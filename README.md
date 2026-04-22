@@ -326,6 +326,7 @@ The Docker socket (`/var/run/docker.sock`) is mounted into the backend container
 ### Backend
 ```bash
 cp .env.example .env
+# Edit .env — set BIOINFOFLOW_HOME to an existing directory, then set your API key
 cd backend
 uv sync
 uv run alembic upgrade head
