@@ -1,0 +1,1995 @@
+{
+  "greeting": {
+    "morning": "Good morning ☀️ What data shall we explore?",
+    "afternoon": "Good afternoon 🌤️ Ready to run some analyses?",
+    "evening": "Evening session 🌙 Let's explore some data",
+    "lateNight": "Late night science 🔬 The best discoveries happen after hours",
+    "dashboardMorning": "Good morning ☀️ {name}",
+    "dashboardAfternoon": "Good afternoon 🌤️ {name}",
+    "dashboardEvening": "Good evening 🌙 {name}",
+    "dashboardLateNight": "Late night 🔬 {name}"
+  },
+  "common": {
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "save": "Save",
+    "close": "Close",
+    "edit": "Edit",
+    "create": "Create",
+    "submit": "Submit",
+    "search": "Search",
+    "filter": "Filter",
+    "actions": "Actions",
+    "cannotUndo": "This action cannot be undone",
+    "clear": "Clear",
+    "refresh": "Refresh",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "all": "All",
+    "none": "None",
+    "yes": "Yes",
+    "no": "No",
+    "ok": "OK",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info",
+    "duplicate": "Duplicate",
+    "copy": "Copy",
+    "download": "Download",
+    "copiedToClipboard": "Copied to clipboard",
+    "noMatches": "No matches.",
+    "workspace": "Workspace",
+    "debug": "Debug",
+    "viewModes": {
+      "list": "List view",
+      "cards": "Card view"
+    }
+  },
+  "metadata": {
+    "appTitle": "Bioinfoflow - Local-first Agentic Bioinformatics Platform",
+    "appDescription": "Bioinfoflow is the local-first, agentic platform that turns biological intent into reproducible pipelines. Run complex workflows on your own data without uploads.",
+    "keywords": [
+      "bioinformatics",
+      "pipelines",
+      "local-first",
+      "agentic",
+      "workflows",
+      "genomics",
+      "research"
+    ]
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "agent": "Agent",
+    "workflows": "Workflows",
+    "runs": "Runs",
+    "images": "Images",
+    "scheduler": "Scheduler",
+    "settings": "Settings"
+  },
+  "userMenu": {
+    "localUser": "Local User",
+    "demoMode": "Demo Mode",
+    "keyboardShortcuts": "Keyboard shortcuts",
+    "helpDocs": "Help & Docs",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "defaultName": "User",
+    "lightMode": "Light mode",
+    "darkMode": "Dark mode",
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member"
+    },
+    "toasts": {
+      "signingOut": "Signing out...",
+      "openingDocs": "Opening documentation...",
+      "keyboardShortcutsHint": "Press Cmd+K to open command palette",
+      "loggedOut": "Logged out successfully",
+      "logoutFailed": "Couldn't sign you out. Check your connection and try again."
+    }
+  },
+  "sidebar": {
+    "projects": "Projects",
+    "workspace": "Workspace",
+    "newProject": "New Project",
+    "newAnalysis": "New Analysis",
+    "newConversation": "New Conversation",
+    "conversationFallback": "Conversation {index}",
+    "conversations": "Conversations",
+    "noConversations": "No conversations yet",
+    "noProjects": "No projects yet",
+    "noProjectsDescription": "Create a workspace here, then launch your first analysis from the main panel.",
+    "deleteConversation": "Delete Conversation",
+    "deleteConversationConfirm": "Are you sure you want to delete this conversation?",
+    "deleteProject": "Delete Project",
+    "deleteProjectConfirm": "Are you sure you want to delete this project?",
+    "renameProject": "Rename Project",
+    "editProject": "Edit Project",
+    "projectName": "Project Name",
+    "projectDescription": "Project Description",
+    "workspacePath": "Workspace Path",
+    "createProject": "Create Project",
+    "selectProject": "Select Project",
+    "searchProjects": "Search projects",
+    "noProjectsFound": "No projects found",
+    "selectProjectFirst": "Select a project to see conversations",
+    "pinned": "Pinned",
+    "recent": "Recent",
+    "noResults": "No matching conversations",
+    "untitledConversation": "Untitled conversation",
+    "defaultProject": "Default Project",
+    "quickActions": "Quick actions",
+    "copyOf": "Copy of {name}",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "thisWeek": "This Week",
+    "older": "Older",
+    "advancedSettings": "Advanced Settings",
+    "storageManagedPreview": "Storage managed by Bioinfoflow",
+    "workspacePreview": "Storage: {path}",
+    "workspacePreviewLabel": "Storage location",
+    "browseDirectories": "Browse...",
+    "selectDirectory": "Select this directory",
+    "goUp": "Go up",
+    "directoryBrowser": "Choose Directory",
+    "selectDirectoryDescription": "Navigate to and select a directory for your project workspace",
+    "placeholders": {
+      "projectName": "e.g., COVID Analysis",
+      "projectDescription": "Short description",
+      "workspacePath": "e.g., projects/my-analysis"
+    },
+    "hints": {
+      "workspacePath": "Local directory for workflow files, results, and agent tools. Relative paths resolve from backend root. Supports absolute paths and ~. Auto-created if missing.",
+      "storageOverridePath": "Advanced override for external project storage. Leave empty to let Bioinfoflow manage the project root."
+    },
+    "prompts": {
+      "renameProject": "Rename project",
+      "renameConversation": "Rename conversation"
+    },
+    "errors": {
+      "projectNameRequired": "Project name is required",
+      "workspacePathRequired": "Workspace path is required",
+      "selectProjectFirst": "Select a project first",
+      "createProjectFailed": "Couldn't create the project. Verify the workspace path exists and try again.",
+      "renameProjectFailed": "Couldn't rename the project. Check your connection and try again.",
+      "duplicateProjectFailed": "Couldn't duplicate the project. Ensure you have enough disk space.",
+      "deleteProjectFailed": "Couldn't delete the project. Close any open files and try again.",
+      "createConversationFailed": "Couldn't start a new conversation. Refresh the page and try again.",
+      "renameConversationFailed": "Couldn't rename the conversation. Try again in a moment.",
+      "updateConversationFailed": "Couldn't save conversation changes. Check your connection.",
+      "deleteConversationFailed": "Couldn't delete the conversation. Refresh and try again."
+    },
+    "toasts": {
+      "projectCreated": "Project \"{name}\" created",
+      "projectRenamed": "Renamed to \"{name}\"",
+      "projectDuplicated": "\"{name}\" duplicated",
+      "deleteProjectConfirmTitle": "Delete \"{name}\"?",
+      "projectDeleted": "\"{name}\" deleted",
+      "deleteConversationConfirmTitle": "Delete this conversation?",
+      "conversationRenamed": "Conversation renamed",
+      "conversationMoved": "Conversation moved",
+      "settingsTitle": "Settings",
+      "settingsDescription": "Opening settings panel...",
+      "helpTitle": "Help & Documentation",
+      "helpDescription": "Visit docs.bioinfoflow.io for guides and tutorials",
+      "quickActionsSoon": "Quick actions feature coming soon"
+    }
+  },
+  "commandPalette": {
+    "searchPlaceholder": "Search projects, runs, workflows, or actions...",
+    "searchAriaLabel": "Search commands",
+    "empty": "No results found.",
+    "groups": {
+      "actions": "Actions",
+      "demos": "Demo Runs",
+      "projects": "Projects",
+      "conversations": "Conversations",
+      "runs": "Runs",
+      "workflows": "Workflows"
+    },
+    "actions": {
+      "newConversation": "New Conversation"
+    },
+    "conversationFallback": "Conversation {index}",
+    "errors": {
+      "loadFailed": "Couldn't load command palette data. Refresh the page to try again.",
+      "createConversationFailed": "Couldn't start a new conversation. Refresh and try again.",
+      "runDemoFailed": "Couldn't start the demo. Check that Docker is running."
+    },
+    "toasts": {
+      "demoQueued": "Demo run {runId} queued"
+    }
+  },
+  "workspace": {
+    "loading": "Loading workspace...",
+    "noFiles": "No files found.",
+    "selected": "Selected",
+    "itemTypes": {
+      "directory": "dir",
+      "file": "file"
+    },
+    "actions": {
+      "preview": "Preview"
+    },
+    "tree": {
+      "loading": "Loading...",
+      "empty": "Empty folder"
+    },
+    "preview": {
+      "title": "Preview",
+      "lines": "{count} lines",
+      "folder": "Folder",
+      "filesOnly": "Preview is only available for files.",
+      "loading": "Loading preview...",
+      "unable": "Unable to preview file.",
+      "clickToLoad": "Click Preview to load file content."
+    },
+    "errors": {
+      "loadFilesFailed": "Couldn't load workspace files. Verify the workspace path exists.",
+      "loadFolderFailed": "Couldn't open this folder. Check file permissions.",
+      "pathCannotContainDotDot": "Path cannot contain \"..\"",
+      "previewFailed": "Couldn't preview this file. It may be too large or binary.",
+      "deleteFailed": "Couldn't delete the file. Check that it's not in use."
+    },
+    "toasts": {
+      "deleteConfirmTitle": "Delete {name}?",
+      "deleteConfirmDescription": "This action cannot be undone"
+    },
+    "liveDeck": {
+      "files": "Files",
+      "pipeline": "Workflow",
+      "monitor": "Monitor"
+    }
+  },
+  "chat": {
+    "placeholder": "Describe your analysis goal, dataset, or ask to run a demo...",
+    "selectProject": "Select a project to start",
+    "selectProjectDescription": "Choose an existing workspace from the sidebar to continue your analysis, review past chats, or start a fresh run.",
+    "inboxWorkspaceTitle": "Assign a project to unlock workspace tools",
+    "inboxWorkspaceDescription": "This inbox analysis can chat normally, but files, terminal, workflows, and runs stay disabled until you move it into a real project.",
+    "you": "You",
+    "quickStart": {
+      "upload": "Upload data",
+      "uploadDescription": "Start with your own FASTQ, BAM, or VCF files",
+      "tryDemo": "Try a demo",
+      "tryDemoDescription": "Run a pre-configured pipeline to see BioFlow in action",
+      "askQuestion": "Ask a question",
+      "askQuestionDescription": "Describe your analysis needs in plain language"
+    }
+  },
+  "status": {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "queued": "Queued"
+  },
+  "connectionStatus": {
+    "connecting": "Connecting...",
+    "connected": "Connected",
+    "reconnecting": "Reconnecting...",
+    "disconnected": "Disconnected",
+    "label": "Realtime connection"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Platform overview and system status",
+    "runs": "Runs",
+    "workflows": "Workflows",
+    "images": "Images",
+    "projects": "Projects",
+    "recentActivity": "Recent Activity",
+    "systemStatus": "System Status",
+    "viewAll": "View All",
+    "noRecentRuns": "No recent runs",
+    "noRecentRunsDescription": "Once you launch your first analysis, results and progress appear here.",
+    "dockerAvailable": "Docker Status",
+    "gpuStatus": "GPU Status",
+    "healthy": "Healthy",
+    "unavailable": "Unavailable",
+    "registered": "registered",
+    "local": "local",
+    "remote": "remote",
+    "active": "active",
+    "errors": {
+      "loadFailed": "Couldn't load dashboard data. Check that the backend is running, then refresh."
+    },
+    "docker": {
+      "badgePrefix": "Docker:",
+      "nvidiaRuntimePrefix": "NVIDIA Runtime:",
+      "available": "Available",
+      "notRunning": "Not running",
+      "notFound": "Not found"
+    },
+    "parabricksCompatible": "Parabricks Compatible",
+    "noGpuDetected": "No GPU detected",
+    "narrativeEmpty": "No runs yet — head to the Agent to start your first analysis!",
+    "narrativeAllComplete": "All {total} runs completed successfully",
+    "narrativeTotal": "{total} total runs",
+    "narrativeCompleted": "{count} completed",
+    "narrativeRunning": "{count} running",
+    "narrativeFailed": "{count} failed",
+    "narrativeQueued": "{count} queued",
+    "narrativeSeparator": ", ",
+    "narrativeJoin": "{parts}.",
+    "dockerUnavailableTitle": "Docker is not running",
+    "dockerUnavailableDescription": "Workflow execution requires Docker. Please start the Docker daemon to run pipelines.",
+    "schedulerCard": {
+      "title": "Scheduler",
+      "queueDepth": "Queue Depth"
+    }
+  },
+  "runs": {
+    "title": "Runs",
+    "subtitle": "View and manage workflow runs",
+    "stage": {
+      "pending": "Pending",
+      "queued": "Queued",
+      "preparing": "Preparing",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "currentTask": "Running: {task}"
+    },
+    "error": {
+      "stage": {
+        "validation": "Validation",
+        "preparation": "Preparation",
+        "execution": "Execution",
+        "post": "Post-run"
+      }
+    },
+    "scopes": {
+      "project": "Project",
+      "all": "All"
+    },
+    "noRuns": "No runs yet",
+    "noRunsDescription": "No pipelines have run yet. Launch an analysis from the Agent to see results here.",
+    "tableCaption": "List of workflow runs",
+    "runId": "Run ID",
+    "workflow": "Workflow",
+    "status": "Status",
+    "startTime": "Start Time",
+    "endTime": "End Time",
+    "duration": "Duration",
+    "currentTask": "Current Task",
+    "samples": "Samples",
+    "actions": "Actions",
+    "viewDetails": "View Details",
+    "viewLogs": "View Logs",
+    "viewResults": "View Results",
+    "downloadResults": "Download Results",
+    "cancelRun": "Cancel Run",
+    "resumeFromCheckpoint": "Resume from checkpoint",
+    "deleteRun": "Delete Run",
+    "openTerminal": "Open Terminal",
+    "goToRunDir": "Go to Run Dir",
+    "rerun": "Rerun",
+    "rerunPipeline": "Rerun Pipeline",
+    "cleanupRun": "Cleanup",
+    "submitBatch": "Submit Batch",
+    "notifications": "Notifications",
+    "openFullPage": "Open full page",
+    "backToRuns": "Back to Runs",
+    "fullscreen": "Fullscreen",
+    "progress": "Progress",
+    "workflowFallback": "Workflow {id}",
+    "unknownWorkflow": "Unknown workflow",
+    "cancelConfirmTitle": "Cancel Run?",
+    "cancelConfirmMessage": "Are you sure you want to cancel this run? This action cannot be undone.",
+    "pagination": {
+      "showing": "Showing {shown} runs",
+      "showingOf": "Showing {shown} of {total} runs",
+      "page": "Page {page}"
+    },
+    "errors": {
+      "loadWorkflowsFailed": "Couldn't load workflows. Check that the backend is running and refresh.",
+      "loadRunsFailed": "Couldn't reach the runs data. Check that the backend is running, then refresh.",
+      "loadRunDetailsFailed": "Couldn't load run details. The run may have been deleted or the backend is unreachable.",
+      "resumeFailed": "Couldn't resume the run. Verify the checkpoint is still available.",
+      "retryFailed": "Couldn't retry the run. Check that the workflow is still registered.",
+      "cancelFailed": "Couldn't cancel the run. It may have already finished.",
+      "deleteFailed": "Couldn't delete the run. Refresh and try again.",
+      "previewFailed": "Couldn't preview the file. It may be too large or in an unsupported format.",
+      "cleanupFailed": "Couldn't clean up the run. Refresh and try again."
+    },
+    "toasts": {
+      "openingLogsTitle": "Opening logs for {runId}",
+      "pipelineLabel": "Pipeline: {pipeline}",
+      "resumingTitle": "Resuming {runId}...",
+      "resumingDescription": "Attempting to resume from last checkpoint",
+      "resumedTitle": "{runId} resumed",
+      "executionQueued": "Pipeline execution queued",
+      "retryingTitle": "Retrying {runId}...",
+      "retryingDescription": "Restarting pipeline from beginning",
+      "resubmittedTitle": "{runId} resubmitted",
+      "checkRunsPage": "Check Runs page for new execution",
+      "cancelConfirmTitle": "Cancel {runId}?",
+      "cancelConfirmDescription": "This will stop the running pipeline",
+      "cancelledTitle": "{runId} cancelled",
+      "executionStopped": "Pipeline execution stopped",
+      "deleteConfirmTitle": "Delete {runId}?",
+      "deleteConfirmDescription": "This action cannot be undone",
+      "deletedTitle": "{runId} deleted",
+      "cleanupConfirmTitle": "Clean up {runId}?",
+      "cleanupConfirmDescription": "This will remove intermediate work files for this run",
+      "cleanupDoneTitle": "{runId} cleaned up",
+      "batchSubmittedTitle": "Batch submitted",
+      "batchSubmittedDescription": "Batch {batchId} created with {count} runs",
+      "batchCancelledTitle": "Batch cancelled"
+    },
+    "detail": {
+      "started": "Started",
+      "duration": "Duration",
+      "workspace": "Workspace",
+      "errorTitle": "Run Failed",
+      "error": {
+        "expand": "Show full error",
+        "collapse": "Hide details",
+        "copy": "Copy",
+        "copied": "Error message copied",
+        "copyFailed": "Couldn't copy to clipboard"
+      },
+      "connectionReconnecting": "Reconnecting...",
+      "connectionDisconnected": "Connection lost",
+      "tabs": {
+        "dag": "Pipeline DAG",
+        "logs": "Logs",
+        "files": "Output Files",
+        "audit": "Audit"
+      },
+      "logs": {
+        "empty": "No logs available",
+        "emptyDescription": "Logs will appear here once the pipeline starts executing."
+      },
+      "outputs": {
+        "empty": "No output files yet",
+        "title": "Outputs",
+        "expandAll": "Expand",
+        "selectFile": "Select a file",
+        "chooseFileToPreview": "Choose a file from the tree to preview it.",
+        "loadingPreview": "Loading preview…",
+        "binaryNotPreviewed": "This file type isn’t previewed. Download to inspect locally.",
+        "showingFirstRows": "Showing first {count} rows."
+      },
+      "outputsEmptyRunning": "Run is still in progress. Outputs will appear when complete.",
+      "outputsEmptyCompleted": "This run completed with no output files.",
+      "outputsEmptyFailed": "This run failed before producing outputs.",
+      "logsTruncated": "Showing latest {count} log entries",
+      "audit": {
+        "intro": "Audit log tracks key state changes, actors and timing for this run.",
+        "empty": "No audit entries yet",
+        "emptyDescription": "Audit log tracks key state changes, actors and timing for this run.",
+        "actor": "Actor",
+        "by": "by {actor}",
+        "system": "system",
+        "details": "Details",
+        "showDetails": "Show details",
+        "hideDetails": "Hide details",
+        "actions": {
+          "created": "Created",
+          "queued": "Queued",
+          "started": "Started",
+          "completed": "Completed",
+          "failed": "Failed",
+          "cancelled": "Cancelled",
+          "retried": "Retried",
+          "resumed": "Resumed",
+          "cleanup": "Cleaned up",
+          "timeout": "Timed out",
+          "unknown": "Unknown"
+        },
+        "errors": {
+          "loadFailed": "Couldn't load audit trail. Refresh and try again."
+        }
+      }
+    }
+  },
+  "workflows": {
+    "title": "Workflows",
+    "subtitle": "Manage registered workflows",
+    "noWorkflows": "No workflows registered",
+    "noWorkflowsDescription": "Import a pipeline definition from nf-core, GitHub, or a local file to get started.",
+    "tableCaption": "List of workflows",
+    "register": "Register Workflow",
+    "name": "Name",
+    "description": "Description",
+    "noDescription": "No description",
+    "source": "Source",
+    "version": "Version",
+    "engine": "Engine",
+    "inputSchema": "Input Schema",
+    "outputSchema": "Output Schema",
+    "edit": "Edit",
+    "delete": "Delete",
+    "run": "Run",
+    "viewDetails": "View Details",
+    "editParameters": "Edit Parameters",
+    "lastModified": "Last Modified",
+    "scopes": {
+      "hub": "Hub",
+      "project": "Project"
+    },
+    "viewModes": {
+      "list": "List view",
+      "cards": "Card view"
+    },
+    "emptyProject": "No workflows enabled for this project yet",
+    "emptyProjectDescription": "Switch to Hub to browse available pipelines and add them to your project.",
+    "enabledVersions": "{count} version(s) enabled",
+    "versionCount": "{count} version(s)",
+    "hub": {
+      "card": {
+        "versionLabel": "Version {version}",
+        "versionMenuLabel": "Switch version ({count} available)",
+        "latestTag": "Latest"
+      }
+    },
+    "actions": {
+      "add": "Add",
+      "selectProject": "Select project",
+      "remove": "Remove",
+      "removeFromProject": "Remove from project"
+    },
+    "errors": {
+      "fileRequired": "Please upload a .nf or .wdl file",
+      "repoUrlRequired": "Please enter a repository URL",
+      "pipelineNameRequired": "Please enter a pipeline name",
+      "registerFailed": "Couldn't register the workflow. Check the repository URL and try again.",
+      "registerLocalFailed": "Couldn't register the local workflow. Check backend connectivity or parser errors and try again.",
+      "loadWorkflowsFailed": "Couldn't load workflows. Verify the backend is running and refresh.",
+      "selectProjectToRun": "Select a project to start a run",
+      "selectProjectFirst": "Select a project first",
+      "addToProjectFailed": "Couldn't add the workflow to the project. Refresh and try again.",
+      "removeFromProjectFailed": "Couldn't remove the workflow from the project. Refresh and try again.",
+      "switchVersionFailed": "Couldn't switch the workflow version. The version may no longer be available.",
+      "deleteFailed": "Couldn't delete the workflow. It may be in use by a running pipeline.",
+      "loadWorkflowFailed": "Couldn't load the workflow. It may have been deleted.",
+      "fileTooLarge": "File size ({actualSize}) exceeds the {maxSize} limit. Workflow files are typically small — please check you selected the right file.",
+      "unsupportedFileType": "Unsupported format ({ext}). Only WDL (.wdl) and Nextflow (.nf) workflow files are accepted.",
+      "validationFailed": "Workflow has syntax errors. Fix the highlighted lines and try again.",
+      "bundlePathRequired": "Please choose the workflow bundle directory",
+      "entrypointRelpathRequired": "Please enter the entrypoint path inside the bundle"
+    },
+    "toasts": {
+      "registered": "Workflow \"{name}\" registered",
+      "addedToProject": "Added \"{name}\" to project",
+      "removedFromProject": "Removed \"{name}\" from project",
+      "parameterEditorTitle": "Parameter editor",
+      "parameterEditorDescription": "Opening parameter editor for {name}...",
+      "duplicatedDescription": "Copy created as \"Copy of {name}\"",
+      "deleteConfirmTitle": "Delete {name}?",
+      "deleteConfirmDescription": "This action cannot be undone",
+      "deleted": "{name} deleted"
+    },
+    "registerDialog": {
+      "title": "Register New Workflow",
+      "description": "Add a new pipeline template to your library.",
+      "importSource": "Import source",
+      "importSourceDescription": "Pick a public catalog or validate a local workflow file.",
+      "selected": "Selected",
+      "fields": {
+        "sourceType": "Source Type",
+        "repoUrl": "Repository URL",
+        "workflowNameOptional": "Workflow Name (optional)",
+        "pipelineName": "Pipeline Name",
+        "localImportMode": "Local import mode",
+        "bundleUpload": "Workflow Bundle Directory",
+        "bundlePath": "Workflow Bundle Directory",
+        "entrypointRelpath": "Entrypoint Relative Path",
+        "entrypointSelect": "Entrypoint File",
+        "workflowFile": "Workflow File (.nf or .wdl)",
+        "description": "Description (optional)"
+      },
+      "localModes": {
+        "bundle": "Bundle directory",
+        "singleFile": "Single file"
+      },
+      "actions": {
+        "chooseBundle": "Choose bundle",
+        "chooseEntrypoint": "Choose entrypoint"
+      },
+      "sourceTypes": {
+        "local": "Local"
+      },
+      "sourceDescriptions": {
+        "nfCore": "Import from nf-core catalog.",
+        "github": "Pull from GitHub repo.",
+        "local": "Register a local workflow bundle, or quick-import a single WDL/Nextflow file."
+      },
+      "placeholders": {
+        "repoUrl": "https://github.com/user/pipeline",
+        "pipelineName": "e.g., viralrecon",
+        "version": "e.g., 2.6.0",
+        "description": "Brief description of this workflow",
+        "bundleUpload": "Choose a workflow bundle directory",
+        "bundlePath": "/path/to/workflow-bundle",
+        "entrypointRelpath": "e.g., main.nf or workflows/main.wdl",
+        "entrypointSelect": "Choose an entrypoint file from this bundle"
+      },
+      "hints": {
+        "bundlePath": "Choose the directory that contains the workflow entrypoint and any imported modules, configs, or scripts.",
+        "entrypointRelpath": "Path to the entrypoint file inside the selected bundle directory."
+      },
+      "entrypointBrowser": {
+        "title": "Choose Entrypoint",
+        "empty": "Choose a workflow bundle first."
+      },
+      "selectedFile": "Selected: {name}",
+      "nfCoreHint": "nf-core workflows use Nextflow.",
+      "submitting": "Registering...",
+      "progress": {
+        "reading": "Reading file",
+        "validating": "Checking syntax",
+        "parsing": "Extracting schema",
+        "registering": "Saving to hub"
+      },
+      "editor": {
+        "title": "Source Code",
+        "changeFile": "Choose different file",
+        "autoValidating": "Validating...",
+        "syntaxOk": "Syntax valid",
+        "errorsFound": "{count} error(s) found"
+      },
+      "preview": {
+        "title": "Registration Preview",
+        "nameLabel": "Name",
+        "detectedEngine": "Detected engine: {engine}",
+        "fileName": "Source file: {name}",
+        "bundleName": "Bundle: {name} ({count} files)",
+        "bundlePath": "Bundle directory: {path}",
+        "entrypointRelpath": "Entrypoint: {path}",
+        "runtimeAssets": "Runtime assets checked separately",
+        "afterRegistration": "After registration",
+        "latest": "latest",
+        "dagPreviewTitle": "DAG Preview",
+        "dagPreviewEmpty": "Upload a valid workflow file to preview the task graph.",
+        "validationErrors": "Validation Errors",
+        "clickToLocate": "Click to jump to line"
+      }
+    },
+    "wizard": {
+      "title": "Run Wizard",
+      "descriptionWithWorkflow": "Configure inputs for {workflow}.",
+      "descriptionNoWorkflow": "Select a workflow to start a run.",
+      "projectWorkspaceRoot": "Project workspace root",
+      "modes": {
+        "guided": "Guided",
+        "json": "JSON"
+      },
+      "workspacePathLabel": "Workspace path (relative to project)",
+      "workspaceTip": {
+        "part1": "Tips: if your files are in",
+        "part2": ", set workspace to",
+        "part3": "then type"
+      },
+      "outdirLabel": "Outdir",
+      "inputModeLabel": "Input mode",
+      "detecting": "Detecting…",
+      "autoDetect": "Auto-detect samples",
+      "inputModes": {
+        "fastqPaired": "FASTQ paired",
+        "fastqSingle": "FASTQ single",
+        "bam": "BAM"
+      },
+      "removeRow": "Remove row",
+      "addSample": "Add sample",
+      "workspaceRelativeHint": "Paths are workspace-relative (recommended).",
+      "referenceSource": "Reference source",
+      "referenceSourcePlaceholder": "Select reference source",
+      "referenceSources": {
+        "builtin": "Builtin",
+        "local": "Local path"
+      },
+      "builtinReference": "Builtin reference",
+      "referencePath": "Reference path",
+      "paramsJson": "Params JSON",
+      "inputsJson": "Inputs JSON (WDL)",
+      "configOverridesJson": "Config overrides JSON (Nextflow)",
+      "pathAutocompleteHint": "If you’re unsure about paths: click into any path field to get autocomplete suggestions from the project workspace.",
+      "advanced": {
+        "title": "Advanced Options",
+        "timeoutLabel": "Timeout (seconds)",
+        "timeoutPlaceholder": "No timeout",
+        "timeoutHint": "Maximum execution time in seconds. Leave empty for no limit.",
+        "retryEnable": "Enable retry policy",
+        "maxRetries": "Max retries",
+        "delaySeconds": "Initial delay (s)",
+        "backoffMultiplier": "Backoff multiplier",
+        "maxDelaySeconds": "Max delay (s)",
+        "retryOn": "Retry on errors",
+        "retryOnPlaceholder": "e.g. timeout, oom, exit:137",
+        "retryOnHint": "Comma-separated error patterns to trigger retries"
+      },
+      "startRun": "Start Run",
+      "errors": {
+        "selectProjectFirst": "Select a project first",
+        "workspaceRequired": "Workspace path is required",
+        "noSamplesDetected": "No samples detected in this workspace",
+        "noFastqPairs": "Found FASTQs, but couldn’t form any R1/R2 pairs",
+        "noSingleEndFastq": "No single-end FASTQs detected",
+        "noBamDetected": "No BAM files detected",
+        "detectFailed": "Couldn't detect samples. Verify files exist in the workspace and try again.",
+        "selectProjectAndWorkflow": "Select a project and workflow to start a run",
+        "guidedOnlyForViralMini": "Guided mode is only available for viral-mini workflows right now",
+        "addSampleRow": "Add at least one sample row",
+        "sampleIdsUnique": "Sample IDs must be unique",
+        "sampleIdRequired": "Sample ID is required for every row",
+        "fastqPairedNeedsR1R2": "Paired FASTQ requires both R1 and R2 paths",
+        "fastqSingleNeedsR1": "Single FASTQ requires an R1 path",
+        "bamNeedsPath": "BAM mode requires a BAM path",
+        "referenceRequired": "Reference path is required",
+        "startRunFailed": "Couldn't start the run. Check inputs and workflow configuration.",
+        "paramsJsonInvalid": "Params JSON is invalid",
+        "inputsJsonInvalid": "Inputs JSON is invalid",
+        "configOverridesInvalid": "Config overrides JSON is invalid"
+      },
+      "toasts": {
+        "detectedPaired": "Detected {count} paired samples",
+        "detectedSamples": "Detected {count} samples",
+        "detectedBam": "Detected {count} BAM samples",
+        "submitted": "{workflow} submitted",
+        "runId": "Run ID {runId}"
+      }
+    },
+    "runForm": {
+      "loading": "Loading workflow form…",
+      "browse": "Browse",
+      "clear": "Clear",
+      "addManual": "Add path",
+      "addRow": "Add row",
+      "removeRow": "Remove row",
+      "removeItem": "Remove",
+      "emptyList": "No files selected",
+      "filePlaceholder": "asset:// or absolute path",
+      "platformManaged": "Managed",
+      "summaryFields": "{filled} of {total} fields filled",
+      "section": {
+        "data": "Inputs",
+        "params": "Parameters",
+        "advanced": "Advanced"
+      }
+    },
+    "submission": {
+      "title": "Submit Run",
+      "description": "Configure and submit a workflow run.",
+      "steps": {
+        "chooseWorkflow": "Choose Workflow",
+        "editSubmit": "Edit & Submit",
+        "configureParams": "Configure",
+        "reviewSubmit": "Review & Submit"
+      },
+      "modes": {
+        "table": "Samplesheet",
+        "json": "JSON Input",
+        "autoDetectedTable": "Detected samplesheet workflow",
+        "autoDetectedWdl": "WDL workflow",
+        "autoDetectedJson": "JSON-parameter workflow",
+        "autoDetectExplainer": "For Nextflow samplesheet workflows, fill sample rows in Samplesheet and add optional parameters in JSON Input; for WDL workflows, use JSON Input."
+      },
+      "tableEditor": {
+        "pasteTsv": "Paste TSV",
+        "importCsv": "Import CSV",
+        "maxRows": "Max rows",
+        "additionalParams": "Additional parameters"
+      },
+      "jsonEditor": {
+        "upload": "Upload JSON",
+        "downloadTemplate": "Template",
+        "invalid": "Invalid",
+        "validJson": "Valid JSON",
+        "editHint": "Edit directly or upload a file"
+      },
+      "step1": {
+        "searchPlaceholder": "Search workflows...",
+        "noResults": "No workflows match your search."
+      },
+      "step2": {
+        "changeWorkflow": "Change",
+        "workspaceTitle": "Workspace & Output",
+        "workspaceSectionHint": "Choose the project-relative folder to inspect, then confirm where results should be written.",
+        "workspace": "Workspace",
+        "workspaceHint": "Relative path to project workspace root",
+        "outdir": "Output Directory",
+        "outdirLabel": "Output Directory",
+        "managedStorageLabel": "Managed Storage",
+        "managedStorageSummary": "Project storage and output locations are managed by Bioinfoflow.",
+        "managedStorageDetail": "Use the project data browser below to select inputs. Run outputs are written automatically.",
+        "managedStorageLocations": "Use Project Data for private manifests and Deliveries for upstream fq/bam/vcf inputs.",
+        "profileLabel": "Profile",
+        "profileHint": "Nextflow execution profile (e.g. docker, singularity)",
+        "advancedSettings": "Run Settings",
+        "inputDataTitle": "Input Data",
+        "inputDataHint": "Primary bioinformatics inputs are surfaced here with workspace-aware defaults when available.",
+        "parametersTitle": "Run Parameters",
+        "parametersHint": "Workflow-specific knobs that most users may tweak occasionally.",
+        "advancedFieldTitle": "Expert Inputs",
+        "advancedFieldHint": "Runtime-heavy or infrastructure-oriented settings stay out of the main path.",
+        "autoGenerated": "Auto-generated from workflow schema",
+        "jsonOverride": "JSON Override (Advanced)",
+        "jsonOverrideHint": "Override workflow config parameters. Leave empty for defaults."
+      },
+      "step3": {
+        "title": "Review & Submit",
+        "pendingSubmit": "Pending",
+        "workflowSection": "Workflow",
+        "workflowName": "Name",
+        "engine": "Engine",
+        "estimatedTime": "Est. Time",
+        "workspace": "Workspace",
+        "samplesSection": "Samples",
+        "inputDataSection": "Input Data",
+        "parametersSection": "Parameters",
+        "defaultParams": "Using default parameters",
+        "runConfigSection": "Run Config",
+        "retryPolicy": "Retry Policy",
+        "timeout": "Timeout",
+        "disabled": "Disabled",
+        "noLimit": "No limit",
+        "jsonOverrides": "JSON Overrides",
+        "customConfig": "Custom config applied"
+      },
+      "samplesheet": {
+        "title": "Sample Data",
+        "autoDetect": "Auto-detect",
+        "detecting": "Detecting...",
+        "importCsv": "Import CSV/TSV",
+        "paste": "Paste",
+        "downloadTemplate": "Template",
+        "addRow": "Add row",
+        "removeRow": "Remove row {row}",
+        "noSamplesDetected": "No samples detected in this workspace",
+        "detected": "Detected {count} samples",
+        "detectFailed": "Could not detect samples. Check workspace path.",
+        "imported": "Imported {count} samples",
+        "importEmpty": "File is empty or has no data rows",
+        "pasted": "Pasted {count} samples",
+        "pasteEmpty": "Clipboard is empty or has no data rows",
+        "pasteFailed": "Could not read clipboard"
+      },
+      "workbench": {
+        "badge": "Run Workbench",
+        "changeWorkflow": "Change Workflow",
+        "closeAria": "Close submission workbench",
+        "pickerTitle": "Choose a workflow to run",
+        "pickerDescription": "Pick the workflow first, then fill in the shared settings and input documents in one place.",
+        "continue": "Continue",
+        "cancel": "Cancel",
+        "submissionPreview": "Submission preview",
+        "hidePreview": "Hide Preview",
+        "uploadJson": "Upload JSON",
+        "formatJson": "Format JSON",
+        "downloadTemplate": "Download Template",
+        "buildManifest": "Build manifest",
+        "fileSourceProject": "Use Project Data for private files and uploaded manifests.",
+        "fileSourceDeliveries": "Use Deliveries for upstream data.",
+        "fileSourceReference": "Use Reference Library for reference bundles and indexes.",
+        "fileSourceMixed": "Choose the source that matches where your data lives.",
+        "manifestBuilderDescription": "Draft a manifest using asset:// URIs. Save writes it into Project Data so the backend can materialize runtime paths automatically.",
+        "insertFromBrowser": "Insert from browser",
+        "saveManifest": "Save to Project Data",
+        "manifestBuilderPlaceholder": "sample_a\tasset://deliveries/run42/sample_a.fastq.gz",
+        "requiredKeys": "Required keys",
+        "reservedKeys": "Reserved keys",
+        "guidedInputs": "Guided Inputs",
+        "chipProfile": "Profile: {value}",
+        "chipTimeout": "Timeout: {value}s",
+        "chipRetry": "Retry x{count}",
+        "optionalField": "Optional field",
+        "none": "None",
+        "validJson": "Valid JSON",
+        "invalidJson": "Invalid JSON",
+        "missingKeys": "Missing required keys: {keys}",
+        "reservedConflicts": "Reserved keys cannot be set here: {keys}",
+        "populatedFields": "{count} populated fields",
+        "draftJsonFields": "{count} JSON fields in the current draft",
+        "draftSamples": "{count} samples detected in the current draft",
+        "summarySamples": "{count} samples",
+        "summaryWorkspace": "Workspace {value}",
+        "summaryOutdir": "Outdir {value}",
+        "summaryJsonFields": "{count} JSON fields",
+        "validationRowMissing": "Row {row} is missing required columns: {columns}",
+        "validationJsonObject": "JSON input must be an object.",
+        "validationSamplesheetRequired": "Add at least one samplesheet row before submitting.",
+        "validationMissingRequired": "Missing required JSON keys: {keys}",
+        "validationReservedConflicts": "Reserved keys cannot be set here: {keys}"
+      },
+      "back": "Back",
+      "submitRun": "Submit Run",
+      "submitting": "Submitting...",
+      "preview": "Preview",
+      "previewTitle": "Launch Preview",
+      "previewCommand": "Command",
+      "previewSamples": "Samples",
+      "previewInputs": "Inputs",
+      "previewExtraParams": "Parameters",
+      "footer": {
+        "back": "Back",
+        "next": "Next",
+        "cancel": "Cancel",
+        "startRun": "Start Run"
+      },
+      "toasts": {
+        "submitted": "{workflow} submitted",
+        "runId": "Run ID: {runId}",
+        "runCreated": "Run submitted successfully"
+      },
+      "errors": {
+        "loadWorkflowsFailed": "Could not load workflows",
+        "jsonOverrideInvalid": "JSON override is not valid JSON",
+        "noSamples": "Add at least one sample",
+        "invalidJson": "Invalid JSON. Please check your input.",
+        "createFailed": "Could not create run. Check inputs and try again.",
+        "submitFailed": "Could not submit run. Check inputs and try again."
+      }
+    },
+    "runDialog": {
+      "title": "Start Workflow Run",
+      "description": "Configure workspace and parameters for this run.",
+      "workflow": "Workflow",
+      "selectWorkflow": "Select workflow",
+      "workspacePath": "Workspace Path (relative)",
+      "paramsJson": "Params JSON",
+      "inputsJson": "Inputs JSON (WDL)"
+    },
+    "detail": {
+      "toasts": {
+        "copiedId": "Workflow ID copied to clipboard"
+      },
+      "notFound": {
+        "title": "Workflow not found",
+        "description": "The workflow you're looking for doesn't exist."
+      },
+      "backToWorkflows": "Back to Workflows",
+      "noDescription": "No description available",
+      "copyId": "Copy workflow ID",
+      "estTime": "Est. Time",
+      "sourceUrl": "Source URL",
+      "tabs": {
+        "overview": "Overview",
+        "parameters": "Parameters",
+        "tasks": "Tasks",
+        "dag": "DAG",
+        "source": "Source"
+      },
+      "readiness": {
+        "tasksCompact": "{count} tasks detected",
+        "dependenciesCompact": "{count} dependency edges",
+        "runtimeAssetsCompact": "Runtime assets needed"
+      },
+      "overview": {
+        "description": "Description",
+        "workflowName": "Workflow Name",
+        "schemaVersion": "Schema Version",
+        "inputs": "Inputs",
+        "outputs": "Outputs",
+        "dependencies": "Dependencies",
+        "noSchema": "No schema information available for this workflow. Schema is automatically extracted for local WDL and Nextflow workflows during registration.",
+        "created": "Created:",
+        "updated": "Updated:"
+      },
+      "parameters": {
+        "noInfoTitle": "No parameter information available",
+        "noInfoDescription": "Parameters are extracted from local WDL and Nextflow workflows during registration",
+        "columns": {
+          "name": "Name",
+          "type": "Type",
+          "required": "Required",
+          "optional": "Optional",
+          "default": "Default",
+          "description": "Description"
+        },
+        "optional": "Optional",
+        "required": "Required",
+        "managed": "Platform managed",
+        "artifact": "Artifact",
+        "fileSource": {
+          "project": "Project data",
+          "deliveries": "Deliveries",
+          "reference": "Reference library",
+          "mixed": "Mixed sources"
+        },
+        "noInputs": "No inputs defined",
+        "noOutputs": "No outputs defined"
+      },
+      "tasks": {
+        "noInfoTitle": "No task information available",
+        "noInfoDescription": "Tasks are extracted from local WDL and Nextflow workflows during registration",
+        "title": "Tasks / Processes",
+        "expandAll": "Expand All",
+        "collapseAll": "Collapse All",
+        "inputsCount": "{count} inputs",
+        "outputsCount": "{count} outputs",
+        "container": "Container",
+        "noTasks": "No tasks defined"
+      },
+      "source": {
+        "copied": "Source code copied to clipboard",
+        "unknownLanguage": "Unknown",
+        "notLocalTitle": "Source Code Not Available Locally",
+        "notLocalDescription": "This workflow is sourced from {source}. View the source code at the original repository.",
+        "viewOnGithub": "View on GitHub",
+        "loadingTitle": "Loading Source Code",
+        "loadingDescription": "Fetching workflow source file...",
+        "lines": "lines",
+        "rawView": "Raw",
+        "diffView": "Diff",
+        "compareVersion": "Compare version",
+        "comparePlaceholder": "Choose another version",
+        "compareNone": "Current version only",
+        "compareHint": "Select another registered version to see a Git-style diff.",
+        "compareUnavailable": "No other registered versions are available for comparison yet.",
+        "compareLoading": "Loading comparison source...",
+        "compareActive": "Comparing current {current} against {previous}",
+        "currentVersionLabel": "Current · {version}",
+        "compareVersionLabel": "Compared · {version}"
+      }
+    }
+  },
+  "images": {
+    "title": "Images",
+    "subtitle": "Manage Docker images",
+    "noImages": "No images available",
+    "noImagesDescription": "No container images found. Pull an image from a registry or upload a tarball to get started.",
+    "tableCaption": "List of container images",
+    "name": "Name",
+    "tag": "Tag",
+    "size": "Size",
+    "status": "Status",
+    "pull": "Pull",
+    "remove": "Remove",
+    "ready": "Ready",
+    "pulling": "Pulling",
+    "missing": "Missing",
+    "shared": "Shared",
+    "upload": "Upload Image",
+    "usedByProject": "Used by this project",
+    "noDescription": "No description",
+    "statuses": {
+      "local": "Local",
+      "remote": "Remote",
+      "pulling": "Pulling",
+      "failed": "Failed"
+    },
+    "actions": {
+      "viewDetails": "View Details",
+      "copyName": "Copy Image Name",
+      "copyPullCommand": "Copy docker pull command",
+      "deleteLocal": "Delete Local Copy",
+      "repull": "Re-pull",
+      "pulling": "Pulling...",
+      "pull": "Pull",
+      "refresh": "Refresh"
+    },
+    "table": {
+      "image": "Image",
+      "version": "Version",
+      "size": "Size",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "uploadDialog": {
+      "title": "Upload Docker Image",
+      "description": "Import a container image from a registry or file.",
+      "importMethod": "Import Method",
+      "methods": {
+        "registry": "From Registry",
+        "tarball": "From Tarball"
+      },
+      "imageName": "Image Name",
+      "tarball": "Tarball (.tar)",
+      "selectedFile": "Selected: {name}",
+      "submitting": "Pulling...",
+      "submit": "Pull Image"
+    },
+    "errors": {
+      "loadFailed": "Couldn't load images. Check that Docker is running and the backend is reachable.",
+      "dockerNotRunning": "Docker is not running. Start Docker to pull images.",
+      "dockerUnavailableBanner": "Docker is not running. Image list is stale, and pulls are disabled until Docker starts.",
+      "dockerUnavailableEmpty": "Docker is unavailable, so Bioinfoflow cannot sync or import images right now.",
+      "tarballRequired": "Please select a tarball file",
+      "tarballLoadFailed": "Couldn't load the tarball. Verify the file format is valid.",
+      "imageNameRequired": "Please enter an image name",
+      "imageNameInvalid": "Please enter a valid image name",
+      "pullFailed": "Couldn't pull the image. Verify Docker is running and you have network access.",
+      "deleteFailed": "Couldn't delete the image. It may be in use by a running container.",
+      "deletePulling": "The image is still being pulled. Wait for the download to finish before deleting it.",
+      "deleteInUse": "The image is currently used by a container. Stop the container before deleting the image."
+    },
+    "toasts": {
+      "tarballLoaded": "Image tarball loaded",
+      "pullingTitle": "Pulling {name}...",
+      "pullingDescription": "This may take a few minutes depending on image size",
+      "pullStartedTitle": "{name} pull started",
+      "pullStartedDescription": "Image is now downloading",
+      "sizeDescription": "Size: {size}",
+      "deleteConfirmTitle": "Delete local copy of {name}?",
+      "deleteConfirmDescription": "This will free {size} of disk space",
+      "removedTitle": "{name} removed",
+      "removedDescription": "Local copy deleted"
+    },
+    "empty": {
+      "availableTitle": "No images are ready yet",
+      "availableDescription": "Images define the runtime environment for your analyses. Add your first image to get started.",
+      "unavailableTitle": "Docker connection required",
+      "unavailableDescription": "Docker is unavailable, so Bioinfoflow cannot sync or import images right now.",
+      "recommendedTitle": "Starter images",
+      "recommendedDescription": "Pick a common base image to prefill the pull dialog.",
+      "actions": {
+        "pull": "Pull from registry",
+        "tarball": "Import tarball",
+        "recommended": "View recommended images"
+      }
+    },
+    "details": {
+      "title": "Image Details",
+      "description": "Inspect the image metadata currently known to Bioinfoflow.",
+      "sections": {
+        "labels": "Labels",
+        "environment": "Environment",
+        "entrypoint": "Entrypoint"
+      },
+      "fields": {
+        "name": "Full name",
+        "registry": "Registry",
+        "tag": "Tag",
+        "size": "Size",
+        "status": "Status",
+        "updated": "Updated",
+        "error": "Last error"
+      }
+    },
+    "meta": {
+      "lastSynced": "Last synced {value}"
+    }
+  },
+  "dag": {
+    "demoBadge": "Demo",
+    "runSelect": {
+      "ariaLabel": "Select run",
+      "placeholder": "Select run",
+      "groups": {
+        "experience": "Experience",
+        "runs": "Runs"
+      },
+      "demoQuest": "Demo Quest",
+      "loading": "Loading runs...",
+      "empty": "No runs yet"
+    },
+    "emptyState": {
+      "title": "No DAG data available",
+      "description": "DAG visualization is available for workflows with parsed dependencies"
+    },
+    "demoHint": {
+      "title": "Mission Map",
+      "body": "Pick a run to unlock live DAG updates. Demo nodes pulse to show the quest path."
+    }
+  },
+  "monitor": {
+    "title": "Run Monitor",
+    "live": "Live",
+    "currentTask": "Current Task",
+    "progressSummary": "{completed} of {total} tasks complete",
+    "taskStatus": "Task Status",
+    "labels": {
+      "status": "Status",
+      "tasksDone": "Tasks Done",
+      "remaining": "Remaining",
+      "run": "Run"
+    }
+  },
+  "agentDebug": {
+    "title": "Agent Debug Trace",
+    "loading": "Loading trace...",
+    "empty": "No trace events found.",
+    "errors": {
+      "loadTraceFailed": "Couldn't load the trace. The trace data may have been cleared."
+    }
+  },
+  "demo": {
+    "title": "Run Demo",
+    "subtitle": "Select a demo to run",
+    "dialogTitle": "Run a Demo",
+    "runDemo": "Run Demo",
+    "askAgent": "Ask Agent",
+    "fastqQC": "FASTQ Quality Control",
+    "fastqQCDescription": "Run quality control on FASTQ files",
+    "alignment": "Read Alignment",
+    "alignmentDescription": "Align reads to reference genome",
+    "variantCalling": "Variant Calling",
+    "variantCallingDescription": "Call variants from aligned reads",
+    "rnaseq": "RNA-seq Analysis",
+    "rnaseqDescription": "Analyze RNA sequencing data"
+  },
+  "time": {
+    "justNow": "Just now",
+    "minutesAgo": "{count} minutes ago",
+    "hoursAgo": "{count} hours ago",
+    "daysAgo": "{count} days ago",
+    "today": "Today",
+    "yesterday": "Yesterday"
+  },
+  "language": {
+    "title": "Language",
+    "select": "Select language"
+  },
+  "loading": {
+    "doubleHelix": "Unwinding the double helix...",
+    "transcribing": "Transcribing your request...",
+    "folding": "Folding the data into shape...",
+    "sequencing": "Sequencing the response...",
+    "aligning": "Aligning the results...",
+    "annealing": "Annealing primers to your question...",
+    "translating": "Translating codons to insights..."
+  },
+  "accessibility": {
+    "skipToContent": "Skip to content",
+    "toggleSidebar": "Toggle sidebar",
+    "toggleTheme": "Toggle theme",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "openSidebar": "Open sidebar",
+    "closeSidebar": "Close sidebar",
+    "hidePanel": "Hide panel",
+    "refreshWorkspace": "Refresh workspace",
+    "userMenu": "User menu",
+    "message": "Message",
+    "attachFile": "Attach file",
+    "stopGenerating": "Stop generating",
+    "sendMessage": "Send message",
+    "selectProject": "Select a project first",
+    "openTerminal": "Open terminal",
+    "closeTerminal": "Close terminal",
+    "reconnectTerminal": "Reconnect terminal",
+    "clearTerminal": "Clear terminal"
+  },
+  "landing": {
+    "announcement": {
+      "text": "Bioinfoflow v0.1 preview is live",
+      "dismiss": "Dismiss announcement"
+    },
+    "nav": {
+      "product": "Product",
+      "workflows": "Workflows",
+      "features": "Features",
+      "docs": "Docs",
+      "signIn": "Sign in",
+      "startFree": "Start for free",
+      "theme": "Theme",
+      "language": "Language",
+      "dark": "Dark",
+      "light": "Light",
+      "toggleMenu": "Toggle menu",
+      "toggleTheme": "Toggle theme",
+      "selectLanguage": "Select language"
+    },
+    "hero": {
+      "tagline": "Local-first bioinformatics platform",
+      "gpuPowered": "GPU-Powered",
+      "title": "Run your own WGS",
+      "titleSuffix": "at home.",
+      "description": "Full 30X whole genome sequencing analysis in under 2 hours on your RTX 4090.",
+      "wgsHighlight": "✨ Free for personal use. Your data never leaves your machine.",
+      "startFree": "Get started",
+      "bookDemo": "Learn more",
+      "windowTitle": "bioinfoflow — agent",
+      "chatExample": "Analyze my whole genome sequencing data from /data/wgs using Parabricks.",
+      "planningWorkflow": "Planning GPU-accelerated workflow...",
+      "workflowDescription": "Parabricks Germline → FASTQ to BAM → VCF"
+    },
+    "trustBar": {
+      "builtFor": "Built for",
+      "rnaseq": "RNA-seq",
+      "chipseq": "ChIP-seq",
+      "variantCalling": "Variant Calling",
+      "singleCell": "Single-cell",
+      "metagenomics": "Metagenomics"
+    },
+    "productTabs": {
+      "title": "Built for bioinformatics",
+      "subtitle": "Everything you need to plan, run, and monitor computational biology workflows.",
+      "learnMore": "Learn more",
+      "agent": {
+        "label": "Agent",
+        "title": "Ask in plain language. Get reproducible pipelines.",
+        "description": "Describe your analysis goal and let the agent plan the optimal workflow. No scripting required — just scientific intent.",
+        "chatExample1": "Analyze my ChIP-seq data for H3K27ac peaks",
+        "chatExample2": "I'll set up nf-core/chipseq with MACS2 peak calling..."
+      },
+      "workflows": {
+        "label": "Workflows",
+        "title": "Curated nf-core + local WDLs, ready to run.",
+        "description": "Access a registry of validated workflows from nf-core and your own custom pipelines. Version-controlled and reproducible."
+      },
+      "runs": {
+        "label": "Runs",
+        "title": "Trace, resume, or retry with full audit history.",
+        "description": "Every run is logged with full provenance. Resume failed jobs, compare runs, and maintain complete audit trails."
+      },
+      "images": {
+        "label": "Images",
+        "title": "Manage Docker runtimes with versioned certainty.",
+        "description": "All containers are tracked and versioned. Reproducible environments for every step of your pipeline."
+      }
+    },
+    "bento": {
+      "title": "Why Bioinfoflow?",
+      "subtitle": "Built from the ground up for computational biology workflows.",
+      "gpu": {
+        "title": "GPU-Accelerated WGS",
+        "description": "Run 30X whole genome sequencing in under 2 hours using your RTX 4090. Parabricks-powered, free for personal use."
+      },
+      "agentic": {
+        "title": "Agentic Planning",
+        "description": "Describe your analysis goal in plain language. The agent plans the optimal workflow, selects tools, and configures parameters."
+      },
+      "local": {
+        "title": "Local-First Compute",
+        "description": "Your data never leaves your infrastructure. Run compute-heavy workflows on your own machines or cluster."
+      },
+      "artifacts": {
+        "title": "Reproducible Artifacts",
+        "description": "Every run stores its config, samplesheet, and environment. Re-run any analysis months later with identical results."
+      },
+      "observability": {
+        "title": "Real-time Observability",
+        "description": "Watch your pipeline execute with DAG visualization, streaming logs, and resource utilization metrics."
+      }
+    },
+    "hardware": {
+      "badge": "Hardware Requirements",
+      "title": "Ready to run WGS?",
+      "subtitle": "Check if your gaming PC can handle professional-grade genome analysis.",
+      "gpu": {
+        "title": "GPU",
+        "spec": "RTX 4090",
+        "description": "NVIDIA GPU with 16GB+ VRAM"
+      },
+      "ram": {
+        "title": "Memory",
+        "spec": "64GB+",
+        "description": "System RAM for genome data"
+      },
+      "storage": {
+        "title": "Storage",
+        "spec": "500GB+ SSD",
+        "description": "Fast storage for temp files"
+      },
+      "checkButton": "Check Your Hardware",
+      "checking": "Checking...",
+      "detected": "Detected GPU",
+      "status": {
+        "ready": "Ready for WGS!",
+        "partial": "May work with limitations",
+        "notCompatible": "NVIDIA GPU required",
+        "noGpu": "No GPU detected",
+        "cannotDetect": "Check your NVIDIA GPU manually"
+      }
+    },
+    "howItWorks": {
+      "title": "How it works",
+      "subtitle": "From biological question to reproducible results in four steps.",
+      "step1": {
+        "title": "Select Workspace",
+        "description": "Choose your local data folder. Your files stay where they are."
+      },
+      "step2": {
+        "title": "Describe Intent",
+        "description": "Tell the agent what analysis you need in plain language."
+      },
+      "step3": {
+        "title": "Agent Plans",
+        "description": "AI selects the optimal workflow and generates configuration."
+      },
+      "step4": {
+        "title": "Run & Monitor",
+        "description": "Execute locally with real-time DAG, logs, and results."
+      }
+    },
+    "quote": {
+      "label": "Our vision",
+      "text": "Make computational biology accessible to everyone, powered by AI."
+    },
+    "results": {
+      "title": "What you get",
+      "subtitle": "Core capabilities that make bioinformatics workflows faster and more reliable.",
+      "wgsSpeed": {
+        "title": "30X WGS in < 2 Hours",
+        "description": "Run complete whole genome sequencing analysis on your RTX 4090 at home. No cloud required."
+      },
+      "nlp": {
+        "title": "Natural Language to Pipeline",
+        "description": "Describe your analysis in plain English. Get a configured, ready-to-run workflow."
+      },
+      "zeroData": {
+        "title": "Zero Data Movement",
+        "description": "Process terabytes of sequencing data without uploading. Your files stay on your infrastructure."
+      },
+      "provenance": {
+        "title": "Full Provenance",
+        "description": "Every run captures exact versions, parameters, and outputs. Reproduce any analysis, anytime."
+      },
+      "comparison": {
+        "title": "Typical workflow comparison",
+        "manual": "Manual pipeline setup",
+        "manualTime": "Hours to days",
+        "withBioinfoflow": "With Bioinfoflow",
+        "withBioinfoflowTime": "Minutes",
+        "note": "Based on internal benchmarks comparing manual nf-core configuration vs. agent-assisted setup for RNA-seq workflows."
+      }
+    },
+    "security": {
+      "badge": "Local-first security",
+      "title": "Your data, your control",
+      "subtitle": "Built for sensitive biological data. Run analyses without compromising security or compliance.",
+      "dataNeverLeaves": {
+        "title": "Data never leaves",
+        "description": "Your files stay on your machine by default. No cloud uploads required."
+      },
+      "auditTrails": {
+        "title": "Full audit trails",
+        "description": "Every run logged with complete provenance and timestamps."
+      },
+      "localArtifacts": {
+        "title": "Local artifacts",
+        "description": "Configs, samplesheets, and results stored in your workspace."
+      },
+      "secureByDesign": {
+        "title": "Secure by design",
+        "description": "Built with research data compliance requirements in mind."
+      },
+      "yourInfrastructure": {
+        "title": "Your infrastructure",
+        "description": "Run on your HPC, cloud, or local workstation."
+      },
+      "transparentExecution": {
+        "title": "Transparent execution",
+        "description": "See exactly what runs, where, and how at every step."
+      }
+    },
+    "cta": {
+      "title": "Ready to try it?",
+      "subtitle": "Run your first pipeline in minutes. Free for individual researchers.",
+      "getStarted": "Get started",
+      "contactUs": "Contact us"
+    },
+    "footer": {
+      "tagline": "Local-first, agentic bioinformatics workflows for research teams.",
+      "copyright": "© {year} Bioinfoflow. All rights reserved.",
+      "bottomTagline": "Local-first bioinformatics workflows",
+      "product": {
+        "title": "Product",
+        "agent": "Agent",
+        "workflows": "Workflows",
+        "runs": "Runs",
+        "images": "Images",
+        "changelog": "Changelog"
+      },
+      "resources": {
+        "title": "Resources",
+        "documentation": "Documentation",
+        "apiReference": "API Reference",
+        "tutorials": "Tutorials",
+        "blog": "Blog"
+      },
+      "company": {
+        "title": "Company",
+        "about": "About",
+        "careers": "Careers",
+        "contact": "Contact"
+      },
+      "legal": {
+        "title": "Legal",
+        "privacy": "Privacy",
+        "terms": "Terms",
+        "security": "Security"
+      }
+    }
+  },
+  "auth": {
+    "title": "Sign in to continue",
+    "description": "Enter your team's Bioinfoflow workspace. Projects, runs, conversations, and file views stay shared inside one protected research space.",
+    "terms": "By continuing, you agree to our Terms of Service and Privacy Policy.",
+    "continueWith": "Continue with {provider}",
+    "continueWithGithub": "Continue with GitHub",
+    "continueWithGoogle": "Continue with Google",
+    "redirecting": "Redirecting...",
+    "errorMessage": "We couldn't start the sign-in flow. Please try again.",
+    "enableProviders": "Add OAuth credentials in your environment to enable all providers.",
+    "noProviders": "No authentication providers are configured yet. Enable local email/password or add OAuth credentials.",
+    "oauthDivider": "Or continue with",
+    "badges": {
+      "localReady": "Local account ready",
+      "oauthOnly": "OAuth only",
+      "personal": "Personal secure",
+      "team": "Team workspace",
+      "dev": "Development mode"
+    },
+    "teamCard": {
+      "title": "Workspace",
+      "access": "Access model",
+      "adminCreated": "Accounts are created by an owner or admin.",
+      "accessPersonal": "Password-protected. No team overhead."
+    },
+    "local": {
+      "emailLabel": "Email",
+      "emailPlaceholder": "name@lab.org",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Enter your password",
+      "submit": "Sign in with email",
+      "submitting": "Signing in...",
+      "errorMessage": "That email or password didn't work. Try again or ask an admin to reset it.",
+      "timeoutMessage": "Request timed out. Try again.",
+      "adminProvisioned": "Bioinfoflow does not offer open registration in team mode. Ask your lab admin to create or reset your account.",
+      "personalProvisioned": "This instance is protected with a local owner account. Use your local credentials to continue."
+    },
+    "preview": {
+      "eyebrow": "Team instance",
+      "title": "One lab workspace. Shared context. Clear accountability.",
+      "description": "The app stays intentionally lightweight: one workspace for the instance, shared operational views for the team, and personal identity only for access, audits, and member management.",
+      "chatLabel": "Shared analysis context",
+      "chatTitle": "Chats, runs, and files stay aligned",
+      "workspaceShared": "Workspace shared",
+      "chatExample": "Run differential expression on my RNA-seq data",
+      "chatAgent1": "I'll set up a standard RNA-seq DE pipeline. How many samples do you have?",
+      "chatUser2": "3 treated vs 3 control, paired-end reads on /data/rnaseq.",
+      "planningWorkflow": "Planning workflow",
+      "audit": "audited",
+      "personalTitle": "Private workstation, protected by password",
+      "personalDescription": "Personal mode keeps the full app behind login without bringing team administration into your daily workflow.",
+      "membersLabel": "Minimal team roles",
+      "tagline": "Simple enough for a private workstation. Structured enough for a research group.",
+      "roles": {
+        "owner": {
+          "name": "Owner",
+          "description": "Bootstrap authority, final recovery path, never lose the instance."
+        },
+        "admin": {
+          "name": "Admin",
+          "description": "Create users, reset passwords, disable accounts, and keep the lab moving."
+        },
+        "member": {
+          "name": "Member",
+          "description": "Run analyses, inspect results, and collaborate inside the shared workspace."
+        }
+      }
+    }
+  },
+  "scheduler": {
+    "title": "Scheduler",
+    "subtitle": "A health dashboard for queue pressure, scheduler availability, and local system capacity.",
+    "mode": "Mode",
+    "configuredMode": "Configured Mode",
+    "configuredModeLabel": "Configured mode:",
+    "workers": "Workers",
+    "queueDepth": "Queue Depth",
+    "tasks": "Tasks",
+    "queued": "Queued",
+    "dispatched": "Dispatched",
+    "completed": "Completed",
+    "failed": "Failed",
+    "resources": "System Resources",
+    "cpu": "CPU",
+    "memory": "Memory",
+    "disk": "Disk",
+    "gpu": "GPU",
+    "snapshot": "Snapshot",
+    "utilization": "Utilization",
+    "noGpu": "No GPU detected",
+    "autoRefresh": "Auto-refreshes every 30s",
+    "refreshDescription": "Counts are refreshed on a timer, not streamed live.",
+    "resourceUnavailable": "Unavailable",
+    "resourceSnapshotPending": "Waiting for the first sample",
+    "resourcesUnavailable": "Resource monitoring is unavailable",
+    "resourcesUnavailableBody": "This usually means the scheduler is running in fallback mode or resource sampling is disabled.",
+    "cardDescriptions": {
+      "queued": "Runs waiting in the scheduler queue before a worker can claim them.",
+      "dispatched": "Runs currently claimed by workers and expected to be executing.",
+      "completed": "Tasks the scheduler has seen finish successfully since startup.",
+      "failed": "Tasks that ended in failure and may need investigation or retry."
+    },
+    "status": {
+      "activeTitle": "Persistent scheduler is active",
+      "activeBody": "New runs are being written to the scheduler queue and claimed by workers from persistent state.",
+      "fallbackTitle": "Persistent mode is configured, but fallback is active",
+      "fallbackBody": "The app is serving runs without an active persistent scheduler instance, so queue visibility and recovery features are limited."
+    },
+    "guidance": {
+      "title": "How to use this page",
+      "body": "Use this page to answer why runs are not starting: queue backlog, worker saturation, fallback mode, or local resource pressure.",
+      "queueTitle": "If queued is growing",
+      "queueBody": "You are submitting runs faster than workers can claim them, or the scheduler is intentionally delaying work.",
+      "dispatchTitle": "If dispatched stays high",
+      "dispatchBody": "Workers are busy. Check run logs and duration patterns in Runs for the actual workload details.",
+      "resourcesTitle": "If resources look tight",
+      "resourcesBody": "CPU, memory, or disk pressure may keep new work waiting even when the queue is healthy."
+    },
+    "resourceUnits": {
+      "coresFree": "cores free",
+      "freeVram": "free VRAM"
+    },
+    "dashboardCard": {
+      "title": "Scheduler",
+      "queueDepth": "Queue depth"
+    },
+    "errors": {
+      "loadFailed": "Couldn't load scheduler status. Check that the backend is running."
+    },
+    "pressure": {
+      "label": "System pressure",
+      "healthy": "healthy",
+      "moderate": "moderate",
+      "saturated": "saturated",
+      "factors": {
+        "cpu": "CPU",
+        "mem": "Memory",
+        "load": "Load",
+        "queue": "Queue"
+      }
+    },
+    "activeRuns": {
+      "title": "Active runs · causing load",
+      "count": "{count} running",
+      "empty": "No runs currently dispatched.",
+      "unknownWorkflow": "unknown workflow"
+    },
+    "charts": {
+      "cpuUtil": "CPU utilisation",
+      "memory": "Memory",
+      "diskIo": "Disk used",
+      "gpuFree": "GPU free"
+    },
+    "advanced": {
+      "button": "Advanced",
+      "drawerTitle": "Advanced · btop process view",
+      "drawerMeta": "Live process stream · btop",
+      "comingSoon": "Terminal view is coming soon",
+      "comingSoonBody": "This pane will embed the live btop process view once the pty bridge ships. Until then, use the default panel for pressure and run-level attribution.",
+      "connecting": "Connecting to btop…",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "exited": "btop exited",
+      "unavailable": "btop is not installed on the server",
+      "unavailableBody": "Install btop on the host (e.g. `brew install btop` or `apt install btop`) and reopen this drawer.",
+      "retry": "Reconnect"
+    },
+    "legend": {
+      "safe": "safe <60%",
+      "warn": "warn 60–85%",
+      "danger": "danger >85%",
+      "dispatch": "dispatch",
+      "complete": "complete",
+      "window": "60s window · 2s tick · click a run to highlight",
+      "minus60s": "−60s",
+      "minus30s": "−30s",
+      "now": "now"
+    },
+    "trust": {
+      "streaming": "streaming",
+      "connecting": "connecting…",
+      "reconnecting": "reconnecting…",
+      "disconnected": "disconnected"
+    }
+  },
+  "audit": {
+    "empty": "No audit entries",
+    "emptyDescription": "Audit trail entries will appear here as actions are performed on this run.",
+    "actions": {
+      "created": "Created",
+      "queued": "Queued",
+      "started": "Started",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "retried": "Retried",
+      "resumed": "Resumed",
+      "cleanup": "Cleanup",
+      "timeout": "Timeout",
+      "unknown": "Unknown"
+    },
+    "errors": {
+      "loadFailed": "Couldn't load audit trail. Refresh and try again."
+    }
+  },
+  "batch": {
+    "title": "Submit Batch",
+    "description": "Submit multiple runs as a batch",
+    "workflow": "Workflow",
+    "selectWorkflow": "Select a workflow",
+    "priority": "Priority",
+    "priorities": {
+      "urgent": "Urgent",
+      "normal": "Normal",
+      "low": "Low"
+    },
+    "batchDescription": "Description",
+    "batchDescriptionPlaceholder": "Optional description for this batch",
+    "runsTable": "Batch Runs",
+    "workspace": "Workspace",
+    "params": "Params (JSON)",
+    "addRow": "Add Run",
+    "removeRow": "Remove",
+    "minRows": "Minimum 2 runs required",
+    "sharedRetry": "Shared Retry Policy",
+    "submit": "Submit Batch",
+    "cancel": "Cancel Batch",
+    "status": "Batch Status",
+    "progress": "{completed} / {total} completed",
+    "errors": {
+      "selectWorkflow": "Select a workflow first",
+      "minTwoRuns": "Add at least 2 runs to the batch",
+      "invalidParams": "Run {index} has invalid params JSON",
+      "submitFailed": "Couldn't submit the batch. Check inputs and try again.",
+      "cancelFailed": "Couldn't cancel the batch."
+    }
+  },
+  "notificationConfig": {
+    "title": "Notifications",
+    "description": "Configure webhook notifications for run events",
+    "empty": "No notifications configured",
+    "emptyDescription": "Add a webhook to receive notifications when runs complete, fail, or are cancelled.",
+    "add": "Add Notification",
+    "trigger": "Trigger",
+    "webhookUrl": "Webhook URL",
+    "webhookUrlPlaceholder": "https://hooks.example.com/notify",
+    "enabled": "Enabled",
+    "triggers": {
+      "run": {
+        "completed": "Run Completed",
+        "failed": "Run Failed",
+        "cancelled": "Run Cancelled"
+      },
+      "batch": {
+        "completed": "Batch Completed",
+        "failed": "Batch Failed"
+      }
+    },
+    "errors": {
+      "loadFailed": "Couldn't load notifications. Refresh and try again.",
+      "createFailed": "Couldn't create notification. Check the webhook URL.",
+      "deleteFailed": "Couldn't delete notification."
+    },
+    "toasts": {
+      "created": "Notification created",
+      "deleted": "Notification deleted"
+    }
+  },
+  "welcome": {
+    "eyebrow": "Analysis Workspace",
+    "title": "Start your first analysis",
+    "subtitle": "Choose a project template or create a custom workspace. Once a project exists, Bioinfoflow can keep chats, files, and runs aligned in one place.",
+    "blankName": "Blank Workspace",
+    "blankDescription": "Start with an empty project for ad hoc exploration",
+    "wgsName": "WGS Analysis",
+    "wgsDescription": "Whole genome sequencing variant calling",
+    "rnaseqName": "RNA-seq Analysis",
+    "rnaseqDescription": "Differential gene expression analysis",
+    "createFromTemplate": "Use Template",
+    "createFromTemplateNamed": "Use {name}",
+    "customProjectLabel": "Custom Setup",
+    "customProjectDescription": "Need a custom folder structure, naming scheme, or workspace path? Start with a blank project and configure it yourself.",
+    "customProject": "Create a custom project"
+  },
+  "settings": {
+    "pageTitle": "Settings",
+    "nav": {
+      "account": "Account",
+      "providers": "AI Providers",
+      "members": "Members"
+    },
+    "title": "AI Providers",
+    "subtitle": "Configure your API keys and select which model powers the agent.",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "Paste your key ({prefix}...)",
+    "baseUrl": "Base URL",
+    "baseUrlPlaceholder": "Enter the provider base URL",
+    "model": "Model",
+    "modelPlaceholder": "Enter the model name",
+    "testConnection": "Test",
+    "testSuccess": "Connection successful",
+    "testFailed": "Connection failed",
+    "keySaved": "API key saved",
+    "keyCleared": "API key removed",
+    "clearKey": "Remove key",
+    "settingSaved": "{field} saved",
+    "settingCleared": "{field} cleared",
+    "clearValue": "Clear {field}",
+    "getApiKey": "Get your key at {provider}",
+    "activeProvider": "Active model: {model}",
+    "status": {
+      "connected": "Connected",
+      "notConfigured": "Not configured"
+    },
+    "setupBanner": {
+      "title": "Configure an API key to start chatting with the AI agent.",
+      "action": "Set up provider",
+      "dismiss": "Dismiss"
+    },
+    "modelSelector": {
+      "noProviders": "No model available",
+      "configure": "Configure providers",
+      "searchModels": "Search models..."
+    },
+    "members": {
+      "title": "Members",
+      "description": "Manage who can enter this Bioinfoflow instance. Shared analysis resources remain visible inside the workspace; identity is used for access, audit, and administration.",
+      "createCta": "Add member",
+      "loading": "Loading members...",
+      "loadFailed": "Couldn't load members.",
+      "created": "Member created.",
+      "createFailed": "Couldn't create that member.",
+      "roleUpdated": "Role updated.",
+      "roleUpdateFailed": "Couldn't update that role.",
+      "disabled": "Account disabled.",
+      "enabled": "Account enabled.",
+      "statusUpdateFailed": "Couldn't update that account.",
+      "sessionsRevoked": "All active sessions revoked.",
+      "sessionsRevokeFailed": "Couldn't revoke sessions.",
+      "passwordReset": "Password reset.",
+      "passwordResetFailed": "Couldn't reset that password.",
+      "lastOwner": "At least one owner must remain active.",
+      "disabledBadge": "Disabled",
+      "you": "You",
+      "enable": "Enable",
+      "disable": "Disable",
+      "resetPassword": "Reset password",
+      "revokeSessions": "Revoke sessions",
+      "createTitle": "Create member",
+      "createDescription": "Create a team account. If local auth is enabled, set an initial password here.",
+      "createAction": "Create account",
+      "resetTitle": "Reset password",
+      "resetDescription": "Set a new password for {email}.",
+      "resetAction": "Save password",
+      "cancel": "Cancel",
+      "fields": {
+        "name": "Name",
+        "email": "Email",
+        "password": "Password",
+        "role": "Role"
+      },
+      "roles": {
+        "owner": "Owner",
+        "admin": "Admin",
+        "member": "Member"
+      }
+    },
+    "account": {
+      "title": "Account",
+      "description": "Your identity is used for sign-in, auditing, and personal security settings.",
+      "email": "Email",
+      "role": "Role",
+      "mode": "Mode",
+      "notAvailable": "Not available",
+      "changePasswordTitle": "Change password",
+      "changePasswordDescription": "Update your local password and revoke other active sessions.",
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "savePassword": "Save password",
+      "savingPassword": "Saving...",
+      "passwordChanged": "Password updated.",
+      "passwordChangeFailed": "Couldn't update your password.",
+      "modes": {
+        "personal": "Personal",
+        "team": "Team",
+        "dev": "Development"
+      }
+    }
+  },
+  "terminal": {
+    "title": "Terminal",
+    "startingSession": "Starting terminal...",
+    "connectionStates": {
+      "idle": "Idle",
+      "connecting": "Connecting",
+      "disconnected": "Disconnected",
+      "error": "Error",
+      "exited": "Exited"
+    }
+  },
+  "fileBrowser": {
+    "title": "Select File",
+    "home": "Home",
+    "up": "Up",
+    "emptyHere": "No data files here",
+    "emptyAtSource": "{source} is empty at this location.",
+    "errors": {
+      "loadSources": "Could not load storage sources",
+      "loadDirectory": "Could not load directory",
+      "upload": "Could not upload file"
+    }
+  },
+  "directoryBrowser": {
+    "errors": {
+      "load": "Could not load directory"
+    },
+    "empty": "No entries here"
+  },
+  "errors": {
+    "globalTitle": "Something went wrong",
+    "globalDescription": "An unexpected error occurred. Please try again.",
+    "tryAgain": "Try again",
+    "notFoundTitle": "Page not found",
+    "notFoundDescription": "The page you're looking for doesn't exist or has been moved.",
+    "goToDashboard": "Go to dashboard"
+  },
+  "agent": {
+    "disclaimer": "Bioinfoflow Agents can make mistakes. Verify important results.",
+    "selectProjectHint": "Choose a project from the sidebar to start chatting",
+    "status": {
+      "thinking": "Thinking...",
+      "responding": "Responding...",
+      "runningTool": "Running {tool}...",
+      "runningToolGeneric": "Running tool...",
+      "cancelling": "Cancelling...",
+      "cancelled": "Cancelled"
+    },
+    "actions": {
+      "copy": "Copy",
+      "regenerate": "Regenerate",
+      "edit": "Edit",
+      "cancel": "Cancel",
+      "send": "Send",
+      "export": "Export",
+      "dropFilesHint": "Drop files to upload"
+    },
+    "approval": {
+      "title": "Approval required",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "expired": "Expired",
+      "resolving": "Resolving...",
+      "approve": "Approve",
+      "deny": "Deny"
+    },
+    "tools": {
+      "runningProgress": "Running tools ({done}/{total})",
+      "usedTools": "Used {count} tools",
+      "usedToolsFailed": "Used {count} tools ({failed} failed)",
+      "matches": "{count} matches"
+    },
+    "errorBoundary": {
+      "failedToRender": "Failed to render {label}",
+      "genericError": "Something went wrong",
+      "exhausted": "This content cannot be rendered after {count} attempts.",
+      "retry": "Retry ({remaining} left)"
+    },
+    "shortcuts": {
+      "title": "Keyboard Shortcuts",
+      "focusInput": "Focus chat input",
+      "stopGeneration": "Stop generation",
+      "toggleSidebar": "Toggle sidebar",
+      "newConversation": "New conversation",
+      "sendMessage": "Send message",
+      "newLine": "New line",
+      "cancelOrClose": "Cancel edit / Close overlay",
+      "showShortcuts": "Show keyboard shortcuts",
+      "toggleHint": "Press ? to toggle"
+    },
+    "tokens": "{count}k tokens"
+  },
+  "executionMode": {
+    "askShort": "Ask",
+    "approveAllShort": "Approve all",
+    "bypassShort": "Bypass",
+    "triggerAriaLabel": "Change execution mode",
+    "menuLabel": "Tool execution mode",
+    "askTitle": "Ask (Default)",
+    "askDescription": "Prompt before running high-risk tools like runs, shell, and code execution.",
+    "approveAllTitle": "Approve all actions",
+    "approveAllDescription": "Also prompt on low-risk writes (file edits). Strictest mode.",
+    "bypassTitle": "Bypass all approvals",
+    "bypassDescription": "Never prompt. The agent runs every tool automatically. Only use if you trust the plan.",
+    "changeFailed": "Could not change execution mode. Please try again.",
+    "bypassBannerTitle": "Bypass mode on.",
+    "bypassBannerDescription": "Tool calls run without approval.",
+    "bypassBannerDisable": "Disable"
+  }
+}

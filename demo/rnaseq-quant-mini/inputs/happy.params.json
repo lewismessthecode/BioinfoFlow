@@ -1,0 +1,5 @@
+{
+  "samplesheet": "demo/rnaseq-quant-mini/data/samplesheet.csv",
+  "outdir": "results/rnaseq-quant-mini",
+  "genome": "GRCh38"
+}

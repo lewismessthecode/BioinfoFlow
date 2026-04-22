@@ -1,0 +1,44 @@
+add_newline = true
+format = "$directory$git_branch$git_status$line_break$character"
+
+[directory]
+truncate_to_repo = true
+truncation_length = 3
+style = "blue"
+format = "[$path]($style) "
+
+[git_branch]
+format = "[$branch]($style)"
+style = "bright-black"
+
+[git_status]
+disabled = true
+
+[character]
+success_symbol = "[❯](blue)"
+error_symbol = "[❯](red)"
+vimcmd_symbol = "[❯](green)"
+
+[python]
+disabled = true
+
+[conda]
+disabled = true
+
+[package]
+disabled = true
+
+[nodejs]
+disabled = true
+
+[golang]
+disabled = true
+
+[rust]
+disabled = true
+
+[java]
+disabled = true
+
+[docker_context]
+disabled = true

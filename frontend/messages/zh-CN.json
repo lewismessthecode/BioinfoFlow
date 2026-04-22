@@ -1,0 +1,1995 @@
+{
+  "greeting": {
+    "morning": "早上好 ☀️ 今天想探索什么数据？",
+    "afternoon": "下午好 🌤️ 准备好运行分析了吗？",
+    "evening": "晚上好 🌙 来探索一些数据吧",
+    "lateNight": "夜深了 🔬 最好的发现往往在深夜诞生",
+    "dashboardMorning": "早上好 ☀️ {name}",
+    "dashboardAfternoon": "下午好 🌤️ {name}",
+    "dashboardEvening": "晚上好 🌙 {name}",
+    "dashboardLateNight": "夜深了 🔬 {name}"
+  },
+  "common": {
+    "loading": "加载中...",
+    "cancel": "取消",
+    "confirm": "确认",
+    "delete": "删除",
+    "save": "保存",
+    "close": "关闭",
+    "edit": "编辑",
+    "create": "创建",
+    "submit": "提交",
+    "search": "搜索",
+    "filter": "筛选",
+    "actions": "操作",
+    "cannotUndo": "此操作无法撤销",
+    "clear": "清除",
+    "refresh": "刷新",
+    "back": "返回",
+    "next": "下一步",
+    "previous": "上一步",
+    "all": "全部",
+    "none": "无",
+    "yes": "是",
+    "no": "否",
+    "ok": "确定",
+    "error": "错误",
+    "success": "成功",
+    "warning": "警告",
+    "info": "信息",
+    "duplicate": "复制",
+    "copy": "复制",
+    "download": "下载",
+    "copiedToClipboard": "已复制到剪贴板",
+    "noMatches": "无匹配结果。",
+    "workspace": "工作区",
+    "debug": "调试",
+    "viewModes": {
+      "list": "列表视图",
+      "cards": "卡片视图"
+    }
+  },
+  "metadata": {
+    "appTitle": "Bioinfoflow - 本地优先的智能生信平台",
+    "appDescription": "Bioinfoflow 是一个本地优先、智能驱动的生物信息平台，可把研究意图转成可复现的分析流程。无需上传数据，在自己的电脑上运行复杂工作流。",
+    "keywords": [
+      "生物信息学",
+      "分析流程",
+      "本地优先",
+      "智能体",
+      "工作流",
+      "基因组学",
+      "科研"
+    ]
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "agent": "智能助手",
+    "workflows": "工作流",
+    "runs": "运行记录",
+    "images": "镜像管理",
+    "scheduler": "调度器",
+    "settings": "设置"
+  },
+  "userMenu": {
+    "localUser": "本地用户",
+    "demoMode": "演示模式",
+    "keyboardShortcuts": "键盘快捷键",
+    "helpDocs": "帮助文档",
+    "settings": "设置",
+    "signOut": "退出登录",
+    "defaultName": "用户",
+    "lightMode": "浅色模式",
+    "darkMode": "深色模式",
+    "roles": {
+      "owner": "所有者",
+      "admin": "管理员",
+      "member": "成员"
+    },
+    "toasts": {
+      "signingOut": "正在退出登录...",
+      "openingDocs": "正在打开文档...",
+      "keyboardShortcutsHint": "按 Cmd+K 打开命令面板",
+      "loggedOut": "已退出登录",
+      "logoutFailed": "无法退出登录。请检查网络连接后重试。"
+    }
+  },
+  "sidebar": {
+    "projects": "项目",
+    "workspace": "工作区",
+    "newProject": "新建项目",
+    "newAnalysis": "新建分析",
+    "newConversation": "新建对话",
+    "conversationFallback": "对话 {index}",
+    "conversations": "对话",
+    "noConversations": "暂无对话",
+    "noProjects": "还没有项目",
+    "noProjectsDescription": "先在这里创建一个工作区，然后再从主画布开始你的第一次分析。",
+    "deleteConversation": "删除对话",
+    "deleteConversationConfirm": "确定要删除这个对话吗？",
+    "deleteProject": "删除项目",
+    "deleteProjectConfirm": "确定要删除这个项目吗？",
+    "renameProject": "重命名项目",
+    "editProject": "编辑项目",
+    "projectName": "项目名称",
+    "projectDescription": "项目描述",
+    "workspacePath": "工作区路径",
+    "createProject": "创建项目",
+    "selectProject": "选择项目",
+    "searchProjects": "搜索项目",
+    "noProjectsFound": "未找到项目",
+    "selectProjectFirst": "选择一个项目查看对话",
+    "pinned": "已固定",
+    "recent": "最近",
+    "noResults": "没有匹配的对话",
+    "untitledConversation": "未命名对话",
+    "defaultProject": "默认项目",
+    "quickActions": "快捷操作",
+    "copyOf": "副本 - {name}",
+    "today": "今天",
+    "yesterday": "昨天",
+    "thisWeek": "本周",
+    "older": "更早",
+    "advancedSettings": "高级设置",
+    "storageManagedPreview": "项目存储由 Bioinfoflow 自动管理",
+    "workspacePreview": "存储位置：{path}",
+    "workspacePreviewLabel": "存储位置",
+    "browseDirectories": "浏览...",
+    "selectDirectory": "选择此目录",
+    "goUp": "返回上级",
+    "directoryBrowser": "选择目录",
+    "selectDirectoryDescription": "浏览并选择一个目录作为项目工作区",
+    "placeholders": {
+      "projectName": "例如：COVID 分析",
+      "projectDescription": "简短描述",
+      "workspacePath": "例如：/data/projects/my-analysis"
+    },
+    "hints": {
+      "workspacePath": "工作区路径是存储项目文件和数据的本地目录",
+      "storageOverridePath": "高级覆盖路径，用于接入外部项目存储。留空则由 Bioinfoflow 自动管理项目根目录。"
+    },
+    "prompts": {
+      "renameProject": "重命名项目",
+      "renameConversation": "重命名对话"
+    },
+    "errors": {
+      "projectNameRequired": "项目名称不能为空",
+      "workspacePathRequired": "工作区路径不能为空",
+      "selectProjectFirst": "请先选择项目",
+      "createProjectFailed": "无法创建项目。请确认工作区路径存在后重试。",
+      "renameProjectFailed": "无法重命名项目。请刷新后重试。",
+      "duplicateProjectFailed": "无法复制项目。请刷新后重试。",
+      "deleteProjectFailed": "无法删除项目。该项目可能正在使用中。",
+      "createConversationFailed": "无法创建对话。请重试或检查后端日志。",
+      "renameConversationFailed": "无法重命名对话。请刷新后重试。",
+      "updateConversationFailed": "无法更新对话。请刷新后重试。",
+      "deleteConversationFailed": "无法删除对话。请刷新后重试。"
+    },
+    "toasts": {
+      "projectCreated": "已创建项目“{name}”",
+      "projectRenamed": "已重命名为“{name}”",
+      "projectDuplicated": "已复制“{name}”",
+      "deleteProjectConfirmTitle": "删除“{name}”？",
+      "projectDeleted": "已删除“{name}”",
+      "deleteConversationConfirmTitle": "删除此对话？",
+      "conversationRenamed": "对话已重命名",
+      "conversationMoved": "对话已移动",
+      "settingsTitle": "设置",
+      "settingsDescription": "正在打开设置面板...",
+      "helpTitle": "帮助与文档",
+      "helpDescription": "访问 docs.bioinfoflow.io 获取指南与教程",
+      "quickActionsSoon": "快捷操作功能即将推出"
+    }
+  },
+  "commandPalette": {
+    "searchPlaceholder": "搜索项目、运行、工作流或操作...",
+    "searchAriaLabel": "搜索命令",
+    "empty": "未找到结果。",
+    "groups": {
+      "actions": "操作",
+      "demos": "演示运行",
+      "projects": "项目",
+      "conversations": "对话",
+      "runs": "运行",
+      "workflows": "工作流"
+    },
+    "actions": {
+      "newConversation": "新建对话"
+    },
+    "conversationFallback": "对话 {index}",
+    "errors": {
+      "loadFailed": "无法加载命令面板数据。请检查后端是否正在运行。",
+      "createConversationFailed": "无法创建对话。请重试。",
+      "runDemoFailed": "无法运行演示。请确认工作流已注册。"
+    },
+    "toasts": {
+      "demoQueued": "演示运行 {runId} 已加入队列"
+    }
+  },
+  "workspace": {
+    "loading": "正在加载工作区...",
+    "noFiles": "未找到文件。",
+    "selected": "已选择",
+    "itemTypes": {
+      "directory": "目录",
+      "file": "文件"
+    },
+    "actions": {
+      "preview": "预览"
+    },
+    "tree": {
+      "loading": "加载中...",
+      "empty": "空文件夹"
+    },
+    "preview": {
+      "title": "预览",
+      "lines": "{count} 行",
+      "folder": "文件夹",
+      "filesOnly": "仅支持预览文件。",
+      "loading": "正在加载预览...",
+      "unable": "无法预览该文件。",
+      "clickToLoad": "点击“预览”加载文件内容。"
+    },
+    "errors": {
+      "loadFilesFailed": "无法加载工作区文件。请确认工作区路径存在。",
+      "loadFolderFailed": "无法加载文件夹内容。请确认路径可访问。",
+      "pathCannotContainDotDot": "路径不能包含“..”",
+      "previewFailed": "无法预览文件。文件可能过大或格式不受支持。",
+      "deleteFailed": "无法删除文件。请刷新后重试。"
+    },
+    "toasts": {
+      "deleteConfirmTitle": "删除 {name}？",
+      "deleteConfirmDescription": "此操作无法撤销"
+    },
+    "liveDeck": {
+      "files": "文件",
+      "pipeline": "工作流",
+      "monitor": "监控"
+    }
+  },
+  "chat": {
+    "placeholder": "描述您的分析目标、数据集，或让我运行演示...",
+    "selectProject": "选择一个项目开始",
+    "selectProjectDescription": "从侧边栏选择一个已有工作区，继续分析、查看历史对话，或开始新的实验流程。",
+    "inboxWorkspaceTitle": "分配项目后可启用工作区能力",
+    "inboxWorkspaceDescription": "这个收件箱分析可以正常聊天，但文件、终端、工作流和运行能力会保持禁用，直到它被移动到真实项目中。",
+    "you": "",
+    "quickStart": {
+      "upload": "上传数据",
+      "uploadDescription": "使用自己的 FASTQ、BAM 或 VCF 文件开始分析",
+      "tryDemo": "试用演示",
+      "tryDemoDescription": "运行预配置的流程，体验 BioFlow 的强大功能",
+      "askQuestion": "提个问题",
+      "askQuestionDescription": "用自然语言描述您的分析需求"
+    }
+  },
+  "status": {
+    "pending": "等待中",
+    "running": "运行中",
+    "completed": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "queued": "排队中"
+  },
+  "connectionStatus": {
+    "connecting": "连接中...",
+    "connected": "已连接",
+    "reconnecting": "重新连接中...",
+    "disconnected": "已断开",
+    "label": "实时连接"
+  },
+  "dashboard": {
+    "title": "仪表盘",
+    "subtitle": "平台概览和系统状态",
+    "runs": "运行",
+    "workflows": "工作流",
+    "images": "镜像",
+    "projects": "项目",
+    "recentActivity": "近期活动",
+    "systemStatus": "系统状态",
+    "viewAll": "查看全部",
+    "noRecentRuns": "暂无运行记录",
+    "noRecentRunsDescription": "启动首次分析后，运行结果和进度将在此显示。",
+    "dockerAvailable": "Docker 状态",
+    "gpuStatus": "GPU 状态",
+    "healthy": "正常",
+    "unavailable": "不可用",
+    "registered": "已注册",
+    "local": "本地",
+    "remote": "远程",
+    "active": "活跃",
+    "errors": {
+      "loadFailed": "无法加载仪表盘数据。请检查后端是否正在运行，然后刷新。"
+    },
+    "docker": {
+      "badgePrefix": "Docker：",
+      "nvidiaRuntimePrefix": "NVIDIA Runtime：",
+      "available": "可用",
+      "notRunning": "未运行",
+      "notFound": "未找到"
+    },
+    "parabricksCompatible": "兼容 Parabricks",
+    "noGpuDetected": "未检测到 GPU",
+    "narrativeEmpty": "还没有运行记录，去智能助手页面开始你的第一次分析吧！",
+    "narrativeAllComplete": "已完成全部 {total} 次运行，一切顺利 ✅",
+    "narrativeTotal": "共 {total} 次运行",
+    "narrativeCompleted": "{count} 次已完成",
+    "narrativeRunning": "{count} 次正在进行中",
+    "narrativeFailed": "{count} 次失败",
+    "narrativeQueued": "{count} 次排队中",
+    "narrativeSeparator": "，",
+    "narrativeJoin": "{parts}。",
+    "dockerUnavailableTitle": "Docker 未运行",
+    "dockerUnavailableDescription": "工作流执行需要 Docker。请启动 Docker 守护进程以运行流水线。",
+    "schedulerCard": {
+      "title": "调度器",
+      "queueDepth": "队列深度"
+    }
+  },
+  "runs": {
+    "title": "运行",
+    "subtitle": "查看和管理工作流运行",
+    "stage": {
+      "pending": "待处理",
+      "queued": "排队中",
+      "preparing": "准备中",
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "已失败",
+      "cancelled": "已取消",
+      "currentTask": "正在执行：{task}"
+    },
+    "error": {
+      "stage": {
+        "validation": "验证",
+        "preparation": "准备",
+        "execution": "执行",
+        "post": "运行后"
+      }
+    },
+    "scopes": {
+      "project": "项目",
+      "all": "全部"
+    },
+    "noRuns": "暂无运行",
+    "noRunsDescription": "暂无流水线运行记录。从 Agent 启动分析以在此查看结果。",
+    "tableCaption": "工作流运行列表",
+    "runId": "运行 ID",
+    "workflow": "工作流",
+    "status": "状态",
+    "startTime": "开始时间",
+    "endTime": "结束时间",
+    "duration": "持续时间",
+    "currentTask": "当前任务",
+    "samples": "样本",
+    "actions": "操作",
+    "viewDetails": "查看详情",
+    "viewLogs": "查看日志",
+    "viewResults": "查看结果",
+    "downloadResults": "下载结果",
+    "cancelRun": "取消运行",
+    "resumeFromCheckpoint": "从检查点继续",
+    "deleteRun": "删除运行",
+    "openTerminal": "打开终端",
+    "goToRunDir": "切到运行目录",
+    "rerun": "重新运行",
+    "rerunPipeline": "重新运行流程",
+    "cleanupRun": "清理",
+    "submitBatch": "批量提交",
+    "notifications": "通知",
+    "openFullPage": "打开完整页面",
+    "backToRuns": "返回运行列表",
+    "fullscreen": "全屏",
+    "progress": "进度",
+    "workflowFallback": "工作流 {id}",
+    "unknownWorkflow": "未知工作流",
+    "cancelConfirmTitle": "取消运行？",
+    "cancelConfirmMessage": "确定要取消此运行吗？此操作无法撤销。",
+    "pagination": {
+      "showing": "显示 {shown} 条运行",
+      "showingOf": "显示 {shown}/{total} 条运行",
+      "page": "第 {page} 页"
+    },
+    "errors": {
+      "loadWorkflowsFailed": "无法加载工作流。请检查后端是否正在运行并刷新。",
+      "loadRunsFailed": "无法获取运行数据。请检查后端是否正在运行，然后刷新。",
+      "loadRunDetailsFailed": "无法加载运行详情。该运行可能已被删除或后端不可达。",
+      "resumeFailed": "无法恢复运行。请确认检查点仍然可用。",
+      "retryFailed": "无法重试运行。请检查工作流是否仍已注册。",
+      "cancelFailed": "无法取消运行。该运行可能已经完成。",
+      "deleteFailed": "无法删除运行。请刷新后重试。",
+      "previewFailed": "无法预览文件。文件可能过大或格式不受支持。",
+      "cleanupFailed": "无法清理运行。请刷新后重试。"
+    },
+    "toasts": {
+      "openingLogsTitle": "正在打开 {runId} 的日志",
+      "pipelineLabel": "流程：{pipeline}",
+      "resumingTitle": "正在继续 {runId}...",
+      "resumingDescription": "尝试从上次检查点继续执行",
+      "resumedTitle": "{runId} 已继续",
+      "executionQueued": "流程已进入执行队列",
+      "retryingTitle": "正在重试 {runId}...",
+      "retryingDescription": "将从头重新启动流程",
+      "resubmittedTitle": "{runId} 已重新提交",
+      "checkRunsPage": "请在“运行”页面查看新的执行记录",
+      "cancelConfirmTitle": "取消 {runId}？",
+      "cancelConfirmDescription": "这将停止正在运行的流程",
+      "cancelledTitle": "{runId} 已取消",
+      "executionStopped": "流程执行已停止",
+      "deleteConfirmTitle": "删除 {runId}？",
+      "deleteConfirmDescription": "此操作无法撤销",
+      "deletedTitle": "{runId} 已删除",
+      "cleanupConfirmTitle": "清理 {runId}？",
+      "cleanupConfirmDescription": "这将移除该运行的中间工作文件",
+      "cleanupDoneTitle": "{runId} 已清理",
+      "batchSubmittedTitle": "批次已提交",
+      "batchSubmittedDescription": "批次 {batchId} 已创建，包含 {count} 个运行",
+      "batchCancelledTitle": "批次已取消"
+    },
+    "detail": {
+      "started": "开始时间",
+      "duration": "持续时间",
+      "workspace": "工作区",
+      "errorTitle": "运行失败",
+      "error": {
+        "expand": "展开详情",
+        "collapse": "收起详情",
+        "copy": "复制",
+        "copied": "错误信息已复制",
+        "copyFailed": "复制到剪贴板失败"
+      },
+      "connectionReconnecting": "重新连接中...",
+      "connectionDisconnected": "连接已断开",
+      "tabs": {
+        "dag": "流程 DAG",
+        "logs": "日志",
+        "files": "输出文件",
+        "audit": "审计"
+      },
+      "logs": {
+        "empty": "暂无日志",
+        "emptyDescription": "流水线开始执行后，日志将在此显示。"
+      },
+      "outputs": {
+        "empty": "暂无输出文件",
+        "title": "输出",
+        "expandAll": "展开",
+        "selectFile": "选择文件",
+        "chooseFileToPreview": "从文件树中选择一个文件进行预览。",
+        "loadingPreview": "正在加载预览…",
+        "binaryNotPreviewed": "该文件类型无法预览，请下载后在本地查看。",
+        "showingFirstRows": "显示前 {count} 行。"
+      },
+      "outputsEmptyRunning": "运行仍在进行中。完成后输出将显示在此处。",
+      "outputsEmptyCompleted": "此运行完成，但未产生输出文件。",
+      "outputsEmptyFailed": "此运行在产生输出之前失败。",
+      "logsTruncated": "显示最新 {count} 条日志",
+      "audit": {
+        "intro": "审计日志记录此运行的关键状态变更、操作来源与时间。",
+        "empty": "暂无审计记录",
+        "emptyDescription": "审计日志记录此运行的关键状态变更、操作来源与时间。",
+        "actor": "操作者",
+        "by": "由 {actor}",
+        "system": "系统",
+        "details": "详情",
+        "showDetails": "查看详情",
+        "hideDetails": "收起详情",
+        "actions": {
+          "created": "已创建",
+          "queued": "已加入队列",
+          "started": "已启动",
+          "completed": "已完成",
+          "failed": "失败",
+          "cancelled": "已取消",
+          "retried": "已重试",
+          "resumed": "已恢复",
+          "cleanup": "已清理",
+          "timeout": "已超时",
+          "unknown": "未知"
+        },
+        "errors": {
+          "loadFailed": "无法加载审计记录，请刷新后再试。"
+        }
+      }
+    }
+  },
+  "workflows": {
+    "title": "工作流",
+    "subtitle": "管理已注册的工作流",
+    "noWorkflows": "暂无注册的工作流",
+    "noWorkflowsDescription": "从 nf-core、GitHub 或本地文件导入流水线定义以开始使用。",
+    "tableCaption": "工作流列表",
+    "register": "注册工作流",
+    "name": "名称",
+    "description": "描述",
+    "noDescription": "暂无描述",
+    "source": "来源",
+    "version": "版本",
+    "engine": "引擎",
+    "inputSchema": "输入模式",
+    "outputSchema": "输出模式",
+    "edit": "编辑",
+    "delete": "删除",
+    "run": "运行",
+    "viewDetails": "查看详情",
+    "editParameters": "编辑参数",
+    "lastModified": "最近更新",
+    "scopes": {
+      "hub": "Hub",
+      "project": "项目"
+    },
+    "viewModes": {
+      "list": "列表视图",
+      "cards": "卡片视图"
+    },
+    "emptyProject": "此项目暂未启用工作流",
+    "emptyProjectDescription": "切换到 Hub 浏览可用流水线并添加到项目中。",
+    "enabledVersions": "已启用 {count} 个版本",
+    "versionCount": "{count} 个版本",
+    "hub": {
+      "card": {
+        "versionLabel": "版本 {version}",
+        "versionMenuLabel": "切换版本（共 {count} 个）",
+        "latestTag": "最新"
+      }
+    },
+    "actions": {
+      "add": "添加",
+      "selectProject": "选择项目",
+      "remove": "移除",
+      "removeFromProject": "从项目移除"
+    },
+    "errors": {
+      "fileRequired": "请上传 .nf 或 .wdl 文件",
+      "repoUrlRequired": "请输入仓库 URL",
+      "pipelineNameRequired": "请输入 pipeline 名称",
+      "registerFailed": "无法注册工作流。请检查仓库 URL 后重试。",
+      "registerLocalFailed": "无法注册本地工作流。请检查后端连通性或解析错误后重试。",
+      "loadWorkflowsFailed": "无法加载工作流列表。请确认后端正在运行并刷新。",
+      "selectProjectToRun": "请选择一个项目以开始运行",
+      "selectProjectFirst": "请先选择项目",
+      "addToProjectFailed": "无法将工作流添加到项目。请刷新后重试。",
+      "removeFromProjectFailed": "无法从项目移除工作流。请刷新后重试。",
+      "switchVersionFailed": "无法切换工作流版本。该版本可能已不可用。",
+      "deleteFailed": "无法删除工作流。该工作流可能正在被运行中的 pipeline 使用。",
+      "loadWorkflowFailed": "无法加载工作流。该工作流可能已被删除。",
+      "fileTooLarge": "文件大小（{actualSize}）超过 {maxSize} 限制。工作流定义文件通常很小，请确认选择了正确的文件。",
+      "unsupportedFileType": "不支持的格式（{ext}）。仅接受 WDL（.wdl）和 Nextflow（.nf）工作流文件。",
+      "validationFailed": "工作流存在语法错误。请修复标红行后重试。",
+      "bundlePathRequired": "请选择工作流 bundle 目录",
+      "entrypointRelpathRequired": "请输入 bundle 内的入口文件相对路径"
+    },
+    "toasts": {
+      "registered": "已注册工作流“{name}”",
+      "addedToProject": "已将“{name}”添加到项目",
+      "removedFromProject": "已从项目移除“{name}”",
+      "parameterEditorTitle": "参数编辑器",
+      "parameterEditorDescription": "正在打开 {name} 的参数编辑器...",
+      "duplicatedDescription": "已创建副本：“{name} 的副本”",
+      "deleteConfirmTitle": "删除 {name}？",
+      "deleteConfirmDescription": "此操作无法撤销",
+      "deleted": "已删除 {name}"
+    },
+    "registerDialog": {
+      "title": "注册新工作流",
+      "description": "将新的 pipeline 模板添加到你的库中。",
+      "importSource": "导入来源",
+      "importSourceDescription": "选择从公开目录接入，或直接验证本地工作流文件。",
+      "selected": "已选中",
+      "fields": {
+        "sourceType": "来源类型",
+        "repoUrl": "仓库 URL",
+        "workflowNameOptional": "工作流名称（可选）",
+        "pipelineName": "Pipeline 名称",
+        "localImportMode": "本地导入方式",
+        "bundleUpload": "工作流 Bundle 目录",
+        "bundlePath": "工作流 Bundle 目录",
+        "entrypointRelpath": "入口文件相对路径",
+        "entrypointSelect": "入口文件",
+        "workflowFile": "工作流文件（.nf 或 .wdl）",
+        "description": "描述（可选）"
+      },
+      "localModes": {
+        "bundle": "Bundle 目录",
+        "singleFile": "单文件"
+      },
+      "actions": {
+        "chooseBundle": "选择 Bundle",
+        "chooseEntrypoint": "选择入口文件"
+      },
+      "sourceTypes": {
+        "local": "本地"
+      },
+      "sourceDescriptions": {
+        "nfCore": "从 nf-core 目录导入。",
+        "github": "从 GitHub 仓库拉取。",
+        "local": "注册本地 workflow bundle，或快速导入单个 WDL/Nextflow 文件。"
+      },
+      "placeholders": {
+        "repoUrl": "https://github.com/user/pipeline",
+        "pipelineName": "例如：viralrecon",
+        "version": "例如：2.6.0",
+        "description": "简要描述此工作流",
+        "bundleUpload": "请选择一个 workflow bundle 目录",
+        "bundlePath": "/path/to/workflow-bundle",
+        "entrypointRelpath": "例如：main.nf 或 workflows/main.wdl",
+        "entrypointSelect": "请从该 bundle 中选择入口文件"
+      },
+      "hints": {
+        "bundlePath": "选择包含入口文件以及相关 modules、config、脚本等依赖文件的工作流目录。",
+        "entrypointRelpath": "填写入口文件在所选 bundle 目录内的相对路径。"
+      },
+      "entrypointBrowser": {
+        "title": "选择入口文件",
+        "empty": "请先选择一个 workflow bundle。"
+      },
+      "selectedFile": "已选择：{name}",
+      "nfCoreHint": "nf-core 工作流使用 Nextflow。",
+      "submitting": "正在注册...",
+      "progress": {
+        "reading": "读取文件",
+        "validating": "语法校验",
+        "parsing": "提取 Schema",
+        "registering": "写入 Hub"
+      },
+      "editor": {
+        "title": "源代码",
+        "changeFile": "重新选择文件",
+        "autoValidating": "校验中...",
+        "syntaxOk": "语法正确",
+        "errorsFound": "发现 {count} 个错误"
+      },
+      "preview": {
+        "title": "注册预览",
+        "nameLabel": "名称",
+        "detectedEngine": "识别引擎：{engine}",
+        "fileName": "源文件：{name}",
+        "bundleName": "Bundle：{name}（{count} 个文件）",
+        "bundlePath": "Bundle 目录：{path}",
+        "entrypointRelpath": "入口文件：{path}",
+        "runtimeAssets": "运行资产需另行确认",
+        "afterRegistration": "注册后",
+        "latest": "最新",
+        "dagPreviewTitle": "DAG 预览",
+        "dagPreviewEmpty": "上传有效的工作流文件即可预览任务图。",
+        "validationErrors": "校验错误",
+        "clickToLocate": "点击跳转到对应行"
+      }
+    },
+    "wizard": {
+      "title": "运行向导",
+      "descriptionWithWorkflow": "为 {workflow} 配置输入。",
+      "descriptionNoWorkflow": "选择一个工作流以开始运行。",
+      "projectWorkspaceRoot": "项目工作区根目录",
+      "modes": {
+        "guided": "引导",
+        "json": "JSON"
+      },
+      "workspacePathLabel": "工作区路径（相对项目）",
+      "workspaceTip": {
+        "part1": "提示：如果你的文件在",
+        "part2": "，将工作区设置为",
+        "part3": "然后输入"
+      },
+      "outdirLabel": "输出目录",
+      "inputModeLabel": "输入模式",
+      "detecting": "正在检测…",
+      "autoDetect": "自动检测样本",
+      "inputModes": {
+        "fastqPaired": "FASTQ 双端",
+        "fastqSingle": "FASTQ 单端",
+        "bam": "BAM"
+      },
+      "removeRow": "删除行",
+      "addSample": "添加样本",
+      "workspaceRelativeHint": "路径建议使用工作区相对路径。",
+      "referenceSource": "参考来源",
+      "referenceSourcePlaceholder": "选择参考来源",
+      "referenceSources": {
+        "builtin": "内置",
+        "local": "本地路径"
+      },
+      "builtinReference": "内置参考",
+      "referencePath": "参考路径",
+      "paramsJson": "参数 JSON",
+      "inputsJson": "Inputs JSON（WDL）",
+      "configOverridesJson": "配置覆盖 JSON（Nextflow）",
+      "pathAutocompleteHint": "如果不确定路径：点击任意路径输入框，会从项目工作区提供自动补全建议。",
+      "advanced": {
+        "title": "高级选项",
+        "timeoutLabel": "超时时间（秒）",
+        "timeoutPlaceholder": "无超时",
+        "timeoutHint": "最大执行时间（秒）。留空表示不设限制。",
+        "retryEnable": "启用重试策略",
+        "maxRetries": "最大重试次数",
+        "delaySeconds": "初始延迟（秒）",
+        "backoffMultiplier": "退避倍数",
+        "maxDelaySeconds": "最大延迟（秒）",
+        "retryOn": "重试条件",
+        "retryOnPlaceholder": "例如 timeout, oom, exit:137",
+        "retryOnHint": "逗号分隔的错误模式，触发重试"
+      },
+      "startRun": "开始运行",
+      "errors": {
+        "selectProjectFirst": "请先选择项目",
+        "workspaceRequired": "工作区路径不能为空",
+        "noSamplesDetected": "在该工作区中未检测到样本",
+        "noFastqPairs": "检测到 FASTQ，但无法形成任何 R1/R2 配对",
+        "noSingleEndFastq": "未检测到单端 FASTQ",
+        "noBamDetected": "未检测到 BAM 文件",
+        "detectFailed": "无法检测样本。请确认工作区中存在文件后重试。",
+        "selectProjectAndWorkflow": "请选择项目和工作流以开始运行",
+        "guidedOnlyForViralMini": "目前仅 viral-mini 工作流支持引导模式",
+        "addSampleRow": "至少添加一行样本",
+        "sampleIdsUnique": "样本 ID 必须唯一",
+        "sampleIdRequired": "每一行都必须填写样本 ID",
+        "fastqPairedNeedsR1R2": "双端 FASTQ 需要同时提供 R1 和 R2 路径",
+        "fastqSingleNeedsR1": "单端 FASTQ 需要提供 R1 路径",
+        "bamNeedsPath": "BAM 模式需要提供 BAM 路径",
+        "referenceRequired": "参考路径不能为空",
+        "startRunFailed": "无法启动运行。请检查输入和工作流配置。",
+        "paramsJsonInvalid": "参数 JSON 格式不正确",
+        "inputsJsonInvalid": "Inputs JSON 格式不正确",
+        "configOverridesInvalid": "配置覆盖 JSON 格式不正确"
+      },
+      "toasts": {
+        "detectedPaired": "检测到 {count} 对双端样本",
+        "detectedSamples": "检测到 {count} 个样本",
+        "detectedBam": "检测到 {count} 个 BAM 样本",
+        "submitted": "{workflow} 已提交",
+        "runId": "运行 ID {runId}"
+      }
+    },
+    "runForm": {
+      "loading": "正在加载工作流表单…",
+      "browse": "浏览",
+      "clear": "清除",
+      "addManual": "添加路径",
+      "addRow": "添加行",
+      "removeRow": "删除行",
+      "removeItem": "删除",
+      "emptyList": "未选择文件",
+      "filePlaceholder": "asset:// 或绝对路径",
+      "platformManaged": "平台托管",
+      "summaryFields": "已填写 {filled} / {total} 项",
+      "section": {
+        "data": "输入数据",
+        "params": "参数",
+        "advanced": "高级"
+      }
+    },
+    "submission": {
+      "title": "提交运行",
+      "description": "配置并提交工作流运行。",
+      "steps": {
+        "chooseWorkflow": "选择工作流",
+        "editSubmit": "编辑并提交",
+        "configureParams": "配置参数",
+        "reviewSubmit": "确认提交"
+      },
+      "modes": {
+        "table": "Samplesheet",
+        "json": "JSON 输入",
+        "autoDetectedTable": "检测到 samplesheet 工作流",
+        "autoDetectedWdl": "WDL 工作流",
+        "autoDetectedJson": "JSON 参数驱动流程",
+        "autoDetectExplainer": "对 Nextflow 的 samplesheet 流程，请在 Samplesheet 填样本行，在 JSON 输入补充可选参数；对 WDL 流程，使用 JSON 输入。"
+      },
+      "tableEditor": {
+        "pasteTsv": "粘贴 TSV",
+        "importCsv": "导入 CSV",
+        "maxRows": "最大行数",
+        "additionalParams": "附加参数"
+      },
+      "jsonEditor": {
+        "upload": "上传 JSON",
+        "downloadTemplate": "模板",
+        "invalid": "无效",
+        "validJson": "有效 JSON",
+        "editHint": "直接编辑或上传文件"
+      },
+      "step1": {
+        "searchPlaceholder": "搜索工作流...",
+        "noResults": "没有匹配的工作流。"
+      },
+      "step2": {
+        "changeWorkflow": "更换",
+        "workspaceTitle": "工作区与输出",
+        "workspaceSectionHint": "选择要检查的项目相对目录，再确认结果输出位置。",
+        "workspace": "工作区",
+        "workspaceHint": "相对于项目工作区根目录的路径",
+        "outdir": "输出目录",
+        "outdirLabel": "输出目录",
+        "managedStorageLabel": "托管存储",
+        "managedStorageSummary": "项目存储和输出位置由 Bioinfoflow 自动管理。",
+        "managedStorageDetail": "请在下方通过项目数据浏览器选择输入文件，运行产物会自动写入结果目录。",
+        "managedStorageLocations": "项目私有 manifest 和小文件放在 Project Data，上游 fq/bam/vcf 交付数据放在 Deliveries。",
+        "profileLabel": "配置文件",
+        "profileHint": "Nextflow 执行配置（如 docker、singularity）",
+        "advancedSettings": "运行设置",
+        "inputDataTitle": "输入数据",
+        "inputDataHint": "这里优先展示核心生信输入，并在可用时自动预填工作区默认值。",
+        "parametersTitle": "运行参数",
+        "parametersHint": "这些是流程本身的可调参数，通常按需修改即可。",
+        "advancedFieldTitle": "专家输入",
+        "advancedFieldHint": "更偏运行时或基础设施的设置会收敛到这里，避免干扰主流程。",
+        "autoGenerated": "根据工作流 schema 自动生成",
+        "jsonOverride": "JSON 覆盖（高级）",
+        "jsonOverrideHint": "覆盖工作流配置参数，留空使用默认值。"
+      },
+      "step3": {
+        "title": "确认提交",
+        "pendingSubmit": "待提交",
+        "workflowSection": "工作流",
+        "workflowName": "名称",
+        "engine": "引擎",
+        "estimatedTime": "预计时间",
+        "workspace": "工作区",
+        "samplesSection": "样本",
+        "inputDataSection": "输入数据",
+        "parametersSection": "参数",
+        "defaultParams": "使用默认参数",
+        "runConfigSection": "运行配置",
+        "retryPolicy": "重试策略",
+        "timeout": "超时",
+        "disabled": "已禁用",
+        "noLimit": "无限制",
+        "jsonOverrides": "JSON 覆盖",
+        "customConfig": "已应用自定义配置"
+      },
+      "samplesheet": {
+        "title": "样本数据",
+        "autoDetect": "自动检测",
+        "detecting": "检测中...",
+        "importCsv": "导入 CSV/TSV",
+        "paste": "粘贴",
+        "downloadTemplate": "下载模板",
+        "addRow": "添加行",
+        "removeRow": "删除第 {row} 行",
+        "noSamplesDetected": "未在工作区中检测到样本",
+        "detected": "已检测到 {count} 个样本",
+        "detectFailed": "无法检测样本，请检查工作区路径。",
+        "imported": "已导入 {count} 个样本",
+        "importEmpty": "文件为空或没有数据行",
+        "pasted": "已粘贴 {count} 个样本",
+        "pasteEmpty": "剪贴板为空或没有数据行",
+        "pasteFailed": "无法读取剪贴板"
+      },
+      "workbench": {
+        "badge": "运行工作台",
+        "changeWorkflow": "切换工作流",
+        "closeAria": "关闭运行提交工作台",
+        "pickerTitle": "选择要运行的工作流",
+        "pickerDescription": "先选定工作流，再在同一处完成共享设置和输入文档填写。",
+        "continue": "继续",
+        "cancel": "取消",
+        "submissionPreview": "提交预览",
+        "hidePreview": "隐藏预览",
+        "uploadJson": "上传 JSON",
+        "formatJson": "格式化 JSON",
+        "downloadTemplate": "下载模板",
+        "buildManifest": "构建 manifest",
+        "fileSourceProject": "项目私有文件和上传后的 manifest 请放在 Project Data。",
+        "fileSourceDeliveries": "上游交付数据请放在 Deliveries。",
+        "fileSourceReference": "参考序列、索引和参考包请从 Reference Library 选择。",
+        "fileSourceMixed": "请按数据实际所在位置选择来源。",
+        "manifestBuilderDescription": "这里可以用 asset:// URI 草拟 manifest。保存后会写入 Project Data，后端会在提交时自动物化运行态真实路径。",
+        "insertFromBrowser": "从浏览器插入",
+        "saveManifest": "保存到 Project Data",
+        "manifestBuilderPlaceholder": "sample_a\tasset://deliveries/run42/sample_a.fastq.gz",
+        "requiredKeys": "必填键",
+        "reservedKeys": "保留键",
+        "guidedInputs": "引导输入",
+        "chipProfile": "配置：{value}",
+        "chipTimeout": "超时：{value}s",
+        "chipRetry": "重试 x{count}",
+        "optionalField": "可选字段",
+        "none": "无",
+        "validJson": "JSON 有效",
+        "invalidJson": "JSON 无效",
+        "missingKeys": "缺少必填键：{keys}",
+        "reservedConflicts": "这些保留键不能在此设置：{keys}",
+        "populatedFields": "已填写 {count} 个字段",
+        "draftJsonFields": "当前草稿含 {count} 个 JSON 字段",
+        "draftSamples": "当前草稿检测到 {count} 个样本",
+        "summarySamples": "{count} 个样本",
+        "summaryWorkspace": "工作区 {value}",
+        "summaryOutdir": "输出目录 {value}",
+        "summaryJsonFields": "{count} 个 JSON 字段",
+        "validationRowMissing": "第 {row} 行缺少必填列：{columns}",
+        "validationJsonObject": "JSON 输入必须是对象。",
+        "validationSamplesheetRequired": "提交前请至少填写一行 samplesheet。",
+        "validationMissingRequired": "缺少必填 JSON 键：{keys}",
+        "validationReservedConflicts": "这些保留键不能在此设置：{keys}"
+      },
+      "back": "上一步",
+      "submitRun": "提交运行",
+      "submitting": "提交中...",
+      "preview": "预览",
+      "previewTitle": "启动预览",
+      "previewCommand": "命令",
+      "previewSamples": "样本",
+      "previewInputs": "输入",
+      "previewExtraParams": "参数",
+      "footer": {
+        "back": "上一步",
+        "next": "下一步",
+        "cancel": "取消",
+        "startRun": "开始运行"
+      },
+      "toasts": {
+        "submitted": "{workflow} 已提交",
+        "runId": "运行 ID：{runId}",
+        "runCreated": "运行提交成功"
+      },
+      "errors": {
+        "loadWorkflowsFailed": "无法加载工作流",
+        "jsonOverrideInvalid": "JSON 覆盖格式无效",
+        "noSamples": "请至少添加一个样本",
+        "invalidJson": "JSON 格式无效",
+        "createFailed": "创建运行失败",
+        "submitFailed": "提交失败，请检查输入后重试。"
+      }
+    },
+    "runDialog": {
+      "title": "启动工作流运行",
+      "description": "配置本次运行的工作区和参数。",
+      "workflow": "工作流",
+      "selectWorkflow": "选择工作流",
+      "workspacePath": "工作区路径（相对）",
+      "paramsJson": "参数 JSON",
+      "inputsJson": "Inputs JSON（WDL）"
+    },
+    "detail": {
+      "toasts": {
+        "copiedId": "已复制工作流 ID"
+      },
+      "notFound": {
+        "title": "未找到工作流",
+        "description": "你要找的工作流不存在。"
+      },
+      "backToWorkflows": "返回工作流列表",
+      "noDescription": "暂无描述",
+      "copyId": "复制工作流 ID",
+      "estTime": "预计时间",
+      "sourceUrl": "源码 URL",
+      "tabs": {
+        "overview": "概览",
+        "parameters": "参数",
+        "tasks": "任务",
+        "dag": "DAG",
+        "source": "源码"
+      },
+      "readiness": {
+        "tasksCompact": "已检测 {count} 个任务",
+        "dependenciesCompact": "{count} 条依赖边",
+        "runtimeAssetsCompact": "需要运行资产"
+      },
+      "overview": {
+        "description": "描述",
+        "workflowName": "工作流名称",
+        "schemaVersion": "模式版本",
+        "inputs": "输入",
+        "outputs": "输出",
+        "dependencies": "依赖",
+        "noSchema": "此工作流暂无可用的 schema 信息。本地 WDL 与 Nextflow 工作流会在注册时自动提取 schema。",
+        "created": "创建：",
+        "updated": "更新："
+      },
+      "parameters": {
+        "noInfoTitle": "暂无参数信息",
+        "noInfoDescription": "本地 WDL 与 Nextflow 工作流会在注册时提取参数信息",
+        "columns": {
+          "name": "名称",
+          "type": "类型",
+          "required": "必填",
+          "optional": "可选",
+          "default": "默认值",
+          "description": "描述"
+        },
+        "optional": "可选",
+        "required": "必填",
+        "managed": "平台托管",
+        "artifact": "产物",
+        "fileSource": {
+          "project": "项目数据",
+          "deliveries": "交付区",
+          "reference": "参考库",
+          "mixed": "混合来源"
+        },
+        "noInputs": "无输入定义",
+        "noOutputs": "无输出定义"
+      },
+      "tasks": {
+        "noInfoTitle": "暂无任务信息",
+        "noInfoDescription": "本地 WDL 与 Nextflow 工作流会在注册时提取任务信息",
+        "title": "任务 / 进程",
+        "expandAll": "全部展开",
+        "collapseAll": "全部收起",
+        "inputsCount": "{count} 个输入",
+        "outputsCount": "{count} 个输出",
+        "container": "容器",
+        "noTasks": "无任务定义"
+      },
+      "source": {
+        "copied": "已复制源码到剪贴板",
+        "unknownLanguage": "未知",
+        "notLocalTitle": "本地无源码",
+        "notLocalDescription": "该工作流来源于 {source}。请在原始仓库查看源码。",
+        "viewOnGithub": "在 GitHub 查看",
+        "loadingTitle": "正在加载源码",
+        "loadingDescription": "正在获取工作流源码文件...",
+        "lines": "行",
+        "rawView": "原文",
+        "diffView": "差异",
+        "compareVersion": "比较版本",
+        "comparePlaceholder": "选择另一个版本",
+        "compareNone": "仅看当前版本",
+        "compareHint": "选择另一个已注册版本，就能看到 Git 风格的彩色 diff。",
+        "compareUnavailable": "目前还没有其他可比较的已注册版本。",
+        "compareLoading": "正在加载对比版本源码...",
+        "compareActive": "正在把当前版本 {current} 与 {previous} 做比较",
+        "currentVersionLabel": "当前 · {version}",
+        "compareVersionLabel": "对比 · {version}"
+      }
+    }
+  },
+  "images": {
+    "title": "镜像",
+    "subtitle": "管理 Docker 镜像",
+    "noImages": "暂无镜像",
+    "noImagesDescription": "未找到容器镜像。从注册中心拉取镜像或上传 tarball 以开始使用。",
+    "tableCaption": "容器镜像列表",
+    "name": "名称",
+    "tag": "标签",
+    "size": "大小",
+    "status": "状态",
+    "pull": "拉取",
+    "remove": "移除",
+    "ready": "就绪",
+    "pulling": "拉取中",
+    "missing": "缺失",
+    "shared": "共享",
+    "upload": "上传镜像",
+    "usedByProject": "本项目使用中",
+    "noDescription": "暂无描述",
+    "statuses": {
+      "local": "本地",
+      "remote": "远程",
+      "pulling": "拉取中",
+      "failed": "失败"
+    },
+    "actions": {
+      "viewDetails": "查看详情",
+      "copyName": "复制镜像名",
+      "copyPullCommand": "复制 docker pull 命令",
+      "deleteLocal": "删除本地副本",
+      "repull": "重新拉取",
+      "pulling": "拉取中...",
+      "pull": "拉取",
+      "refresh": "刷新"
+    },
+    "table": {
+      "image": "镜像",
+      "version": "版本",
+      "size": "大小",
+      "status": "状态",
+      "actions": "操作"
+    },
+    "uploadDialog": {
+      "title": "上传 Docker 镜像",
+      "description": "从镜像仓库或文件导入容器镜像。",
+      "importMethod": "导入方式",
+      "methods": {
+        "registry": "从仓库",
+        "tarball": "从 Tar 包"
+      },
+      "imageName": "镜像名称",
+      "tarball": "Tar 包（.tar）",
+      "selectedFile": "已选择：{name}",
+      "submitting": "拉取中...",
+      "submit": "拉取镜像"
+    },
+    "errors": {
+      "loadFailed": "无法加载镜像列表。请检查 Docker 是否正在运行且后端可达。",
+      "dockerNotRunning": "Docker 未运行。请启动 Docker 后再拉取镜像。",
+      "dockerUnavailableBanner": "Docker 未运行。镜像列表可能不是最新，并且在 Docker 启动前无法拉取。",
+      "dockerUnavailableEmpty": "Docker 当前不可用，因此 Bioinfoflow 无法同步或导入镜像。",
+      "tarballRequired": "请选择 tar 包文件",
+      "tarballLoadFailed": "无法加载 tar 包。请确认文件格式有效。",
+      "imageNameRequired": "请输入镜像名称",
+      "imageNameInvalid": "请输入有效的镜像名称",
+      "pullFailed": "无法拉取镜像。请确认 Docker 正在运行且网络连接正常。",
+      "deleteFailed": "无法删除镜像。该镜像可能正在被运行中的容器使用。",
+      "deletePulling": "镜像仍在拉取中，请等待下载结束后再删除。",
+      "deleteInUse": "镜像当前正被容器使用，请先停止相关容器再删除。"
+    },
+    "toasts": {
+      "tarballLoaded": "已导入镜像 tar 包",
+      "pullingTitle": "正在拉取 {name}...",
+      "pullingDescription": "根据镜像大小可能需要几分钟",
+      "pullStartedTitle": "{name} 开始拉取",
+      "pullStartedDescription": "镜像正在下载",
+      "sizeDescription": "大小：{size}",
+      "deleteConfirmTitle": "删除 {name} 的本地副本？",
+      "deleteConfirmDescription": "将释放 {size} 的磁盘空间",
+      "removedTitle": "{name} 已移除",
+      "removedDescription": "本地副本已删除"
+    },
+    "empty": {
+      "availableTitle": "还没有可用镜像",
+      "availableDescription": "镜像决定分析任务的运行环境。先添加至少一个镜像再开始使用。",
+      "unavailableTitle": "需要先连接 Docker",
+      "unavailableDescription": "Docker 当前不可用，因此 Bioinfoflow 无法同步或导入镜像。",
+      "recommendedTitle": "推荐起步镜像",
+      "recommendedDescription": "选择常用 starter 镜像，快速填充拉取表单。",
+      "actions": {
+        "pull": "从 Registry 拉取",
+        "tarball": "导入 tar 包",
+        "recommended": "查看推荐镜像"
+      }
+    },
+    "details": {
+      "title": "镜像详情",
+      "description": "查看 Bioinfoflow 当前掌握的镜像元数据。",
+      "sections": {
+        "labels": "Labels",
+        "environment": "环境变量",
+        "entrypoint": "入口命令"
+      },
+      "fields": {
+        "name": "完整名称",
+        "registry": "Registry",
+        "tag": "标签",
+        "size": "大小",
+        "status": "状态",
+        "updated": "最近更新",
+        "error": "最近错误"
+      }
+    },
+    "meta": {
+      "lastSynced": "最近同步于 {value}"
+    }
+  },
+  "dag": {
+    "demoBadge": "演示",
+    "runSelect": {
+      "ariaLabel": "选择运行",
+      "placeholder": "选择运行",
+      "groups": {
+        "experience": "体验",
+        "runs": "运行"
+      },
+      "demoQuest": "演示任务",
+      "loading": "正在加载运行...",
+      "empty": "暂无运行"
+    },
+    "emptyState": {
+      "title": "暂无 DAG 数据",
+      "description": "仅对已解析依赖的工作流提供 DAG 可视化"
+    },
+    "demoHint": {
+      "title": "任务地图",
+      "body": "选择一次运行以解锁实时 DAG 更新。演示节点会脉冲显示任务路径。"
+    }
+  },
+  "monitor": {
+    "title": "运行监控",
+    "live": "实时",
+    "currentTask": "当前任务",
+    "progressSummary": "已完成 {completed}/{total} 个任务",
+    "taskStatus": "任务状态",
+    "labels": {
+      "status": "状态",
+      "tasksDone": "已完成",
+      "remaining": "剩余",
+      "run": "运行"
+    }
+  },
+  "agentDebug": {
+    "title": "助手调试跟踪",
+    "loading": "正在加载跟踪...",
+    "empty": "未找到跟踪事件。",
+    "errors": {
+      "loadTraceFailed": "无法加载跟踪数据。跟踪数据可能已被清除。"
+    }
+  },
+  "demo": {
+    "title": "运行演示",
+    "subtitle": "选择一个演示运行",
+    "dialogTitle": "运行演示",
+    "runDemo": "运行演示",
+    "askAgent": "询问助手",
+    "fastqQC": "FASTQ质量控制",
+    "fastqQCDescription": "对FASTQ文件运行质量控制",
+    "alignment": "序列比对",
+    "alignmentDescription": "将序列比对到参考基因组",
+    "variantCalling": "变异检测",
+    "variantCallingDescription": "从比对结果中检测变异",
+    "rnaseq": "RNA-seq分析",
+    "rnaseqDescription": "分析RNA测序数据"
+  },
+  "time": {
+    "justNow": "刚刚",
+    "minutesAgo": "{count}分钟前",
+    "hoursAgo": "{count}小时前",
+    "daysAgo": "{count}天前",
+    "today": "今天",
+    "yesterday": "昨天"
+  },
+  "language": {
+    "title": "语言",
+    "select": "选择语言"
+  },
+  "loading": {
+    "doubleHelix": "正在解旋双螺旋...",
+    "transcribing": "正在转录您的请求...",
+    "folding": "正在折叠数据...",
+    "sequencing": "正在测序响应...",
+    "aligning": "正在比对结果...",
+    "annealing": "正在退火引物...",
+    "translating": "正在翻译密码子..."
+  },
+  "accessibility": {
+    "skipToContent": "跳到内容",
+    "toggleSidebar": "切换侧边栏",
+    "toggleTheme": "切换主题",
+    "openMenu": "打开菜单",
+    "closeMenu": "关闭菜单",
+    "openSidebar": "打开侧边栏",
+    "closeSidebar": "关闭侧边栏",
+    "hidePanel": "隐藏面板",
+    "refreshWorkspace": "刷新工作区",
+    "userMenu": "用户菜单",
+    "message": "消息",
+    "attachFile": "添加附件",
+    "stopGenerating": "停止生成",
+    "sendMessage": "发送消息",
+    "selectProject": "请先选择一个项目",
+    "openTerminal": "打开终端",
+    "closeTerminal": "关闭终端",
+    "reconnectTerminal": "重新连接终端",
+    "clearTerminal": "清空终端"
+  },
+  "landing": {
+    "announcement": {
+      "text": "Bioinfoflow v0.1 抢先体验",
+      "dismiss": "关闭"
+    },
+    "nav": {
+      "product": "产品",
+      "workflows": "工作流",
+      "features": "功能",
+      "docs": "文档",
+      "signIn": "登录",
+      "startFree": "免费体验",
+      "theme": "主题",
+      "language": "语言",
+      "dark": "深色",
+      "light": "浅色",
+      "toggleMenu": "菜单",
+      "toggleTheme": "主题",
+      "selectLanguage": "语言"
+    },
+    "hero": {
+      "tagline": "本地优先的生物信息学平台",
+      "gpuPowered": "GPU 加速",
+      "title": "在家运行你的 WGS",
+      "titleSuffix": "全基因组分析。",
+      "description": "使用 RTX 4090 在 2 小时内完成完整的 30X 全基因组测序分析。",
+      "wgsHighlight": "✨ 个人使用免费。数据永不离开你的机器。",
+      "startFree": "立即开始",
+      "bookDemo": "了解更多",
+      "windowTitle": "bioinfoflow — 智能助手",
+      "chatExample": "使用 Parabricks 分析 /data/wgs 中的全基因组测序数据。",
+      "planningWorkflow": "规划 GPU 加速工作流中...",
+      "workflowDescription": "Parabricks Germline → FASTQ 到 BAM → VCF"
+    },
+    "trustBar": {
+      "builtFor": "支持",
+      "rnaseq": "RNA-seq",
+      "chipseq": "ChIP-seq",
+      "variantCalling": "变异检测",
+      "singleCell": "单细胞",
+      "metagenomics": "宏基因组"
+    },
+    "productTabs": {
+      "title": "专为生信打造",
+      "subtitle": "从规划到运行再到监控，一站式搞定。",
+      "learnMore": "了解更多",
+      "agent": {
+        "label": "智能助手",
+        "title": "说人话，跑流程。",
+        "description": "描述分析目标，AI 自动选择最优流程、配置参数。不写代码，只聊科学。",
+        "chatExample1": "帮我分析 ChIP-seq 数据，找 H3K27ac 峰",
+        "chatExample2": "好的，我来配置 nf-core/chipseq + MACS2..."
+      },
+      "workflows": {
+        "label": "工作流",
+        "title": "nf-core 精选 + 自定义 WDL，开箱即用。",
+        "description": "一键调用经过验证的 nf-core 流程，也能接入自己的 pipeline。版本可控，结果可复现。"
+      },
+      "runs": {
+        "label": "运行记录",
+        "title": "追踪、恢复、重试。每一步都有迹可循。",
+        "description": "完整记录每次运行。失败可恢复，历史可追溯，审计无死角。"
+      },
+      "images": {
+        "label": "镜像",
+        "title": "Docker 环境，版本锁定。",
+        "description": "所有容器统一管理、版本追踪。每个步骤的运行环境都可复现。"
+      }
+    },
+    "bento": {
+      "title": "为什么选择 Bioinfoflow？",
+      "subtitle": "从零开始为计算生物学工作流构建。",
+      "gpu": {
+        "title": "GPU 加速 WGS",
+        "description": "使用 RTX 4090 在 2 小时内运行 30X 全基因组测序。基于 Parabricks，个人使用免费。"
+      },
+      "agentic": {
+        "title": "AI 智能规划",
+        "description": "用自然语言描述目标。AI 自动选工具、配参数、生成最优方案。"
+      },
+      "local": {
+        "title": "本地优先",
+        "description": "数据不出本地。在自己的服务器或集群上跑计算密集型任务。"
+      },
+      "artifacts": {
+        "title": "完全可复现",
+        "description": "每次运行的配置、样本表、环境都完整保存。几个月后再跑，结果一致。"
+      },
+      "observability": {
+        "title": "实时可观测",
+        "description": "DAG 可视化、日志流、资源监控。流程跑到哪，一目了然。"
+      }
+    },
+    "hardware": {
+      "badge": "硬件要求",
+      "title": "准备好运行 WGS 了吗？",
+      "subtitle": "检查你的游戏电脑是否能运行专业级基因组分析。",
+      "gpu": {
+        "title": "显卡",
+        "spec": "RTX 4090",
+        "description": "NVIDIA GPU，16GB+ 显存"
+      },
+      "ram": {
+        "title": "内存",
+        "spec": "64GB+",
+        "description": "用于基因组数据处理"
+      },
+      "storage": {
+        "title": "存储",
+        "spec": "500GB+ SSD",
+        "description": "快速存储用于临时文件"
+      },
+      "checkButton": "检查硬件",
+      "checking": "检查中...",
+      "detected": "检测到 GPU",
+      "status": {
+        "ready": "可以运行 WGS！",
+        "partial": "可能有限制",
+        "notCompatible": "需要 NVIDIA GPU",
+        "noGpu": "未检测到 GPU",
+        "cannotDetect": "请手动检查 NVIDIA GPU"
+      }
+    },
+    "howItWorks": {
+      "title": "四步上手",
+      "subtitle": "从科学问题到可复现结果。",
+      "step1": {
+        "title": "选择工作区",
+        "description": "指定本地数据目录。文件不动，原地分析。"
+      },
+      "step2": {
+        "title": "描述需求",
+        "description": "用自然语言告诉 AI 你想做什么分析。"
+      },
+      "step3": {
+        "title": "AI 规划",
+        "description": "自动选择最优流程，生成配置。"
+      },
+      "step4": {
+        "title": "运行监控",
+        "description": "本地执行，实时查看 DAG、日志和结果。"
+      }
+    },
+    "quote": {
+      "label": "我们的愿景",
+      "text": "用 AI 让计算生物学人人可用。"
+    },
+    "results": {
+      "title": "您将获得",
+      "subtitle": "让生物信息学工作流更快、更可靠的核心能力。",
+      "wgsSpeed": {
+        "title": "30X WGS 不到 2 小时",
+        "description": "在家用 RTX 4090 运行完整的全基因组测序分析。无需云端。"
+      },
+      "nlp": {
+        "title": "自然语言转流程",
+        "description": "用中文描述分析需求，获得配置好的可运行 pipeline。"
+      },
+      "zeroData": {
+        "title": "零数据迁移",
+        "description": "TB 级测序数据无需上传。文件留在本地，分析照样跑。"
+      },
+      "provenance": {
+        "title": "全链路溯源",
+        "description": "版本、参数、产出，每次运行都完整记录。随时可复现。"
+      },
+      "comparison": {
+        "title": "效率对比",
+        "manual": "传统手动配置",
+        "manualTime": "数小时 ~ 数天",
+        "withBioinfoflow": "Bioinfoflow",
+        "withBioinfoflowTime": "几分钟",
+        "note": "基于 RNA-seq 流程配置实测：手动 vs AI 辅助。"
+      }
+    },
+    "security": {
+      "badge": "本地优先 · 安全可控",
+      "title": "你的数据，你做主",
+      "subtitle": "专为敏感生物数据设计。合规无忧，安全放心。",
+      "dataNeverLeaves": {
+        "title": "数据不出本地",
+        "description": "默认本地运行，无需上传云端。"
+      },
+      "auditTrails": {
+        "title": "完整审计",
+        "description": "每次运行都有时间戳和溯源记录。"
+      },
+      "localArtifacts": {
+        "title": "本地存储",
+        "description": "配置、样本表、结果都在你的工作区。"
+      },
+      "secureByDesign": {
+        "title": "安全设计",
+        "description": "符合科研数据合规要求。"
+      },
+      "yourInfrastructure": {
+        "title": "你的基础设施",
+        "description": "HPC、云端、本地工作站，任你选。"
+      },
+      "transparentExecution": {
+        "title": "透明执行",
+        "description": "每一步做了什么、在哪跑、怎么跑，清清楚楚。"
+      }
+    },
+    "cta": {
+      "title": "想试试看？",
+      "subtitle": "几分钟内跑通第一个流程。个人研究者永久免费。",
+      "getStarted": "立即开始",
+      "contactUs": "联系我们"
+    },
+    "footer": {
+      "tagline": "本地优先 · AI 驱动 · 为科研而生。",
+      "copyright": "© {year} Bioinfoflow",
+      "bottomTagline": "本地优先的生物信息学平台",
+      "product": {
+        "title": "产品",
+        "agent": "智能助手",
+        "workflows": "工作流",
+        "runs": "运行记录",
+        "images": "镜像",
+        "changelog": "更新日志"
+      },
+      "resources": {
+        "title": "资源",
+        "documentation": "文档",
+        "apiReference": "API",
+        "tutorials": "教程",
+        "blog": "博客"
+      },
+      "company": {
+        "title": "公司",
+        "about": "关于",
+        "careers": "加入我们",
+        "contact": "联系"
+      },
+      "legal": {
+        "title": "法律",
+        "privacy": "隐私",
+        "terms": "条款",
+        "security": "安全"
+      }
+    }
+  },
+  "auth": {
+    "title": "登录以继续",
+    "description": "进入团队的 Bioinfoflow 工作区。项目、运行、会话和文件视图会在一个受保护的研究空间里共享。",
+    "terms": "继续即表示您同意我们的服务条款和隐私政策。",
+    "continueWith": "使用 {provider} 继续",
+    "continueWithGithub": "使用 GitHub 继续",
+    "continueWithGoogle": "使用 Google 继续",
+    "redirecting": "跳转中...",
+    "errorMessage": "无法启动登录流程。请重试。",
+    "enableProviders": "在您的环境中添加 OAuth 凭据以启用所有提供商。",
+    "noProviders": "当前还没有可用的认证方式。请启用本地邮箱密码或配置 OAuth 凭据。",
+    "oauthDivider": "或使用以下方式继续",
+    "badges": {
+      "localReady": "本地账号可用",
+      "oauthOnly": "仅 OAuth",
+      "personal": "个人安全模式",
+      "team": "团队工作区",
+      "dev": "开发模式"
+    },
+    "teamCard": {
+      "title": "工作区",
+      "access": "访问模型",
+      "adminCreated": "账号由所有者或管理员创建。",
+      "accessPersonal": "密码保护，无团队管理负担。"
+    },
+    "local": {
+      "emailLabel": "邮箱",
+      "emailPlaceholder": "name@lab.org",
+      "passwordLabel": "密码",
+      "passwordPlaceholder": "输入密码",
+      "submit": "邮箱密码登录",
+      "submitting": "登录中...",
+      "errorMessage": "邮箱或密码不正确。请重试，或联系管理员重置账号。",
+      "timeoutMessage": "请求超时，请重试。",
+      "adminProvisioned": "团队模式下不开放公开注册。请联系实验室管理员创建或重置账号。",
+      "personalProvisioned": "当前实例由本地所有者账号保护，请使用本地凭据继续。"
+    },
+    "preview": {
+      "eyebrow": "团队实例",
+      "title": "一个实验室工作区，共享上下文，职责清晰。",
+      "description": "保持轻量设计：整个实例只有一个 workspace，团队共享业务资源，个人身份只用于门禁、审计和成员管理。",
+      "chatLabel": "共享分析上下文",
+      "chatTitle": "对话、运行与文件始终对齐",
+      "workspaceShared": "工作区共享",
+      "chatExample": "对我的 RNA-seq 数据运行差异表达分析",
+      "chatAgent1": "好的，我来搭建标准的 RNA-seq 差异表达流程。请问有多少样本？",
+      "chatUser2": "3 个处理组 vs 3 个对照组，双端测序，数据在 /data/rnaseq。",
+      "planningWorkflow": "规划工作流",
+      "audit": "可审计",
+      "personalTitle": "私人工作站，也应该有密码门禁",
+      "personalDescription": "个人模式会保留完整登录门禁，但不会把团队成员管理强加到日常使用流程里。",
+      "membersLabel": "最小团队角色",
+      "tagline": "足够轻，适合私人工作站。也足够规范，适合课题组协作。",
+      "roles": {
+        "owner": {
+          "name": "所有者",
+          "description": "负责引导初始化与最终兜底，避免把实例彻底锁死。"
+        },
+        "admin": {
+          "name": "管理员",
+          "description": "创建用户、重置密码、禁用账号，保持团队运转。"
+        },
+        "member": {
+          "name": "成员",
+          "description": "在共享工作区里运行分析、查看结果并协作。"
+        }
+      }
+    }
+  },
+  "scheduler": {
+    "title": "调度器",
+    "subtitle": "用于观察队列压力、调度器可用性和本机资源容量的健康面板。",
+    "mode": "模式",
+    "configuredMode": "配置模式",
+    "configuredModeLabel": "当前配置：",
+    "workers": "工作线程",
+    "queueDepth": "队列深度",
+    "tasks": "任务",
+    "queued": "排队中",
+    "dispatched": "已分配",
+    "completed": "已完成",
+    "failed": "失败",
+    "resources": "系统资源",
+    "cpu": "CPU",
+    "memory": "内存",
+    "disk": "磁盘",
+    "gpu": "GPU",
+    "snapshot": "快照时间",
+    "utilization": "使用率",
+    "noGpu": "未检测到 GPU",
+    "autoRefresh": "每 30 秒自动刷新",
+    "refreshDescription": "页面按定时轮询刷新，不是实时流式更新。",
+    "resourceUnavailable": "不可用",
+    "resourceSnapshotPending": "等待首个采样结果",
+    "resourcesUnavailable": "资源监控当前不可用",
+    "resourcesUnavailableBody": "这通常表示系统处于回退模式，或资源采样功能被关闭。",
+    "cardDescriptions": {
+      "queued": "等待 worker 认领、尚未开始执行的运行。",
+      "dispatched": "已经被 worker 认领，预计正在执行中的运行。",
+      "completed": "自服务启动以来，调度器观察到的成功完成任务数。",
+      "failed": "以失败结束、可能需要排查或重试的任务数。"
+    },
+    "status": {
+      "activeTitle": "持久化调度器已启用",
+      "activeBody": "新的 run 会先写入持久化队列，再由 worker 从队列中认领执行。",
+      "fallbackTitle": "虽然配置为 persistent，但当前处于回退模式",
+      "fallbackBody": "应用正在无持久化调度实例的情况下提供运行能力，因此队列可见性和恢复能力都会受限。"
+    },
+    "guidance": {
+      "title": "如何使用这个页面",
+      "body": "当 run 没有及时开始时，用这个页面判断原因是队列积压、worker 饱和、回退模式，还是本机资源紧张。",
+      "queueTitle": "如果 queued 持续上升",
+      "queueBody": "说明提交速度高于 worker 消费速度，或者调度器正在主动延迟任务。",
+      "dispatchTitle": "如果 dispatched 长时间偏高",
+      "dispatchBody": "说明 worker 正在忙。具体任务进度和耗时仍应去 Runs 页面看日志和执行详情。",
+      "resourcesTitle": "如果资源接近瓶颈",
+      "resourcesBody": "CPU、内存或磁盘压力可能让新任务继续等待，即使队列本身并不深。"
+    },
+    "resourceUnits": {
+      "coresFree": "空闲核心",
+      "freeVram": "可用显存"
+    },
+    "dashboardCard": {
+      "title": "调度器",
+      "queueDepth": "队列深度"
+    },
+    "errors": {
+      "loadFailed": "无法加载调度器状态。请检查后端是否正在运行。"
+    },
+    "pressure": {
+      "label": "系统压力",
+      "healthy": "健康",
+      "moderate": "偏紧",
+      "saturated": "饱和",
+      "factors": {
+        "cpu": "CPU",
+        "mem": "内存",
+        "load": "负载",
+        "queue": "队列"
+      }
+    },
+    "activeRuns": {
+      "title": "活动 run · 资源占用来源",
+      "count": "{count} 个运行中",
+      "empty": "当前没有正在执行的 run。",
+      "unknownWorkflow": "未知 workflow"
+    },
+    "charts": {
+      "cpuUtil": "CPU 使用率",
+      "memory": "内存",
+      "diskIo": "磁盘占用",
+      "gpuFree": "GPU 可用"
+    },
+    "advanced": {
+      "button": "高级视图",
+      "drawerTitle": "高级视图 · btop 进程面板",
+      "drawerMeta": "实时进程流 · btop",
+      "comingSoon": "终端视图即将上线",
+      "comingSoonBody": "该面板将在 pty 通道落地后嵌入实时的 btop 视图。在此之前，默认面板已提供压力与按 run 的来源归因。",
+      "connecting": "正在连接 btop…",
+      "connected": "已连接",
+      "disconnected": "连接断开",
+      "exited": "btop 已退出",
+      "unavailable": "服务端未安装 btop",
+      "unavailableBody": "请在服务器上安装 btop（例如 `brew install btop` 或 `apt install btop`），然后重新打开此面板。",
+      "retry": "重新连接"
+    },
+    "legend": {
+      "safe": "安全 <60%",
+      "warn": "预警 60–85%",
+      "danger": "饱和 >85%",
+      "dispatch": "分派",
+      "complete": "完成",
+      "window": "60 秒窗口 · 2 秒刷新 · 点击 run 高亮",
+      "minus60s": "−60s",
+      "minus30s": "−30s",
+      "now": "现在"
+    },
+    "trust": {
+      "streaming": "实时流式",
+      "connecting": "连接中…",
+      "reconnecting": "重连中…",
+      "disconnected": "已断开"
+    }
+  },
+  "audit": {
+    "empty": "暂无审计记录",
+    "emptyDescription": "对此运行执行操作后，审计记录将在此显示。",
+    "actions": {
+      "created": "已创建",
+      "queued": "已排队",
+      "started": "已启动",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消",
+      "retried": "已重试",
+      "resumed": "已恢复",
+      "cleanup": "清理",
+      "timeout": "超时",
+      "unknown": "未知"
+    },
+    "errors": {
+      "loadFailed": "无法加载审计记录。请刷新后重试。"
+    }
+  },
+  "batch": {
+    "title": "批量提交",
+    "description": "提交多个运行作为一个批次",
+    "workflow": "工作流",
+    "selectWorkflow": "选择工作流",
+    "priority": "优先级",
+    "priorities": {
+      "urgent": "紧急",
+      "normal": "正常",
+      "low": "低"
+    },
+    "batchDescription": "描述",
+    "batchDescriptionPlaceholder": "批次的可选描述",
+    "runsTable": "批量运行",
+    "workspace": "工作区",
+    "params": "参数（JSON）",
+    "addRow": "添加运行",
+    "removeRow": "移除",
+    "minRows": "至少需要 2 个运行",
+    "sharedRetry": "共享重试策略",
+    "submit": "提交批次",
+    "cancel": "取消批次",
+    "status": "批次状态",
+    "progress": "{completed} / {total} 已完成",
+    "errors": {
+      "selectWorkflow": "请先选择工作流",
+      "minTwoRuns": "批次中至少添加 2 个运行",
+      "invalidParams": "运行 {index} 的参数 JSON 无效",
+      "submitFailed": "无法提交批次。请检查输入后重试。",
+      "cancelFailed": "无法取消批次。"
+    }
+  },
+  "notificationConfig": {
+    "title": "通知",
+    "description": "配置运行事件的 Webhook 通知",
+    "empty": "暂无通知配置",
+    "emptyDescription": "添加 Webhook 以在运行完成、失败或取消时接收通知。",
+    "add": "添加通知",
+    "trigger": "触发器",
+    "webhookUrl": "Webhook URL",
+    "webhookUrlPlaceholder": "https://hooks.example.com/notify",
+    "enabled": "已启用",
+    "triggers": {
+      "run": {
+        "completed": "运行完成",
+        "failed": "运行失败",
+        "cancelled": "运行取消"
+      },
+      "batch": {
+        "completed": "批次完成",
+        "failed": "批次失败"
+      }
+    },
+    "errors": {
+      "loadFailed": "无法加载通知。请刷新后重试。",
+      "createFailed": "无法创建通知。请检查 Webhook URL。",
+      "deleteFailed": "无法删除通知。"
+    },
+    "toasts": {
+      "created": "通知已创建",
+      "deleted": "通知已删除"
+    }
+  },
+  "welcome": {
+    "eyebrow": "分析工作区",
+    "title": "开始你的第一次分析",
+    "subtitle": "选择一个项目模板，或创建自定义工作区。只要项目建立起来，Bioinfoflow 就能把对话、文件和运行结果组织在同一个上下文里。",
+    "blankName": "空白工作区",
+    "blankDescription": "从一个空项目开始，自由探索",
+    "wgsName": "全基因组测序分析",
+    "wgsDescription": "全基因组测序变异检测",
+    "rnaseqName": "RNA-seq 分析",
+    "rnaseqDescription": "差异基因表达分析",
+    "createFromTemplate": "使用模板",
+    "createFromTemplateNamed": "使用{name}",
+    "customProjectLabel": "自定义设置",
+    "customProjectDescription": "如果你需要自定义目录结构、命名方式或工作区路径，可以从空白项目开始并自行配置。",
+    "customProject": "创建自定义项目"
+  },
+  "settings": {
+    "pageTitle": "设置",
+    "nav": {
+      "account": "账户",
+      "providers": "AI 服务商",
+      "members": "成员管理"
+    },
+    "title": "AI 服务商",
+    "subtitle": "配置 API 密钥并选择驱动智能助手的模型。",
+    "apiKey": "API 密钥",
+    "apiKeyPlaceholder": "粘贴您的密钥（{prefix}...）",
+    "baseUrl": "基础 URL",
+    "baseUrlPlaceholder": "输入服务商基础 URL",
+    "model": "模型",
+    "modelPlaceholder": "输入模型名称",
+    "testConnection": "测试",
+    "testSuccess": "连接成功",
+    "testFailed": "连接失败",
+    "keySaved": "API 密钥已保存",
+    "keyCleared": "API 密钥已移除",
+    "clearKey": "移除密钥",
+    "settingSaved": "{field}已保存",
+    "settingCleared": "{field}已清除",
+    "clearValue": "清除{field}",
+    "getApiKey": "在 {provider} 获取密钥",
+    "activeProvider": "当前模型：{model}",
+    "status": {
+      "connected": "已连接",
+      "notConfigured": "未配置"
+    },
+    "setupBanner": {
+      "title": "请配置 API 密钥以开始与 AI 助手对话。",
+      "action": "配置服务商",
+      "dismiss": "关闭"
+    },
+    "modelSelector": {
+      "noProviders": "无可用模型",
+      "configure": "配置服务商",
+      "searchModels": "搜索模型..."
+    },
+    "members": {
+      "title": "成员",
+      "description": "管理谁可以进入这个 Bioinfoflow 实例。共享分析资源保留在同一个 workspace 中，身份只用于门禁、审计和管理。",
+      "createCta": "添加成员",
+      "loading": "正在加载成员...",
+      "loadFailed": "无法加载成员列表。",
+      "created": "成员已创建。",
+      "createFailed": "无法创建该成员。",
+      "roleUpdated": "角色已更新。",
+      "roleUpdateFailed": "无法更新角色。",
+      "disabled": "账号已禁用。",
+      "enabled": "账号已启用。",
+      "statusUpdateFailed": "无法更新账号状态。",
+      "sessionsRevoked": "已撤销所有活动会话。",
+      "sessionsRevokeFailed": "无法撤销会话。",
+      "passwordReset": "密码已重置。",
+      "passwordResetFailed": "无法重置密码。",
+      "lastOwner": "系统中至少要保留一个启用状态的所有者。",
+      "disabledBadge": "已禁用",
+      "you": "当前账号",
+      "enable": "启用",
+      "disable": "禁用",
+      "resetPassword": "重置密码",
+      "revokeSessions": "撤销会话",
+      "createTitle": "创建成员",
+      "createDescription": "创建一个团队账号。如果启用了本地认证，可以在这里设置初始密码。",
+      "createAction": "创建账号",
+      "resetTitle": "重置密码",
+      "resetDescription": "为 {email} 设置新密码。",
+      "resetAction": "保存密码",
+      "cancel": "取消",
+      "fields": {
+        "name": "姓名",
+        "email": "邮箱",
+        "password": "密码",
+        "role": "角色"
+      },
+      "roles": {
+        "owner": "所有者",
+        "admin": "管理员",
+        "member": "成员"
+      }
+    },
+    "account": {
+      "title": "账号",
+      "description": "您的身份用于登录、审计以及个人安全设置。",
+      "email": "邮箱",
+      "role": "角色",
+      "mode": "模式",
+      "notAvailable": "不可用",
+      "changePasswordTitle": "修改密码",
+      "changePasswordDescription": "更新本地密码，并撤销其他活动会话。",
+      "currentPassword": "当前密码",
+      "newPassword": "新密码",
+      "savePassword": "保存密码",
+      "savingPassword": "保存中...",
+      "passwordChanged": "密码已更新。",
+      "passwordChangeFailed": "无法更新密码。",
+      "modes": {
+        "personal": "个人",
+        "team": "团队",
+        "dev": "开发"
+      }
+    }
+  },
+  "terminal": {
+    "title": "终端",
+    "startingSession": "正在启动终端...",
+    "connectionStates": {
+      "idle": "空闲",
+      "connecting": "连接中",
+      "disconnected": "已断开",
+      "error": "错误",
+      "exited": "已退出"
+    }
+  },
+  "fileBrowser": {
+    "title": "选择文件",
+    "home": "根目录",
+    "up": "上一级",
+    "emptyHere": "此处无数据文件",
+    "emptyAtSource": "{source} 在此位置为空。",
+    "errors": {
+      "loadSources": "无法加载存储源",
+      "loadDirectory": "无法加载目录",
+      "upload": "无法上传文件"
+    }
+  },
+  "directoryBrowser": {
+    "errors": {
+      "load": "无法加载目录"
+    },
+    "empty": "此处无条目"
+  },
+  "errors": {
+    "globalTitle": "出了点问题",
+    "globalDescription": "发生了意外错误，请重试。",
+    "tryAgain": "重试",
+    "notFoundTitle": "页面未找到",
+    "notFoundDescription": "您要查找的页面不存在或已被移动。",
+    "goToDashboard": "前往仪表板"
+  },
+  "agent": {
+    "disclaimer": "Bioinfoflow 智能助手可能犯错，请核实重要结果。",
+    "selectProjectHint": "从侧边栏选择项目以开始对话",
+    "status": {
+      "thinking": "思考中...",
+      "responding": "回复中...",
+      "runningTool": "正在运行 {tool}...",
+      "runningToolGeneric": "正在运行工具...",
+      "cancelling": "正在取消...",
+      "cancelled": "已取消"
+    },
+    "actions": {
+      "copy": "复制",
+      "regenerate": "重新生成",
+      "edit": "编辑",
+      "cancel": "取消",
+      "send": "发送",
+      "export": "导出",
+      "dropFilesHint": "拖放文件以上传"
+    },
+    "approval": {
+      "title": "需要审批",
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "expired": "已过期",
+      "resolving": "处理中...",
+      "approve": "批准",
+      "deny": "拒绝"
+    },
+    "tools": {
+      "runningProgress": "正在运行工具 ({done}/{total})",
+      "usedTools": "使用了 {count} 个工具",
+      "usedToolsFailed": "使用了 {count} 个工具（{failed} 个失败）",
+      "matches": "{count} 个匹配"
+    },
+    "errorBoundary": {
+      "failedToRender": "无法渲染 {label}",
+      "genericError": "出了点问题",
+      "exhausted": "经过 {count} 次尝试后仍无法渲染此内容。",
+      "retry": "重试（还剩 {remaining} 次）"
+    },
+    "shortcuts": {
+      "title": "键盘快捷键",
+      "focusInput": "聚焦输入框",
+      "stopGeneration": "停止生成",
+      "toggleSidebar": "切换侧边栏",
+      "newConversation": "新建对话",
+      "sendMessage": "发送消息",
+      "newLine": "换行",
+      "cancelOrClose": "取消编辑 / 关闭弹窗",
+      "showShortcuts": "显示键盘快捷键",
+      "toggleHint": "按 ? 切换"
+    },
+    "tokens": "{count}k tokens"
+  },
+  "executionMode": {
+    "askShort": "询问",
+    "approveAllShort": "全部确认",
+    "bypassShort": "跳过",
+    "triggerAriaLabel": "切换执行模式",
+    "menuLabel": "工具执行模式",
+    "askTitle": "询问（默认）",
+    "askDescription": "在执行高风险工具（运行、shell、代码执行）前提示。",
+    "approveAllTitle": "全部需要确认",
+    "approveAllDescription": "低风险写入（如文件编辑）也会提示。最严格模式。",
+    "bypassTitle": "跳过所有审批",
+    "bypassDescription": "不再提示，所有工具自动运行。仅在你信任该计划时启用。",
+    "changeFailed": "切换执行模式失败，请重试。",
+    "bypassBannerTitle": "已开启跳过模式。",
+    "bypassBannerDescription": "工具调用无需审批即可运行。",
+    "bypassBannerDisable": "关闭"
+  }
+}

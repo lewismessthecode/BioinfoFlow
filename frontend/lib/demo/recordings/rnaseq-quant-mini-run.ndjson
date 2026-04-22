@@ -1,0 +1,106 @@
+{"t":0,"event":"user.message","data":{"content":"Run a quick RNA-seq quantification on my samples"}}
+{"t":800,"event":"agent.thinking_delta","data":{"id":"m1","content":"The user wants to run a quick RNA-seq quantification. I'll use the rnaseq-quant-mini workflow, which is a lightweight local pipeline for fast validation and summary outputs. Let me set this up."}}
+{"t":1200,"event":"agent.text_delta","data":{"id":"m1","content":"I'll"}}
+{"t":1230,"event":"agent.text_delta","data":{"id":"m1","content":" run"}}
+{"t":1260,"event":"agent.text_delta","data":{"id":"m1","content":" the"}}
+{"t":1290,"event":"agent.text_delta","data":{"id":"m1","content":" **E."}}
+{"t":1320,"event":"agent.text_delta","data":{"id":"m1","content":" coli"}}
+{"t":1350,"event":"agent.text_delta","data":{"id":"m1","content":" QC"}}
+{"t":1380,"event":"agent.text_delta","data":{"id":"m1","content":" pipeline**"}}
+{"t":1410,"event":"agent.text_delta","data":{"id":"m1","content":" on"}}
+{"t":1440,"event":"agent.text_delta","data":{"id":"m1","content":" your"}}
+{"t":1470,"event":"agent.text_delta","data":{"id":"m1","content":" samples."}}
+{"t":1500,"event":"agent.text_delta","data":{"id":"m1","content":" This"}}
+{"t":1530,"event":"agent.text_delta","data":{"id":"m1","content":" lightweight"}}
+{"t":1560,"event":"agent.text_delta","data":{"id":"m1","content":" Nextflow"}}
+{"t":1590,"event":"agent.text_delta","data":{"id":"m1","content":" workflow"}}
+{"t":1620,"event":"agent.text_delta","data":{"id":"m1","content":" will"}}
+{"t":1650,"event":"agent.text_delta","data":{"id":"m1","content":" analyze"}}
+{"t":1680,"event":"agent.text_delta","data":{"id":"m1","content":" read"}}
+{"t":1710,"event":"agent.text_delta","data":{"id":"m1","content":" quality,"}}
+{"t":1740,"event":"agent.text_delta","data":{"id":"m1","content":" check"}}
+{"t":1770,"event":"agent.text_delta","data":{"id":"m1","content":" reference"}}
+{"t":1800,"event":"agent.text_delta","data":{"id":"m1","content":" alignment"}}
+{"t":1830,"event":"agent.text_delta","data":{"id":"m1","content":" stats,"}}
+{"t":1860,"event":"agent.text_delta","data":{"id":"m1","content":" and"}}
+{"t":1890,"event":"agent.text_delta","data":{"id":"m1","content":" generate"}}
+{"t":1920,"event":"agent.text_delta","data":{"id":"m1","content":" a"}}
+{"t":1950,"event":"agent.text_delta","data":{"id":"m1","content":" summary"}}
+{"t":1980,"event":"agent.text_delta","data":{"id":"m1","content":" report."}}
+{"t":2200,"event":"agent.tool_call_start","data":{"id":"m1","metadata":{"id":"tc1","name":"submit_run","args":{"workflow":"rnaseq-quant-mini","params":{"reads":"data/sample_R1.fastq.gz","reference":"data/reference.fa"}}}}}
+{"t":3500,"event":"agent.tool_call_end","data":{"id":"m1","metadata":{"id":"tc1","name":"submit_run","result":"Run submitted: run_demo_001 (rnaseq-quant-mini v1.0)","is_error":false,"duration_ms":1280}}}
+{"t":3800,"event":"agent.text_delta","data":{"id":"m1","content":"\n\nPipeline"}}
+{"t":3830,"event":"agent.text_delta","data":{"id":"m1","content":" submitted!"}}
+{"t":3860,"event":"agent.text_delta","data":{"id":"m1","content":" The"}}
+{"t":3890,"event":"agent.text_delta","data":{"id":"m1","content":" DAG"}}
+{"t":3920,"event":"agent.text_delta","data":{"id":"m1","content":" on"}}
+{"t":3950,"event":"agent.text_delta","data":{"id":"m1","content":" the"}}
+{"t":3980,"event":"agent.text_delta","data":{"id":"m1","content":" right"}}
+{"t":4010,"event":"agent.text_delta","data":{"id":"m1","content":" shows"}}
+{"t":4040,"event":"agent.text_delta","data":{"id":"m1","content":" the"}}
+{"t":4070,"event":"agent.text_delta","data":{"id":"m1","content":" pipeline"}}
+{"t":4100,"event":"agent.text_delta","data":{"id":"m1","content":" stages."}}
+{"t":4130,"event":"agent.text_delta","data":{"id":"m1","content":" I'll"}}
+{"t":4160,"event":"agent.text_delta","data":{"id":"m1","content":" monitor"}}
+{"t":4190,"event":"agent.text_delta","data":{"id":"m1","content":" the"}}
+{"t":4220,"event":"agent.text_delta","data":{"id":"m1","content":" progress."}}
+{"t":4400,"event":"run.status","data":{"run_id":"run_demo_001","status":"running","current_task":"READS_STATS","tasks_completed":0,"tasks_total":3,"message":"Starting pipeline..."}}
+{"t":4600,"event":"run.dag","data":{"run_id":"run_demo_001","dag":{"nodes":[{"id":"reads_stats","type":"pipeline","position":{"x":250,"y":50},"data":{"label":"READS_STATS","status":"running","displayLabel":"Read Quality Stats"}},{"id":"reference_stats","type":"pipeline","position":{"x":250,"y":200},"data":{"label":"REFERENCE_STATS","status":"pending","displayLabel":"Reference Alignment"}},{"id":"summary_report","type":"pipeline","position":{"x":250,"y":350},"data":{"label":"SUMMARY_REPORT","status":"pending","displayLabel":"Summary Report"}}],"edges":[{"id":"e1","source":"reads_stats","target":"reference_stats","animated":true},{"id":"e2","source":"reference_stats","target":"summary_report","animated":false}]}}}
+{"t":8000,"event":"run.status","data":{"run_id":"run_demo_001","status":"running","current_task":"READS_STATS","tasks_completed":0,"tasks_total":3,"message":"Analyzing read quality..."}}
+{"t":12000,"event":"run.dag","data":{"run_id":"run_demo_001","dag":{"nodes":[{"id":"reads_stats","type":"pipeline","position":{"x":250,"y":50},"data":{"label":"READS_STATS","status":"success","displayLabel":"Read Quality Stats","duration":7400}},{"id":"reference_stats","type":"pipeline","position":{"x":250,"y":200},"data":{"label":"REFERENCE_STATS","status":"running","displayLabel":"Reference Alignment"}},{"id":"summary_report","type":"pipeline","position":{"x":250,"y":350},"data":{"label":"SUMMARY_REPORT","status":"pending","displayLabel":"Summary Report"}}],"edges":[{"id":"e1","source":"reads_stats","target":"reference_stats","animated":true},{"id":"e2","source":"reference_stats","target":"summary_report","animated":false}]}}}
+{"t":12200,"event":"run.status","data":{"run_id":"run_demo_001","status":"running","current_task":"REFERENCE_STATS","tasks_completed":1,"tasks_total":3,"message":"Checking reference alignment..."}}
+{"t":18000,"event":"run.dag","data":{"run_id":"run_demo_001","dag":{"nodes":[{"id":"reads_stats","type":"pipeline","position":{"x":250,"y":50},"data":{"label":"READS_STATS","status":"success","displayLabel":"Read Quality Stats","duration":7400}},{"id":"reference_stats","type":"pipeline","position":{"x":250,"y":200},"data":{"label":"REFERENCE_STATS","status":"success","displayLabel":"Reference Alignment","duration":5800}},{"id":"summary_report","type":"pipeline","position":{"x":250,"y":350},"data":{"label":"SUMMARY_REPORT","status":"running","displayLabel":"Summary Report"}}],"edges":[{"id":"e1","source":"reads_stats","target":"reference_stats","animated":false},{"id":"e2","source":"reference_stats","target":"summary_report","animated":true}]}}}
+{"t":18200,"event":"run.status","data":{"run_id":"run_demo_001","status":"running","current_task":"SUMMARY_REPORT","tasks_completed":2,"tasks_total":3,"message":"Generating summary report..."}}
+{"t":22000,"event":"run.dag","data":{"run_id":"run_demo_001","dag":{"nodes":[{"id":"reads_stats","type":"pipeline","position":{"x":250,"y":50},"data":{"label":"READS_STATS","status":"success","displayLabel":"Read Quality Stats","duration":7400}},{"id":"reference_stats","type":"pipeline","position":{"x":250,"y":200},"data":{"label":"REFERENCE_STATS","status":"success","displayLabel":"Reference Alignment","duration":5800}},{"id":"summary_report","type":"pipeline","position":{"x":250,"y":350},"data":{"label":"SUMMARY_REPORT","status":"success","displayLabel":"Summary Report","duration":3800}}],"edges":[{"id":"e1","source":"reads_stats","target":"reference_stats","animated":false},{"id":"e2","source":"reference_stats","target":"summary_report","animated":false}]}}}
+{"t":22200,"event":"run.status","data":{"run_id":"run_demo_001","status":"completed","current_task":null,"tasks_completed":3,"tasks_total":3,"message":"Pipeline completed successfully"}}
+{"t":23000,"event":"agent.text_delta","data":{"id":"m2","content":"Your"}}
+{"t":23030,"event":"agent.text_delta","data":{"id":"m2","content":" QC"}}
+{"t":23060,"event":"agent.text_delta","data":{"id":"m2","content":" pipeline"}}
+{"t":23090,"event":"agent.text_delta","data":{"id":"m2","content":" completed"}}
+{"t":23120,"event":"agent.text_delta","data":{"id":"m2","content":" successfully!"}}
+{"t":23150,"event":"agent.text_delta","data":{"id":"m2","content":" Here's"}}
+{"t":23180,"event":"agent.text_delta","data":{"id":"m2","content":" the"}}
+{"t":23210,"event":"agent.text_delta","data":{"id":"m2","content":" summary:\n\n"}}
+{"t":23240,"event":"agent.text_delta","data":{"id":"m2","content":"**Read"}}
+{"t":23270,"event":"agent.text_delta","data":{"id":"m2","content":" Quality"}}
+{"t":23300,"event":"agent.text_delta","data":{"id":"m2","content":" (READS_STATS):**\n"}}
+{"t":23330,"event":"agent.text_delta","data":{"id":"m2","content":"- Total"}}
+{"t":23360,"event":"agent.text_delta","data":{"id":"m2","content":" reads:"}}
+{"t":23390,"event":"agent.text_delta","data":{"id":"m2","content":" 1,234,567\n"}}
+{"t":23420,"event":"agent.text_delta","data":{"id":"m2","content":"- Mean"}}
+{"t":23450,"event":"agent.text_delta","data":{"id":"m2","content":" quality"}}
+{"t":23480,"event":"agent.text_delta","data":{"id":"m2","content":" score:"}}
+{"t":23510,"event":"agent.text_delta","data":{"id":"m2","content":" Q32\n"}}
+{"t":23540,"event":"agent.text_delta","data":{"id":"m2","content":"- GC"}}
+{"t":23570,"event":"agent.text_delta","data":{"id":"m2","content":" content:"}}
+{"t":23600,"event":"agent.text_delta","data":{"id":"m2","content":" 50.8%"}}
+{"t":23630,"event":"agent.text_delta","data":{"id":"m2","content":" (expected"}}
+{"t":23660,"event":"agent.text_delta","data":{"id":"m2","content":" for"}}
+{"t":23690,"event":"agent.text_delta","data":{"id":"m2","content":" E."}}
+{"t":23720,"event":"agent.text_delta","data":{"id":"m2","content":" coli)\n\n"}}
+{"t":23750,"event":"agent.text_delta","data":{"id":"m2","content":"**Reference"}}
+{"t":23780,"event":"agent.text_delta","data":{"id":"m2","content":" Alignment"}}
+{"t":23810,"event":"agent.text_delta","data":{"id":"m2","content":" (REFERENCE_STATS):**\n"}}
+{"t":23840,"event":"agent.text_delta","data":{"id":"m2","content":"- Alignment"}}
+{"t":23870,"event":"agent.text_delta","data":{"id":"m2","content":" rate:"}}
+{"t":23900,"event":"agent.text_delta","data":{"id":"m2","content":" 98.7%\n"}}
+{"t":23930,"event":"agent.text_delta","data":{"id":"m2","content":"- Mean"}}
+{"t":23960,"event":"agent.text_delta","data":{"id":"m2","content":" coverage:"}}
+{"t":23990,"event":"agent.text_delta","data":{"id":"m2","content":" 42x\n"}}
+{"t":24020,"event":"agent.text_delta","data":{"id":"m2","content":"- Mismatch"}}
+{"t":24050,"event":"agent.text_delta","data":{"id":"m2","content":" rate:"}}
+{"t":24080,"event":"agent.text_delta","data":{"id":"m2","content":" 0.3%\n\n"}}
+{"t":24110,"event":"agent.text_delta","data":{"id":"m2","content":"All"}}
+{"t":24140,"event":"agent.text_delta","data":{"id":"m2","content":" metrics"}}
+{"t":24170,"event":"agent.text_delta","data":{"id":"m2","content":" look"}}
+{"t":24200,"event":"agent.text_delta","data":{"id":"m2","content":" healthy."}}
+{"t":24230,"event":"agent.text_delta","data":{"id":"m2","content":" Your"}}
+{"t":24260,"event":"agent.text_delta","data":{"id":"m2","content":" E."}}
+{"t":24290,"event":"agent.text_delta","data":{"id":"m2","content":" coli"}}
+{"t":24320,"event":"agent.text_delta","data":{"id":"m2","content":" samples"}}
+{"t":24350,"event":"agent.text_delta","data":{"id":"m2","content":" are"}}
+{"t":24380,"event":"agent.text_delta","data":{"id":"m2","content":" ready"}}
+{"t":24410,"event":"agent.text_delta","data":{"id":"m2","content":" for"}}
+{"t":24440,"event":"agent.text_delta","data":{"id":"m2","content":" downstream"}}
+{"t":24470,"event":"agent.text_delta","data":{"id":"m2","content":" analysis. 🧬"}}
+{"t":24800,"event":"agent.done","data":{"id":"m2"}}

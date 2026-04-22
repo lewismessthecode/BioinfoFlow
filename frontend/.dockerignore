@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+*.db
+out
+coverage
+tests/
+playwright-report/
+test-results/
+.eslintcache
+*.tsbuildinfo

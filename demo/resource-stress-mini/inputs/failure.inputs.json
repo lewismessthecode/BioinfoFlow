@@ -1,0 +1,5 @@
+{
+  "resource_stress_mini.outdir": "results/resource-stress-mini",
+  "resource_stress_mini.fanout": 2,
+  "resource_stress_mini.sleep_seconds": 900
+}

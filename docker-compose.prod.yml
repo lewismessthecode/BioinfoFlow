@@ -1,0 +1,60 @@
+# Production Docker Compose — uses pre-built images (no source code needed).
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Images come from either:
+#   - GHCR:    docker compose -f docker-compose.prod.yml pull
+#   - Offline: docker load < bioinfoflow-images.tar.gz
+#
+# Path Contract v3 — identity mount.
+# BIOINFOFLOW_HOME is the one path where bioinfoflow data lives. The host
+# directory is bind-mounted at the SAME path inside every container, so the
+# backend, miniwdl runner, and task containers see identical absolute paths.
+# Default is /srv/bioinfoflow (FHS-compliant). Override in .env:
+#   BIOINFOFLOW_HOME=/lustre/<user>/bpiper   # HPC
+#   BIOINFOFLOW_HOME=/mnt/efs/bpiper          # cloud
+#
+# Set IMAGE_REGISTRY and IMAGE_TAG in .env to customize images:
+#   IMAGE_REGISTRY=ghcr.io/your-username
+#   IMAGE_TAG=v1.0.0
+
+services:
+  backend:
+    image: ${IMAGE_REGISTRY:+${IMAGE_REGISTRY}/}bioinfoflow-backend:${IMAGE_TAG:-latest}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    env_file: .env
+    environment:
+      BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
+      BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
+      DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/bioinfoflow.db
+      BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/auth/better-auth.db
+      DOCKER_SOCKET: unix:///var/run/docker.sock
+    volumes:
+      - ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}:${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/system/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+
+  frontend:
+    image: ${IMAGE_REGISTRY:+${IMAGE_REGISTRY}/}bioinfoflow-frontend:${IMAGE_TAG:-latest}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    env_file: .env
+    environment:
+      BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
+      BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
+      BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/auth/better-auth.db
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+    volumes:
+      - ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}:${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

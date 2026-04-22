@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bioinfoflow Product System Flow</title>
+    <style>
+      :root {
+        --bg: #f6f1e8;
+        --panel: rgba(255, 252, 246, 0.92);
+        --panel-strong: #fffdf8;
+        --ink: #1f2721;
+        --muted: #5f675f;
+        --line: #cbbfaa;
+        --line-strong: #8e7a56;
+        --accent: #1d6b52;
+        --accent-soft: #d7ebe2;
+        --warm: #a65e2e;
+        --warm-soft: #f3e2d2;
+        --violet: #4253a3;
+        --violet-soft: #e1e6fb;
+        --danger: #8e3b2d;
+        --shadow: 0 18px 50px rgba(42, 33, 18, 0.09);
+        --radius-xl: 28px;
+        --radius-lg: 20px;
+        --radius-md: 14px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background:
+          radial-gradient(circle at top left, rgba(166, 94, 46, 0.08), transparent 26rem),
+          radial-gradient(circle at top right, rgba(29, 107, 82, 0.08), transparent 22rem),
+          linear-gradient(180deg, #fbf7f0 0%, var(--bg) 100%);
+        color: var(--ink);
+        font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(85, 74, 52, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(85, 74, 52, 0.04) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.35), transparent 92%);
+      }
+
+      .page {
+        width: min(1480px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 42px 0 80px;
+      }
+
+      .hero,
+      .panel {
+        background: var(--panel);
+        border: 1px solid rgba(142, 122, 86, 0.2);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(16px);
+      }
+
+      .hero {
+        padding: 36px 38px 30px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        right: -100px;
+        top: -70px;
+        width: 320px;
+        height: 320px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(29, 107, 82, 0.18), transparent 70%);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 14px;
+        border-radius: 999px;
+        background: rgba(29, 107, 82, 0.08);
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+        font-weight: 700;
+      }
+
+      h1 {
+        margin-top: 18px;
+        font-size: clamp(34px, 4vw, 58px);
+        line-height: 0.96;
+        max-width: 10ch;
+      }
+
+      .hero p {
+        max-width: 76ch;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.75;
+        margin: 16px 0 0;
+      }
+
+      .hero-grid,
+      .insight-grid,
+      .branch-grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .hero-grid {
+        margin-top: 28px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .hero-card,
+      .insight-card,
+      .branch-card,
+      .flow-card,
+      .rail-card {
+        background: var(--panel-strong);
+        border: 1px solid rgba(142, 122, 86, 0.16);
+        border-radius: var(--radius-lg);
+      }
+
+      .hero-card {
+        padding: 18px 18px 16px;
+      }
+
+      .hero-card strong {
+        display: block;
+        font-size: 14px;
+        margin-bottom: 10px;
+      }
+
+      .hero-card span {
+        display: block;
+        color: var(--muted);
+        line-height: 1.65;
+        font-size: 14px;
+      }
+
+      .section {
+        margin-top: 22px;
+      }
+
+      .panel {
+        padding: 28px;
+      }
+
+      .section-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 22px;
+      }
+
+      .section-head p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        line-height: 1.7;
+        max-width: 72ch;
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .pill {
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 700;
+        border: 1px solid transparent;
+      }
+
+      .pill.green {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .pill.orange {
+        background: var(--warm-soft);
+        color: var(--warm);
+      }
+
+      .pill.blue {
+        background: var(--violet-soft);
+        color: var(--violet);
+      }
+
+      .rail {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(250px, 1fr));
+        gap: 16px;
+        overflow-x: auto;
+        padding-bottom: 6px;
+      }
+
+      .rail-step {
+        min-width: 250px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: stretch;
+        gap: 12px;
+      }
+
+      .connector {
+        align-self: center;
+        width: 56px;
+        min-width: 56px;
+        height: 2px;
+        background: linear-gradient(90deg, var(--line-strong), rgba(142, 122, 86, 0));
+        position: relative;
+        margin-top: 76px;
+      }
+
+      .connector::after {
+        content: "";
+        position: absolute;
+        right: 0;
+        top: 50%;
+        width: 11px;
+        height: 11px;
+        border-top: 2px solid var(--line-strong);
+        border-right: 2px solid var(--line-strong);
+        transform: translateY(-50%) rotate(45deg);
+      }
+
+      .rail-step:first-child .connector {
+        display: none;
+      }
+
+      .rail-card {
+        padding: 18px;
+        position: relative;
+      }
+
+      .rail-card::before {
+        content: "";
+        position: absolute;
+        inset: 16px auto 16px 16px;
+        width: 4px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, var(--accent), rgba(29, 107, 82, 0.15));
+      }
+
+      .rail-card h3 {
+        padding-left: 18px;
+        font-size: 23px;
+      }
+
+      .step-no {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        background: var(--ink);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 700;
+        margin: 2px 0 12px 18px;
+      }
+
+      .rail-card ul,
+      .branch-card ul,
+      .insight-card ul {
+        margin: 12px 0 0;
+        padding-left: 18px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .rail-card li,
+      .branch-card li,
+      .insight-card li {
+        margin: 8px 0;
+      }
+
+      .tag {
+        display: inline-block;
+        margin: 12px 0 0 18px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(66, 83, 163, 0.08);
+        color: var(--violet);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+
+      .branch-grid {
+        grid-template-columns: 1.1fr 1.1fr 0.9fr;
+        margin-top: 18px;
+      }
+
+      .branch-card {
+        padding: 20px;
+      }
+
+      .branch-card.agent {
+        background: linear-gradient(180deg, rgba(66, 83, 163, 0.07), rgba(255, 255, 255, 0.9));
+      }
+
+      .branch-card.demo {
+        background: linear-gradient(180deg, rgba(166, 94, 46, 0.08), rgba(255, 255, 255, 0.9));
+      }
+
+      .branch-card.image {
+        background: linear-gradient(180deg, rgba(29, 107, 82, 0.08), rgba(255, 255, 255, 0.9));
+      }
+
+      .branch-card h3 {
+        font-size: 24px;
+      }
+
+      .branch-card p,
+      .insight-card p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .mini-flow {
+        margin-top: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .mini-node {
+        padding: 12px 14px;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(142, 122, 86, 0.16);
+        background: rgba(255, 255, 255, 0.88);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.45;
+      }
+
+      .mini-arrow {
+        color: var(--line-strong);
+        font-weight: 900;
+      }
+
+      .insight-grid {
+        grid-template-columns: 1.25fr 1fr;
+        margin-top: 18px;
+      }
+
+      .insight-card {
+        padding: 20px;
+      }
+
+      .callout {
+        border-left: 4px solid var(--warm);
+        padding-left: 14px;
+        margin-top: 16px;
+        color: var(--muted);
+        line-height: 1.75;
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+      }
+
+      .legend-dot.core {
+        background: var(--accent);
+      }
+
+      .legend-dot.optional {
+        background: var(--warm);
+      }
+
+      .legend-dot.agent {
+        background: var(--violet);
+      }
+
+      footer {
+        margin-top: 26px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      code {
+        font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+        font-size: 0.95em;
+        background: rgba(31, 39, 33, 0.06);
+        padding: 0.14em 0.38em;
+        border-radius: 6px;
+      }
+
+      @media (max-width: 1080px) {
+        .hero-grid,
+        .branch-grid,
+        .insight-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div class="eyebrow">Bioinfoflow / Customer & Product View</div>
+        <h1>从用户进入，到 agent 驱动执行，再到 scheduler 落地</h1>
+        <p>
+          这张图刻意不用工程内部视角去堆类名，而是把客户和产品真正关心的链路压成一张总览图：
+          用户怎么进入系统，workflow 怎么注册，run 怎么创建，镜像什么时候介入，agent 和平台如何协作，
+          最终又是怎么被 scheduler 接住并执行。
+        </p>
+        <div class="hero-grid">
+          <div class="hero-card">
+            <strong>当前系统的主心骨</strong>
+            <span><code>GET /workflows/{id}/form-spec</code> + <code>POST /runs</code> 是 run 体验的唯一真契约。</span>
+          </div>
+          <div class="hero-card">
+            <strong>Agent 不是另一套平台</strong>
+            <span>agent 负责理解用户、组织步骤、申请审批，但真正的 workflow/run 仍应回到平台主链路。</span>
+          </div>
+          <div class="hero-card">
+            <strong>Scheduler 是执行中枢</strong>
+            <span>它接住已编译好的 run，做排队、资源判断、调度执行、状态回写和事件广播。</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section panel">
+        <div class="section-head">
+          <div>
+            <h2>一张图看主链路</h2>
+            <p>
+              这条轨道是“标准产品流程”。用户可以从 UI、agent、demo 快速入口进入，
+              但真正开始执行前，都会尽量汇入同一个 run 编译与调度链路。
+            </p>
+          </div>
+          <div class="pill-row">
+            <span class="pill green">核心链路</span>
+            <span class="pill orange">可选入口</span>
+            <span class="pill blue">Agent 分支</span>
+          </div>
+        </div>
+
+        <div class="rail">
+          <div class="rail-step">
+            <div class="connector"></div>
+            <article class="rail-card">
+              <div class="step-no">1</div>
+              <h3>登录与工作区</h3>
+              <span class="tag">Identity / Workspace</span>
+              <ul>
+                <li>用户登录后，请求携带 Better Auth session。</li>
+                <li>后端用 <code>get_current_user</code> 解析用户与 <code>workspace_id</code>。</li>
+                <li>首次进入时更像“自动确保 membership + default workspace”，不是显式 workspace CRUD。</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="rail-step">
+            <div class="connector"></div>
+            <article class="rail-card">
+              <div class="step-no">2</div>
+              <h3>项目与入口</h3>
+              <span class="tag">Project Scope</span>
+              <ul>
+                <li>用户进入某个 project，或通过 <code>/projects/default</code> 获得默认项目。</li>
+                <li>从这里开始，文件、会话、run、terminal 都被 project scope 接住。</li>
+                <li>这是产品层真正的“工作上下文”。</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="rail-step">
+            <div class="connector"></div>
+            <article class="rail-card">
+              <div class="step-no">3</div>
+              <h3>Workflow 注册</h3>
+              <span class="tag">Workflow Catalog</span>
+              <ul>
+                <li>用 <code>/workflows/validate</code> 做源码预校验。</li>
+                <li>用 <code>/workflows</code> 落库，抽取 schema / DAG / form spec。</li>
+                <li>再用 <code>/projects/{project_id}/workflows/{workflow_id}:bind</code> 绑定到项目。</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="rail-step">
+            <div class="connector"></div>
+            <article class="rail-card">
+              <div class="step-no">4</div>
+              <h3>Run 准备与提交</h3>
+              <span class="tag">Canonical Envelope</span>
+              <ul>
+                <li>前端或 agent 先取 <code>/workflows/{id}/form-spec</code>。</li>
+                <li>用户填写 <code>values</code>，可带 <code>options</code>。</li>
+                <li>统一走 <code>POST /runs</code>，而不是多套参数格式。</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="rail-step">
+            <div class="connector"></div>
+            <article class="rail-card">
+              <div class="step-no">5</div>
+              <h3>编译、调度、执行、回传</h3>
+              <span class="tag">RunCompiler -> Scheduler</span>
+              <ul>
+                <li><code>RunCompiler</code> 做校验、路径解析、附件物化、launch snapshot。</li>
+                <li>run 入队后由 scheduler 看资源、排队并调用 execution backend / engine adapter。</li>
+                <li>日志、状态、DAG、输出通过 API 与 SSE 回流到前端。</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+
+        <div class="branch-grid">
+          <article class="branch-card agent">
+            <h3>Agent 分支</h3>
+            <p>
+              agent 是“理解用户并组织平台动作”的一层，不该再独立维护另一套 workflow/run 语义。
+            </p>
+            <div class="mini-flow">
+              <div class="mini-node">用户消息<br /><code>/agent/message</code></div>
+              <div class="mini-arrow">-></div>
+              <div class="mini-node">Conversation<br />execution policy</div>
+              <div class="mini-arrow">-></div>
+              <div class="mini-node">Runtime / Hermes</div>
+              <div class="mini-arrow">-></div>
+              <div class="mini-node">workflow_schema / preview_run_profile</div>
+              <div class="mini-arrow">-></div>
+              <div class="mini-node">submit_run<br />并回到 <code>/runs</code></div>
+            </div>
+            <div class="callout">
+              理想形态：agent 负责“决策、解释、审批、编排”，平台负责“校验、提交、执行、追踪”。
+            </div>
+          </article>
+
+          <article class="branch-card demo">
+            <h3>Bundled Test Assets</h3>
+            <p>
+              现在保留的 bundled workflow 目录只作为测试与本地注册素材，不再属于产品侧的 demo / starter 执行入口。
+            </p>
+            <div class="mini-flow">
+              <div class="mini-node">目录保留在 <code>demo/</code></div>
+              <div class="mini-arrow">+</div>
+              <div class="mini-node">用于测试 / 本地注册</div>
+              <div class="mini-arrow">-></div>
+              <div class="mini-node">不再经过产品 API</div>
+              <div class="mini-arrow">-></div>
+              <div class="mini-node">需要时手动汇入标准 run 提交链</div>
+            </div>
+          </article>
+
+          <article class="branch-card image">
+            <h3>镜像分支</h3>
+            <p>
+              镜像管理是执行环境准备链路，不等于 run 创建本身，但会影响真正执行时的可用环境。
+            </p>
+            <div class="mini-flow">
+              <div class="mini-node"><code>/images/pull</code> / <code>/images/load</code></div>
+              <div class="mini-arrow">-></div>
+              <div class="mini-node">ImageService</div>
+              <div class="mini-arrow">-></div>
+              <div class="mini-node"><code>image.progress</code></div>
+              <div class="mini-arrow">-></div>
+              <div class="mini-node">Execution Backend 使用镜像</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section panel">
+        <div class="section-head">
+          <div>
+            <h2>给客户和产品的解释方式</h2>
+            <p>如果不想讲太多内部名词，可以直接按下面这三个层次去解释。</p>
+          </div>
+        </div>
+
+        <div class="insight-grid">
+          <article class="insight-card">
+            <h3>客户看到的是一个连续体验</h3>
+            <ul>
+              <li>先进入自己的 workspace / project。</li>
+              <li>选一个 workflow，系统给出表单。</li>
+              <li>提交后系统自己去准备输入、执行环境、调度资源与追踪状态。</li>
+              <li>如果用 agent，对客户来说只是“多了一个会帮我组织步骤的助手”。</li>
+            </ul>
+          </article>
+
+          <article class="insight-card">
+            <h3>产品真正要守住的边界</h3>
+            <ul>
+              <li>一套 run 契约，不要前端、agent、脚本入口各自发明 payload。</li>
+              <li>一套 project/workspace 授权，不要边缘入口比主链路更宽松。</li>
+              <li>agent 是体验增强层，不是平台核心的平行实现。</li>
+              <li>scheduler 是执行中台，负责把已经合法的 run 安全落地。</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="insight-grid">
+          <article class="insight-card">
+            <h3>关于 “新建 workspace” 的现实口径</h3>
+            <p>
+              按当前代码，用户登录后并没有一条明确暴露给前端的 “workspace create API”。
+              更准确的说法是：系统在登录后自动确保用户属于某个 workspace，并确保默认 workspace 存在。
+              如果你要对外讲产品流程，建议写成 “进入或加入 workspace”，不要写成 “前端显式新建 workspace”。
+            </p>
+          </article>
+
+          <article class="insight-card">
+            <h3>关于 Bundled Workflows 的产品口径</h3>
+            <p>
+              现在这些 bundled workflow 目录应该被表述成“测试 / 本地验证素材”，而不是对外产品功能。
+              对客户和产品统一说法时，建议只讲标准 workflow 注册与 run 提交流程，不再讲 demo service。
+            </p>
+          </article>
+        </div>
+
+        <div class="legend">
+          <div class="legend-item"><span class="legend-dot core"></span>核心平台链路</div>
+          <div class="legend-item"><span class="legend-dot agent"></span>Agent 编排分支</div>
+          <div class="legend-item"><span class="legend-dot optional"></span>测试资产 / 镜像等辅助链路</div>
+        </div>
+      </section>
+
+      <footer>
+        建议用途：给客户演示整体系统、给产品解释为什么要统一 run contract、给研发对齐 agent 与平台的职责边界。
+        如果后面你愿意，我可以基于这张图再做一版更“架构师视角”的 HTML，把具体 API 名、服务名、SSE/WS 事件也挂得更细。
+      </footer>
+    </main>
+  </body>
+</html>

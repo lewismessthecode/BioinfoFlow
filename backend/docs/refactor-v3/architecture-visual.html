@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refactor V3 — 调度引擎架构可视化</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232735;
+    --border: #2e3344;
+    --text: #e1e4ed;
+    --text-dim: #8b90a0;
+    --accent: #6c8cff;
+    --accent-dim: #3d5299;
+    --green: #4ecb71;
+    --green-dim: #1a4a2a;
+    --orange: #f0a050;
+    --orange-dim: #4a3520;
+    --red: #f06060;
+    --red-dim: #4a2020;
+    --purple: #b06cff;
+    --purple-dim: #3a2060;
+    --cyan: #50d0e0;
+    --cyan-dim: #1a3a40;
+    --yellow: #e0d060;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  .hero {
+    text-align: center;
+    padding: 60px 24px 40px;
+    background: linear-gradient(180deg, #161926 0%, var(--bg) 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .hero h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .hero p {
+    color: var(--text-dim);
+    margin-top: 10px;
+    font-size: 1.05rem;
+    max-width: 640px;
+    margin-inline: auto;
+  }
+
+  /* ── Layout ── */
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Section titles ── */
+  .section-title {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin: 56px 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .section-desc {
+    color: var(--text-dim);
+    margin-bottom: 24px;
+    font-size: 0.95rem;
+    max-width: 720px;
+  }
+
+  /* ── Architecture layers ── */
+  .arch-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 32px 0;
+  }
+  .arch-layer {
+    display: flex;
+    align-items: center;
+    padding: 18px 24px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .arch-layer:hover { transform: translateX(4px); }
+  .arch-layer .layer-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+    margin-right: 16px;
+  }
+  .arch-layer .layer-name { font-weight: 600; font-size: 1rem; }
+  .arch-layer .layer-desc { color: var(--text-dim); font-size: 0.85rem; margin-top: 2px; }
+  .arch-layer .layer-files {
+    margin-left: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-align: right;
+    flex-shrink: 0;
+    padding-left: 16px;
+  }
+  .arch-arrow {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 2px 0;
+    opacity: 0.5;
+  }
+
+  .l-api { background: linear-gradient(90deg, var(--accent-dim) 0%, transparent 60%); border-left: 3px solid var(--accent); }
+  .l-api .layer-icon { background: var(--accent-dim); color: var(--accent); }
+  .l-sched { background: linear-gradient(90deg, var(--purple-dim) 0%, transparent 60%); border-left: 3px solid var(--purple); }
+  .l-sched .layer-icon { background: var(--purple-dim); color: var(--purple); }
+  .l-engine { background: linear-gradient(90deg, var(--green-dim) 0%, transparent 60%); border-left: 3px solid var(--green); }
+  .l-engine .layer-icon { background: var(--green-dim); color: var(--green); }
+  .l-adapt { background: linear-gradient(90deg, var(--cyan-dim) 0%, transparent 60%); border-left: 3px solid var(--cyan); }
+  .l-adapt .layer-icon { background: var(--cyan-dim); color: var(--cyan); }
+  .l-event { background: linear-gradient(90deg, var(--orange-dim) 0%, transparent 60%); border-left: 3px solid var(--orange); }
+  .l-event .layer-icon { background: var(--orange-dim); color: var(--orange); }
+  .l-hooks { background: linear-gradient(90deg, var(--red-dim) 0%, transparent 60%); border-left: 3px solid var(--red); }
+  .l-hooks .layer-icon { background: var(--red-dim); color: var(--red); }
+
+  /* ── Flow diagram ── */
+  .flow-container {
+    position: relative;
+    margin: 32px 0;
+    padding: 32px 0;
+  }
+  .flow-track {
+    position: absolute;
+    left: 39px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+  .flow-step {
+    position: relative;
+    padding-left: 80px;
+    margin-bottom: 20px;
+  }
+  .flow-dot {
+    position: absolute;
+    left: 30px;
+    top: 10px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 2px solid;
+    background: var(--bg);
+    z-index: 1;
+  }
+  .flow-step .step-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px 20px;
+    transition: border-color 0.2s;
+  }
+  .flow-step:hover .step-card { border-color: var(--accent); }
+  .step-label {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .step-label .tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tag-api { background: var(--accent-dim); color: var(--accent); }
+  .tag-sched { background: var(--purple-dim); color: var(--purple); }
+  .tag-engine { background: var(--green-dim); color: var(--green); }
+  .tag-hooks { background: var(--red-dim); color: var(--red); }
+  .tag-retry { background: var(--orange-dim); color: var(--orange); }
+  .step-body { color: var(--text-dim); font-size: 0.88rem; }
+  .step-body code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.8rem;
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--text);
+  }
+
+  .dot-api { border-color: var(--accent); }
+  .dot-sched { border-color: var(--purple); }
+  .dot-engine { border-color: var(--green); }
+  .dot-hooks { border-color: var(--red); }
+  .dot-retry { border-color: var(--orange); }
+
+  /* ── Component cards grid ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .comp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.15s;
+  }
+  .comp-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .comp-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .comp-card h3 .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .comp-card .card-path {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .comp-card p { font-size: 0.88rem; color: var(--text-dim); line-height: 1.5; }
+  .comp-card ul {
+    list-style: none;
+    margin-top: 10px;
+    font-size: 0.85rem;
+  }
+  .comp-card li {
+    padding: 3px 0;
+    padding-left: 16px;
+    position: relative;
+    color: var(--text-dim);
+  }
+  .comp-card li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+  }
+
+  /* ── State machine ── */
+  .state-machine {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 24px 0;
+    justify-content: center;
+  }
+  .state-node {
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .state-arrow {
+    color: var(--text-dim);
+    font-size: 1.2rem;
+  }
+  .s-queued { background: var(--accent-dim); color: var(--accent); }
+  .s-dispatched { background: var(--purple-dim); color: var(--purple); }
+  .s-running { background: var(--cyan-dim); color: var(--cyan); }
+  .s-completed { background: var(--green-dim); color: var(--green); }
+  .s-failed { background: var(--red-dim); color: var(--red); }
+  .s-cancelled { background: var(--surface2); color: var(--text-dim); }
+
+  /* ── Phase timeline ── */
+  .phase-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 24px 0;
+  }
+  .phase-item {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    cursor: pointer;
+  }
+  .phase-marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 48px;
+    flex-shrink: 0;
+  }
+  .phase-num {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+  .phase-line {
+    width: 2px;
+    flex: 1;
+    margin-top: 4px;
+    background: var(--border);
+  }
+  .phase-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px 20px;
+    flex: 1;
+    transition: border-color 0.2s;
+  }
+  .phase-item:hover .phase-content { border-color: var(--accent); }
+  .phase-content h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 4px; }
+  .phase-content p { font-size: 0.85rem; color: var(--text-dim); }
+  .phase-content .deliverables {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .deliverables .chip {
+    font-size: 0.72rem;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: var(--surface2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+
+  .p0 .phase-num { background: var(--surface2); color: var(--text-dim); }
+  .p1 .phase-num { background: var(--green-dim); color: var(--green); }
+  .p2 .phase-num { background: var(--purple-dim); color: var(--purple); }
+  .p3 .phase-num { background: var(--orange-dim); color: var(--orange); }
+  .p4 .phase-num { background: var(--cyan-dim); color: var(--cyan); }
+  .p5 .phase-num { background: var(--accent-dim); color: var(--accent); }
+  .p6 .phase-num { background: var(--red-dim); color: var(--red); }
+
+  /* ── Dependency graph ── */
+  .dep-graph {
+    margin: 24px 0;
+    padding: 32px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-x: auto;
+  }
+  .dep-graph svg { display: block; margin: 0 auto; }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin: 24px 0;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    padding: 40px 24px;
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    border-top: 1px solid var(--border);
+    margin-top: 60px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 1.6rem; }
+    .arch-layer .layer-files { display: none; }
+    .card-grid { grid-template-columns: 1fr; }
+    .state-machine { gap: 6px; }
+  }
+
+  /* ── Animations ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in {
+    animation: fadeUp 0.4s ease-out both;
+  }
+
+  /* ── Tooltips ── */
+  .tooltip-trigger { position: relative; }
+  .tooltip-trigger .tip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    z-index: 10;
+    color: var(--text);
+  }
+  .tooltip-trigger:hover .tip { display: block; }
+
+  /* ── Retry loop visual ── */
+  .retry-box {
+    margin: 16px 0;
+    padding: 16px 20px;
+    border: 1px dashed var(--orange);
+    border-radius: var(--radius-sm);
+    background: var(--orange-dim);
+  }
+  .retry-box p { font-size: 0.85rem; color: var(--text-dim); }
+  .retry-box code {
+    font-family: 'SF Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--orange);
+  }
+
+  /* ── Resource block ── */
+  .res-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin: 16px 0;
+  }
+  .res-item {
+    text-align: center;
+    padding: 14px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .res-item .res-icon { font-size: 1.4rem; margin-bottom: 4px; }
+  .res-item .res-label { font-size: 0.75rem; color: var(--text-dim); }
+  .res-item .res-val { font-size: 0.9rem; font-weight: 600; color: var(--text); }
+
+  @media (max-width: 640px) {
+    .res-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ====== Hero ====== -->
+<div class="hero">
+  <h1>Refactor V3 — 调度引擎</h1>
+  <p>从单体 Run 执行重构为分层、可扩展的持久化调度引擎<br>
+     7 个阶段渐进式构建，每层职责单一、可独立回滚</p>
+</div>
+
+<div class="container">
+
+<!-- ====== 1. Architecture Overview ====== -->
+<h2 class="section-title"><span class="num">1</span> 整体架构分层</h2>
+<p class="section-desc">
+  请求从 API 入口一路向下穿过 6 个层级，最终触达工作流引擎。每层通过接口 (Protocol / ABC) 解耦，可独立替换。
+</p>
+
+<div class="arch-stack">
+  <div class="arch-layer l-api">
+    <div class="layer-icon">📡</div>
+    <div>
+      <div class="layer-name">API Layer — RunService</div>
+      <div class="layer-desc">验证请求、构建配置、分发到调度器</div>
+    </div>
+    <div class="layer-files">api/v1/runs.py<br>services/run_service.py</div>
+  </div>
+  <div class="arch-arrow">▼</div>
+
+  <div class="arch-layer l-sched">
+    <div class="layer-icon">📋</div>
+    <div>
+      <div class="layer-name">Scheduler Layer — RunScheduler + TaskQueue</div>
+      <div class="layer-desc">持久化优先级队列、Worker 池、并发控制、恢复 &amp; 超时</div>
+    </div>
+    <div class="layer-files">scheduler/scheduler.py<br>scheduler/queue.py</div>
+  </div>
+  <div class="arch-arrow">▼</div>
+
+  <div class="arch-layer l-engine">
+    <div class="layer-icon">⚙️</div>
+    <div>
+      <div class="layer-name">Execution Backend — LocalBackend</div>
+      <div class="layer-desc">进程生命周期管理，流式读取 stdout/stderr</div>
+    </div>
+    <div class="layer-files">engine/backend.py<br>engine/local.py</div>
+  </div>
+  <div class="arch-arrow">▼</div>
+
+  <div class="arch-layer l-adapt">
+    <div class="layer-icon">🔌</div>
+    <div>
+      <div class="layer-name">Engine Adapter — Nextflow / WDL</div>
+      <div class="layer-desc">引擎特定逻辑：命令构建、事件解析、取消、Schema 提取</div>
+    </div>
+    <div class="layer-files">engine/adapters/nextflow.py<br>engine/adapters/wdl.py</div>
+  </div>
+  <div class="arch-arrow">▼</div>
+
+  <div class="arch-layer l-event">
+    <div class="layer-icon">📨</div>
+    <div>
+      <div class="layer-name">Event Model — EngineEvent</div>
+      <div class="layer-desc">统一事件流：STARTED → TASK_UPDATE → LOG → COMPLETED / ERROR</div>
+    </div>
+    <div class="layer-files">engine/backend.py<br>(EngineEvent dataclass)</div>
+  </div>
+  <div class="arch-arrow">▼</div>
+
+  <div class="arch-layer l-hooks">
+    <div class="layer-icon">🪝</div>
+    <div>
+      <div class="layer-name">Completion Hooks</div>
+      <div class="layer-desc">清理、审计日志、通知 Webhook、批量状态更新</div>
+    </div>
+    <div class="layer-files">scheduler/hooks.py<br>scheduler/cleanup.py</div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> API 入口</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div> 调度层</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> 执行后端</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--cyan)"></div> 引擎适配器</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div> 事件模型</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> 完成钩子</div>
+</div>
+
+<!-- ====== 2. Task State Machine ====== -->
+<h2 class="section-title"><span class="num">2</span> 任务状态机</h2>
+<p class="section-desc">
+  每个 Run 创建一个 <code>ScheduledTask</code>，经历以下状态流转。队列基于 SQLite 持久化，重启后可自动恢复。
+</p>
+
+<div class="state-machine">
+  <div class="state-node s-queued tooltip-trigger">
+    QUEUED
+    <span class="tip">入队等待，按优先级 + 创建时间排序</span>
+  </div>
+  <span class="state-arrow">→</span>
+  <div class="state-node s-dispatched tooltip-trigger">
+    DISPATCHED
+    <span class="tip">Worker 认领，绑定 worker_id</span>
+  </div>
+  <span class="state-arrow">→</span>
+  <div class="state-node s-running tooltip-trigger">
+    RUNNING
+    <span class="tip">子进程已启动，正在流式输出事件</span>
+  </div>
+  <span class="state-arrow">→</span>
+  <div class="state-node s-completed tooltip-trigger">
+    COMPLETED
+    <span class="tip">流程正常完成，触发 Hooks</span>
+  </div>
+</div>
+
+<div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-top:-8px; margin-bottom:24px;">
+  <div style="display:flex; align-items:center; gap:6px; color:var(--text-dim); font-size:0.82rem;">
+    <span style="color:var(--orange);">↻</span> 失败时：RetryEvaluator 判断 → 重新入队 (QUEUED)
+  </div>
+  <div style="display:flex; align-items:center; gap:6px; color:var(--text-dim); font-size:0.82rem;">
+    <span style="color:var(--red);">✕</span> 不可重试 → FAILED
+  </div>
+  <div style="display:flex; align-items:center; gap:6px; color:var(--text-dim); font-size:0.82rem;">
+    <span style="color:var(--text-dim);">⊘</span> 用户取消 → CANCELLED
+  </div>
+</div>
+
+<!-- ====== 3. Execution Flow ====== -->
+<h2 class="section-title"><span class="num">3</span> 请求完整流转</h2>
+<p class="section-desc">
+  一次 Run 从 API 提交到最终完成的端到端流程。
+</p>
+
+<div class="flow-container">
+  <div class="flow-track"></div>
+
+  <div class="flow-step">
+    <div class="flow-dot dot-api" style="background:var(--accent);"></div>
+    <div class="step-card">
+      <div class="step-label"><span class="tag tag-api">API</span> POST /runs</div>
+      <div class="step-body">验证参数 → 创建 <code>Run</code> (status=QUEUED) → 构建 <code>RunConfigHelper.build_v1()</code> → 发送 SSE 事件</div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-dot dot-api"></div>
+    <div class="step-card">
+      <div class="step-label"><span class="tag tag-api">Dispatch</span> RunDispatcher.dispatch()</div>
+      <div class="step-body">通过 <code>SchedulerDispatcher</code> 将 run_id 传递给调度器（替换旧的 in-memory TaskRunner）</div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-dot dot-sched" style="background:var(--purple);"></div>
+    <div class="step-card">
+      <div class="step-label"><span class="tag tag-sched">Scheduler</span> 入队 &amp; Worker 认领</div>
+      <div class="step-body">
+        <code>TaskQueue.enqueue()</code> 创建 ScheduledTask →
+        Worker 循环 <code>claim_next()</code> 按优先级 (URGENT &gt; NORMAL &gt; LOW) + FIFO 取出 →
+        并发受 <code>max_concurrency</code> 信号量控制
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-dot dot-sched"></div>
+    <div class="step-card">
+      <div class="step-label"><span class="tag tag-sched">Resource</span> 资源检查 (可选)</div>
+      <div class="step-body">
+        <code>ResourceMonitor</code> 采样 CPU/内存/磁盘/GPU →
+        <code>ResourceEstimator</code> 根据配置或管线名称预估需求 →
+        <code>ResourceChecker</code> 确认可用 ≥ 所需 + 安全余量 →
+        不足则重新入队延迟 30s
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-dot dot-engine" style="background:var(--green);"></div>
+    <div class="step-card">
+      <div class="step-label"><span class="tag tag-engine">Engine</span> 执行工作流</div>
+      <div class="step-body">
+        <code>adapter.pre_submit()</code> 准备环境 (Docker 检测、profile 注入等) →
+        <code>adapter.build_command()</code> 构建 CLI 命令 →
+        <code>LocalBackend.submit()</code> 通过 <code>asyncio.create_subprocess_exec</code> 启动子进程 →
+        流式读取 stdout/stderr，逐行调用 <code>adapter.parse_event()</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-dot dot-engine"></div>
+    <div class="step-card">
+      <div class="step-label"><span class="tag tag-engine">Events</span> EngineEvent 事件流</div>
+      <div class="step-body">
+        每个事件实时处理：
+        <code>TASK_UPDATE</code> → DagMatcher 模糊匹配更新 DAG 节点 |
+        <code>LOG</code> → 追加日志 + SSE |
+        <code>ERROR</code> → 记录错误信息 |
+        <code>COMPLETED</code> → 最终化 DAG 状态
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-dot dot-retry"></div>
+    <div class="step-card" style="border-color: var(--orange);">
+      <div class="step-label"><span class="tag tag-retry">Retry</span> 失败处理</div>
+      <div class="step-body">
+        <code>RetryEvaluator.should_retry()</code> 检查：尝试次数 &lt; 上限？错误匹配模式 (connection/oom/137/killed)？→
+        是则计算指数退避延迟 <code>delay × multiplier^(attempt-1)</code> → 重新入队
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-dot dot-hooks" style="background:var(--red);"></div>
+    <div class="step-card">
+      <div class="step-label"><span class="tag tag-hooks">Hooks</span> 完成后处理</div>
+      <div class="step-body">
+        <code>RunCompletionHooks.on_run_terminal()</code> →
+        ① 工作目录清理 (CleanupPolicy) →
+        ② 审计日志 (AuditService) →
+        ③ Webhook 通知 (NotificationService) →
+        ④ 批量状态更新 (BatchService)
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== 4. Key Components ====== -->
+<h2 class="section-title"><span class="num">4</span> 核心组件</h2>
+<p class="section-desc">各组件职责与关键方法一览。</p>
+
+<div class="card-grid">
+  <div class="comp-card">
+    <h3><div class="dot" style="background:var(--purple)"></div>TaskQueue</h3>
+    <div class="card-path">scheduler/queue.py</div>
+    <p>DB-backed 优先级队列，SQLite 持久化。使用 asyncio.Lock 序列化并发操作。</p>
+    <ul>
+      <li><code>enqueue()</code> 创建任务</li>
+      <li><code>claim_next(worker_id)</code> 原子认领</li>
+      <li><code>re_enqueue()</code> 重试重新入队</li>
+      <li><code>get_stale()</code> 发现僵尸任务</li>
+    </ul>
+  </div>
+
+  <div class="comp-card">
+    <h3><div class="dot" style="background:var(--purple)"></div>RunScheduler</h3>
+    <div class="card-path">scheduler/scheduler.py</div>
+    <p>调度器核心，管理 Worker 池、资源检查、超时监控。启动时自动恢复 stale 任务。</p>
+    <ul>
+      <li><code>start()</code> 启动 Workers + 监控</li>
+      <li><code>enqueue()</code> 提交新任务</li>
+      <li><code>cancel()</code> 取消排队/运行中任务</li>
+      <li><code>recover()</code> 重启后恢复</li>
+    </ul>
+  </div>
+
+  <div class="comp-card">
+    <h3><div class="dot" style="background:var(--green)"></div>LocalBackend</h3>
+    <div class="card-path">engine/local.py</div>
+    <p>本地子进程执行器。通过 asyncio 异步 spawn 进程并流式读取输出。</p>
+    <ul>
+      <li><code>submit()</code> 启动进程 → yield 事件流</li>
+      <li><code>cancel()</code> SIGTERM → SIGKILL</li>
+      <li>双通道 drain (stdout + stderr)</li>
+    </ul>
+  </div>
+
+  <div class="comp-card">
+    <h3><div class="dot" style="background:var(--cyan)"></div>EngineAdapter</h3>
+    <div class="card-path">engine/adapter.py</div>
+    <p>引擎抽象接口 (ABC)。Nextflow 和 WDL 各自实现，通过 EngineRegistry 自动注册。</p>
+    <ul>
+      <li><code>build_command()</code> 构建 CLI 参数</li>
+      <li><code>parse_event(line)</code> 解析输出行</li>
+      <li><code>pre_submit()</code> 预处理 (Docker 等)</li>
+      <li><code>extract_schema()</code> 提取 DAG Schema</li>
+    </ul>
+  </div>
+
+  <div class="comp-card">
+    <h3><div class="dot" style="background:var(--orange)"></div>RetryEvaluator</h3>
+    <div class="card-path">scheduler/retry.py</div>
+    <p>指数退避重试策略。预设生信场景匹配模式 (connection, oom, 137, killed)。</p>
+    <ul>
+      <li><code>should_retry()</code> 判断是否重试</li>
+      <li><code>next_delay()</code> 计算退避延迟</li>
+      <li>默认策略：2 次重试，60s 起始</li>
+    </ul>
+  </div>
+
+  <div class="comp-card">
+    <h3><div class="dot" style="background:var(--accent)"></div>ResourceMonitor</h3>
+    <div class="card-path">scheduler/monitor.py</div>
+    <p>系统资源采样器。使用 psutil 定期采集，检测 GPU 通过 nvidia-smi。</p>
+    <ul>
+      <li>采样：CPU / 内存 / 磁盘 / GPU</li>
+      <li>ResourceEstimator：按管线名预估</li>
+      <li>ResourceChecker：可用 ≥ 需求 + 余量</li>
+    </ul>
+  </div>
+
+  <div class="comp-card">
+    <h3><div class="dot" style="background:var(--cyan)"></div>DagMatcher</h3>
+    <div class="card-path">utils/dag_matcher.py</div>
+    <p>模糊匹配运行时任务名到 Schema DAG 节点。4 级策略：精确 → 标签 → 后缀 → 子串。</p>
+    <ul>
+      <li>Schema DAG：注册时静态解析</li>
+      <li>Runtime DAG：执行时动态构建</li>
+      <li>无 Schema 时自动创建节点</li>
+    </ul>
+  </div>
+
+  <div class="comp-card">
+    <h3><div class="dot" style="background:var(--red)"></div>BatchService</h3>
+    <div class="card-path">services/batch_service.py</div>
+    <p>批量提交管理。支持 2-500 个 Run 同时提交，跟踪整体完成状态。</p>
+    <ul>
+      <li><code>create_batch()</code> 批量创建 Runs</li>
+      <li><code>update_batch_status()</code> 聚合状态</li>
+      <li>状态：PARTIAL (部分成功/失败)</li>
+      <li>终态时触发 on_batch_complete</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ====== 5. Resource Templates ====== -->
+<h2 class="section-title"><span class="num">5</span> 资源模板 &amp; 管线映射</h2>
+<p class="section-desc">
+  ResourceEstimator 按管线名称自动匹配预设模板，未知管线默认 medium。
+</p>
+
+<div class="res-grid">
+  <div class="res-item">
+    <div class="res-icon">🟢</div>
+    <div class="res-val">Small</div>
+    <div class="res-label">2 CPU · 4 GB · 10 GB</div>
+    <div class="res-label" style="margin-top:4px; color:var(--green)">viralrecon, fetchngs</div>
+  </div>
+  <div class="res-item">
+    <div class="res-icon">🟡</div>
+    <div class="res-val">Medium</div>
+    <div class="res-label">4 CPU · 8 GB · 50 GB</div>
+    <div class="res-label" style="margin-top:4px; color:var(--yellow)">ampliseq, taxprofiler</div>
+  </div>
+  <div class="res-item">
+    <div class="res-icon">🟠</div>
+    <div class="res-val">Large</div>
+    <div class="res-label">8 CPU · 16 GB · 100 GB</div>
+    <div class="res-label" style="margin-top:4px; color:var(--orange)">rnaseq, mag</div>
+  </div>
+  <div class="res-item">
+    <div class="res-icon">🔴</div>
+    <div class="res-val">XLarge</div>
+    <div class="res-label">16 CPU · 32 GB · 200 GB</div>
+    <div class="res-label" style="margin-top:4px; color:var(--red)">sarek</div>
+  </div>
+</div>
+
+<!-- ====== 6. Phase Timeline ====== -->
+<h2 class="section-title"><span class="num">6</span> 阶段演进</h2>
+<p class="section-desc">
+  7 个阶段渐进构建，每阶段有 Feature Flag 可独立回滚。前 3 个阶段是核心基础，后 4 个独立扩展。
+</p>
+
+<div class="phase-timeline">
+  <div class="phase-item p0">
+    <div class="phase-marker">
+      <div class="phase-num">0</div>
+      <div class="phase-line"></div>
+    </div>
+    <div class="phase-content">
+      <h3>Baseline Seams — 安全网</h3>
+      <p>不改行为，只建接口。15+ 特征测试固定现有行为，引入 RunDispatcher 协议和 RunConfigHelper。</p>
+      <div class="deliverables">
+        <span class="chip">RunDispatcher</span>
+        <span class="chip">RunConfigHelper</span>
+        <span class="chip">特征测试 ×15</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-item p1">
+    <div class="phase-marker">
+      <div class="phase-num">1</div>
+      <div class="phase-line"></div>
+    </div>
+    <div class="phase-content">
+      <h3>Engine Abstraction — 插件化引擎</h3>
+      <p>消除 if/elif 引擎分支。统一事件模型 EngineEvent，抽象 EngineAdapter + ExecutionBackend。</p>
+      <div class="deliverables">
+        <span class="chip">EngineEvent</span>
+        <span class="chip">EngineAdapter</span>
+        <span class="chip">LocalBackend</span>
+        <span class="chip">EngineRegistry</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-item p2">
+    <div class="phase-marker">
+      <div class="phase-num">2</div>
+      <div class="phase-line"></div>
+    </div>
+    <div class="phase-content">
+      <h3>Persistent Scheduler — 持久化调度</h3>
+      <p>从 in-memory FIFO 迁移到 DB-backed 优先级队列。Worker 池 + 并发控制 + 重启恢复。</p>
+      <div class="deliverables">
+        <span class="chip">ScheduledTask 模型</span>
+        <span class="chip">TaskQueue</span>
+        <span class="chip">RunScheduler</span>
+        <span class="chip">Alembic 迁移</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-item p3">
+    <div class="phase-marker">
+      <div class="phase-num">3</div>
+      <div class="phase-line"></div>
+    </div>
+    <div class="phase-content">
+      <h3>Retry / Timeout / Ops — 运维基线</h3>
+      <p>自动重试 (指数退避)、超时监控 (默认 24h)、WDL 尽力恢复、工作目录清理、审计日志。</p>
+      <div class="deliverables">
+        <span class="chip">RetryEvaluator</span>
+        <span class="chip">TimeoutWatcher</span>
+        <span class="chip">WorkDirCleaner</span>
+        <span class="chip">AuditService</span>
+        <span class="chip">CompletionHooks</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-item p4">
+    <div class="phase-marker">
+      <div class="phase-num">4</div>
+      <div class="phase-line"></div>
+    </div>
+    <div class="phase-content">
+      <h3>DAG Schema — 可视化增强</h3>
+      <p>双层 DAG (Schema 注册时 + Runtime 执行时)，DagMatcher 4 级模糊匹配，未知节点自动创建。</p>
+      <div class="deliverables">
+        <span class="chip">SchemaExtractor</span>
+        <span class="chip">DagMatcher</span>
+        <span class="chip">Runtime DAG Builder</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-item p5">
+    <div class="phase-marker">
+      <div class="phase-num">5</div>
+      <div class="phase-line"></div>
+    </div>
+    <div class="phase-content">
+      <h3>Resource Awareness — 资源感知</h3>
+      <p>防止明显超额预订。psutil 采样 + 管线模板预估 + 安全余量检查。不足时延迟重排，不拒绝。</p>
+      <div class="deliverables">
+        <span class="chip">ResourceMonitor</span>
+        <span class="chip">ResourceEstimator</span>
+        <span class="chip">ResourceChecker</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-item p6">
+    <div class="phase-marker">
+      <div class="phase-num">6</div>
+      <div class="phase-line" style="background:transparent;"></div>
+    </div>
+    <div class="phase-content">
+      <h3>Batch &amp; Notifications — 批量 &amp; 通知</h3>
+      <p>多 Run 批量提交 (2-500)，Webhook 通知 (best-effort)，批量状态聚合 (PARTIAL 部分完成)。</p>
+      <div class="deliverables">
+        <span class="chip">BatchService</span>
+        <span class="chip">NotificationService</span>
+        <span class="chip">Batch / BatchRun 模型</span>
+        <span class="chip">Webhook API</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== 7. Dependency Graph ====== -->
+<h2 class="section-title"><span class="num">7</span> 阶段依赖关系</h2>
+<p class="section-desc">Phase 0 → 1 → 2 是必经之路（核心骨架），3/4/5/6 可并行推进。</p>
+
+<div class="dep-graph">
+  <svg viewBox="0 0 700 260" width="700" height="260" xmlns="http://www.w3.org/2000/svg">
+    <!-- Edges -->
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b90a0"/>
+      </marker>
+    </defs>
+    <!-- P0 → P1 -->
+    <line x1="120" y1="40" x2="218" y2="40" stroke="#8b90a0" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <!-- P1 → P2 -->
+    <line x1="340" y1="40" x2="438" y2="40" stroke="#8b90a0" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <!-- P2 → P3 -->
+    <line x1="530" y1="56" x2="530" y2="108" stroke="#8b90a0" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <!-- P2 → P5 -->
+    <line x1="500" y1="56" x2="400" y2="168" stroke="#8b90a0" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <!-- P2 → P6 -->
+    <line x1="520" y1="56" x2="580" y2="168" stroke="#8b90a0" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <!-- P1 → P4 -->
+    <line x1="280" y1="56" x2="220" y2="168" stroke="#8b90a0" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <!-- Nodes -->
+    <!-- P0 -->
+    <rect x="20" y="18" width="100" height="44" rx="10" fill="#232735" stroke="#8b90a0" stroke-width="1"/>
+    <text x="70" y="36" text-anchor="middle" fill="#8b90a0" font-size="11" font-weight="600">Phase 0</text>
+    <text x="70" y="52" text-anchor="middle" fill="#8b90a0" font-size="9">Seams</text>
+
+    <!-- P1 -->
+    <rect x="220" y="18" width="120" height="44" rx="10" fill="#1a4a2a" stroke="#4ecb71" stroke-width="1.5"/>
+    <text x="280" y="36" text-anchor="middle" fill="#4ecb71" font-size="11" font-weight="600">Phase 1</text>
+    <text x="280" y="52" text-anchor="middle" fill="#4ecb71" font-size="9">Engine Abstraction</text>
+
+    <!-- P2 -->
+    <rect x="440" y="18" width="140" height="44" rx="10" fill="#3a2060" stroke="#b06cff" stroke-width="1.5"/>
+    <text x="510" y="36" text-anchor="middle" fill="#b06cff" font-size="11" font-weight="600">Phase 2</text>
+    <text x="510" y="52" text-anchor="middle" fill="#b06cff" font-size="9">Persistent Scheduler</text>
+
+    <!-- P3 -->
+    <rect x="460" y="110" width="140" height="44" rx="10" fill="#4a3520" stroke="#f0a050" stroke-width="1.5"/>
+    <text x="530" y="128" text-anchor="middle" fill="#f0a050" font-size="11" font-weight="600">Phase 3</text>
+    <text x="530" y="144" text-anchor="middle" fill="#f0a050" font-size="9">Retry / Timeout / Ops</text>
+
+    <!-- P4 -->
+    <rect x="140" y="170" width="140" height="44" rx="10" fill="#1a3a40" stroke="#50d0e0" stroke-width="1.5"/>
+    <text x="210" y="188" text-anchor="middle" fill="#50d0e0" font-size="11" font-weight="600">Phase 4</text>
+    <text x="210" y="204" text-anchor="middle" fill="#50d0e0" font-size="9">DAG Schema</text>
+
+    <!-- P5 -->
+    <rect x="320" y="170" width="140" height="44" rx="10" fill="#3d5299" stroke="#6c8cff" stroke-width="1.5"/>
+    <text x="390" y="188" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="600">Phase 5</text>
+    <text x="390" y="204" text-anchor="middle" fill="#6c8cff" font-size="9">Resource Awareness</text>
+
+    <!-- P6 -->
+    <rect x="500" y="170" width="160" height="44" rx="10" fill="#4a2020" stroke="#f06060" stroke-width="1.5"/>
+    <text x="580" y="188" text-anchor="middle" fill="#f06060" font-size="11" font-weight="600">Phase 6</text>
+    <text x="580" y="204" text-anchor="middle" fill="#f06060" font-size="9">Batch &amp; Notifications</text>
+
+    <!-- Label -->
+    <text x="350" y="248" text-anchor="middle" fill="#8b90a0" font-size="10">箭头表示"依赖于" · Phase 0 → 1 → 2 为核心路径 · 3 / 4 / 5 / 6 可并行推进</text>
+  </svg>
+</div>
+
+<!-- ====== 8. Design Decisions ====== -->
+<h2 class="section-title"><span class="num">8</span> 关键设计决策</h2>
+<p class="section-desc">整个架构中反复出现的设计哲学。</p>
+
+<div class="card-grid">
+  <div class="comp-card">
+    <h3>SQLite 单实例</h3>
+    <p>不引入 Redis / RabbitMQ / Celery。SQLite 作为持久化队列，Python async loop 驱动调度。足够简单，保留 PostgreSQL 迁移路径。</p>
+  </div>
+  <div class="comp-card">
+    <h3>Best-Effort 哲学</h3>
+    <p>Webhook 通知、WDL 恢复、资源预估均为"尽力而为"。不做强一致性保证，换取实现简单和系统韧性。</p>
+  </div>
+  <div class="comp-card">
+    <h3>Feature Flag 回滚</h3>
+    <p><code>run_scheduler_mode = "legacy" | "persistent"</code>，资源检查可独立开关。每个阶段可安全回退。</p>
+  </div>
+  <div class="comp-card">
+    <h3>延迟而非拒绝</h3>
+    <p>资源不足时 re-enqueue + 30s delay，不是 reject。保证任务最终执行，避免用户困惑。</p>
+  </div>
+  <div class="comp-card">
+    <h3>Hooks 扩展点</h3>
+    <p>RunCompletionHooks 统一管理完成后副作用（清理、审计、通知、批量更新），避免逻辑散落各处。</p>
+  </div>
+  <div class="comp-card">
+    <h3>不可变配置命名空间</h3>
+    <p>RunConfigHelper 用 v1 schema 分离 request / resolved / runtime / policy / ui，防止字段冲突，运行时追加不污染原始配置。</p>
+  </div>
+</div>
+
+<!-- ====== Stats ====== -->
+<h2 class="section-title"><span class="num">9</span> 实现规模</h2>
+<div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin:24px 0;">
+  <div class="res-item">
+    <div class="res-val" style="font-size:1.6rem; color:var(--accent);">87</div>
+    <div class="res-label">文件变更</div>
+  </div>
+  <div class="res-item">
+    <div class="res-val" style="font-size:1.6rem; color:var(--green);">7,922</div>
+    <div class="res-label">新增行数</div>
+  </div>
+  <div class="res-item">
+    <div class="res-val" style="font-size:1.6rem; color:var(--purple);">27</div>
+    <div class="res-label">新测试文件</div>
+  </div>
+  <div class="res-item">
+    <div class="res-val" style="font-size:1.6rem; color:var(--orange);">3</div>
+    <div class="res-label">DB 迁移</div>
+  </div>
+</div>
+
+</div>
+
+<div class="footer">
+  Refactor V3 Architecture Visualization · Bioinfo Agent Pipe
+</div>
+
+</body>
+</html>

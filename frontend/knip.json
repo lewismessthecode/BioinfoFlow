@@ -1,0 +1,4 @@
+{
+  "ignoreDependencies": ["server-only"],
+  "ignore": ["playwright.config.ts", "tests/e2e/**"]
+}

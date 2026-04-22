@@ -1,0 +1,5 @@
+{
+  "flaky_retry_mini.outdir": "results/flaky-retry-mini",
+  "flaky_retry_mini.flaky_count": 2,
+  "flaky_retry_mini.fatal_enabled": false
+}

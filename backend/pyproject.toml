@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[project]
+name = "bioinfoflow-backend"
+version = "0.1.0"
+description = "Bioinfoflow backend"
+requires-python = ">=3.13"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic",
+  "pydantic-settings",
+  "sqlalchemy[asyncio]",
+  "aiosqlite",
+  "alembic",
+  "litellm>=1.81",
+  "anthropic>=0.40",
+  "openai>=1.60",
+  "docker",
+  "python-multipart",
+  "psutil",
+  "python-dotenv",
+  "structlog",
+  "miniwdl>=1.13.1",
+  "httpx",
+  "typer>=0.15",
+  "rich>=13.0",
+  "httpx-sse>=0.4",
+  "tomli-w>=1.0",
+  "duckduckgo-search>=7.0",
+  "aiofiles>=25.1.0",
+  "hermes-agent @ git+https://github.com/NousResearch/hermes-agent.git@7ad47ace51ef28ad613e5f7152a9d0401061636e",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "ruff",
+    "vulture>=2.14",
+    "respx>=0.22",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+markers = [
+  "unit: fast unit tests for helper-level behavior",
+]
+filterwarnings = [
+  "ignore:pythonjsonlogger\\.jsonlogger has been moved to pythonjsonlogger\\.json:DeprecationWarning",
+]
+
+[project.scripts]
+bif = "app.cli.main:app"
+
+[project.entry-points."miniwdl.plugin.container_backend"]
+bioinfoflow_docker_swarm = "app.engine.miniwdl_container_backend:BioinfoflowSwarmContainer"

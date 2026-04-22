@@ -1,0 +1,357 @@
+from __future__ import annotations
+
+import json
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+
+class Settings(BaseSettings):
+    """Application configuration via environment variables."""
+
+    # Precedence:
+    # 1. Shell-exported env vars
+    # 2. backend/.env (optional backend-only override)
+    # 3. repo-root .env (shared defaults for Docker and local dev)
+    # 4. code defaults below
+    model_config = SettingsConfigDict(
+        env_file=(str(REPO_ROOT / ".env"), str(BACKEND_ROOT / ".env")),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # Application
+    app_name: str = "Bioinfoflow"
+    app_version: str = "0.1.0"
+    debug: bool = False
+    repo_root: str = str(REPO_ROOT)
+    agent_hermes_home: str = "~/.bioinfoflow/hermes"
+    agent_hermes_state_db: str = ""
+    bioinfoflow_home: str = "data"
+    # Path Contract v3: identity-mount invariant. When the backend runs in a
+    # container, BIOINFOFLOW_HOME_HOST must equal BIOINFOFLOW_HOME (the compose
+    # volume must be `-v ${BIOINFOFLOW_HOME}:${BIOINFOFLOW_HOME}`). Leave empty
+    # on bare-metal/`uv run uvicorn` to skip the assertion.
+    bioinfoflow_home_host: str = ""
+    # Escape hatch for emergency debugging only. When enabled, legacy
+    # host↔container path translation via Docker API is restored. Normal
+    # deployments must rely on identity mount and keep this off.
+    allow_path_translation: bool = False
+
+    @field_validator("repo_root", mode="before")
+    @classmethod
+    def normalize_repo_root(cls, value: Any) -> str:
+        """Fall back to computed default when REPO_ROOT is empty or unset."""
+        if not value or not str(value).strip():
+            return str(REPO_ROOT)
+        return str(value).strip()
+
+    @field_validator("agent_hermes_home", mode="before")
+    @classmethod
+    def normalize_hermes_home(cls, value: Any) -> str:
+        raw = value if value is not None and str(value).strip() else "~/.bioinfoflow/hermes"
+        path = Path(str(raw).strip()).expanduser()
+        if not path.is_absolute():
+            path = (Path(__file__).resolve().parents[1] / path).resolve()
+        return str(path)
+
+    @field_validator("agent_hermes_state_db", mode="before")
+    @classmethod
+    def normalize_hermes_state_db(cls, value: Any) -> str:
+        if value is None or not str(value).strip():
+            return ""
+        raw = str(value).strip()
+        path = Path(str(raw).strip()).expanduser()
+        if not path.is_absolute():
+            path = (Path(__file__).resolve().parents[1] / path).resolve()
+        return str(path)
+
+    @model_validator(mode="after")
+    def reconcile_hermes_paths(self):
+        if self.agent_hermes_state_db:
+            state_db = Path(self.agent_hermes_state_db).expanduser()
+            self.agent_hermes_state_db = str(state_db)
+            self.agent_hermes_home = str(state_db.parent)
+            return self
+
+        home = Path(self.agent_hermes_home).expanduser()
+        self.agent_hermes_home = str(home)
+        self.agent_hermes_state_db = str(home / "state.db")
+        return self
+
+    @field_validator("bioinfoflow_home", mode="before")
+    @classmethod
+    def normalize_bioinfoflow_home(cls, value: Any) -> str:
+        candidate = Path(str(value).strip()) if value else Path("data")
+        if not candidate.is_absolute():
+            candidate = REPO_ROOT / candidate
+        return str(candidate.expanduser().resolve())
+
+    # Auth (Better Auth shared DB)
+    better_auth_db_path: str = ""
+    auth_mode: str = ""
+    auth_enabled: bool = True
+
+    # Database (SQLite MVP)
+    database_url: str = ""
+
+    # Nextflow
+    nextflow_bin: str = Field(
+        default="/usr/local/bin/nextflow",
+        description="Path to nextflow binary - customize via NEXTFLOW_BIN environment variable",
+    )
+
+    # MiniWDL (WDL)
+    miniwdl_bin: str = Field(
+        default="/usr/local/bin/miniwdl",
+        description="Path to miniwdl binary - customize via MINIWDL_BIN environment variable",
+    )
+
+    # Docker
+    docker_socket: str = "unix:///var/run/docker.sock"
+
+    # Agent / LLM
+    agent_provider: str = "auto"
+    agent_engine: str = "legacy"
+    agent_sandbox_enabled: bool = False  # Enable OS-level sandboxing for code execution
+    agent_model: str = "claude-sonnet-4-6"  # Global model override
+    agent_max_tokens: int = 16384
+    agent_observability: bool = True
+    agent_log_truncate_chars: int = 1200
+    agent_max_rounds: int = 50  # Loop safety limit
+    agent_compact_threshold: int = 50000  # Auto-compact token threshold
+    agent_hermes_max_concurrency: int = 4
+
+    # Provider API keys (read by PROVIDER_REGISTRY via env vars)
+    # Keep these for backward compat with existing .env files.
+    # New providers don't need entries here — just set the env var.
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    gemini_api_key: str = ""
+    openrouter_api_key: str = ""
+    ollama_base_url: str = "http://localhost:11434"
+    deepseek_api_key: str = ""
+    xai_api_key: str = ""
+    qwen_api_key: str = ""
+    kimi_api_key: str = ""
+    minimax_api_key: str = ""
+
+    # Extended thinking
+    agent_thinking_enabled: bool = True
+    agent_thinking_budget: int = 10000
+    agent_thinking_effort: str = "medium"
+    agent_thinking_level: str = "medium"
+
+    scheduler_total_slots: int = 0  # 0 = auto-detect (cpu_count)
+    scheduler_max_workers: int = 0  # 0 = same as total_slots
+    scheduler_max_concurrency: int = 4
+    scheduler_max_queue_depth: int = 500
+    scheduler_poll_interval: float = 1.0
+    scheduler_stale_timeout_minutes: int = 30
+    scheduler_resource_check_enabled: bool = True
+    scheduler_resource_sample_interval: float = 30.0
+    scheduler_safety_cpu: int = 2
+    scheduler_safety_memory_gb: float = 2.0
+    scheduler_safety_disk_gb: float = 10.0
+    langsmith_tracing: bool = False
+    langsmith_tracing_v2: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = "bioinfoflow"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+
+    # CORS
+    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    trusted_hosts: list[str] = [
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "test",
+        "testserver",
+    ]
+
+    # Upload limits (bytes)
+    max_upload_size_bytes: int = 100 * 1024 * 1024  # 100 MB for file uploads
+    max_image_upload_size_bytes: int = 500 * 1024 * 1024  # 500 MB for container images
+
+    @field_validator("agent_provider", mode="before")
+    @classmethod
+    def normalize_agent_provider(cls, value: Any) -> str:
+        if value is None:
+            return "gemini"
+        return str(value).strip().lower()
+
+    @field_validator("agent_engine", mode="before")
+    @classmethod
+    def normalize_agent_engine(cls, value: Any) -> str:
+        if value is None:
+            return "legacy"
+        normalized = str(value).strip().lower()
+        if normalized in {"legacy", "hermes_service"}:
+            return normalized
+        return "legacy"
+
+    @field_validator("auth_mode", mode="before")
+    @classmethod
+    def normalize_auth_mode(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        normalized = str(value).strip().lower()
+        if normalized in {"personal", "team", "dev"}:
+            return normalized
+        return ""
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: Any) -> list[str]:
+        return cls._parse_str_list(value)
+
+    @field_validator("trusted_hosts", mode="before")
+    @classmethod
+    def parse_trusted_hosts(cls, value: Any) -> list[str]:
+        return cls._parse_str_list(value)
+
+    @classmethod
+    def _parse_str_list(cls, value: Any) -> list[str]:
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return []
+            try:
+                parsed = json.loads(cleaned)
+            except json.JSONDecodeError:
+                return [item.strip() for item in cleaned.split(",") if item.strip()]
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed]
+        return list(value)
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return _resolve_sqlite_url(str(value).strip())
+
+    @field_validator("better_auth_db_path", mode="before")
+    @classmethod
+    def normalize_better_auth_db_path(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        candidate = Path(str(value).strip()).expanduser()
+        if not str(value).strip():
+            return ""
+        if not candidate.is_absolute():
+            candidate = REPO_ROOT / candidate
+        return str(candidate.resolve())
+
+    @model_validator(mode="after")
+    def apply_path_defaults(self) -> Settings:
+        if not self.database_url:
+            self.database_url = _resolve_sqlite_url(
+                f"sqlite+aiosqlite:///{(self.state_root / 'bioinfoflow.db').resolve()}"
+            )
+        if not self.better_auth_db_path:
+            self.better_auth_db_path = str(
+                (self.state_root / "auth" / "better-auth.db").resolve()
+            )
+        return self
+
+    @property
+    def resolved_auth_mode(self) -> str:
+        if self.auth_mode:
+            return self.auth_mode
+        return "personal" if self.auth_enabled else "dev"
+
+    @property
+    def auth_enabled_effective(self) -> bool:
+        return self.resolved_auth_mode != "dev"
+
+    @property
+    def auth_is_team(self) -> bool:
+        return self.resolved_auth_mode == "team"
+
+    @property
+    def auth_is_personal(self) -> bool:
+        return self.resolved_auth_mode == "personal"
+
+    @property
+    def state_root(self) -> Path:
+        return Path(self.bioinfoflow_home) / "state"
+
+    @property
+    def projects_root(self) -> Path:
+        return Path(self.bioinfoflow_home) / "projects"
+
+    @property
+    def sources_root(self) -> Path:
+        return Path(self.bioinfoflow_home) / "sources"
+
+    @property
+    def deliveries_root(self) -> Path:
+        return self.sources_root / "deliveries"
+
+    @property
+    def reference_root(self) -> Path:
+        return self.sources_root / "reference"
+
+    @property
+    def database_root(self) -> Path:
+        return self.sources_root / "database"
+
+    @property
+    def workflow_registry_root(self) -> Path:
+        return self.state_root / "workflows"
+
+    @property
+    def engine_cache_root(self) -> Path:
+        return self.state_root / "engine" / "cache"
+
+    @property
+    def nextflow_cache_root(self) -> Path:
+        return self.engine_cache_root / "nextflow"
+
+    @property
+    def miniwdl_cache_root(self) -> Path:
+        return self.engine_cache_root / "miniwdl"
+
+
+def _resolve_sqlite_url(url: str) -> str:
+    prefixes = ("sqlite+aiosqlite:///", "sqlite:///")
+    if not url.startswith(prefixes):
+        return url
+
+    relative_path = None
+    prefix = ""
+    for candidate in prefixes:
+        if url.startswith(candidate):
+            prefix = candidate
+            relative_path = url[len(candidate) :]
+            break
+
+    if relative_path is None:
+        return url
+
+    if not relative_path or relative_path in {":memory:"}:
+        return url
+
+    if relative_path.startswith("/") or relative_path.startswith("file:"):
+        return url
+
+    backend_root = Path(__file__).resolve().parents[1]
+    normalized = (backend_root / relative_path).resolve()
+    return f"{prefix}/{normalized}"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

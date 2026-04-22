@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <style>
+    @media (prefers-color-scheme: light) {
+      .logo-stroke { stroke: #18181b; }
+      .logo-fill { fill: #18181b; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .logo-stroke { stroke: #ffffff; }
+      .logo-fill { fill: #ffffff; }
+    }
+  </style>
+
+  <!-- Three connected nodes with organic molecular curves -->
+  <!-- Top node -->
+  <circle cx="16" cy="8" r="3" class="logo-stroke" stroke-width="2" fill="none"/>
+  <circle cx="16" cy="8" r="1.5" class="logo-fill"/>
+
+  <!-- Bottom left node -->
+  <circle cx="9" cy="22" r="3" class="logo-stroke" stroke-width="2" fill="none"/>
+  <circle cx="9" cy="22" r="1.5" class="logo-fill"/>
+
+  <!-- Bottom right node -->
+  <circle cx="23" cy="22" r="3" class="logo-stroke" stroke-width="2" fill="none"/>
+  <circle cx="23" cy="22" r="1.5" class="logo-fill"/>
+
+  <!-- Organic curved connections (molecular bonds + flow) -->
+  <!-- Top to bottom-left with gentle S-curve -->
+  <path d="M 15 10.5 Q 12 14, 10 19.5" class="logo-stroke" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- Top to bottom-right with gentle S-curve -->
+  <path d="M 17 10.5 Q 20 14, 22 19.5" class="logo-stroke" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- Bottom horizontal connection -->
+  <path d="M 11.5 23 L 20.5 23" class="logo-stroke" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>

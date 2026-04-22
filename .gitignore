@@ -1,0 +1,131 @@
+# --- Python ---
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+# lib/  <-- Removed this as it matches frontend/lib
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.venv/
+venv/
+ENV/
+.coverage
+.cache
+backend/.venv/
+backend/.pytest_cache/
+
+# --- Node / Next.js ---
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+build/
+dist/
+.cache/
+.parcel-cache/
+.nyc_output/
+.eslintcache/
+*.tsbuildinfo
+next-env.d.ts
+playwright-report/
+test-results/
+
+# --- Env / Secrets ---
+.env
+.env.*
+!.env.example
+.venv
+env.bak
+venv.bak
+
+# --- Logs ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.log
+
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+Desktop.ini
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Git Worktrees ---
+.worktrees/
+worktrees/
+
+# --- Projects ---
+.bioinfoflow/
+.nextflow/
+.nextflow*
+.nextflow.history
+.bioinfoflow*
+# log*  <-- Commented out to allow logo.tsx
+results/
+history*
+
+# Database files (CRITICAL - prevents tracking runtime data)
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+data/
+
+# NextFlow runtime artifacts
+*nextflow*
+.nextflow.log*
+
+# Build/generated files
+.reports/
+*.pyc
+
+# Generated documentation artifacts
+docs/course-bioinfoflow-zh.html
+.gstack/
+.zsh_history
+.playwright-mcp/
+
+# --- Claude Code runtime ---
+.claude/
+
+# --- Run output directories (created by scheduler) ---
+**/runs/run_*/
+
+# --- Runtime project data ---
+projects/
+backend/output/
+/tmp/
+
+# --- Design artifacts (personal) ---
+.impeccable.md
+frontend/public/mockups/
+
+# --- Root-level npm (claude-code CLI only) ---
+/package.json
+/package-lock.json
