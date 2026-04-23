@@ -288,6 +288,108 @@ describe("WorkflowRegisterDialog", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith('workflows.toasts.registered:Deaf_20')
   })
 
+  it("registers an nf-core workflow through the real source selector and trims the catalog prefix", async () => {
+    const onRegistered = vi.fn()
+
+    apiRequestMock.mockResolvedValue({
+      data: {
+        id: "workflow-nfcore-1",
+        name: "rnaseq",
+        source: "nf-core",
+        engine: "nextflow",
+        version: "3.18.0",
+      },
+      meta: undefined,
+    })
+
+    renderAppPage(
+      <WorkflowRegisterDialog
+        open
+        onOpenChange={() => {}}
+        onRegistered={onRegistered}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "nf-core" }))
+    fireEvent.change(screen.getByLabelText("workflows.registerDialog.fields.pipelineName"), {
+      target: { value: "nf-core/rnaseq" },
+    })
+    fireEvent.change(screen.getByLabelText("workflows.version"), {
+      target: { value: "3.18.0" },
+    })
+    fireEvent.change(screen.getByLabelText("workflows.registerDialog.fields.description"), {
+      target: { value: "RNA-seq main path" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "workflows.register" }))
+
+    await waitFor(() => {
+      expect(latestWorkflowJsonPayload()).toEqual({
+        source: "nf-core",
+        engine: "nextflow",
+        name: "rnaseq",
+        version: "3.18.0",
+        description: "RNA-seq main path",
+      })
+    })
+
+    expect(onRegistered).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "workflow-nfcore-1", name: "rnaseq" })
+    )
+    expect(toastSuccessMock).toHaveBeenCalledWith("workflows.toasts.registered:rnaseq")
+  })
+
+  it("registers a GitHub workflow through the real source selector using source_ref", async () => {
+    const onRegistered = vi.fn()
+
+    apiRequestMock.mockResolvedValue({
+      data: {
+        id: "workflow-github-1",
+        name: "nf-core/rnaseq",
+        source: "github",
+        engine: "nextflow",
+        version: "main",
+      },
+      meta: undefined,
+    })
+
+    renderAppPage(
+      <WorkflowRegisterDialog
+        open
+        onOpenChange={() => {}}
+        onRegistered={onRegistered}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "GitHub" }))
+    fireEvent.change(screen.getByLabelText("workflows.registerDialog.fields.repoUrl"), {
+      target: { value: "https://github.com/nf-core/rnaseq" },
+    })
+    fireEvent.change(screen.getByLabelText("workflows.version"), {
+      target: { value: "main" },
+    })
+    fireEvent.change(screen.getByLabelText("workflows.registerDialog.fields.description"), {
+      target: { value: "GitHub registration path" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "workflows.register" }))
+
+    await waitFor(() => {
+      expect(latestWorkflowJsonPayload()).toEqual({
+        source: "github",
+        engine: "nextflow",
+        source_ref: "https://github.com/nf-core/rnaseq",
+        version: "main",
+        description: "GitHub registration path",
+      })
+    })
+
+    expect(onRegistered).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "workflow-github-1", source: "github" })
+    )
+    expect(toastSuccessMock).toHaveBeenCalledWith("workflows.toasts.registered:nf-core/rnaseq")
+  })
+
   it("submits a selected local bundle as multipart data and lets the user choose the entrypoint", async () => {
     const onRegistered = vi.fn()
 
