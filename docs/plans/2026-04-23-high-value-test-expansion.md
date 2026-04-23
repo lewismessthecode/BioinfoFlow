@@ -15,6 +15,11 @@
   - Frontend hook/unit/integration coverage for runs, images, chat subcomponents, provider card, DAG affordances, workspace shell, settings flow, app layout coordination, and agent project-selection flow
   - Backend regression coverage for successful-run cleanup/log persistence fixes
   - Backend wrapper coverage for GPU, btop, Nextflow, and miniwdl compatibility services
+- Completed after the earlier batches:
+  - Integration coverage for workflow registration from `nf-core` and GitHub through the real dialog state
+  - Integration coverage for agent natural-language workflow orchestration, approval-gated run submission, and explicit startup failure feedback
+  - Final Agent first-analysis E2E using the real `/agent/message` + SSE path with the deterministic runtime enabled for Playwright
+  - Test-support cleanup for the Agent page initial-state contract so navigation coverage matches the current UI instead of a stale empty-state assumption
 - Real issues already found and fixed:
   - Successful runs were being cleaned up immediately, breaking run-detail main paths
   - Structured engine events were not persisted into `run.log`, leaving successful runs with empty logs
