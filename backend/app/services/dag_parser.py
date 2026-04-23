@@ -130,7 +130,7 @@ class DagParser:
         Returns:
             Updated DAG dict
         """
-        process_id = normalize_dag_id(process_name)
+        process_id = normalize_dag_id(self._clean_process_label(process_name))
 
         for node in dag.get("nodes", []):
             if node.get("id") == process_id:
@@ -161,8 +161,7 @@ class DagParser:
 
         for edge in edges:
             source_status = node_status.get(edge["source"], "pending")
-            target_status = node_status.get(edge["target"], "pending")
-            edge["animated"] = source_status == "running" or target_status == "running"
+            edge["animated"] = source_status == "running"
 
         return dag
 
