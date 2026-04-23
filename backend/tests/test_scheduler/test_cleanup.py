@@ -6,7 +6,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_work_dir_cleaner_removes_success_artifacts(tmp_path):
+async def test_work_dir_cleaner_keeps_success_artifacts_by_default(tmp_path):
     from app.scheduler.cleanup import WorkDirCleaner
 
     workspace = tmp_path / "workspace"
@@ -27,8 +27,8 @@ async def test_work_dir_cleaner_removes_success_artifacts(tmp_path):
         runtime={"wdl_work_dir": str(Path("runs/run_123/engine/wdl/work"))},
     )
 
-    assert run_home.exists() is False
-    assert result["deleted"] == [str(run_home)]
+    assert run_home.exists() is True
+    assert result["deleted"] == []
 
 
 @pytest.mark.asyncio

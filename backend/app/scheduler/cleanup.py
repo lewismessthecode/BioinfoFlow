@@ -17,7 +17,7 @@ _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 @dataclass(slots=True)
 class CleanupPolicy:
-    keep_on_success: bool = False
+    keep_on_success: bool = True
     keep_on_failure: bool = True
     max_age_days: int = 7
 

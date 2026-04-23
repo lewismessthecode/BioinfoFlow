@@ -134,6 +134,7 @@ async def _handle_run_event(
 ) -> None:
     event_type = event.type
     if event_type == EngineEventType.STARTED:
+        await _append_structured_event_log(run_service, run, event)
         run.nextflow_run_name = event.data.get("run_name") or run.nextflow_run_name
         await session.commit()
         await publish_run_status(run)
@@ -157,6 +158,7 @@ async def _handle_run_event(
         return
 
     if event_type == EngineEventType.TASK_UPDATE:
+        await _append_structured_event_log(run_service, run, event)
         run.current_task = event.task_name or run.current_task
         status = event.task_status
         if status == "completed":
@@ -227,6 +229,7 @@ async def _handle_run_event(
         return
 
     if event_type == EngineEventType.COMPLETED:
+        await _append_structured_event_log(run_service, run, event)
         run.status = RunStatus.COMPLETED.value
         run.completed_at = _now()
         run.duration_seconds = _duration_seconds(run.started_at, run.completed_at)
@@ -234,6 +237,20 @@ async def _handle_run_event(
         await session.commit()
         await publish_run_status(run, message="Run completed")
         await publish_run_dag(run)
+
+
+async def _append_structured_event_log(
+    run_service: RunService,
+    run,
+    event: EngineEvent,
+) -> None:
+    raw_message = event.message
+    if not raw_message:
+        candidate = event.data.get("raw")
+        if isinstance(candidate, str) and candidate.strip():
+            raw_message = candidate
+    if raw_message:
+        await run_service.append_run_log(run, raw_message)
 
 
 async def _handle_engine_event(

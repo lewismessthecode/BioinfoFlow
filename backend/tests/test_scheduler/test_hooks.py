@@ -13,7 +13,7 @@ from app.services.audit_service import AuditService
 
 
 @pytest.mark.asyncio
-async def test_run_completion_hooks_cleanup_success_and_write_audit(
+async def test_run_completion_hooks_keep_success_artifacts_and_write_audit(
     db_session, tmp_path
 ):
     workspace = tmp_path / "workspace"
@@ -63,8 +63,8 @@ async def test_run_completion_hooks_cleanup_success_and_write_audit(
         engine="nextflow",
     )
 
-    assert archive_dir.exists() is False
+    assert archive_dir.exists() is True
 
     audit_entries = await AuditService(db_session).list_for_resource("run", run.run_id)
     assert [entry.action for entry in audit_entries] == ["run.completed"]
-    assert audit_entries[0].details["cleanup"]["deleted"] == [str(archive_dir)]
+    assert audit_entries[0].details["cleanup"]["deleted"] == []
