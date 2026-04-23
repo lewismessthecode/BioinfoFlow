@@ -437,6 +437,11 @@ class DeterministicTestClient:
     ) -> LLMResponse:
         self._call_count += 1
 
+        # Playwright E2E needs the intermediate tool-running state to stay
+        # visible long enough for the browser to observe it.
+        if os.getenv("PYTEST_CURRENT_TEST") == "playwright-e2e" and self._call_count > 1:
+            await asyncio.sleep(0.35)
+
         if self._responses is not None:
             idx = min(self._call_count - 1, len(self._responses) - 1)
             resp = self._responses[idx]
