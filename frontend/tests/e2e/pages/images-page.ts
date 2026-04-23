@@ -9,7 +9,7 @@ export class ImagesPage {
   }
 
   get heading(): Locator {
-    return this.page.getByRole("heading", { name: "Images" })
+    return this.page.getByRole("heading", { name: "Images", exact: true })
   }
 
   get searchInput(): Locator {

@@ -9,7 +9,7 @@ export class WorkflowsPage {
   }
 
   get heading(): Locator {
-    return this.page.getByRole("heading", { name: "Workflows" })
+    return this.page.getByRole("heading", { name: "Workflows", exact: true })
   }
 
   get searchInput(): Locator {
