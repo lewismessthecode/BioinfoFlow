@@ -4,6 +4,12 @@ import { afterEach } from "vitest"
 
 type StorageMap = Map<string, string>
 
+Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
+  configurable: true,
+  writable: true,
+  value: true,
+})
+
 function createMemoryStorage(seed?: StorageMap): Storage {
   const store = seed ?? new Map<string, string>()
 

@@ -1,6 +1,8 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react"
+import * as React from "react"
+import { act, fireEvent, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import AgentPage from "@/app/(app)/agent/page"
+import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { renderAppPage } from "@/tests/app-test-utils"
 
 // Per-test mock state, scoped to this file and reset before each test
@@ -65,9 +67,21 @@ vi.mock("@/components/ui/sidebar-toggle", () => ({
   ),
 }))
 
+function ProjectSelectionHarness() {
+  const { setActiveProjectId } = useProjectContext()
+
+  return (
+    <>
+      <button onClick={() => setActiveProjectId("project-9")}>select project</button>
+      <button onClick={() => setActiveProjectId("")}>clear project</button>
+    </>
+  )
+}
+
 describe("AgentPage", () => {
   beforeEach(() => {
     mockRunToSelect = null
+    localStorage.clear()
   })
 
   it("restores persisted sidebar state and toggles with the keyboard shortcut", async () => {
@@ -129,10 +143,14 @@ describe("AgentPage", () => {
       expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
     })
 
-    onRunDag?.({ data: { run_id: "run-other", dag: { nodes: [{ id: "n1" }] } } })
+    act(() => {
+      onRunDag?.({ data: { run_id: "run-other", dag: { nodes: [{ id: "n1" }] } } })
+    })
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
 
-    onRunDag?.({ data: { run_id: "run-123", dag: { nodes: [{ id: "n1" }] } } })
+    act(() => {
+      onRunDag?.({ data: { run_id: "run-123", dag: { nodes: [{ id: "n1" }] } } })
+    })
 
     await waitFor(() => {
       expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:dag")
@@ -150,5 +168,38 @@ describe("AgentPage", () => {
 
     expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:project-default|workspace:off")
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
+  })
+
+  it("moves from project selection into workspace mode and back out without leaking the live deck state", async () => {
+    renderAppPage(
+      <>
+        <ProjectSelectionHarness />
+        <AgentPage />
+      </>,
+      {
+        projectContext: {
+          selectedProjectId: "",
+          conversationProjectId: "",
+          activeProjectId: "",
+        },
+      },
+    )
+
+    expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:none|workspace:off")
+    expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText("select project"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:project-9|workspace:on")
+    })
+    expect(screen.getByText("toggle live deck")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText("clear project"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:none|workspace:off")
+    })
+    expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
   })
 })
