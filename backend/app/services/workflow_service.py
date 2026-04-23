@@ -120,6 +120,7 @@ class WorkflowService:
                         "file_name or entrypoint_relpath is required for inline local workflows"
                     )
                 entrypoint_relpath = entrypoint_relpath or file_name
+                entrypoint_relpath = _normalize_entrypoint(entrypoint_relpath)
                 target_path = bundle_root / str(entrypoint_relpath)
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 target_path.write_text(content, encoding="utf-8")
@@ -128,6 +129,7 @@ class WorkflowService:
                 if not source_path.exists() or not source_path.is_file():
                     raise FileNotFoundError("local workflow source not found")
                 entrypoint_relpath = entrypoint_relpath or file_name or source_path.name
+                entrypoint_relpath = _normalize_entrypoint(entrypoint_relpath)
                 target_path = bundle_root / str(entrypoint_relpath)
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_path, target_path)
@@ -280,7 +282,10 @@ def _normalize_enum(value: Any, enum_cls):
 def _normalize_entrypoint(value: str | None) -> str:
     if not value or not str(value).strip():
         raise ValueError("entrypoint_relpath is required")
-    normalized = str(Path(str(value).strip())).replace("\\", "/")
+    candidate = Path(str(value).strip())
+    if candidate.is_absolute():
+        raise ValueError("entrypoint_relpath must stay within the bundle")
+    normalized = str(candidate).replace("\\", "/")
     if normalized.startswith("../") or normalized == "..":
         raise ValueError("entrypoint_relpath escapes bundle")
     return normalized
