@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +24,12 @@ class DockerImageInfo:
     entrypoint: list[str] | None
 
 
+_PLAYWRIGHT_FAKE_IMAGES: dict[str, DockerImageInfo] = {}
+_PLAYWRIGHT_TARBALL_IMAGE_PATTERN = re.compile(
+    rb"BIOINFOFLOW_TEST_IMAGE=(?P<full_name>[^\s]+)"
+)
+
+
 class DockerService:
     def __init__(self, socket: str | None = None) -> None:
         self.socket = socket or settings.docker_socket
@@ -34,6 +42,13 @@ class DockerService:
         return self._client
 
     async def list_images(self, search: str | None = None) -> list[DockerImageInfo]:
+        if _use_playwright_fake_docker():
+            images = list(_PLAYWRIGHT_FAKE_IMAGES.values())
+            if search:
+                query = search.lower()
+                return [image for image in images if query in image.name.lower()]
+            return images
+
         def _list() -> list[DockerImageInfo]:
             images: list[DockerImageInfo] = []
             for image in self.client.images.list():
@@ -60,6 +75,9 @@ class DockerService:
         return await asyncio.to_thread(_list)
 
     async def is_available(self) -> bool:
+        if _use_playwright_fake_docker():
+            return True
+
         def _ping() -> bool:
             try:
                 return bool(self.client.ping())
@@ -95,6 +113,9 @@ class DockerService:
         return None
 
     async def inspect_image(self, full_name: str) -> DockerImageInfo | None:
+        if _use_playwright_fake_docker():
+            return _PLAYWRIGHT_FAKE_IMAGES.get(full_name)
+
         def _inspect() -> DockerImageInfo | None:
             try:
                 image = self.client.images.get(full_name)
@@ -118,6 +139,15 @@ class DockerService:
         return await asyncio.to_thread(_inspect)
 
     async def pull_image(self, name: str, tag: str, registry: str) -> Any:
+        if _use_playwright_fake_docker():
+            yield {"progressDetail": {"current": 50, "total": 100}}
+            await asyncio.sleep(0)
+            full_name = f"{name}:{tag}"
+            _PLAYWRIGHT_FAKE_IMAGES[full_name] = _make_playwright_fake_image(
+                full_name, registry=registry
+            )
+            return
+
         def _pull():
             repository = _apply_registry(name, registry)
             return self.client.api.pull(repository, tag=tag, stream=True, decode=True)
@@ -127,6 +157,9 @@ class DockerService:
             yield event
 
     async def delete_image(self, full_name: str, force: bool = False) -> bool:
+        if _use_playwright_fake_docker():
+            return _PLAYWRIGHT_FAKE_IMAGES.pop(full_name, None) is not None
+
         def _delete() -> bool:
             try:
                 self.client.images.remove(full_name, force=force)
@@ -137,6 +170,9 @@ class DockerService:
         return await asyncio.to_thread(_delete)
 
     async def get_image_usage(self, full_name: str) -> list[dict[str, str]]:
+        if _use_playwright_fake_docker():
+            return []
+
         def _list_usage() -> list[dict[str, str]]:
             containers = self.client.containers.list(
                 all=True,
@@ -153,6 +189,11 @@ class DockerService:
         return await asyncio.to_thread(_list_usage)
 
     async def load_image(self, content: bytes) -> list[str]:
+        if _use_playwright_fake_docker():
+            full_name = _parse_playwright_tarball_image(content)
+            _PLAYWRIGHT_FAKE_IMAGES[full_name] = _make_playwright_fake_image(full_name)
+            return [full_name]
+
         def _load() -> list[str]:
             result = self.client.images.load(content)
             tags: list[str] = []
@@ -161,6 +202,34 @@ class DockerService:
             return tags
 
         return await asyncio.to_thread(_load)
+
+
+def _use_playwright_fake_docker() -> bool:
+    return os.getenv("BIOINFOFLOW_E2E_FAKE_DOCKER") == "1"
+
+
+def _make_playwright_fake_image(
+    full_name: str, *, registry: str | None = None
+) -> DockerImageInfo:
+    name, tag = _split_tag(full_name)
+    detected_registry, normalized_name = _split_registry(name)
+    return DockerImageInfo(
+        name=normalized_name,
+        tag=tag,
+        full_name=full_name,
+        registry=registry or detected_registry,
+        size_bytes=32 * 1024 * 1024,
+        labels={"maintainer": "bioinfoflow-e2e"},
+        env=["PATH=/usr/local/bin"],
+        entrypoint=["/bin/sh"],
+    )
+
+
+def _parse_playwright_tarball_image(content: bytes) -> str:
+    match = _PLAYWRIGHT_TARBALL_IMAGE_PATTERN.search(content)
+    if match:
+        return match.group("full_name").decode("utf-8")
+    return "bioinfoflow/tarball-import:1.0.0"
 
 
 def _split_tag(full_name: str) -> tuple[str, str]:

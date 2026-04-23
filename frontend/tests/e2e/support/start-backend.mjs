@@ -17,6 +17,7 @@ const env = {
   DATABASE_URL: `sqlite+aiosqlite:///${databasePath}`,
   SCHEDULER_POLL_INTERVAL: "30",
   PYTEST_CURRENT_TEST: process.env.PYTEST_CURRENT_TEST || "playwright-e2e",
+  BIOINFOFLOW_E2E_FAKE_DOCKER: "1",
 }
 
 fs.rmSync(stateRoot, { recursive: true, force: true })
