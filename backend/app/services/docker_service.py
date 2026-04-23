@@ -47,7 +47,7 @@ class DockerService:
                         DockerImageInfo(
                             name=normalized_name,
                             tag=version,
-                            full_name=f"{normalized_name}:{version}",
+                            full_name=tag,
                             registry=registry,
                             size_bytes=image.attrs.get("Size"),
                             labels=image.labels or config.get("Labels") or {},
@@ -107,7 +107,7 @@ class DockerService:
             return DockerImageInfo(
                 name=normalized_name,
                 tag=version,
-                full_name=f"{normalized_name}:{version}",
+                full_name=full_name,
                 registry=registry,
                 size_bytes=image.attrs.get("Size"),
                 labels=image.labels or config.get("Labels") or {},
@@ -164,7 +164,8 @@ class DockerService:
 
 
 def _split_tag(full_name: str) -> tuple[str, str]:
-    if ":" in full_name:
+    last_segment = full_name.rsplit("/", 1)[-1]
+    if ":" in last_segment:
         name, tag = full_name.rsplit(":", 1)
         return name, tag
     return full_name, "latest"
