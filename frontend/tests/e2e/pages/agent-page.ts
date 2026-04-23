@@ -16,8 +16,12 @@ export class AgentPage {
     return this.page.getByRole("tab", { name: "Pipeline" })
   }
 
+  get emptyStateHeading(): Locator {
+    return this.page.getByRole("heading", { name: "Start your first analysis" })
+  }
+
   async expectLoaded() {
-    await expect(this.pipelineTab).toBeVisible()
+    await expect(this.pipelineTab.or(this.emptyStateHeading)).toBeVisible()
   }
 
   async goToRuns() {

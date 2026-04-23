@@ -1,10 +1,14 @@
 import { defineConfig, devices } from "@playwright/test"
 
-const baseURL = process.env.BASE_URL || "http://localhost:3000"
+const frontendPort = Number(process.env.PLAYWRIGHT_FRONTEND_PORT || 3100)
+const backendPort = Number(process.env.PLAYWRIGHT_BACKEND_PORT || 8100)
+const baseURL = process.env.BASE_URL || `http://127.0.0.1:${frontendPort}`
+const apiBaseUrl = `http://127.0.0.1:${backendPort}/api/v1`
 
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 60_000,
+  workers: 1,
   expect: { timeout: 10_000 },
   retries: process.env.CI ? 2 : 1,
   reporter: [
@@ -22,5 +26,19 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
+  ],
+  webServer: [
+    {
+      command: `PLAYWRIGHT_BACKEND_PORT=${backendPort} node tests/e2e/support/start-backend.mjs`,
+      url: `${apiBaseUrl}/system/health`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+    {
+      command: `NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=${apiBaseUrl} bun run dev -- --hostname 127.0.0.1 --port ${frontendPort} --webpack`,
+      url: `${baseURL}/runs`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
   ],
 })

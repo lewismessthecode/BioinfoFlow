@@ -13,7 +13,7 @@ export class ImagesPage {
   }
 
   get searchInput(): Locator {
-    return this.page.getByPlaceholder("Search images...")
+    return this.page.getByRole("textbox", { name: "Search Images" })
   }
 
   async expectLoaded() {

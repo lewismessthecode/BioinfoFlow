@@ -13,7 +13,7 @@ export class WorkflowsPage {
   }
 
   get searchInput(): Locator {
-    return this.page.getByPlaceholder("Search workflows...")
+    return this.page.getByRole("textbox", { name: "Search Workflows" })
   }
 
   async expectLoaded() {
