@@ -45,6 +45,7 @@ dist/
 next-env.d.ts
 playwright-report/
 test-results/
+frontend/.playwright-e2e/
 
 # --- Env / Secrets ---
 .env

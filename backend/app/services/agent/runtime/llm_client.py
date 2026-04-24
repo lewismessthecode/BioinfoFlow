@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
@@ -448,6 +449,11 @@ class DeterministicTestClient:
             self._last_tool_calls = resp.tool_calls
             return resp
 
+        playwright_workflow_run = self._maybe_create_playwright_workflow_run(messages)
+        if playwright_workflow_run is not None:
+            self._last_tool_calls = playwright_workflow_run.tool_calls
+            return playwright_workflow_run
+
         # Default behavior: glob then text
         if self._call_count == 1:
             resp = LLMResponse(
@@ -496,3 +502,120 @@ class DeterministicTestClient:
     ) -> list[dict[str, Any]]:
         """Return tool calls from the last response (no chunking in test mode)."""
         return self._last_tool_calls
+
+    def _maybe_create_playwright_workflow_run(
+        self, messages: list[dict[str, Any]]
+    ) -> LLMResponse | None:
+        if os.getenv("PYTEST_CURRENT_TEST") != "playwright-e2e":
+            return None
+
+        prompt = self._latest_user_prompt(messages)
+        workflow_name = self._match_playwright_workflow_run_prompt(prompt)
+        if workflow_name is None:
+            return None
+
+        listed_group = self._extract_project_workflow_group(messages)
+        submitted_run = self._extract_tool_result(
+            messages, "platform_run_submit"
+        )
+
+        if submitted_run is not None:
+            run_id = (
+                submitted_run.get("data", {})
+                .get("run", {})
+                .get("run_id", "unknown-run")
+            )
+            return LLMResponse(
+                content=f"Queued run {run_id} for workflow {workflow_name}.",
+                stop_reason="end_turn",
+                usage={"input_tokens": 260, "output_tokens": 48},
+            )
+
+        if listed_group is None:
+            return LLMResponse(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "test_tool_call_project_workflows",
+                        "name": "platform_workflow_project_list",
+                        "input": {},
+                    }
+                ],
+                stop_reason="tool_use",
+                usage={"input_tokens": 180, "output_tokens": 55},
+            )
+
+        pinned_workflow = listed_group.get("pinned_workflow", {})
+        workflow_id = pinned_workflow.get("id")
+        if not workflow_id:
+            return LLMResponse(
+                content=f"I couldn't find an enabled workflow named {workflow_name}.",
+                stop_reason="end_turn",
+                usage={"input_tokens": 220, "output_tokens": 36},
+            )
+
+        return LLMResponse(
+            content="",
+            tool_calls=[
+                {
+                    "id": "test_tool_call_submit_run",
+                    "name": "platform_run_submit",
+                    "input": {"workflow_id": workflow_id, "values": {}},
+                }
+            ],
+            stop_reason="tool_use",
+            usage={"input_tokens": 230, "output_tokens": 60},
+        )
+
+    @staticmethod
+    def _latest_user_prompt(messages: list[dict[str, Any]]) -> str:
+        for message in reversed(messages):
+            if message.get("role") == "user":
+                return str(message.get("content", ""))
+        return ""
+
+    @staticmethod
+    def _match_playwright_workflow_run_prompt(prompt: str) -> str | None:
+        match = re.search(
+            r"run the (?P<workflow>agent-e2e-workflow-\d+) workflow",
+            prompt,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group("workflow")
+        return None
+
+    def _extract_project_workflow_group(
+        self, messages: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        result = self._extract_tool_result(messages, "platform_workflow_project_list")
+        if result is None:
+            return None
+        workflows = result.get("data", {}).get("workflows", [])
+        if workflows:
+            return workflows[0]
+        return None
+
+    @staticmethod
+    def _extract_tool_result(
+        messages: list[dict[str, Any]], tool_name: str
+    ) -> dict[str, Any] | None:
+        for index in range(len(messages) - 1):
+            assistant_message = messages[index]
+            tool_message = messages[index + 1]
+            if assistant_message.get("role") != "assistant":
+                continue
+            if tool_message.get("role") != "tool":
+                continue
+
+            for tool_call in assistant_message.get("tool_calls", []):
+                function = tool_call.get("function", {})
+                if function.get("name") != tool_name:
+                    continue
+                if tool_call.get("id") != tool_message.get("tool_call_id"):
+                    continue
+                try:
+                    return json.loads(str(tool_message.get("content", "{}")))
+                except json.JSONDecodeError:
+                    return None
+        return None
