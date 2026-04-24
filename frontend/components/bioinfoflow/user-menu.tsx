@@ -1,10 +1,10 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { ChevronsUpDown, Moon, Settings } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { getNextAppearanceMode, useAppearance } from "@/lib/appearance/use-appearance"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,7 +26,7 @@ interface UserMenuProps {
 export function UserMenu({ collapsed, viewer }: UserMenuProps) {
   const tUserMenu = useTranslations("userMenu")
   const tAccessibility = useTranslations("accessibility")
-  const { theme, setTheme } = useTheme()
+  const { mode, resolvedMode, setMode } = useAppearance()
   const router = useRouter()
   const currentViewer = viewer ?? buildAnonymousViewer()
   const userName = currentViewer.name || tUserMenu("defaultName")
@@ -66,7 +66,7 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
         <button
           className={
             collapsed
-              ? "group mx-auto flex h-10 w-10 items-center justify-center rounded-2xl border border-border/65 bg-white/92 p-0 transition-colors hover:bg-sidebar-accent dark:bg-card dark:border-border/80 dark:hover:bg-sidebar-accent/70"
+              ? "group mx-auto flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-card/90 p-0 transition-colors hover:bg-sidebar-accent/70"
               : "group flex w-full items-center gap-2 rounded-[18px] border border-transparent px-2 py-1.5 transition-colors hover:bg-sidebar-accent"
           }
           aria-label={`${userName} — ${tAccessibility("userMenu")}`}
@@ -119,12 +119,12 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
         ) : null}
 
         <DropdownMenuItem
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          onClick={() => setMode(getNextAppearanceMode(mode, resolvedMode))}
           className="mx-0.5 cursor-pointer rounded-lg px-2.5 py-2 focus:bg-secondary"
         >
           <Moon className="mr-2.5 h-4 w-4 text-muted-foreground" />
           <span>
-            {theme === "dark"
+            {resolvedMode === "dark"
               ? tUserMenu("lightMode")
               : tUserMenu("darkMode")}
           </span>

@@ -8,6 +8,7 @@ const replaceMock = vi.fn()
 const refreshMock = vi.fn()
 const successToastMock = vi.fn()
 const errorToastMock = vi.fn()
+const setModeMock = vi.fn()
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -34,10 +35,17 @@ vi.mock("next-intl", () => ({
   },
 }))
 
-vi.mock("next-themes", () => ({
-  useTheme: () => ({
-    theme: "light",
-    setTheme: vi.fn(),
+vi.mock("@/lib/appearance/use-appearance", () => ({
+  getNextAppearanceMode: () => "dark",
+  useAppearance: () => ({
+    mode: "light",
+    resolvedMode: "light",
+    lightPreset: "codex",
+    darkPreset: "codex",
+    activePreset: "codex",
+    setMode: setModeMock,
+    setLightPreset: vi.fn(),
+    setDarkPreset: vi.fn(),
   }),
 }))
 
@@ -102,6 +110,16 @@ describe("UserMenu", () => {
     vi.clearAllMocks()
   })
 
+  it("routes the theme toggle through the appearance hook", async () => {
+    const user = userEvent.setup()
+
+    render(<UserMenu collapsed={false} viewer={ALICE_VIEWER} />)
+
+    await user.click(screen.getByRole("button", { name: "Dark mode" }))
+
+    expect(setModeMock).toHaveBeenCalledWith("dark")
+  })
+
   it("redirects to /auth and refreshes after a successful sign out", async () => {
     const user = userEvent.setup()
     signOutMock.mockImplementation(async (options?: { fetchOptions?: { onSuccess?: () => void } }) => {
@@ -123,6 +141,14 @@ describe("UserMenu", () => {
 
     const trigger = screen.getByRole("button", { name: "Alice Example — User menu" })
     expect(trigger.className).toContain("justify-center")
+  })
+
+  it("avoids a hard white collapsed trigger shell", () => {
+    render(<UserMenu collapsed viewer={ALICE_VIEWER} />)
+
+    const trigger = screen.getByRole("button", { name: "Alice Example — User menu" })
+    expect(trigger.className).not.toContain("bg-white/92")
+    expect(trigger.className).toContain("bg-card/90")
   })
 
   it("does not render the email in the sidebar trigger", () => {

@@ -26,18 +26,30 @@ import type { ReactCodeMirrorRef } from "@uiw/react-codemirror"
 import { ValidationBadge } from "./register-preview-panel"
 import type { LocalImportMode, SourceType } from "./register-form-hook"
 
-const SOURCE_ACCENTS: Record<SourceType, { card: string; icon: string }> = {
+const SOURCE_ACCENTS: Record<
+  SourceType,
+  { gradient: string; iconBackground: string; iconColor: string }
+> = {
   "nf-core": {
-    card: "from-emerald-500/10 via-transparent to-transparent dark:from-emerald-400/8",
-    icon: "bg-emerald-500/12 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-200",
+    gradient:
+      "linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, transparent), transparent 70%)",
+    iconBackground:
+      "color-mix(in srgb, var(--primary) 12%, transparent)",
+    iconColor: "var(--primary)",
   },
   github: {
-    card: "from-sky-500/10 via-transparent to-transparent dark:from-sky-400/8",
-    icon: "bg-sky-500/12 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200",
+    gradient:
+      "linear-gradient(135deg, color-mix(in srgb, var(--ring) 12%, transparent), transparent 70%)",
+    iconBackground:
+      "color-mix(in srgb, var(--ring) 12%, transparent)",
+    iconColor: "var(--ring)",
   },
   local: {
-    card: "from-amber-500/10 via-transparent to-transparent dark:from-amber-400/8",
-    icon: "bg-amber-500/12 text-amber-700 dark:bg-amber-400/15 dark:text-amber-200",
+    gradient:
+      "linear-gradient(135deg, color-mix(in srgb, var(--accent) 92%, transparent), transparent 70%)",
+    iconBackground:
+      "color-mix(in srgb, var(--foreground) 8%, transparent)",
+    iconColor: "var(--foreground)",
   },
 }
 
@@ -169,12 +181,23 @@ export function RegisterFormFields({
                 className={cn(
                   "group relative min-h-[136px] rounded-2xl border p-3.5 text-left transition-all duration-150",
                   sourceType === type
-                    ? `border-foreground/20 shadow-sm bg-gradient-to-br ${accent.card}`
+                    ? "border-foreground/20 shadow-sm"
                     : "border-border/60 bg-background hover:border-foreground/15 hover:shadow-sm",
                 )}
+                style={
+                  sourceType === type
+                    ? { backgroundImage: accent.gradient }
+                    : undefined
+                }
               >
                 <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", accent.icon)}>
+                  <div
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                    style={{
+                      backgroundColor: accent.iconBackground,
+                      color: accent.iconColor,
+                    }}
+                  >
                     <Icon className="h-4 w-4" />
                   </div>
                   {sourceType === type && (

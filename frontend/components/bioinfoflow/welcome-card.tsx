@@ -25,16 +25,25 @@ interface WelcomeCardProps {
 const TEMPLATE_ICONS = [Dna, FlaskConical, TestTube2] as const;
 const TEMPLATE_ACCENTS = [
   {
-    card: "from-slate-500/10 via-transparent to-transparent dark:from-slate-300/8",
-    icon: "bg-slate-500/12 text-slate-700 dark:bg-slate-400/15 dark:text-slate-200",
+    gradient:
+      "linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, transparent), transparent 72%)",
+    iconBackground:
+      "color-mix(in srgb, var(--primary) 12%, transparent)",
+    iconColor: "var(--primary)",
   },
   {
-    card: "from-sky-500/12 via-transparent to-transparent dark:from-sky-400/10",
-    icon: "bg-sky-500/12 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200",
+    gradient:
+      "linear-gradient(135deg, color-mix(in srgb, var(--ring) 12%, transparent), transparent 72%)",
+    iconBackground:
+      "color-mix(in srgb, var(--ring) 12%, transparent)",
+    iconColor: "var(--ring)",
   },
   {
-    card: "from-emerald-500/12 via-transparent to-transparent dark:from-emerald-400/10",
-    icon: "bg-emerald-500/12 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-200",
+    gradient:
+      "linear-gradient(135deg, color-mix(in srgb, var(--accent) 92%, transparent), transparent 72%)",
+    iconBackground:
+      "color-mix(in srgb, var(--foreground) 8%, transparent)",
+    iconColor: "var(--foreground)",
   },
 ] as const;
 
@@ -106,16 +115,17 @@ export function WelcomeCard({
               type="button"
               disabled={isCreating}
               onClick={() => handleCreate(template)}
-              className={cn(
+                className={cn(
                 "group flex items-center gap-3 rounded-xl border border-border/60 p-3 text-left transition-all duration-150 hover:border-foreground/15 hover:shadow-sm disabled:opacity-60",
-                `bg-gradient-to-br ${accent.card}`,
               )}
+              style={{ backgroundImage: accent.gradient }}
             >
               <div
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                  accent.icon,
-                )}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                style={{
+                  backgroundColor: accent.iconBackground,
+                  color: accent.iconColor,
+                }}
               >
                 <Icon className="h-4 w-4" />
               </div>
