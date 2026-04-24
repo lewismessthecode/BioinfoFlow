@@ -15,7 +15,7 @@ const image: DockerImage = {
 }
 
 describe("ImageCardsGrid", () => {
-  it("keeps the local badge visible while using the quieter package glyph", () => {
+  it("renders local status as a neutral metadata pill while keeping the quieter package glyph", () => {
     const { container } = render(
       <ImageCardsGrid
         images={[image]}
@@ -29,7 +29,11 @@ describe("ImageCardsGrid", () => {
       />,
     )
 
-    expect(screen.getByText("statuses.local")).toBeInTheDocument()
+    const localBadge = screen.getByText("statuses.local")
+
+    expect(localBadge.className).toContain("metadata-pill")
+    expect(localBadge.className).not.toContain("bg-success")
+    expect(localBadge.className).not.toContain("text-success")
     expect(screen.getByRole("button", { name: /actions.repull/i })).toBeInTheDocument()
     expect(container.querySelector("svg.lucide-package2")).not.toBeNull()
   })

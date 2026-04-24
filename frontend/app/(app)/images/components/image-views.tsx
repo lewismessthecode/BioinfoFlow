@@ -50,8 +50,8 @@ function ImageStatusBadge({ image, tImages }: { image: DockerImage; tImages: (ke
       variant="outline"
       className={cn(
         "text-xs-tight",
-        image.status === "local" && "bg-success/[0.08] text-success/90 border-success/[0.16]",
-        image.status === "remote" && "bg-secondary/60 text-muted-foreground border-border/60",
+        image.status === "local" && "metadata-pill metadata-pill--source",
+        image.status === "remote" && "metadata-pill",
         image.status === "pulling" && "bg-info/10 text-info border-info/20",
         image.status === "failed" && "bg-destructive/10 text-destructive border-destructive/20",
       )}
