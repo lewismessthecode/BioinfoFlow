@@ -1,7 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { MoreHorizontal, Clock } from "lucide-react"
+import { MoreHorizontal, Clock, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -28,9 +28,7 @@ interface WorkflowCardBaseProps {
 
 function WorkflowIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={cn("h-3.5 w-3.5 text-foreground/70", className)} fill="currentColor">
-      <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l6.9 3.45L12 11.09 5.1 7.63 12 4.18zM4 16.54V9.09l7 3.5v7.45l-7-3.5zm9 3.5v-7.45l7-3.5v7.45l-7 3.5z" />
-    </svg>
+    <Workflow className={cn("quiet-card-icon-glyph h-4 w-4", className)} strokeWidth={1.8} />
   )
 }
 
@@ -46,7 +44,7 @@ export function WorkflowCardBase({
 
   const nameContent = (
     <div className="flex items-center gap-2.5 min-w-0">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-secondary/50 dark:bg-secondary/30">
+      <div className="quiet-card-icon-shell">
         <WorkflowIcon />
       </div>
       <h3 className="text-sm font-semibold text-foreground leading-tight truncate">{displayName}</h3>
@@ -54,7 +52,7 @@ export function WorkflowCardBase({
   )
 
   return (
-    <Card className="group relative overflow-hidden border-border/60 bg-card/70 hover:shadow-md hover:border-primary/20 transition-all duration-200 h-full flex flex-col">
+    <Card className="group relative overflow-hidden border-border/60 bg-card/84 hover:shadow-sm hover:border-border/90 transition-all duration-200 h-full flex flex-col">
       <CardContent className="p-4 flex-1 flex flex-col">
         {/* Header: icon + name + menu */}
         <div className="flex items-center justify-between gap-2">

@@ -5,7 +5,7 @@ import {
   AlertCircle,
   HardDrive,
   Download,
-  Package,
+  Package2,
   MoreHorizontal,
   Copy,
 } from "lucide-react"
@@ -50,8 +50,8 @@ function ImageStatusBadge({ image, tImages }: { image: DockerImage; tImages: (ke
       variant="outline"
       className={cn(
         "text-xs-tight",
-        image.status === "local" && "bg-success/10 text-success border-success/20",
-        image.status === "remote" && "bg-muted text-muted-foreground",
+        image.status === "local" && "bg-success/[0.08] text-success/90 border-success/[0.16]",
+        image.status === "remote" && "bg-secondary/60 text-muted-foreground border-border/60",
         image.status === "pulling" && "bg-info/10 text-info border-info/20",
         image.status === "failed" && "bg-destructive/10 text-destructive border-destructive/20",
       )}
@@ -140,14 +140,14 @@ export function ImageCardsGrid({
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {images.map((image) => {
         return (
-          <Card key={image.id} className="group relative overflow-hidden border-border/60 bg-card/92 hover:shadow-sm hover:border-primary/20 transition-all duration-200 h-full flex flex-col">
+          <Card key={image.id} className="group relative overflow-hidden border-border/60 bg-card/92 hover:shadow-sm hover:border-border/90 transition-all duration-200 h-full flex flex-col">
             <CardContent className="p-4 flex-1 flex flex-col">
               <div className="flex items-start justify-between gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-2.5 min-w-0 cursor-default">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-secondary/50 dark:bg-secondary/30">
-                        <Package className="h-3.5 w-3.5 text-foreground/70" />
+                      <div className="quiet-card-icon-shell quiet-card-icon-shell--artifact">
+                        <Package2 className="quiet-card-icon-glyph h-4 w-4" strokeWidth={1.8} />
                       </div>
                       <h2 className="text-sm font-semibold text-foreground leading-tight truncate">{image.name}</h2>
                     </div>
