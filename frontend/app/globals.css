@@ -60,6 +60,22 @@
   --divider: #e4e4e7;
   --announcement-bg: #111111;
   --announcement-fg: #ffffff;
+  --bg: #fcfcfd;
+  --bg-elevated: #ffffff;
+  --bg-surface: #f2f2f4;
+  --bg-subtle: #f6f6f8;
+  --bg-hover: #efeff2;
+  --bg-active: #e6e6ea;
+  --fg: #171717;
+  --fg-secondary: #4d4d4d;
+  --fg-muted: #666666;
+  --fg-subtle: #7a7a80;
+  --fg-faint: #8c8c92;
+  --border-subtle: #e4e4e7;
+  --border-hover: #d6d6dc;
+  --accent-muted: rgba(23, 23, 23, 0.05);
+  --accent-subtle: rgba(23, 23, 23, 0.03);
+  --accent-hover: rgba(23, 23, 23, 0.08);
 
   /* Semantic border/muted — light-mode counterparts to .dark vars */
   --success-border: rgba(34, 197, 94, 0.20);
@@ -72,10 +88,10 @@
   --info-muted: rgba(59, 130, 246, 0.08);
 
   /* DAG visualization tokens */
-  --dag-glow: rgba(16, 185, 129, 0.12);
-  --dag-grid: rgba(16, 185, 129, 0.05);
-  --dag-dot-bg: rgba(16, 185, 129, 0.2);
-  --dag-corner-glow: rgba(52, 211, 153, 0.08);
+  --dag-glow: color-mix(in srgb, var(--accent) 28%, transparent);
+  --dag-grid: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+  --dag-dot-bg: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  --dag-corner-glow: color-mix(in srgb, var(--accent) 18%, transparent);
   --dag-minimap-mask: rgba(0, 0, 0, 0.1);
 }
 
@@ -123,10 +139,10 @@
   --info-border: rgba(96,165,250,0.15);
 
   /* DAG visualization tokens — reduced opacity for dark backgrounds */
-  --dag-glow: rgba(34, 197, 94, 0.08);
-  --dag-grid: rgba(34, 197, 94, 0.03);
-  --dag-dot-bg: rgba(34, 197, 94, 0.15);
-  --dag-corner-glow: rgba(34, 197, 94, 0.05);
+  --dag-glow: color-mix(in srgb, var(--accent) 44%, transparent);
+  --dag-grid: color-mix(in srgb, var(--fg-secondary) 10%, transparent);
+  --dag-dot-bg: color-mix(in srgb, var(--fg-secondary) 16%, transparent);
+  --dag-corner-glow: color-mix(in srgb, var(--accent) 28%, transparent);
   --dag-minimap-mask: rgba(255, 255, 255, 0.06);
 
   /* Pipeline state tokens */
@@ -260,6 +276,69 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .quiet-card-icon-shell {
+    position: relative;
+    display: inline-flex;
+    height: 2.5rem;
+    width: 2.5rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--card) 94%, transparent) 0%,
+        color-mix(in srgb, var(--surface-subtle) 92%, transparent) 100%
+      );
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--background) 78%, transparent),
+      0 1px 2px color-mix(in srgb, var(--foreground) 8%, transparent);
+  }
+
+  .dark .quiet-card-icon-shell {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 1px 2px rgba(0, 0, 0, 0.24);
+  }
+
+  .quiet-card-icon-glyph {
+    color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  }
+
+  .quiet-card-icon-shell--artifact .quiet-card-icon-glyph {
+    color: color-mix(in srgb, var(--text-secondary) 78%, transparent);
+  }
+
+  .metadata-pill {
+    border-color: color-mix(in srgb, var(--border) 74%, transparent);
+    background: color-mix(in srgb, var(--surface-subtle) 92%, transparent);
+    color: var(--text-secondary);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background) 72%, transparent);
+  }
+
+  .metadata-pill--scale {
+    background: color-mix(in srgb, var(--accent-subtle) 100%, var(--surface-subtle) 0%);
+  }
+
+  .metadata-pill--source {
+    background: color-mix(in srgb, var(--secondary) 94%, transparent);
+    color: var(--text-secondary);
+  }
+
+  .metadata-pill--engine {
+    border-color: color-mix(in srgb, var(--accent) 36%, var(--border) 64%);
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface-subtle) 86%);
+    color: var(--text-primary);
+  }
+
+  .metadata-pill--version {
+    background: transparent;
   }
 }
 

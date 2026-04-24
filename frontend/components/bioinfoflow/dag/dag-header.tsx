@@ -16,8 +16,8 @@ import type { ProjectWorkflowGroup, Run, RunStatus } from "@/lib/types"
 const statusDot: Record<RunStatus, string> = {
   pending: "bg-muted-foreground/50",
   queued: "bg-warning/70",
-  running: "bg-emerald-400",
-  completed: "bg-emerald-500",
+  running: "bg-warning",
+  completed: "bg-success",
   failed: "bg-destructive",
   cancelled: "bg-muted-foreground/40",
 }
@@ -69,7 +69,7 @@ export function DagHeader({
                 <SelectItem key={group.pinned_workflow.id} value={String(index)} textValue={group.name}>
                   <span className="flex items-center gap-2">
                     <span className="truncate">{group.name}</span>
-                    <Badge variant="outline" className="text-2xs shrink-0">
+                    <Badge variant="outline" className="metadata-pill metadata-pill--source text-2xs shrink-0 uppercase tracking-[0.16em]">
                       {group.source}
                     </Badge>
                   </span>

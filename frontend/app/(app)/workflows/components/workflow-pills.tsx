@@ -2,16 +2,15 @@
 
 import { GitBranch } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 import type { Workflow } from "@/lib/types"
 
 const ENGINE_STYLES = {
   wdl: {
     label: "WDL",
-    classes: "bg-blue-50/70 text-blue-700 border-blue-200/60 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800/40",
   },
   nextflow: {
     label: "Nextflow",
-    classes: "bg-emerald-50/70 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40",
   },
 } as const
 
@@ -34,21 +33,21 @@ export function WorkflowPills({ workflow, scaleLabel, showSource, hideVersion }:
       {scaleLabel && (
         <Badge
           variant="outline"
-          className="text-xs-tight capitalize bg-amber-50/70 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40"
+          className="metadata-pill metadata-pill--scale text-xs-tight capitalize"
         >
           {scaleLabel}
         </Badge>
       )}
       {showSource && (
-        <Badge variant="secondary" className="text-xs-tight uppercase tracking-wide">
+        <Badge variant="outline" className="metadata-pill metadata-pill--source text-xs-tight uppercase tracking-[0.16em]">
           {workflow.source}
         </Badge>
       )}
-      <Badge variant="outline" className={`text-xs-tight ${engine.classes}`}>
+      <Badge variant="outline" className={cn("metadata-pill metadata-pill--engine text-xs-tight", workflow.engine === "wdl" && "font-semibold")}>
         {engine.label}
       </Badge>
       {!hideVersion && (
-        <Badge variant="outline" className="text-xs-tight font-mono gap-1">
+        <Badge variant="outline" className="metadata-pill metadata-pill--version text-xs-tight font-mono gap-1">
           <GitBranch className="h-2.5 w-2.5" />
           {workflow.version}
         </Badge>
