@@ -7,8 +7,9 @@ import { TerminalDockProvider } from "@/components/bioinfoflow/terminal/terminal
 import type { TerminalSession } from "@/lib/types"
 import { renderAppPage } from "@/tests/app-test-utils"
 
-const themeState = {
-  value: "light",
+const appearanceState = {
+  resolvedMode: "light" as const,
+  activePreset: "codex",
 }
 
 const resizeMock = vi.fn()
@@ -80,8 +81,17 @@ class MockTerminal {
 
 const useTerminalSessionMock = vi.fn()
 
-vi.mock("next-themes", () => ({
-  useTheme: () => ({ resolvedTheme: themeState.value }),
+vi.mock("@/lib/appearance/use-appearance", () => ({
+  useAppearance: () => ({
+    mode: appearanceState.resolvedMode,
+    resolvedMode: appearanceState.resolvedMode,
+    lightPreset: "codex",
+    darkPreset: "codex",
+    activePreset: appearanceState.activePreset,
+    setMode: vi.fn(),
+    setLightPreset: vi.fn(),
+    setDarkPreset: vi.fn(),
+  }),
 }))
 
 vi.mock("next-intl", () => ({
@@ -124,7 +134,8 @@ function renderDock() {
 
 describe("TerminalDock", () => {
   beforeEach(() => {
-    themeState.value = "light"
+    appearanceState.resolvedMode = "light"
+    appearanceState.activePreset = "codex"
     terminalInstances.length = 0
     resizeObserverInstances.length = 0
     fitCallCount = 0
@@ -141,6 +152,13 @@ describe("TerminalDock", () => {
       configurable: true,
       value: { ready: Promise.resolve() },
     })
+    document.documentElement.style.setProperty("--terminal-background", "#f6f7fb")
+    document.documentElement.style.setProperty("--terminal-foreground", "#1e293b")
+    document.documentElement.style.setProperty("--terminal-cursor", "#0f172a")
+    document.documentElement.style.setProperty(
+      "--terminal-selection",
+      "rgba(15, 23, 42, 0.18)"
+    )
     vi.stubGlobal("ResizeObserver", MockResizeObserver)
     vi.stubGlobal(
       "requestAnimationFrame",
@@ -194,14 +212,15 @@ describe("TerminalDock", () => {
 
     const terminal = terminalInstances[0]
     expect(terminal.options.theme).toMatchObject({
-      background: "#ffffff",
-      foreground: "#111827",
+      background: "#f6f7fb",
+      foreground: "#1e293b",
     })
     expect(terminal.options.fontFamily).toContain("SFMono-Regular")
     expect(terminal.options.fontFamily).not.toContain("var(--font-terminal-mono)")
     expect(focusCallCount).toBeGreaterThan(0)
 
-    themeState.value = "dark"
+    appearanceState.resolvedMode = "dark"
+    appearanceState.activePreset = "gruvbox"
     view.rerender(
       <TerminalDockProvider projectId="project-1" enabled isMobile={false}>
         <TerminalDock />
@@ -210,8 +229,8 @@ describe("TerminalDock", () => {
 
     await waitFor(() => {
       expect(terminal.options.theme).toMatchObject({
-        background: "#0f1115",
-        foreground: "#e5e7eb",
+        background: "#f6f7fb",
+        foreground: "#1e293b",
       })
     })
 

@@ -393,4 +393,13 @@ describe("WorkspaceShell sidebar integration", () => {
     expect(screen.getByTestId("active-conversation-title")).toHaveTextContent("Alpha thread")
     expect(routerPushMock).toHaveBeenCalledWith("/agent")
   })
+
+  it("renders an icon-only sidebar brand without the old wordmark tile shadow", async () => {
+    renderSidebar()
+
+    const logo = await screen.findByTestId("logo")
+
+    expect(screen.queryByText("Bioinfoflow")).not.toBeInTheDocument()
+    expect(logo.parentElement?.className).not.toContain("shadow-sm")
+  })
 })

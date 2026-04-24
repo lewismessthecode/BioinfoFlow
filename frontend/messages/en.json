@@ -1782,8 +1782,28 @@
     "pageTitle": "Settings",
     "nav": {
       "account": "Account",
+      "appearance": "Appearance",
       "providers": "AI Providers",
       "members": "Members"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "description": "Tune app shell colors and mode.",
+      "mode": "Mode",
+      "activePreset": "Current preset: {preset}",
+      "modes": {
+        "light": "Light",
+        "dark": "Dark",
+        "system": "System"
+      },
+      "presets": {
+        "light": "Light preset",
+        "dark": "Dark preset"
+      },
+      "preview": {
+        "light": "Light preview",
+        "dark": "Dark preview"
+      }
     },
     "title": "AI Providers",
     "subtitle": "Configure your API keys and select which model powers the agent.",

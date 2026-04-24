@@ -236,7 +236,7 @@ export function MembersPanel({
 
   return (
     <>
-      <Card className="border-slate-900/8 bg-white/92 shadow-sm">
+      <Card className="border-border/60 bg-card/95 shadow-sm">
         <CardHeader className="gap-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
@@ -271,12 +271,12 @@ export function MembersPanel({
               return (
                 <div
                   key={member.id}
-                  className="rounded-[24px] border border-slate-900/8 bg-slate-50/70 p-4"
+                  className="rounded-[24px] border border-border/60 bg-[color:var(--surface-subtle)] p-4"
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-slate-900">{member.name}</p>
+                        <p className="font-medium text-foreground">{member.name}</p>
                         <Badge variant="outline" className="rounded-full">
                           <span className="flex items-center gap-1">
                             {icon}
@@ -294,7 +294,7 @@ export function MembersPanel({
                           </Badge>
                         ) : null}
                       </div>
-                      <p className="text-sm text-slate-600">{member.email}</p>
+                      <p className="text-sm text-muted-foreground">{member.email}</p>
                     </div>
 
                     <div className="flex flex-col gap-3 lg:min-w-[360px]">
@@ -306,7 +306,7 @@ export function MembersPanel({
                           }
                           disabled={savingId === member.id || (isLastOwner && isSelf)}
                         >
-                          <SelectTrigger className="h-10 w-full rounded-2xl bg-white sm:w-[160px]">
+                          <SelectTrigger className="h-10 w-full rounded-2xl bg-background sm:w-[160px]">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

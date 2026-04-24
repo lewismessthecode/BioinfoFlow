@@ -1,11 +1,11 @@
 "use client"
 
 import { Moon, Sun, User, LogOut, HelpCircle, Command, Menu } from "lucide-react"
-import { useTheme } from "next-themes"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { getNextAppearanceMode, useAppearance } from "@/lib/appearance/use-appearance"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,7 +44,7 @@ export function Navbar({
   viewer,
 }: NavbarProps) {
   const router = useRouter()
-  const { setTheme, theme } = useTheme()
+  const { mode, resolvedMode, setMode } = useAppearance()
   const tUserMenu = useTranslations("userMenu")
   const tAccessibility = useTranslations("accessibility")
   const currentViewer = viewer ?? buildAnonymousViewer()
@@ -116,7 +116,7 @@ export function Navbar({
           variant="ghost"
           size="icon"
           className={cn(actionButtonClassName, "relative")}
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          onClick={() => setMode(getNextAppearanceMode(mode, resolvedMode))}
         >
           <Sun className="h-4 w-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
           <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />

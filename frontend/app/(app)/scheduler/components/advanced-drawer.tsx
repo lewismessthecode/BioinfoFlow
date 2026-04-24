@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
-import { useTheme } from "next-themes"
 import { RotateCcw, Terminal as TerminalIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { readTerminalTheme } from "@/lib/appearance/terminal-theme"
+import { useAppearance } from "@/lib/appearance/use-appearance"
 import {
   Sheet,
   SheetContent,
@@ -63,7 +64,7 @@ export function AdvancedDrawer({ open, onOpenChange }: AdvancedDrawerProps) {
 
 function BtopPanel() {
   const t = useTranslations("scheduler")
-  const { resolvedTheme } = useTheme()
+  const { activePreset, resolvedMode } = useAppearance()
 
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const bodyRef = useRef<HTMLDivElement | null>(null)
@@ -76,21 +77,8 @@ function BtopPanel() {
   const [attempt, setAttempt] = useState(0)
 
   const terminalTheme = useMemo(
-    () =>
-      resolvedTheme === "dark"
-        ? {
-            background: "#0f1115",
-            foreground: "#e5e7eb",
-            cursor: "#f8fafc",
-            selectionBackground: "rgba(148, 163, 184, 0.35)",
-          }
-        : {
-            background: "#ffffff",
-            foreground: "#111827",
-            cursor: "#111827",
-            selectionBackground: "rgba(17, 24, 39, 0.12)",
-          },
-    [resolvedTheme],
+    () => readTerminalTheme(resolvedMode, activePreset),
+    [activePreset, resolvedMode],
   )
 
   const scheduleFit = useCallback(() => {

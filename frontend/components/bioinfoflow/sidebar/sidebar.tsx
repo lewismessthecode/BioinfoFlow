@@ -100,13 +100,14 @@ export function Sidebar({ collapsed, onCollapsedChange, viewer }: SidebarProps) 
           </Tooltip>
         ) : (
           <>
-            <Link href="/agent" className="flex items-center gap-2.5 overflow-hidden">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 text-sidebar-foreground dark:bg-white/5">
-                <Logo size={22} className="text-sidebar-foreground" />
+            <Link
+              href="/agent"
+              aria-label="Bioinfoflow"
+              className="flex items-center overflow-hidden rounded-2xl"
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sidebar-accent/55 text-sidebar-foreground ring-1 ring-inset ring-sidebar-border/55 transition-colors duration-200 hover:bg-sidebar-accent/75">
+                <Logo size={24} className="text-sidebar-foreground" />
               </div>
-              <span className="text-base font-bold tracking-tight text-sidebar-foreground whitespace-nowrap">
-                Bioinfoflow
-              </span>
             </Link>
             <Button
               variant="ghost"
@@ -128,7 +129,7 @@ export function Sidebar({ collapsed, onCollapsedChange, viewer }: SidebarProps) 
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-10 w-full rounded-[18px] border border-border/85 bg-white/90 text-foreground transition-colors duration-200 hover:bg-white dark:border-border/80 dark:bg-card dark:hover:bg-accent"
+                className="h-10 w-full rounded-[18px] border border-border/85 bg-[color:var(--surface-elevated)] text-foreground transition-colors duration-200 hover:bg-[color:var(--accent)]"
                 onClick={handleNewAnalysis}
               >
                 <SquarePen className="h-4.5 w-4.5" />
@@ -138,7 +139,7 @@ export function Sidebar({ collapsed, onCollapsedChange, viewer }: SidebarProps) 
           </Tooltip>
         ) : (
           <Button
-            className="h-11 w-full justify-start gap-3 rounded-[18px] border border-border/85 bg-white/90 px-3.5 text-sm font-semibold text-foreground transition-colors duration-200 hover:bg-white dark:border-border/80 dark:bg-card dark:hover:bg-accent"
+            className="h-11 w-full justify-start gap-3 rounded-[18px] border border-border/85 bg-[color:var(--surface-elevated)] px-3.5 text-sm font-semibold text-foreground transition-colors duration-200 hover:bg-[color:var(--accent)]"
             onClick={handleNewAnalysis}
           >
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-secondary/75 text-foreground/72">

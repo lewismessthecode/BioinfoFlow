@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { Eraser, RotateCcw, TerminalSquare, X } from "lucide-react"
-import { useTheme } from "next-themes"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { ResizeHandle } from "@/components/ui/resize-handle"
+import { readTerminalTheme } from "@/lib/appearance/terminal-theme"
+import { useAppearance } from "@/lib/appearance/use-appearance"
 import { cn } from "@/lib/utils"
 import type { TerminalServerMessage } from "@/lib/types"
 import { useTerminalSession } from "@/hooks/use-terminal-session"
@@ -75,7 +76,7 @@ export function TerminalDock() {
   } = useTerminalDock()
   const tAccessibility = useTranslations("accessibility")
   const tTerminal = useTranslations("terminal")
-  const { resolvedTheme } = useTheme()
+  const { activePreset, resolvedMode } = useAppearance()
   const terminalViewportRef = useRef<HTMLDivElement | null>(null)
   const terminalBodyRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<TerminalInstance | null>(null)
@@ -86,21 +87,8 @@ export function TerminalDock() {
     enabled && Boolean(projectId) && (isOpen || pendingCommand !== null)
 
   const terminalTheme = useMemo(
-    () =>
-      resolvedTheme === "dark"
-        ? {
-            background: "#0f1115",
-            foreground: "#e5e7eb",
-            cursor: "#f8fafc",
-            selectionBackground: "rgba(148, 163, 184, 0.35)",
-          }
-        : {
-            background: "#ffffff",
-            foreground: "#111827",
-            cursor: "#111827",
-            selectionBackground: "rgba(17, 24, 39, 0.12)",
-          },
-    [resolvedTheme]
+    () => readTerminalTheme(resolvedMode, activePreset),
+    [activePreset, resolvedMode]
   )
   const terminalThemeRef = useRef(terminalTheme)
 

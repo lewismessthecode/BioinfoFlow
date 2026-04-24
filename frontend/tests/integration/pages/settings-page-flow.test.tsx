@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import SettingsPageClient from "@/components/bioinfoflow/settings/settings-page-client"
 import { apiRequest } from "@/lib/api"
+import { useAppearance } from "@/lib/appearance/use-appearance"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 
 const {
@@ -25,8 +26,19 @@ vi.mock("next-intl", () => ({
     const labels: Record<string, string> = {
       pageTitle: "Settings",
       "nav.account": "Account",
+      "nav.appearance": "Appearance",
       "nav.providers": "AI Providers",
       "nav.members": "Members",
+      "appearance.title": "Appearance",
+      "appearance.description": "Tune app shell colors and mode.",
+      "appearance.mode": "Mode",
+      "appearance.modes.light": "Light",
+      "appearance.modes.dark": "Dark",
+      "appearance.modes.system": "System",
+      "appearance.presets.light": "Light preset",
+      "appearance.presets.dark": "Dark preset",
+      "appearance.preview.light": "Light preview",
+      "appearance.preview.dark": "Dark preview",
       title: "AI Providers",
       subtitle: "Configure providers",
       apiKey: "API Key",
@@ -59,6 +71,9 @@ vi.mock("next-intl", () => ({
       "account.modes.team": "Team",
       "members.roles.owner": "Owner",
     }
+    if (key === "appearance.activePreset") {
+      return `Current preset: ${values?.preset ?? ""}`
+    }
     if (key === "settingSaved") return `Saved ${values?.field}`
     if (key === "settingCleared") return `Cleared ${values?.field}`
     if (key === "clearValue") return `Clear ${values?.field}`
@@ -69,6 +84,10 @@ vi.mock("next-intl", () => ({
 
 vi.mock("@/hooks/use-llm-settings", () => ({
   useLlmSettings: vi.fn(),
+}))
+
+vi.mock("@/lib/appearance/use-appearance", () => ({
+  useAppearance: vi.fn(),
 }))
 
 vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
@@ -102,6 +121,7 @@ vi.mock("@/lib/api", async () => {
 
 describe("Settings page flow", () => {
   const apiRequestMock = vi.mocked(apiRequest)
+  const useAppearanceMock = vi.mocked(useAppearance)
   const useLlmSettingsMock = vi.mocked(useLlmSettings)
 
   beforeEach(() => {
@@ -111,6 +131,16 @@ describe("Settings page flow", () => {
     toastSuccessMock.mockReset()
     toastErrorMock.mockReset()
     apiRequestMock.mockReset()
+    useAppearanceMock.mockReturnValue({
+      mode: "system",
+      resolvedMode: "light",
+      lightPreset: "codex",
+      darkPreset: "codex",
+      activePreset: "codex",
+      setMode: vi.fn(),
+      setLightPreset: vi.fn(),
+      setDarkPreset: vi.fn(),
+    })
 
     useLlmSettingsMock.mockReturnValue({
       settings: {
@@ -255,5 +285,33 @@ describe("Settings page flow", () => {
       expect(toastErrorMock).toHaveBeenCalledWith("Upstream 503")
       expect(container.querySelector("svg.text-destructive")).not.toBeNull()
     })
+  })
+
+  it("renders the appearance section and the dual preset controls", async () => {
+    const user = userEvent.setup()
+
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          email: "owner@example.com",
+          role: "owner",
+          mode: "team",
+          canManageMembers: true,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Appearance" }))
+
+    expect(screen.getByText("Tune app shell colors and mode.")).toBeInTheDocument()
+    expect(screen.getByText("Current preset: Codex")).toBeInTheDocument()
+    expect(screen.getByText("Light preview")).toBeInTheDocument()
+    expect(screen.getByText("Dark preview")).toBeInTheDocument()
+    expect(screen.getAllByTestId("appearance-preview-shell")).toHaveLength(2)
+    expect(screen.getByText("Light preset")).toBeInTheDocument()
+    expect(screen.getByText("Dark preset")).toBeInTheDocument()
   })
 })
