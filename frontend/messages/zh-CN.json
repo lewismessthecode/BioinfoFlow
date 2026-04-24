@@ -1782,8 +1782,28 @@
     "pageTitle": "设置",
     "nav": {
       "account": "账户",
+      "appearance": "外观",
       "providers": "AI 服务商",
       "members": "成员管理"
+    },
+    "appearance": {
+      "title": "外观",
+      "description": "调整应用主界面的颜色与模式。",
+      "mode": "模式",
+      "activePreset": "当前预设：{preset}",
+      "modes": {
+        "light": "浅色",
+        "dark": "深色",
+        "system": "系统"
+      },
+      "presets": {
+        "light": "浅色主题预设",
+        "dark": "深色主题预设"
+      },
+      "preview": {
+        "light": "浅色预览",
+        "dark": "深色预览"
+      }
     },
     "title": "AI 服务商",
     "subtitle": "配置 API 密钥并选择驱动智能助手的模型。",

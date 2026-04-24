@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import SettingsPageClient from "@/components/bioinfoflow/settings/settings-page-client"
 import { apiRequest } from "@/lib/api"
+import { useAppearance } from "@/lib/appearance/use-appearance"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 
 type ProviderTestResult = {
@@ -26,8 +27,16 @@ vi.mock("next-intl", () => ({
     const labels: Record<string, string> = {
       pageTitle: "Settings",
       "nav.account": "Account",
+      "nav.appearance": "Appearance",
       "nav.providers": "AI Providers",
       "nav.members": "Members",
+      "appearance.title": "Appearance",
+      "appearance.description": "Tune app shell colors and mode.",
+      "appearance.mode": "Mode",
+      "appearance.presets.light": "Light preset",
+      "appearance.presets.dark": "Dark preset",
+      "appearance.preview.light": "Light preview",
+      "appearance.preview.dark": "Dark preview",
       title: "AI Providers",
       subtitle: "Configure providers",
       apiKey: "API Key",
@@ -49,6 +58,10 @@ vi.mock("@/hooks/use-llm-settings", () => ({
   useLlmSettings: vi.fn(),
 }))
 
+vi.mock("@/lib/appearance/use-appearance", () => ({
+  useAppearance: vi.fn(),
+}))
+
 vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
   ProviderIcon: ({ provider }: { provider: string }) => <span>{provider}</span>,
 }))
@@ -67,12 +80,23 @@ vi.mock("@/lib/api", async () => {
 
 describe("SettingsPage", () => {
   const apiRequestMock = vi.mocked(apiRequest)
+  const useAppearanceMock = vi.mocked(useAppearance)
   const useLlmSettingsMock = vi.mocked(useLlmSettings)
 
   beforeEach(() => {
     apiRequestMock.mockReset()
     updateSettingsMock.mockReset()
     testProviderMock.mockClear()
+    useAppearanceMock.mockReturnValue({
+      mode: "system",
+      resolvedMode: "light",
+      lightPreset: "codex",
+      darkPreset: "codex",
+      activePreset: "codex",
+      setMode: vi.fn(),
+      setLightPreset: vi.fn(),
+      setDarkPreset: vi.fn(),
+    })
 
     useLlmSettingsMock.mockReturnValue({
       settings: {
@@ -181,6 +205,23 @@ describe("SettingsPage", () => {
         },
       })
     })
+  })
+
+  it("shows an appearance section in the settings navigation", async () => {
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          role: "owner",
+          mode: "team",
+          canManageMembers: true,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    expect(screen.getByText("Appearance")).toBeInTheDocument()
   })
 
   it("shows the members panel only to admins and owners", async () => {

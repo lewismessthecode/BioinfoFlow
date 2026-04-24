@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next"
 import { Agentation } from "agentation"
 import { NextIntlClientProvider } from "next-intl"
 import { getLocale, getMessages, getTranslations } from "next-intl/server"
+import { AppearanceProvider } from "@/lib/appearance/provider"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
 
@@ -61,7 +62,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </a>
         <NextIntlClientProvider messages={messages}>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            {children}
+            <AppearanceProvider>{children}</AppearanceProvider>
           </ThemeProvider>
         </NextIntlClientProvider>
         <Analytics />

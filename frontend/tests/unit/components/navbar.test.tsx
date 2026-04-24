@@ -7,7 +7,7 @@ const {
   pushMock,
   replaceMock,
   refreshMock,
-  setThemeMock,
+  setModeMock,
   signOutMock,
   openInNewTabMock,
   toastInfoMock,
@@ -17,7 +17,7 @@ const {
   pushMock: vi.fn(),
   replaceMock: vi.fn(),
   refreshMock: vi.fn(),
-  setThemeMock: vi.fn(),
+  setModeMock: vi.fn(),
   signOutMock: vi.fn(),
   openInNewTabMock: vi.fn(),
   toastInfoMock: vi.fn(),
@@ -33,10 +33,17 @@ vi.mock("next/navigation", () => ({
   }),
 }))
 
-vi.mock("next-themes", () => ({
-  useTheme: () => ({
-    theme: "light",
-    setTheme: setThemeMock,
+vi.mock("@/lib/appearance/use-appearance", () => ({
+  getNextAppearanceMode: () => "dark",
+  useAppearance: () => ({
+    mode: "light",
+    resolvedMode: "light",
+    lightPreset: "codex",
+    darkPreset: "codex",
+    activePreset: "codex",
+    setMode: setModeMock,
+    setLightPreset: vi.fn(),
+    setDarkPreset: vi.fn(),
   }),
 }))
 
@@ -148,7 +155,7 @@ describe("Navbar", () => {
 
     await user.click(screen.getByRole("button", { name: "Toggle theme" }))
 
-    expect(setThemeMock).toHaveBeenCalledWith("dark")
+    expect(setModeMock).toHaveBeenCalledWith("dark")
   })
 
   it("signs out authenticated viewers and redirects to /auth on success", async () => {
