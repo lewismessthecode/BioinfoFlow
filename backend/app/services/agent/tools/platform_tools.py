@@ -27,6 +27,7 @@ from uuid import UUID
 
 from app.repositories.workflow_repo import WorkflowRepository
 from app.schemas.project import ProjectRead
+from app.schemas.project_workflow import ProjectWorkflowGroupRead
 from app.schemas.run import RunCreate, RunRead
 from app.schemas.workflow import WorkflowRead
 from app.services.agent.tools import register_tool
@@ -62,6 +63,17 @@ def _serialize_project(project: Any) -> dict[str, Any]:
     return ProjectRead.model_validate(project, from_attributes=True).model_dump(
         mode="json", by_alias=True
     )
+
+
+def _serialize_project_workflow_group(group: dict[str, Any]) -> dict[str, Any]:
+    return ProjectWorkflowGroupRead.model_validate(
+        {
+            "source": group["source"],
+            "name": group["name"],
+            "pinned_workflow": _serialize_workflow(group["pinned_workflow"]),
+            "versions": [_serialize_workflow(workflow) for workflow in group["versions"]],
+        }
+    ).model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +279,14 @@ class PlatformWorkflowProjectListTool(_PlatformToolBase):
         entries = await self.project_workflow_service.list_project_workflows(
             project_id=self.project_id
         )
-        return ToolResult(success=True, data={"workflows": entries})
+        return ToolResult(
+            success=True,
+            data={
+                "workflows": [
+                    _serialize_project_workflow_group(entry) for entry in entries
+                ]
+            },
+        )
 
 
 @register_tool

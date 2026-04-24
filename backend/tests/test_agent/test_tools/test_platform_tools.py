@@ -7,6 +7,7 @@ already covered by each service's own tests.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ from app.services.agent.tools.platform_tools import (
     PlatformRunSubmitTool,
     PlatformWorkflowBindTool,
     PlatformWorkflowListTool,
+    PlatformWorkflowProjectListTool,
 )
 
 
@@ -161,3 +163,111 @@ class TestAuthScopingForwarded:
 
             assert not result.success
             assert "not found" in (result.error or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_project_workflow_list_serializes_nested_workflows(self, mock_session):
+        tool = PlatformWorkflowProjectListTool(
+            mock_session,
+            project_id="proj-1",
+            user_id="alice",
+            workspace_id="ws-42",
+        )
+        pinned = object()
+        old_version = object()
+        newest_version = object()
+        now = datetime.now(UTC)
+
+        with patch(
+            "app.services.agent.tools.platform_tools.ProjectWorkflowService"
+        ) as svc_class:
+            instance = svc_class.return_value
+            instance.list_project_workflows = AsyncMock(
+                return_value=[
+                    {
+                        "source": "local",
+                        "name": "rna-seq",
+                        "pinned_workflow": newest_version,
+                        "versions": [newest_version, old_version, pinned],
+                    }
+                ]
+            )
+
+            with patch(
+                "app.services.agent.tools.platform_tools._serialize_workflow",
+                side_effect=[
+                    {
+                        "id": str(uuid4()),
+                        "name": "rna-seq",
+                        "description": "Newest workflow",
+                        "source": "local",
+                        "engine": "nextflow",
+                        "source_ref": "/tmp/new.nf",
+                        "entrypoint_relpath": "main.nf",
+                        "bundle_kind": "single_file",
+                        "version": "2.0.0",
+                        "estimated_time": None,
+                        "schema_json": None,
+                        "created_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    },
+                    {
+                        "id": str(uuid4()),
+                        "name": "rna-seq",
+                        "description": "Newest workflow",
+                        "source": "local",
+                        "engine": "nextflow",
+                        "source_ref": "/tmp/new.nf",
+                        "entrypoint_relpath": "main.nf",
+                        "bundle_kind": "single_file",
+                        "version": "2.0.0",
+                        "estimated_time": None,
+                        "schema_json": None,
+                        "created_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    },
+                    {
+                        "id": str(uuid4()),
+                        "name": "rna-seq",
+                        "description": "Older workflow",
+                        "source": "local",
+                        "engine": "nextflow",
+                        "source_ref": "/tmp/old.nf",
+                        "entrypoint_relpath": "main.nf",
+                        "bundle_kind": "single_file",
+                        "version": "1.0.0",
+                        "estimated_time": None,
+                        "schema_json": None,
+                        "created_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    },
+                    {
+                        "id": str(uuid4()),
+                        "name": "rna-seq",
+                        "description": "Pinned workflow",
+                        "source": "local",
+                        "engine": "nextflow",
+                        "source_ref": "/tmp/pinned.nf",
+                        "entrypoint_relpath": "main.nf",
+                        "bundle_kind": "single_file",
+                        "version": "0.9.0",
+                        "estimated_time": None,
+                        "schema_json": None,
+                        "created_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    },
+                ],
+            ) as serialize_workflow:
+                result = await tool.execute()
+
+            instance.list_project_workflows.assert_awaited_once_with(project_id="proj-1")
+            assert serialize_workflow.call_count == 4
+            assert result.success
+            workflow_group = result.data["workflows"][0]
+            assert workflow_group["source"] == "local"
+            assert workflow_group["name"] == "rna-seq"
+            assert workflow_group["pinned_workflow"]["version"] == "2.0.0"
+            assert [version["version"] for version in workflow_group["versions"]] == [
+                "2.0.0",
+                "1.0.0",
+                "0.9.0",
+            ]
