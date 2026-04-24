@@ -8,6 +8,7 @@ import {
   getServerAuthConfig,
 } from "@/lib/auth-config"
 import AppLayout from "./app-layout"
+import "./app-shell.css"
 
 export default async function ProtectedLayout({
   children,

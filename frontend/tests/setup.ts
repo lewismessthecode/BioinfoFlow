@@ -52,10 +52,12 @@ function ensureStorage(name: "localStorage" | "sessionStorage") {
     configurable: true,
     value: storage,
   })
-  Object.defineProperty(window, name, {
-    configurable: true,
-    value: storage,
-  })
+  if (typeof window !== "undefined") {
+    Object.defineProperty(window, name, {
+      configurable: true,
+      value: storage,
+    })
+  }
 }
 
 ensureStorage("localStorage")

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { fireEvent, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import RunsPage from "@/app/(app)/runs/page"
@@ -32,6 +32,39 @@ const translationMocks = new Map<
 const useEventsMock = vi.fn()
 const routerPushMock = vi.fn()
 const routerReplaceMock = vi.fn()
+
+vi.mock("next/dynamic", () => ({
+  default: (
+    loader: () => Promise<{ default: React.ComponentType<Record<string, unknown>> }>,
+    options?: { loading?: React.ComponentType<Record<string, unknown>> },
+  ) => {
+    return function DynamicMock(props: Record<string, unknown>) {
+      const [Component, setComponent] = React.useState<React.ComponentType<Record<string, unknown>> | null>(null)
+
+      React.useEffect(() => {
+        let cancelled = false
+        const timer = window.setTimeout(async () => {
+          const loaded = await loader()
+          if (!cancelled) {
+            setComponent(() => loaded.default)
+          }
+        }, 0)
+
+        return () => {
+          cancelled = true
+          window.clearTimeout(timer)
+        }
+      }, [])
+
+      if (!Component) {
+        const Loading = options?.loading
+        return Loading ? <Loading /> : null
+      }
+
+      return <Component {...props} />
+    }
+  },
+}))
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({
@@ -84,12 +117,21 @@ vi.mock("next/link", () => ({
   default: ({
     href,
     children,
+    onClick,
     ...props
   }: {
     href: string
     children: React.ReactNode
+    onClick?: React.MouseEventHandler<HTMLAnchorElement>
   } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <a href={href} {...props}>
+    <a
+      href={href}
+      {...props}
+      onClick={(event) => {
+        event.preventDefault()
+        onClick?.(event)
+      }}
+    >
       {children}
     </a>
   ),
@@ -335,29 +377,31 @@ describe("RunsPage - core features", () => {
       expect(screen.getByTestId("run-inline-detail")).toHaveTextContent("detail-workflow:nf-core/viral-mini-nf")
     })
 
-    eventHandlers?.onRunStatus?.({
-      data: {
-        run_id: "run-1",
-        status: "completed",
-        current_task: "done",
-        tasks_completed: 4,
-        tasks_total: 4,
-      },
-    })
-    eventHandlers?.onRunLog?.({
-      data: {
-        run_id: "run-1",
-        message: "finished",
-        level: "info",
-        task: "align",
-        timestamp: "2026-03-16T00:01:00Z",
-      },
-    })
-    eventHandlers?.onRunDag?.({
-      data: {
-        run_id: "run-1",
-        dag: { nodes: [{ id: "task-1" }, { id: "task-2" }] },
-      },
+    await act(async () => {
+      eventHandlers?.onRunStatus?.({
+        data: {
+          run_id: "run-1",
+          status: "completed",
+          current_task: "done",
+          tasks_completed: 4,
+          tasks_total: 4,
+        },
+      })
+      eventHandlers?.onRunLog?.({
+        data: {
+          run_id: "run-1",
+          message: "finished",
+          level: "info",
+          task: "align",
+          timestamp: "2026-03-16T00:01:00Z",
+        },
+      })
+      eventHandlers?.onRunDag?.({
+        data: {
+          run_id: "run-1",
+          dag: { nodes: [{ id: "task-1" }, { id: "task-2" }] },
+        },
+      })
     })
 
     await waitFor(() => {
@@ -611,6 +655,41 @@ describe("RunsPage - core features", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("run-inline-detail")).not.toBeInTheDocument()
     })
+  })
+
+  it("shows an inline loading placeholder before the heavy detail chunk resolves", async () => {
+    searchParamsState.highlight = null
+    useEventsMock.mockReturnValue({ connectionState: "connected" })
+
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/workflows") {
+        return {
+          data: [{ id: "wf-1", name: "viral-mini-nf", source: "nf-core", engine: "nextflow", version: "1.0.0" }],
+          meta: undefined,
+        }
+      }
+      if (path === "/runs") {
+        return {
+          data: [makeRun({ run_id: "run-1", workflow_id: "wf-1", status: "running" })],
+          meta: { pagination: { total_count: 1, next_cursor: null } },
+        }
+      }
+      if (path === "/runs/run-1/logs") return { data: { logs: [] }, meta: undefined }
+      if (path === "/runs/run-1/outputs") return { data: { files: [] }, meta: undefined }
+      if (path === "/runs/run-1/dag") return { data: { nodes: [], edges: [] }, meta: undefined }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<RunsPage />, {
+      projectContext: { activeProjectId: "project-url" },
+    })
+
+    expect(await screen.findByText("run-1")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "runs.viewDetails" }))
+
+    expect(screen.getByTestId("run-inline-detail-loading")).toBeInTheDocument()
+    expect(await screen.findByTestId("run-inline-detail")).toHaveTextContent("detail-run:run-1")
   })
 
   it("renders workflow names as links without expanding the row", async () => {

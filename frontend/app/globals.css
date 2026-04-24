@@ -1,7 +1,5 @@
 @import "tailwindcss" source(none);
 @import "tw-animate-css";
-@import "@xterm/xterm/css/xterm.css";
-@import "uplot/dist/uPlot.min.css";
 @source "./";
 @source "../components";
 @source "../hooks";

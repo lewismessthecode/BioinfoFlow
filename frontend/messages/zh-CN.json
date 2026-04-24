@@ -377,6 +377,7 @@
     "cleanupRun": "清理",
     "submitBatch": "批量提交",
     "notifications": "通知",
+    "loadingInlineDetail": "正在加载运行详情…",
     "openFullPage": "打开完整页面",
     "backToRuns": "返回运行列表",
     "fullscreen": "全屏",

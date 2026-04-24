@@ -1,5 +1,5 @@
 import * as React from "react"
-import { screen, waitFor } from "@testing-library/react"
+import { fireEvent, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import AppLayout from "@/app/(app)/app-layout"
@@ -13,6 +13,24 @@ const pathnameState = {
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathnameState.value,
+}))
+
+vi.mock("next/dynamic", () => ({
+  default: () => {
+    return function DynamicMock(props: Record<string, unknown>) {
+      const { isOpen } = useTerminalDock()
+
+      if ("open" in props) {
+        return (
+          <div data-testid="command-palette-shell">
+            {props.open ? "open" : "closed"}
+          </div>
+        )
+      }
+
+      return <div data-testid="terminal-dock">{isOpen ? "open" : "closed"}</div>
+    }
+  },
 }))
 
 vi.mock("next-intl", () => ({
@@ -41,7 +59,11 @@ vi.mock("@/components/bioinfoflow/sidebar/sidebar-drawer", () => ({
 }))
 
 vi.mock("@/components/bioinfoflow/command-palette", () => ({
-  CommandPalette: () => null,
+  CommandPalette: ({ open }: { open: boolean }) => (
+    <div data-testid="command-palette-shell">
+      {open ? "open" : "closed"}
+    </div>
+  ),
 }))
 
 vi.mock("@/components/ui/sonner", () => ({
@@ -100,10 +122,28 @@ describe("AppLayout terminal integration", () => {
     const toggle = await screen.findByRole("button", { name: "accessibility.openTerminal" })
     expect(screen.getByTestId("terminal-dock")).toHaveTextContent("closed")
 
-    toggle.click()
+    fireEvent.click(toggle)
 
     await waitFor(() => {
       expect(screen.getByTestId("terminal-dock")).toHaveTextContent("open")
+    })
+  })
+
+  it("does not mount the command palette until the shortcut is used", async () => {
+    pathnameState.value = "/agent"
+
+    renderAppPage(
+      <AppLayout>
+        <ProjectSeeder projectId="project-1" />
+      </AppLayout>
+    )
+
+    expect(screen.queryByTestId("command-palette-shell")).not.toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("command-palette-shell")).toHaveTextContent("open")
     })
   })
 

@@ -3,16 +3,15 @@
 import type React from "react"
 
 import { useCallback, useEffect, useState } from "react"
+import dynamic from "next/dynamic"
 import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { TerminalSquare } from "lucide-react"
 import { BreadcrumbProvider } from "@/components/bioinfoflow/breadcrumb-context"
-import { CommandPalette } from "@/components/bioinfoflow/command-palette"
 import { Navbar } from "@/components/bioinfoflow/navbar"
 import { ProjectProvider } from "@/components/bioinfoflow/project-context"
 import { Sidebar } from "@/components/bioinfoflow/sidebar/index"
 import { SidebarDrawer } from "@/components/bioinfoflow/sidebar/sidebar-drawer"
-import { TerminalDock } from "@/components/bioinfoflow/terminal/terminal-dock"
 import { WorkspaceShellProvider } from "@/components/bioinfoflow/workspace-shell-context"
 import {
   TerminalDockProvider,
@@ -28,6 +27,16 @@ const LEFT_SIDEBAR_MIN = 200
 const LEFT_SIDEBAR_MAX = 400
 const LEFT_SIDEBAR_DEFAULT = 260
 const LEFT_SIDEBAR_COLLAPSED = 56
+
+const LazyCommandPalette = dynamic(
+  () => import("@/components/bioinfoflow/command-palette").then((m) => ({ default: m.CommandPalette })),
+  { ssr: false },
+)
+
+const LazyTerminalDock = dynamic(
+  () => import("@/components/bioinfoflow/terminal/terminal-dock").then((m) => ({ default: m.TerminalDock })),
+  { ssr: false },
+)
 
 type AppLayoutProps = {
   children: React.ReactNode
@@ -45,6 +54,7 @@ export default function AppLayout({ children, viewer }: AppLayoutProps) {
   const [activeProjectName, setActiveProjectName] = useState("")
   const [activeConversationTitle, setActiveConversationTitle] = useState("")
   const [commandOpen, setCommandOpen] = useState(false)
+  const [commandPaletteMounted, setCommandPaletteMounted] = useState(false)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const isMobile = useIsMobile()
   const terminalEnabled =
@@ -88,11 +98,23 @@ export default function AppLayout({ children, viewer }: AppLayoutProps) {
     }
   }, [isMobile])
 
+  const handleCommandOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen) {
+      setCommandPaletteMounted(true)
+    }
+    setCommandOpen(nextOpen)
+  }, [])
+
+  const toggleCommandPalette = useCallback(() => {
+    setCommandPaletteMounted(true)
+    setCommandOpen((prev) => !prev)
+  }, [])
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault()
-        setCommandOpen((prev) => !prev)
+        toggleCommandPalette()
       }
       // Toggle left sidebar with Cmd+B
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
@@ -102,7 +124,7 @@ export default function AppLayout({ children, viewer }: AppLayoutProps) {
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [toggleLeftSidebar])
+  }, [toggleCommandPalette, toggleLeftSidebar])
 
   const effectiveLeftWidth = leftSidebarCollapsed ? LEFT_SIDEBAR_COLLAPSED : leftSidebarWidth
 
@@ -187,10 +209,12 @@ export default function AppLayout({ children, viewer }: AppLayoutProps) {
                 <main id="main-content" className="min-h-0 flex-1 overflow-hidden" role="main">
                   {children}
                 </main>
-                <TerminalDock />
+                {terminalEnabled ? <LazyTerminalDock /> : null}
               </div>
             </div>
-            <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+            {commandPaletteMounted ? (
+              <LazyCommandPalette open={commandOpen} onOpenChange={handleCommandOpenChange} />
+            ) : null}
             <Toaster position="bottom-right" />
           </TerminalDockProvider>
         </BreadcrumbProvider>

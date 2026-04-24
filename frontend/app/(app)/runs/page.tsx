@@ -4,6 +4,7 @@ import { useState } from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
 import { AnimatePresence } from "framer-motion"
+import { useTranslations } from "next-intl"
 import { Search, Filter, Eye, FileText, RotateCcw, XCircle, Trash2, ChevronLeft, ChevronRight, ChevronDown, Play, Layers, Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,7 +35,6 @@ import { runStatusLabel, runStatusVariant } from "@/constants/status-config"
 import type { Run, RunStatus } from "@/lib/types"
 import { formatDateTime, formatDuration } from "@/lib/format-utils"
 import { RunsTableSkeleton } from "./components/runs-table-skeleton"
-import { RunInlineDetail } from "./components/run-inline-detail"
 const RunSubmissionWizard = dynamic(
   () => import("../workflows/components/run-submission-wizard").then((m) => ({ default: m.RunSubmissionWizard })),
   { ssr: false },
@@ -43,7 +43,32 @@ const NotificationConfigPanel = dynamic(
   () => import("./components/notification-config-panel").then((m) => ({ default: m.NotificationConfigPanel })),
   { ssr: false },
 )
+const RUNS_TABLE_COLUMN_COUNT = 8
+const RunInlineDetail = dynamic(
+  () => import("./components/run-inline-detail").then((m) => ({ default: m.RunInlineDetail })),
+  {
+    ssr: false,
+    loading: () => <RunInlineDetailLoadingRow />,
+  },
+)
 import { useRunsPage } from "./use-runs-page"
+
+function RunInlineDetailLoadingRow() {
+  const tRuns = useTranslations("runs")
+
+  return (
+    <tr data-testid="run-inline-detail-loading">
+      <td colSpan={RUNS_TABLE_COLUMN_COUNT} className="p-0">
+        <div className="border-l-3 border-primary/30 bg-accent/4 px-6 py-5">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <div className="h-2 w-2 animate-pulse rounded-full bg-primary/55" />
+            <span>{tRuns("loadingInlineDetail")}</span>
+          </div>
+        </div>
+      </td>
+    </tr>
+  )
+}
 
 export default function RunsPage() {
   const {

@@ -377,6 +377,7 @@
     "cleanupRun": "Cleanup",
     "submitBatch": "Submit Batch",
     "notifications": "Notifications",
+    "loadingInlineDetail": "Loading run details…",
     "openFullPage": "Open full page",
     "backToRuns": "Back to Runs",
     "fullscreen": "Fullscreen",

@@ -1,5 +1,7 @@
 "use client"
 
+import "./scheduler.css"
+
 import { useCallback, useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
 import {
