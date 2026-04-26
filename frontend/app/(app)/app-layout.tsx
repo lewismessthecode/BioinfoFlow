@@ -22,6 +22,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
 import type { ViewerIdentity } from "@/lib/auth-config"
+import { RuntimeProvider, getActiveRuntime, type RuntimeMode } from "@/lib/runtime"
 
 const LEFT_SIDEBAR_MIN = 200
 const LEFT_SIDEBAR_MAX = 400
@@ -41,15 +42,25 @@ const LazyTerminalDock = dynamic(
 type AppLayoutProps = {
   children: React.ReactNode
   viewer?: ViewerIdentity
+  runtimeMode?: RuntimeMode
 }
 
-export default function AppLayout({ children, viewer }: AppLayoutProps) {
+export default function AppLayout({
+  children,
+  viewer,
+  runtimeMode = "live",
+}: AppLayoutProps) {
+  const runtime = getActiveRuntime(runtimeMode)
   const pathname = usePathname()
   const tAccessibility = useTranslations("accessibility")
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(LEFT_SIDEBAR_DEFAULT)
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false)
-  const [selectedProjectId, setSelectedProjectId] = useState("")
-  const [conversationProjectId, setConversationProjectId] = useState("")
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    runtime.contextDefaults?.selectedProjectId ?? "",
+  )
+  const [conversationProjectId, setConversationProjectId] = useState(
+    runtime.contextDefaults?.selectedProjectId ?? "",
+  )
   const [activeConversationId, setActiveConversationId] = useState("")
   const [activeProjectName, setActiveProjectName] = useState("")
   const [activeConversationTitle, setActiveConversationTitle] = useState("")
@@ -58,6 +69,7 @@ export default function AppLayout({ children, viewer }: AppLayoutProps) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const isMobile = useIsMobile()
   const terminalEnabled =
+    runtime.capabilities.terminal &&
     Boolean(selectedProjectId) &&
     (pathname === "/agent" ||
       pathname.startsWith("/agent/") ||
@@ -129,97 +141,100 @@ export default function AppLayout({ children, viewer }: AppLayoutProps) {
   const effectiveLeftWidth = leftSidebarCollapsed ? LEFT_SIDEBAR_COLLAPSED : leftSidebarWidth
 
   return (
-    <ProjectProvider
-      value={{
-        selectedProjectId,
-        setSelectedProjectId,
-        conversationProjectId,
-        setConversationProjectId,
-        activeProjectId: selectedProjectId,
-        setActiveProjectId: setSelectedProjectId,
-        activeConversationId,
-        setActiveConversationId,
-        activeProjectName,
-        setActiveProjectName,
-        activeConversationTitle,
-        setActiveConversationTitle,
-      }}
-    >
-      <WorkspaceShellProvider>
-        <BreadcrumbProvider>
-          <TerminalDockProvider
-            projectId={selectedProjectId || undefined}
-            enabled={terminalEnabled}
-            isMobile={isMobile}
-          >
-            <TerminalHotkeys enabled={terminalEnabled} />
-            {/* Skip-to-content link */}
-            <a
-              href="#main-content"
-              className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-primary focus:text-primary-foreground focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg"
+    <RuntimeProvider mode={runtimeMode}>
+      <ProjectProvider
+        value={{
+          selectedProjectId,
+          setSelectedProjectId,
+          conversationProjectId,
+          setConversationProjectId,
+          activeProjectId: selectedProjectId,
+          setActiveProjectId: setSelectedProjectId,
+          activeConversationId,
+          setActiveConversationId,
+          activeProjectName,
+          setActiveProjectName,
+          activeConversationTitle,
+          setActiveConversationTitle,
+        }}
+      >
+        <WorkspaceShellProvider>
+          <BreadcrumbProvider>
+            <TerminalDockProvider
+              projectId={selectedProjectId || undefined}
+              enabled={terminalEnabled}
+              isMobile={isMobile}
             >
-              Skip to content
-            </a>
+              <TerminalHotkeys enabled={terminalEnabled} />
+              {/* Skip-to-content link */}
+              <a
+                href="#main-content"
+                className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-primary focus:text-primary-foreground focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg"
+              >
+                Skip to content
+              </a>
 
-            <div className="flex h-screen bg-background">
-              {/* Left Sidebar - Desktop */}
-              {!isMobile && (
-                <nav
-                  className="relative flex-shrink-0 transition-[width,opacity] duration-200"
-                  style={{ width: effectiveLeftWidth }}
-                  role="navigation"
-                  aria-label="Project navigation"
-                >
-                  <div
-                    className="h-full transition-opacity duration-200"
-                    style={{ opacity: leftSidebarCollapsed ? 0.7 : 1 }}
+              <div className="flex h-screen bg-background">
+                {/* Left Sidebar - Desktop */}
+                {!isMobile && (
+                  <nav
+                    className="relative flex-shrink-0 transition-[width,opacity] duration-200"
+                    style={{ width: effectiveLeftWidth }}
+                    role="navigation"
+                    aria-label="Project navigation"
                   >
-                    <Sidebar
-                      collapsed={leftSidebarCollapsed}
-                      onCollapsedChange={setLeftSidebarCollapsed}
-                      viewer={viewer}
-                    />
-                  </div>
-                  {!leftSidebarCollapsed && (
-                    <ResizeHandle side="left" onResize={handleLeftResize} />
-                  )}
-                </nav>
-              )}
+                    <div
+                      className="h-full transition-opacity duration-200"
+                      style={{ opacity: leftSidebarCollapsed ? 0.7 : 1 }}
+                    >
+                      <Sidebar
+                        collapsed={leftSidebarCollapsed}
+                        onCollapsedChange={setLeftSidebarCollapsed}
+                        viewer={viewer}
+                        runtimeMode={runtimeMode}
+                      />
+                    </div>
+                    {!leftSidebarCollapsed && (
+                      <ResizeHandle side="left" onResize={handleLeftResize} />
+                    )}
+                  </nav>
+                )}
 
-              {/* Left Sidebar - Mobile Drawer */}
-              {isMobile && (
-                <SidebarDrawer open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
-                  <Sidebar collapsed={false} viewer={viewer} />
-                </SidebarDrawer>
-              )}
+                {/* Left Sidebar - Mobile Drawer */}
+                {isMobile && (
+                  <SidebarDrawer open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
+                    <Sidebar collapsed={false} viewer={viewer} runtimeMode={runtimeMode} />
+                  </SidebarDrawer>
+                )}
 
-              {/* Main Content Area */}
-              <div className="flex-1 flex flex-col min-w-0">
-                <Navbar
-                  onSidebarToggle={toggleLeftSidebar}
-                  showHamburger={isMobile}
-                  projectName={activeProjectName}
-                  conversationTitle={activeConversationTitle}
-                  viewer={viewer}
-                >
-                  {terminalEnabled ? (
-                    <TerminalNavbarAction label={tAccessibility("openTerminal")} />
-                  ) : null}
-                </Navbar>
-                <main id="main-content" className="min-h-0 flex-1 overflow-hidden" role="main">
-                  {children}
-                </main>
-                {terminalEnabled ? <LazyTerminalDock /> : null}
+                {/* Main Content Area */}
+                <div className="flex-1 flex flex-col min-w-0">
+                  <Navbar
+                    onSidebarToggle={toggleLeftSidebar}
+                    showHamburger={isMobile}
+                    projectName={activeProjectName}
+                    conversationTitle={activeConversationTitle}
+                    viewer={viewer}
+                  >
+                    {terminalEnabled ? (
+                      <TerminalNavbarAction label={tAccessibility("openTerminal")} />
+                    ) : null}
+                  </Navbar>
+                  <main id="main-content" className="min-h-0 flex-1 overflow-hidden" role="main">
+                    {children}
+                  </main>
+                  {terminalEnabled ? <LazyTerminalDock /> : null}
+                </div>
               </div>
-            </div>
-            {commandPaletteMounted ? (
-              <LazyCommandPalette open={commandOpen} onOpenChange={handleCommandOpenChange} />
-            ) : null}
-            <Toaster position="bottom-right" />
-          </TerminalDockProvider>
-        </BreadcrumbProvider>
-      </WorkspaceShellProvider>
-    </ProjectProvider>
+              {commandPaletteMounted ? (
+                <LazyCommandPalette open={commandOpen} onOpenChange={handleCommandOpenChange} />
+              ) : null}
+              <Toaster position="bottom-right" />
+            </TerminalDockProvider>
+          </BreadcrumbProvider>
+        </WorkspaceShellProvider>
+      </ProjectProvider>
+    </RuntimeProvider>
   )
 }
 
