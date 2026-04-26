@@ -1,19 +1,44 @@
 import Link from "next/link"
-import { headers } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { ChevronRight, GitBranch, LockKeyhole, MessageSquare, Shield, Sparkles } from "lucide-react"
+import {
+  ChevronRight,
+  GitBranch,
+  LockKeyhole,
+  MessageSquare,
+  Shield,
+  Sparkles,
+} from "lucide-react"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { getTranslations } from "next-intl/server"
 import { AuthActions } from "@/components/auth/auth-actions"
+import { DemoAuthScreen } from "@/components/auth/demo-auth-screen"
 import { EmailSignInForm } from "@/components/auth/email-sign-in-form"
 import { ensureAuthReady, getAuth } from "@/lib/auth"
 import { authProviderStatus, getServerAuthConfig } from "@/lib/auth-config"
+import { DEMO_ACCESS_COOKIE, isDemoDeployment } from "@/lib/demo-auth"
 
 const TEAM_ROLES = ["owner", "admin", "member"] as const
 
 export default async function AuthPage() {
   const t = await getTranslations("auth")
   const authConfig = getServerAuthConfig()
+  const demoMode = isDemoDeployment()
+  const cookieStore = await cookies()
+  const hasDemoAccess = Boolean(cookieStore.get(DEMO_ACCESS_COOKIE)?.value)
+
+  if (demoMode && !authConfig.authEnabled) {
+    if (hasDemoAccess) {
+      redirect("/agent")
+    }
+
+    return (
+      <DemoAuthScreen
+        t={t}
+        workspaceName={authConfig.workspaceName}
+      />
+    )
+  }
 
   if (!authConfig.authEnabled) {
     redirect("/agent")

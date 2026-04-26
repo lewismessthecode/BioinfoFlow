@@ -1,4 +1,5 @@
 import type { SocialProviders } from "better-auth/social-providers"
+import { isDemoDeployment } from "@/lib/deploy-mode"
 
 export const DEFAULT_WORKSPACE_NAME = "Bioinfoflow Team"
 
@@ -88,7 +89,7 @@ export function getServerAuthConfig() {
 
   // OAuth social providers are only available in the Vercel demo deployment.
   // Local dev and Docker Compose instances use email/password auth only.
-  const isDemo = process.env.DEPLOY_MODE === "demo"
+  const isDemo = isDemoDeployment()
 
   const githubEnabled = isDemo && Boolean(
     process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET,

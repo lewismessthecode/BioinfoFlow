@@ -77,6 +77,7 @@
     "keyboardShortcuts": "键盘快捷键",
     "helpDocs": "帮助文档",
     "settings": "设置",
+    "exitDemo": "退出演示",
     "signOut": "退出登录",
     "defaultName": "用户",
     "lightMode": "浅色模式",
@@ -125,6 +126,7 @@
     "untitledConversation": "未命名对话",
     "defaultProject": "默认项目",
     "quickActions": "快捷操作",
+    "exitDemo": "退出演示",
     "copyOf": "副本 - {name}",
     "today": "今天",
     "yesterday": "昨天",
@@ -1270,7 +1272,8 @@
       "light": "浅色",
       "toggleMenu": "菜单",
       "toggleTheme": "主题",
-      "selectLanguage": "语言"
+      "selectLanguage": "语言",
+      "github": "GitHub"
     },
     "hero": {
       "tagline": "本地优先的生物信息学平台",
@@ -1562,6 +1565,19 @@
           "description": "在共享工作区里运行分析、查看结果并协作。"
         }
       }
+    },
+    "demo": {
+      "badge": "Demo 入口",
+      "description": "进入公开的 Bioinfoflow demo。产品界面是真实页面，运行、对话和工作流回放则由预设脚本驱动，保证演示顺滑可信。",
+      "continueAsGuest": "以访客身份继续",
+      "oauthHint": "这里的 GitHub 和 Google 按钮是 demo 入口，不需要真实外部登录，只是用来解锁预置工作区。",
+      "eyebrow": "引导式产品回放",
+      "title": "直接进入真实应用外壳，体验一套打磨好的 demo 工作区。",
+      "subtitle": "打开预置项目、提交脚本化工作流、观察 runs 推进，再切回 agent，整个对话状态都会保留下来。",
+      "previewLabel": "Demo 预览",
+      "previewBadge": "接近实时的回放",
+      "previewTitle": "一个预置工作区，五个真实页面，零安装零配置",
+      "previewResponse": "我会启动准备好的 RNA-seq 演示流程，把 run 状态同步到各个页面，并在你来回切换时保住完整的对话历史。"
     }
   },
   "scheduler": {

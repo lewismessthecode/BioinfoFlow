@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getCurrentRuntime } from "@/lib/runtime";
 import { cn } from "@/lib/utils";
 import { formatSize } from "@/lib/format-utils";
 import { DagPanel } from "@/components/bioinfoflow/dag";
@@ -83,6 +84,9 @@ export function RunDetailContent({
   const tRuns = useTranslations("runs");
   const tCommon = useTranslations("common");
   const { openTerminal, chdir } = useTerminalDock();
+  const runtime = getCurrentRuntime();
+  const terminalEnabled = runtime.capabilities.terminal;
+  const destructiveActionsEnabled = runtime.capabilities.destructiveActions;
 
   const outputTree = useMemo(
     () => buildOutputTree(outputs?.files ?? []),
@@ -281,29 +285,34 @@ export function RunDetailContent({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={openTerminal}>
-                  <Terminal className="w-3.5 h-3.5 mr-2" />
-                  {tRuns("openTerminal")}
-                </DropdownMenuItem>
+                {terminalEnabled ? (
+                  <DropdownMenuItem onClick={openTerminal}>
+                    <Terminal className="w-3.5 h-3.5 mr-2" />
+                    {tRuns("openTerminal")}
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem onClick={() => chdir(`runs/${run.run_id}`)}>
                   <FolderOpen className="w-3.5 h-3.5 mr-2" />
                   {tRuns("goToRunDir")}
                 </DropdownMenuItem>
-                {onCleanup &&
+                {destructiveActionsEnabled &&
+                  onCleanup &&
                   (run.status === "completed" || run.status === "failed" || run.status === "cancelled") && (
                   <DropdownMenuItem onClick={() => onCleanup(run)}>
                     <Eraser className="w-3.5 h-3.5 mr-2" />
                     {tRuns("cleanupRun")}
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => onDelete(run)}
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-2" />
-                  {tRuns("deleteRun")}
-                </DropdownMenuItem>
+                {destructiveActionsEnabled ? <DropdownMenuSeparator /> : null}
+                {destructiveActionsEnabled ? (
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => onDelete(run)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-2" />
+                    {tRuns("deleteRun")}
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

@@ -77,6 +77,7 @@
     "keyboardShortcuts": "Keyboard shortcuts",
     "helpDocs": "Help & Docs",
     "settings": "Settings",
+    "exitDemo": "Exit demo",
     "signOut": "Sign out",
     "defaultName": "User",
     "lightMode": "Light mode",
@@ -125,6 +126,7 @@
     "untitledConversation": "Untitled conversation",
     "defaultProject": "Default Project",
     "quickActions": "Quick actions",
+    "exitDemo": "Exit demo",
     "copyOf": "Copy of {name}",
     "today": "Today",
     "yesterday": "Yesterday",
@@ -1270,7 +1272,8 @@
       "light": "Light",
       "toggleMenu": "Toggle menu",
       "toggleTheme": "Toggle theme",
-      "selectLanguage": "Select language"
+      "selectLanguage": "Select language",
+      "github": "GitHub"
     },
     "hero": {
       "tagline": "Local-first bioinformatics platform",
@@ -1562,6 +1565,19 @@
           "description": "Run analyses, inspect results, and collaborate inside the shared workspace."
         }
       }
+    },
+    "demo": {
+      "badge": "Demo access",
+      "description": "Enter the public Bioinfoflow demo. The product UI is real, while runs, chat activity, and workflow playback are scripted for a smooth walkthrough.",
+      "continueAsGuest": "Continue as guest",
+      "oauthHint": "These GitHub and Google actions are demo-friendly entry buttons. They unlock the seeded workspace without requiring a real external sign-in.",
+      "eyebrow": "Guided product replay",
+      "title": "Walk through the real app shell with a polished demo workspace.",
+      "subtitle": "Open the seeded project, submit the scripted workflow, watch runs progress, and return to the agent without losing the conversation state.",
+      "previewLabel": "Demo preview",
+      "previewBadge": "Live-feeling replay",
+      "previewTitle": "One seeded workspace, five real pages, zero setup friction",
+      "previewResponse": "I'll launch the prepared RNA-seq walkthrough, mirror the run state across pages, and keep the full chat history intact while you explore."
     }
   },
   "scheduler": {

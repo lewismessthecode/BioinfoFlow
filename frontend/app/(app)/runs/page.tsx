@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { getCurrentRuntime } from "@/lib/runtime"
 import { cn } from "@/lib/utils"
 import { runStatusLabel, runStatusVariant } from "@/constants/status-config"
 import type { Run, RunStatus } from "@/lib/types"
@@ -420,6 +421,9 @@ function RunRowActions({
   onCancel: (run: Run) => void
   onDelete: (run: Run) => void
 }) {
+  const destructiveActionsEnabled =
+    getCurrentRuntime().capabilities.destructiveActions
+
   return (
     <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
       <Button
@@ -454,7 +458,8 @@ function RunRowActions({
           <RotateCcw className="h-4 w-4" />
         </Button>
       )}
-      {(run.status === "running" || run.status === "queued" || run.status === "pending") && (
+      {destructiveActionsEnabled &&
+        (run.status === "running" || run.status === "queued" || run.status === "pending") && (
         <Button
           variant="ghost"
           size="icon"
@@ -466,7 +471,8 @@ function RunRowActions({
           <XCircle className="h-4 w-4" />
         </Button>
       )}
-      {(run.status === "completed" || run.status === "failed" || run.status === "cancelled") && (
+      {destructiveActionsEnabled &&
+        (run.status === "completed" || run.status === "failed" || run.status === "cancelled") && (
         <Button
           variant="ghost"
           size="icon"

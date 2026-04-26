@@ -1,16 +1,36 @@
 import { type NextRequest, NextResponse } from "next/server"
 
 import { getServerAuthConfig } from "@/lib/auth-config"
+import { resolveDeployMode } from "@/lib/deploy-mode"
+import { DEMO_ACCESS_COOKIE } from "@/lib/demo-auth"
 
 // ---------------------------------------------------------------------------
 // Deploy mode — controls which routes are accessible
 // ---------------------------------------------------------------------------
 
-const DEPLOY_MODE = process.env.DEPLOY_MODE || "app"
+const DEPLOY_MODE = resolveDeployMode()
 
 // Paths accessible in demo mode (no backend needed)
-const DEMO_PATHS = new Set(["/", "/demo"])
-const DEMO_PREFIXES = ["/auth", "/api/auth", "/demo"]
+const DEMO_PATHS = new Set([
+  "/",
+  "/demo",
+  "/auth",
+  "/agent",
+  "/dashboard",
+  "/workflows",
+  "/runs",
+  "/images",
+])
+const DEMO_PREFIXES = [
+  "/api/auth",
+  "/api/demo-auth",
+  "/demo/",
+  "/agent/",
+  "/dashboard/",
+  "/workflows/",
+  "/runs/",
+  "/images/",
+]
 
 function isDemoAllowed(pathname: string): boolean {
   if (DEMO_PATHS.has(pathname)) return true
@@ -21,8 +41,8 @@ function isDemoAllowed(pathname: string): boolean {
 // Auth — paths that bypass authentication
 // ---------------------------------------------------------------------------
 
-const PUBLIC_PATHS = new Set(["/"])
-const PUBLIC_PREFIXES = ["/auth", "/api/auth", "/demo"]
+const PUBLIC_PATHS = new Set(["/", "/auth"])
+const PUBLIC_PREFIXES = ["/api/auth", "/api/demo-auth", "/demo/"]
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) {
@@ -44,15 +64,20 @@ export function proxy(request: NextRequest) {
     if (!isDemoAllowed(pathname)) {
       return NextResponse.redirect(new URL("/", request.url))
     }
-    // Demo mode still requires auth if configured
-    const authConfig = getServerAuthConfig()
-    if (!authConfig.authEnabled) {
-      return NextResponse.next()
-    }
-    // Allow public demo paths without auth
+
     if (isPublicPath(pathname)) {
       return NextResponse.next()
     }
+
+    const authConfig = getServerAuthConfig()
+    if (!authConfig.authEnabled) {
+      const demoAccess = request.cookies.get(DEMO_ACCESS_COOKIE)
+      if (!demoAccess?.value) {
+        return NextResponse.redirect(new URL("/auth", request.url))
+      }
+      return NextResponse.next()
+    }
+
     const sessionToken = request.cookies.get("better-auth.session_token")
     if (!sessionToken?.value) {
       return NextResponse.redirect(new URL("/auth", request.url))
