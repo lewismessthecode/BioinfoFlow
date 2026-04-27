@@ -13,7 +13,7 @@ eggs/
 .eggs/
 # lib/  <-- Removed this as it matches frontend/lib
 lib64/
-parts/
+/parts/
 sdist/
 var/
 wheels/
@@ -99,7 +99,6 @@ history*
 data/
 
 # NextFlow runtime artifacts
-*nextflow*
 .nextflow.log*
 
 # Build/generated files
