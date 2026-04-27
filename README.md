@@ -29,16 +29,8 @@ Bioinfoflow starts as the local operating layer between those worlds. It keeps s
 - Manage projects, workflow registrations, run inputs, outputs, logs, and status.
 - Monitor long-running jobs with live task updates, DAG visualization, and scheduler state.
 - Use the `bif` CLI for scripting, JSON output, and remote/local automation.
-- Run GPU-accelerated WGS analysis with NVIDIA Parabricks on your own workstation or lab server, including personal-genome workflows when your hardware supports it.
+- **Run GPU-accelerated WGS analysis with NVIDIA Parabricks on your own workstation or lab server, including personal-genome workflows when your hardware supports it.**
 - Deploy to a trusted Linux workstation or lab GPU server without copying source code to it.
-
-## Current Status
-
-Bioinfoflow is ready for developer-preview use on trusted machines and lab servers. It is intentionally local-first and single-node today.
-
-Use it now if you want to validate the workflow experience, run platform tests, and collect early users. Before exposing it broadly on the public internet, treat the Docker socket and authentication model as production hardening work.
-
-Ship checklist: [`docs/SHIP_CHECKLIST.md`](docs/SHIP_CHECKLIST.md)
 
 ## Quick Start
 
@@ -168,71 +160,6 @@ Input templates:
 
 Replace the FASTQ/reference paths with files visible on your GPU server, then register the workflows in Bioinfoflow to test registration, image handling, scheduling, GPU execution, and result collection.
 
-## Remote Deployment
-
-Deploy to a trusted Linux server without copying source code to the server. The existing `deploy.sh` supports two paths.
-
-### First-Time Server Setup
-
-```bash
-./deploy.sh setup user@your-server
-ssh user@your-server
-cd ~/bioinfoflow
-vim .env
-```
-
-Set server-specific values:
-
-```env
-BIOINFOFLOW_HOME=/srv/bioinfoflow
-ANTHROPIC_API_KEY=...
-AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
-AUTH_BOOTSTRAP_OWNER_PASSWORD=<strong-password>
-BETTER_AUTH_SECRET=<long-random-secret>
-
-NEXT_PUBLIC_API_BASE_URL=http://YOUR_SERVER_IP:8000/api/v1
-BETTER_AUTH_URL=http://YOUR_SERVER_IP:3000
-CORS_ORIGINS=["http://YOUR_SERVER_IP:3000"]
-TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP"]
-```
-
-`NEXT_PUBLIC_API_BASE_URL` is baked into the frontend image at build time. If this points at `localhost`, remote browser sessions will fail.
-
-### Offline Sync
-
-Build locally, copy image tarballs over SSH, and start Compose on the server:
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=http://YOUR_SERVER_IP:8000/api/v1 \
-  ./deploy.sh sync --arch amd64 user@your-server
-```
-
-Use `--arch arm64` only for ARM Linux servers.
-
-### GHCR Release
-
-Publish images to GitHub Container Registry:
-
-```bash
-export GHCR_USER=your-github-user-or-org
-export GHCR_TOKEN=your-github-token
-echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-
-IMAGE_TAG=v0.1.0 ./deploy.sh release
-```
-
-On the server:
-
-```env
-IMAGE_REGISTRY=ghcr.io/your-github-user-or-org
-IMAGE_TAG=v0.1.0
-```
-
-```bash
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-```
-
 ## CLI
 
 The `bif` CLI supports remote HTTP mode, local in-process mode, and auto fallback:
@@ -284,13 +211,6 @@ cd frontend && bun run test
 - Scheduler: persistent queue with resource accounting, retries, timeouts, cleanup, and completion hooks
 - Realtime: SSE for runs and agent events, WebSocket for terminal sessions
 - Agent runtime: async tool dispatch loop with project/workflow context
-
-More detail:
-
-- Product overview: [`docs/product-overview.md`](docs/product-overview.md)
-- Backend overview: [`docs/backend/overview.md`](docs/backend/overview.md)
-- Frontend overview: [`docs/frontend/overview.md`](docs/frontend/overview.md)
-- Workflow submission guide: [`docs/workflow-submission-guide.md`](docs/workflow-submission-guide.md)
 
 ## Security Notes
 
