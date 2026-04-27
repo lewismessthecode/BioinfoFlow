@@ -10,7 +10,7 @@ It is built for teams that want modern product ergonomics for local and lab-serv
 
 > Preview slot: replace this block with an MP4 or GIF before launch.
 >
-> Suggested path: `docs/assets/product-preview.mp4` or `docs/assets/product-preview.gif`.
+> Suggested path after you add media assets: `assets/product-preview.mp4` or `assets/product-preview.gif`.
 
 ## Why It Exists
 
@@ -173,7 +173,7 @@ uv run bif project list
 uv run bif --output json run show r-abc
 ```
 
-Full CLI documentation: [`docs/cli/README.md`](docs/cli/README.md)
+Run `uv run bif --help` for the full command list.
 
 ## Local Development
 
@@ -218,6 +218,17 @@ cd frontend && bun run test
 - Use a strong `BETTER_AUTH_SECRET` for any shared server.
 - Set `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` to the exact public origin/host before remote use.
 - Keep `.env` private. Use `.env.example` as the shareable template.
+
+## Ship Checks
+
+Before publishing or demoing to real users:
+
+- Start from a fresh `.env` and confirm Docker Compose starts both services.
+- Confirm owner login works.
+- Run at least one Nextflow or WDL workflow end to end.
+- For remote deployments, make sure `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` use the server origin, not localhost.
+- For GPU demos, verify `nvidia-smi` and Docker GPU access on the server.
+- Confirm no secrets are tracked with `git ls-files | rg '(^|/)\\.env$|secret|token|credential' || true`.
 
 ## License
 

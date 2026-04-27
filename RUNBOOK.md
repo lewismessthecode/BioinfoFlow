@@ -260,5 +260,3 @@ export NEXT_PUBLIC_API_BASE_URL=http://YOUR_SERVER_IP:8000/api/v1
   Canonical setup and troubleshooting guide
 - `backend/README.md`
   Backend-focused notes
-- `docs/operations/runbook.md`
-  Additional ops notes and legacy deployment context

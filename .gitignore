@@ -106,6 +106,7 @@ data/
 *.pyc
 
 # Generated documentation artifacts
+/docs/
 docs/course-bioinfoflow-zh.html
 .gstack/
 .zsh_history
