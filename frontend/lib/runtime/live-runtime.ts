@@ -25,20 +25,13 @@ function parseEnvelope<T>(event: MessageEvent): EventEnvelope<T> | null {
 function subscribeLive(options: RuntimeEventSubscription) {
   if (!options.projectId) return () => {}
 
-  const source = new EventSource(
-    buildLiveApiUrl("/events/stream", {
-      project_id: options.projectId,
-      conversation_id: options.conversationId || undefined,
-      run_id: options.runId || undefined,
-      image_id: options.imageId || undefined,
-    }),
-  )
-
   let backoff = INITIAL_BACKOFF
   let disposed = false
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let source: EventSource | null = null
 
   const bind = <T,>(
+    eventSource: EventSource,
     eventName: string,
     handler?: (event: EventEnvelope<T>) => void,
   ) => {
@@ -48,56 +41,79 @@ function subscribeLive(options: RuntimeEventSubscription) {
       if (!envelope) return
       handler(envelope)
     }
-    source.addEventListener(eventName, listener)
+    eventSource.addEventListener(eventName, listener)
   }
 
-  source.onopen = () => {
+  const connect = () => {
     if (disposed) return
-    backoff = INITIAL_BACKOFF
-    options.onOpen?.()
-  }
 
-  source.onerror = (event) => {
-    if (disposed) return
-    options.onError?.(event)
-    if (source.readyState === EventSource.CLOSED) {
-      reconnectTimer = setTimeout(() => {
-        backoff = Math.min(backoff * BACKOFF_MULTIPLIER, MAX_BACKOFF)
-      }, backoff)
+    const nextSource = new EventSource(
+      buildLiveApiUrl("/events/stream", {
+        project_id: options.projectId,
+        conversation_id: options.conversationId || undefined,
+        run_id: options.runId || undefined,
+        image_id: options.imageId || undefined,
+      }),
+    )
+    source = nextSource
+
+    nextSource.onopen = () => {
+      if (disposed) return
+      backoff = INITIAL_BACKOFF
+      options.onOpen?.()
     }
+
+    nextSource.onerror = (event) => {
+      if (disposed) return
+      options.onError?.(event)
+      if (nextSource.readyState === EventSource.CLOSED && !reconnectTimer) {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null
+          if (disposed) return
+          backoff = Math.min(backoff * BACKOFF_MULTIPLIER, MAX_BACKOFF)
+          connect()
+        }, backoff)
+      }
+    }
+
+    bind<RunStatusEvent>(nextSource, "run.status", options.onRunStatus)
+    bind<RunLogEvent>(nextSource, "run.log", options.onRunLog)
+    bind<RunDagEvent>(nextSource, "run.dag", options.onRunDag)
+    bind<ImageProgressEvent>(
+      nextSource,
+      "image.progress",
+      options.onImageProgress,
+    )
+
+    const agentEvents = [
+      "agent.thinking",
+      "agent.thinking_content",
+      "agent.plan",
+      "agent.artifact",
+      "agent.message",
+      "agent.done",
+      "agent.cancelled",
+      "agent.error",
+      "agent.text_delta",
+      "agent.thinking_delta",
+      "agent.tool_call_start",
+      "agent.tool_call_progress",
+      "agent.tool_call_end",
+      "agent.approval.requested",
+      "agent.approval.resolved",
+    ] as const
+
+    agentEvents.forEach((eventName) => {
+      bind<AgentEventData>(nextSource, eventName, options.onAgentEvent)
+    })
   }
 
-  bind<RunStatusEvent>("run.status", options.onRunStatus)
-  bind<RunLogEvent>("run.log", options.onRunLog)
-  bind<RunDagEvent>("run.dag", options.onRunDag)
-  bind<ImageProgressEvent>("image.progress", options.onImageProgress)
-
-  const agentEvents = [
-    "agent.thinking",
-    "agent.thinking_content",
-    "agent.plan",
-    "agent.artifact",
-    "agent.message",
-    "agent.done",
-    "agent.cancelled",
-    "agent.error",
-    "agent.text_delta",
-    "agent.thinking_delta",
-    "agent.tool_call_start",
-    "agent.tool_call_progress",
-    "agent.tool_call_end",
-    "agent.approval.requested",
-    "agent.approval.resolved",
-  ] as const
-
-  agentEvents.forEach((eventName) => {
-    bind<AgentEventData>(eventName, options.onAgentEvent)
-  })
+  connect()
 
   return () => {
     disposed = true
     if (reconnectTimer) clearTimeout(reconnectTimer)
-    source.close()
+    source?.close()
   }
 }
 

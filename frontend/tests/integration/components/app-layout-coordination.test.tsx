@@ -33,6 +33,20 @@ vi.mock("next/link", () => ({
   ),
 }))
 
+vi.mock("next/dynamic", () => ({
+  default: () => {
+    return function DynamicMock(props: Record<string, unknown>) {
+      const { isOpen } = useTerminalDock()
+
+      if ("open" in props) {
+        return <div data-testid="command-palette-shell" />
+      }
+
+      return <div data-testid="terminal-dock">{isOpen ? "open" : "closed"}</div>
+    }
+  },
+}))
+
 vi.mock("next-intl", () => ({
   useTranslations: (namespace: string) => (key: string) => {
     const labels: Record<string, Record<string, string>> = {
