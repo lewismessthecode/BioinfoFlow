@@ -1,0 +1,23 @@
+{
+  "samplesheet": "/abs/path/to/samplesheet.csv",
+  "reference": "/abs/path/to/Homo_sapiens_assembly38.fasta",
+  "reference_indexes": [
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.fai",
+    "/abs/path/to/Homo_sapiens_assembly38.dict",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.amb",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.ann",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.bwt",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.pac",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.sa"
+  ],
+  "known_sites": "/abs/path/to/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz",
+  "known_sites_indexes": [
+    "/abs/path/to/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz.tbi"
+  ],
+  "outdir": "results/parabricks-wgs-nextflow",
+  "num_gpus": 1,
+  "cpus": 16,
+  "memory": "96 GB",
+  "fq2bam_extra_args": "",
+  "haplotypecaller_extra_args": ""
+}

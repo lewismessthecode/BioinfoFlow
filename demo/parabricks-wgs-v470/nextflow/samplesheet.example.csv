@@ -1,0 +1,2 @@
+sample,fastq_1,fastq_2,read_group
+HG002,/abs/path/to/HG002_R1.fastq.gz,/abs/path/to/HG002_R2.fastq.gz,@RG\tID:HG002\tLB:HG002\tPL:ILLUMINA\tSM:HG002\tPU:unit1

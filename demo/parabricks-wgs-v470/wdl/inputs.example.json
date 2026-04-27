@@ -1,0 +1,27 @@
+{
+  "parabricks_wgs_fq_to_vcf.sample_name": "HG002",
+  "parabricks_wgs_fq_to_vcf.fastq_r1": "/abs/path/to/HG002_R1.fastq.gz",
+  "parabricks_wgs_fq_to_vcf.fastq_r2": "/abs/path/to/HG002_R2.fastq.gz",
+  "parabricks_wgs_fq_to_vcf.read_group": "@RG\\tID:HG002\\tLB:HG002\\tPL:ILLUMINA\\tSM:HG002\\tPU:unit1",
+  "parabricks_wgs_fq_to_vcf.reference": "/abs/path/to/Homo_sapiens_assembly38.fasta",
+  "parabricks_wgs_fq_to_vcf.reference_indexes": [
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.fai",
+    "/abs/path/to/Homo_sapiens_assembly38.dict",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.amb",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.ann",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.bwt",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.pac",
+    "/abs/path/to/Homo_sapiens_assembly38.fasta.sa"
+  ],
+  "parabricks_wgs_fq_to_vcf.known_sites": "/abs/path/to/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz",
+  "parabricks_wgs_fq_to_vcf.known_sites_indexes": [
+    "/abs/path/to/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz.tbi"
+  ],
+  "parabricks_wgs_fq_to_vcf.out_prefix": "HG002",
+  "parabricks_wgs_fq_to_vcf.num_gpus": 1,
+  "parabricks_wgs_fq_to_vcf.cpu": 16,
+  "parabricks_wgs_fq_to_vcf.memory": "96G",
+  "parabricks_wgs_fq_to_vcf.disk": "local-disk 1000 HDD",
+  "parabricks_wgs_fq_to_vcf.fq2bam_extra_args": "",
+  "parabricks_wgs_fq_to_vcf.haplotypecaller_extra_args": ""
+}
