@@ -20,10 +20,9 @@ async def test_cleanup_candidate_paths_include_new_layout(tmp_path):
     (new_dir / "results").mkdir()
 
     cleaner = WorkDirCleaner()
-    result = await cleaner.cleanup_run(
+    result = await cleaner.manual_cleanup(
         "run_new_123",
         workspace_path=workspace,
-        status="completed",
         engine="nextflow",
         runtime={},
     )
@@ -41,10 +40,9 @@ async def test_cleanup_wdl_removes_run_home(tmp_path):
     new_work.mkdir(parents=True)
 
     cleaner = WorkDirCleaner()
-    result = await cleaner.cleanup_run(
+    result = await cleaner.manual_cleanup(
         "run_wdl_789",
         workspace_path=workspace,
-        status="completed",
         engine="wdl",
         runtime={"wdl_work_dir": "runs/run_wdl_789/work"},
     )

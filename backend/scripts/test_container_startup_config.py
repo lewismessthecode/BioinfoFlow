@@ -1,6 +1,6 @@
 from pathlib import Path
 
-ROOT = Path("/Users/lewisliu/Dev/playground/bpiper")
+ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "backend/scripts/docker-entrypoint.sh"
 DOCKERFILE = ROOT / "backend/Dockerfile"
 COMPOSE = ROOT / "docker-compose.prod.yml"

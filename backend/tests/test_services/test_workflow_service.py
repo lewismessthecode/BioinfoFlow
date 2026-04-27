@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -130,4 +129,3 @@ async def test_resolve_source_path_returns_local_entrypoint_and_rejects_remote(d
     )
     with pytest.raises(ValueError, match="source code is only available for local workflows"):
         service.resolve_source_path(remote_workflow)
-

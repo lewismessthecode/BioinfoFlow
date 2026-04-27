@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-REPO = Path("/Users/lewisliu/Dev/playground/bpiper")
+REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "deploy.sh"
 
 

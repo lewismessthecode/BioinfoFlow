@@ -315,9 +315,11 @@ async def _update_dag_task_status(
         )
         runtime_node = create_runtime_node(task_name, frontend_status, dag)
         dag.setdefault("nodes", []).append(runtime_node)
-        infer_runtime_edge(dag, runtime_node["id"])
 
     dag = DagParser.update_edge_animations(dag)
+
+    if not matched:
+        infer_runtime_edge(dag, runtime_node["id"])
 
     if isinstance(run.config, dict):
         run.config = {**run.config, "dag": dag}
