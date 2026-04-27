@@ -9,6 +9,7 @@ include = ["app*"]
 name = "bioinfoflow-backend"
 version = "0.1.0"
 description = "Bioinfoflow backend"
+license = "MIT"
 requires-python = ">=3.13"
 dependencies = [
   "fastapi",

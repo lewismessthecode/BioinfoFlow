@@ -1,6 +1,7 @@
 {
   "name": "bioinfoflow-frontend",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "prebuild": "node scripts/ensure-better-sqlite3-node-abi.mjs",
