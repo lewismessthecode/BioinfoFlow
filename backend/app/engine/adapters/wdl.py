@@ -111,6 +111,9 @@ class WDLAdapter(EngineAdapter):
         if not required_images:
             updated["runtime"] = runtime
             return updated
+        if runtime.get("pull_required_images") is False:
+            updated["runtime"] = runtime
+            return updated
 
         docker = DockerService()
         if not await docker.is_available():

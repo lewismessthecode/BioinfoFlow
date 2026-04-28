@@ -17,6 +17,16 @@ _TERMINAL_EVENT_TYPES = {
 class LocalBackend(ExecutionBackend):
     async def submit(self, adapter, config: dict, workspace: str):
         prepared_config = deepcopy(config) if isinstance(config, dict) else {}
+        required_images = _required_images(prepared_config)
+        if required_images:
+            yield EngineEvent(
+                EngineEventType.LOG,
+                {
+                    "level": "info",
+                    "message": "Preparing required container images: "
+                    + ", ".join(required_images),
+                },
+            )
         prepared_config = await adapter.pre_submit(prepared_config, workspace)
 
         bootstrap_logs = prepared_config.pop(_ENGINE_LOGS_KEY, [])
@@ -132,3 +142,13 @@ class LocalBackend(ExecutionBackend):
 
 def _stderr_tail(lines: list[str]) -> str:
     return "\n".join(lines[-100:]).strip()
+
+
+def _required_images(config: dict) -> list[str]:
+    runtime = config.get("runtime")
+    if not isinstance(runtime, dict):
+        return []
+    images = runtime.get("required_images")
+    if not isinstance(images, list):
+        return []
+    return [image.strip() for image in images if isinstance(image, str) and image.strip()]

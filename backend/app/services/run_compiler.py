@@ -287,7 +287,12 @@ class RunCompiler:
         # at dispatch to pick up anything environment-dependent (e.g. Docker
         # availability) that shifted between compile and execute.
         adapter = get_adapter(engine)
-        prepared = await adapter.pre_submit(dict(config), str(workspace_path))
+        launch_config = deepcopy(config)
+        if engine == WorkflowEngine.WDL.value:
+            launch_runtime = dict(launch_config.get("runtime") or {})
+            launch_runtime["pull_required_images"] = False
+            launch_config["runtime"] = launch_runtime
+        prepared = await adapter.pre_submit(launch_config, str(workspace_path))
         prepared.pop("__engine_logs__", None)
         argv = await adapter.build_command(prepared, str(workspace_path))
         launch = LaunchSpec(

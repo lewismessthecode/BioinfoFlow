@@ -21,8 +21,10 @@ from app.schemas.form_spec import ColumnSpec, FormField, FormSpec
 from app.schemas.run import RunCreate
 from app.services.run_compiler import (
     CompileError,
+    CompiledRun,
     LaunchSpec,
     RunCompiler,
+    ValidatedRun,
     _render_csv,
 )
 
@@ -363,6 +365,86 @@ async def test_resolve_values_resolves_table_paths_within_allowed_roots(
             "rows": [{"sample": "S1", "fastq_1": str(target)}],
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_compile_wdl_launch_snapshot_does_not_pull_required_images(
+    monkeypatch, tmp_path
+):
+    class FakeWDLAdapter:
+        engine_name = "wdl"
+        display_name = "MiniWDL"
+        binary = "miniwdl"
+        supports_native_resume = False
+
+        def __init__(self):
+            self.pre_submit_config: dict | None = None
+
+        async def pre_submit(self, config: dict, workspace: str) -> dict:
+            self.pre_submit_config = config
+            return config
+
+        async def build_command(self, config: dict, workspace: str) -> list[str]:
+            return ["miniwdl", "run", config["workflow_path"]]
+
+    adapter = FakeWDLAdapter()
+    project_id = uuid4()
+    workflow_id = uuid4()
+    project_home = tmp_path / "project-home"
+    workflow_path = tmp_path / "workflow.wdl"
+    workflow_path.write_text("version 1.0\nworkflow wf {}\n", encoding="utf-8")
+
+    compiler = _make_compiler(storage=SimpleNamespace(resolve_asset=AsyncMock()))
+    monkeypatch.setattr(run_compiler_module, "get_adapter", lambda engine: adapter)
+    monkeypatch.setattr(run_compiler_module, "generate_run_id", lambda: "run_wdl")
+    monkeypatch.setattr(
+        compiler,
+        "_materialize_runtime_inputs",
+        lambda resolved_values, **kwargs: resolved_values,
+    )
+    monkeypatch.setattr(
+        compiler,
+        "_build_engine_inputs",
+        lambda **kwargs: ({}, {}, 0),
+    )
+
+    payload = RunCreate(project_id=project_id, workflow_id=workflow_id)
+    validated = ValidatedRun(
+        project=SimpleNamespace(
+            id=str(project_id),
+            storage_mode="external",
+            external_root_path=str(project_home),
+        ),
+        workflow=SimpleNamespace(
+            id=str(workflow_id),
+            name="parabricks_container_smoke",
+            engine="wdl",
+            source="remote",
+            source_ref=str(workflow_path),
+            schema_json={
+                "workflow_name": "parabricks_container_smoke",
+                "tasks": [
+                    {
+                        "name": "smoke",
+                        "container": "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1",
+                    }
+                ],
+            },
+        ),
+        spec=FormSpec(fields=[]),
+        submitted_values={},
+        resolved_values={},
+    )
+
+    compiled = await compiler._compile(payload, validated=validated)
+
+    assert isinstance(compiled, CompiledRun)
+    assert adapter.pre_submit_config is not None
+    assert adapter.pre_submit_config["runtime"]["required_images"] == [
+        "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1"
+    ]
+    assert adapter.pre_submit_config["runtime"]["pull_required_images"] is False
+    assert "pull_required_images" not in compiled.run.config["runtime"]
 
 
 def _make_compiler(*, storage, project_repo=None) -> RunCompiler:

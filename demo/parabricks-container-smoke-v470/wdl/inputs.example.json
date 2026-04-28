@@ -1,0 +1,8 @@
+{
+  "parabricks_container_smoke.sample_name": "parabricks_smoke",
+  "parabricks_container_smoke.num_gpus": 0,
+  "parabricks_container_smoke.cpu": 2,
+  "parabricks_container_smoke.memory": "8G",
+  "parabricks_container_smoke.disk": "local-disk 20 HDD",
+  "parabricks_container_smoke.require_gpu": false
+}

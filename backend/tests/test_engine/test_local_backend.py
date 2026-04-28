@@ -33,8 +33,14 @@ class _FakeProcess:
 
 
 class _FakeAdapter(EngineAdapter):
-    def __init__(self, *, exit_event: EngineEvent | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        exit_event: EngineEvent | None = None,
+        pre_submit_gate: asyncio.Event | None = None,
+    ) -> None:
         self._exit_event = exit_event
+        self._pre_submit_gate = pre_submit_gate
         self.pre_submit_calls: list[dict] = []
         self.post_complete_calls: list[tuple[dict, str, str]] = []
 
@@ -81,6 +87,8 @@ class _FakeAdapter(EngineAdapter):
 
     async def pre_submit(self, config: dict, workspace: str) -> dict:
         self.pre_submit_calls.append(config)
+        if self._pre_submit_gate is not None:
+            await self._pre_submit_gate.wait()
         return config
 
     async def post_complete(self, config: dict, workspace: str, status: str) -> None:
@@ -116,6 +124,33 @@ async def test_local_backend_submit_yields_process_and_adapter_events(
     assert adapter.post_complete_calls == [
         ({"run_id": "run_123"}, str(tmp_path), "completed")
     ]
+
+
+@pytest.mark.asyncio
+async def test_local_backend_emits_image_prepare_log_before_pre_submit(tmp_path):
+    gate = asyncio.Event()
+    adapter = _FakeAdapter(pre_submit_gate=gate)
+    backend = LocalBackend()
+    stream = backend.submit(
+        adapter,
+        {
+            "run_id": "run_images",
+            "runtime": {
+                "required_images": [
+                    "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1"
+                ]
+            },
+        },
+        str(tmp_path),
+    )
+
+    event = await asyncio.wait_for(anext(stream), timeout=0.1)
+    gate.set()
+    await stream.aclose()
+
+    assert event.type == EngineEventType.LOG
+    assert "Preparing required container images" in event.message
+    assert "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1" in event.message
 
 
 @pytest.mark.asyncio
