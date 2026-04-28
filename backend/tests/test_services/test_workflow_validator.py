@@ -677,6 +677,43 @@ class TestValidationBasics:
         assert params["samplesheet"].default is None
         assert params["samplesheet"].value_kind == "file"
 
+    def test_ignores_params_contains_key_helper_calls(self, validator):
+        content = """
+        nextflow.enable.dsl=2
+
+        if (!params.containsKey("samplesheet")) params.samplesheet = "samplesheet.csv"
+
+        workflow {
+          Channel.fromPath(params.samplesheet, checkIfExists: true).view()
+        }
+        """
+        result = validator.validate(content, "nextflow")
+        assert result.valid
+        params = {p.name: p for p in result.inputs}
+        assert set(params) == {"samplesheet"}
+        assert params["samplesheet"].optional is True
+
+    def test_parabricks_side_inputs_and_extra_args_are_typed_from_names(self, validator):
+        content = """
+        nextflow.enable.dsl=2
+
+        if (!params.containsKey("known_sites")) params.known_sites = null
+        if (!params.containsKey("known_sites_indexes")) params.known_sites_indexes = []
+        if (!params.containsKey("fq2bam_extra_args")) params.fq2bam_extra_args = ""
+
+        workflow {
+          Channel.value(file(params.known_sites))
+          Channel.value(params.known_sites_indexes)
+          println params.fq2bam_extra_args
+        }
+        """
+        result = validator.validate(content, "nextflow")
+        assert result.valid
+        params = {p.name: p for p in result.inputs}
+        assert params["known_sites"].value_kind == "file"
+        assert params["known_sites_indexes"].value_kind == "file_list"
+        assert params["fq2bam_extra_args"].value_kind == "scalar"
+
     def test_extracts_container(self, validator):
         """Test that container info is extracted."""
         content = """

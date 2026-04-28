@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.engine.registry import get_adapter
 from app.schemas.form_spec import FormField, FormSpec
 
@@ -52,11 +54,11 @@ def _has_schema_content(schema: dict | None) -> bool:
 # guessed structures. The frontend renders the spec verbatim.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_FILE_ROOTS = ["project_data", "shared_data", "reference"]
+_DEFAULT_FILE_ROOTS = ["shared_data", "reference", "database", "project_data"]
 _SOURCE_HINT_TO_ROOTS = {
-    "project": ["project_data"],
-    "deliveries": ["shared_data"],
-    "reference": ["reference"],
+    "project": _DEFAULT_FILE_ROOTS,
+    "deliveries": ["shared_data", "reference", "database", "project_data"],
+    "reference": ["reference", "shared_data", "database", "project_data"],
     "mixed": _DEFAULT_FILE_ROOTS,
 }
 
@@ -146,8 +148,26 @@ def _normalize_default(default: object, kind: str) -> object:
     text = str(default)
     if "?:" in text:
         text = text.split("?:")[1].strip().strip("'\"")
+    text = text.strip()
+    if (
+        len(text) >= 2
+        and text[0] == text[-1]
+        and text[0] in {"'", '"'}
+    ):
+        text = text[1:-1]
     if text == "":
         return None
+    if text.lower() in {"null", "none", "nil"}:
+        return None
+    if kind == "file_list" and text == "[]":
+        return []
+    if kind == "file_list" and text.startswith("[") and text.endswith("]"):
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, list):
+            return parsed
     if kind == "bool":
         lowered = text.lower()
         if lowered in ("true", "1", "yes"):

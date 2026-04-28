@@ -168,6 +168,8 @@ def infer_value_kind(type_name: str | None, *, name: str = "", default: str | No
     lowered_default = _normalized_default_text(default)
     combined = f"{lowered_type} {lowered_name} {lowered_default}"
 
+    if _looks_like_cli_args(lowered_name):
+        return "scalar"
     if "directory" in lowered_type or lowered_name.endswith("_dir"):
         return "directory"
     if "array[file" in lowered_type or "list[file" in lowered_type:
@@ -177,6 +179,8 @@ def infer_value_kind(type_name: str | None, *, name: str = "", default: str | No
     if _contains_name_hint(lowered_name, _REFERENCE_HINT_TOKENS) and (
         not lowered_default or _default_looks_pathlike(lowered_default)
     ):
+        if _looks_like_file_list_name(lowered_name) or lowered_default == "[]":
+            return "file_list"
         return "file"
     if any(marker in lowered_default for marker in ("*.fastq", "*.fq", "*.bam", "*.vcf", "*.fa")):
         return "file_list"
@@ -191,7 +195,32 @@ def _contains_name_hint(name: str, tokens: tuple[str, ...]) -> bool:
     name_tokens = {
         token for token in re.split(r"[^a-z0-9]+", name) if token
     }
-    return any(token in name_tokens for token in tokens)
+    normalized_name = "_".join(token for token in re.split(r"[^a-z0-9]+", name) if token)
+    bounded_name = f"_{normalized_name}_"
+    for token in tokens:
+        token_normalized = "_".join(
+            part for part in re.split(r"[^a-z0-9]+", token) if part
+        )
+        if not token_normalized:
+            continue
+        if token_normalized in name_tokens:
+            return True
+        if "_" in token_normalized and f"_{token_normalized}_" in bounded_name:
+            return True
+    return False
+
+
+def _looks_like_file_list_name(name: str) -> bool:
+    normalized = "_".join(token for token in re.split(r"[^a-z0-9]+", name) if token)
+    return normalized.endswith(("indexes", "indices", "files")) or normalized in {
+        "reference_indexes",
+        "known_sites_indexes",
+    }
+
+
+def _looks_like_cli_args(name: str) -> bool:
+    normalized = "_".join(token for token in re.split(r"[^a-z0-9]+", name) if token)
+    return normalized.endswith(("args", "extra_args", "arguments", "options"))
 
 
 def _normalized_default_text(default: str | None) -> str:
@@ -227,7 +256,7 @@ def infer_source_hint(
     if value_kind not in {"file", "file_list", "directory"}:
         return None
     combined = f"{name} {description or ''}".lower()
-    if any(token in combined for token in _REFERENCE_HINT_TOKENS):
+    if _contains_name_hint(combined, _REFERENCE_HINT_TOKENS):
         return "reference"
     return "project"
 

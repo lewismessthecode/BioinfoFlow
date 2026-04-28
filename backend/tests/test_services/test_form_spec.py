@@ -9,7 +9,7 @@ import pytest
 from app.engine.schema_extractor import derive_form_spec
 from app.schemas.form_spec import FormSpec, to_read_projection
 from app.services.workflow_form_spec import reconcile_workflow_form_spec
-from app.services.validators.types import infer_value_kind
+from app.services.validators.types import infer_source_hint, infer_value_kind
 
 
 def _wdl_schema(inputs: list[dict]) -> dict:
@@ -197,7 +197,7 @@ def test_ambiguous_input_falls_back_to_string_no_inference():
 
 
 @pytest.mark.unit
-def test_source_hint_narrows_allow_roots():
+def test_source_hint_orders_but_does_not_narrow_allow_roots():
     spec = derive_form_spec(
         _nf_schema(
             [
@@ -212,7 +212,91 @@ def test_source_hint_narrows_allow_roots():
         "nextflow",
     )
     field = _by_id(spec)["genome"]
-    assert field.allow_roots == ["reference"]
+    assert field.allow_roots == ["reference", "shared_data", "database", "project_data"]
+
+
+@pytest.mark.unit
+def test_file_fields_default_to_all_browsable_input_roots():
+    spec = derive_form_spec(
+        _wdl_schema(
+            [
+                {
+                    "name": "fastq_r1",
+                    "type": "File",
+                    "value_kind": "file",
+                    "source_hint": "project",
+                },
+                {
+                    "name": "reference",
+                    "type": "File",
+                    "value_kind": "file",
+                    "source_hint": "reference",
+                },
+            ]
+        ),
+        "wdl",
+    )
+
+    fields = _by_id(spec)
+    assert fields["fastq_r1"].allow_roots == [
+        "shared_data",
+        "reference",
+        "database",
+        "project_data",
+    ]
+    assert fields["reference"].allow_roots == [
+        "reference",
+        "shared_data",
+        "database",
+        "project_data",
+    ]
+
+
+@pytest.mark.unit
+def test_source_hint_does_not_treat_fastq_fa_substring_as_reference():
+    assert infer_source_hint(name="fastq_r1", value_kind="file") == "project"
+    assert infer_source_hint(name="reference_indexes", value_kind="file_list") == "reference"
+
+
+@pytest.mark.unit
+def test_reference_side_inputs_and_extra_args_infer_stable_kinds():
+    assert infer_value_kind("Any", name="known_sites", default="null") == "file"
+    assert infer_value_kind("Any", name="known_sites_indexes", default="[]") == "file_list"
+    assert infer_value_kind("String", name="fq2bam_extra_args", default='""') == "scalar"
+
+
+@pytest.mark.unit
+def test_jsonish_defaults_are_normalized_for_form_values():
+    spec = derive_form_spec(
+        _nf_schema(
+            [
+                {
+                    "name": "samplesheet",
+                    "type": "Any",
+                    "value_kind": "file",
+                    "default": '"samplesheet.csv"',
+                },
+                {
+                    "name": "reference",
+                    "type": "Any",
+                    "value_kind": "file",
+                    "default": "null",
+                },
+                {
+                    "name": "reference_indexes",
+                    "type": "Any",
+                    "value_kind": "file_list",
+                    "default": "[]",
+                },
+            ]
+        ),
+        "nextflow",
+    )
+
+    fields = _by_id(spec)
+    assert fields["samplesheet"].default == "samplesheet.csv"
+    assert fields["reference"].default is None
+    assert fields["reference_indexes"].default == []
 
 
 @pytest.mark.unit

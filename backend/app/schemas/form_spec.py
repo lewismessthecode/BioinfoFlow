@@ -18,7 +18,13 @@ FormFieldKind = Literal[
 
 FormFieldSection = Literal["data", "params", "advanced"]
 
-AllowRoot = Literal["project_data", "shared_data", "reference", "any_allowed_root"]
+AllowRoot = Literal[
+    "project_data",
+    "shared_data",
+    "reference",
+    "database",
+    "any_allowed_root",
+]
 
 
 class ColumnSpec(BaseModel):

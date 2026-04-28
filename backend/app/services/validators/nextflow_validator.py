@@ -95,7 +95,7 @@ class NextflowValidator:
                 )
             )
 
-        for match in re.finditer(r"params\.(\w+)\b", content):
+        for match in re.finditer(r"params\.(\w+)\b(?!\s*\()", content):
             name = match.group(1)
             if name in seen_params:
                 continue

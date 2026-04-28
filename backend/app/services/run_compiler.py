@@ -39,6 +39,7 @@ from app.models.run_config import RunConfigHelper
 from app.models.workflow import WorkflowEngine
 from app.path_layout import (
     RunLayout,
+    database_root,
     deliveries_root,
     ensure_run_layout,
     path_relative_to,
@@ -899,12 +900,15 @@ class RunCompiler:
                 roots.append(deliveries_root())
             elif allow_root == "reference":
                 roots.append(reference_root())
+            elif allow_root == "database":
+                roots.append(database_root())
             elif allow_root == "any_allowed_root":
                 roots.extend(
                     (
                         project_data_root(project),
                         deliveries_root(),
                         reference_root(),
+                        database_root(),
                     )
                 )
 
