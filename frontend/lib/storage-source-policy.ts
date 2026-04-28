@@ -6,7 +6,8 @@ const ROOT_TO_SOURCE_KINDS: Record<AllowRoot, StorageSourceKind[]> = {
   project_data: ["project"],
   shared_data: ["deliveries"],
   reference: ["reference"],
-  any_allowed_root: ["project", "deliveries", "reference"],
+  database: ["database"],
+  any_allowed_root: ["deliveries", "reference", "database", "project"],
 }
 
 export function allowedSourceKindsFromRoots(

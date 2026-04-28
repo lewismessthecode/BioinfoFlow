@@ -15,6 +15,7 @@ export type AllowRoot =
   | "project_data"
   | "shared_data"
   | "reference"
+  | "database"
   | "any_allowed_root"
 
 export type ColumnSpec = {

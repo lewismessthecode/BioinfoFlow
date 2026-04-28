@@ -109,4 +109,167 @@ describe("RunSubmissionWizard (new envelope)", () => {
       })
     })
   })
+
+  it("imports a WDL inputs JSON file into the canonical run values", async () => {
+    apiMock.mockImplementation((path: string) => {
+      if (path.endsWith("/form-spec")) {
+        return Promise.resolve({
+          data: {
+            fields: [
+              {
+                id: "sample_name",
+                label: "Sample name",
+                section: "params",
+                kind: "string",
+                required: true,
+                default: null,
+                platform_managed: false,
+              },
+              {
+                id: "fastq_r1",
+                label: "Fastq r1",
+                section: "data",
+                kind: "file",
+                required: true,
+                default: null,
+                platform_managed: false,
+                allow_roots: ["shared_data", "reference", "database", "project_data"],
+              },
+            ],
+          },
+        })
+      }
+      if (path === "/runs") {
+        return Promise.resolve({ data: { run_id: "r-1" } })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    const { container } = renderWithProviders(
+      <RunSubmissionWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        projectId="proj-1"
+        initialWorkflowId="wf-1"
+        availableWorkflows={[WORKFLOW]}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Sample name")).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText("workbench.inputFileTab"))
+    const importInput = container.querySelector(
+      'input[type="file"][accept*=".json"]',
+    ) as HTMLInputElement | null
+    expect(importInput).not.toBeNull()
+    const file = new File(
+      [
+        JSON.stringify({
+          "Demo.sample_name": "S1",
+          "Demo.fastq_r1": "asset://deliveries/S1_R1.fastq.gz",
+        }),
+      ],
+      "inputs.json",
+      { type: "application/json" },
+    )
+    fireEvent.change(importInput as HTMLInputElement, { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("S1")).toBeInTheDocument()
+      expect(screen.getByDisplayValue("asset://deliveries/S1_R1.fastq.gz")).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText("submitRun"))
+
+    await waitFor(() => {
+      const runsCall = apiMock.mock.calls.find(([path]) => path === "/runs")
+      expect(runsCall).toBeDefined()
+      const body = JSON.parse((runsCall![1] as { body: string }).body)
+      expect(body.values).toMatchObject({
+        sample_name: "S1",
+        fastq_r1: "asset://deliveries/S1_R1.fastq.gz",
+      })
+    })
+  })
+
+  it("uploads a prepared CSV input file into a materialized file field", async () => {
+    apiMock.mockImplementation((path: string) => {
+      if (path.endsWith("/form-spec")) {
+        return Promise.resolve({
+          data: {
+            fields: [
+              {
+                id: "samplesheet",
+                label: "Samplesheet",
+                section: "data",
+                kind: "file",
+                required: true,
+                default: null,
+                platform_managed: false,
+                materialize_to_run: true,
+                allow_roots: ["shared_data", "reference", "database", "project_data"],
+              },
+            ],
+          },
+        })
+      }
+      if (path === "/runs/uploads") {
+        return Promise.resolve({
+          data: { uri: "asset://run_upload/upload-1/samplesheet.csv" },
+        })
+      }
+      if (path === "/runs") {
+        return Promise.resolve({ data: { run_id: "r-1" } })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    const { container } = renderWithProviders(
+      <RunSubmissionWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        projectId="proj-1"
+        initialWorkflowId="wf-1"
+        availableWorkflows={[WORKFLOW]}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Samplesheet")).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText("workbench.inputFileTab"))
+    const importInput = container.querySelector(
+      'input[type="file"][accept*=".csv"]',
+    ) as HTMLInputElement | null
+    expect(importInput).not.toBeNull()
+    const file = new File(["sample,fastq_1\nS1,S1_R1.fastq.gz\n"], "samplesheet.csv", {
+      type: "text/csv",
+    })
+    fireEvent.change(importInput as HTMLInputElement, { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith(
+        "/runs/uploads",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.any(FormData),
+        }),
+      )
+      expect(screen.getByDisplayValue("asset://run_upload/upload-1/samplesheet.csv")).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText("submitRun"))
+
+    await waitFor(() => {
+      const runsCall = apiMock.mock.calls.find(([path]) => path === "/runs")
+      expect(runsCall).toBeDefined()
+      const body = JSON.parse((runsCall![1] as { body: string }).body)
+      expect(body.values).toMatchObject({
+        samplesheet: "asset://run_upload/upload-1/samplesheet.csv",
+      })
+    })
+  })
 })

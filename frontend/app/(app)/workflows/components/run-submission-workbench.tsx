@@ -13,9 +13,11 @@ import {
 } from "@/lib/form-spec"
 import { useFormSpec } from "@/hooks/use-form-spec"
 import type { Workflow } from "@/lib/types"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RunSharedSettings } from "./run-shared-settings"
 import { RunSubmissionFooter } from "./run-submission-footer"
 import { RunSubmissionHeader } from "./run-submission-header"
+import { RunInputFileImport } from "./run-input-file-import"
 import { RunForm } from "./run-form/run-form"
 import type { AdvancedOptionsState } from "./run-advanced-options"
 
@@ -46,6 +48,7 @@ export function RunSubmissionWorkbench({
   })
   const [previewOpen, setPreviewOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [activeTab, setActiveTab] = useState("form")
 
   // Seed defaults the first time a spec arrives for this workflow. Subsequent
   // user edits live in `values`; we re-seed only when the workflow changes.
@@ -115,6 +118,11 @@ export function RunSubmissionWorkbench({
     setValues((current) => ({ ...current, [id]: value }))
   }, [])
 
+  const handleApplyImportedValues = useCallback((nextValues: FormValues) => {
+    setValues((current) => ({ ...current, ...nextValues }))
+    setActiveTab("form")
+  }, [])
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <RunSubmissionHeader
@@ -139,13 +147,28 @@ export function RunSubmissionWorkbench({
             {specState.message}
           </div>
         ) : specState.status === "ready" ? (
-          <RunForm
-            spec={specState.spec}
-            projectId={projectId}
-            values={values}
-            onChange={handleChange}
-            issues={validation.issues}
-          />
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-5">
+            <TabsList>
+              <TabsTrigger value="form">{t("workbench.formTab")}</TabsTrigger>
+              <TabsTrigger value="input-file">{t("workbench.inputFileTab")}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="form">
+              <RunForm
+                spec={specState.spec}
+                projectId={projectId}
+                values={values}
+                onChange={handleChange}
+                issues={validation.issues}
+              />
+            </TabsContent>
+            <TabsContent value="input-file" forceMount>
+              <RunInputFileImport
+                spec={specState.spec}
+                projectId={projectId}
+                onApplyValues={handleApplyImportedValues}
+              />
+            </TabsContent>
+          </Tabs>
         ) : null}
       </div>
 

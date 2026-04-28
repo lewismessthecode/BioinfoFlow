@@ -430,10 +430,10 @@ function formatSize(bytes: number): string {
 }
 
 const SOURCE_KIND_ORDER: Record<StorageSourceKind, number> = {
-  project: 0,
-  deliveries: 1,
-  reference: 2,
-  database: 3,
+  deliveries: 0,
+  reference: 1,
+  database: 2,
+  project: 3,
   results: 4,
 }
 

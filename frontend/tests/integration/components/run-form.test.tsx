@@ -83,7 +83,7 @@ describe("RunForm", () => {
     apiRequestMock.mockReset()
   })
 
-  it("passes allowed source kinds to file and table pickers", () => {
+  it("passes every browsable input source kind to file and table pickers", () => {
     fileBrowserDialogMock.mockClear()
     const spec: FormSpec = {
       fields: [
@@ -95,7 +95,7 @@ describe("RunForm", () => {
           required: true,
           default: null,
           platform_managed: false,
-          allow_roots: ["project_data", "shared_data"],
+          allow_roots: ["shared_data", "reference", "database", "project_data"],
         },
         {
           id: "sheet",
@@ -105,7 +105,7 @@ describe("RunForm", () => {
           required: false,
           default: null,
           platform_managed: false,
-          allow_roots: ["reference"],
+          allow_roots: ["reference", "shared_data", "database", "project_data"],
           columns: [
             { name: "sample", required: true, kind: "string" },
             { name: "reference_path", required: true, kind: "path" },
@@ -128,13 +128,13 @@ describe("RunForm", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "browse" })[0])
     expect(fileBrowserDialogMock.mock.calls.at(-1)?.[0]).toMatchObject({
-      allowedSourceKinds: ["project", "deliveries"],
-      preferredSourceKind: "project",
+      allowedSourceKinds: ["deliveries", "reference", "database", "project"],
+      preferredSourceKind: "deliveries",
     })
 
     fireEvent.click(screen.getAllByRole("button", { name: "browse" })[1])
     expect(fileBrowserDialogMock.mock.calls.at(-1)?.[0]).toMatchObject({
-      allowedSourceKinds: ["reference"],
+      allowedSourceKinds: ["reference", "deliveries", "database", "project"],
       preferredSourceKind: "reference",
     })
   })
