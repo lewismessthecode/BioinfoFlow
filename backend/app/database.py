@@ -6,7 +6,7 @@ from typing import Any
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import CHAR, MetaData
+from sqlalchemy import CHAR, MetaData, event
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import (
@@ -72,11 +72,39 @@ class GUID(TypeDecorator):
         return uuid.UUID(str(value))
 
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-    poolclass=NullPool,
-)
+SQLITE_BUSY_TIMEOUT_MS = 30000
+
+
+def _is_sqlite_url(database_url: str) -> bool:
+    return database_url.startswith(("sqlite+aiosqlite://", "sqlite://"))
+
+
+def create_state_engine(database_url: str, *, debug: bool) -> AsyncEngine:
+    engine_kwargs: dict[str, Any] = {
+        "echo": debug,
+        "poolclass": NullPool,
+    }
+    if _is_sqlite_url(database_url):
+        engine_kwargs["connect_args"] = {"timeout": SQLITE_BUSY_TIMEOUT_MS / 1000}
+
+    next_engine = create_async_engine(database_url, **engine_kwargs)
+
+    if _is_sqlite_url(database_url):
+
+        @event.listens_for(next_engine.sync_engine, "connect")
+        def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA foreign_keys=ON")
+            finally:
+                cursor.close()
+
+    return next_engine
+
+
+engine = create_state_engine(settings.database_url, debug=settings.debug)
 
 async_session_maker = async_sessionmaker(
     engine,
