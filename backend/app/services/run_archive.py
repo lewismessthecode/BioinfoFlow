@@ -112,8 +112,9 @@ class RunArchiveService:
     ) -> None:
         run_dir = workspace_path / "runs" / run.run_id
         input_dir = run_dir / "input"
+        request_dir = input_dir / "request"
         audit_dir = run_dir / "audit"
-        input_dir.mkdir(parents=True, exist_ok=True)
+        request_dir.mkdir(parents=True, exist_ok=True)
         audit_dir.mkdir(parents=True, exist_ok=True)
 
         config = config_helper(run.config)
@@ -126,22 +127,40 @@ class RunArchiveService:
         archived_params = _redact_secrets(archive_documents.get("params")) or params
         archived_inputs = _redact_secrets(archive_documents.get("inputs")) or inputs
 
-        (input_dir / "params.json").write_text(
+        request_params_path = request_dir / "params.json"
+        request_inputs_path = request_dir / "inputs.json"
+        request_overrides_path = request_dir / "config_overrides.json"
+
+        request_params_path.write_text(
             json.dumps(archived_params, indent=2), encoding="utf-8"
         )
-        (input_dir / "inputs.json").write_text(
+        request_inputs_path.write_text(
             json.dumps(archived_inputs, indent=2), encoding="utf-8"
         )
-        (input_dir / "config_overrides.json").write_text(
+        request_overrides_path.write_text(
             json.dumps(config_overrides, indent=2), encoding="utf-8"
         )
+
+        documents = {
+            "request_params": str(request_params_path.relative_to(workspace_path)),
+            "request_inputs": str(request_inputs_path.relative_to(workspace_path)),
+            "request_config_overrides": str(
+                request_overrides_path.relative_to(workspace_path)
+            ),
+        }
+        engine_inputs_path = run_dir / "engine" / str(engine).lower() / "inputs.json"
+        if engine_inputs_path.exists():
+            documents["engine_inputs"] = str(
+                engine_inputs_path.relative_to(workspace_path)
+            )
 
         manifest = {
             "run_id": run.run_id,
             "project_id": str(run.project_id),
             "workflow_id": str(run.workflow_id) if run.workflow_id else None,
             "engine": engine,
-            "archive_version": 3,
+            "archive_version": 4,
+            "documents": documents,
             "resolved_inputs": resolved_runspec,
         }
         (audit_dir / "run.manifest.json").write_text(

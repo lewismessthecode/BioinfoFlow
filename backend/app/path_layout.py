@@ -115,6 +115,12 @@ def run_input_root(project: Project | str, run_id: str, *, external_root_path: s
     return run_home(project, run_id, external_root_path=external_root_path) / "input"
 
 
+def run_input_request_root(
+    project: Project | str, run_id: str, *, external_root_path: str | None = None
+) -> Path:
+    return run_input_root(project, run_id, external_root_path=external_root_path) / "request"
+
+
 def run_manifest_materialized_root(
     project: Project | str, run_id: str, *, external_root_path: str | None = None
 ) -> Path:
@@ -179,15 +185,6 @@ def ensure_run_layout(
     run_input_root(project, run_id, external_root_path=external_root_path).mkdir(
         parents=True, exist_ok=True
     )
-    run_input_attachments_root(project, run_id, external_root_path=external_root_path).mkdir(
-        parents=True, exist_ok=True
-    )
-    run_manifest_materialized_root(
-        project, run_id, external_root_path=external_root_path
-    ).mkdir(parents=True, exist_ok=True)
-    run_materialized_attachments_root(
-        project, run_id, external_root_path=external_root_path
-    ).mkdir(parents=True, exist_ok=True)
     run_engine_workspace(
         project, run_id, engine, external_root_path=external_root_path
     ).mkdir(parents=True, exist_ok=True)
@@ -367,6 +364,7 @@ class RunLayout:
 
     home: Path
     input: Path
+    request: Path
     materialized: Path
     attachments: Path
     materialized_attachments: Path
@@ -387,6 +385,9 @@ class RunLayout:
         return cls(
             home=home,
             input=run_input_root(project, run_id, external_root_path=external_root_path),
+            request=run_input_request_root(
+                project, run_id, external_root_path=external_root_path
+            ),
             materialized=run_manifest_materialized_root(
                 project, run_id, external_root_path=external_root_path
             ),

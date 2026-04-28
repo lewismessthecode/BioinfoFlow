@@ -171,12 +171,15 @@ async def test_create_run_persists_run_archive(db_session, monkeypatch, tmp_path
     assert (archive_dir / "input").is_dir()
     assert (archive_dir / "audit" / "run.manifest.json").is_file()
 
-    params_path = archive_dir / "input" / "params.json"
-    inputs_path = archive_dir / "input" / "inputs.json"
-    overrides_path = archive_dir / "input" / "config_overrides.json"
+    params_path = archive_dir / "input" / "request" / "params.json"
+    inputs_path = archive_dir / "input" / "request" / "inputs.json"
+    overrides_path = archive_dir / "input" / "request" / "config_overrides.json"
     assert params_path.is_file()
     assert inputs_path.is_file()
     assert overrides_path.is_file()
+    assert not (archive_dir / "input" / "params.json").exists()
+    assert not (archive_dir / "input" / "inputs.json").exists()
+    assert not (archive_dir / "input" / "config_overrides.json").exists()
 
     manifest = json.loads((archive_dir / "audit" / "run.manifest.json").read_text())
     assert manifest["run_id"] == run.run_id
