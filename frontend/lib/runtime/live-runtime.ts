@@ -54,6 +54,7 @@ function subscribeLive(options: RuntimeEventSubscription) {
         run_id: options.runId || undefined,
         image_id: options.imageId || undefined,
       }),
+      { withCredentials: true },
     )
     source = nextSource
 

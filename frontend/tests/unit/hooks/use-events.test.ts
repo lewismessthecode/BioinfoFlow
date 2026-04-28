@@ -9,13 +9,15 @@ class MockEventSource {
   static instances: MockEventSource[] = []
 
   readonly url: string
+  readonly options?: EventSourceInit
   readyState = MockEventSource.CONNECTING
   onopen: ((event: Event) => void) | null = null
   onerror: ((event: Event) => void) | null = null
   private listeners = new Map<string, Set<(event: MessageEvent) => void>>()
 
-  constructor(url: string) {
+  constructor(url: string, options?: EventSourceInit) {
     this.url = url
+    this.options = options
     MockEventSource.instances.push(this)
   }
 
@@ -78,6 +80,7 @@ describe("useEvents", () => {
     expect(source.url).toContain("conversation_id=conversation-1")
     expect(source.url).toContain("run_id=run-1")
     expect(source.url).toContain("image_id=image-1")
+    expect(source.options).toEqual({ withCredentials: true })
 
     act(() => {
       source.readyState = MockEventSource.OPEN
