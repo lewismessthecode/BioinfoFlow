@@ -48,6 +48,7 @@ COPY --from=builder /app/public ./public
 
 # i18n message bundles (next-intl)
 COPY --from=builder /app/messages ./messages
+COPY --from=builder /app/scripts/with-root-env.mjs ./scripts/with-root-env.mjs
 
 # better-sqlite3 native addon — required at runtime for Better Auth
 COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
@@ -60,4 +61,4 @@ RUN find . -type f -name "*.map" -delete
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["node", "scripts/with-root-env.mjs", "start"]

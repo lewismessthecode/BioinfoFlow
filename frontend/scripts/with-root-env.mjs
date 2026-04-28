@@ -55,38 +55,142 @@ function applyFileEnv(targetEnv, shellKeys, filePath) {
   }
 }
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const frontendDir = path.resolve(scriptDir, "..");
-const repoRoot = path.resolve(frontendDir, "..");
-const nextBin = path.join(frontendDir, "node_modules", "next", "dist", "bin", "next");
-
-const [command, ...args] = process.argv.slice(2);
-if (!VALID_COMMANDS.has(command)) {
-  console.error("Usage: node scripts/with-root-env.mjs <dev|build|start> [...args]");
-  process.exit(1);
+export function redactSecret(value) {
+  return value ? "set" : "unset";
 }
 
-if (!fs.existsSync(nextBin)) {
-  console.error("Next.js is not installed yet. Run `bun install` in frontend/ first.");
-  process.exit(1);
-}
-
-const shellKeys = new Set(Object.keys(process.env));
-const env = { ...process.env };
-
-applyFileEnv(env, shellKeys, path.join(repoRoot, ".env"));
-applyFileEnv(env, shellKeys, path.join(frontendDir, ".env.local"));
-
-const child = spawn(process.execPath, [nextBin, command, ...args], {
-  cwd: frontendDir,
+export function buildStartupSummary({
+  command,
+  args,
+  frontendDir,
+  repoRoot,
+  nextBin,
+  serverJs,
+  loadedEnvFiles,
   env,
-  stdio: "inherit",
-});
+  versions = { node: process.version },
+}) {
+  return {
+    service: "frontend",
+    command,
+    args,
+    cwd: frontendDir,
+    repo_root: repoRoot,
+    node: versions.node,
+    runtime: {
+      node_env: env.NODE_ENV || (command === "dev" ? "development" : "production"),
+      next_bin: nextBin,
+      standalone_server: serverJs || null,
+    },
+    env_files: loadedEnvFiles,
+    network: {
+      hostname: valueAfterFlag(args, "--hostname") || env.HOSTNAME || "0.0.0.0",
+      port: valueAfterFlag(args, "--port") || env.PORT || (command === "dev" ? "3000" : "3000"),
+      api_base_url: env.NEXT_PUBLIC_API_BASE_URL || "",
+      better_auth_url: env.BETTER_AUTH_URL || "",
+    },
+    auth: {
+      mode: env.NEXT_PUBLIC_AUTH_MODE || env.AUTH_MODE || "",
+      local_enabled: env.NEXT_PUBLIC_AUTH_LOCAL_ENABLED || env.AUTH_LOCAL_ENABLED || "",
+      self_signup_enabled:
+        env.NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED
+        || env.AUTH_SELF_SIGNUP_ENABLED
+        || "",
+      better_auth_secret: redactSecret(env.BETTER_AUTH_SECRET),
+    },
+    storage: {
+      bioinfoflow_home: env.BIOINFOFLOW_HOME || "",
+      bioinfoflow_home_host: env.BIOINFOFLOW_HOME_HOST || "",
+      better_auth_db_path: env.BETTER_AUTH_DB_PATH || "",
+    },
+  };
+}
 
-child.on("exit", (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
+export function formatStartupSummary(summary) {
+  return [
+    "Bioinfoflow frontend startup",
+    JSON.stringify(summary, null, 2),
+  ].join("\n");
+}
+
+function valueAfterFlag(args, flag) {
+  const index = args.indexOf(flag);
+  if (index === -1) return "";
+  return args[index + 1] || "";
+}
+
+function isCliEntrypoint() {
+  const thisFile = fileURLToPath(import.meta.url);
+  const invoked = process.argv[1] ? path.resolve(process.argv[1]) : "";
+  return thisFile === invoked;
+}
+
+function runCli() {
+  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+  const frontendDir = path.resolve(scriptDir, "..");
+  const repoRoot = path.resolve(frontendDir, "..");
+  const nextBin = path.join(frontendDir, "node_modules", "next", "dist", "bin", "next");
+  const serverJs = path.join(frontendDir, "server.js");
+
+  const [command, ...args] = process.argv.slice(2);
+  if (!VALID_COMMANDS.has(command)) {
+    console.error("Usage: node scripts/with-root-env.mjs <dev|build|start> [...args]");
+    process.exit(1);
   }
-  process.exit(code ?? 0);
-});
+
+  const useStandaloneServer = command === "start" && fs.existsSync(serverJs);
+  if (!useStandaloneServer && !fs.existsSync(nextBin)) {
+    console.error("Next.js is not installed yet. Run `bun install` in frontend/ first.");
+    process.exit(1);
+  }
+
+  const shellKeys = new Set(Object.keys(process.env));
+  const env = { ...process.env };
+  const envFiles = [
+    path.join(repoRoot, ".env"),
+    path.join(frontendDir, ".env.local"),
+  ];
+
+  for (const envFile of envFiles) {
+    applyFileEnv(env, shellKeys, envFile);
+  }
+
+  console.info(
+    formatStartupSummary(
+      buildStartupSummary({
+        command,
+        args,
+        frontendDir,
+        repoRoot,
+        nextBin: useStandaloneServer ? "" : nextBin,
+        serverJs: useStandaloneServer ? serverJs : "",
+        loadedEnvFiles: envFiles.map((filePath) => ({
+          path: filePath,
+          exists: fs.existsSync(filePath),
+        })),
+        env,
+      }),
+    ),
+  );
+
+  const childArgs = useStandaloneServer
+    ? [serverJs, ...args]
+    : [nextBin, command, ...args];
+  const child = spawn(process.execPath, childArgs, {
+    cwd: frontendDir,
+    env,
+    stdio: "inherit",
+  });
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exit(code ?? 0);
+  });
+}
+
+if (isCliEntrypoint()) {
+  runCli();
+}

@@ -27,6 +27,7 @@ from app.services.run_dispatch import (
     set_run_dispatcher,
     set_run_scheduler,
 )
+from app.startup_logging import log_startup_summary
 from app.services.terminal_service import terminal_manager
 from app.utils.exceptions import AppError, http_error_code
 from app.utils.logging import (
@@ -45,20 +46,27 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle hooks."""
+    logger.info("startup.begin", app=settings.app_name, version=settings.app_version)
     assert_identity_mount()
     ensure_platform_layout()
+    log_startup_summary(settings)
+    logger.info("startup.platform_layout.ready")
     ensure_hermes_home_environment(state_db_path=settings.agent_hermes_state_db)
+    logger.info("startup.hermes_home.ready", state_db=settings.agent_hermes_state_db)
     await init_db()
     await verify_database_schema_current()
+    logger.info("startup.database.ready")
     async with app.state_db_session() as session:
         workspace_service = WorkspaceService(session)
         await workspace_service.ensure_default_workspace()
         await session.commit()
+    logger.info("startup.workspace.ready")
     async with app.state_db_session() as session:
         await reconcile_stale_hermes_responses(
             session,
             stale_before=datetime.now(timezone.utc) - timedelta(minutes=1),
         )
+    logger.info("startup.hermes_responses.reconciled")
     scheduler: RunScheduler | None = None
     monitor: ResourceMonitor | None = None
     monitor = ResourceMonitor(sample_interval=30.0)
@@ -68,26 +76,50 @@ async def lifespan(app: FastAPI):
         monitor=monitor,
     )
     await scheduler.start()
+    logger.info(
+        "startup.scheduler.ready",
+        total_slots=scheduler.config.effective_total_slots(),
+        max_workers=scheduler.config.effective_max_workers(),
+        queue_depth_limit=scheduler.config.max_queue_depth,
+    )
     if monitor is not None:
         await monitor.start()
+        logger.info(
+            "startup.resource_monitor.ready",
+            sample_interval_seconds=settings.scheduler_resource_sample_interval,
+        )
     set_run_scheduler(scheduler)
     set_run_dispatcher(SchedulerDispatcher(scheduler))
     await recover_stale_runs(
         stale_after_minutes=settings.scheduler_stale_timeout_minutes
     )
+    logger.info(
+        "startup.run_recovery.complete",
+        stale_after_minutes=settings.scheduler_stale_timeout_minutes,
+    )
     await task_runner.start()
+    logger.info("startup.task_runner.ready")
     await background_tasks.start()
+    logger.info("startup.background_tasks.ready")
+    logger.info("startup.ready")
     yield
+    logger.info("shutdown.begin")
     await terminal_manager.shutdown()
+    logger.info("shutdown.terminals.complete")
     if monitor is not None:
         await monitor.stop()
+        logger.info("shutdown.resource_monitor.complete")
     if scheduler is not None:
         await scheduler.stop()
+        logger.info("shutdown.scheduler.complete")
     set_run_scheduler(None)
     set_run_dispatcher(None)
     await background_tasks.stop()
+    logger.info("shutdown.background_tasks.complete")
     await task_runner.stop()
+    logger.info("shutdown.task_runner.complete")
     await close_db()
+    logger.info("shutdown.database.complete")
 
 
 @asynccontextmanager
