@@ -250,9 +250,8 @@ class RunCompiler:
             run_id=run_id,
         )
 
-        # ── persist materialized documents ─────────────────────────────────
+        # ── persist engine-native input documents ──────────────────────────
         if engine == WorkflowEngine.WDL.value:
-            self._write_json(layout.input / "inputs.json", resolved_values)
             self._write_json(layout.engine_workspace.parent / "inputs.json", inputs)
 
         # ── assemble run.config ────────────────────────────────────────────

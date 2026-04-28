@@ -65,19 +65,34 @@ async def test_persist_run_archive_redacts_secrets_and_uses_archived_documents(
     )
 
     run_dir = workspace / "runs" / run.run_id
-    params_payload = json.loads((run_dir / "input" / "params.json").read_text())
-    inputs_payload = json.loads((run_dir / "input" / "inputs.json").read_text())
+    request_dir = run_dir / "input" / "request"
+    params_payload = json.loads((request_dir / "params.json").read_text())
+    inputs_payload = json.loads((request_dir / "inputs.json").read_text())
     overrides_payload = json.loads(
-        (run_dir / "input" / "config_overrides.json").read_text()
+        (request_dir / "config_overrides.json").read_text()
     )
     manifest_payload = json.loads(
         (run_dir / "audit" / "run.manifest.json").read_text()
     )
 
+    assert not (run_dir / "input" / "params.json").exists()
+    assert not (run_dir / "input" / "inputs.json").exists()
+    assert not (run_dir / "input" / "config_overrides.json").exists()
+    assert not (run_dir / "input" / "attachments").exists()
+    assert not (run_dir / "input" / "materialized" / "attachments").exists()
     assert params_payload == {"api_key": "[REDACTED]", "sample": "archived"}
     assert inputs_payload == {"token": "[REDACTED]", "manifest": "archived.csv"}
     assert overrides_payload == {"authorization": "[REDACTED]", "cpus": 4}
     assert manifest_payload["engine"] == "nextflow"
+    assert manifest_payload["documents"]["request_params"] == (
+        "runs/run_archive_redaction/input/request/params.json"
+    )
+    assert manifest_payload["documents"]["request_inputs"] == (
+        "runs/run_archive_redaction/input/request/inputs.json"
+    )
+    assert manifest_payload["documents"]["request_config_overrides"] == (
+        "runs/run_archive_redaction/input/request/config_overrides.json"
+    )
     assert manifest_payload["resolved_inputs"]["params"] == {
         "secret_token": "[REDACTED]",
         "sample": "tumor",
