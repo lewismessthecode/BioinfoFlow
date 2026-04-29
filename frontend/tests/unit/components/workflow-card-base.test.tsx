@@ -21,4 +21,20 @@ describe("WorkflowCardBase", () => {
 
     expect(container.querySelector("svg.lucide-workflow")).not.toBeNull()
   })
+
+  it("keeps long workflow names from covering the actions menu", () => {
+    render(
+      <WorkflowCardBase
+        displayName="parabricks_container_smoke_with_a_very_long_identifier"
+        nameWrapper={(children) => <div>{children}</div>}
+        menuItems={<div>menu</div>}
+        actions={<button type="button">Run</button>}
+      />,
+    )
+
+    const title = document.querySelector("h3")
+    expect(title?.className).toContain("min-w-0")
+    expect(title?.closest(".min-w-0.flex-1")).not.toBeNull()
+    expect(document.querySelector("button[aria-label='actions']")?.className).toContain("shrink-0")
+  })
 })

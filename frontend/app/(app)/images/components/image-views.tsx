@@ -143,21 +143,23 @@ export function ImageCardsGrid({
           <Card key={image.id} className="group relative overflow-hidden border-border/60 bg-card/92 hover:shadow-sm hover:border-border/90 transition-all duration-200 h-full flex flex-col">
             <CardContent className="p-4 flex-1 flex flex-col">
               <div className="flex items-start justify-between gap-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="flex items-center gap-2.5 min-w-0 cursor-default">
-                      <div className="quiet-card-icon-shell quiet-card-icon-shell--artifact">
-                        <Package2 className="quiet-card-icon-glyph h-4 w-4" strokeWidth={1.8} />
+                <div className="min-w-0 flex-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex min-w-0 w-full cursor-default items-center gap-2.5">
+                        <div className="quiet-card-icon-shell quiet-card-icon-shell--artifact shrink-0">
+                          <Package2 className="quiet-card-icon-glyph h-4 w-4" strokeWidth={1.8} />
+                        </div>
+                        <h2 className="min-w-0 truncate text-sm font-semibold text-foreground leading-tight">{image.name}</h2>
                       </div>
-                      <h2 className="text-sm font-semibold text-foreground leading-tight truncate">{image.name}</h2>
-                    </div>
-                  </TooltipTrigger>
-                  {image.description && (
-                    <TooltipContent side="right" className="max-w-xs">
-                      {image.description}
-                    </TooltipContent>
-                  )}
-                </Tooltip>
+                    </TooltipTrigger>
+                    {image.description && (
+                      <TooltipContent side="right" className="max-w-xs">
+                        {image.description}
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </div>
                 <ImageActionsMenu
                   image={image}
                   tImages={tImages}

@@ -43,11 +43,11 @@ export function WorkflowCardBase({
   const tCommon = useTranslations("common")
 
   const nameContent = (
-    <div className="flex items-center gap-2.5 min-w-0">
-      <div className="quiet-card-icon-shell">
+    <div className="flex min-w-0 w-full items-center gap-2.5">
+      <div className="quiet-card-icon-shell shrink-0">
         <WorkflowIcon />
       </div>
-      <h3 className="text-sm font-semibold text-foreground leading-tight truncate">{displayName}</h3>
+      <h3 className="min-w-0 truncate text-sm font-semibold text-foreground leading-tight">{displayName}</h3>
     </div>
   )
 
@@ -56,7 +56,9 @@ export function WorkflowCardBase({
       <CardContent className="p-4 flex-1 flex flex-col">
         {/* Header: icon + name + menu */}
         <div className="flex items-center justify-between gap-2">
-          {nameWrapper ? nameWrapper(nameContent) : nameContent}
+          <div className="min-w-0 flex-1">
+            {nameWrapper ? nameWrapper(nameContent) : nameContent}
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

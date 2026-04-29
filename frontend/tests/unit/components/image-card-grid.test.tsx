@@ -37,4 +37,25 @@ describe("ImageCardsGrid", () => {
     expect(screen.getByRole("button", { name: /actions.repull/i })).toBeInTheDocument()
     expect(container.querySelector("svg.lucide-package2")).not.toBeNull()
   })
+
+  it("keeps long image names from covering the actions menu", () => {
+    const longName = "ghcr.io/bioinfoflow/parabricks_container_smoke_with_a_very_long_identifier"
+    render(
+      <ImageCardsGrid
+        images={[{ ...image, name: longName, full_name: `${longName}:latest` }]}
+        tImages={(key) => key}
+        tCommon={(key) => key}
+        onPull={vi.fn()}
+        onViewDetails={vi.fn()}
+        onCopyName={vi.fn()}
+        onCopyPullCommand={vi.fn()}
+        onDeleteLocal={vi.fn()}
+      />,
+    )
+
+    const title = screen.getByRole("heading", { name: longName })
+    expect(title.className).toContain("min-w-0")
+    expect(title.closest(".min-w-0.flex-1")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "actions" }).className).toContain("shrink-0")
+  })
 })
