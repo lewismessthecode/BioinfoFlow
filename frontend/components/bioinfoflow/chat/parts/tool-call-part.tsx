@@ -11,6 +11,7 @@ interface ToolCallPartProps {
 
 interface ToolCallGroupProps {
   parts: ToolCallPartType[]
+  isActiveFallback?: boolean
 }
 
 const statusIcon = {
@@ -207,14 +208,17 @@ function SingleToolCall({ part, showPreview }: { part: ToolCallPartType; showPre
 }
 
 /** Collapsible group that uses a lightweight disclosure row. */
-export const ToolCallGroup = memo(function ToolCallGroup({ parts }: ToolCallGroupProps) {
+export const ToolCallGroup = memo(function ToolCallGroup({ parts, isActiveFallback = false }: ToolCallGroupProps) {
   const [expanded, setExpanded] = useState(false)
 
   const hasError = parts.some((p) => p.status === "error")
   const isRunning = parts.some((p) => p.status === "running")
+  const isActive = isRunning || (isActiveFallback && !hasError)
 
   const label = isRunning
     ? `Running tools (${parts.filter((p) => p.status === "done").length}/${parts.length})`
+    : isActive
+      ? "Working with tools..."
     : hasError
       ? `Used ${parts.length} tools (${parts.filter((p) => p.status === "error").length} failed)`
       : `Used ${parts.length} tools`
@@ -235,13 +239,13 @@ export const ToolCallGroup = memo(function ToolCallGroup({ parts }: ToolCallGrou
             expanded && "rotate-90"
           )}
         />
-        {isRunning ? (
+        {isActive ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
         ) : (
           <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
         )}
         <span>{label}</span>
-        {!isRunning && totalMs > 0 && (
+        {!isActive && totalMs > 0 && (
           <span className="ml-auto text-muted-foreground/60 tabular-nums">
             {totalMs < 1000 ? `${Math.round(totalMs)}ms` : `${(totalMs / 1000).toFixed(1)}s`}
           </span>

@@ -71,4 +71,34 @@ describe("assistant message parts", () => {
 
     expect(screen.getAllByText(/^shell$/i)).toHaveLength(2)
   })
+
+  it("keeps the latest completed tool group visibly active while the response is still running", () => {
+    render(
+      <ToolCallGroup
+        isActiveFallback
+        parts={[
+          {
+            type: "tool-call",
+            id: "tool-1",
+            toolName: "list_runs",
+            args: {},
+            status: "done",
+            durationMs: 1,
+          },
+          {
+            type: "tool-call",
+            id: "tool-2",
+            toolName: "show_run",
+            args: {},
+            status: "done",
+            durationMs: 1,
+          },
+        ]}
+      />
+    )
+
+    const button = screen.getByRole("button", { name: /working with tools/i })
+    expect(button.querySelector(".animate-spin")).not.toBeNull()
+    expect(screen.queryByText(/used 2 tools/i)).not.toBeInTheDocument()
+  })
 })

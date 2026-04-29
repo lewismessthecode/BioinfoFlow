@@ -34,8 +34,16 @@ vi.mock("@/components/bioinfoflow/chat/parts/thinking-part", () => ({
 }))
 
 vi.mock("@/components/bioinfoflow/chat/parts/tool-call-part", () => ({
-  ToolCallGroup: ({ parts }: { parts: Array<{ toolName: string }> }) => (
-    <div data-testid="tool-group">{parts.map((part) => part.toolName).join(",")}</div>
+  ToolCallGroup: ({
+    parts,
+    isActiveFallback,
+  }: {
+    parts: Array<{ toolName: string }>
+    isActiveFallback?: boolean
+  }) => (
+    <div data-active-fallback={isActiveFallback ? "true" : "false"} data-testid="tool-group">
+      {parts.map((part) => part.toolName).join(",")}
+    </div>
   ),
   ToolCallPart: ({ part }: { part: { toolName: string } }) => (
     <div data-testid="tool-call">{part.toolName}</div>
@@ -164,5 +172,37 @@ describe("MessageBubble", () => {
 
     await user.click(screen.getByRole("button", { name: /regenerate/i }))
     expect(onRegenerate).toHaveBeenCalledTimes(1)
+  })
+
+  it("marks the last completed tool group active while an assistant response is still streaming", () => {
+    render(
+      <MessageBubble
+        message={{
+          ...makeAssistantMessage(),
+          streaming: true,
+          parts: [
+            { type: "text", text: "Let me try with the required parameter:" },
+            {
+              type: "tool-call",
+              id: "tool-1",
+              toolName: "list_runs",
+              args: {},
+              status: "done",
+              result: "ok",
+            },
+            {
+              type: "tool-call",
+              id: "tool-2",
+              toolName: "show_run",
+              args: {},
+              status: "done",
+              result: "ok",
+            },
+          ],
+        }}
+      />,
+    )
+
+    expect(screen.getByTestId("tool-group")).toHaveAttribute("data-active-fallback", "true")
   })
 })

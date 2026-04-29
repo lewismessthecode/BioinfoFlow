@@ -133,7 +133,13 @@ export const MessageBubble = memo(function MessageBubble({
       {grouped.map((item, i) => {
         // Tool call group
         if (Array.isArray(item)) {
-          return <ToolCallGroup key={`tools-${i}`} parts={item} />
+          return (
+            <ToolCallGroup
+              key={`tools-${i}`}
+              parts={item}
+              isActiveFallback={Boolean(message.streaming && i === grouped.length - 1)}
+            />
+          )
         }
         // Single parts
         switch (item.type) {
