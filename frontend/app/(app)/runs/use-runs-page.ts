@@ -9,6 +9,7 @@ import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useEvents } from "@/hooks/use-events"
 import type { DagData, Pagination, Run, RunLogs, RunOutputs, RunStatus, Workflow } from "@/lib/types"
 import { openInNewTab } from "@/lib/window-utils"
+import { parseContainerImagePreparationMessage } from "./run-log-toast-utils"
 
 type RunsScope = "all" | "project"
 const TERMINAL_RUN_STATUSES = new Set<RunStatus>(["completed", "failed", "cancelled"])
@@ -49,6 +50,7 @@ export function useRunsPage() {
   const urlScope = searchParams.get("scope")
   const expandedRunIdRef = useRef(expandedRunId)
   const consumedHighlightRef = useRef<string | null>(null)
+  const imagePreparationToastKeysRef = useRef(new Set<string>())
   expandedRunIdRef.current = expandedRunId
 
   const effectiveProjectId = urlProjectId || activeProjectId || null
@@ -160,6 +162,17 @@ export function useRunsPage() {
     []
   )
 
+  const maybeToastImagePreparation = useCallback((runId: string, message: string) => {
+    const images = parseContainerImagePreparationMessage(message)
+    if (!images) return
+    const key = `${runId}:${message}`
+    if (imagePreparationToastKeysRef.current.has(key)) return
+    imagePreparationToastKeysRef.current.add(key)
+    toast.info(tRuns("toasts.preparingImagesTitle"), {
+      description: images,
+    })
+  }, [tRuns])
+
   useEvents({
     projectId: scope === "project" ? effectiveProjectId || undefined : undefined,
     onRunStatus: (envelope) => {
@@ -184,6 +197,7 @@ export function useRunsPage() {
     },
     onRunLog: (envelope) => {
       const { run_id, message, level, task, timestamp } = envelope.data
+      maybeToastImagePreparation(run_id, message)
       handleRunLogEvent(run_id, { message, level: level ?? null, task: task ?? null, timestamp: timestamp ?? null })
     },
     onRunDag: (envelope) => {

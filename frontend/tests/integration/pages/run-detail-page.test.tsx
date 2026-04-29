@@ -1,12 +1,13 @@
-import { screen, waitFor } from "@testing-library/react"
+import { act, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import RunDetailPage from "@/app/(app)/runs/[runId]/page"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { apiRequest } from "@/lib/api"
 import { renderAppPage } from "@/tests/app-test-utils"
 
-const { toastErrorMock } = vi.hoisted(() => ({
+const { toastErrorMock, toastInfoMock } = vi.hoisted(() => ({
   toastErrorMock: vi.fn(),
+  toastInfoMock: vi.fn(),
 }))
 const { translateMock } = vi.hoisted(() => ({
   translateMock: vi.fn((key: string) => key),
@@ -49,6 +50,7 @@ vi.mock("@/app/(app)/runs/components/run-detail-content", () => ({
 vi.mock("sonner", () => ({
   toast: {
     error: toastErrorMock,
+    info: toastInfoMock,
     success: vi.fn(),
     warning: vi.fn(),
   },
@@ -75,6 +77,7 @@ describe("RunDetailPage", () => {
   beforeEach(() => {
     apiRequestMock.mockReset()
     toastErrorMock.mockReset()
+    toastInfoMock.mockReset()
     useEventsMock.mockReset()
     useEventsMock.mockReturnValue({ connectionState: "connected" })
 
@@ -217,19 +220,64 @@ describe("RunDetailPage", () => {
       "run-123:outputs:0"
     )
 
-    eventHandlers?.onRunStatus?.({
-      data: {
-        run_id: "run-123",
-        status: "completed",
-        tasks_completed: 4,
-        tasks_total: 4,
-      },
+    act(() => {
+      eventHandlers?.onRunStatus?.({
+        data: {
+          run_id: "run-123",
+          status: "completed",
+          tasks_completed: 4,
+          tasks_total: 4,
+        },
+      })
     })
 
     await waitFor(() => {
       expect(screen.getByTestId("run-detail-content")).toHaveTextContent(
         "run-123:outputs:1"
       )
+    })
+  })
+
+  it("surfaces container image preparation logs as a toast", async () => {
+    let eventHandlers:
+      | {
+          onRunLog?: (event: {
+            data: {
+              run_id: string
+              message: string
+              level?: string | null
+              task?: string | null
+              timestamp?: string | null
+            }
+          }) => void
+        }
+      | undefined
+
+    useEventsMock.mockImplementation((options) => {
+      eventHandlers = options
+      return { connectionState: "connected" }
+    })
+
+    renderAppPage(<RunDetailPage />)
+
+    expect(await screen.findByTestId("run-detail-content")).toHaveTextContent(
+      "run-123"
+    )
+
+    act(() => {
+      eventHandlers?.onRunLog?.({
+        data: {
+          run_id: "run-123",
+          message: "Preparing required container images: nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1",
+          level: "info",
+          task: null,
+          timestamp: "2026-04-29T01:15:14.000Z",
+        },
+      })
+    })
+
+    expect(toastInfoMock).toHaveBeenCalledWith("toasts.preparingImagesTitle", {
+      description: "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1",
     })
   })
 })

@@ -315,6 +315,66 @@ describe("useRunsPage", () => {
     expect(result.current.filteredRuns[0]?.status).toBe("completed")
   })
 
+  it("surfaces container image preparation logs as a toast", async () => {
+    let eventHandlers:
+      | {
+          onRunLog?: (event: {
+            data: {
+              run_id: string
+              message: string
+              level?: string | null
+              task?: string | null
+              timestamp?: string | null
+            }
+          }) => void
+        }
+      | undefined
+
+    useEventsMock.mockImplementation((options) => {
+      eventHandlers = options
+      return { connectionState: "connected" }
+    })
+
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/workflows") {
+        return { data: [makeWorkflow()], meta: undefined }
+      }
+      if (path === "/runs") {
+        return {
+          data: [makeRun()],
+          meta: { pagination: { next_cursor: null, prev_cursor: null, has_more: false } },
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({
+      activeProjectId: "project-url",
+    })
+    renderHook(() => useRunsPage(), { wrapper: Wrapper })
+
+    await waitFor(() => expect(eventHandlers?.onRunLog).toBeDefined())
+
+    act(() => {
+      eventHandlers?.onRunLog?.({
+        data: {
+          run_id: "run-1",
+          message: "Preparing required container images: nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1",
+          level: "info",
+          task: null,
+          timestamp: "2026-04-29T01:15:14.000Z",
+        },
+      })
+    })
+
+    expect(toastInfoMock).toHaveBeenCalledWith(
+      "runs.toasts.preparingImagesTitle",
+      {
+        description: "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1",
+      },
+    )
+  })
+
   it("updates the URL and refetches runs around a newly submitted run", async () => {
     let runsFetches = 0
     const runRequestParams: Array<Record<string, unknown> | undefined> = []

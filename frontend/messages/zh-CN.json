@@ -411,6 +411,7 @@
       "resumingDescription": "尝试从上次检查点继续执行",
       "resumedTitle": "{runId} 已继续",
       "executionQueued": "流程已进入执行队列",
+      "preparingImagesTitle": "正在准备所需容器镜像",
       "retryingTitle": "正在重试 {runId}...",
       "retryingDescription": "将从头重新启动流程",
       "resubmittedTitle": "{runId} 已重新提交",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -23,6 +23,7 @@ import dynamic from "next/dynamic";
 import { RunDetailContent } from "../components/run-detail-content";
 import { RunStagePanel } from "@/components/bioinfoflow/run-stage-panel";
 import { RunErrorCard } from "@/components/bioinfoflow/run-error-card";
+import { parseContainerImagePreparationMessage } from "../run-log-toast-utils";
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
@@ -47,6 +48,7 @@ export default function RunDetailPage() {
   const [dag, setDag] = useState<DagData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [dagFullscreen, setDagFullscreen] = useState(false);
+  const imagePreparationToastKeysRef = useRef(new Set<string>());
 
   useSetBreadcrumbDetail(runId);
 
@@ -66,6 +68,17 @@ export default function RunDetailPage() {
       const message = getApiErrorMessage(error, tRuns("errors.loadRunDetailsFailed"));
       toast.error(message);
     }
+  }, [runId, tRuns]);
+
+  const maybeToastImagePreparation = useCallback((message: string) => {
+    const images = parseContainerImagePreparationMessage(message);
+    if (!images) return;
+    const key = `${runId}:${message}`;
+    if (imagePreparationToastKeysRef.current.has(key)) return;
+    imagePreparationToastKeysRef.current.add(key);
+    toast.info(tRuns("toasts.preparingImagesTitle"), {
+      description: images,
+    });
   }, [runId, tRuns]);
 
   const fetchRun = useCallback(async () => {
@@ -140,6 +153,7 @@ export default function RunDetailPage() {
     onRunLog: (envelope) => {
       if (envelope.data.run_id !== runId) return;
       const { message, level, task, timestamp } = envelope.data;
+      maybeToastImagePreparation(message);
       setLogs((prev) => {
         const existing = prev?.logs ?? [];
         const next = [

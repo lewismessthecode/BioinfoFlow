@@ -411,6 +411,7 @@
       "resumingDescription": "Attempting to resume from last checkpoint",
       "resumedTitle": "{runId} resumed",
       "executionQueued": "Pipeline execution queued",
+      "preparingImagesTitle": "Preparing required container images",
       "retryingTitle": "Retrying {runId}...",
       "retryingDescription": "Restarting pipeline from beginning",
       "resubmittedTitle": "{runId} resubmitted",
