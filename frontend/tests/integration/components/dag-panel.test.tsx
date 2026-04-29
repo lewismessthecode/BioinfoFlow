@@ -3,12 +3,14 @@ import { fireEvent, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DagPanel } from "@/components/bioinfoflow/dag/dag-panel"
+import { apiRequest } from "@/lib/api"
 import type { DagData } from "@/lib/types"
 import { renderAppPage } from "@/tests/app-test-utils"
 
 const fitViewMock = vi.fn()
 const savePositionMock = vi.fn()
 const clearPositionsMock = vi.fn()
+const apiRequestMock = vi.hoisted(() => vi.fn())
 const persistedPositionsRef = vi.hoisted(() => ({
   current: {} as Record<string, { x: number; y: number }>,
 }))
@@ -24,6 +26,14 @@ vi.mock("@/hooks/use-dag-positions", () => ({
     clearPositions: clearPositionsMock,
   }),
 }))
+
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api")
+  return {
+    ...actual,
+    apiRequest: apiRequestMock,
+  }
+})
 
 vi.mock("reactflow", async () => {
   const ReactModule = await vi.importActual<typeof import("react")>("react")
@@ -111,6 +121,8 @@ const dagWithNode: DagData = {
 describe("DagPanel", () => {
   beforeEach(() => {
     vi.stubGlobal("ResizeObserver", ResizeObserverMock)
+    vi.stubGlobal("fetch", vi.fn())
+    apiRequestMock.mockReset()
     fitViewMock.mockReset()
     savePositionMock.mockReset()
     clearPositionsMock.mockReset()
@@ -151,5 +163,20 @@ describe("DagPanel", () => {
       // overlap when switching axes — landing at {x:80, y:9}.
       expect(screen.getByTestId("nodes-json")).toHaveTextContent("\"x\":80")
     })
+  })
+
+  it("loads missing run DAGs through the credential-aware API client", async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      data: dagWithNode,
+      meta: undefined,
+    })
+
+    renderAppPage(<DagPanel runId="run-authenticated" showHeader={false} />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("nodes-json")).toHaveTextContent("\"fastqc\"")
+    })
+    expect(apiRequest).toHaveBeenCalledWith("/runs/run-authenticated/dag")
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

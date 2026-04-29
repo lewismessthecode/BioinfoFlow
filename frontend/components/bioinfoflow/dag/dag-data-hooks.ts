@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { apiRequest, buildApiUrl } from "@/lib/api"
+import { apiRequest } from "@/lib/api"
 import type { DagData, ProjectWorkflowGroup, Run } from "@/lib/types"
 
 /* ── runs loader ────────────────────────────────────────── */
@@ -130,18 +130,15 @@ export function useDagFetch(
       setIsLoading(true)
       setError(null)
       try {
-        const url = runId ? buildApiUrl(`/runs/${runId}/dag`) : buildApiUrl(`/workflows/${effectiveWorkflowId}/dag`)
-        const response = await fetch(url)
-        const json = await response.json()
+        const response = runId
+          ? await apiRequest<DagData>(`/runs/${runId}/dag`)
+          : await apiRequest<DagData>(`/workflows/${effectiveWorkflowId}/dag`)
         if (!cancelled) {
-          if (json.success) {
-            applyDagData(json.data ?? { nodes: [], edges: [] })
-          } else {
-            clearGraph()
-          }
+          applyDagData(response.data ?? { nodes: [], edges: [] })
         }
       } catch {
         if (!cancelled) {
+          clearGraph()
           setError("Failed to load DAG")
         }
       } finally {

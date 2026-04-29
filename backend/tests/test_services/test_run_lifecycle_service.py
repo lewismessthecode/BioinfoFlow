@@ -148,6 +148,23 @@ async def test_get_logs_falls_back_to_resolved_workspace_when_default_path_is_mi
 
 
 @pytest.mark.asyncio
+async def test_get_logs_returns_empty_list_before_log_file_exists(db_session, tmp_path):
+    workspace_root = tmp_path / "workspace"
+    _, run = await _create_run(
+        db_session,
+        workspace=workspace_root,
+        run_id="run_logs_pending_service",
+        config={},
+        status=RunStatus.PENDING,
+    )
+    service = RunLifecycleService(db_session, dispatcher=_NullDispatcher())
+
+    payload = await service.get_logs(run.run_id, tail=200)
+
+    assert payload == {"logs": []}
+
+
+@pytest.mark.asyncio
 async def test_append_run_log_persists_relative_log_path_and_appends_messages(
     db_session, tmp_path
 ):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -56,6 +58,24 @@ class _FakeImages:
         if self._remove_error is not None:
             raise self._remove_error
         self.removed.append((full_name, force))
+
+
+class _SlowPullStream:
+    def __init__(self, events: list[dict], *, delay_seconds: float) -> None:
+        self._events = events
+        self._delay_seconds = delay_seconds
+        self._index = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._index >= len(self._events):
+            raise StopIteration
+        time.sleep(self._delay_seconds)
+        event = self._events[self._index]
+        self._index += 1
+        return event
 
 
 def _service_with_client(images: _FakeImages) -> DockerService:
@@ -141,3 +161,37 @@ async def test_delete_image_returns_false_when_docker_rejects_delete():
     deleted = await service.delete_image("ghcr.io/demo/tool:1.2.3", force=True)
 
     assert deleted is False
+
+
+@pytest.mark.asyncio
+async def test_pull_image_stream_iteration_does_not_block_event_loop():
+    service = _service_with_client(_FakeImages())
+    events = [
+        {"status": "Pulling fs layer", "id": "layer-1"},
+        {"status": "Downloading", "id": "layer-1"},
+        {"status": "Pull complete", "id": "layer-1"},
+    ]
+    service._client.api.pull = lambda *args, **kwargs: _SlowPullStream(  # type: ignore[attr-defined]
+        events,
+        delay_seconds=0.05,
+    )
+    ticks = 0
+    done = False
+
+    async def ticker() -> None:
+        nonlocal ticks
+        while not done:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    ticker_task = asyncio.create_task(ticker())
+    received: list[dict] = []
+    try:
+        async for event in service.pull_image("demo/tool", "1.0", "docker.io"):
+            received.append(event)
+    finally:
+        done = True
+        await ticker_task
+
+    assert received == events
+    assert ticks >= 3

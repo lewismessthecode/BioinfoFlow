@@ -407,7 +407,7 @@ class RunLifecycleService:
                 workspace_root = self._safe_workspace(root, str(workspace))
             target = self._safe_workspace(workspace_root, log_path)
         if not target.exists() or not target.is_file():
-            raise FileNotFoundError("log file not found")
+            return {"logs": []}
 
         if tail == 0:
 

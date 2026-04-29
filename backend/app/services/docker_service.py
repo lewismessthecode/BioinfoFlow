@@ -153,7 +153,19 @@ class DockerService:
             return self.client.api.pull(repository, tag=tag, stream=True, decode=True)
 
         stream = await asyncio.to_thread(_pull)
-        for event in stream:
+        iterator = iter(stream)
+        done = object()
+
+        def _next_event():
+            try:
+                return next(iterator)
+            except StopIteration:
+                return done
+
+        while True:
+            event = await asyncio.to_thread(_next_event)
+            if event is done:
+                break
             yield event
 
     async def delete_image(self, full_name: str, force: bool = False) -> bool:
