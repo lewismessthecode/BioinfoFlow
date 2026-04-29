@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
-import { applySSEEvent, createUserMessage, mapDbMessage } from "@/lib/chat-utils"
+import { applySSEEvent, createClientMessageId, createUserMessage, mapDbMessage } from "@/lib/chat-utils"
 import type { AgentChatStatus, ChatMessage, SSEEvent } from "@/lib/chat-types"
 import type {
   AgentConversationHistory,
@@ -482,7 +482,7 @@ export function useAgentChat(projectId?: string) {
       const fallbackTitle = toFallbackConversationTitle(trimmedText)
       const isFirstPrompt = messages.length === 0
 
-      const userMsg = createUserMessage(crypto.randomUUID(), trimmedText)
+      const userMsg = createUserMessage(createClientMessageId(), trimmedText)
       setMessages((prev) => [...prev, userMsg])
       setStatus("streaming")
       setError(null)

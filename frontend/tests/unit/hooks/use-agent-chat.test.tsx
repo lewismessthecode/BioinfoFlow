@@ -427,4 +427,48 @@ describe("useAgentChat", () => {
       execution_policy: "bypass",
     })
   })
+
+  it("sends messages when crypto.randomUUID is unavailable", async () => {
+    const originalCrypto = globalThis.crypto
+    vi.stubGlobal("crypto", {
+      ...originalCrypto,
+      randomUUID: undefined,
+      getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto),
+    })
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/agent/message" && options?.method === "POST") {
+        return {
+          data: {
+            conversation_id: "conversation-2",
+            status: "processing",
+          },
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({
+      activeProjectId: "project-1",
+      selectedProjectId: "project-1",
+      conversationProjectId: "project-1",
+      activeConversationId: "",
+    })
+
+    const { result } = renderHook(() => useAgentChat("project-1"), { wrapper: Wrapper })
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    await act(async () => {
+      await result.current.sendMessage("hello agent")
+    })
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "/agent/message",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("hello agent"),
+      }),
+    )
+  })
 })

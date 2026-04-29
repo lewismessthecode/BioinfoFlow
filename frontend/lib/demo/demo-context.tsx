@@ -20,7 +20,7 @@ import {
 
 import type { ChatMessage } from "@/lib/chat-types"
 import type { DagData, RunStatus } from "@/lib/types"
-import { applySSEEvent, createUserMessage } from "@/lib/chat-utils"
+import { applySSEEvent, createClientMessageId, createUserMessage } from "@/lib/chat-utils"
 import {
   parseNDJSON,
   scheduleReplay,
@@ -94,7 +94,7 @@ export function DemoReplayProvider({
       case "user_message":
         setMessages((prev) => [
           ...prev,
-          createUserMessage(crypto.randomUUID(), event.text),
+          createUserMessage(createClientMessageId(), event.text),
         ])
         break
 
