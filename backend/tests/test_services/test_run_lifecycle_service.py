@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select, text
 
+from app.models import ScheduledTask
 from app.models.project import Project
 from app.models.run import Run, RunStatus
 from app.services import run_lifecycle_service
@@ -185,3 +187,25 @@ async def test_append_run_log_persists_relative_log_path_and_appends_messages(
     assert refreshed.config["log_path"] == f"runs/{run.run_id}/audit/run.log"
     log_path = workspace_root / refreshed.config["log_path"]
     assert log_path.read_text(encoding="utf-8") == "first line\nsecond line\n"
+
+
+@pytest.mark.asyncio
+async def test_delete_run_removes_scheduler_task_rows(db_session, tmp_path):
+    _, run = await _create_run(
+        db_session,
+        workspace=tmp_path / "workspace",
+        run_id="run_delete_with_task",
+        status=RunStatus.QUEUED,
+    )
+    await db_session.execute(text("PRAGMA foreign_keys=ON"))
+    db_session.add(ScheduledTask(run_id=run.run_id))
+    await db_session.commit()
+    service = RunLifecycleService(db_session, dispatcher=_NullDispatcher())
+
+    await service.delete_run(run.run_id)
+
+    assert await service.repo.get_by_run_id(run.run_id) is None
+    result = await db_session.execute(
+        select(ScheduledTask).where(ScheduledTask.run_id == run.run_id)
+    )
+    assert result.scalars().all() == []

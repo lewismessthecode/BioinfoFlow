@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.models.project import Project
 from app.models.run import Run, RunStatus
+from app.scheduler.models import ScheduledTask
 from app.repositories.base import BaseRepository
 from app.schemas.common import Pagination
 
@@ -78,6 +79,12 @@ class RunRepository(BaseRepository[Run]):
         run.completed_at = datetime.now(timezone.utc)
         await self.session.commit()
         return run
+
+    async def delete_scheduler_tasks(self, run_id: str) -> None:
+        """Remove persistent scheduler rows for a run before deleting it."""
+        await self.session.execute(
+            delete(ScheduledTask).where(ScheduledTask.run_id == run_id)
+        )
 
     async def delete_by_project_and_statuses(
         self, project_id: str, statuses: list[str]

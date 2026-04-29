@@ -27,7 +27,7 @@ class ScheduledTask(Base, UUIDMixin, TimestampMixin):
 
     run_id: Mapped[str] = mapped_column(
         String(50),
-        ForeignKey("runs.run_id"),
+        ForeignKey("runs.run_id", ondelete="CASCADE"),
         index=True,
         nullable=False,
     )

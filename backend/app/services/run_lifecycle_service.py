@@ -526,6 +526,7 @@ class RunLifecycleService:
         await self._require_run_access(run, user_id, workspace_id=workspace_id)
         if delete_outputs:
             await self._archive.delete_outputs(run)
+        await self.repo.delete_scheduler_tasks(run.run_id)
         await self.repo.delete(run)
 
     # ── outputs ───────────────────────────────────────────────────────────
