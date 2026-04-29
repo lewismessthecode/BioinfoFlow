@@ -274,6 +274,206 @@ describe("useSidebarData", () => {
     expect(pushMock).toHaveBeenCalledWith("/agent")
   })
 
+  it("deletes the previous unsent draft conversation before creating another", async () => {
+    const project: Project = {
+      id: "project-1",
+      name: "Alpha",
+      project_root: "asset://project",
+      storage_mode: "managed",
+    }
+    const createdConversations: AgentConversationRead[] = [
+      { id: "conversation-draft-1", project_id: project.id, title: null },
+      { id: "conversation-draft-2", project_id: project.id, title: null },
+    ]
+    let createIndex = 0
+
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/projects") {
+        return { data: [project], meta: undefined }
+      }
+      if (path === "/projects/default") {
+        throw new Error("no default")
+      }
+      if (path === "/agent/conversations" && options?.method === "POST") {
+        const conversation = createdConversations[createIndex++]
+        return { data: conversation, meta: undefined }
+      }
+      if (path === "/agent/conversations") {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/conversations/conversation-draft-1" && options?.method === "DELETE") {
+        return { data: null, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({ selectedProjectId: "project-1" })
+    const { result } = renderHook(
+      () => ({ sidebar: useSidebarData(tSidebar), project: useProjectContext() }),
+      { wrapper: Wrapper }
+    )
+
+    await waitFor(() => expect(result.current.sidebar.projects).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.sidebar.handleCreateConversation(project.id)
+    })
+    await act(async () => {
+      await result.current.sidebar.handleCreateConversation(project.id)
+    })
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "/agent/conversations/conversation-draft-1",
+      { method: "DELETE" },
+    )
+    expect(result.current.sidebar.projectConversations.get(project.id)).toEqual([
+      createdConversations[1],
+    ])
+    expect(window.localStorage.getItem("bioinfoflow:conversation:project-1")).toBe("conversation-draft-2")
+  })
+
+  it("keeps a draft conversation after it receives a title update", async () => {
+    const project: Project = {
+      id: "project-1",
+      name: "Alpha",
+      project_root: "asset://project",
+      storage_mode: "managed",
+    }
+    const createdConversations: AgentConversationRead[] = [
+      { id: "conversation-draft-1", project_id: project.id, title: null },
+      { id: "conversation-draft-2", project_id: project.id, title: null },
+    ]
+    let createIndex = 0
+
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/projects") {
+        return { data: [project], meta: undefined }
+      }
+      if (path === "/projects/default") {
+        throw new Error("no default")
+      }
+      if (path === "/agent/conversations" && options?.method === "POST") {
+        const conversation = createdConversations[createIndex++]
+        return { data: conversation, meta: undefined }
+      }
+      if (path === "/agent/conversations") {
+        return { data: [], meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({ selectedProjectId: "project-1" })
+    const { result } = renderHook(
+      () => ({ sidebar: useSidebarData(tSidebar), project: useProjectContext() }),
+      { wrapper: Wrapper }
+    )
+
+    await waitFor(() => expect(result.current.sidebar.projects).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.sidebar.handleCreateConversation(project.id)
+    })
+    act(() => {
+      emitConversationUpdated({
+        id: "conversation-draft-1",
+        project_id: project.id,
+        title: "Started analysis",
+      })
+    })
+    await act(async () => {
+      await result.current.sidebar.handleCreateConversation(project.id)
+    })
+
+    expect(
+      apiRequestMock.mock.calls.some(
+        ([path, options]) =>
+          path === "/agent/conversations/conversation-draft-1" &&
+          options?.method === "DELETE",
+      ),
+    ).toBe(false)
+    expect(result.current.sidebar.projectConversations.get(project.id)).toEqual([
+      createdConversations[1],
+      { ...createdConversations[0], title: "Started analysis" },
+    ])
+  })
+
+  it("deletes an existing active empty conversation before creating another", async () => {
+    const project: Project = {
+      id: "project-1",
+      name: "Alpha",
+      project_root: "asset://project",
+      storage_mode: "managed",
+    }
+    const emptyConversation: AgentConversationRead = {
+      id: "conversation-empty",
+      project_id: project.id,
+      title: null,
+    }
+    const newConversation: AgentConversationRead = {
+      id: "conversation-new",
+      project_id: project.id,
+      title: null,
+    }
+
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/projects") {
+        return { data: [project], meta: undefined }
+      }
+      if (path === "/projects/default") {
+        throw new Error("no default")
+      }
+      if (path === "/agent/conversations/conversation-empty" && options?.method === "DELETE") {
+        return { data: null, meta: undefined }
+      }
+      if (path === "/agent/conversations/conversation-empty") {
+        return {
+          data: {
+            conversation_id: emptyConversation.id,
+            project_id: project.id,
+            title: null,
+            messages: [],
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/agent/conversations" && options?.method === "POST") {
+        return { data: newConversation, meta: undefined }
+      }
+      if (path === "/agent/conversations") {
+        return { data: [emptyConversation], meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({
+      selectedProjectId: "project-1",
+      conversationProjectId: "project-1",
+      activeConversationId: "conversation-empty",
+    })
+    const { result } = renderHook(
+      () => ({ sidebar: useSidebarData(tSidebar), project: useProjectContext() }),
+      { wrapper: Wrapper }
+    )
+
+    await waitFor(() =>
+      expect(result.current.sidebar.projectConversations.get(project.id)).toEqual([
+        emptyConversation,
+      ])
+    )
+
+    await act(async () => {
+      await result.current.sidebar.handleCreateConversation(project.id)
+    })
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "/agent/conversations/conversation-empty",
+      { method: "DELETE" },
+    )
+    expect(result.current.sidebar.projectConversations.get(project.id)).toEqual([
+      newConversation,
+    ])
+  })
+
   it("selects a conversation, persists it, and navigates to the agent page", async () => {
     const apiProjects: Project[] = [{ id: "project-1", name: "Alpha", project_root: "asset://project" }]
 

@@ -1,10 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
-import type { AgentConversationRead, Project } from "@/lib/types"
+import type { AgentConversationHistory, AgentConversationRead, Project } from "@/lib/types"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import {
   clearStoredConversationId,
@@ -34,6 +34,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   const [loadingProjects, setLoadingProjects] = useState<Set<string>>(new Set())
   const [defaultProject, setDefaultProject] = useState<Project | null>(null)
   const [inboxConversations, setInboxConversations] = useState<AgentConversationRead[]>([])
+  const draftConversationIdsRef = useRef(new Set<string>())
 
   const fetchProjects = useCallback(async () => {
     setIsLoading(true)
@@ -152,6 +153,10 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
 
   useEffect(() => {
     return listenForConversationUpdates((conversation) => {
+      if (conversation.title?.trim()) {
+        draftConversationIdsRef.current.delete(conversation.id)
+      }
+
       setProjectConversations((prev) => {
         const existing = prev.get(conversation.project_id)
         if (!existing) return prev
@@ -164,6 +169,60 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       })
     })
   }, [])
+
+  const discardActiveDraftConversation = useCallback(async () => {
+    if (!activeConversationId) return
+
+    const projectId = conversationProjectId || selectedProjectId
+    if (!projectId) return
+
+    const conversations = projectConversations.get(projectId) || []
+    const conversation = conversations.find((item) => item.id === activeConversationId)
+    if (!conversation || conversation.title?.trim()) {
+      draftConversationIdsRef.current.delete(activeConversationId)
+      return
+    }
+
+    const draftId = activeConversationId
+    let shouldDiscard = draftConversationIdsRef.current.has(draftId)
+    if (!shouldDiscard) {
+      try {
+        const { data } = await apiRequest<AgentConversationHistory>(
+          `/agent/conversations/${draftId}`,
+        )
+        shouldDiscard = data.messages.length === 0
+      } catch {
+        return
+      }
+    }
+    if (!shouldDiscard) return
+
+    draftConversationIdsRef.current.delete(draftId)
+    try {
+      await apiRequest(`/agent/conversations/${draftId}`, { method: "DELETE" })
+    } catch {
+      return
+    }
+
+    setProjectConversations((prev) => {
+      const existing = prev.get(projectId) || []
+      return new Map(prev).set(projectId, existing.filter((item) => item.id !== draftId))
+    })
+    if (activeConversationId === draftId) {
+      clearStoredConversationId(projectId)
+      setActiveConversationId("")
+      if (conversationProjectId === projectId) {
+        setConversationProjectId("")
+      }
+    }
+  }, [
+    activeConversationId,
+    conversationProjectId,
+    projectConversations,
+    selectedProjectId,
+    setActiveConversationId,
+    setConversationProjectId,
+  ])
 
   const toggleProjectExpanded = (projectId: string) => {
     setExpandedProjects((prev) => {
@@ -288,6 +347,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
 
   const handleCreateConversation = async (projectId?: string) => {
     try {
+      await discardActiveDraftConversation()
       const targetId = projectId || selectedProjectId
       const { data } = await apiRequest<AgentConversationRead>("/agent/conversations", {
         method: "POST",
@@ -307,6 +367,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       }
       setConversationProjectId(resolvedProjectId)
       setActiveConversationId(data.id)
+      draftConversationIdsRef.current.add(data.id)
       setStoredConversationId(resolvedProjectId, data.id)
       router.push("/agent")
     } catch (error) {
