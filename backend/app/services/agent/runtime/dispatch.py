@@ -259,7 +259,9 @@ _TASK_GET_SCHEMA = _json_schema_object(
 
 
 def _wrap_handler(
-    name: str, handler: Callable[..., Awaitable[Any]]
+    name: str,
+    handler: Callable[..., Awaitable[Any]],
+    input_schema: dict[str, Any] | None = None,
 ) -> Callable[..., Awaitable[str]]:
     """Wrap a raw handler with timing, truncation, and error handling."""
 
@@ -267,7 +269,7 @@ def _wrap_handler(
         start = time.perf_counter()
         status = "ok"
         try:
-            result = await handler(**kwargs)
+            result = await handler(**_filter_schema_kwargs(name, input_schema, kwargs))
             output = _serialize_result(result)
             if len(output) > MAX_TOOL_OUTPUT_CHARS:
                 output = output[:MAX_TOOL_OUTPUT_CHARS] + "\n...[truncated]"
@@ -286,6 +288,29 @@ def _wrap_handler(
             )
 
     return wrapped
+
+
+def _filter_schema_kwargs(
+    name: str,
+    input_schema: dict[str, Any] | None,
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Drop model-generated top-level arguments not declared by the tool schema."""
+    if not input_schema or input_schema.get("type") != "object":
+        return kwargs
+    if input_schema.get("additionalProperties") is True:
+        return kwargs
+
+    properties = input_schema.get("properties")
+    if not isinstance(properties, dict):
+        return kwargs
+
+    allowed = set(properties)
+    filtered = {key: value for key, value in kwargs.items() if key in allowed}
+    ignored = sorted(set(kwargs) - allowed)
+    if ignored:
+        logger.info("dispatch.tool_args_ignored", tool=name, args=ignored)
+    return filtered
 
 
 def _serialize_result(result: Any) -> str:
@@ -310,7 +335,7 @@ def _register(
 ) -> None:
     """Register a single tool with standard wrapping."""
     dispatch[name] = ToolEntry(
-        handler=_wrap_handler(name, handler),
+        handler=_wrap_handler(name, handler, input_schema),
         schema={
             "type": "function",
             "function": {
@@ -348,7 +373,7 @@ def _register_base_tool(dispatch: dict[str, ToolEntry], tool: Any) -> None:
     else:
         params = raw_args or _EMPTY_SCHEMA
     dispatch[tool.name] = ToolEntry(
-        handler=_wrap_handler(tool.name, handler),
+        handler=_wrap_handler(tool.name, handler, params),
         schema={
             "type": "function",
             "function": {

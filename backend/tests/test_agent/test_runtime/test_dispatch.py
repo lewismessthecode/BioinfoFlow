@@ -94,6 +94,17 @@ async def test_unknown_tool_returns_error(db_session):
 
 
 @pytest.mark.asyncio
+async def test_tool_handler_ignores_schema_unknown_arguments(db_session):
+    """Model-generated extra arguments should not break strict tool signatures."""
+    dispatch = build_dispatch_map(db_session, project_id="test-project")
+
+    result = await dispatch["compact"].handler(_="")
+
+    assert "unexpected keyword argument" not in result
+    assert result == "Context compaction requested. Will be applied before the next LLM call."
+
+
+@pytest.mark.asyncio
 async def test_tool_handler_truncates_output(db_session, tmp_path):
     """Tool handlers should truncate output exceeding MAX_TOOL_OUTPUT_CHARS."""
     workspace = tmp_path / "workspace"

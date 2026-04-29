@@ -19,6 +19,7 @@ from app.services.agent.runtime.llm_providers import (
     LLMProviderAttempt,
     _LLM_REQUEST_TIMEOUT,
     is_retryable_llm_exception,
+    is_provider_exhausted_exception,
     resolve_provider_attempts,
     resolve_provider_model,
     retry_llm_call,
@@ -78,6 +79,7 @@ class LLMClient:
         self._litellm_model: str | None = None  # Full LiteLLM model ID
         self._initialized = False
         self._attempts: list[LLMProviderAttempt] = []
+        self._disabled_attempts: set[tuple[str, str]] = set()
         self._user_id = user_id
         self._model_override = model_override
         self._db_session = db_session
@@ -105,6 +107,7 @@ class LLMClient:
                     litellm_model="deterministic",
                 )
             ]
+            self._disabled_attempts = set()
             return
 
         # Try per-user settings first
@@ -122,6 +125,7 @@ class LLMClient:
         )
         if not self._attempts:
             return
+        self._disabled_attempts = set()
         primary = self._attempts[0]
         self._provider = primary.provider
         self._model = primary.model
@@ -190,6 +194,26 @@ class LLMClient:
 
         return kwargs
 
+    def _available_attempts(self) -> list[LLMProviderAttempt]:
+        return [
+            attempt
+            for attempt in self._attempts
+            if (attempt.provider, attempt.model) not in self._disabled_attempts
+        ]
+
+    def _disable_attempt(self, attempt: LLMProviderAttempt, error: Exception | str) -> None:
+        key = (attempt.provider, attempt.model)
+        if key in self._disabled_attempts:
+            return
+        self._disabled_attempts.add(key)
+        logger.warning(
+            "llm.provider_disabled",
+            provider=attempt.provider,
+            model=attempt.model,
+            reason="provider_exhausted",
+            error=str(error),
+        )
+
     async def create(
         self,
         *,
@@ -217,7 +241,11 @@ class LLMClient:
             )
 
         last_error: Exception | None = None
-        for index, attempt in enumerate(self._attempts):
+        attempts = self._available_attempts()
+        if not attempts:
+            raise RuntimeError("No LLM provider available.")
+
+        for index, attempt in enumerate(attempts):
             kwargs = self._build_kwargs(
                 attempt=attempt,
                 system=system,
@@ -234,7 +262,7 @@ class LLMClient:
                 message_count=len(messages),
                 has_tools=bool(tools),
                 attempt=index + 1,
-                total_attempts=len(self._attempts),
+                total_attempts=len(attempts),
             )
 
             try:
@@ -249,9 +277,11 @@ class LLMClient:
                 )
             except Exception as exc:
                 last_error = exc
+                if is_provider_exhausted_exception(exc):
+                    self._disable_attempt(attempt, exc)
                 if (
                     not is_retryable_llm_exception(exc)
-                    or index == len(self._attempts) - 1
+                    or index == len(attempts) - 1
                 ):
                     break
                 logger.warning(
@@ -292,7 +322,12 @@ class LLMClient:
             return
 
         last_error: Exception | None = None
-        for index, attempt in enumerate(self._attempts):
+        attempts = self._available_attempts()
+        if not attempts:
+            yield AgentError(message="No LLM provider available.")
+            return
+
+        for index, attempt in enumerate(attempts):
             kwargs = self._build_kwargs(
                 attempt=attempt,
                 system=system,
@@ -308,7 +343,7 @@ class LLMClient:
                 model=attempt.litellm_model,
                 message_count=len(messages),
                 attempt=index + 1,
-                total_attempts=len(self._attempts),
+                total_attempts=len(attempts),
             )
 
             try:
@@ -320,13 +355,15 @@ class LLMClient:
                 last_error = RuntimeError(
                     f"{attempt.provider}/{attempt.model} request timed out after {_LLM_REQUEST_TIMEOUT}s"
                 )
-                if index < len(self._attempts) - 1:
+                if index < len(attempts) - 1:
                     continue
                 yield AgentError(message=str(last_error))
                 return
             except Exception as exc:
                 last_error = exc
-                if is_retryable_llm_exception(exc) and index < len(self._attempts) - 1:
+                if is_provider_exhausted_exception(exc):
+                    self._disable_attempt(attempt, exc)
+                if is_retryable_llm_exception(exc) and index < len(attempts) - 1:
                     logger.warning(
                         "llm.provider_fallback",
                         from_provider=attempt.provider,
@@ -341,7 +378,9 @@ class LLMClient:
             should_fallback = False
             async for event in process_stream_response(response, attempt):
                 if isinstance(event, StreamFallbackSignal):
-                    if index < len(self._attempts) - 1:
+                    if is_provider_exhausted_exception(RuntimeError(event.error)):
+                        self._disable_attempt(attempt, event.error)
+                    if index < len(attempts) - 1:
                         should_fallback = True
                     else:
                         yield AgentError(message=event.error)

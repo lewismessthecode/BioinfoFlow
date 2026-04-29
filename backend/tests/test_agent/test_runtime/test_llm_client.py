@@ -12,6 +12,11 @@ from app.services.agent.runtime.llm_client import (
     LLMProviderAttempt,
     _is_retryable_llm_exception,
 )
+from app.services.agent.runtime.llm_providers import retry_llm_call
+
+
+class RateLimitError(Exception):
+    pass
 
 
 @pytest.mark.asyncio
@@ -99,6 +104,79 @@ def test_retryable_llm_exception_detects_vertex_and_midstream_failures():
 
     assert _is_retryable_llm_exception(midstream_error) is True
     assert _is_retryable_llm_exception(service_unavailable) is True
+
+
+@pytest.mark.asyncio
+async def test_retry_llm_call_does_not_retry_depleted_prepay_errors():
+    attempts = 0
+
+    async def fail_with_depleted_credits():
+        nonlocal attempts
+        attempts += 1
+        raise RateLimitError("RESOURCE_EXHAUSTED: Your prepayment credits are depleted")
+
+    with pytest.raises(RateLimitError):
+        await retry_llm_call(fail_with_depleted_credits)
+
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_llm_client_skips_depleted_provider_after_fallback(monkeypatch):
+    from app.services.agent.runtime.llm_client import LLMClient
+    import litellm
+
+    calls: list[str] = []
+
+    async def fake_completion(**kwargs):
+        calls.append(kwargs["model"])
+        if kwargs["model"].startswith("gemini/"):
+            raise RateLimitError("RESOURCE_EXHAUSTED: Your prepayment credits are depleted")
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="fallback answer",
+                        reasoning_content=None,
+                        tool_calls=None,
+                    )
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=2),
+        )
+
+    monkeypatch.setattr(litellm, "acompletion", fake_completion)
+
+    client = LLMClient()
+    client._initialized = True
+    client._provider = "gemini"
+    client._model = "gemini-3.1-flash-lite-preview"
+    client._litellm_model = "gemini/gemini-3.1-flash-lite-preview"
+    client._attempts = [
+        LLMProviderAttempt(
+            provider="gemini",
+            model="gemini-3.1-flash-lite-preview",
+            litellm_model="gemini/gemini-3.1-flash-lite-preview",
+            api_key="g-key",
+        ),
+        LLMProviderAttempt(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            litellm_model="anthropic/claude-sonnet-4-6",
+            api_key="a-key",
+        ),
+    ]
+
+    first = await client.create(system="test", messages=[])
+    second = await client.create(system="test", messages=[])
+
+    assert first.content == "fallback answer"
+    assert second.content == "fallback answer"
+    assert calls == [
+        "gemini/gemini-3.1-flash-lite-preview",
+        "anthropic/claude-sonnet-4-6",
+        "anthropic/claude-sonnet-4-6",
+    ]
 
 
 @pytest.mark.asyncio

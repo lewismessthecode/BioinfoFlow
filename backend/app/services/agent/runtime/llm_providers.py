@@ -42,6 +42,12 @@ _RETRYABLE_ERROR_SUBSTRINGS = (
     "vertex_ai_betaexception",
     "temporarily unavailable",
 )
+_PROVIDER_EXHAUSTED_SUBSTRINGS = (
+    "resource_exhausted",
+    "prepayment credits are depleted",
+    "quota exceeded",
+    "billing",
+)
 
 
 @dataclass(frozen=True)
@@ -55,10 +61,18 @@ class LLMProviderAttempt:
 
 def is_retryable_llm_exception(exc: Exception) -> bool:
     """Check if an LLM exception is transient and worth retrying."""
+    if is_provider_exhausted_exception(exc):
+        return True
     if type(exc).__name__ in _RETRYABLE_ERRORS:
         return True
     lowered = str(exc).lower()
     return any(fragment in lowered for fragment in _RETRYABLE_ERROR_SUBSTRINGS)
+
+
+def is_provider_exhausted_exception(exc: Exception) -> bool:
+    """Check if a provider/account is exhausted rather than transiently busy."""
+    lowered = str(exc).lower()
+    return any(fragment in lowered for fragment in _PROVIDER_EXHAUSTED_SUBSTRINGS)
 
 
 async def retry_llm_call(
@@ -73,6 +87,8 @@ async def retry_llm_call(
         try:
             return await coro_factory()
         except Exception as exc:
+            if is_provider_exhausted_exception(exc):
+                raise
             if not is_retryable_llm_exception(exc):
                 raise
             last_exc = exc
