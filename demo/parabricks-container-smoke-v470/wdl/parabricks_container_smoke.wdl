@@ -88,5 +88,6 @@ task smoke {
     cpu: cpu
     memory: memory
     disks: disk
+    gpu: require_gpu || num_gpus > 0
   }
 }

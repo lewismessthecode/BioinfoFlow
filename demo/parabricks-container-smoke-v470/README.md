@@ -41,8 +41,9 @@ cd demo/parabricks-container-smoke-v470/wdl
 miniwdl run parabricks_container_smoke.wdl -i inputs.example.json
 ```
 
-The default `num_gpus` is `0`. Bioinfoflow's current miniwdl Docker Swarm
-backend does not provision GPUs from WDL `runtime.gpu`, so this smoke test does
-not declare that runtime key. Set `require_gpu` to `true` only when the Docker
-host is already configured so task containers can see NVIDIA devices; the task
-will then fail unless `nvidia-smi` succeeds inside the Parabricks container.
+The default `num_gpus` is `0`. Set `require_gpu` to `true` when you want the
+task to request a GPU and fail unless `nvidia-smi` succeeds inside the
+Parabricks container. Bioinfoflow's miniwdl Docker Swarm backend translates WDL
+`runtime.gpu` into an NVIDIA generic resource reservation plus the
+`NVIDIA_VISIBLE_DEVICES`/`NVIDIA_DRIVER_CAPABILITIES` task environment. The
+Docker host still needs NVIDIA Container Toolkit/Swarm GPU resources configured.

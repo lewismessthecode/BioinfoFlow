@@ -112,6 +112,26 @@ def test_prepare_mounts_deduplicates_targets(tmp_path, monkeypatch):
     assert len(targets) == 1
 
 
+def test_misc_config_adds_nvidia_runtime_env_and_gpu_reservation(tmp_path):
+    container = _make_container(tmp_path)
+    container.runtime_values = {
+        "gpu": True,
+        "env": {
+            "EXISTING": "1",
+        },
+    }
+
+    resources, _user, _groups = container.misc_config(logging.getLogger(__name__))
+
+    assert container.runtime_values["env"]["EXISTING"] == "1"
+    assert container.runtime_values["env"]["NVIDIA_VISIBLE_DEVICES"] == "all"
+    assert container.runtime_values["env"]["NVIDIA_DRIVER_CAPABILITIES"] == "compute,utility"
+    assert resources is not None
+    assert resources["Reservations"]["GenericResources"] == [
+        {"DiscreteResourceSpec": {"Kind": "NVIDIA-GPU", "Value": 1}}
+    ]
+
+
 # ---------------------------------------------------------------------------
 # host_path override: let declared outputs under the platform's rw mount
 # bypass miniwdl's work-dir-only validation (see issue #214 upstream).
