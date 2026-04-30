@@ -55,6 +55,13 @@ def _has_schema_content(schema: dict | None) -> bool:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_FILE_ROOTS = ["shared_data", "reference", "database", "project_data"]
+_VALID_ALLOW_ROOTS = {
+    "project_data",
+    "shared_data",
+    "reference",
+    "database",
+    "any_allowed_root",
+}
 _SOURCE_HINT_TO_ROOTS = {
     "project": _DEFAULT_FILE_ROOTS,
     "deliveries": ["shared_data", "reference", "database", "project_data"],
@@ -67,7 +74,9 @@ def derive_form_spec(schema_json: dict | None, engine: str) -> FormSpec:
     """Build a deterministic FormSpec from extracted workflow schema."""
     inputs = (schema_json or {}).get("inputs") or []
     is_wdl = (engine or "").lower() == "wdl"
-    workflow_name = str((schema_json or {}).get("workflow_name") or "") if is_wdl else ""
+    workflow_name = (
+        str((schema_json or {}).get("workflow_name") or "") if is_wdl else ""
+    )
 
     fields: list[FormField] = []
     for inp in inputs:
@@ -102,13 +111,27 @@ def derive_form_spec(schema_json: dict | None, engine: str) -> FormSpec:
         )
 
         if kind in ("file", "file_list", "directory"):
-            field.allow_roots = _SOURCE_HINT_TO_ROOTS.get(
-                str(source_hint or ""), list(_DEFAULT_FILE_ROOTS)
-            )  # type: ignore[assignment]
+            field.allow_roots = _resolve_allow_roots(inp, source_hint)  # type: ignore[assignment]
 
         fields.append(field)
 
     return FormSpec(fields=fields)
+
+
+def _resolve_allow_roots(inp: dict, source_hint: object) -> list[str]:
+    declared = inp.get("allow_roots")
+    if isinstance(declared, list):
+        roots: list[str] = []
+        seen: set[str] = set()
+        for item in declared:
+            value = str(item).strip()
+            if value not in _VALID_ALLOW_ROOTS or value in seen:
+                continue
+            seen.add(value)
+            roots.append(value)
+        if roots:
+            return roots
+    return list(_SOURCE_HINT_TO_ROOTS.get(str(source_hint or ""), _DEFAULT_FILE_ROOTS))
 
 
 def _resolve_kind(value_kind: str, type_name: str) -> str:
@@ -149,11 +172,7 @@ def _normalize_default(default: object, kind: str) -> object:
     if "?:" in text:
         text = text.split("?:")[1].strip().strip("'\"")
     text = text.strip()
-    if (
-        len(text) >= 2
-        and text[0] == text[-1]
-        and text[0] in {"'", '"'}
-    ):
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
         text = text[1:-1]
     if text == "":
         return None

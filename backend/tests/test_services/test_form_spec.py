@@ -120,9 +120,19 @@ def test_scalar_types_resolve_to_typed_kinds():
     spec = derive_form_spec(
         _nf_schema(
             [
-                {"name": "threads", "type": "Int", "value_kind": "scalar", "default": "8"},
+                {
+                    "name": "threads",
+                    "type": "Int",
+                    "value_kind": "scalar",
+                    "default": "8",
+                },
                 {"name": "ratio", "type": "Float", "value_kind": "scalar"},
-                {"name": "skip", "type": "Boolean", "value_kind": "scalar", "default": "false"},
+                {
+                    "name": "skip",
+                    "type": "Boolean",
+                    "value_kind": "scalar",
+                    "default": "false",
+                },
                 {"name": "mode", "type": "String", "value_kind": "scalar"},
             ]
         ),
@@ -142,7 +152,12 @@ def test_short_reference_substrings_do_not_turn_scalar_names_into_files():
     spec = derive_form_spec(
         _wdl_schema(
             [
-                {"name": "fanout", "type": "Int", "value_kind": "scalar", "default": "30"},
+                {
+                    "name": "fanout",
+                    "type": "Int",
+                    "value_kind": "scalar",
+                    "default": "30",
+                },
                 {
                     "name": "fatal_enabled",
                     "type": "Boolean",
@@ -162,8 +177,7 @@ def test_short_reference_substrings_do_not_turn_scalar_names_into_files():
 def test_infer_value_kind_does_not_treat_fa_substrings_as_reference_files():
     assert infer_value_kind("Int", name="fanout", default="30") == "scalar"
     assert (
-        infer_value_kind("Boolean", name="fatal_enabled", default="false")
-        == "scalar"
+        infer_value_kind("Boolean", name="fatal_enabled", default="false") == "scalar"
     )
 
 
@@ -175,7 +189,10 @@ def test_infer_value_kind_keeps_null_reference_params_as_files():
 @pytest.mark.unit
 def test_infer_value_kind_treats_genome_build_names_as_scalars():
     assert infer_value_kind("Any", name="genome", default='"GRCh38"') == "scalar"
-    assert infer_value_kind("Any", name="genome", default="params.genome ?: 'GRCh38'") == "scalar"
+    assert (
+        infer_value_kind("Any", name="genome", default="params.genome ?: 'GRCh38'")
+        == "scalar"
+    )
 
 
 @pytest.mark.unit
@@ -185,7 +202,12 @@ def test_ambiguous_input_falls_back_to_string_no_inference():
     spec = derive_form_spec(
         _nf_schema(
             [
-                {"name": "samplesheet", "type": "", "optional": False, "default": "samplesheet.csv"}
+                {
+                    "name": "samplesheet",
+                    "type": "",
+                    "optional": False,
+                    "default": "samplesheet.csv",
+                }
             ]
         ),
         "nextflow",
@@ -213,6 +235,26 @@ def test_source_hint_orders_but_does_not_narrow_allow_roots():
     )
     field = _by_id(spec)["genome"]
     assert field.allow_roots == ["reference", "shared_data", "database", "project_data"]
+
+
+@pytest.mark.unit
+def test_declared_allow_roots_override_source_hint_defaults():
+    spec = derive_form_spec(
+        _nf_schema(
+            [
+                {
+                    "name": "genome",
+                    "type": "File",
+                    "value_kind": "file",
+                    "source_hint": "reference",
+                    "allow_roots": ["reference"],
+                }
+            ]
+        ),
+        "nextflow",
+    )
+    field = _by_id(spec)["genome"]
+    assert field.allow_roots == ["reference"]
 
 
 @pytest.mark.unit
@@ -255,14 +297,21 @@ def test_file_fields_default_to_all_browsable_input_roots():
 @pytest.mark.unit
 def test_source_hint_does_not_treat_fastq_fa_substring_as_reference():
     assert infer_source_hint(name="fastq_r1", value_kind="file") == "project"
-    assert infer_source_hint(name="reference_indexes", value_kind="file_list") == "reference"
+    assert (
+        infer_source_hint(name="reference_indexes", value_kind="file_list")
+        == "reference"
+    )
 
 
 @pytest.mark.unit
 def test_reference_side_inputs_and_extra_args_infer_stable_kinds():
     assert infer_value_kind("Any", name="known_sites", default="null") == "file"
-    assert infer_value_kind("Any", name="known_sites_indexes", default="[]") == "file_list"
-    assert infer_value_kind("String", name="fq2bam_extra_args", default='""') == "scalar"
+    assert (
+        infer_value_kind("Any", name="known_sites_indexes", default="[]") == "file_list"
+    )
+    assert (
+        infer_value_kind("String", name="fq2bam_extra_args", default='""') == "scalar"
+    )
 
 
 @pytest.mark.unit

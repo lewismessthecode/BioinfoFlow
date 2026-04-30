@@ -143,9 +143,7 @@ class RunLifecycleService:
         workspace_id: str | None = None,
     ) -> Run:
         original = await self._require_run(run_id)
-        await self._require_run_access(
-            original, user_id, workspace_id=workspace_id
-        )
+        await self._require_run_access(original, user_id, workspace_id=workspace_id)
         if original.status != RunStatus.FAILED.value:
             raise ValueError("run is not in failed status")
 
@@ -250,9 +248,7 @@ class RunLifecycleService:
         workspace_id: str | None = None,
     ) -> Run:
         original = await self._require_run(run_id)
-        await self._require_run_access(
-            original, user_id, workspace_id=workspace_id
-        )
+        await self._require_run_access(original, user_id, workspace_id=workspace_id)
         if original.status != RunStatus.FAILED.value:
             raise ValueError("run is not in failed status")
 
@@ -399,7 +395,11 @@ class RunLifecycleService:
             resolved_workspace = config.resolved_runspec.get("workspace")
             if isinstance(resolved_workspace, str) and resolved_workspace.strip():
                 workspace = resolved_workspace.strip()
-        if (not target.exists() or not target.is_file()) and workspace not in (None, ".", ""):
+        if (not target.exists() or not target.is_file()) and workspace not in (
+            None,
+            ".",
+            "",
+        ):
             workspace_path = Path(str(workspace))
             if workspace_path.is_absolute():
                 workspace_root = workspace_path
@@ -407,6 +407,12 @@ class RunLifecycleService:
                 workspace_root = self._safe_workspace(root, str(workspace))
             target = self._safe_workspace(workspace_root, log_path)
         if not target.exists() or not target.is_file():
+            if run.status in {
+                RunStatus.COMPLETED.value,
+                RunStatus.FAILED.value,
+                RunStatus.CANCELLED.value,
+            }:
+                raise FileNotFoundError(f"run logs not found: {run_id}")
             return {"logs": []}
 
         if tail == 0:

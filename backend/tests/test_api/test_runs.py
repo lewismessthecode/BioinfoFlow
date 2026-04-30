@@ -254,6 +254,7 @@ async def test_runs_create_rejects_paths_outside_field_allow_roots(
                     "type": "File",
                     "value_kind": "file",
                     "source_hint": "reference",
+                    "allow_roots": ["reference"],
                     "optional": False,
                 }
             ],
@@ -335,7 +336,9 @@ async def test_runs_actions_return_conflict_for_illegal_status_transitions(
 
 
 @pytest.mark.asyncio
-async def test_runs_create_requires_explicit_manifest_documents(async_client, db_session):
+async def test_runs_create_requires_explicit_manifest_documents(
+    async_client, db_session
+):
     project = await create_project(db_session, name="Bundle Defaults Project")
 
     workflow_resp = await async_client.post(
