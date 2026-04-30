@@ -8,19 +8,24 @@ It is built for teams that want modern product ergonomics for local and lab-serv
 
 ## Product Preview
 
-> Preview slot: replace this block with an MP4 or GIF before launch.
->
-> Suggested path after you add media assets: `assets/product-preview.mp4` or `assets/product-preview.gif`.
+<p align="center">
+  <img src="assets/product-preview.gif" alt="Bioinfoflow — register a workflow, pick inputs, submit a run, and watch the live DAG" width="100%">
+</p>
+
+<p align="center">
+  <a href="assets/product-preview.mp4">Watch in higher quality (MP4) →</a>
+</p>
 
 ## Why It Exists
 
-Bioinformatics has three bad defaults:
+Bioinformatics has a few bad defaults:
 
 - Cloud platforms are polished, but expensive, opinionated, and not always the right first stop for regulated or sensitive data.
-- Raw CLI workflows are flexible, but every lab rebuilds the same wrapper scripts, run tracking, file conventions, and debugging habits.
+- Raw CLI workflows are flexible, but every lab rebuilds the same wrapper scripts, run tracking, and conventions — privately, so the wins never compound across the field.
 - Traditional bioinformatics portals often inherit the gap between life science and software: confusing UI, dated UX, hard-to-learn screens, and workflows that feel designed around infrastructure instead of users.
+- Internal lab platforms stay closed, get rewritten every couple of years, and never accumulate the shared wisdom an open project can.
 
-Bioinfoflow starts as the local operating layer between those worlds. It keeps standard workflow engines, Docker, and your filesystem, then adds the product surface teams expect: projects, runs, scheduler, live DAGs, file picking, audit trails, CLI automation, and an agent that can reason across the workspace.
+Bioinfoflow starts as the local operating layer between those worlds. It keeps standard workflow engines, Docker, and your filesystem, then adds the product surface teams expect: projects, runs, scheduler, live DAGs, file picking, audit trails, CLI automation, and an agent that can reason across the workspace. Open by default, so improvements compound.
 
 ## What You Can Do
 
@@ -58,7 +63,7 @@ Examples:
 # BIOINFOFLOW_HOME=${PWD}/data
 BIOINFOFLOW_HOME=/srv/bioinfoflow
 BIOINFOFLOW_HOME=/Users/<you>/bioinfoflow-data
-BIOINFOFLOW_HOME=/lustre/<user>/bioinfoflow
+BIOINFOFLOW_HOME=/lustre/<you>/bioinfoflow
 ```
 
 Create the data root and start the stack. For example, inside this repo you can use `data/`:
@@ -83,10 +88,10 @@ Full setup and troubleshooting: [`RUNBOOK.md`](RUNBOOK.md)
 
 Think of `BIOINFOFLOW_HOME` as Bioinfoflow's workspace folder. It is just a normal directory on your machine or server. The app stores its database, project files, uploaded inputs, references, and run outputs under that one folder.
 
-For local development in this repo, a concrete layout looks like this:
+On a personal machine, a typical layout looks like this:
 
 ```text
-/Users/lewisliu/Dev/ACTIVE/bioinfoflow/data/
+~/bioinfoflow-data/
   projects/   # per-project files, manifests, run outputs
   sources/    # shared input data and references
   state/      # SQLite databases and runtime state
@@ -95,7 +100,7 @@ For local development in this repo, a concrete layout looks like this:
 Set:
 
 ```env
-BIOINFOFLOW_HOME=/Users/lewisliu/Dev/ACTIVE/bioinfoflow/data
+BIOINFOFLOW_HOME=/Users/<you>/bioinfoflow-data
 ```
 
 On a Linux server, the same idea usually becomes:
