@@ -46,7 +46,6 @@ cp .env.example .env
 Edit `.env` and set at least:
 
 ```env
-BIOINFOFLOW_HOME=${PWD}/data
 ANTHROPIC_API_KEY=...
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
@@ -55,7 +54,8 @@ AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 Examples:
 
 ```env
-BIOINFOFLOW_HOME=${PWD}/data
+# Local Docker default if unset:
+# BIOINFOFLOW_HOME=${PWD}/data
 BIOINFOFLOW_HOME=/srv/bioinfoflow
 BIOINFOFLOW_HOME=/Users/<you>/bioinfoflow-data
 BIOINFOFLOW_HOME=/lustre/<user>/bioinfoflow

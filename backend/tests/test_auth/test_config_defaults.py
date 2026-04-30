@@ -1,17 +1,19 @@
 from app.config import Settings
 
 
-def test_better_auth_db_path_defaults_to_state_auth_db() -> None:
-    settings = Settings(_env_file=None)
-
-    assert settings.better_auth_db_path.endswith("/data/state/auth/better-auth.db")
-
-
-def test_auth_mode_defaults_to_personal() -> None:
+def test_auth_mode_defaults_to_personal(monkeypatch) -> None:
+    monkeypatch.delenv("AUTH_MODE", raising=False)
+    monkeypatch.delenv("AUTH_ENABLED", raising=False)
     settings = Settings(_env_file=None)
 
     assert settings.resolved_auth_mode == "personal"
     assert settings.auth_enabled_effective is True
+
+
+def test_better_auth_db_path_defaults_to_state_auth_db() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.better_auth_db_path.endswith("/data/state/auth/better-auth.db")
 
 
 def test_legacy_auth_enabled_false_maps_to_dev_mode() -> None:
