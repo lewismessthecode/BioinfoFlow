@@ -13,7 +13,7 @@ describe("storage-source-policy", () => {
         "project_data",
         "any_allowed_root",
       ]),
-    ).toEqual(["reference", "project", "deliveries"])
+    ).toEqual(["reference", "project", "deliveries", "database"])
   })
 
   it("returns the first allowed source kind as the preferred default", () => {
