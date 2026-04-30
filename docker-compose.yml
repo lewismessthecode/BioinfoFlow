@@ -4,8 +4,9 @@
 # task container see identical absolute paths, removing every host↔container
 # translation layer from the codebase.
 #
-# Default is /srv/bioinfoflow (FHS-compliant). On HPC / cloud / macOS dev, set
-# BIOINFOFLOW_HOME in .env to a path that exists on your host, e.g.:
+# Default is ${PWD}/data for local development. On Linux servers / HPC / cloud,
+# set BIOINFOFLOW_HOME in .env to a path that exists on your host, e.g.:
+#   BIOINFOFLOW_HOME=/srv/bioinfoflow
 #   BIOINFOFLOW_HOME=/lustre/<user>/bpiper
 #   BIOINFOFLOW_HOME=/Users/<you>/bpiper-data
 services:
@@ -18,13 +19,13 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     env_file: .env
     environment:
-      BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
-      BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
-      DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/bioinfoflow.db
-      BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/auth/better-auth.db
+      BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-${PWD}/data}
+      BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-${PWD}/data}
+      DATABASE_URL: sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-${PWD}/data}/state/bioinfoflow.db
+      BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-${PWD}/data}/state/auth/better-auth.db
       DOCKER_SOCKET: unix:///var/run/docker.sock
     volumes:
-      - ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}:${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
+      - ${BIOINFOFLOW_HOME:-${PWD}/data}:${BIOINFOFLOW_HOME:-${PWD}/data}
       - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/system/health')"]
@@ -48,12 +49,12 @@ services:
       - "${FRONTEND_PORT:-3000}:3000"
     env_file: .env
     environment:
-      BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
-      BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
-      BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/auth/better-auth.db
+      BIOINFOFLOW_HOME: ${BIOINFOFLOW_HOME:-${PWD}/data}
+      BIOINFOFLOW_HOME_HOST: ${BIOINFOFLOW_HOME:-${PWD}/data}
+      BETTER_AUTH_DB_PATH: ${BIOINFOFLOW_HOME:-${PWD}/data}/state/auth/better-auth.db
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
     volumes:
-      - ${BIOINFOFLOW_HOME:-/srv/bioinfoflow}:${BIOINFOFLOW_HOME:-/srv/bioinfoflow}
+      - ${BIOINFOFLOW_HOME:-${PWD}/data}:${BIOINFOFLOW_HOME:-${PWD}/data}
     depends_on:
       backend:
         condition: service_healthy

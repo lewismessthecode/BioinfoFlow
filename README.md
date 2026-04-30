@@ -46,7 +46,7 @@ cp .env.example .env
 Edit `.env` and set at least:
 
 ```env
-BIOINFOFLOW_HOME=/absolute/path/to/bioinfoflow-data
+BIOINFOFLOW_HOME=${PWD}/data
 ANTHROPIC_API_KEY=...
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
@@ -55,6 +55,7 @@ AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 Examples:
 
 ```env
+BIOINFOFLOW_HOME=${PWD}/data
 BIOINFOFLOW_HOME=/srv/bioinfoflow
 BIOINFOFLOW_HOME=/Users/<you>/bioinfoflow-data
 BIOINFOFLOW_HOME=/lustre/<user>/bioinfoflow
@@ -63,7 +64,7 @@ BIOINFOFLOW_HOME=/lustre/<user>/bioinfoflow
 Create the data root and start the stack. For example, inside this repo you can use `data/`:
 
 ```bash
-mkdir -p /Users/lewisliu/Dev/ACTIVE/bioinfoflow/data/{projects,sources,state}
+mkdir -p data/state data/projects data/sources/deliveries data/sources/reference
 docker compose up -d --build
 ```
 

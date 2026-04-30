@@ -51,6 +51,7 @@ cp .env.example .env
 Then set at least:
 
 ```env
+BIOINFOFLOW_HOME=${PWD}/data
 ANTHROPIC_API_KEY=...
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
