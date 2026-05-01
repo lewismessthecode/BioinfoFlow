@@ -54,6 +54,15 @@ class ConfigStore:
         data[key] = value
         self.save(data)
 
+    def unset(self, key: str) -> bool:
+        """Remove a key. Return True if it existed, False otherwise."""
+        data = self.load()
+        if key not in data:
+            return False
+        del data[key]
+        self.save(data)
+        return True
+
     def init(self) -> None:
         """Create config directory and default config file."""
         self._dir.mkdir(parents=True, exist_ok=True)

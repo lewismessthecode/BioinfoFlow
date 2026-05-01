@@ -19,6 +19,7 @@ def require_project(cli_ctx: CliContext, project_id: str | None) -> str:
     pid = project_id or cli_ctx.project_id
     if not pid:
         raise typer.BadParameter(
-            "--project is required (or set default: bif config use-project)"
+            "--project/-p is required, or set a default with "
+            "`bif config use-project <id>` (also reads $BIOFLOW_PROJECT)."
         )
     return pid

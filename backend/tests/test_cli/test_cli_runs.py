@@ -96,10 +96,30 @@ class TestRunLogs:
 
 
 class TestRunCancel:
-    def test_cancel(self, runner: CliRunner) -> None:
+    def test_cancel_with_force(self, runner: CliRunner) -> None:
         resp = make_envelope(_run(status="cancelled"))
         with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "cancel", "r-42"])
+            result = runner.invoke(
+                app, ["--mode", "remote", "run", "cancel", "r-42", "--force"]
+            )
+        assert result.exit_code == 0
+        assert "cancelled" in result.stdout
+
+    def test_cancel_prompts_without_force(self, runner: CliRunner) -> None:
+        resp = make_envelope(_run(status="cancelled"))
+        with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
+            # Reject the prompt — command should abort, no API call.
+            result = runner.invoke(
+                app, ["--mode", "remote", "run", "cancel", "r-42"], input="n\n"
+            )
+        assert "Cancel run r-42?" in result.stdout
+
+    def test_cancel_via_confirmation(self, runner: CliRunner) -> None:
+        resp = make_envelope(_run(status="cancelled"))
+        with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
+            result = runner.invoke(
+                app, ["--mode", "remote", "run", "cancel", "r-42"], input="y\n"
+            )
         assert result.exit_code == 0
         assert "cancelled" in result.stdout
 
@@ -137,12 +157,22 @@ class TestRunResume:
 
 
 class TestRunCleanup:
-    def test_cleanup(self, runner: CliRunner) -> None:
+    def test_cleanup_with_force(self, runner: CliRunner) -> None:
         resp = make_envelope({"cleaned": True})
         with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "cleanup", "r-42"])
+            result = runner.invoke(
+                app, ["--mode", "remote", "run", "cleanup", "r-42", "--force"]
+            )
         assert result.exit_code == 0
         assert "cleaned" in result.stdout
+
+    def test_cleanup_prompts_without_force(self, runner: CliRunner) -> None:
+        resp = make_envelope({"cleaned": True})
+        with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
+            result = runner.invoke(
+                app, ["--mode", "remote", "run", "cleanup", "r-42"], input="n\n"
+            )
+        assert "Clean up run r-42?" in result.stdout
 
 
 class TestRunOutputsList:
@@ -222,14 +252,25 @@ class TestBatchShow:
 
 
 class TestBatchCancel:
-    def test_cancel(self, runner: CliRunner) -> None:
+    def test_cancel_with_force(self, runner: CliRunner) -> None:
         resp = make_envelope({"batch_id": "b-1", "status": "cancelled"})
         with patch(f"{_RB}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "batch", "cancel", "b-1"]
+                app,
+                ["--mode", "remote", "run", "batch", "cancel", "b-1", "--force"],
             )
         assert result.exit_code == 0
         assert "cancelled" in result.stdout
+
+    def test_cancel_prompts_without_force(self, runner: CliRunner) -> None:
+        resp = make_envelope({"batch_id": "b-1", "status": "cancelled"})
+        with patch(f"{_RB}.api_post", new_callable=AsyncMock, return_value=resp):
+            result = runner.invoke(
+                app,
+                ["--mode", "remote", "run", "batch", "cancel", "b-1"],
+                input="n\n",
+            )
+        assert "Cancel all runs in batch b-1?" in result.stdout
 
 
 class TestRunListFilters:

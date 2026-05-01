@@ -115,7 +115,7 @@ class TestRendererPagination:
         r.table([{"key": "id", "header": "ID"}], [{"id": "1"}], resp)
         output = console.file.getvalue()
         assert "abc123" in output
-        assert "More results" in output
+        assert "--cursor" in output
 
 
 class TestRendererEdgeCases:

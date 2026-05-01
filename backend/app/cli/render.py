@@ -59,7 +59,9 @@ class Renderer:
                 )
             if pg.get("has_more"):
                 cursor = pg.get("next_cursor", "")
-                self._console.print(f"[dim]More results: --cursor {cursor}[/dim]")
+                self._console.print(
+                    f"[dim]More available — re-run with --cursor {cursor}[/dim]"
+                )
 
     def detail(
         self,
@@ -124,4 +126,16 @@ class Renderer:
         if raw.meta:
             envelope["meta"] = raw.meta
         sys.stdout.write(json.dumps(envelope, default=str) + "\n")
+        sys.stdout.flush()
+
+    def emit_data(self, data: Any) -> None:
+        """Emit a synthetic `{success, data}` envelope for client-side data.
+
+        Use when there is no upstream ApiResponse — e.g. config values, doctor
+        check summaries — but we still want JSON-mode consumers to receive a
+        consistent envelope.
+        """
+        sys.stdout.write(
+            json.dumps({"success": True, "data": data}, default=str) + "\n"
+        )
         sys.stdout.flush()

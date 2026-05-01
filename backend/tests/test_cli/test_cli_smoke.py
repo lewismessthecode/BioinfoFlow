@@ -86,3 +86,29 @@ class TestNoArgsShowsHelp:
         # Typer returns exit code 0 for help display with no_args_is_help
         assert result.exit_code in (0, 2)
         assert "Usage" in result.stdout or "Bioinfoflow" in result.stdout
+
+
+class TestVersion:
+    def test_version_long(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert "bif" in result.stdout
+
+    def test_version_short(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["-V"])
+        assert result.exit_code == 0
+        assert "bif" in result.stdout
+
+
+class TestShortFlags:
+    def test_short_help(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["-h"])
+        assert result.exit_code == 0
+        assert "Usage" in result.stdout
+
+    def test_short_project_flag(self, runner: CliRunner) -> None:
+        # -p is the short for --project at the root level. Just verify
+        # that it's accepted (will fail downstream without auth/server,
+        # but the parser must recognise it).
+        result = runner.invoke(app, ["-p", "p-x", "--help"])
+        assert result.exit_code == 0

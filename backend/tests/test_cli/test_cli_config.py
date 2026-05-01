@@ -76,3 +76,15 @@ class TestConfigStore:
         store.init()
         stat = store.path.stat()
         assert oct(stat.st_mode)[-3:] == "600"
+
+    def test_unset_existing_key(self, tmp_path: Path) -> None:
+        store = ConfigStore(config_dir=tmp_path / "cfg")
+        store.init()
+        store.set("project_id", "p-1")
+        assert store.unset("project_id") is True
+        assert store.get("project_id") is None
+
+    def test_unset_missing_key(self, tmp_path: Path) -> None:
+        store = ConfigStore(config_dir=tmp_path / "cfg")
+        store.init()
+        assert store.unset("project_id") is False

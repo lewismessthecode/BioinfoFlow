@@ -67,9 +67,12 @@ def batch_show(
 def batch_cancel(
     ctx: typer.Context,
     batch_id: str = typer.Argument(help="Batch ID"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
     """Cancel all runs in a batch."""
     cli_ctx, r = unpack_ctx(ctx)
+    if not force and cli_ctx.output_mode == "human":
+        typer.confirm(f"Cancel all runs in batch {batch_id}?", abort=True)
     resp = cli_ctx.run(api_post(cli_ctx, f"/runs/batch/{batch_id}/cancel"))
     r.success(f"Batch {batch_id} cancelled.", raw=resp)
 
