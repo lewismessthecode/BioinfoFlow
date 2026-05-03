@@ -18,13 +18,18 @@ from app.cli.jsonio import try_parse_json
 class Renderer:
     """Output formatter supporting human (Rich) and JSON modes."""
 
-    def __init__(self, console: Console, mode: str) -> None:
+    def __init__(self, console: Console, mode: str, quiet: bool = False) -> None:
         self._console = console
         self._json = mode == "json"
+        self._quiet = quiet
 
     @property
     def is_json(self) -> bool:
         return self._json
+
+    @property
+    def is_quiet(self) -> bool:
+        return self._quiet
 
     def table(
         self,
@@ -80,6 +85,8 @@ class Renderer:
     def success(self, message: str, raw: ApiResponse | None = None) -> None:
         if self._json and raw is not None:
             self.emit_json(raw)
+            return
+        if self._quiet:
             return
         self._console.print(f"[green]{message}[/green]")
 

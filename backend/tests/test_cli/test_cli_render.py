@@ -134,6 +134,23 @@ class TestRendererEdgeCases:
         output = console.file.getvalue()
         assert "Done!" in output
 
+    def test_success_quiet_suppresses_human_message(self) -> None:
+        console = Console(file=StringIO(), no_color=True)
+        r = Renderer(console, "human", quiet=True)
+        r.success("Done!")
+        assert console.file.getvalue() == ""
+
+    def test_success_quiet_still_emits_json_envelope(self) -> None:
+        from tests.test_cli.conftest import make_envelope
+
+        resp = make_envelope({"ok": True})
+        r = Renderer(Console(no_color=True), "json", quiet=True)
+        with patch("sys.stdout", new_callable=StringIO) as mock_out:
+            r.success("Done!", raw=resp)
+            parsed = json.loads(mock_out.getvalue())
+        # Quiet must NOT suppress the machine-readable envelope.
+        assert parsed["success"] is True
+
     def test_error_json_with_raw(self) -> None:
         from tests.test_cli.conftest import make_error
 

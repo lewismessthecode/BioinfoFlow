@@ -7,6 +7,7 @@ import sys
 from functools import wraps
 from typing import Any, Callable
 
+import click
 import typer
 
 from app.cli.client import ApiError, ConnectionFailed
@@ -53,6 +54,11 @@ def handle_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
             raise
         except typer.Abort:
             raise typer.Exit(EXIT_OK)
+        except click.exceptions.ClickException:
+            # Usage/parse errors (BadParameter, UsageError, ...) are Click's
+            # responsibility — let it print the standard "Usage: ... Error:"
+            # message and set exit code 2. Don't repackage as UNEXPECTED.
+            raise
         except Exception as exc:
             _emit_error(cli_ctx, str(exc), "UNEXPECTED")
             raise typer.Exit(EXIT_GENERAL) from exc

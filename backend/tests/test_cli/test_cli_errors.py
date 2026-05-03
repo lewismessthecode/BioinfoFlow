@@ -95,6 +95,29 @@ class TestHandleErrors:
 
         assert _fn() == 42
 
+    def test_bad_parameter_propagates_to_click(self) -> None:
+        """BadParameter must NOT be caught as a generic Exception — Click
+        needs to handle it natively to produce the standard usage-error
+        output and exit code 2."""
+        import click
+
+        @handle_errors
+        def _fn():
+            raise typer.BadParameter("nope")
+
+        with pytest.raises(click.exceptions.BadParameter):
+            _fn()
+
+    def test_click_usage_error_propagates(self) -> None:
+        import click
+
+        @handle_errors
+        def _fn():
+            raise click.UsageError("bad usage")
+
+        with pytest.raises(click.exceptions.UsageError):
+            _fn()
+
 
 def _ctx_with_mode(output_mode: str) -> typer.Context:
     """Build a typer.Context with a CliContext attached in the given mode."""

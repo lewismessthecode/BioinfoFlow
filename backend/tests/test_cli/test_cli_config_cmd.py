@@ -64,7 +64,9 @@ class TestConfigSet:
         result = runner.invoke(
             app, ["--mode", "remote", "config", "set", "invalid_key", "val"]
         )
-        assert result.exit_code != 0
+        # Click usage error → exit code 2 (must NOT be repackaged as
+        # `[UNEXPECTED] BadParameter` by handle_errors).
+        assert result.exit_code == 2
 
     def test_set_json_output(self, runner: CliRunner, _patched_store) -> None:
         runner.invoke(app, ["--mode", "remote", "config", "init"])
@@ -136,7 +138,7 @@ class TestConfigSetValidation:
         result = runner.invoke(
             app, ["--mode", "remote", "config", "set", "mode", "magic"]
         )
-        assert result.exit_code != 0
+        assert result.exit_code == 2
 
     def test_set_invalid_output_value(
         self, runner: CliRunner, _patched_store
@@ -145,7 +147,7 @@ class TestConfigSetValidation:
         result = runner.invoke(
             app, ["--mode", "remote", "config", "set", "output", "xml"]
         )
-        assert result.exit_code != 0
+        assert result.exit_code == 2
 
 
 class TestConfigUnset:
