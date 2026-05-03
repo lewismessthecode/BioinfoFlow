@@ -25,10 +25,13 @@ uv run pytest tests/test_api/test_runs.py -v
 uv run pytest tests/test_api/ -v -k "test_create"
 uv run ruff check .
 uv run ruff format .
-uv run bif --help
-uv run bif doctor
+uv run bif --version                    # CLI version (also -V)
+uv run bif --help                       # also -h
+uv run bif doctor                       # backend + scheduler + GPU + local tool checks
 uv run bif project list
-uv run bif --output json run show r-abc
+uv run bif config use-project proj-123  # default project (also -p / $BIOFLOW_PROJECT)
+uv run bif --output json run show r-abc # JSON envelope on stdout, errors on stderr
+uv run bif run cancel r-abc --force     # destructive verbs prompt unless -f
 ```
 
 ### Frontend (from `frontend/`)
@@ -66,7 +69,7 @@ bun run test:watch
 - **Run pipeline** uses a thin `RunService` facade that delegates to submission, DAG, lifecycle, archive, and dispatch services. Do not add new business logic to the facade if a dedicated service already exists.
 - **`backend/app/scheduler/`** contains the persistent scheduler: queue, slot accounting, resource monitoring, retry/timeout logic, cleanup, and completion hooks. Main endpoints are `/scheduler/status`, `/scheduler/resources`, and `/scheduler/slots`.
 - **`backend/app/engine/`** holds the workflow engine abstraction for Nextflow and WDL, including local/container execution backends and mount/path handling.
-- **`backend/app/cli/`** provides the `bif` CLI with `remote`, `local`, and `auto` transports. Prefer `--output json` when a machine-readable envelope is useful.
+- **`backend/app/cli/`** provides the `bif` CLI with `remote`, `local`, and `auto` transports. Prefer `--output json` when a machine-readable envelope is useful — it emits `{success, data, error?, meta?}` on stdout and a matching error envelope on stderr (parseable by automation). Standard flags: `-V/--version`, `-h/--help`, `-p/--project`, `-q/--quiet`, `-v/--verbose`, `--no-color`. Destructive verbs (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) prompt by default; pass `--force/-f` in scripts. Exit codes: `0` ok, `1` general, `2` usage, `3` backend, `4` connection.
 - **`backend/app/auth/` + frontend auth routes** implement Better Auth for `personal`, `team`, and `dev` modes.
 - **`frontend/`** — Next.js 16 App Router, React 19, next-intl, Better Auth, React Flow, Radix UI, and Tailwind CSS 4.
 - Frontend data flow is REST for regular API calls, SSE for long-running events, and WebSocket for terminal sessions.
@@ -116,6 +119,7 @@ bun run test:watch
 - `TRUSTED_HOSTS` and `CORS_ORIGINS` must match the actual deployment host/origin when exposing the app remotely.
 - `NEXT_PUBLIC_API_BASE_URL` is build-time config, not runtime config.
 - `bif` `LocalTransport` runs the full FastAPI lifespan locally, which is useful for tests and scripts but heavier than `RemoteTransport`.
+- `handle_errors` decorator re-raises `click.exceptions.ClickException` (covers `BadParameter`/`UsageError`) so Click renders proper usage errors with exit code 2 — never extend the catch-all `except Exception` branch to swallow them.
 - Path Contract v3 assumes identical host/container paths under `BIOINFOFLOW_HOME`; avoid reintroducing host/container path translation unless you are intentionally working on that subsystem.
 - Keep per-run mount targets as siblings, not nested under a read-only parent mount, or container writes may silently break.
 - miniwdl `glob()` patterns must stay relative to the task working directory; avoid absolute output globs in WDLs.

@@ -25,9 +25,13 @@ API Routers (18) → Services → Repositories → SQLite (aiosqlite)
    ├─ SSE EventBus (runtime/events.py)
    │
    └─ CLI (`bif` — Typer + Rich)
-        ├─ Agent, project, workflow, run, file, system commands
-        ├─ SSE streaming + approval resolution
-        └─ Config store + remote/local/auto transport
+        ├─ agent (incl. approvals), project, workflow, run (incl. outputs/batch),
+        │   file, events, system, doctor, config commands
+        ├─ Standard flags: -V/--version, -h/--help, -p/--project, -q/--quiet
+        ├─ SSE streaming + approval resolution (NDJSON in --output json)
+        ├─ JSON envelope on stdout / parseable error envelope on stderr
+        ├─ Confirm-by-default destructive verbs (--force/-f to skip)
+        └─ Config store (~/.config/bioinfoflow/cli.toml) + remote/local/auto transport
 ```
 
 ## API Routes (18 routers)

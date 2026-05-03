@@ -44,9 +44,13 @@ FastAPI /api/v1  ───────────────►  SQLite (aiosq
    │    └─ Completion hooks (audit, notifications, batch)
    │
    ├─ CLI (`bif` command — Typer + Rich)
-   │    ├─ Agent, project, workflow, run, file, system commands
-   │    ├─ SSE event streaming + approval resolution
-   │    └─ Config store + remote/local/auto transport
+   │    ├─ Agent (incl. approvals), project, workflow, run (incl. outputs/batch),
+   │    │   file, events, system, doctor, config commands
+   │    ├─ SSE event streaming (NDJSON in --output json)
+   │    ├─ JSON envelope on stdout / parseable error envelope on stderr
+   │    ├─ Standard flags: -V/--version, -h/--help, -p/--project, -q/--quiet
+   │    ├─ Confirm-by-default destructive verbs (--force/-f to skip)
+   │    └─ Config store (~/.config/bioinfoflow/cli.toml) + remote/local/auto transport
    │
    └─ Workflow execution
         ├─ Nextflow adapter
@@ -81,7 +85,9 @@ FastAPI /api/v1  ───────────────►  SQLite (aiosq
 | `backend/app/scheduler/scheduler.py` | Run scheduler orchestration | `RunScheduler` | queue, engine, hooks |
 | `backend/app/scheduler/monitor.py` | Background resource sampler | `ResourceMonitor` | psutil |
 | `backend/app/scheduler/slots.py` | Concurrency slot accounting | slot helpers | resources |
-| `backend/app/cli/main.py` | CLI entry point (`bif` command) | Typer app | commands, transport |
+| `backend/app/cli/main.py` | CLI entry point (`bif` command) | Typer app, `--version`/`-h`/`-p`/`-q`/`-v` root flags | commands, transport, config_store |
+| `backend/app/cli/errors.py` | `handle_errors` decorator + JSON error envelope | `handle_errors`, `_emit_error` | client, context |
+| `backend/app/cli/render.py` | Output formatter (Rich tables / JSON envelopes) | `Renderer` | client, jsonio |
 | `frontend/lib/api.ts` | API helper with envelope parsing | `apiRequest` | Fetch, types |
 | `frontend/hooks/use-events.ts` | SSE subscription hook | `useEvents` | EventSource, types |
 | `frontend/hooks/use-agent-chat.ts` | Chat state management | `useAgentChat` | API, SSE, types |
@@ -100,7 +106,7 @@ FastAPI /api/v1  ───────────────►  SQLite (aiosq
 - ResourceMonitor samples CPU/mem/disk/GPU every 30s; slot tracker enforces concurrency caps; both exposed via `/scheduler/resources`.
 - Completion hooks trigger audit logging, notifications, and batch status updates.
 - i18n handled by next-intl with cookie-based locale detection (en, zh-CN).
-- CLI (`bif`) supports `remote`/`local`/`auto` transports; local mode runs the full ASGI app in-process for offline/script use.
+- CLI (`bif`) supports `remote`/`local`/`auto` transports; local mode runs the full ASGI app in-process for offline/script use. Output is human (Rich tables/panels) by default and switches to a JSON envelope (`{success, data, error?, meta?}` on stdout, parseable error envelope on stderr) under `--output json`. Settings resolve in order CLI flag → env (`BIOFLOW_*`) → `~/.config/bioinfoflow/cli.toml` → default. Exit codes: 0 ok / 1 general / 2 usage / 3 backend / 4 connection.
 
 ## External Dependencies
 - Backend: FastAPI, SQLAlchemy (async), Alembic, LangGraph, LangChain (Anthropic/OpenAI/Gemini/OpenRouter/Ollama/DeepSeek/xAI), Docker SDK, MiniWDL, Typer, Rich, psutil, structlog.

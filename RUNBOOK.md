@@ -155,8 +155,16 @@ If you truly need a frontend-only override, create `frontend/.env.local`.
 
 ```bash
 cd backend
-uv run bif --help
+uv run bif --version                   # bif 0.1.0
+uv run bif --help                      # also -h
+uv run bif doctor                      # backend + scheduler + GPU + local tool checks
+uv run bif config init                 # write ~/.config/bioinfoflow/cli.toml
+uv run bif config use-project proj-1   # set default project (also $BIOFLOW_PROJECT)
+uv run bif config set mode local       # validated; rejects unknown values
+uv run bif --output json project list  # machine-readable envelope on stdout
 ```
+
+`bif` follows POSIX conventions: `-h/--help`, `-V/--version`, `-p/--project`, `-q/--quiet`. Settings resolve as CLI flag → env (`BIOFLOW_*`) → `~/.config/bioinfoflow/cli.toml` → default. Destructive commands (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) confirm interactively unless you pass `--force/-f`. Exit codes: `0` ok, `1` general, `2` usage, `3` backend, `4` connection.
 
 ## 4. Minimal Local Setup Checklist
 
