@@ -18,13 +18,18 @@ from app.cli.jsonio import try_parse_json
 class Renderer:
     """Output formatter supporting human (Rich) and JSON modes."""
 
-    def __init__(self, console: Console, mode: str) -> None:
+    def __init__(self, console: Console, mode: str, quiet: bool = False) -> None:
         self._console = console
         self._json = mode == "json"
+        self._quiet = quiet
 
     @property
     def is_json(self) -> bool:
         return self._json
+
+    @property
+    def is_quiet(self) -> bool:
+        return self._quiet
 
     def table(
         self,
@@ -59,7 +64,9 @@ class Renderer:
                 )
             if pg.get("has_more"):
                 cursor = pg.get("next_cursor", "")
-                self._console.print(f"[dim]More results: --cursor {cursor}[/dim]")
+                self._console.print(
+                    f"[dim]More available — re-run with --cursor {cursor}[/dim]"
+                )
 
     def detail(
         self,
@@ -78,6 +85,8 @@ class Renderer:
     def success(self, message: str, raw: ApiResponse | None = None) -> None:
         if self._json and raw is not None:
             self.emit_json(raw)
+            return
+        if self._quiet:
             return
         self._console.print(f"[green]{message}[/green]")
 
@@ -124,4 +133,16 @@ class Renderer:
         if raw.meta:
             envelope["meta"] = raw.meta
         sys.stdout.write(json.dumps(envelope, default=str) + "\n")
+        sys.stdout.flush()
+
+    def emit_data(self, data: Any) -> None:
+        """Emit a synthetic `{success, data}` envelope for client-side data.
+
+        Use when there is no upstream ApiResponse — e.g. config values, doctor
+        check summaries — but we still want JSON-mode consumers to receive a
+        consistent envelope.
+        """
+        sys.stdout.write(
+            json.dumps({"success": True, "data": data}, default=str) + "\n"
+        )
         sys.stdout.flush()

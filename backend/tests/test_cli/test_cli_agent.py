@@ -42,6 +42,65 @@ class TestAgentSend:
         assert result.exit_code == 0
         mock_send.assert_called_once()
 
+    def test_send_surfaces_conversation_id(self, runner: CliRunner) -> None:
+        """When no conversation is provided, the new CID and resume hint
+        should be printed so the user can continue later."""
+        from app.cli.client import SSEEvent
+        from tests.test_cli.conftest import make_envelope
+
+        events = [
+            SSEEvent(
+                id=None,
+                event="agent.message",
+                data='{"data": {"content": "hi"}}',
+            ),
+            SSEEvent(id=None, event="agent.done", data="{}"),
+        ]
+
+        class _AsyncIter:
+            def __init__(self, items):
+                self._items = list(items)
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if not self._items:
+                    raise StopAsyncIteration
+                return self._items.pop(0)
+
+        def _stream(*_args, **_kwargs):
+            return _AsyncIter(events)
+
+        with (
+            patch(
+                f"{_A}.api_post",
+                new_callable=AsyncMock,
+                return_value=make_envelope({}),
+            ),
+            patch(
+                "app.cli.client.ApiClient.post",
+                new_callable=AsyncMock,
+                return_value=make_envelope({"id": "conv-new"}),
+            ),
+            patch("app.cli.client.ApiClient.stream_sse", side_effect=_stream),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "--mode",
+                    "remote",
+                    "--project",
+                    "p-1",
+                    "agent",
+                    "send",
+                    "hello",
+                ],
+            )
+        assert result.exit_code == 0
+        assert "conv-new" in result.stdout
+        assert "--conversation conv-new" in result.stdout
+
 
 class TestAgentChat:
     def test_chat_requires_project(self, runner: CliRunner) -> None:

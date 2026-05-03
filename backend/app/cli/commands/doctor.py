@@ -8,30 +8,22 @@ from typing import Any
 import typer
 from rich.table import Table
 
-from app.cli.context import CliContext
 from app.cli.client import ApiError, ConnectionFailed
+from app.cli.context import CliContext
 from app.cli.errors import handle_errors
-from app.cli.render import Renderer
+from app.cli.helpers import unpack_ctx
 
 doctor_help = "Check backend health, scheduler, GPU, and local tool availability."
-
-
-def _renderer(ctx: typer.Context) -> tuple[CliContext, Renderer]:
-    cli_ctx: CliContext = ctx.obj
-    return cli_ctx, Renderer(cli_ctx.console, cli_ctx.output_mode)
 
 
 @handle_errors
 def doctor(ctx: typer.Context) -> None:
     """Run diagnostics on backend connectivity and local tools."""
-    cli_ctx, r = _renderer(ctx)
+    cli_ctx, r = unpack_ctx(ctx)
     checks = cli_ctx.run(_run_checks(cli_ctx))
 
     if r.is_json:
-        import json
-        import sys
-
-        sys.stdout.write(json.dumps({"success": True, "data": checks}) + "\n")
+        r.emit_data(checks)
         return
 
     t = Table(title="Doctor", show_header=True, header_style="bold cyan")

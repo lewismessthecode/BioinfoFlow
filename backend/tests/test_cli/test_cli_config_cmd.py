@@ -64,7 +64,9 @@ class TestConfigSet:
         result = runner.invoke(
             app, ["--mode", "remote", "config", "set", "invalid_key", "val"]
         )
-        assert result.exit_code != 0
+        # Click usage error → exit code 2 (must NOT be repackaged as
+        # `[UNEXPECTED] BadParameter` by handle_errors).
+        assert result.exit_code == 2
 
     def test_set_json_output(self, runner: CliRunner, _patched_store) -> None:
         runner.invoke(app, ["--mode", "remote", "config", "init"])
@@ -126,6 +128,50 @@ class TestConfigShow:
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)
         assert parsed["success"] is True
+
+
+class TestConfigSetValidation:
+    def test_set_invalid_mode_value(
+        self, runner: CliRunner, _patched_store
+    ) -> None:
+        runner.invoke(app, ["--mode", "remote", "config", "init"])
+        result = runner.invoke(
+            app, ["--mode", "remote", "config", "set", "mode", "magic"]
+        )
+        assert result.exit_code == 2
+
+    def test_set_invalid_output_value(
+        self, runner: CliRunner, _patched_store
+    ) -> None:
+        runner.invoke(app, ["--mode", "remote", "config", "init"])
+        result = runner.invoke(
+            app, ["--mode", "remote", "config", "set", "output", "xml"]
+        )
+        assert result.exit_code == 2
+
+
+class TestConfigUnset:
+    def test_unset_existing(self, runner: CliRunner, _patched_store) -> None:
+        runner.invoke(app, ["--mode", "remote", "config", "init"])
+        runner.invoke(app, ["--mode", "remote", "config", "set", "mode", "remote"])
+        result = runner.invoke(app, ["--mode", "remote", "config", "unset", "mode"])
+        assert result.exit_code == 0
+        assert "Unset" in result.stdout
+
+    def test_unset_missing(self, runner: CliRunner, _patched_store) -> None:
+        runner.invoke(app, ["--mode", "remote", "config", "init"])
+        result = runner.invoke(
+            app, ["--mode", "remote", "config", "unset", "project_id"]
+        )
+        assert result.exit_code == 0
+        assert "not set" in result.stdout
+
+    def test_unset_invalid_key(self, runner: CliRunner, _patched_store) -> None:
+        runner.invoke(app, ["--mode", "remote", "config", "init"])
+        result = runner.invoke(
+            app, ["--mode", "remote", "config", "unset", "bogus"]
+        )
+        assert result.exit_code != 0
 
 
 class TestConfigUseProject:

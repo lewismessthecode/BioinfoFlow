@@ -234,6 +234,9 @@ async def _send(
 ) -> None:
     """Send a single message, stream SSE response, print final answer."""
     cid = await _ensure_conversation(cli_ctx, project_id, conversation_id)
+    new_conversation = conversation_id is None
+    if new_conversation and not r.is_json and not cli_ctx.quiet:
+        cli_ctx.console.print(f"[dim]Conversation: {cid}[/dim]")
     await cli_ctx.client.post(
         "/agent/message",
         {"conversation_id": cid, "project_id": project_id, "content": message},
@@ -244,6 +247,10 @@ async def _send(
         text = ""
     if not r.is_json and text:
         cli_ctx.console.print(text)
+        if new_conversation and not cli_ctx.quiet:
+            cli_ctx.console.print(
+                f"\n[dim]Continue with: bif agent send --conversation {cid} ...[/dim]"
+            )
 
 
 async def _chat_loop(

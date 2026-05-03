@@ -92,7 +92,7 @@ def run_wizard(
     ctx: typer.Context,
     spec: str = typer.Option(..., "--spec", help="JSON spec file or - for stdin"),
 ) -> None:
-    """Submit a guided run via the canonical /runs envelope."""
+    """Submit a run from a complete spec (project, workflow, values, options)."""
     cli_ctx, r = unpack_ctx(ctx)
     payload = _normalize_run_payload(read_spec(spec) or {})
     resp = cli_ctx.run(api_post(cli_ctx, "/runs", payload))
@@ -182,9 +182,12 @@ def run_logs(
 def run_cancel(
     ctx: typer.Context,
     run_id: str = typer.Argument(help="Run ID"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
     """Cancel a running pipeline."""
     cli_ctx, r = unpack_ctx(ctx)
+    if not force and cli_ctx.output_mode == "human":
+        typer.confirm(f"Cancel run {run_id}?", abort=True)
     resp = cli_ctx.run(api_post(cli_ctx, f"/runs/{run_id}/cancel"))
     r.success(f"Run {run_id} cancelled.", raw=resp)
 
@@ -230,11 +233,32 @@ def run_resume(
 def run_cleanup(
     ctx: typer.Context,
     run_id: str = typer.Argument(help="Run ID"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
     """Clean up run resources."""
     cli_ctx, r = unpack_ctx(ctx)
+    if not force and cli_ctx.output_mode == "human":
+        typer.confirm(f"Clean up run {run_id}?", abort=True)
     resp = cli_ctx.run(api_post(cli_ctx, f"/runs/{run_id}/cleanup"))
     r.success(f"Run {run_id} cleaned up.", raw=resp)
+
+
+_STATUS_STYLES: dict[str, str] = {
+    "completed": "green",
+    "running": "cyan",
+    "queued": "yellow",
+    "pending": "yellow",
+    "submitted": "yellow",
+    "failed": "red",
+    "cancelled": "magenta",
+}
+
+
+def _style_status(status: str) -> str:
+    if not status:
+        return ""
+    style = _STATUS_STYLES.get(status.lower())
+    return f"[{style}]{status}[/{style}]" if style else status
 
 
 def _run_fields(data: dict | None) -> dict:
@@ -244,7 +268,7 @@ def _run_fields(data: dict | None) -> dict:
         "Run ID": data.get("run_id", ""),
         "Project": data.get("project_id", ""),
         "Workflow": data.get("workflow_id", ""),
-        "Status": data.get("status", ""),
+        "Status": _style_status(data.get("status", "")),
         "Task": data.get("current_task", ""),
         "Created": data.get("created_at", ""),
     }
@@ -324,7 +348,7 @@ async def _watch_stream(
                     if status in TERMINAL_RUN_STATUSES:
                         if not r.is_json:
                             cli_ctx.console.print(
-                                f"\n[bold]Run finished: {status}[/bold]"
+                                f"\nRun finished: {_style_status(status)}"
                             )
                         break
                 except (json.JSONDecodeError, TypeError):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import Optional
 
 import typer
@@ -14,6 +15,14 @@ from app.cli.context import CliContext
 from app.cli.errors import EXIT_USER_INPUT
 from app.cli.transport import AutoTransport, LocalTransport, RemoteTransport
 
+
+def _bif_version() -> str:
+    try:
+        return _pkg_version("bioinfoflow-backend")
+    except PackageNotFoundError:
+        return "0.0.0+unknown"
+
+
 # -- App ----------------------------------------------------------------------
 
 app = typer.Typer(
@@ -22,7 +31,14 @@ app = typer.Typer(
     no_args_is_help=True,
     rich_markup_mode="rich",
     pretty_exceptions_enable=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"bif {_bif_version()}")
+        raise typer.Exit()
 
 
 @app.callback()
@@ -41,7 +57,8 @@ def main(
     project: Optional[str] = typer.Option(
         None,
         "--project",
-        help="Project ID to use.",
+        "-p",
+        help="Project ID to use (overrides default from config).",
     ),
     output: Optional[str] = typer.Option(
         None,
@@ -53,10 +70,25 @@ def main(
         "--no-color",
         help="Disable color output.",
     ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Suppress non-essential output (errors and data still printed).",
+    ),
     verbose: bool = typer.Option(
         False,
         "--verbose",
+        "-v",
         help="Show debug info (request/response details).",
+    ),
+    show_version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        "-V",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show CLI version and exit.",
     ),
 ) -> None:
     """Bioinfoflow CLI — manage projects, workflows, and pipeline runs."""
@@ -101,6 +133,7 @@ def main(
         project_id=resolved_project,
         verbose=verbose,
         console=console,
+        quiet=quiet,
     )
 
 

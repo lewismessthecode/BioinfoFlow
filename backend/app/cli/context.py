@@ -23,6 +23,7 @@ class CliContext:
     project_id: str | None
     verbose: bool
     console: Console
+    quiet: bool = False
     _runner: asyncio.Runner | None = field(default=None, init=False, repr=False)
 
     def run(self, awaitable: Awaitable[T]) -> T:
