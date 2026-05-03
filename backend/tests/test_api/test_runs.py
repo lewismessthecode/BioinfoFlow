@@ -10,6 +10,7 @@ from app.models.run import RunStatus
 from app.models.workflow import WorkflowEngine, WorkflowSource
 from app.path_layout import project_data_root, run_manifest_materialized_root
 from app.services import run_service
+from app.services.run_lifecycle_service import RunLifecycleService
 from tests.support.path_contract import bind_workflow, create_project, create_workflow
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -18,6 +19,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 @pytest.mark.asyncio
 async def test_runs_endpoints(async_client, db_session, monkeypatch):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    # Resume/retry preflight checks for the engine binary; bypass it under test.
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
 
     project = await create_project(db_session, name="Run Project")
     workflow = await create_workflow(

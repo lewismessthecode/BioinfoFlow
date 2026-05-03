@@ -119,9 +119,18 @@ async def test_enqueue_or_mark_failed_marks_failed_on_exception():
     mock_scheduler = MagicMock()
     mock_scheduler.enqueue = AsyncMock(side_effect=RuntimeError("queue full"))
 
-    with patch(
-        "app.services.run_dispatch._mark_run_failed", new_callable=AsyncMock
-    ) as mock_mark:
+    # Stub _run_is_terminal too — otherwise it opens the real DB looking for
+    # the run, which doesn't exist in this unit test.
+    with (
+        patch(
+            "app.services.run_dispatch._run_is_terminal",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch(
+            "app.services.run_dispatch._mark_run_failed", new_callable=AsyncMock
+        ) as mock_mark,
+    ):
         await _enqueue_or_mark_failed(mock_scheduler, "run-boom", priority="normal")
 
     mock_mark.assert_called_once_with("run-boom", "queue full")

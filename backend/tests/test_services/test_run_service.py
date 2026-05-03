@@ -17,6 +17,7 @@ from app.path_layout import project_data_root, project_home, run_home
 from app.schemas.run import RunCreate
 from app.services import run_service
 from app.services.run_compiler import RunCompiler
+from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.run_service import RunService
 from tests.support.path_contract import (
     bind_workflow,
@@ -87,6 +88,8 @@ async def _create_run_via_compiler(
 @pytest.mark.asyncio
 async def test_run_service_lifecycle(db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    # Tests should not require the host to have a real `nextflow` binary.
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -313,6 +316,7 @@ async def test_retry_run_prefers_resolved_runspec_when_original_params_changed(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()

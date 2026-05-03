@@ -166,6 +166,13 @@ async def test_image_service_pull_uses_background_tasks_submit(db_session, monke
     monkeypatch.setattr(image_service.background_tasks, "submit", fake_submit)
 
     service = ImageService(db_session)
+    # The CI host has no Docker socket; this test only exercises the seam
+    # between pull_image and background_tasks.submit, so stub the availability
+    # check rather than gating on a real daemon.
+    async def _docker_available() -> bool:
+        return True
+
+    monkeypatch.setattr(service.docker, "is_available", _docker_available)
     image = await service.pull_image(
         name="bioinfoflow/bwa",
         tag="v2.2.1",

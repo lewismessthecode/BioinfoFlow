@@ -126,8 +126,14 @@ class HermesRunner:
         async def _emit(event: dict[str, Any]) -> None:
             await on_event(event)
 
+        # Track in-flight emissions scheduled from the worker thread so we can
+        # wait for them before returning — otherwise consumers can miss events
+        # that were posted just before run_conversation completes.
+        pending_emissions: list = []
+
         def _schedule(event: dict[str, Any]) -> None:
-            loop.call_soon_threadsafe(lambda: asyncio.create_task(_emit(event)))
+            future = asyncio.run_coroutine_threadsafe(_emit(event), loop)
+            pending_emissions.append(future)
 
         def _parse_args(args: Any) -> Any:
             if isinstance(args, str):
@@ -269,6 +275,13 @@ class HermesRunner:
 
         async with self._get_run_semaphore():
             final_result = await asyncio.to_thread(_run)
+        # Drain any events still being emitted from the worker thread so the
+        # caller sees a complete event stream by the time we return.
+        for future in pending_emissions:
+            try:
+                await asyncio.wrap_future(future)
+            except Exception:  # noqa: BLE001 — emit failures must not poison the run result
+                logger.exception("hermes.run_response.emit_failed", session_id=session_id)
         return HermesRunResult(
             final_text=str(final_result.get("final_response") or ""),
             usage=final_result.get("usage") or {},
