@@ -168,18 +168,31 @@ Replace the FASTQ/reference paths with files visible on your GPU server, then re
 
 ## CLI
 
-The `bif` CLI supports remote HTTP mode, local in-process mode, and auto fallback:
+The `bif` CLI is built on Typer + Rich and follows POSIX conventions: `-h/--help`, `-V/--version`, short flags for common options, predictable exit codes, and a machine-readable JSON envelope.
 
 ```bash
 cd backend
 uv sync
-uv run bif --help
-uv run bif doctor
+uv run bif --version                       # bif 0.1.0
+uv run bif --help                          # also -h
+uv run bif doctor                          # backend, scheduler, GPU, local tools
 uv run bif project list
-uv run bif --output json run show r-abc
+uv run bif config use-project proj-123     # set default project
+uv run bif -p proj-123 run list            # -p / --project, also $BIOFLOW_PROJECT
+uv run bif --output json run show r-abc    # JSON envelope on stdout
+uv run bif run cancel r-abc --force        # confirm-by-default; -f skips
+uv run bif agent send "analyze samples"    # streams + prints conversation ID + resume hint
 ```
 
-Run `uv run bif --help` for the full command list.
+**Transports.** `--mode auto` (default), `remote`, or `local`. Remote talks HTTP to a running backend; local runs the FastAPI app in-process (no server needed); auto tries remote and falls back to local. Configure once via `bif config set mode local` or `BIOFLOW_MODE=local`.
+
+**Output.** `--output human` (default) renders Rich tables/panels; `--output json` emits `{success, data, error?, meta?}` envelopes on **stdout** (NDJSON for streaming commands) and JSON error envelopes on **stderr**. `NO_COLOR` and `--no-color` disable styling.
+
+**Exit codes.** `0` ok · `1` general · `2` bad usage · `3` backend error · `4` connection failure.
+
+**Config resolution.** CLI flag → environment variable (`BIOFLOW_MODE`, `BIOFLOW_API_URL`, `BIOFLOW_PROJECT`, `BIOFLOW_OUTPUT`) → `~/.config/bioinfoflow/cli.toml` (managed by `bif config init|set|get|unset|show|use-project`) → built-in default.
+
+Run `uv run bif --help` and `uv run bif <command> --help` for the full command tree.
 
 ## Local Development
 

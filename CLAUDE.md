@@ -34,14 +34,28 @@ bun run lint:dead-code # knip — find unused exports
 
 ### CLI (from `backend/`)
 ```bash
-uv run bif --help                              # All commands
-uv run bif project list                        # List projects
-uv run bif --output json run show r-abc        # JSON envelope output
-uv run bif agent send "analyze samples" --project proj  # Agent message
+uv run bif --version                           # Show CLI version
+uv run bif --help                              # All commands (also -h)
 uv run bif doctor                              # Health check
+uv run bif project list                        # List projects
+uv run bif -p proj run list                    # Scope to a project (-p / --project)
+uv run bif --output json run show r-abc        # JSON envelope on stdout
+uv run bif config use-project proj-123         # Set default project
+uv run bif config set mode local               # Validated; rejects unknown values
+uv run bif config unset project_id             # Remove a setting
+uv run bif run cancel r-abc --force            # Confirm-by-default; -f skips
+uv run bif agent send "analyze samples" -p proj  # Prints conversation ID + resume hint
 ```
 
-The `bif` CLI supports three transport modes: `remote` (HTTP to running server), `local` (in-process ASGI, no server needed), `auto` (tries remote, falls back to local). Use `--output json` for machine-parseable NDJSON.
+**Transports.** `bif` supports three modes: `remote` (HTTP to a running server), `local` (in-process ASGI, no server needed), `auto` (tries remote, falls back to local). Set with `--mode` or `BIOFLOW_MODE`.
+
+**Output contract.** `--output human` (default) renders Rich tables/panels on stdout. `--output json` (or `BIOFLOW_OUTPUT=json`) emits a `{success, data, error?, meta?}` envelope on **stdout**, and any error — including `ConnectionFailed` and `BadParameter` — as a parseable `{success:false, error:{code,message,...}}` envelope on **stderr**. Streaming commands (`run watch`, `events stream`, `run logs --follow`) emit NDJSON.
+
+**Standard flags** (root): `-V/--version`, `-h/--help`, `-p/--project`, `-q/--quiet`, `-v/--verbose`, `--no-color` (also honors `NO_COLOR`), `--mode`, `--base-url`, `--output`. Resolution order for every overridable setting: CLI flag → env var (`BIOFLOW_*`) → `~/.config/bioinfoflow/cli.toml` → built-in default.
+
+**Exit codes.** `0` ok · `1` general · `2` bad usage / spec / Click `BadParameter` · `3` backend/API error · `4` connection failure.
+
+**Destructive commands** (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) prompt in human mode; pass `--force/-f` to skip in scripts.
 
 ## Environment
 
@@ -55,7 +69,7 @@ Full setup: `docs/operations/runbook.md`. Minimum: `cp backend/.env.example back
 - **`backend/app/services/run_service.py`** — RunService is a facade that delegates to `RunSubmissionService` (wizard/table/unified run creation), `RunDagService` (DAG repair + mock variants), `RunLifecycleService` (state transitions), and `RunDispatchService` (engine dispatch). All callers import from `run_service.py` — never import the sub-services directly.
 - **`backend/app/scheduler/`** — Persistent run scheduler with priority queue, retry policies, resource monitoring (CPU/mem/disk/GPU), and completion hooks. Modes: `persistent` (default), `legacy`, `local`. API: `/scheduler/status`, `/scheduler/resources`.
 - **`backend/app/engine/`** — Workflow execution via adapter pattern. `EngineAdapter` interface with Nextflow and WDL adapters. `LocalBackend` for execution, `SchemaExtractor` for workflow parameter discovery.
-- **`backend/app/cli/`** — `bif` CLI (Typer + Rich). Three transport modes (`RemoteTransport`, `LocalTransport`, `AutoTransport`). Commands for projects, workflows, runs, agent, files, events, system.
+- **`backend/app/cli/`** — `bif` CLI (Typer + Rich). Three transport modes (`RemoteTransport`, `LocalTransport`, `AutoTransport`). Commands for projects, workflows, runs (incl. `outputs`, `batch`), agent (incl. `approvals`), files, events, system, doctor, config. `errors.handle_errors` is the standard command decorator: it closes the API client, emits a JSON envelope on stderr in `--output json` mode, and re-raises Click `BadParameter`/`UsageError` so usage errors keep exit code 2.
 - **`frontend/`** — Next.js 16 App Router, React 19, React Flow DAG visualization, Radix UI + Tailwind CSS 4. Auth via Better Auth. i18n via next-intl (en, zh-CN).
 - **Communication:** REST for CRUD, SSE (`EventBus`) for long-running operations (agent, runs, image pulls), WebSocket for terminal sessions (`/terminal/sessions/{id}/ws`).
 - **Database:** SQLite via async SQLAlchemy (`aiosqlite`). ORM models in `models/`, repositories in `repositories/`, schemas in `schemas/`, migrations via Alembic.
@@ -100,7 +114,7 @@ Three contracts govern workflow execution. Violating any of them produces silent
 - **DB schema change:** edit models → `uv run alembic revision --autogenerate -m "desc"` → `uv run alembic upgrade head` (don't skip the revision step).
 - **New agent tool:** subclass `BaseTool` + `@register_tool` decorator → register in `runtime/dispatch.py` tool map.
 - **New scheduler hook:** add to `backend/app/scheduler/hooks.py` → test in `test_scheduler/test_hooks.py`.
-- **New CLI command:** add module in `backend/app/cli/commands/` → register in `cli/main.py`.
+- **New CLI command:** add module in `backend/app/cli/commands/` → register in `cli/main.py`. Wrap each command with `@handle_errors`, fetch state via `cli_ctx, r = unpack_ctx(ctx)`, and use `r.success(...)`/`r.detail(...)`/`r.table(...)`/`r.emit_data(...)` for output (never write JSON inline). Destructive verbs gate on `--force/-f` and `cli_ctx.output_mode == "human"` before calling `typer.confirm(..., abort=True)`. Add a smoke test under `backend/tests/test_cli/` and assert exit codes precisely (`== 2` for usage errors, not just `!= 0`).
 - **New frontend route:** add directory under `frontend/app/(app)/` with `page.tsx` → add sidebar link in `components/bioinfoflow/sidebar/`.
 - **New WDL demo:** add WDL under `demo/{name}/` → ensure each declared `output { File X = "..." }` path actually exists at the literal path after the task command runs (use `cp` after any `rename.pl`-style scripts; do **not** try miniwdl's `glob()` for absolute paths) → validate parse with `cd backend && uv run python -c "import WDL; WDL.load('../demo/{name}/{file}.wdl')"`.
 
@@ -111,6 +125,7 @@ Three contracts govern workflow execution. Violating any of them produces silent
 - Scheduler config: 10+ env vars (`SCHEDULER_*`) — check `backend/app/config.py` lines 67-76 for all options.
 - Backend test DB: each test gets its own in-memory SQLite — no shared state, no cleanup needed.
 - CLI `LocalTransport` enters the full FastAPI lifespan (DB init, scheduler) — useful for testing but heavier than `RemoteTransport`.
+- **CLI `handle_errors` and Click exceptions.** The decorator's catch-all `except Exception` would swallow `typer.BadParameter` / `click.UsageError` and downgrade them to `[UNEXPECTED]` exit-1. They are explicitly re-raised so Click can render the standard usage error with exit code 2 — keep this branch when adding new exception handling.
 - Services must delegate DB queries to repositories — never use `session.execute()` directly in service code. This was enforced in the 2026-04-04 prune.
 - Frontend uses Better Auth (v1.4.17) for authentication — config in `frontend/lib/auth.ts` and `auth-config.ts`.
 - **Swarm nested bind mounts.** A `rw` child mount under a `ro` parent is silently demoted to `ro`. Always declare per-run mounts as siblings (`runs/{run_id}/input` + `runs/{run_id}/results`); never re-introduce a `project_root` mount alongside them.
