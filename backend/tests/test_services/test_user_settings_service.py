@@ -194,6 +194,74 @@ async def test_test_provider_unknown_returns_error(db_session):
 
 
 @pytest.mark.asyncio
+async def test_test_ollama_provider_uses_real_openai_compatible_probe(
+    db_session, monkeypatch
+):
+    from app.schemas.user_settings import ProviderTestResult, UserSettingsUpdate
+
+    calls: list[dict[str, str]] = []
+
+    async def fake_test_openai(self, api_key: str, base_url: str, model: str | None = None):
+        calls.append({"api_key": api_key, "base_url": base_url, "model": model or ""})
+        return ProviderTestResult(provider="openai", success=True, model=model)
+
+    monkeypatch.setattr(UserSettingsService, "_test_openai", fake_test_openai)
+
+    service = UserSettingsService(db_session)
+    user_id = "user-test-ollama"
+    await service.update_settings(
+        user_id,
+        UserSettingsUpdate(
+            provider_credentials={
+                "ollama": {
+                    "base_url": "http://localhost:11434",
+                    "model": "deepseek-r1:latest",
+                }
+            },
+            selected_provider="ollama",
+            selected_model="deepseek-r1:latest",
+        ),
+    )
+
+    result = await service.test_provider(user_id, "ollama")
+
+    assert result.success is True
+    assert result.provider == "ollama"
+    assert result.model == "deepseek-r1:latest"
+    assert calls == [
+        {
+            "api_key": "ollama",
+            "base_url": "http://127.0.0.1:11434/v1",
+            "model": "deepseek-r1:latest",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_available_models_includes_user_configured_local_model(db_session):
+    from app.schemas.user_settings import UserSettingsUpdate
+
+    service = UserSettingsService(db_session)
+    user_id = "user-local-model"
+    await service.update_settings(
+        user_id,
+        UserSettingsUpdate(
+            provider_credentials={
+                "ollama": {
+                    "base_url": "http://127.0.0.1:11434",
+                    "model": "deepseek-r1:latest",
+                }
+            }
+        ),
+    )
+
+    providers = await service.get_available_models(user_id)
+    ollama = next(provider for provider in providers if provider.provider == "ollama")
+
+    assert ollama.models[0].id == "deepseek-r1:latest"
+
+
+@pytest.mark.asyncio
 async def test_clearing_a_key_removes_provider(db_session):
     from app.schemas.user_settings import UserSettingsUpdate
 

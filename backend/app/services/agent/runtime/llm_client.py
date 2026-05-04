@@ -189,7 +189,10 @@ class LLMClient:
                     "type": "enabled",
                     "budget_tokens": settings.agent_thinking_budget,
                 }
-            elif settings.agent_thinking_effort != "none":
+            elif (
+                attempt.supports_reasoning_effort
+                and settings.agent_thinking_effort != "none"
+            ):
                 kwargs["reasoning_effort"] = settings.agent_thinking_effort
 
         return kwargs
