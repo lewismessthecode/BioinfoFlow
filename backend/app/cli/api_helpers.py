@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.cli.client import ApiResponse
 from app.cli.context import CliContext
+from app.cli.types import ApiResponse
 
 
 async def api_get(

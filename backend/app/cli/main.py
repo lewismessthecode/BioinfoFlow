@@ -9,11 +9,13 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from app.cli.client import ApiClient
 from app.cli.config_store import ConfigStore
 from app.cli.context import CliContext
 from app.cli.errors import EXIT_USER_INPUT
-from app.cli.transport import AutoTransport, LocalTransport, RemoteTransport
+
+# Note: app.cli.client and app.cli.transport are imported lazily inside the
+# main callback below. They pull httpx (~50ms cold), and bif --version /
+# bif --help return without ever needing them.
 
 
 def _bif_version() -> str:
@@ -116,7 +118,11 @@ def main(
         )
         raise typer.Exit(EXIT_USER_INPUT)
 
-    # Build transport
+    # Lazy-import the network stack so `bif --version` / `bif --help` never
+    # pay for httpx + asyncio + the FastAPI ASGI graph.
+    from app.cli.client import ApiClient
+    from app.cli.transport import AutoTransport, LocalTransport, RemoteTransport
+
     if resolved_mode == "remote":
         transport = RemoteTransport(resolved_url)
     elif resolved_mode == "local":

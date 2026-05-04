@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from typing import Literal, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 from rich.console import Console
 
-from app.cli.client import ApiClient
+if TYPE_CHECKING:
+    # Imported only for typing; the runtime class lives in app.cli.client and
+    # transitively pulls httpx — we don't want to load it for `--version`.
+    from app.cli.client import ApiClient
 
 T = TypeVar("T")
 

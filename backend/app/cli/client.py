@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator
 from uuid import uuid4
@@ -11,45 +10,17 @@ from uuid import uuid4
 import httpx
 
 from app.cli.transport import BaseTransport
+from app.cli.types import ApiError, ApiResponse, ConnectionFailed, SSEEvent
 
-
-# ---------------------------------------------------------------------------
-# Data types
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ApiResponse:
-    """Parsed API envelope."""
-
-    success: bool
-    data: Any
-    error: dict[str, Any] | None
-    meta: dict[str, Any] | None
-    status_code: int
-
-
-@dataclass(frozen=True)
-class SSEEvent:
-    """A single Server-Sent Event."""
-
-    id: str | None
-    event: str
-    data: str
-
-
-class ApiError(Exception):
-    """Structured error from the API."""
-
-    def __init__(self, code: str, message: str, status_code: int) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status_code = status_code
-
-
-class ConnectionFailed(Exception):
-    """Transport-level connection failure."""
+# Re-export the lightweight types so existing imports from app.cli.client
+# keep working. New code should prefer importing from app.cli.types directly.
+__all__ = [
+    "ApiClient",
+    "ApiError",
+    "ApiResponse",
+    "ConnectionFailed",
+    "SSEEvent",
+]
 
 
 # ---------------------------------------------------------------------------

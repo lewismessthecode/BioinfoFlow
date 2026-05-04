@@ -8,7 +8,7 @@ import sys
 import typer
 
 from app.cli.api_helpers import api_get, api_post
-from app.cli.client import ApiError
+from app.cli.types import ApiError
 from app.cli.constants import TERMINAL_AGENT_EVENTS
 from app.cli.context import CliContext
 from app.cli.errors import handle_errors

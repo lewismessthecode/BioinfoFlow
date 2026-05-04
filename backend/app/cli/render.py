@@ -11,8 +11,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from app.cli.client import ApiResponse, SSEEvent
 from app.cli.jsonio import try_parse_json
+from app.cli.types import ApiResponse, SSEEvent
 
 
 class Renderer:

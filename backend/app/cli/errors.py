@@ -10,9 +10,9 @@ from typing import Any, Callable
 import click
 import typer
 
-from app.cli.client import ApiError, ConnectionFailed
 from app.cli.context import CliContext
 from app.cli.jsonio import SpecError
+from app.cli.types import ApiError, ConnectionFailed
 
 # -- Exit codes ---------------------------------------------------------------
 

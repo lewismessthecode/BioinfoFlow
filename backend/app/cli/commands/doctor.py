@@ -8,10 +8,10 @@ from typing import Any
 import typer
 from rich.table import Table
 
-from app.cli.client import ApiError, ConnectionFailed
 from app.cli.context import CliContext
 from app.cli.errors import handle_errors
 from app.cli.helpers import unpack_ctx
+from app.cli.types import ApiError, ConnectionFailed
 
 doctor_help = "Check backend health, scheduler, GPU, and local tool availability."
 
