@@ -145,6 +145,7 @@ from app.cli.commands.config_cmd import config_app  # noqa: E402
 from app.cli.commands.doctor import doctor  # noqa: E402
 from app.cli.commands.events import events_app  # noqa: E402
 from app.cli.commands.file import file_app  # noqa: E402
+from app.cli.commands.open_cmd import open_app  # noqa: E402
 from app.cli.commands.project import project_app  # noqa: E402
 from app.cli.commands.run import run_app  # noqa: E402
 from app.cli.commands.run_batch import batch_app  # noqa: E402
@@ -158,6 +159,7 @@ app.add_typer(workflow_app, name="workflow")
 app.add_typer(file_app, name="file")
 app.add_typer(system_app, name="system")
 app.add_typer(events_app, name="events")
+app.add_typer(open_app, name="open")
 
 # Nest run sub-apps
 run_app.add_typer(outputs_app, name="outputs")

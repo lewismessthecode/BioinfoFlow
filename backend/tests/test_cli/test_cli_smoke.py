@@ -29,6 +29,7 @@ class TestHelp:
             "events",
             "doctor",
             "config",
+            "open",
         ]:
             assert cmd in result.stdout
 

@@ -45,6 +45,7 @@ uv run bif config set mode local               # Validated; rejects unknown valu
 uv run bif config unset project_id             # Remove a setting
 uv run bif run cancel r-abc --force            # Confirm-by-default; -f skips
 uv run bif agent send "analyze samples" -p proj  # Prints conversation ID + resume hint
+uv run bif open run r-abc                      # Open a page in the browser ($BIOFLOW_WEB_URL)
 ```
 
 **Transports.** `bif` supports three modes: `remote` (HTTP to a running server), `local` (in-process ASGI, no server needed), `auto` (tries remote, falls back to local). Set with `--mode` or `BIOFLOW_MODE`.
