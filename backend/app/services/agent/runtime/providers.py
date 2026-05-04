@@ -9,6 +9,9 @@ All providers are called through LiteLLM's unified API.
 
 from __future__ import annotations
 
+import json
+import os
+import re
 from dataclasses import dataclass, field
 
 
@@ -42,6 +45,7 @@ class ProviderConfig:
     )
     env_key_var: str = ""  # Env var for API key (e.g. "DEEPSEEK_API_KEY")
     env_base_url_var: str = ""  # Env var for base URL (e.g. "OLLAMA_BASE_URL")
+    static_api_key: str = ""  # For env-declared local/OpenAI-compatible profiles
 
     # --- Provider inference ---
     model_patterns: list[str] = field(
@@ -54,10 +58,103 @@ class ProviderConfig:
     # --- Testing ---
     test_protocol: str = "openai"  # "anthropic" | "openai" | "gemini" | "ollama"
 
+    # --- Capability flags ---
+    supports_reasoning_effort: bool = False
+
 
 # ── Registry ────────────────────────────────────────────────────────
 
-PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
+def normalize_openai_compatible_base_url(
+    base_url: str,
+    *,
+    prefer_loopback_ip: bool = False,
+) -> str:
+    """Normalize an OpenAI-compatible endpoint URL for SDK/LiteLLM calls."""
+    normalized = (base_url or "").strip().rstrip("/")
+    if not normalized:
+        return normalized
+    if prefer_loopback_ip:
+        normalized = normalized.replace("http://localhost:", "http://127.0.0.1:", 1)
+        normalized = normalized.replace("https://localhost:", "https://127.0.0.1:", 1)
+    if not normalized.endswith("/v1"):
+        normalized = f"{normalized}/v1"
+    return normalized
+
+
+def _model_entries(raw_models: object) -> list[ModelEntry]:
+    if not isinstance(raw_models, list):
+        return []
+    entries: list[ModelEntry] = []
+    for item in raw_models:
+        if isinstance(item, str) and item.strip():
+            model_id = item.strip()
+            entries.append(ModelEntry(id=model_id, name=model_id))
+        elif isinstance(item, dict):
+            model_id = str(item.get("id") or "").strip()
+            if not model_id:
+                continue
+            entries.append(
+                ModelEntry(
+                    id=model_id,
+                    name=str(item.get("name") or model_id),
+                    context_window=item.get("context_window"),
+                )
+            )
+    return entries
+
+
+def parse_openai_compatible_profiles(raw: str | None) -> dict[str, ProviderConfig]:
+    """Parse env-declared OpenAI-compatible endpoint profiles.
+
+    This mirrors the deployment/profile style used by LiteLLM and other AI
+    gateways: each named profile owns a base URL, optional API key, and model
+    catalog while sharing the same OpenAI-compatible protocol adapter.
+    """
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, list):
+        return {}
+
+    profiles: dict[str, ProviderConfig] = {}
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        profile_id = str(item.get("id") or "").strip().lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,62}", profile_id):
+            continue
+        base_url = normalize_openai_compatible_base_url(
+            str(item.get("base_url") or ""),
+            prefer_loopback_ip=bool(item.get("prefer_loopback_ip")),
+        )
+        if not base_url:
+            continue
+        models = _model_entries(item.get("models"))
+        default_model = str(item.get("default_model") or "").strip()
+        if not default_model and models:
+            default_model = models[0].id
+        if not default_model:
+            continue
+        if not models:
+            models = [ModelEntry(id=default_model, name=default_model)]
+        profiles[profile_id] = ProviderConfig(
+            default_model=default_model,
+            prefix="openai/",
+            base_url=base_url,
+            label=str(item.get("label") or profile_id),
+            credential_type="api_key_and_base_url",
+            static_api_key=str(item.get("api_key") or ""),
+            priority=int(item.get("priority") or 60),
+            test_protocol="openai",
+            models=models,
+        )
+    return profiles
+
+
+_BASE_PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
     "anthropic": ProviderConfig(
         default_model="claude-sonnet-4-6",
         prefix="anthropic/",
@@ -89,6 +186,7 @@ PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
         model_patterns=["gpt", "o1", "o3"],
         priority=20,
         test_protocol="openai",
+        supports_reasoning_effort=True,
         models=[
             ModelEntry(id="gpt-5.4", name="GPT-5.4", context_window=1_000_000),
             ModelEntry(id="gpt-5.4-pro", name="GPT-5.4 Pro", context_window=1_000_000),
@@ -287,8 +385,8 @@ PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
     ),
     "ollama": ProviderConfig(
         default_model="llama3.3",
-        prefix="ollama/",
-        base_url="http://localhost:11434",
+        prefix="openai/",
+        base_url="http://127.0.0.1:11434/v1",
         label="Ollama",
         credential_type="base_url_only",
         env_base_url_var="OLLAMA_BASE_URL",
@@ -301,6 +399,19 @@ PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
         ],
     ),
 }
+
+
+def build_provider_registry() -> dict[str, ProviderConfig]:
+    registry = dict(_BASE_PROVIDER_REGISTRY)
+    for name, cfg in parse_openai_compatible_profiles(
+        os.getenv("OPENAI_COMPATIBLE_PROVIDERS")
+    ).items():
+        if name not in registry:
+            registry[name] = cfg
+    return registry
+
+
+PROVIDER_REGISTRY: dict[str, ProviderConfig] = build_provider_registry()
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -334,6 +445,8 @@ def infer_provider_from_model(model: str) -> str:
     "anthropic/claude-sonnet-4-6" must resolve to openrouter, not anthropic.
     """
     m = model.lower()
+    if m.startswith("ollama/"):
+        return "ollama"
     if "/" in m:
         return "openrouter"
     for name, cfg in PROVIDER_REGISTRY.items():

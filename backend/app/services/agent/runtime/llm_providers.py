@@ -16,6 +16,7 @@ from app.services.agent.runtime.providers import (
     PROVIDER_REGISTRY,
     infer_provider_from_model,
     litellm_model_name,
+    normalize_openai_compatible_base_url,
 )
 from app.utils.logging import get_logger
 
@@ -57,6 +58,7 @@ class LLMProviderAttempt:
     litellm_model: str
     api_key: str | None = None
     api_base: str | None = None
+    supports_reasoning_effort: bool = False
 
 
 def is_retryable_llm_exception(exc: Exception) -> bool:
@@ -123,6 +125,8 @@ def select_provider() -> str | None:
         if cfg.credential_type == "base_url_only":
             if os.getenv(cfg.env_base_url_var):
                 available.append(name)
+        elif cfg.static_api_key and cfg.base_url:
+            available.append(name)
         elif cfg.env_key_var:
             env_val = os.getenv(cfg.env_key_var)
             if name == "anthropic":
@@ -171,14 +175,24 @@ def resolve_credentials(
             api_key = os.getenv(cfg.env_key_var) or None
     elif (current_provider or provider) == "ollama":
         api_key = "ollama"
-        api_base = user_creds.get("base_url") or os.getenv(cfg.env_base_url_var) or cfg.base_url or None
+        api_base = normalize_openai_compatible_base_url(
+            user_creds.get("base_url") or os.getenv(cfg.env_base_url_var) or cfg.base_url or "",
+            prefer_loopback_ip=True,
+        ) or None
     else:
         # Generic: user JSON -> env var
-        api_key = user_creds.get("api_key") or os.getenv(cfg.env_key_var) or None
+        api_key = (
+            user_creds.get("api_key")
+            or cfg.static_api_key
+            or (os.getenv(cfg.env_key_var) if cfg.env_key_var else None)
+            or None
+        )
         if user_creds.get("base_url"):
             api_base = user_creds["base_url"]
         elif cfg.env_base_url_var:
             api_base = os.getenv(cfg.env_base_url_var) or api_base
+        if cfg.prefix == "openai/" and api_base:
+            api_base = normalize_openai_compatible_base_url(api_base)
 
     return api_key, api_base
 
@@ -196,6 +210,9 @@ def resolve_provider_attempts(
     def add_attempt(provider: str | None, model: str | None) -> None:
         if not provider or not model:
             return
+        cfg = PROVIDER_REGISTRY.get(provider)
+        if not cfg:
+            return
         key = (provider, model)
         if key in seen:
             return
@@ -211,6 +228,7 @@ def resolve_provider_attempts(
                 litellm_model=litellm_model_name(provider, model),
                 api_key=api_key,
                 api_base=api_base,
+                supports_reasoning_effort=cfg.supports_reasoning_effort,
             )
         )
         seen.add(key)

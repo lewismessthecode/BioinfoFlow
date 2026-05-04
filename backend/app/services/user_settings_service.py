@@ -15,7 +15,10 @@ from app.schemas.user_settings import (
     UserSettingsRead,
     UserSettingsUpdate,
 )
-from app.services.agent.runtime.providers import PROVIDER_REGISTRY
+from app.services.agent.runtime.providers import (
+    PROVIDER_REGISTRY,
+    normalize_openai_compatible_base_url,
+)
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -78,9 +81,11 @@ def _provider_has_env_credentials(provider: str) -> bool:
 
     if cfg.credential_type == "base_url_only":
         return bool(os.getenv(cfg.env_base_url_var))
+    if cfg.static_api_key and cfg.base_url:
+        return True
     if provider == "anthropic":
         return bool(os.getenv(cfg.env_key_var) or os.getenv("ANTHROPIC_AUTH_TOKEN"))
-    return bool(os.getenv(cfg.env_key_var))
+    return bool(os.getenv(cfg.env_key_var)) if cfg.env_key_var else False
 
 
 # ── Service ─────────────────────────────────────────────────────────
@@ -182,9 +187,15 @@ class UserSettingsService:
         # Dispatch based on test_protocol from registry
         try:
             if cfg.test_protocol == "ollama":
+                model = provider_creds.get("model") or cfg.default_model
+                base_url = normalize_openai_compatible_base_url(
+                    provider_creds.get("base_url") or os.getenv(cfg.env_base_url_var) or cfg.base_url,
+                    prefer_loopback_ip=True,
+                )
+                result = await self._test_openai("ollama", base_url, model)
                 return ProviderTestResult(
                     provider=provider, success=True,
-                    model=provider_creds.get("model") or cfg.default_model,
+                    model=result.model or model,
                 )
             elif cfg.test_protocol == "anthropic":
                 api_key = provider_creds.get("api_key", "")
@@ -203,12 +214,25 @@ class UserSettingsService:
             else:
                 # OpenAI-compatible (openai, deepseek, qwen, kimi, minimax, openrouter)
                 api_key = provider_creds.get("api_key", "")
+                if not api_key and cfg.static_api_key:
+                    api_key = cfg.static_api_key
                 if not api_key:
                     return ProviderTestResult(
                         provider=provider, success=False, error="No API key configured"
                     )
                 base_url = provider_creds.get("base_url") or cfg.base_url or "https://api.openai.com/v1"
-                return await self._test_openai(api_key, base_url)
+                if cfg.prefix == "openai/":
+                    base_url = normalize_openai_compatible_base_url(base_url)
+                model = provider_creds.get("model")
+                if cfg.prefix == "openai/" or model:
+                    model = model or cfg.default_model
+                result = await self._test_openai(api_key, base_url, model)
+                return ProviderTestResult(
+                    provider=provider,
+                    success=result.success,
+                    error=result.error,
+                    model=result.model,
+                )
         except Exception as exc:
             logger.warning("Provider test failed", provider=provider, error=str(exc))
             return ProviderTestResult(
@@ -232,10 +256,20 @@ class UserSettingsService:
                 if not _provider_has_credentials(provider, creds) and not _provider_has_env_credentials(provider):
                     continue
 
-            models = [
+            provider_creds = creds.get(provider, {})
+            models: list[ModelInfo] = []
+            custom_model = provider_creds.get("model")
+            seen_models: set[str] = set()
+            if custom_model:
+                models.append(
+                    ModelInfo(id=custom_model, name=custom_model, context_window=None)
+                )
+                seen_models.add(custom_model)
+            models.extend(
                 ModelInfo(id=m.id, name=m.name, context_window=m.context_window)
                 for m in cfg.models
-            ]
+                if m.id not in seen_models
+            )
             result.append(ProviderModels(
                 provider=provider,
                 label=cfg.label,
@@ -267,13 +301,29 @@ class UserSettingsService:
             model=response.model,
         )
 
-    async def _test_openai(self, api_key: str, base_url: str) -> ProviderTestResult:
+    async def _test_openai(
+        self,
+        api_key: str,
+        base_url: str,
+        model: str | None = None,
+    ) -> ProviderTestResult:
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url or "https://api.openai.com/v1",
         )
+        if model:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1,
+            )
+            return ProviderTestResult(
+                provider="openai",
+                success=True,
+                model=response.model,
+            )
         models = await client.models.list()
         return ProviderTestResult(
             provider="openai",

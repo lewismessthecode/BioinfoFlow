@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from app.services.agent.runtime.providers import (
     PROVIDER_REGISTRY,
+    parse_openai_compatible_profiles,
     infer_provider_from_model,
     litellm_model_name,
 )
@@ -148,7 +149,7 @@ class TestLitellmModelName:
         )
 
     def test_ollama(self):
-        assert litellm_model_name("ollama", "llama3.3") == "ollama/llama3.3"
+        assert litellm_model_name("ollama", "llama3.3") == "openai/llama3.3"
 
     def test_xai(self):
         assert litellm_model_name("xai", "grok-4") == "xai/grok-4"
@@ -178,6 +179,9 @@ class TestInferProvider:
     def test_unknown_defaults_to_ollama(self):
         assert infer_provider_from_model("llama3.3") == "ollama"
 
+    def test_explicit_ollama_prefix(self):
+        assert infer_provider_from_model("ollama/llama3.3") == "ollama"
+
     def test_deepseek_model(self):
         assert infer_provider_from_model("deepseek-chat") == "deepseek"
         assert infer_provider_from_model("deepseek-reasoner") == "deepseek"
@@ -193,3 +197,35 @@ class TestInferProvider:
 
     def test_xai_model(self):
         assert infer_provider_from_model("grok-4") == "xai"
+
+
+def test_parse_openai_compatible_profiles_builds_named_endpoint_configs():
+    profiles = parse_openai_compatible_profiles(
+        """
+        [
+          {
+            "id": "lmstudio",
+            "label": "LM Studio",
+            "base_url": "http://localhost:1234",
+            "api_key": "local-key",
+            "models": ["local-model"],
+            "priority": 55
+          },
+          {
+            "id": "ollama-deepseek",
+            "label": "Ollama DeepSeek",
+            "base_url": "http://127.0.0.1:11434/v1",
+            "api_key": "ollama",
+            "default_model": "deepseek-r1:latest"
+          }
+        ]
+        """
+    )
+
+    assert set(profiles) == {"lmstudio", "ollama-deepseek"}
+    assert profiles["lmstudio"].prefix == "openai/"
+    assert profiles["lmstudio"].base_url == "http://localhost:1234/v1"
+    assert profiles["lmstudio"].static_api_key == "local-key"
+    assert profiles["lmstudio"].default_model == "local-model"
+    assert profiles["lmstudio"].priority == 55
+    assert profiles["ollama-deepseek"].default_model == "deepseek-r1:latest"
