@@ -54,10 +54,11 @@ For local Docker, leave `BIOINFOFLOW_HOME` unset unless you want the data root o
 ANTHROPIC_API_KEY=...
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
-BETTER_AUTH_SECRET=<long-random-secret>
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 BETTER_AUTH_URL=http://localhost:3000
 ```
+
+For localhost Docker, `BETTER_AUTH_SECRET` may stay empty. Bioinfoflow creates a persistent local secret under `BIOINFOFLOW_HOME/state/auth` on first startup. For shared or remote deployments, generate one with `openssl rand -base64 32` and set `BETTER_AUTH_SECRET` explicitly.
 
 Optional data-root override:
 
@@ -86,7 +87,7 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP_OR_DOMAIN"]
 
 ```bash
 cp .env.example .env
-# edit .env: provider key, owner credentials, BETTER_AUTH_SECRET
+# edit .env: provider key and owner credentials
 docker compose up -d --build
 ```
 

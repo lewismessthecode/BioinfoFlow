@@ -29,7 +29,11 @@ ANTHROPIC_API_KEY=...
 
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
-BETTER_AUTH_SECRET=change-me-to-a-long-random-string
+
+# Optional for localhost Docker. If empty, Bioinfoflow creates a persistent
+# local secret under BIOINFOFLOW_HOME/state/auth on first startup.
+# Set this before running a shared or remote deployment.
+# BETTER_AUTH_SECRET=...
 ```
 
 Start the stack:

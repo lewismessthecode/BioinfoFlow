@@ -1,7 +1,7 @@
 import "server-only"
 
-import { createHash } from "node:crypto"
-import { mkdirSync } from "node:fs"
+import { createHash, randomBytes } from "node:crypto"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { hostname } from "node:os"
 import path from "node:path"
 import { countOwnerUsers, guardAdminOperation } from "@/lib/auth-admin-guards"
@@ -16,6 +16,8 @@ let authPromise: Promise<Awaited<ReturnType<typeof createAuthInstance>> | null> 
 let authReadyPromise: Promise<void> | null = null
 
 const LEGACY_FRONTEND_BETTER_AUTH_PATHS = new Set(["better-auth.db", "./better-auth.db"])
+const LOCAL_BETTER_AUTH_SECRET_FILE = ".better-auth-local-secret"
+const LOCAL_AUTH_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
 
 function resolveBioinfoflowHome() {
   const configured = process.env.BIOINFOFLOW_HOME?.trim()
@@ -36,13 +38,56 @@ export function resolveBetterAuthDbPath() {
   return path.join(resolveBioinfoflowHome(), "state", "auth", "better-auth.db")
 }
 
+function isLocalAuthUrl() {
+  const configured = process.env.BETTER_AUTH_URL?.trim()
+  if (!configured) {
+    return false
+  }
+
+  try {
+    return LOCAL_AUTH_HOSTS.has(new URL(configured).hostname)
+  } catch {
+    return false
+  }
+}
+
+function resolveLocalBetterAuthSecret() {
+  const secretPath = path.join(
+    path.dirname(resolveBetterAuthDbPath()),
+    LOCAL_BETTER_AUTH_SECRET_FILE,
+  )
+
+  if (existsSync(secretPath)) {
+    const existing = readFileSync(secretPath, "utf8").trim()
+    if (existing.length >= 32) {
+      return existing
+    }
+  }
+
+  mkdirSync(path.dirname(secretPath), { recursive: true })
+  const secret = randomBytes(32).toString("base64")
+  writeFileSync(secretPath, `${secret}\n`, { mode: 0o600 })
+  return secret
+}
+
 export function resolveBetterAuthSecret() {
   if (process.env.BETTER_AUTH_SECRET) {
     return process.env.BETTER_AUTH_SECRET
   }
 
   if (process.env.NODE_ENV === "production") {
-    throw new Error("BETTER_AUTH_SECRET must be set in production")
+    if (!isLocalAuthUrl()) {
+      throw new Error("BETTER_AUTH_SECRET must be set in production")
+    }
+
+    if (!warnedAboutDerivedSecret) {
+      warnedAboutDerivedSecret = true
+      console.warn(
+        "BETTER_AUTH_SECRET is not set. Generated a local secret for this localhost instance. Set BETTER_AUTH_SECRET for shared or remote deployments.",
+      )
+    }
+
+    return resolveLocalBetterAuthSecret()
   }
 
   if (!warnedAboutDerivedSecret) {
