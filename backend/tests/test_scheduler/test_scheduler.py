@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -607,3 +608,64 @@ async def test_scheduler_worker_survives_execute_task_exception(
 
     assert run2.status == RunStatus.COMPLETED.value
     assert call_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_scheduler_resolve_run_context_returns_workspace_path(db_session):
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    scheduler = RunScheduler(
+        config=SchedulerConfig(poll_interval_seconds=0.01),
+        backend=FakeBackend(),
+        session_factory=session_factory,
+        queue=TaskQueue(session_factory=session_factory),
+    )
+    run = await _seed_run(db_session)
+
+    workspace_path, engine = await scheduler._resolve_run_context(db_session, run)
+
+    assert isinstance(workspace_path, Path)
+    assert engine == WorkflowEngine.NEXTFLOW.value
+
+
+@pytest.mark.asyncio
+async def test_scheduler_releases_slot_when_execute_raises(db_session, monkeypatch):
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    scheduler = RunScheduler(
+        config=SchedulerConfig(total_slots=2, max_workers=1, poll_interval_seconds=0.01),
+        backend=FakeBackend(),
+        session_factory=session_factory,
+        queue=queue,
+    )
+    run = await _seed_run(db_session)
+    executed = asyncio.Event()
+
+    async def crashing_execute(self, run_id, *, task_id=None, worker_id):
+        del self, run_id, task_id, worker_id
+        executed.set()
+        raise RuntimeError("simulated execute failure")
+
+    monkeypatch.setattr(RunScheduler, "_execute_run_id", crashing_execute)
+
+    await scheduler.start()
+    try:
+        await scheduler.enqueue(run.run_id)
+        await asyncio.wait_for(executed.wait(), timeout=2)
+        for _ in range(50):
+            if scheduler._slots.used == 0:
+                break
+            await asyncio.sleep(0.02)
+        else:
+            raise AssertionError("slot was not released after execute failure")
+    finally:
+        await scheduler.stop()
+
+    assert scheduler._slots.used == 0

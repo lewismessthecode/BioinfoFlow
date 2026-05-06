@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import app.database as app_database
 from sqlalchemy import and_, exists, func, or_, select
@@ -174,6 +175,7 @@ class RunScheduler:
             if not run:
                 return False
             workspace_path, engine = await self._resolve_run_context(session, run)
+            workspace_path_str = str(workspace_path) if workspace_path else None
 
             if (
                 task.state == TaskState.DISPATCHED.value
@@ -198,19 +200,19 @@ class RunScheduler:
                 run.error_message = reason
             run.completed_at = _now()
             run.duration_seconds = _duration_seconds(run.started_at, run.completed_at)
-            if workspace_path:
-                await _finalize_dag_statuses(run, workspace_path=workspace_path)
+            if workspace_path_str:
+                await _finalize_dag_statuses(run, workspace_path=workspace_path_str)
             await self._mark_task_terminal_in_session(
                 session,
                 task_id=task.id,
                 state=TaskState.CANCELLED.value,
             )
             await session.commit()
-            if workspace_path and engine:
+            if workspace_path_str and engine:
                 await self._hooks(session).on_run_terminal(
                     run,
                     status=RunStatus.CANCELLED.value,
-                    workspace_path=workspace_path,
+                    workspace_path=workspace_path_str,
                     engine=engine,
                 )
 
@@ -744,7 +746,7 @@ class RunScheduler:
                 run,
                 task_id=task_id,
                 error=reason,
-                workspace_path=workspace_path,
+                workspace_path=str(workspace_path) if workspace_path else None,
                 engine=engine,
             )
             return True
@@ -831,7 +833,7 @@ class RunScheduler:
         self,
         session: AsyncSession,
         run: Run,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[Path | None, str | None]:
         project = await ProjectRepository(session).get(run.project_id)
         workflow = (
             await session.get(Workflow, run.workflow_id) if run.workflow_id else None
@@ -840,4 +842,4 @@ class RunScheduler:
             return None, None
         workspace_path = project_home(project)
         engine = getattr(workflow.engine, "value", workflow.engine)
-        return str(workspace_path), str(engine)
+        return workspace_path, str(engine)
