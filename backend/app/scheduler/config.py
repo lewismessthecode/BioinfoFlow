@@ -57,7 +57,5 @@ class SchedulerConfig:
             safety_memory_gb=settings.scheduler_safety_memory_gb,
             safety_disk_gb=settings.scheduler_safety_disk_gb,
             resource_workspace_path=workspace_path,
-            worker_heartbeat_grace_seconds=getattr(
-                settings, "scheduler_worker_heartbeat_grace_seconds", 90
-            ),
+            worker_heartbeat_grace_seconds=settings.scheduler_worker_heartbeat_grace_seconds,
         )

@@ -160,6 +160,7 @@ class Settings(BaseSettings):
     scheduler_safety_cpu: int = 2
     scheduler_safety_memory_gb: float = 2.0
     scheduler_safety_disk_gb: float = 10.0
+    scheduler_worker_heartbeat_grace_seconds: int = 90
     langsmith_tracing: bool = False
     langsmith_tracing_v2: bool = False
     langsmith_api_key: str = ""

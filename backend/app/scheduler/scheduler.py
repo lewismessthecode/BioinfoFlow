@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import app.database as app_database
 from sqlalchemy import and_, exists, func, or_, select
@@ -41,6 +41,12 @@ from app.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
+
+
+def _ensure_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 DEFAULT_STATE_COUNTS = {
@@ -313,7 +319,7 @@ class RunScheduler:
                     run.status = RunStatus.FAILED.value
                     heartbeat_stale = (
                         run.last_heartbeat_at is not None
-                        and run.last_heartbeat_at <= heartbeat_cutoff
+                        and _ensure_utc(run.last_heartbeat_at) <= heartbeat_cutoff
                     )
                     if heartbeat_stale:
                         run.error_message = (
