@@ -13,9 +13,8 @@ config_app = typer.Typer(
     name="config", help="Manage CLI configuration.", no_args_is_help=True
 )
 
-_VALID_KEYS = {"mode", "base_url", "output", "project_id", "web_url"}
+_VALID_KEYS = {"base_url", "output", "project_id", "web_url"}
 _KEY_VALUES: dict[str, set[str]] = {
-    "mode": {"auto", "remote", "local"},
     "output": {"human", "json"},
 }
 

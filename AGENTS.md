@@ -118,7 +118,7 @@ bun run test:watch
 - `BETTER_AUTH_URL` must match the browser origin exactly or auth callbacks will fail.
 - `TRUSTED_HOSTS` and `CORS_ORIGINS` must match the actual deployment host/origin when exposing the app remotely.
 - `NEXT_PUBLIC_API_BASE_URL` is build-time config, not runtime config.
-- `bif` `LocalTransport` runs the full FastAPI lifespan locally, which is useful for tests and scripts but heavier than `RemoteTransport`.
+- `bif` is an HTTP-only client for a running backend; use `--base-url` or `BIOFLOW_API_URL` to select the API target.
 - `handle_errors` decorator re-raises `click.exceptions.ClickException` (covers `BadParameter`/`UsageError`) so Click renders proper usage errors with exit code 2 — never extend the catch-all `except Exception` branch to swallow them.
 - Path Contract v3 assumes identical host/container paths under `BIOINFOFLOW_HOME`; avoid reintroducing host/container path translation unless you are intentionally working on that subsystem.
 - Keep per-run mount targets as siblings, not nested under a read-only parent mount, or container writes may silently break.

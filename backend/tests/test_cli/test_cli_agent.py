@@ -22,7 +22,7 @@ def runner() -> CliRunner:
 
 class TestAgentSend:
     def test_send_requires_project(self, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["--mode", "remote", "agent", "send", "hello"])
+        result = runner.invoke(app, ["agent", "send", "hello"])
         assert result.exit_code != 0
 
     def test_send_streams(self, runner: CliRunner) -> None:
@@ -30,8 +30,6 @@ class TestAgentSend:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "agent",
@@ -88,8 +86,6 @@ class TestAgentSend:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "agent",
@@ -104,14 +100,14 @@ class TestAgentSend:
 
 class TestAgentChat:
     def test_chat_requires_project(self, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["--mode", "remote", "agent", "chat"])
+        result = runner.invoke(app, ["agent", "chat"])
         assert result.exit_code != 0
 
     def test_chat_starts_loop(self, runner: CliRunner) -> None:
         with patch(f"{_A}._chat_loop", new_callable=AsyncMock) as mock_loop:
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "--project", "p-1", "agent", "chat"],
+                ["--project", "p-1", "agent", "chat"],
             )
         assert result.exit_code == 0
         mock_loop.assert_called_once()
@@ -129,7 +125,7 @@ class TestAgentHistory:
         )
         with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "agent", "history", "conv-1"]
+                app, ["agent", "history", "conv-1"]
             )
         assert result.exit_code == 0
         assert "hello" in result.stdout
@@ -140,7 +136,7 @@ class TestAgentHistory:
         with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--output", "json", "--mode", "remote", "agent", "history", "conv-1"],
+                ["--output", "json", "agent", "history", "conv-1"],
             )
         parsed = json.loads(result.stdout)
         assert parsed["success"] is True
@@ -151,7 +147,7 @@ class TestAgentStatus:
         resp = make_envelope({"running": True})
         with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "agent", "status", "conv-1"]
+                app, ["agent", "status", "conv-1"]
             )
         assert result.exit_code == 0
         assert "True" in result.stdout
@@ -162,7 +158,7 @@ class TestAgentCancel:
         resp = make_envelope({"cancelled": True})
         with patch(f"{_A}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "agent", "cancel", "conv-1"]
+                app, ["agent", "cancel", "conv-1"]
             )
         assert result.exit_code == 0
         assert "cancelled" in result.stdout
@@ -182,7 +178,7 @@ class TestAgentTrace:
         )
         with patch(f"{_A}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "agent", "trace", "conv-1"]
+                app, ["agent", "trace", "conv-1"]
             )
         assert result.exit_code == 0
         assert "scan_dir" in result.stdout
@@ -202,7 +198,7 @@ class TestApprovalsList:
         )
         with patch(f"{_AA}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "agent", "approvals", "list", "conv-1"]
+                app, ["agent", "approvals", "list", "conv-1"]
             )
         assert result.exit_code == 0
         assert "execute_code" in result.stdout
@@ -214,7 +210,7 @@ class TestApprovalsResolve:
         with patch(f"{_AA}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "agent", "approvals", "resolve", "a-1", "approve"],
+                ["agent", "approvals", "resolve", "a-1", "approve"],
             )
         assert result.exit_code == 0
         assert "approved" in result.stdout
@@ -224,13 +220,13 @@ class TestApprovalsResolve:
         with patch(f"{_AA}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "agent", "approvals", "resolve", "a-1", "reject"],
+                ["agent", "approvals", "resolve", "a-1", "reject"],
             )
         assert result.exit_code == 0
         assert "rejected" in result.stdout
 
     def test_invalid_action(self, runner: CliRunner) -> None:
         result = runner.invoke(
-            app, ["--mode", "remote", "agent", "approvals", "resolve", "a-1", "maybe"]
+            app, ["agent", "approvals", "resolve", "a-1", "maybe"]
         )
         assert result.exit_code != 0

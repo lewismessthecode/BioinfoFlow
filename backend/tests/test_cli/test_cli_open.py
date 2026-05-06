@@ -31,7 +31,7 @@ class TestOpenRun:
     ) -> None:
         with patch("webbrowser.open", return_value=True) as mock_open:
             result = runner.invoke(
-                app, ["--mode", "remote", "open", "run", "r-42"]
+                app, ["open", "run", "r-42"]
             )
         assert result.exit_code == 0
         mock_open.assert_called_once_with("http://localhost:3000/runs/r-42")
@@ -40,7 +40,7 @@ class TestOpenRun:
         with patch("webbrowser.open") as mock_open:
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "open", "run", "r-42", "--no-browser"],
+                ["open", "run", "r-42", "--no-browser"],
             )
         assert result.exit_code == 0
         assert "http://localhost:3000/runs/r-42" in result.stdout
@@ -53,8 +53,6 @@ class TestOpenRun:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "open",
                     "run",
                     "r-42",
@@ -73,7 +71,7 @@ class TestOpenRun:
         monkeypatch.setenv("BIOFLOW_WEB_URL", "https://bf.example.com:8443/app")
         with patch("webbrowser.open", return_value=True) as mock_open:
             result = runner.invoke(
-                app, ["--mode", "remote", "open", "run", "r-42"]
+                app, ["open", "run", "r-42"]
             )
         assert result.exit_code == 0
         mock_open.assert_called_once_with(
@@ -85,8 +83,6 @@ class TestOpenRun:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "open",
                     "run",
                     "r-42",
@@ -103,8 +99,6 @@ class TestOpenRun:
         result = runner.invoke(
             app,
             [
-                "--mode",
-                "remote",
                 "open",
                 "run",
                 "r-42",
@@ -119,7 +113,7 @@ class TestOpenRun:
     ) -> None:
         with patch("webbrowser.open", return_value=False):
             result = runner.invoke(
-                app, ["--mode", "remote", "open", "run", "r-42"]
+                app, ["open", "run", "r-42"]
             )
         # webbrowser.open returning False is benign — we surface the URL.
         assert result.exit_code == 0
@@ -131,7 +125,7 @@ class TestOpenWorkflow:
         with patch("webbrowser.open", return_value=True) as mock_open:
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "open", "workflow", "wf-7", "--no-browser"],
+                ["open", "workflow", "wf-7", "--no-browser"],
             )
         assert result.exit_code == 0
         assert "http://localhost:3000/workflows/wf-7" in result.stdout
@@ -152,7 +146,7 @@ class TestOpenStaticPages:
     ) -> None:
         with patch("webbrowser.open", return_value=True) as mock_open:
             result = runner.invoke(
-                app, ["--mode", "remote", "open", subcommand]
+                app, ["open", subcommand]
             )
         assert result.exit_code == 0
         mock_open.assert_called_once_with(f"http://localhost:3000/{suffix}")
@@ -168,8 +162,6 @@ class TestOpenJsonOutput:
                 [
                     "--output",
                     "json",
-                    "--mode",
-                    "remote",
                     "open",
                     "run",
                     "r-42",
@@ -206,12 +198,10 @@ class TestOpenConfigKey:
         )
         monkeypatch.delenv("BIOFLOW_WEB_URL", raising=False)
 
-        runner.invoke(app, ["--mode", "remote", "config", "init"])
+        runner.invoke(app, ["config", "init"])
         result = runner.invoke(
             app,
             [
-                "--mode",
-                "remote",
                 "config",
                 "set",
                 "web_url",
@@ -222,7 +212,7 @@ class TestOpenConfigKey:
 
         with patch("webbrowser.open", return_value=True) as mock_open:
             result = runner.invoke(
-                app, ["--mode", "remote", "open", "dashboard"]
+                app, ["open", "dashboard"]
             )
         assert result.exit_code == 0
         mock_open.assert_called_once_with(

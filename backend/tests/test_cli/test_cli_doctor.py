@@ -40,7 +40,7 @@ class TestDoctorHuman:
                 "nextflow": {"ok": True, "detail": "/usr/bin/nextflow"},
                 "docker": {"ok": True, "detail": "/usr/bin/docker"},
             }
-            result = runner.invoke(app, ["--mode", "remote", "doctor"])
+            result = runner.invoke(app, ["doctor"])
         assert result.exit_code == 0
         assert "All checks passed" in result.stdout
 
@@ -52,7 +52,7 @@ class TestDoctorHuman:
                 "gpu": {"ok": True, "detail": "not detected"},
                 "nextflow": {"ok": False, "detail": "not found in PATH"},
             }
-            result = runner.invoke(app, ["--mode", "remote", "doctor"])
+            result = runner.invoke(app, ["doctor"])
         assert result.exit_code == 0
         assert "Issues detected" in result.stdout
 
@@ -63,7 +63,7 @@ class TestDoctorHuman:
                 "scheduler": {"ok": True, "detail": "persistent"},
             }
             result = runner.invoke(
-                app, ["--output", "json", "--mode", "remote", "doctor"]
+                app, ["--output", "json", "doctor"]
             )
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)

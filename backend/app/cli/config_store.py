@@ -14,11 +14,11 @@ _DEFAULT_CONFIG_DIR = Path("~/.config/bioinfoflow").expanduser()
 _CONFIG_FILENAME = "cli.toml"
 
 _DEFAULTS: dict[str, str] = {
-    "mode": "auto",
     "base_url": "http://localhost:8000/api/v1",
     "output": "human",
     "web_url": "http://localhost:3000",
 }
+_DEPRECATED_KEYS = {"mode"}
 
 
 class ConfigStore:
@@ -38,8 +38,12 @@ class ConfigStore:
             return self._cache
         if not self._path.exists():
             return {}
-        self._cache = tomllib.loads(self._path.read_text())
-        return self._cache
+        data = tomllib.loads(self._path.read_text())
+        if _DEPRECATED_KEYS.intersection(data):
+            data = {k: v for k, v in data.items() if k not in _DEPRECATED_KEYS}
+            self.save(data)
+        self._cache = data
+        return data
 
     def save(self, data: dict[str, Any]) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)

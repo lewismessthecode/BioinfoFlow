@@ -187,7 +187,7 @@ class TestErrorEnvelope:
 
 
 class TestConnectionHint:
-    def test_includes_local_mode_hint(self, capsys) -> None:
+    def test_includes_http_backend_hint(self, capsys) -> None:
         ctx = _ctx_with_mode("human")
 
         @handle_errors
@@ -197,4 +197,7 @@ class TestConnectionHint:
         with pytest.raises(typer.Exit):
             _cmd(ctx)
         captured = capsys.readouterr()
-        assert "--mode local" in captured.err
+        assert "start the backend" in captured.err
+        assert "--base-url" in captured.err
+        assert "BIOFLOW_API_URL" in captured.err
+        assert "--mode" not in captured.err

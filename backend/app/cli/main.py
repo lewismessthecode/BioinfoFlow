@@ -46,11 +46,6 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def main(
     ctx: typer.Context,
-    mode: Optional[str] = typer.Option(
-        None,
-        "--mode",
-        help="Transport mode: auto, remote, or local.",
-    ),
     base_url: Optional[str] = typer.Option(
         None,
         "--base-url",
@@ -96,7 +91,6 @@ def main(
     """Bioinfoflow CLI — manage projects, workflows, and pipeline runs."""
     store = ConfigStore()
 
-    resolved_mode = store.resolve("mode", mode, "BIOFLOW_MODE") or "auto"
     resolved_url = (
         store.resolve("base_url", base_url, "BIOFLOW_API_URL")
         or "http://localhost:8000/api/v1"
@@ -111,24 +105,12 @@ def main(
         )
         raise typer.Exit(EXIT_USER_INPUT)
 
-    if resolved_mode not in ("auto", "remote", "local"):
-        typer.echo(
-            f"Invalid mode: {resolved_mode}. Use 'auto', 'remote', or 'local'.",
-            err=True,
-        )
-        raise typer.Exit(EXIT_USER_INPUT)
-
     # Lazy-import the network stack so `bif --version` / `bif --help` never
     # pay for httpx + asyncio + the FastAPI ASGI graph.
     from app.cli.client import ApiClient
-    from app.cli.transport import AutoTransport, LocalTransport, RemoteTransport
+    from app.cli.transport import RemoteTransport
 
-    if resolved_mode == "remote":
-        transport = RemoteTransport(resolved_url)
-    elif resolved_mode == "local":
-        transport = LocalTransport()
-    else:
-        transport = AutoTransport(resolved_url)
+    transport = RemoteTransport(resolved_url)
 
     effective_no_color = no_color or os.environ.get("NO_COLOR") is not None
     console = Console(no_color=effective_no_color, stderr=resolved_output == "json")

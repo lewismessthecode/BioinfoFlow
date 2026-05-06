@@ -169,7 +169,7 @@ uv run bif --help                      # also -h
 uv run bif doctor                      # backend + scheduler + GPU + local tool checks
 uv run bif config init                 # write ~/.config/bioinfoflow/cli.toml
 uv run bif config use-project proj-1   # set default project (also $BIOFLOW_PROJECT)
-uv run bif config set mode local       # validated; rejects unknown values
+uv run bif config set base_url http://localhost:8000/api/v1
 uv run bif --output json project list  # machine-readable envelope on stdout
 ```
 

@@ -36,7 +36,7 @@ class TestWorkflowList:
     def test_lists_workflows(self, runner: CliRunner) -> None:
         resp = make_envelope([_wf("rnaseq"), _wf("sarek")])
         with patch(f"{_W}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "workflow", "list"])
+            result = runner.invoke(app, ["workflow", "list"])
         assert result.exit_code == 0
         assert "rnaseq" in result.stdout
         assert "sarek" in result.stdout
@@ -45,7 +45,7 @@ class TestWorkflowList:
         resp = make_envelope([_wf()])
         with patch(f"{_W}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--output", "json", "--mode", "remote", "workflow", "list"]
+                app, ["--output", "json", "workflow", "list"]
             )
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)
@@ -59,8 +59,6 @@ class TestWorkflowRegister:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "workflow",
                     "register",
                     "--source",
@@ -78,7 +76,7 @@ class TestWorkflowShow:
         resp = make_envelope(_wf("rnaseq", id="wf-42"))
         with patch(f"{_W}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "workflow", "show", "wf-42"]
+                app, ["workflow", "show", "wf-42"]
             )
         assert result.exit_code == 0
         assert "rnaseq" in result.stdout
@@ -89,7 +87,7 @@ class TestWorkflowSource:
         resp = make_envelope({"content": "nextflow.enable.dsl=2"})
         with patch(f"{_W}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "workflow", "source", "wf-42"]
+                app, ["workflow", "source", "wf-42"]
             )
         assert result.exit_code == 0
         assert "nextflow" in result.stdout
@@ -97,7 +95,7 @@ class TestWorkflowSource:
 
 class TestWorkflowBind:
     def test_bind_requires_project(self, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["--mode", "remote", "workflow", "bind", "wf-42"])
+        result = runner.invoke(app, ["workflow", "bind", "wf-42"])
         assert result.exit_code != 0
 
     def test_bind_with_project(self, runner: CliRunner) -> None:
@@ -105,7 +103,7 @@ class TestWorkflowBind:
         with patch(f"{_W}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "--project", "p-1", "workflow", "bind", "wf-42"],
+                ["--project", "p-1", "workflow", "bind", "wf-42"],
             )
         assert result.exit_code == 0
         assert "bound" in result.stdout
@@ -117,7 +115,7 @@ class TestWorkflowUnbind:
         with patch(f"{_W}.api_delete", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "--project", "p-1", "workflow", "unbind", "wf-42"],
+                ["--project", "p-1", "workflow", "unbind", "wf-42"],
             )
         assert result.exit_code == 0
 
@@ -128,7 +126,7 @@ class TestWorkflowPin:
         with patch(f"{_W}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "--project", "p-1", "workflow", "pin", "wf-42"],
+                ["--project", "p-1", "workflow", "pin", "wf-42"],
             )
         assert result.exit_code == 0
         assert "pinned" in result.stdout

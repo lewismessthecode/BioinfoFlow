@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
 from app.cli.client import ApiClient, ApiError, ConnectionFailed, SSEEvent
 from app.cli.context import CliContext
-from app.cli.transport import AutoTransport, LocalTransport, RemoteTransport
+from app.cli.transport import RemoteTransport
 
 # Intentionally a mock URL for unit tests — no real server runs on this port.
 # Used only to construct transport objects; all HTTP calls are mocked.
@@ -354,48 +354,6 @@ class TestRemoteTransportReuse:
     async def test_close_when_no_client(self) -> None:
         transport = RemoteTransport(TEST_BASE_URL)
         await transport.close()  # no client created yet, should not raise
-
-
-class TestAutoTransport:
-    @pytest.mark.asyncio
-    async def test_delegates_to_remote_when_reachable(self) -> None:
-        auto = AutoTransport(TEST_BASE_URL)
-
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.get.return_value = httpx.Response(200, json={"status": "ok"})
-        mock_client.is_closed = False
-
-        with patch.object(RemoteTransport, "get_client", return_value=mock_client):
-            client = await auto.get_client()
-            assert client is mock_client
-            mock_client.get.assert_awaited_once_with("/system/health")
-        await auto.close()
-
-    @pytest.mark.asyncio
-    async def test_auto_close_when_no_delegate(self) -> None:
-        auto = AutoTransport(TEST_BASE_URL)
-        await auto.close()  # _delegate is None, should not raise
-
-    @pytest.mark.asyncio
-    async def test_delegates_to_local_on_connection_failure(self) -> None:
-        auto = AutoTransport(TEST_BASE_URL)
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.is_closed = False
-
-        with (
-            patch.object(
-                RemoteTransport,
-                "get_client",
-                AsyncMock(side_effect=httpx.ConnectError("refused")),
-            ),
-            patch.object(
-                LocalTransport, "get_client", AsyncMock(return_value=mock_client)
-            ),
-        ):
-            client = await auto.get_client()
-
-        assert client is mock_client
-        await auto.close()
 
 
 class TestSSEEvent:

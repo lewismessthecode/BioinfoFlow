@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import pytest
 from typer.testing import CliRunner
+from unittest.mock import AsyncMock, patch
 
 from app.cli.main import app
+from tests.test_cli.conftest import make_envelope
 
 
 @pytest.fixture
@@ -76,9 +78,42 @@ class TestFlagValidation:
         result = runner.invoke(app, ["--output", "xml", "project", "list"])
         assert result.exit_code == 2
 
-    def test_invalid_transport_mode(self, runner: CliRunner) -> None:
+    def test_mode_option_is_removed(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["--mode", "magic", "project", "list"])
         assert result.exit_code == 2
+        assert "No such option" in result.stdout
+
+    def test_root_help_does_not_show_mode(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+        assert "--mode" not in result.stdout
+
+    def test_base_url_selects_http_backend(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, str] = {}
+
+        def fake_transport_init(self, base_url: str) -> None:
+            captured["base_url"] = base_url
+            self._base_url = base_url
+            self._client = None
+
+        monkeypatch.setattr(
+            "app.cli.transport.RemoteTransport.__init__",
+            fake_transport_init,
+        )
+        with patch(
+            "app.cli.commands.project.api_get",
+            new_callable=AsyncMock,
+            return_value=make_envelope([]),
+        ):
+            result = runner.invoke(
+                app,
+                ["--base-url", "https://api.example.test/api/v1", "project", "list"],
+            )
+
+        assert result.exit_code == 0
+        assert captured["base_url"] == "https://api.example.test/api/v1"
 
 
 class TestNoArgsShowsHelp:

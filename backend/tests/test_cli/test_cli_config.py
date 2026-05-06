@@ -16,15 +16,30 @@ class TestConfigStore:
         assert store.path.exists()
         # Defaults written
         data = store.load()
-        assert data["mode"] == "auto"
+        assert "mode" not in data
         assert "base_url" in data
 
     def test_init_idempotent(self, tmp_path: Path) -> None:
         store = ConfigStore(config_dir=tmp_path / "cfg")
         store.init()
-        store.set("mode", "remote")
+        store.set("base_url", "http://example.com/api/v1")
         store.init()  # should NOT overwrite
-        assert store.get("mode") == "remote"
+        assert store.get("base_url") == "http://example.com/api/v1"
+
+    def test_load_prunes_deprecated_mode_key(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "cfg"
+        config_dir.mkdir()
+        config_path = config_dir / "cli.toml"
+        config_path.write_text(
+            'mode = "local"\nbase_url = "http://example.com/api/v1"\n'
+        )
+
+        store = ConfigStore(config_dir=config_dir)
+
+        data = store.load()
+        assert "mode" not in data
+        assert data["base_url"] == "http://example.com/api/v1"
+        assert "mode" not in config_path.read_text()
 
     def test_set_and_get(self, tmp_path: Path) -> None:
         store = ConfigStore(config_dir=tmp_path / "cfg")
@@ -46,30 +61,46 @@ class TestConfigStore:
     ) -> None:
         store = ConfigStore(config_dir=tmp_path / "cfg")
         store.init()
-        store.set("mode", "local")
-        monkeypatch.setenv("BIOFLOW_MODE", "remote")
-        assert store.resolve("mode", "auto", "BIOFLOW_MODE") == "auto"
+        store.set("base_url", "http://config.example/api/v1")
+        monkeypatch.setenv("BIOFLOW_API_URL", "http://env.example/api/v1")
+        assert (
+            store.resolve(
+                "base_url",
+                "http://cli.example/api/v1",
+                "BIOFLOW_API_URL",
+            )
+            == "http://cli.example/api/v1"
+        )
 
     def test_resolve_priority_env_second(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         store = ConfigStore(config_dir=tmp_path / "cfg")
         store.init()
-        store.set("mode", "local")
-        monkeypatch.setenv("BIOFLOW_MODE", "remote")
-        assert store.resolve("mode", None, "BIOFLOW_MODE") == "remote"
+        store.set("base_url", "http://config.example/api/v1")
+        monkeypatch.setenv("BIOFLOW_API_URL", "http://env.example/api/v1")
+        assert (
+            store.resolve("base_url", None, "BIOFLOW_API_URL")
+            == "http://env.example/api/v1"
+        )
 
     def test_resolve_priority_config_third(self, tmp_path: Path) -> None:
         store = ConfigStore(config_dir=tmp_path / "cfg")
         store.init()
-        store.set("mode", "local")
+        store.set("base_url", "http://config.example/api/v1")
         # No env var, no CLI flag
-        assert store.resolve("mode", None, "BIOFLOW_MODE_NOT_SET") == "local"
+        assert (
+            store.resolve("base_url", None, "BIOFLOW_API_URL_NOT_SET")
+            == "http://config.example/api/v1"
+        )
 
     def test_resolve_falls_to_default(self, tmp_path: Path) -> None:
         store = ConfigStore(config_dir=tmp_path / "empty")
         # No file, no env, no CLI → default
-        assert store.resolve("mode", None, "BIOFLOW_MODE_NOT_SET") == "auto"
+        assert (
+            store.resolve("base_url", None, "BIOFLOW_API_URL_NOT_SET")
+            == "http://localhost:8000/api/v1"
+        )
 
     def test_file_permissions(self, tmp_path: Path) -> None:
         store = ConfigStore(config_dir=tmp_path / "cfg")
