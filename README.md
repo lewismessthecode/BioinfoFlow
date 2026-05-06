@@ -17,11 +17,13 @@ It is built for teams that want modern product ergonomics for local and lab-serv
 
 ## What You Can Do
 
-- Run existing Nextflow and WDL/MiniWDL workflows from one UI.
-- Keep project data, shared inputs, references, run outputs, and state under one `BIOINFOFLOW_HOME`.
-- Monitor long-running jobs with live task updates, DAG visualization, scheduler state, logs, and outputs.
-- Use the `bif` CLI for scripting, JSON output, and remote/local automation.
-- Run GPU-oriented workflows, including the included NVIDIA Parabricks WGS examples, on a trusted workstation or lab server.
+- Put the Nextflow and WDL pipelines your lab already trusts behind a usable product workflow, instead of leaving them trapped in another README, wrapper script, or tribal runbook.
+- Stop losing time to “which FASTQ did we use?”, “which reference is this aligned against?”, and “where did that run write its outputs?” by keeping deliveries, references, run state, and results under one `BIOINFOFLOW_HOME`.
+- Catch failures while they are happening, not the next morning: follow live task status, DAG progress, scheduler pressure, logs, and produced outputs from one place.
+- Give scientists and platform teams a UI that does not fight them: register workflows, choose managed inputs, inspect outputs, retry or cancel runs, and move between runs, scheduler, and agent views without tab chaos or shell archaeology.
+- Work from the browser when you want clarity, from the `bif` CLI when you want automation, and increasingly from agents when you want higher-level execution, without splitting the workflow across disconnected tools.
+- Keep the environment reproducible with containers, instead of rebuilding the same brittle local setup on every machine.
+- Run serious local analysis on infrastructure you already trust, from a workstation to a lab GPU server, including NVIDIA Parabricks pipelines on your own GeForce RTX 4080-class hardware.
 
 ## Quick Start
 
