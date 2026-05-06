@@ -33,13 +33,13 @@ class TestFileLs:
         )
         with patch(f"{_F}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "--project", "p-1", "file", "ls"]
+                app, ["--project", "p-1", "file", "ls"]
             )
         assert result.exit_code == 0
         assert "data.fastq" in result.stdout
 
     def test_requires_project(self, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["--mode", "remote", "file", "ls"])
+        result = runner.invoke(app, ["file", "ls"])
         assert result.exit_code != 0
 
 
@@ -51,7 +51,7 @@ class TestFileCat:
         with patch(f"{_F}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "--project", "p-1", "file", "cat", "readme.txt"],
+                ["--project", "p-1", "file", "cat", "readme.txt"],
             )
         assert result.exit_code == 0
         assert "hello world" in result.stdout
@@ -64,8 +64,6 @@ class TestFileCat:
                 [
                     "--output",
                     "json",
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "file",
@@ -85,7 +83,7 @@ class TestFileUpload:
         with patch(f"{_F}.api_upload", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "--project", "p-1", "file", "upload", str(local)],
+                ["--project", "p-1", "file", "upload", str(local)],
             )
         assert result.exit_code == 0
         assert "Uploaded" in result.stdout
@@ -93,7 +91,7 @@ class TestFileUpload:
     def test_upload_missing_file(self, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
-            ["--mode", "remote", "--project", "p-1", "file", "upload", "/nonexistent"],
+            ["--project", "p-1", "file", "upload", "/nonexistent"],
         )
         assert result.exit_code != 0
 
@@ -110,7 +108,7 @@ class TestFileScan:
         )
         with patch(f"{_F}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "--project", "p-1", "file", "scan"]
+                app, ["--project", "p-1", "file", "scan"]
             )
         assert result.exit_code == 0
         assert "S1" in result.stdout
@@ -123,8 +121,6 @@ class TestFileRm:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "file",

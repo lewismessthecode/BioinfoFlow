@@ -27,7 +27,7 @@ class TestProjectList:
         )
 
         with patch(f"{_P}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "project", "list"])
+            result = runner.invoke(app, ["project", "list"])
         assert result.exit_code == 0
         assert "Alpha" in result.stdout
         assert "Beta" in result.stdout
@@ -38,7 +38,7 @@ class TestProjectList:
 
         with patch(f"{_P}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--output", "json", "--mode", "remote", "project", "list"]
+                app, ["--output", "json", "project", "list"]
             )
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)
@@ -49,7 +49,7 @@ class TestProjectList:
         resp = make_envelope([])
 
         with patch(f"{_P}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "project", "list"])
+            result = runner.invoke(app, ["project", "list"])
         assert result.exit_code == 0
         assert "No results" in result.stdout
 
@@ -63,8 +63,6 @@ class TestProjectCreate:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "project",
                     "create",
                     "--name",
@@ -83,7 +81,7 @@ class TestProjectShow:
 
         with patch(f"{_P}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "project", "show", "p-123"]
+                app, ["project", "show", "p-123"]
             )
         assert result.exit_code == 0
         assert "Detail" in result.stdout
@@ -95,7 +93,7 @@ class TestProjectShow:
         with patch(f"{_P}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--output", "json", "--mode", "remote", "project", "show", "p-123"],
+                ["--output", "json", "project", "show", "p-123"],
             )
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)
@@ -108,7 +106,7 @@ class TestProjectDelete:
 
         with patch(f"{_P}.api_delete", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "project", "delete", "p-123", "--force"]
+                app, ["project", "delete", "p-123", "--force"]
             )
         assert result.exit_code == 0
         assert "deleted" in result.stdout
@@ -123,7 +121,7 @@ class TestProjectUse:
         project = make_project(id="p-999", name="MyProject")
         resp = make_envelope(project)
         with patch(f"{_P}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "project", "use", "p-999"])
+            result = runner.invoke(app, ["project", "use", "p-999"])
         assert result.exit_code == 0
         assert "MyProject" in result.stdout
 
@@ -139,8 +137,6 @@ class TestProjectCreateDescription:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "project",
                     "create",
                     "--name",
@@ -161,7 +157,7 @@ class TestProjectListFilters:
             f"{_P}.api_get", new_callable=AsyncMock, return_value=resp
         ) as mock_get:
             result = runner.invoke(
-                app, ["--mode", "remote", "project", "list", "--cursor", "abc"]
+                app, ["project", "list", "--cursor", "abc"]
             )
         assert result.exit_code == 0
         params = mock_get.call_args[0][2]
@@ -173,7 +169,7 @@ class TestProjectListFilters:
             f"{_P}.api_get", new_callable=AsyncMock, return_value=resp
         ) as mock_get:
             result = runner.invoke(
-                app, ["--mode", "remote", "project", "list", "--search", "viral"]
+                app, ["project", "list", "--search", "viral"]
             )
         assert result.exit_code == 0
         params = mock_get.call_args[0][2]

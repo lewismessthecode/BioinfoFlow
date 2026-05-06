@@ -30,7 +30,7 @@ class TestSystemHealth:
             }
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "system", "health"])
+            result = runner.invoke(app, ["system", "health"])
         assert result.exit_code == 0
         assert "healthy" in result.stdout
 
@@ -51,7 +51,7 @@ class TestSystemStats:
             }
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "system", "stats"])
+            result = runner.invoke(app, ["system", "stats"])
         assert result.exit_code == 0
         assert "10" in result.stdout
 
@@ -61,7 +61,7 @@ class TestSystemStats:
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--output", "json", "--mode", "remote", "system", "stats"]
+                app, ["--output", "json", "system", "stats"]
             )
         parsed = json.loads(result.stdout)
         assert parsed["data"]["runs"]["total"] == 5
@@ -81,7 +81,7 @@ class TestSchedulerStatus:
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "system", "scheduler-status"]
+                app, ["system", "scheduler-status"]
             )
         assert result.exit_code == 0
         assert "persistent" in result.stdout
@@ -101,7 +101,7 @@ class TestSchedulerResources:
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "system", "scheduler-resources"]
+                app, ["system", "scheduler-resources"]
             )
         assert result.exit_code == 0
         assert "6/8" in result.stdout
@@ -120,6 +120,6 @@ class TestGpu:
             }
         )
         with patch(f"{_S}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "system", "gpu"])
+            result = runner.invoke(app, ["system", "gpu"])
         assert result.exit_code == 0
         assert "Install NVIDIA" in result.stdout

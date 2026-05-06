@@ -119,10 +119,10 @@ def _emit_error(
 
 
 def _connection_hint(detail: str) -> str:
-    """Append a friendly hint about transport modes to a connection error."""
+    """Append a friendly hint about backend connectivity to a connection error."""
     base = detail or "Cannot reach the backend."
     return (
         f"{base}\n"
-        "Hint: start the backend (uvicorn app.main:app), or run with "
-        "--mode local to use the in-process ASGI transport."
+        "Hint: start the backend (uvicorn app.main:app), or point the CLI at "
+        "a running API with --base-url / BIOFLOW_API_URL."
     )

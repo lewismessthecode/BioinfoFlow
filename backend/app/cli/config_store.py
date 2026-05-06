@@ -14,7 +14,6 @@ _DEFAULT_CONFIG_DIR = Path("~/.config/bioinfoflow").expanduser()
 _CONFIG_FILENAME = "cli.toml"
 
 _DEFAULTS: dict[str, str] = {
-    "mode": "auto",
     "base_url": "http://localhost:8000/api/v1",
     "output": "human",
     "web_url": "http://localhost:3000",

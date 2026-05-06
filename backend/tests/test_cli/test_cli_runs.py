@@ -36,7 +36,7 @@ class TestRunList:
     def test_lists_runs(self, runner: CliRunner) -> None:
         resp = make_envelope([_run("r-1"), _run("r-2")])
         with patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "list"])
+            result = runner.invoke(app, ["run", "list"])
         assert result.exit_code == 0
         assert "r-1" in result.stdout
 
@@ -44,7 +44,7 @@ class TestRunList:
         resp = make_envelope([_run()])
         with patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--output", "json", "--mode", "remote", "run", "list"]
+                app, ["--output", "json", "run", "list"]
             )
         parsed = json.loads(result.stdout)
         assert parsed["success"] is True
@@ -57,8 +57,6 @@ class TestRunSubmit:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "run",
@@ -72,7 +70,7 @@ class TestRunSubmit:
 
     def test_submit_requires_project(self, runner: CliRunner) -> None:
         result = runner.invoke(
-            app, ["--mode", "remote", "run", "submit", "--workflow", "wf-1"]
+            app, ["run", "submit", "--workflow", "wf-1"]
         )
         assert result.exit_code != 0
 
@@ -81,7 +79,7 @@ class TestRunShow:
     def test_shows_run(self, runner: CliRunner) -> None:
         resp = make_envelope(_run("r-42"))
         with patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "show", "r-42"])
+            result = runner.invoke(app, ["run", "show", "r-42"])
         assert result.exit_code == 0
         assert "r-42" in result.stdout
 
@@ -90,7 +88,7 @@ class TestRunLogs:
     def test_logs_output(self, runner: CliRunner) -> None:
         resp = make_envelope(["line 1", "line 2"])
         with patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "logs", "r-42"])
+            result = runner.invoke(app, ["run", "logs", "r-42"])
         assert result.exit_code == 0
         assert "line 1" in result.stdout
 
@@ -100,7 +98,7 @@ class TestRunCancel:
         resp = make_envelope(_run(status="cancelled"))
         with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "cancel", "r-42", "--force"]
+                app, ["run", "cancel", "r-42", "--force"]
             )
         assert result.exit_code == 0
         assert "cancelled" in result.stdout
@@ -110,7 +108,7 @@ class TestRunCancel:
         with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
             # Reject the prompt — command should abort, no API call.
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "cancel", "r-42"], input="n\n"
+                app, ["run", "cancel", "r-42"], input="n\n"
             )
         assert "Cancel run r-42?" in result.stdout
 
@@ -118,7 +116,7 @@ class TestRunCancel:
         resp = make_envelope(_run(status="cancelled"))
         with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "cancel", "r-42"], input="y\n"
+                app, ["run", "cancel", "r-42"], input="y\n"
             )
         assert result.exit_code == 0
         assert "cancelled" in result.stdout
@@ -135,7 +133,7 @@ class TestRunRetry:
             }
         )
         with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "retry", "r-42"])
+            result = runner.invoke(app, ["run", "retry", "r-42"])
         assert result.exit_code == 0
         assert "r-43" in result.stdout
 
@@ -151,7 +149,7 @@ class TestRunResume:
             }
         )
         with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "resume", "r-42"])
+            result = runner.invoke(app, ["run", "resume", "r-42"])
         assert result.exit_code == 0
         assert "r-44" in result.stdout
 
@@ -161,7 +159,7 @@ class TestRunCleanup:
         resp = make_envelope({"cleaned": True})
         with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "cleanup", "r-42", "--force"]
+                app, ["run", "cleanup", "r-42", "--force"]
             )
         assert result.exit_code == 0
         assert "cleaned" in result.stdout
@@ -170,7 +168,7 @@ class TestRunCleanup:
         resp = make_envelope({"cleaned": True})
         with patch(f"{_R}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "cleanup", "r-42"], input="n\n"
+                app, ["run", "cleanup", "r-42"], input="n\n"
             )
         assert "Clean up run r-42?" in result.stdout
 
@@ -182,7 +180,7 @@ class TestRunOutputsList:
         )
         with patch(f"{_RO}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "outputs", "list", "r-42"]
+                app, ["run", "outputs", "list", "r-42"]
             )
         assert result.exit_code == 0
         assert "result.vcf" in result.stdout
@@ -205,7 +203,7 @@ class TestBatchSubmit:
         resp = make_envelope({"batch_id": "b-1", "run_count": 3, "status": "submitted"})
         with patch(f"{_RB}.api_post", new_callable=AsyncMock, return_value=resp) as mock_post:
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "batch", "submit", "--spec", str(spec)]
+                app, ["run", "batch", "submit", "--spec", str(spec)]
             )
         assert result.exit_code == 0
         assert "b-1" in result.stdout
@@ -231,7 +229,7 @@ class TestBatchSubmit:
 
         result = runner.invoke(
             app,
-            ["--mode", "remote", "run", "batch", "submit", "--spec", str(spec)],
+            ["run", "batch", "submit", "--spec", str(spec)],
         )
 
         assert result.exit_code != 0
@@ -245,7 +243,7 @@ class TestBatchShow:
         )
         with patch(f"{_RB}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "batch", "show", "b-1"]
+                app, ["run", "batch", "show", "b-1"]
             )
         assert result.exit_code == 0
         assert "b-1" in result.stdout
@@ -257,7 +255,7 @@ class TestBatchCancel:
         with patch(f"{_RB}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "run", "batch", "cancel", "b-1", "--force"],
+                ["run", "batch", "cancel", "b-1", "--force"],
             )
         assert result.exit_code == 0
         assert "cancelled" in result.stdout
@@ -267,7 +265,7 @@ class TestBatchCancel:
         with patch(f"{_RB}.api_post", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "run", "batch", "cancel", "b-1"],
+                ["run", "batch", "cancel", "b-1"],
                 input="n\n",
             )
         assert "Cancel all runs in batch b-1?" in result.stdout
@@ -280,7 +278,7 @@ class TestRunListFilters:
             f"{_R}.api_get", new_callable=AsyncMock, return_value=resp
         ) as mock_get:
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "list", "--workflow", "wf-9"]
+                app, ["run", "list", "--workflow", "wf-9"]
             )
         assert result.exit_code == 0
         params = mock_get.call_args[0][2]
@@ -292,7 +290,7 @@ class TestRunListFilters:
             f"{_R}.api_get", new_callable=AsyncMock, return_value=resp
         ) as mock_get:
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "list", "--status", "completed,failed"]
+                app, ["run", "list", "--status", "completed,failed"]
             )
         assert result.exit_code == 0
         params = mock_get.call_args[0][2]
@@ -304,7 +302,7 @@ class TestRunListFilters:
             f"{_R}.api_get", new_callable=AsyncMock, return_value=resp
         ) as mock_get:
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "list", "--cursor", "c1"]
+                app, ["run", "list", "--cursor", "c1"]
             )
         assert result.exit_code == 0
         params = mock_get.call_args[0][2]
@@ -320,8 +318,6 @@ class TestRunSubmitAdvanced:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "run",
@@ -342,8 +338,6 @@ class TestRunSubmitAdvanced:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "run",
@@ -364,8 +358,6 @@ class TestRunSubmitAdvanced:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "run",
@@ -396,7 +388,7 @@ class TestRunSubmitAdvanced:
         )
 
         result = runner.invoke(
-            app, ["--mode", "remote", "run", "wizard", "--spec", str(spec)]
+            app, ["run", "wizard", "--spec", str(spec)]
         )
 
         assert result.exit_code != 0
@@ -420,7 +412,7 @@ class TestRunWizard:
             f"{_R}.api_post", new_callable=AsyncMock, return_value=resp
         ) as mock_post:
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "wizard", "--spec", str(spec)]
+                app, ["run", "wizard", "--spec", str(spec)]
             )
         assert result.exit_code == 0
         assert "r-001" in result.stdout
@@ -434,14 +426,14 @@ class TestRunLogsFormats:
     def test_logs_string_data(self, runner: CliRunner) -> None:
         resp = make_envelope("log output as string")
         with patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "logs", "r-42"])
+            result = runner.invoke(app, ["run", "logs", "r-42"])
         assert result.exit_code == 0
         assert "log output as string" in result.stdout
 
     def test_logs_dict_data(self, runner: CliRunner) -> None:
         resp = make_envelope({"lines": ["dict line 1", "dict line 2"]})
         with patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "logs", "r-42"])
+            result = runner.invoke(app, ["run", "logs", "r-42"])
         assert result.exit_code == 0
         assert "dict line 1" in result.stdout
 
@@ -451,7 +443,7 @@ class TestRunLogsFormats:
             f"{_R}.api_get", new_callable=AsyncMock, return_value=resp
         ) as mock_get:
             result = runner.invoke(
-                app, ["--mode", "remote", "run", "logs", "r-42", "--task", "FASTQC"]
+                app, ["run", "logs", "r-42", "--task", "FASTQC"]
             )
         assert result.exit_code == 0
         params = mock_get.call_args[0][2]
@@ -461,7 +453,7 @@ class TestRunLogsFormats:
         resp = make_envelope(["line 1"])
         with patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp):
             result = runner.invoke(
-                app, ["--output", "json", "--mode", "remote", "run", "logs", "r-42"]
+                app, ["--output", "json", "run", "logs", "r-42"]
             )
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)
@@ -477,8 +469,6 @@ class TestRunOutputsDownload:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "run",
                     "outputs",
                     "download",

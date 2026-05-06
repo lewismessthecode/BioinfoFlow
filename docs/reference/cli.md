@@ -20,7 +20,6 @@ uv run bif --help
 The main Typer callback supports:
 
 ```text
---mode auto|remote|local
 --base-url <url>
 --project <project-id> / -p <project-id>
 --output human|json
@@ -33,7 +32,6 @@ The main Typer callback supports:
 
 Defaults from the current implementation:
 
-- `--mode`: `auto`
 - `--base-url`: `http://localhost:8000/api/v1`
 - `--output`: `human`
 
@@ -50,18 +48,14 @@ The CLI resolves values in this order:
 
 Environment variables:
 
-- `BIOFLOW_MODE`
 - `BIOFLOW_API_URL`
 - `BIOFLOW_PROJECT`
 - `BIOFLOW_OUTPUT`
 
-## Transport Modes
+## Backend Target
 
-| Mode | Behavior |
-| --- | --- |
-| `remote` | Use HTTP against `--base-url`. |
-| `local` | Use the FastAPI app in-process through the local transport. |
-| `auto` | Try the configured remote URL, then fall back to local transport on connection failure. |
+`bif` is an HTTP client for a running Bioinfoflow backend. Start the backend
+first, or point the CLI at another API with `--base-url` / `BIOFLOW_API_URL`.
 
 ## Registered Command Groups
 

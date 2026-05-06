@@ -46,7 +46,7 @@ class TestRunWatch:
         """If run is already completed, just show details and exit."""
         resp = make_envelope(_run_data("completed"))
         with patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "watch", "r-42"])
+            result = runner.invoke(app, ["run", "watch", "r-42"])
         assert result.exit_code == 0
         assert "completed" in result.stdout
 
@@ -62,7 +62,7 @@ class TestRunWatch:
             patch(f"{_R}._watch_stream", new_callable=AsyncMock) as mock_stream,
         ):
             result = runner.invoke(
-                app, ["--mode", "remote", "--project", "p-1", "run", "watch", "r-42"]
+                app, ["--project", "p-1", "run", "watch", "r-42"]
             )
         assert result.exit_code == 0
         mock_stream.assert_called_once()
@@ -72,7 +72,7 @@ class TestRunLogsFollow:
     def test_logs_without_follow(self, runner: CliRunner) -> None:
         resp = make_envelope(["line 1", "line 2"])
         with patch(f"{_R}.api_get", new_callable=AsyncMock, return_value=resp):
-            result = runner.invoke(app, ["--mode", "remote", "run", "logs", "r-42"])
+            result = runner.invoke(app, ["run", "logs", "r-42"])
         assert result.exit_code == 0
         assert "line 1" in result.stdout
 
@@ -86,8 +86,6 @@ class TestRunLogsFollow:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "run",
@@ -103,7 +101,7 @@ class TestRunLogsFollow:
 
 class TestEventsStream:
     def test_requires_project(self, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["--mode", "remote", "events", "stream"])
+        result = runner.invoke(app, ["events", "stream"])
         assert result.exit_code != 0
 
     def test_stream_passes_params(self, runner: CliRunner) -> None:
@@ -114,8 +112,6 @@ class TestEventsStream:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "events",
@@ -135,8 +131,6 @@ class TestEventsStream:
             result = runner.invoke(
                 app,
                 [
-                    "--mode",
-                    "remote",
                     "--project",
                     "p-1",
                     "events",
@@ -153,7 +147,7 @@ class TestEventsStream:
         with patch(f"{_E}._stream", new_callable=AsyncMock) as mock_fn:
             result = runner.invoke(
                 app,
-                ["--mode", "remote", "--project", "p-1", "events", "stream"],
+                ["--project", "p-1", "events", "stream"],
             )
         assert result.exit_code == 0
         params = mock_fn.call_args[0][2]

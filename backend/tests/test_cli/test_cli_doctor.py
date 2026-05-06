@@ -40,7 +40,7 @@ class TestDoctorHuman:
                 "nextflow": {"ok": True, "detail": "/usr/bin/nextflow"},
                 "docker": {"ok": True, "detail": "/usr/bin/docker"},
             }
-            result = runner.invoke(app, ["--mode", "remote", "doctor"])
+            result = runner.invoke(app, ["doctor"])
         assert result.exit_code == 0
         assert "All checks passed" in result.stdout
 
@@ -52,7 +52,7 @@ class TestDoctorHuman:
                 "gpu": {"ok": True, "detail": "not detected"},
                 "nextflow": {"ok": False, "detail": "not found in PATH"},
             }
-            result = runner.invoke(app, ["--mode", "remote", "doctor"])
+            result = runner.invoke(app, ["doctor"])
         assert result.exit_code == 0
         assert "Issues detected" in result.stdout
 
@@ -63,7 +63,7 @@ class TestDoctorHuman:
                 "scheduler": {"ok": True, "detail": "persistent"},
             }
             result = runner.invoke(
-                app, ["--output", "json", "--mode", "remote", "doctor"]
+                app, ["--output", "json", "doctor"]
             )
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)
@@ -177,31 +177,3 @@ class TestRunChecks:
         assert results["backend"]["ok"] is True
         assert results["scheduler"]["ok"] is False
         assert "not reachable" in results["scheduler"]["detail"]
-
-    @pytest.mark.asyncio
-    async def test_local_transport_doctor_is_not_blocked_by_trusted_host(
-        self,
-    ) -> None:
-        from app.cli.client import ApiClient
-        from app.cli.commands.doctor import _run_checks
-        from app.cli.context import CliContext
-        from app.cli.transport import LocalTransport
-        from rich.console import Console
-
-        client = ApiClient(LocalTransport())
-        ctx = CliContext(
-            client=client,
-            output_mode="human",
-            project_id=None,
-            verbose=False,
-            console=Console(),
-        )
-
-        try:
-            with patch("shutil.which", return_value="/usr/bin/tool"):
-                results = await _run_checks(ctx)
-        finally:
-            await client.close()
-
-        assert results["backend"]["ok"] is True
-        assert results["scheduler"]["ok"] is True
