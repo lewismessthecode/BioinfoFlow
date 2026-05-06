@@ -64,7 +64,7 @@ class LocalTransport(BaseTransport):
                 transport = httpx.ASGITransport(app=fastapi_app)  # type: ignore[arg-type]
                 self._client = httpx.AsyncClient(
                     transport=transport,
-                    base_url="http://local/api/v1",
+                    base_url="http://localhost/api/v1",
                 )
             except Exception:
                 await self._lifespan_cm.__aexit__(None, None, None)
