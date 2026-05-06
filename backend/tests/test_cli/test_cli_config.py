@@ -26,6 +26,21 @@ class TestConfigStore:
         store.init()  # should NOT overwrite
         assert store.get("base_url") == "http://example.com/api/v1"
 
+    def test_load_prunes_deprecated_mode_key(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "cfg"
+        config_dir.mkdir()
+        config_path = config_dir / "cli.toml"
+        config_path.write_text(
+            'mode = "local"\nbase_url = "http://example.com/api/v1"\n'
+        )
+
+        store = ConfigStore(config_dir=config_dir)
+
+        data = store.load()
+        assert "mode" not in data
+        assert data["base_url"] == "http://example.com/api/v1"
+        assert "mode" not in config_path.read_text()
+
     def test_set_and_get(self, tmp_path: Path) -> None:
         store = ConfigStore(config_dir=tmp_path / "cfg")
         store.init()

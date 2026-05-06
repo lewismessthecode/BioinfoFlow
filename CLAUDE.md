@@ -41,18 +41,18 @@ uv run bif project list                        # List projects
 uv run bif -p proj run list                    # Scope to a project (-p / --project)
 uv run bif --output json run show r-abc        # JSON envelope on stdout
 uv run bif config use-project proj-123         # Set default project
-uv run bif config set mode local               # Validated; rejects unknown values
+uv run bif config set base_url http://localhost:8000/api/v1
 uv run bif config unset project_id             # Remove a setting
 uv run bif run cancel r-abc --force            # Confirm-by-default; -f skips
 uv run bif agent send "analyze samples" -p proj  # Prints conversation ID + resume hint
 uv run bif open run r-abc                      # Open a page in the browser ($BIOFLOW_WEB_URL)
 ```
 
-**Transports.** `bif` supports three modes: `remote` (HTTP to a running server), `local` (in-process ASGI, no server needed), `auto` (tries remote, falls back to local). Set with `--mode` or `BIOFLOW_MODE`.
+**Backend target.** `bif` is an HTTP-only client for a running backend. Start `uvicorn app.main:app` locally, or select another API with `--base-url` / `BIOFLOW_API_URL`.
 
-**Output contract.** `--output human` (default) renders Rich tables/panels on stdout. `--output json` (or `BIOFLOW_OUTPUT=json`) emits a `{success, data, error?, meta?}` envelope on **stdout**, and any error — including `ConnectionFailed` and `BadParameter` — as a parseable `{success:false, error:{code,message,...}}` envelope on **stderr**. Streaming commands (`run watch`, `events stream`, `run logs --follow`) emit NDJSON.
+**Output contract.** `--output human` (default) renders Rich tables/panels on stdout. `--output json` (or `BIOFLOW_OUTPUT=json`) emits a `{success, data, error?, meta?}` envelope on **stdout**, and CLI-handled runtime errors such as `ConnectionFailed` as a parseable `{success:false, error:{code,message,...}}` envelope on **stderr**. Click usage errors (`BadParameter`, `UsageError`) keep Click's standard usage rendering and exit code 2. Streaming commands (`run watch`, `events stream`, `run logs --follow`) emit NDJSON.
 
-**Standard flags** (root): `-V/--version`, `-h/--help`, `-p/--project`, `-q/--quiet`, `-v/--verbose`, `--no-color` (also honors `NO_COLOR`), `--mode`, `--base-url`, `--output`. Resolution order for every overridable setting: CLI flag → env var (`BIOFLOW_*`) → `~/.config/bioinfoflow/cli.toml` → built-in default.
+**Standard flags** (root): `-V/--version`, `-h/--help`, `-p/--project`, `-q/--quiet`, `-v/--verbose`, `--no-color` (also honors `NO_COLOR`), `--base-url`, `--output`. Resolution order for every overridable setting: CLI flag → env var (`BIOFLOW_API_URL`, `BIOFLOW_PROJECT`, `BIOFLOW_OUTPUT`, `BIOFLOW_WEB_URL`) → `~/.config/bioinfoflow/cli.toml` → built-in default.
 
 **Exit codes.** `0` ok · `1` general · `2` bad usage / spec / Click `BadParameter` · `3` backend/API error · `4` connection failure.
 
@@ -70,7 +70,7 @@ Full setup: `docs/operations/runbook.md`. Minimum: `cp backend/.env.example back
 - **`backend/app/services/run_service.py`** — RunService is a facade that delegates to `RunSubmissionService` (wizard/table/unified run creation), `RunDagService` (DAG repair + mock variants), `RunLifecycleService` (state transitions), and `RunDispatchService` (engine dispatch). All callers import from `run_service.py` — never import the sub-services directly.
 - **`backend/app/scheduler/`** — Persistent run scheduler with priority queue, retry policies, resource monitoring (CPU/mem/disk/GPU), and completion hooks. Modes: `persistent` (default), `legacy`, `local`. API: `/scheduler/status`, `/scheduler/resources`.
 - **`backend/app/engine/`** — Workflow execution via adapter pattern. `EngineAdapter` interface with Nextflow and WDL adapters. `LocalBackend` for execution, `SchemaExtractor` for workflow parameter discovery.
-- **`backend/app/cli/`** — `bif` CLI (Typer + Rich). Three transport modes (`RemoteTransport`, `LocalTransport`, `AutoTransport`). Commands for projects, workflows, runs (incl. `outputs`, `batch`), agent (incl. `approvals`), files, events, system, doctor, config. `errors.handle_errors` is the standard command decorator: it closes the API client, emits a JSON envelope on stderr in `--output json` mode, and re-raises Click `BadParameter`/`UsageError` so usage errors keep exit code 2.
+- **`backend/app/cli/`** — `bif` CLI (Typer + Rich). HTTP-only transport via `RemoteTransport`. Commands for projects, workflows, runs (incl. `outputs`, `batch`), agent (incl. `approvals`), files, events, system, doctor, config. `errors.handle_errors` is the standard command decorator: it closes the API client, emits a JSON envelope on stderr in `--output json` mode, and re-raises Click `BadParameter`/`UsageError` so usage errors keep exit code 2.
 - **`frontend/`** — Next.js 16 App Router, React 19, React Flow DAG visualization, Radix UI + Tailwind CSS 4. Auth via Better Auth. i18n via next-intl (en, zh-CN).
 - **Communication:** REST for CRUD, SSE (`EventBus`) for long-running operations (agent, runs, image pulls), WebSocket for terminal sessions (`/terminal/sessions/{id}/ws`).
 - **Database:** SQLite via async SQLAlchemy (`aiosqlite`). ORM models in `models/`, repositories in `repositories/`, schemas in `schemas/`, migrations via Alembic.
@@ -125,7 +125,7 @@ Three contracts govern workflow execution. Violating any of them produces silent
 - Frontend tests: `renderAppPage` returns per-test state — never store `appTestState` in a shared variable across tests (causes flaky failures).
 - Scheduler config: 10+ env vars (`SCHEDULER_*`) — check `backend/app/config.py` lines 67-76 for all options.
 - Backend test DB: each test gets its own in-memory SQLite — no shared state, no cleanup needed.
-- CLI `LocalTransport` enters the full FastAPI lifespan (DB init, scheduler) — useful for testing but heavier than `RemoteTransport`.
+- `bif` is an HTTP-only client; start the backend or use `--base-url` / `BIOFLOW_API_URL` for non-default API targets.
 - **CLI `handle_errors` and Click exceptions.** The decorator's catch-all `except Exception` would swallow `typer.BadParameter` / `click.UsageError` and downgrade them to `[UNEXPECTED]` exit-1. They are explicitly re-raised so Click can render the standard usage error with exit code 2 — keep this branch when adding new exception handling.
 - Services must delegate DB queries to repositories — never use `session.execute()` directly in service code. This was enforced in the 2026-04-04 prune.
 - Frontend uses Better Auth (v1.4.17) for authentication — config in `frontend/lib/auth.ts` and `auth-config.ts`.
