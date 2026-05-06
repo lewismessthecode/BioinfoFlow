@@ -56,6 +56,33 @@ class TestDoctorHuman:
         assert result.exit_code == 0
         assert "Issues detected" in result.stdout
 
+    def test_skipped_checks_are_reported_separately(self, runner: CliRunner) -> None:
+        with patch("app.cli.commands.doctor._run_checks") as mock_checks:
+            mock_checks.return_value = {
+                "backend": {
+                    "ok": False,
+                    "status": "fail",
+                    "detail": "Cannot connect to backend",
+                    "hint": "Start backend: uv run uvicorn app.main:app --reload --port 8000",
+                },
+                "scheduler": {
+                    "ok": True,
+                    "status": "skip",
+                    "detail": "requires backend",
+                },
+                "gpu": {
+                    "ok": True,
+                    "status": "skip",
+                    "detail": "requires backend",
+                },
+                "nextflow": {"ok": True, "status": "pass", "detail": "/usr/bin/nextflow"},
+            }
+            result = runner.invoke(app, ["doctor"])
+        assert result.exit_code == 0
+        assert "skip" in result.stdout
+        assert "Skipped checks: scheduler, gpu" in result.stdout
+        assert "Start backend: uv run uvicorn" in result.stdout
+
     def test_json_output(self, runner: CliRunner) -> None:
         with patch("app.cli.commands.doctor._run_checks") as mock_checks:
             mock_checks.return_value = {
@@ -120,9 +147,12 @@ class TestRunChecks:
         with patch("shutil.which", return_value=None):
             results = await _run_checks(ctx)
         assert results["backend"]["ok"] is False
+        assert results["backend"]["status"] == "fail"
         assert "Cannot connect" in results["backend"]["detail"]
+        assert "uv run uvicorn app.main:app --reload --port 8000" in results["backend"]["hint"]
         assert results["scheduler"]["ok"] is True
-        assert results["scheduler"]["detail"] == "skipped (backend unavailable)"
+        assert results["scheduler"]["status"] == "skip"
+        assert results["scheduler"]["detail"] == "requires backend"
 
     @pytest.mark.asyncio
     async def test_backend_api_error(self) -> None:
@@ -147,9 +177,11 @@ class TestRunChecks:
         with patch("shutil.which", return_value=None):
             results = await _run_checks(ctx)
         assert results["backend"]["ok"] is False
+        assert results["backend"]["status"] == "fail"
         assert "broken" in results["backend"]["detail"]
         assert results["scheduler"]["ok"] is True
-        assert results["scheduler"]["detail"] == "skipped (backend unavailable)"
+        assert results["scheduler"]["status"] == "skip"
+        assert results["scheduler"]["detail"] == "requires backend"
 
     @pytest.mark.asyncio
     async def test_scheduler_connection_failed(self) -> None:

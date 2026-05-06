@@ -1,0 +1,16 @@
+{
+  "pipeline": "nf-core/rnaseq",
+  "revision": "3.24.0",
+  "profile": "test,docker",
+  "input": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/samplesheet_test.local.csv",
+  "fasta": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/reference/genome.fasta",
+  "gtf": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/reference/genes_with_empty_tid.gtf.gz",
+  "gff": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/reference/genes.gff.gz",
+  "transcript_fasta": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/reference/transcriptome.fasta",
+  "additional_fasta": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/reference/gfp.fa.gz",
+  "bbsplit_fasta_list": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/reference/bbsplit_fasta_list.txt",
+  "hisat2_index": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/reference/hisat2.tar.gz",
+  "salmon_index": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/reference/salmon.tar.gz",
+  "kraken_db": "demo/nfcore-rnaseq/runs/direct-test-docker/testdata/reference/kraken2.tar.gz",
+  "outdir": "demo/nfcore-rnaseq/runs/direct-test-docker/results"
+}

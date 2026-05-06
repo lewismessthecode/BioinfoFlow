@@ -15,6 +15,18 @@ from app.cli.types import ApiError, ConnectionFailed
 
 doctor_help = "Check backend health, scheduler, GPU, and local tool availability."
 
+_START_BACKEND_HINT = (
+    "Start backend: uv run uvicorn app.main:app --reload --port 8000 "
+    "(from backend/), or set --base-url / BIOFLOW_API_URL."
+)
+
+_STATUS_STYLES = {
+    "pass": "[green]pass[/green]",
+    "fail": "[red]fail[/red]",
+    "warn": "[yellow]warn[/yellow]",
+    "skip": "[dim]skip[/dim]",
+}
+
 
 @handle_errors
 def doctor(ctx: typer.Context) -> None:
@@ -32,17 +44,26 @@ def doctor(ctx: typer.Context) -> None:
     t.add_column("Details")
 
     for name, info in checks.items():
-        status = "[green]pass[/green]" if info["ok"] else "[red]fail[/red]"
-        t.add_row(name, status, info.get("detail", ""))
+        status = _check_status(info)
+        detail = str(info.get("detail", ""))
+        if info.get("hint"):
+            detail = f"{detail}\n[dim]{info['hint']}[/dim]"
+        t.add_row(name, _STATUS_STYLES.get(status, status), detail)
 
     cli_ctx.console.print(t)
 
-    fails = [n for n, i in checks.items() if not i["ok"]]
+    fails = [n for n, i in checks.items() if _check_status(i) == "fail"]
+    warnings = [n for n, i in checks.items() if _check_status(i) == "warn"]
+    skipped = [n for n, i in checks.items() if _check_status(i) == "skip"]
     if fails:
         cli_ctx.console.print(
             f"\n[yellow]Issues detected in: {', '.join(fails)}[/yellow]"
         )
-    else:
+    if warnings:
+        cli_ctx.console.print(f"[yellow]Warnings: {', '.join(warnings)}[/yellow]")
+    if skipped:
+        cli_ctx.console.print(f"[dim]Skipped checks: {', '.join(skipped)}[/dim]")
+    if not fails and not warnings:
         cli_ctx.console.print("\n[green]All checks passed.[/green]")
 
 
@@ -55,32 +76,38 @@ async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
         resp = await cli_ctx.client.get("/system/health")
         data = resp.data or {}
         backend_available = True
-        results["backend"] = {
-            "ok": True,
-            "detail": data.get("status", "healthy"),
-        }
+        results["backend"] = _result("pass", data.get("status", "healthy"))
     except ConnectionFailed:
-        results["backend"] = {"ok": False, "detail": "Cannot connect to backend"}
+        results["backend"] = _result(
+            "fail",
+            "Cannot connect to backend",
+            hint=_START_BACKEND_HINT,
+        )
     except ApiError as exc:
-        results["backend"] = {"ok": False, "detail": exc.message}
+        results["backend"] = _result(
+            "fail",
+            exc.message,
+            hint="Check backend logs, then re-run doctor.",
+        )
 
     # Scheduler
     if backend_available:
         try:
             resp = await cli_ctx.client.get("/scheduler/status")
             data = resp.data or {}
-            results["scheduler"] = {
-                "ok": True,
-                "detail": f"mode={data.get('mode', '?')}, queue={data.get('queue_depth', '?')}",
-            }
+            results["scheduler"] = _result(
+                "pass",
+                f"mode={data.get('mode', '?')}, queue={data.get('queue_depth', '?')}",
+            )
         except (ConnectionFailed, ApiError) as exc:
             detail = "not reachable" if isinstance(exc, ConnectionFailed) else exc.message
-            results["scheduler"] = {"ok": False, "detail": detail}
+            results["scheduler"] = _result(
+                "fail",
+                detail,
+                hint="Check backend scheduler logs and /scheduler/status.",
+            )
     else:
-        results["scheduler"] = {
-            "ok": True,
-            "detail": "skipped (backend unavailable)",
-        }
+        results["scheduler"] = _result("skip", "requires backend")
 
     # GPU
     if backend_available:
@@ -88,21 +115,51 @@ async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
             resp = await cli_ctx.client.get("/system/gpu")
             data = resp.data or {}
             available = data.get("available", False)
-            results["gpu"] = {
-                "ok": True,
-                "detail": "available" if available else "not detected",
-            }
-        except (ConnectionFailed, ApiError):
-            results["gpu"] = {"ok": True, "detail": "skipped (backend unavailable)"}
+            results["gpu"] = _result(
+                "pass" if available else "warn",
+                "available" if available else "not detected",
+            )
+        except (ConnectionFailed, ApiError) as exc:
+            detail = "not reachable" if isinstance(exc, ConnectionFailed) else exc.message
+            results["gpu"] = _result("warn", detail)
     else:
-        results["gpu"] = {"ok": True, "detail": "skipped (backend unavailable)"}
+        results["gpu"] = _result("skip", "requires backend")
 
     # Local binaries
     for binary in ["nextflow", "miniwdl", "docker"]:
         path = shutil.which(binary)
-        results[binary] = {
-            "ok": path is not None,
-            "detail": path or "not found in PATH",
-        }
+        results[binary] = _result(
+            "pass" if path is not None else "fail",
+            path or "not found in PATH",
+            hint=None if path is not None else _binary_hint(binary),
+        )
 
     return results
+
+
+def _check_status(info: dict[str, Any]) -> str:
+    status = str(info.get("status") or "").lower()
+    if status:
+        return status
+    return "pass" if info.get("ok") else "fail"
+
+
+def _result(status: str, detail: str, *, hint: str | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": status not in {"fail"},
+        "status": status,
+        "detail": detail,
+    }
+    if hint:
+        result["hint"] = hint
+    return result
+
+
+def _binary_hint(binary: str) -> str:
+    if binary == "nextflow":
+        return "Install Nextflow or add it to PATH before starting the backend."
+    if binary == "miniwdl":
+        return "Run uv sync from backend/ so miniwdl is installed in the project environment."
+    if binary == "docker":
+        return "Install Docker Desktop or add the docker CLI to PATH."
+    return f"Install {binary} or add it to PATH."

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Bioinfoflow discussions
+    url: https://github.com/lewisliu/bioinfoflow/discussions
+    about: Ask usage questions or share longer design notes.

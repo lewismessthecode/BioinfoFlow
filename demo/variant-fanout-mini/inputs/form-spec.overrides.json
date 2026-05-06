@@ -1,6 +1,0 @@
-{
-  "samples_tsv": {
-    "allow_roots": ["project_data", "shared_data"],
-    "materialize_to_run": true
-  }
-}

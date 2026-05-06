@@ -109,6 +109,7 @@ data/
 /docs/*
 /docs/_legacy/
 !/docs/README.md
+!/docs/architecture.md
 !/docs/getting-started/
 !/docs/getting-started/**
 !/docs/concepts/
@@ -123,6 +124,7 @@ data/
 !/docs/plans/
 /docs/plans/*
 !/docs/plans/2026-05-06-readme-docs-refresh.md
+!/docs/plans/2026-05-06-nfcore-rnaseq-launch-demo.md
 docs/course-bioinfoflow-zh.html
 .gstack/
 .zsh_history
@@ -133,6 +135,7 @@ docs/course-bioinfoflow-zh.html
 
 # --- Run output directories (created by scheduler) ---
 **/runs/run_*/
+demo/nfcore-rnaseq/runs/
 
 # --- Runtime project data ---
 projects/

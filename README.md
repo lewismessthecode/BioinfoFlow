@@ -85,6 +85,22 @@ Notes:
 
 More setup detail: [Docker Quick Start](docs/getting-started/docker.md) and [Runbook](RUNBOOK.md).
 
+## Canonical Demo
+
+The public end-to-end demo is [nf-core/rnaseq](demo/nfcore-rnaseq/README.md).
+It runs the real upstream `nf-core/rnaseq` pipeline pinned to `3.24.0` with the
+official `test,docker` profile, so new users can validate Bioinfoflow without
+checking large FASTQ files into this repo.
+
+Direct smoke test:
+
+```bash
+demo/nfcore-rnaseq/run-direct.sh
+```
+
+Then register the same pinned workflow in Bioinfoflow and submit it from the UI
+to verify logs, DAG progress, and outputs through the product path.
+
 ## Local Development
 
 Backend:
@@ -122,5 +138,5 @@ The backend and frontend both read the repo-root `.env` by default. Use `backend
 - [Storage And Data Layout](docs/concepts/storage.md)
 - [Parabricks WGS Workflows](docs/workflows/parabricks-wgs.md)
 - [CLI Reference](docs/reference/cli.md)
-- [Architecture](docs/reference/architecture.md)
+- [Architecture](docs/architecture.md)
 - [Security Notes](docs/security.md)

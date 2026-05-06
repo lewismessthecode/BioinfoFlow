@@ -1,5 +1,0 @@
-{
-  "samplesheet": "demo/rnaseq-quant-mini/data/does_not_exist.csv",
-  "outdir": "results/rnaseq-quant-mini",
-  "genome": "GRCh38"
-}
