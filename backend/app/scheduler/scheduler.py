@@ -131,6 +131,12 @@ class RunScheduler:
             return existing
         depth = await self._queue.depth()
         if depth >= self.config.max_queue_depth:
+            logger.warning(
+                "scheduler.queue.full",
+                run_id=run_id,
+                depth=depth,
+                max_queue_depth=self.config.max_queue_depth,
+            )
             raise QueueFullError("run scheduler queue is full")
         max_attempts = 1
         weight = 1
@@ -216,9 +222,11 @@ class RunScheduler:
         stale_task_count = await self._recover_stale_tasks()
         orphan_run_count = await self._recover_orphan_runs()
         used = await self._compute_used_slots()
+        dispatched_count = await self._compute_dispatched_task_count()
         self._slots.sync_from_db(used)
         logger.info(
             "scheduler.slots.recovered",
+            dispatched_count=dispatched_count,
             total=self._slots.total,
             used=self._slots.used,
             available=self._slots.available,
@@ -230,6 +238,17 @@ class RunScheduler:
         try:
             async with self._session_factory() as session:
                 stmt = select(func.coalesce(func.sum(ScheduledTask.weight), 0)).where(
+                    ScheduledTask.state == TaskState.DISPATCHED.value
+                )
+                return int(await session.scalar(stmt) or 0)
+        except OperationalError:
+            return 0
+
+    async def _compute_dispatched_task_count(self) -> int:
+        """Count DISPATCHED task rows in DB."""
+        try:
+            async with self._session_factory() as session:
+                stmt = select(func.count()).select_from(ScheduledTask).where(
                     ScheduledTask.state == TaskState.DISPATCHED.value
                 )
                 return int(await session.scalar(stmt) or 0)
@@ -373,6 +392,15 @@ class RunScheduler:
             "total_slots": self._slots.total,
             "used_slots": self._slots.used,
             "available_slots": self._slots.available,
+            "config": {
+                "total_slots": self.config.effective_total_slots(),
+                "max_workers": self.config.effective_max_workers(),
+                "max_queue_depth": self.config.max_queue_depth,
+                "poll_interval_seconds": self.config.poll_interval_seconds,
+                "stale_timeout_minutes": self.config.stale_timeout_minutes,
+                "worker_heartbeat_grace_seconds": self.config.worker_heartbeat_grace_seconds,
+                "resource_check_enabled": self.config.resource_check_enabled,
+            },
             "active_runs": [
                 {"run_id": run_id, "weight": weight} for run_id, weight in dispatched
             ],
@@ -408,14 +436,36 @@ class RunScheduler:
                 # pick it up on the next poll.
                 if not self._slots.try_acquire(task.weight):
                     await self._queue.re_enqueue(task.id, attempt=task.attempt)
+                    logger.info(
+                        "scheduler.slot.race_re_enqueued",
+                        task_id=task.id,
+                        weight=task.weight,
+                        available=self._slots.available,
+                    )
                     await asyncio.sleep(self.config.poll_interval_seconds)
                     continue
+                logger.debug(
+                    "scheduler.slot.acquired",
+                    worker_id=worker_id,
+                    task_id=task.id,
+                    weight=task.weight,
+                    used=self._slots.used,
+                    available=self._slots.available,
+                )
                 try:
                     await self._execute_run_id(
                         task.run_id, task_id=task.id, worker_id=worker_id
                     )
                 finally:
                     self._slots.release(task.weight)
+                    logger.debug(
+                        "scheduler.slot.released",
+                        worker_id=worker_id,
+                        task_id=task.id,
+                        weight=task.weight,
+                        used=self._slots.used,
+                        available=self._slots.available,
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001

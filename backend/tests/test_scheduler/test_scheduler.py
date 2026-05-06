@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -112,6 +113,74 @@ async def test_scheduler_enqueue_rejects_when_queue_is_full(db_session):
 
     with pytest.raises(QueueFullError):
         await scheduler.enqueue(second.run_id)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_enqueue_logs_warning_when_queue_is_full(
+    db_session, caplog
+):
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    first = await _seed_run(db_session)
+    second = await _seed_run(db_session)
+    baseline_depth = await queue.depth()
+    scheduler = RunScheduler(
+        config=SchedulerConfig(
+            max_queue_depth=baseline_depth + 1,
+            poll_interval_seconds=0.01,
+        ),
+        backend=FakeBackend(),
+        session_factory=session_factory,
+        queue=queue,
+    )
+
+    await scheduler.enqueue(first.run_id)
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(QueueFullError):
+            await scheduler.enqueue(second.run_id)
+
+    assert "scheduler.queue.full" in caplog.text
+    assert second.run_id in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_scheduler_status_payload_includes_config_block(db_session):
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    scheduler = RunScheduler(
+        config=SchedulerConfig(
+            total_slots=7,
+            max_workers=3,
+            max_queue_depth=17,
+            poll_interval_seconds=0.25,
+            stale_timeout_minutes=9,
+            worker_heartbeat_grace_seconds=11,
+            resource_check_enabled=True,
+        ),
+        backend=FakeBackend(),
+        session_factory=session_factory,
+        queue=TaskQueue(session_factory=session_factory),
+    )
+
+    status = await scheduler.get_status()
+
+    assert status["config"] == {
+        "total_slots": 7,
+        "max_workers": 3,
+        "max_queue_depth": 17,
+        "poll_interval_seconds": 0.25,
+        "stale_timeout_minutes": 9,
+        "worker_heartbeat_grace_seconds": 11,
+        "resource_check_enabled": True,
+    }
 
 
 @pytest.mark.asyncio
