@@ -55,7 +55,11 @@ class Settings(BaseSettings):
     @field_validator("agent_hermes_home", mode="before")
     @classmethod
     def normalize_hermes_home(cls, value: Any) -> str:
-        raw = value if value is not None and str(value).strip() else "~/.bioinfoflow/hermes"
+        raw = (
+            value
+            if value is not None and str(value).strip()
+            else "~/.bioinfoflow/hermes"
+        )
         path = Path(str(raw).strip()).expanduser()
         if not path.is_absolute():
             path = (Path(__file__).resolve().parents[1] / path).resolve()

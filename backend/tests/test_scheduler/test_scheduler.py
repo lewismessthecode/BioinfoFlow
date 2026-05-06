@@ -117,9 +117,7 @@ async def test_scheduler_enqueue_rejects_when_queue_is_full(db_session):
 
 
 @pytest.mark.asyncio
-async def test_scheduler_enqueue_logs_warning_when_queue_is_full(
-    db_session, caplog
-):
+async def test_scheduler_enqueue_logs_warning_when_queue_is_full(db_session, caplog):
     session_factory = async_sessionmaker(
         bind=db_session.bind,
         expire_on_commit=False,
@@ -572,7 +570,9 @@ async def test_scheduler_worker_survives_execute_task_exception(
         call_count += 1
         if call_count == 1:
             raise RuntimeError("Simulated worker crash")
-        return await original_execute_run_id(self, run_id, task_id=task_id, worker_id=worker_id)
+        return await original_execute_run_id(
+            self, run_id, task_id=task_id, worker_id=worker_id
+        )
 
     monkeypatch.setattr(RunScheduler, "_execute_run_id", crashing_then_normal)
 
@@ -640,7 +640,9 @@ async def test_scheduler_releases_slot_when_execute_raises(db_session, monkeypat
     )
     queue = TaskQueue(session_factory=session_factory)
     scheduler = RunScheduler(
-        config=SchedulerConfig(total_slots=2, max_workers=1, poll_interval_seconds=0.01),
+        config=SchedulerConfig(
+            total_slots=2, max_workers=1, poll_interval_seconds=0.01
+        ),
         backend=FakeBackend(),
         session_factory=session_factory,
         queue=queue,

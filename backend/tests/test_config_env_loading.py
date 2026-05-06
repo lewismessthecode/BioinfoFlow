@@ -47,15 +47,12 @@ def test_shell_env_has_highest_precedence(tmp_path, monkeypatch):
     assert settings.bioinfoflow_home == str(shell_home)
 
 
-def test_scheduler_worker_heartbeat_grace_seconds_binds_from_env(
-    tmp_path, monkeypatch
-):
+def test_scheduler_worker_heartbeat_grace_seconds_binds_from_env(tmp_path, monkeypatch):
     root_home = (tmp_path / "root-home").resolve()
     root_env = tmp_path / "root.env"
     backend_env = tmp_path / "backend.env"
     root_env.write_text(
-        f"BIOINFOFLOW_HOME={root_home}\n"
-        "SCHEDULER_WORKER_HEARTBEAT_GRACE_SECONDS=5\n",
+        f"BIOINFOFLOW_HOME={root_home}\nSCHEDULER_WORKER_HEARTBEAT_GRACE_SECONDS=5\n",
         encoding="utf-8",
     )
     backend_env.write_text("", encoding="utf-8")
@@ -66,7 +63,4 @@ def test_scheduler_worker_heartbeat_grace_seconds_binds_from_env(
     settings = Settings(_env_file=(root_env, backend_env))
 
     assert settings.scheduler_worker_heartbeat_grace_seconds == 5
-    assert (
-        SchedulerConfig.from_settings(settings).worker_heartbeat_grace_seconds
-        == 5
-    )
+    assert SchedulerConfig.from_settings(settings).worker_heartbeat_grace_seconds == 5

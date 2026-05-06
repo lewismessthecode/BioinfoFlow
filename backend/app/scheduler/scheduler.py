@@ -250,8 +250,10 @@ class RunScheduler:
         """Count DISPATCHED task rows in DB."""
         try:
             async with self._session_factory() as session:
-                stmt = select(func.count()).select_from(ScheduledTask).where(
-                    ScheduledTask.state == TaskState.DISPATCHED.value
+                stmt = (
+                    select(func.count())
+                    .select_from(ScheduledTask)
+                    .where(ScheduledTask.state == TaskState.DISPATCHED.value)
                 )
                 return int(await session.scalar(stmt) or 0)
         except OperationalError:
@@ -312,9 +314,7 @@ class RunScheduler:
                             Run.started_at.is_not(None),
                             Run.started_at <= stale_cutoff,
                         ),
-                        and_(
-                            Run.started_at.is_(None), Run.created_at <= stale_cutoff
-                        ),
+                        and_(Run.started_at.is_(None), Run.created_at <= stale_cutoff),
                         and_(
                             Run.status == RunStatus.RUNNING.value,
                             Run.last_heartbeat_at.is_not(None),

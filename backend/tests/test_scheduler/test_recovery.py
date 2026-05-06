@@ -32,7 +32,10 @@ class NoopBackend:
 @pytest.mark.asyncio
 async def test_scheduler_recover_marks_stale_dispatched_tasks_failed(db_session):
     project = Project(
-        name=f"Recovery Project {uuid4()}", storage_mode="managed", external_root_path=None, user_id="dev"
+        name=f"Recovery Project {uuid4()}",
+        storage_mode="managed",
+        external_root_path=None,
+        user_id="dev",
     )
     workflow = Workflow(
         name=f"wf-{uuid4()}",
@@ -136,8 +139,7 @@ async def test_scheduler_recover_uses_configured_worker_heartbeat_grace(
     root_env = tmp_path / "root.env"
     backend_env = tmp_path / "backend.env"
     root_env.write_text(
-        f"BIOINFOFLOW_HOME={root_home}\n"
-        "SCHEDULER_WORKER_HEARTBEAT_GRACE_SECONDS=5\n",
+        f"BIOINFOFLOW_HOME={root_home}\nSCHEDULER_WORKER_HEARTBEAT_GRACE_SECONDS=5\n",
         encoding="utf-8",
     )
     backend_env.write_text("", encoding="utf-8")
