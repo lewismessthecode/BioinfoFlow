@@ -48,20 +48,26 @@ For almost everyone, this is enough:
 cp .env.example .env
 ```
 
-Then set at least:
+For local Docker, leave `BIOINFOFLOW_HOME` unset unless you want the data root outside this repo. Then set at least:
 
 ```env
 ANTHROPIC_API_KEY=...
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
+BETTER_AUTH_SECRET=<long-random-secret>
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 BETTER_AUTH_URL=http://localhost:3000
+```
+
+Optional data-root override:
+
+```env
+BIOINFOFLOW_HOME=/absolute/path/to/bioinfoflow-data
 ```
 
 For any shared or production deployment, also set:
 
 ```env
-BETTER_AUTH_SECRET=<long-random-secret>
 TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP_OR_DOMAIN"]
 ```
 
@@ -74,12 +80,13 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP_OR_DOMAIN"]
   - `ANTHROPIC_API_KEY`
   - or `OPENAI_API_KEY`
   - or `GEMINI_API_KEY`
+  - or `DEEPSEEK_API_KEY`
 
 ### First run
 
 ```bash
 cp .env.example .env
-mkdir -p data/state data/projects data/sources/deliveries data/sources/reference
+# edit .env: provider key, owner credentials, BETTER_AUTH_SECRET
 docker compose up -d --build
 ```
 
@@ -103,7 +110,8 @@ docker compose up -d --build
 ```
 
 - `BIOINFOFLOW_HOME` is identity-mounted into the same absolute path on host and in containers.
-- If you do nothing, Docker defaults to `/srv/bioinfoflow`.
+- If you leave `BIOINFOFLOW_HOME` unset, Docker Compose defaults to this repo's `data/` directory.
+- The backend creates the required platform subdirectories on startup.
 
 ## 3. Local Development
 

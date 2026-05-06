@@ -9,67 +9,52 @@ It is built for teams that want modern product ergonomics for local and lab-serv
 ## Product Preview
 
 <p align="center">
-  <img src="assets/product-preview.gif" alt="Bioinfoflow — register a workflow, pick inputs, submit a run, and watch the live DAG" width="100%">
+  <img src="assets/product-preview.gif" alt="Bioinfoflow - register a workflow, pick inputs, submit a run, and watch the live DAG" width="100%">
 </p>
-
-<p align="center">
-  <a href="assets/product-preview.mp4">Watch in higher quality (MP4) →</a>
-</p>
-
-## Why It Exists
-
-Bioinformatics has a few bad defaults:
-
-- Cloud platforms are polished, but expensive, opinionated, and not always the right first stop for regulated or sensitive data.
-- Raw CLI workflows are flexible, but every lab rebuilds the same wrapper scripts, run tracking, and conventions — privately, so the wins never compound across the field.
-- Traditional bioinformatics portals often inherit the gap between life science and software: confusing UI, dated UX, hard-to-learn screens, and workflows that feel designed around infrastructure instead of users.
-- Internal lab platforms stay closed, get rewritten every couple of years, and never accumulate the shared wisdom an open project can.
-
-Bioinfoflow starts as the local operating layer between those worlds. It keeps standard workflow engines, Docker, and your filesystem, then adds the product surface teams expect: projects, runs, scheduler, live DAGs, file picking, audit trails, CLI automation, and an agent that can reason across the workspace. Open by default, so improvements compound.
 
 ## What You Can Do
 
-- Run existing **Nextflow** and **WDL/MiniWDL** workflows from one UI.
-- Keep data local under a single `BIOINFOFLOW_HOME`.
-- Manage projects, workflow registrations, run inputs, outputs, logs, and status.
-- Monitor long-running jobs with live task updates, DAG visualization, and scheduler state.
+- Run existing Nextflow and WDL/MiniWDL workflows from one UI.
+- Keep project data, shared inputs, references, run outputs, and state under one `BIOINFOFLOW_HOME`.
+- Monitor long-running jobs with live task updates, DAG visualization, scheduler state, logs, and outputs.
 - Use the `bif` CLI for scripting, JSON output, and remote/local automation.
-- **Run GPU-accelerated WGS analysis with NVIDIA Parabricks on your own workstation or lab server, including personal-genome workflows when your hardware supports it.**
-- Deploy to a trusted Linux workstation or lab GPU server without copying source code to it.
+- Run GPU-oriented workflows, including the included NVIDIA Parabricks WGS examples, on a trusted workstation or lab server.
 
 ## Quick Start
 
 Prerequisites:
 
 - Docker Engine or Docker Desktop with Compose
-- One AI provider key: Anthropic, OpenAI, Gemini, or DeepSeek
+- One AI provider key, such as Anthropic, OpenAI, Gemini, or DeepSeek
+
+Create your local environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and set at least:
+Edit `.env` and set:
 
 ```env
+# Optional for local Docker.
+# If unset, Docker Compose uses this repo's ./data directory.
+# Set an absolute path only when you want the data root somewhere else.
+# BIOINFOFLOW_HOME=/absolute/path/to/bioinfoflow-data
+
+# Set at least one provider key.
 ANTHROPIC_API_KEY=...
+# OPENAI_API_KEY=...
+# GEMINI_API_KEY=...
+# DEEPSEEK_API_KEY=...
+
+# First local owner account.
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 ```
 
-Examples:
-
-```env
-# Local Docker default if unset:
-# BIOINFOFLOW_HOME=${PWD}/data
-BIOINFOFLOW_HOME=/srv/bioinfoflow
-BIOINFOFLOW_HOME=/Users/<you>/bioinfoflow-data
-BIOINFOFLOW_HOME=/lustre/<you>/bioinfoflow
-```
-
-Create the data root and start the stack. For example, inside this repo you can use `data/`:
+Then start Bioinfoflow:
 
 ```bash
-mkdir -p data/state data/projects data/sources/deliveries data/sources/reference
 docker compose up -d --build
 ```
 
@@ -80,119 +65,14 @@ Open:
 
 Sign in with `AUTH_BOOTSTRAP_OWNER_EMAIL` and `AUTH_BOOTSTRAP_OWNER_PASSWORD`.
 
-Full setup and troubleshooting: [`RUNBOOK.md`](RUNBOOK.md)
+Notes:
 
-## Core Concepts
+- For local Docker, leaving `BIOINFOFLOW_HOME` unset is the simplest path. Compose mounts this repo's `data/` directory at the same absolute path inside the containers.
+- The backend creates the platform directories under `BIOINFOFLOW_HOME` on startup.
+- If you set `BIOINFOFLOW_HOME`, use an absolute host path and keep the same path visible to containers.
+- For a shared or remote server, also set `BETTER_AUTH_SECRET`, `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` before building.
 
-### Where Your Files Go
-
-Think of `BIOINFOFLOW_HOME` as Bioinfoflow's workspace folder. It is just a normal directory on your machine or server. The app stores its database, project files, uploaded inputs, references, and run outputs under that one folder.
-
-On a personal machine, a typical layout looks like this:
-
-```text
-~/bioinfoflow-data/
-  projects/   # per-project files, manifests, run outputs
-  sources/    # shared input data and references
-  state/      # SQLite databases and runtime state
-```
-
-Set:
-
-```env
-BIOINFOFLOW_HOME=/Users/<you>/bioinfoflow-data
-```
-
-On a Linux server, the same idea usually becomes:
-
-```text
-/srv/bioinfoflow/
-  projects/
-  sources/
-  state/
-```
-
-Docker mounts that directory at the same absolute path inside the backend container. That means the host, backend, workflow runner, and task containers can all refer to the same FASTQ, BAM, VCF, reference, and output paths without translation.
-
-### How The UI Organizes Files
-
-The UI presents storage as three user-facing zones:
-
-| Zone | Use it for |
-| --- | --- |
-| Project Data | Files under `data/projects/...`: project-private manifests, helper files, run outputs |
-| Deliveries | Files under `data/sources/deliveries/...`: incoming FASTQ/BAM/VCF files from instruments or collaborators |
-| Reference Library | Files under `data/sources/reference/...`: shared FASTA, indexes, BED/GTF, known-sites VCFs |
-
-Typical flow:
-
-1. Copy raw sequencing files to `data/sources/deliveries/<batch-name>/`.
-2. Copy reusable references to `data/sources/reference/<genome-name>/`.
-3. Register or select a workflow.
-4. Use the run wizard to pick files instead of typing container paths.
-5. Submit and watch the run update live.
-
-Example:
-
-```bash
-mkdir -p data/sources/deliveries/hg002
-mkdir -p data/sources/reference/hg38
-
-cp /path/to/HG002_R1.fastq.gz data/sources/deliveries/hg002/
-cp /path/to/HG002_R2.fastq.gz data/sources/deliveries/hg002/
-cp /path/to/hg38.fa* data/sources/reference/hg38/
-```
-
-Then choose those files from `Deliveries` and `Reference Library` in the run wizard.
-
-## Included Parabricks WGS Workflows
-
-For GPU-accelerated whole-genome analysis, this repo includes NVIDIA Parabricks WGS FASTQ-to-VCF workflows pinned to Parabricks v4.7.0:
-
-- Nextflow: `demo/parabricks-wgs-v470/nextflow/main.nf`
-- WDL: `demo/parabricks-wgs-v470/wdl/wgs_fq_to_vcf.wdl`
-
-Both use:
-
-```text
-nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1
-```
-
-Input templates:
-
-- `demo/parabricks-wgs-v470/nextflow/params.example.json`
-- `demo/parabricks-wgs-v470/nextflow/samplesheet.example.csv`
-- `demo/parabricks-wgs-v470/wdl/inputs.example.json`
-
-Replace the FASTQ/reference paths with files visible on your GPU server, then register the workflows in Bioinfoflow to test registration, image handling, scheduling, GPU execution, and result collection.
-
-## CLI
-
-The `bif` CLI is built on Typer + Rich and follows POSIX conventions: `-h/--help`, `-V/--version`, short flags for common options, predictable exit codes, and a machine-readable JSON envelope.
-
-```bash
-cd backend
-uv sync
-uv run bif --version                       # bif 0.1.0
-uv run bif --help                          # also -h
-uv run bif doctor                          # backend, scheduler, GPU, local tools
-uv run bif project list
-uv run bif config use-project proj-123     # set default project
-uv run bif -p proj-123 run list            # -p / --project, also $BIOFLOW_PROJECT
-uv run bif --output json run show r-abc    # JSON envelope on stdout
-uv run bif run cancel r-abc --force        # confirm-by-default; -f skips
-uv run bif agent send "analyze samples"    # streams + prints conversation ID + resume hint
-```
-
-**Transports.** `--mode auto` (default), `remote`, or `local`. Remote talks HTTP to a running backend; local runs the FastAPI app in-process (no server needed); auto tries remote and falls back to local. Configure once via `bif config set mode local` or `BIOFLOW_MODE=local`.
-
-**Output.** `--output human` (default) renders Rich tables/panels; `--output json` emits `{success, data, error?, meta?}` envelopes on **stdout** (NDJSON for streaming commands) and JSON error envelopes on **stderr**. `NO_COLOR` and `--no-color` disable styling.
-
-**Exit codes.** `0` ok · `1` general · `2` bad usage · `3` backend error · `4` connection failure.
-
-**Config resolution.** CLI flag → environment variable (`BIOFLOW_MODE`, `BIOFLOW_API_URL`, `BIOFLOW_PROJECT`, `BIOFLOW_OUTPUT`) → `~/.config/bioinfoflow/cli.toml` (managed by `bif config init|set|get|unset|show|use-project`) → built-in default.
-
-Run `uv run bif --help` and `uv run bif <command> --help` for the full command tree.
+More setup detail: [Docker Quick Start](docs/getting-started/docker.md) and [Runbook](RUNBOOK.md).
 
 ## Local Development
 
@@ -222,33 +102,14 @@ cd frontend && bun run lint
 cd frontend && bun run test
 ```
 
-## Architecture
+The backend and frontend both read the repo-root `.env` by default. Use `backend/.env` or `frontend/.env.local` only for machine-local overrides.
 
-- Backend: FastAPI, async SQLAlchemy, SQLite, Alembic, Typer CLI
-- Frontend: Next.js 16, React 19, Radix UI, Tailwind CSS 4, React Flow
-- Engines: Nextflow and WDL/MiniWDL adapters
-- Scheduler: persistent queue with resource accounting, retries, timeouts, cleanup, and completion hooks
-- Realtime: SSE for runs and agent events, WebSocket for terminal sessions
-- Agent runtime: async tool dispatch loop with project/workflow context
+## Bioinfoflow Docs
 
-## Security Notes
-
-- Mounting `/var/run/docker.sock` gives the backend container access to the host Docker daemon. Deploy only on trusted machines and trusted networks.
-- Use a strong `BETTER_AUTH_SECRET` for any shared server.
-- Set `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` to the exact public origin/host before remote use.
-- Keep `.env` private. Use `.env.example` as the shareable template.
-
-## Ship Checks
-
-Before publishing or demoing to real users:
-
-- Start from a fresh `.env` and confirm Docker Compose starts both services.
-- Confirm owner login works.
-- Run at least one Nextflow or WDL workflow end to end.
-- For remote deployments, make sure `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` use the server origin, not localhost.
-- For GPU demos, verify `nvidia-smi` and Docker GPU access on the server.
-- Confirm no secrets are tracked with `git ls-files | rg '(^|/)\\.env$|secret|token|credential' || true`.
-
-## License
-
-MIT. See [`LICENSE`](LICENSE).
+- [Docs Home](docs/README.md)
+- [Docker Quick Start](docs/getting-started/docker.md)
+- [Storage And Data Layout](docs/concepts/storage.md)
+- [Parabricks WGS Workflows](docs/workflows/parabricks-wgs.md)
+- [CLI Reference](docs/reference/cli.md)
+- [Architecture](docs/reference/architecture.md)
+- [Security Notes](docs/security.md)

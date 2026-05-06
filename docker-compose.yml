@@ -7,8 +7,8 @@
 # Default is ${PWD}/data for local development. On Linux servers / HPC / cloud,
 # set BIOINFOFLOW_HOME in .env to a path that exists on your host, e.g.:
 #   BIOINFOFLOW_HOME=/srv/bioinfoflow
-#   BIOINFOFLOW_HOME=/lustre/<user>/bpiper
-#   BIOINFOFLOW_HOME=/Users/<you>/bpiper-data
+#   BIOINFOFLOW_HOME=/lustre/<user>/bioinfoflow
+#   BIOINFOFLOW_HOME=/Users/<you>/bioinfoflow-data
 services:
   backend:
     image: bioinfoflow-backend:latest

@@ -97,14 +97,13 @@ MINIWDL_BIN=backend/.venv/bin/miniwdl
 ## Docker Compose (local dev container)
 
 ```bash
-mkdir -p data/state data/projects data/sources/deliveries data/sources/reference
 docker compose up --build
 ```
 
 The container exposes the API at `http://localhost:8000/api/v1/docs`.
 
 Notes:
-- Bioinfoflow now uses a single home root mounted as `./data -> /srv/bioinfoflow`.
+- Bioinfoflow uses a single home root. With Docker Compose, leaving `BIOINFOFLOW_HOME` unset mounts this repo's `data/` directory at the same absolute path inside the containers.
 - Managed projects live under `projects/<project_id>/data` and `projects/<project_id>/runs`.
 - Put project-private manifests or small helper files into `Project Data` via the in-app upload flow.
 - Put upstream-delivered input files under `./data/sources/deliveries/...`.
