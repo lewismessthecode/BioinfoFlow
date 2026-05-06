@@ -9,7 +9,10 @@ It is built for teams that want modern product ergonomics for local and lab-serv
 ## Product Preview
 
 <p align="center">
-  <img src="assets/product-preview.gif" alt="Bioinfoflow - register a workflow, pick inputs, submit a run, and watch the live DAG" width="100%">
+  <picture>
+    <source srcset="assets/product-preview.webp" type="image/webp">
+    <img src="assets/product-preview.gif" alt="Bioinfoflow - register a workflow, pick inputs, submit a run, and watch the live DAG" width="100%" decoding="async">
+  </picture>
 </p>
 
 ## What You Can Do
