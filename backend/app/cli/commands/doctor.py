@@ -48,11 +48,13 @@ def doctor(ctx: typer.Context) -> None:
 
 async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
     results: dict[str, Any] = {}
+    backend_available = False
 
     # Backend health
     try:
         resp = await cli_ctx.client.get("/system/health")
         data = resp.data or {}
+        backend_available = True
         results["backend"] = {
             "ok": True,
             "detail": data.get("status", "healthy"),
@@ -63,27 +65,36 @@ async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
         results["backend"] = {"ok": False, "detail": exc.message}
 
     # Scheduler
-    try:
-        resp = await cli_ctx.client.get("/scheduler/status")
-        data = resp.data or {}
+    if backend_available:
+        try:
+            resp = await cli_ctx.client.get("/scheduler/status")
+            data = resp.data or {}
+            results["scheduler"] = {
+                "ok": True,
+                "detail": f"mode={data.get('mode', '?')}, queue={data.get('queue_depth', '?')}",
+            }
+        except (ConnectionFailed, ApiError) as exc:
+            detail = "not reachable" if isinstance(exc, ConnectionFailed) else exc.message
+            results["scheduler"] = {"ok": False, "detail": detail}
+    else:
         results["scheduler"] = {
             "ok": True,
-            "detail": f"mode={data.get('mode', '?')}, queue={data.get('queue_depth', '?')}",
+            "detail": "skipped (backend unavailable)",
         }
-    except (ConnectionFailed, ApiError) as exc:
-        detail = "not reachable" if isinstance(exc, ConnectionFailed) else exc.message
-        results["scheduler"] = {"ok": False, "detail": detail}
 
     # GPU
-    try:
-        resp = await cli_ctx.client.get("/system/gpu")
-        data = resp.data or {}
-        available = data.get("available", False)
-        results["gpu"] = {
-            "ok": True,
-            "detail": "available" if available else "not detected",
-        }
-    except (ConnectionFailed, ApiError):
+    if backend_available:
+        try:
+            resp = await cli_ctx.client.get("/system/gpu")
+            data = resp.data or {}
+            available = data.get("available", False)
+            results["gpu"] = {
+                "ok": True,
+                "detail": "available" if available else "not detected",
+            }
+        except (ConnectionFailed, ApiError):
+            results["gpu"] = {"ok": True, "detail": "skipped (backend unavailable)"}
+    else:
         results["gpu"] = {"ok": True, "detail": "skipped (backend unavailable)"}
 
     # Local binaries

@@ -121,6 +121,8 @@ class TestRunChecks:
             results = await _run_checks(ctx)
         assert results["backend"]["ok"] is False
         assert "Cannot connect" in results["backend"]["detail"]
+        assert results["scheduler"]["ok"] is True
+        assert results["scheduler"]["detail"] == "skipped (backend unavailable)"
 
     @pytest.mark.asyncio
     async def test_backend_api_error(self) -> None:
@@ -146,6 +148,8 @@ class TestRunChecks:
             results = await _run_checks(ctx)
         assert results["backend"]["ok"] is False
         assert "broken" in results["backend"]["detail"]
+        assert results["scheduler"]["ok"] is True
+        assert results["scheduler"]["detail"] == "skipped (backend unavailable)"
 
     @pytest.mark.asyncio
     async def test_scheduler_connection_failed(self) -> None:

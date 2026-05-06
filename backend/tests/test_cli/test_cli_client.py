@@ -355,6 +355,13 @@ class TestRemoteTransportReuse:
         transport = RemoteTransport(TEST_BASE_URL)
         await transport.close()  # no client created yet, should not raise
 
+    @pytest.mark.asyncio
+    async def test_localhost_remote_transport_ignores_proxy_env(self) -> None:
+        transport = RemoteTransport("http://localhost:8000/api/v1")
+        client = await transport.get_client()
+        assert client.trust_env is False
+        await transport.close()
+
 
 class TestSSEEvent:
     def test_sse_event_fields(self) -> None:
