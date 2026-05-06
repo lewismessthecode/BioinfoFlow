@@ -36,7 +36,13 @@ Create your local environment file:
 cp .env.example .env
 ```
 
-Edit `.env` and set:
+Generate an auth secret:
+
+```bash
+openssl rand -base64 32
+```
+
+Then edit `.env` and set:
 
 ```env
 # Optional for local Docker.
@@ -53,6 +59,10 @@ ANTHROPIC_API_KEY=...
 # First local owner account.
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
+
+# Required for Docker Compose because the frontend runs in production mode.
+# Paste the output of `openssl rand -base64 32`.
+BETTER_AUTH_SECRET=...
 ```
 
 Then start Bioinfoflow:
@@ -71,9 +81,10 @@ Sign in with `AUTH_BOOTSTRAP_OWNER_EMAIL` and `AUTH_BOOTSTRAP_OWNER_PASSWORD`.
 Notes:
 
 - For local Docker, leaving `BIOINFOFLOW_HOME` unset is the simplest path. Compose mounts this repo's `data/` directory at the same absolute path inside the containers.
+- For Docker Compose, `BETTER_AUTH_SECRET` must be non-empty. Leave it empty only for local `bun run dev` development, where the frontend can derive an instance-local secret.
 - The backend creates the platform directories under `BIOINFOFLOW_HOME` on startup.
 - If you set `BIOINFOFLOW_HOME`, use an absolute host path and keep the same path visible to containers.
-- For a shared or remote server, also set `BETTER_AUTH_SECRET`, `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` before building.
+- For a shared or remote server, also set `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` before building.
 
 More setup detail: [Docker Quick Start](docs/getting-started/docker.md) and [Runbook](RUNBOOK.md).
 
