@@ -15,9 +15,19 @@ redact_url() {
   echo "$value"
 }
 
+if [[ -z "${BIOINFOFLOW_HOME:-}" ]]; then
+  export BIOINFOFLOW_HOME="$(
+    /app/.venv/bin/python - <<'PY'
+from app.config import Settings
+
+print(Settings(_env_file=None).bioinfoflow_home)
+PY
+  )"
+fi
+
 # ── Startup context ───────────────────────────────────────────
 echo "Bioinfoflow backend container startup"
-echo "  BIOINFOFLOW_HOME=${BIOINFOFLOW_HOME:-/srv/bioinfoflow}"
+echo "  BIOINFOFLOW_HOME=${BIOINFOFLOW_HOME}"
 echo "  BIOINFOFLOW_HOME_HOST=${BIOINFOFLOW_HOME_HOST:-}"
 echo "  DATABASE_URL=$(redact_url "${DATABASE_URL:-sqlite+aiosqlite:///\${BIOINFOFLOW_HOME}/state/bioinfoflow.db}")"
 echo "  BETTER_AUTH_DB_PATH=${BETTER_AUTH_DB_PATH:-\${BIOINFOFLOW_HOME}/state/auth/better-auth.db}"
@@ -27,11 +37,11 @@ echo "  MINIWDL_BIN=${MINIWDL_BIN:-/usr/local/bin/miniwdl}"
 
 # ── Ensure data directories exist ─────────────────────────────
 mkdir -p \
-  "${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/auth" \
-  "${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/workflows" \
-  "${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/projects" \
-  "${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/engine/cache/nextflow" \
-  "${BIOINFOFLOW_HOME:-/srv/bioinfoflow}/state/engine/cache/miniwdl"
+  "${BIOINFOFLOW_HOME}/state/auth" \
+  "${BIOINFOFLOW_HOME}/state/workflows" \
+  "${BIOINFOFLOW_HOME}/projects" \
+  "${BIOINFOFLOW_HOME}/state/engine/cache/nextflow" \
+  "${BIOINFOFLOW_HOME}/state/engine/cache/miniwdl"
 
 # ── Run database migrations ───────────────────────────────────
 echo "Running database migrations..."
