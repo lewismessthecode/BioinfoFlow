@@ -2,7 +2,7 @@
   <img src="frontend/public/brand-icon.png" width="80" alt="Bioinfoflow" />
 </p>
 
-<h1 align="center">Bioinfoflow 👋</h1>
+<h1 align="center">BioinfoFlow 👋</h1>
 
 <p align="center">
   <em>The local Agentic control plane for Nextflow &amp; WDL bioinformatics pipelines.</em>
@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://discord.gg/bBZB8bFnHB"><img src="https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/docs-view-3b82f6" alt="Docs" /></a>
-  <a href="https://bioinfoflow.dev"><img src="https://img.shields.io/badge/website-visit-111827" alt="Website" /></a>
+  <a href="https://bioinfoflow.com"><img src="https://img.shields.io/badge/website-visit-111827" alt="Website" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT" /></a>
 </p>
 
