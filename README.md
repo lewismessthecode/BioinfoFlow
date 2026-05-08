@@ -1,107 +1,125 @@
-# Bioinfoflow
-
-> A local-first AI workspace for running bioinformatics pipelines on your own machine or lab server.
-
-Bioinfoflow turns the messy middle of computational biology into a product workflow: register a Nextflow or WDL pipeline, choose data from managed project storage, submit runs, watch the DAG and logs live, and ask an AI agent to help with the parts that normally become shell scripts and tribal knowledge.
-
-It is built for teams that want modern product ergonomics for local and lab-server analysis today, with a path toward cloud execution later when the workflow or organization needs it.
-
-## Product Preview
-
 <p align="center">
-  <picture>
-    <source srcset="assets/product-preview.webp" type="image/webp">
-    <img src="assets/product-preview.gif" alt="Bioinfoflow - register a workflow, pick inputs, submit a run, and watch the live DAG" width="100%" decoding="async">
-  </picture>
+  <img src="frontend/public/brand-icon.png" width="80" alt="Bioinfoflow" />
 </p>
 
-## What You Can Do
+<h1 align="center">Bioinfoflow 👋</h1>
 
-- Put the Nextflow and WDL pipelines your lab already trusts behind a usable product workflow, instead of leaving them trapped in another README, wrapper script, or tribal runbook.
-- Stop losing time to “which FASTQ did we use?”, “which reference is this aligned against?”, and “where did that run write its outputs?” by keeping deliveries, references, run state, and results under one `BIOINFOFLOW_HOME`.
-- Catch failures while they are happening, not the next morning: follow live task status, DAG progress, scheduler pressure, logs, and produced outputs from one place.
-- Give scientists and platform teams a UI that does not fight them: register workflows, choose managed inputs, inspect outputs, retry or cancel runs, and move between runs, scheduler, and agent views without tab chaos or shell archaeology.
-- Work from the browser when you want clarity, from the `bif` CLI when you want automation, and increasingly from agents when you want higher-level execution, without splitting the workflow across disconnected tools.
-- Keep the environment reproducible with containers, instead of rebuilding the same brittle local setup on every machine.
-- Run serious local analysis on infrastructure you already trust, from a workstation to a lab GPU server, including NVIDIA Parabricks pipelines on your own GeForce RTX 4080-class hardware.
+<p align="center">
+  <em>The local Agentic control plane for Nextflow &amp; WDL bioinformatics pipelines.</em>
+</p>
 
-## Quick Start
+<p align="center">
+  <a href="https://discord.gg/bBZB8bFnHB"><img src="https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+  <a href="docs/README.md"><img src="https://img.shields.io/badge/docs-view-3b82f6" alt="Docs" /></a>
+  <a href="https://bioinfoflow.dev"><img src="https://img.shields.io/badge/website-visit-111827" alt="Website" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT" /></a>
+</p>
 
-Prerequisites:
+<p align="center">
+  <b>English</b> | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+---
+
+Bioinformatics tooling has been stuck in another era — clunky interfaces, tedious workflows, learning curves steep enough to turn away the people who need them most. Bioinfoflow's mission is simple: bring the elegance of modern software engineering to bioinformatics, and let an AI agent close the cultural gap between biologists and computer scientists.
+
+Bioinfoflow turns a workstation or a lab server into a workspace your whole team can share. It sits above Nextflow and WDL: register pipelines once, gather project data under a single `BIOINFOFLOW_HOME`, hand runs off to a built-in scheduler, and watch DAGs, logs, resource pressure, and outputs from one product surface.
+
+The bigger ambition: a single, coherent product layer above the compute — so computational biology stops being something only specialist teams can run. One sentence of natural language should be enough to launch a full analysis. With a 16 GB-class GPU (an RTX 4080 will do), even a desktop at home can finish a Parabricks WGS run and put your own genome within reach.
+
+> [!TIP]
+> One-line install:
+>
+> ```bash
+> git clone https://github.com/your-org/bioinfoflow && cd bioinfoflow
+> cp .env.example .env   # add ANTHROPIC_API_KEY (or another provider) to .env
+> docker compose up -d --build
+> ```
+>
+> Then open <http://localhost:3000>.
+
+<!--
+  Hero video: replace the <img> below with a GitHub-hosted MP4 for sharper rendering.
+  Steps:
+    1. Open a new issue or PR draft on this repo (no need to submit it)
+    2. Drag-and-drop assets/product-preview.mp4 into the comment box and wait for the upload
+    3. Copy the resulting https://github.com/user-attachments/assets/<uuid> URL
+    4. Replace with: <video src="<that-url>" autoplay loop muted playsinline width="100%"></video>
+-->
+<p align="center">
+  <img src="assets/product-preview.gif" alt="Bioinfoflow — register a workflow, pick inputs, submit a run, watch the live DAG" width="100%" />
+</p>
+
+---
+
+## ⭐ Features
+
+- 🧬 **Workflow Catalog** — Register once, run anywhere; demos for nf-core/rnaseq, Parabricks WGS, and more ship out of the box.
+- 📁 **Unified Data Layout** — A single `BIOINFOFLOW_HOME` for project files, references, databases, uploads, and results.
+- 🚦 **Run Workspace** — Configure, submit, watch the live DAG, follow logs, and inspect outputs — all on one page.
+- ⚙️ **Persistent Scheduler** — A queue that doesn't lose work, resource gates that won't dispatch what won't fit, and automatic retries when something fails.
+- 🤖 **AI Agent** — Register pipelines, prepare configs, inspect files, submit runs, and interpret results — all from chat.
+- 💻 **Browser Terminal & `bif` CLI** — GUI when you want it, shell when you don't.
+- 🔐 **Local Auth & Personalization** — Switch between personal and team modes, swap themes with a click.
+
+<!--
+  TODO (Plan 3): drop 2–3 feature screenshots here for visual density.
+  Suggested shots:
+    - Workflow catalog page (sidebar + workflow cards)
+    - Run detail page (live DAG + logs side panel)
+    - Agent chat (with an approval step in view)
+  Spec: 1600px-wide PNGs, < 800KB each (run pngquant before committing).
+  Layout: three across
+    <p align="center">
+      <img src="assets/feature-catalog.png"  width="32%" />
+      <img src="assets/feature-run-dag.png"  width="32%" />
+      <img src="assets/feature-agent.png"    width="32%" />
+    </p>
+-->
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
 
 - Docker Engine or Docker Desktop with Compose
-- One AI provider key, such as Anthropic, OpenAI, Gemini, or DeepSeek
+- One AI provider key (Anthropic, OpenAI, Gemini, DeepSeek, or an OpenAI-compatible provider)
 
-Create your local environment file:
+### Run with Docker
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env` and set:
+Edit `.env` and set at least:
 
 ```env
-# Optional for local Docker.
-# If unset, Docker Compose uses this repo's ./data directory.
-# Set an absolute path only when you want the data root somewhere else.
-# BIOINFOFLOW_HOME=/absolute/path/to/bioinfoflow-data
-
-# Set at least one provider key.
 ANTHROPIC_API_KEY=...
-# OPENAI_API_KEY=...
-# GEMINI_API_KEY=...
-# DEEPSEEK_API_KEY=...
+# or OPENAI_API_KEY=... / GEMINI_API_KEY=... / DEEPSEEK_API_KEY=...
 
-# First local owner account.
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
-
-# Optional for localhost Docker. If empty, Bioinfoflow creates a persistent
-# local secret under BIOINFOFLOW_HOME/state/auth on first startup.
-# Set this before running a shared or remote deployment.
-# BETTER_AUTH_SECRET=...
 ```
 
-Then start Bioinfoflow:
+Start the stack:
 
 ```bash
 docker compose up -d --build
 ```
 
-Open:
+Then open:
 
-- UI: <http://localhost:3000>
-- API docs: <http://localhost:8000/api/v1/docs>
+- **UI** — <http://localhost:3000>
+- **API docs** — <http://localhost:8000/api/v1/docs>
 
-Sign in with `AUTH_BOOTSTRAP_OWNER_EMAIL` and `AUTH_BOOTSTRAP_OWNER_PASSWORD`.
+Sign in with the bootstrap owner credentials from `.env`.
 
-Notes:
+For local Docker, leaving `BIOINFOFLOW_HOME` unset is the simplest path — Compose stores platform data under this repo's `data/` directory and mounts it at the same absolute path inside containers. For a shared or remote server, set `BETTER_AUTH_SECRET`, `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` before building. See the [Docker Quick Start](docs/getting-started/docker.md) and [Runbook](RUNBOOK.md).
 
-- For local Docker, leaving `BIOINFOFLOW_HOME` unset is the simplest path. Compose mounts this repo's `data/` directory at the same absolute path inside the containers.
-- For localhost Docker, `BETTER_AUTH_SECRET` can stay empty. Bioinfoflow generates and reuses a local secret file on first startup.
-- The backend creates the platform directories under `BIOINFOFLOW_HOME` on startup.
-- If you set `BIOINFOFLOW_HOME`, use an absolute host path and keep the same path visible to containers.
-- For a shared or remote server, generate a secret with `openssl rand -base64 32`, then set `BETTER_AUTH_SECRET`, `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` before building.
+---
 
-More setup detail: [Docker Quick Start](docs/getting-started/docker.md) and [Runbook](RUNBOOK.md).
-
-## Canonical Demo
-
-The public end-to-end demo is [nf-core/rnaseq](demo/nfcore-rnaseq/README.md).
-It runs the real upstream `nf-core/rnaseq` pipeline pinned to `3.24.0` with the
-official `test,docker` profile, so new users can validate Bioinfoflow without
-checking large FASTQ files into this repo.
-
-Direct smoke test:
-
-```bash
-demo/nfcore-rnaseq/run-direct.sh
-```
-
-Then register the same pinned workflow in Bioinfoflow and submit it from the UI
-to verify logs, DAG progress, and outputs through the product path.
-
-## Local Development
+## 🛠 Development
 
 Backend:
 
@@ -120,23 +138,46 @@ bun install
 bun run dev
 ```
 
-Verification:
+Checks:
 
 ```bash
-cd backend && uv run pytest
-cd backend && uv run ruff check .
-cd frontend && bun run lint
-cd frontend && bun run test
+cd backend  && uv run pytest && uv run ruff check .
+cd frontend && bun run lint && bun run test
 ```
 
-The backend and frontend both read the repo-root `.env` by default. Use `backend/.env` or `frontend/.env.local` only for machine-local overrides.
+Backend and frontend both read the repo-root `.env` by default. Use `backend/.env` or `frontend/.env.local` only for machine-local overrides.
 
-## Bioinfoflow Docs
+---
+
+## 💻 CLI
+
+`bif` is an HTTP client for a running Bioinfoflow backend:
+
+```bash
+cd backend
+uv run bif doctor
+uv run bif project list
+uv run bif workflow list
+uv run bif run list
+uv run bif --output json run show <run-id>
+```
+
+Use `--base-url` or `BIOFLOW_API_URL` to point at a non-default backend. See the [CLI Reference](docs/reference/cli.md).
+
+---
+
+## 📚 Documentation
 
 - [Docs Home](docs/README.md)
 - [Docker Quick Start](docs/getting-started/docker.md)
-- [Storage And Data Layout](docs/concepts/storage.md)
-- [Parabricks WGS Workflows](docs/workflows/parabricks-wgs.md)
+- [Storage and Data Layout](docs/concepts/storage.md)
 - [CLI Reference](docs/reference/cli.md)
 - [Architecture](docs/architecture.md)
 - [Security Notes](docs/security.md)
+- [Runbook](RUNBOOK.md)
+
+---
+
+## 📜 License
+
+Bioinfoflow is released under the [MIT License](LICENSE).
