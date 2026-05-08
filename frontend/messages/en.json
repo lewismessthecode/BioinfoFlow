@@ -1288,8 +1288,8 @@
     "hero": {
       "tagline": "Local-first bioinformatics platform",
       "gpuPowered": "GPU-Powered",
-      "title": "Run your own WGS",
-      "titleSuffix": "at home.",
+      "title": "Bioinfoflow",
+      "titleSuffix": "runs WGS at home.",
       "description": "Full 30X whole genome sequencing analysis in under 2 hours on your RTX 4090.",
       "wgsHighlight": "✨ Free for personal use. Your data never leaves your machine.",
       "startFree": "Get started",

@@ -16,16 +16,59 @@ const geistMono = Geist_Mono({
 })
 const ibmPlexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-ibm-plex-mono" })
 const iconVersion = "20260408-3"
+const siteUrl = "https://www.bioinfoflow.com"
+const previewImage = {
+  url: "/image.png",
+  width: 1024,
+  height: 1024,
+  alt: "Bioinfoflow local-first agentic bioinformatics platform",
+}
 
 export async function generateMetadata(): Promise<Metadata> {
   // Locale-aware title / description / keywords so Chinese users don't
   // land on English browser tab titles and social previews. Icons and
   // generator stay locale-agnostic.
   const t = await getTranslations("metadata")
+  const title = t("appTitle")
+  const description = t("appDescription")
+
   return {
-    title: t("appTitle"),
-    description: t("appDescription"),
+    metadataBase: new URL("https://www.bioinfoflow.com"),
+    applicationName: "Bioinfoflow",
+    title,
+    description,
+    alternates: { canonical: "/" },
+    openGraph: {
+      title,
+      description,
+      url: "/",
+      siteName: "Bioinfoflow",
+      images: [previewImage],
+      locale: "en_US",
+      alternateLocale: ["zh_CN"],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [previewImage.url],
+    },
     keywords: t.raw("keywords") as string[],
+    authors: [{ name: "Bioinfoflow", url: siteUrl }],
+    creator: "Bioinfoflow",
+    publisher: "Bioinfoflow",
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+        "max-video-preview": -1,
+      },
+    },
     icons: {
       icon: [
         { url: `/icon-light-32x32.png?v=${iconVersion}`, type: "image/png", sizes: "32x32" },
