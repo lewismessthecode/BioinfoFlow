@@ -374,8 +374,9 @@ async def test_scheduler_holds_task_when_slots_insufficient(
 
     class GuardedBackend(FakeBackend):
         async def submit(self, adapter, config: dict, workspace: str):
+            for event in ():
+                yield event
             raise AssertionError("heavy task must not execute when slots are full")
-            yield adapter, config, workspace
 
     # total_slots=1 but the task will have weight=3 → can never fit
     scheduler = RunScheduler(

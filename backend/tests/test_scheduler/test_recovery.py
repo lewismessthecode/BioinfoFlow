@@ -21,8 +21,8 @@ from app.scheduler.scheduler import RunScheduler
 class NoopBackend:
     async def submit(self, adapter, config: dict, workspace: str):
         del adapter, config, workspace
-        if False:
-            yield None
+        for event in ():
+            yield event
 
     async def cancel(self, adapter, *, pid: int | None, **kwargs) -> bool:
         del adapter, pid, kwargs

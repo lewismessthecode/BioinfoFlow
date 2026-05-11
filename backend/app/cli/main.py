@@ -89,6 +89,8 @@ def main(
     ),
 ) -> None:
     """Bioinfoflow CLI — manage projects, workflows, and pipeline runs."""
+    del show_version
+
     store = ConfigStore()
 
     resolved_url = (

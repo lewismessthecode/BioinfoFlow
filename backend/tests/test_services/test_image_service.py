@@ -123,8 +123,9 @@ async def test_image_service_pull_task_marks_failed_when_pull_raises(
 
     class FakeDockerService:
         async def pull_image(self, name: str, tag: str, registry: str):
+            for progress in ():
+                yield progress
             raise RuntimeError("pull exploded")
-            yield {}
 
     monkeypatch.setattr(image_service, "DockerService", FakeDockerService)
 

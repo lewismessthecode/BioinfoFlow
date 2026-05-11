@@ -18,6 +18,8 @@ class ProjectService:
         self, *, workspace_id: str, workspace_slug: str, user_id: str
     ):
         """Return the workspace default project, creating it if needed."""
+        del workspace_slug
+
         existing = await self.repo.get_default_for_workspace(workspace_id)
         if existing:
             return existing

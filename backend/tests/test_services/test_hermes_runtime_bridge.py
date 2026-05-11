@@ -798,6 +798,8 @@ async def test_real_sdk_runner_executes_registered_bioinfoflow_tool_roundtrip(
         )
 
     def fake_interruptible_streaming_api_call(self, api_kwargs, on_first_delta=None):
+        del api_kwargs
+
         nonlocal call_count
         call_count += 1
         if on_first_delta is not None:
@@ -1034,6 +1036,8 @@ async def test_internal_canary_real_sdk_service_flow_supports_risky_tool_approva
         )
 
     def fake_interruptible_streaming_api_call(self, api_kwargs, on_first_delta=None):
+        del api_kwargs
+
         nonlocal call_count
         call_count += 1
         if on_first_delta is not None:

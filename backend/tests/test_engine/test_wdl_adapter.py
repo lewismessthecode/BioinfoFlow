@@ -527,8 +527,9 @@ async def test_wdl_adapter_pre_submit_can_skip_required_image_pull():
             raise AssertionError(f"unexpected image inspect during launch compile: {full_name}")
 
         async def pull_image(self, name: str, tag: str, registry: str):
+            for progress in ():
+                yield progress
             raise AssertionError("unexpected image pull during launch compile")
-            yield {"status": "unreachable"}
 
     adapter = WDLAdapter()
     config = _wdl_config()
