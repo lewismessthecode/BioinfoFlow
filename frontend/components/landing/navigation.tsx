@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition } from "react"
 import Link from "next/link"
-import { Menu, X, Moon, Sun, Globe } from "lucide-react"
+import { Menu, X, Moon, Sun, Globe, Github } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useLocale, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,7 @@ export function Navigation() {
   const locale = useLocale()
   const [isPending, startTransition] = useTransition()
   const t = useTranslations("landing.nav")
+  const githubUrl = "https://github.com/lewismessthecode/BioinfoFlow"
 
   const navLinks = [
     { label: t("product"), href: "#product" },
@@ -36,7 +37,7 @@ export function Navigation() {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10)
     }
-    window.addEventListener("scroll", handleScroll)
+    window.addEventListener("scroll", handleScroll, { passive: true })
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
@@ -59,7 +60,7 @@ export function Navigation() {
       <div className="container mx-auto px-6 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
+          <div className="size-8 rounded-lg flex items-center justify-center">
             <Logo size={32} className="text-foreground" />
           </div>
           <span className="font-semibold text-lg tracking-tight">Bioinfoflow</span>
@@ -80,16 +81,28 @@ export function Navigation() {
 
         {/* Desktop CTAs */}
         <div className="hidden md:flex items-center gap-3">
+          <Button
+            asChild
+            variant="ghost"
+            size="icon"
+            className="size-8 text-muted-foreground hover:text-foreground"
+          >
+            <a href={githubUrl} target="_blank" rel="noreferrer">
+              <Github className="size-4" />
+              <span className="sr-only">GitHub</span>
+            </a>
+          </Button>
+
           {/* Language Switcher */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                className="size-8 text-muted-foreground hover:text-foreground"
                 disabled={isPending}
               >
-                <Globe className="h-4 w-4" />
+                <Globe className="size-4" />
                 <span className="sr-only">{t("selectLanguage")}</span>
               </Button>
             </DropdownMenuTrigger>
@@ -110,11 +123,11 @@ export function Navigation() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="size-8 text-muted-foreground hover:text-foreground"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           >
-            <Sun className="h-4 w-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
-            <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+            <Sun className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
+            <Moon className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
             <span className="sr-only">{t("toggleTheme")}</span>
           </Button>
 
@@ -133,9 +146,9 @@ export function Navigation() {
           aria-label={t("toggleMenu")}
         >
           {isMobileMenuOpen ? (
-            <X className="w-5 h-5" />
+            <X className="size-5" />
           ) : (
-            <Menu className="w-5 h-5" />
+            <Menu className="size-5" />
           )}
         </button>
       </div>
@@ -166,24 +179,36 @@ export function Navigation() {
               >
                 {theme === "dark" ? (
                   <>
-                    <Moon className="h-4 w-4" />
+                    <Moon className="size-4" />
                     {t("dark")}
                   </>
                 ) : (
                   <>
-                    <Sun className="h-4 w-4" />
+                    <Sun className="size-4" />
                     {t("light")}
                   </>
                 )}
               </Button>
             </div>
 
+            <Button asChild variant="outline" className="w-full justify-start gap-2 bg-transparent">
+              <a
+                href={githubUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <Github className="size-4" />
+                GitHub
+              </a>
+            </Button>
+
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">{t("language")}</span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-2" disabled={isPending}>
-                    <Globe className="h-4 w-4" />
+                    <Globe className="size-4" />
                     {localeNames[locale as Locale]}
                   </Button>
                 </DropdownMenuTrigger>
