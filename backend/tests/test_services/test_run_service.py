@@ -12,9 +12,10 @@ import app.models  # noqa: F401
 from app.database import Base
 from app.models.project import Project
 from app.models.run import RunStatus
-from app.models.workflow import Workflow, WorkflowEngine
+from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
 from app.path_layout import project_data_root, project_home, run_home
 from app.schemas.run import RunCreate
+from app.services import run_compiler as run_compiler_module
 from app.services import run_service
 from app.services.run_compiler import RunCompiler
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -69,6 +70,7 @@ async def _create_run_via_compiler(
     project: Project,
     workflow,
     values: dict | None = None,
+    options: dict | None = None,
     dispatcher=None,
 ):
     compiler = RunCompiler(session, dispatcher=dispatcher or NullDispatcher())
@@ -78,6 +80,7 @@ async def _create_run_via_compiler(
                 "project_id": str(project.id),
                 "workflow_id": str(workflow.id),
                 "values": values or {},
+                **({"options": options} if options else {}),
             }
         ),
         user_id=project.user_id,
@@ -191,6 +194,154 @@ async def test_create_run_persists_run_archive(db_session, monkeypatch, tmp_path
         "/data/samplesheet.csv"
     )
     assert manifest["resolved_inputs"]["files"]
+
+
+@pytest.mark.asyncio
+async def test_nfcore_nextflow_run_compiles_revision_profile_and_params(
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+
+    class FakeDockerService:
+        async def is_available(self) -> bool:
+            return True
+
+    from app.engine.adapters import nextflow as nextflow_module
+
+    monkeypatch.setattr(nextflow_module, "DockerService", FakeDockerService)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project = await create_project(
+        db_session,
+        name="nf-core project",
+        storage_mode="external",
+        external_root_path=str(workspace),
+    )
+    data_root = project_data_root(project)
+    write_project_file(
+        data_root,
+        "samplesheet.csv",
+        "sample,fastq_1,fastq_2\nS1,S1_R1.fastq.gz,S1_R2.fastq.gz\n",
+    )
+    workflow = await create_workflow(
+        db_session,
+        name="rnaseq",
+        source=WorkflowSource.NFCORE,
+        engine=WorkflowEngine.NEXTFLOW,
+        version="3.24.0",
+        source_ref="nf-core/rnaseq",
+        schema_json={
+            "inputs": [
+                {
+                    "name": "input",
+                    "type": "string",
+                    "value_kind": "file",
+                    "optional": False,
+                    "source_hint": "project",
+                },
+                {
+                    "name": "outdir",
+                    "type": "string",
+                    "value_kind": "directory",
+                    "optional": False,
+                    "is_internal": True,
+                },
+            ],
+        },
+    )
+    await bind_workflow(
+        db_session, project_id=str(project.id), workflow_id=str(workflow.id)
+    )
+
+    run = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"input": "samplesheet.csv"},
+        options={"profile": "test,docker", "max_retries": 2},
+    )
+
+    argv = run.config["launch"]["argv"]
+    run_index = argv.index("run")
+    assert argv[run_index + 1] == "nf-core/rnaseq"
+    assert argv[argv.index("-r") + 1] == "3.24.0"
+    assert argv[argv.index("-profile") + 1] == "test,docker"
+    assert argv[argv.index("--input") + 1].endswith("/data/samplesheet.csv")
+    assert run.config["revision"] == "3.24.0"
+    assert run.config["profile"] == "test,docker"
+    assert "profile" not in run.config["config_overrides"]
+
+
+@pytest.mark.asyncio
+async def test_wdl_run_compile_ignores_nextflow_profile_and_revision(
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+
+    class FakeWDLAdapter:
+        engine_name = "wdl"
+        display_name = "MiniWDL"
+        binary = "miniwdl"
+        supports_native_resume = False
+
+        async def pre_submit(self, config: dict, workspace: str) -> dict:
+            return config
+
+        async def build_command(self, config: dict, workspace: str) -> list[str]:
+            command = ["miniwdl", "run", config["workflow_path"]]
+            inputs_path = config.get("inputs_path")
+            if inputs_path:
+                command.extend(["--input", str(inputs_path)])
+            return command
+
+    monkeypatch.setattr(
+        run_compiler_module,
+        "get_adapter",
+        lambda engine: FakeWDLAdapter(),
+    )
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session,
+        external_root=workspace,
+        engine=WorkflowEngine.WDL,
+        workflow_content="version 1.0\nworkflow demo { input { String sample } }\n",
+    )
+    workflow.version = "3.24.0"
+    workflow.schema_json = {
+        "workflow_name": "demo",
+        "inputs": [
+            {
+                "name": "sample",
+                "type": "String",
+                "value_kind": "scalar",
+                "optional": False,
+            }
+        ],
+    }
+    await db_session.commit()
+    await db_session.refresh(workflow)
+
+    run = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"sample": "S1"},
+        options={"profile": "test,docker"},
+    )
+
+    argv = run.config["launch"]["argv"]
+    assert "-r" not in argv
+    assert "-profile" not in argv
+    assert "revision" not in run.config
+    assert "profile" not in run.config
+    assert "profile" not in run.config["config_overrides"]
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from http.client import IncompleteRead, RemoteDisconnected
 from pathlib import Path
 from uuid import uuid4
 
@@ -89,6 +90,22 @@ async def test_nextflow_adapter_build_command_writes_overrides_and_resume(tmp_pa
     overrides_path = Path(command[command.index("-c") + 1])
     assert overrides_path.exists()
     assert "process.cpus = 4" in overrides_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_nextflow_adapter_build_command_includes_revision(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    adapter = NextflowAdapter()
+    config = _nextflow_config(pipeline="nf-core/rnaseq", revision="3.24.0")
+
+    command = await adapter.build_command(config, str(workspace))
+
+    run_index = command.index("run")
+    assert command[run_index : run_index + 2] == ["run", "nf-core/rnaseq"]
+    assert "-r" in command
+    assert command[command.index("-r") + 1] == "3.24.0"
+    assert command.index("-r") < command.index("-work-dir")
 
 
 @pytest.mark.asyncio
@@ -223,3 +240,72 @@ async def test_nextflow_adapter_accepts_valid_param_keys(tmp_path):
         config["request"]["params"] = {valid_key: "value"}
         command = await adapter.build_command(config, str(workspace))
         assert f"--{valid_key}" in command
+
+
+@pytest.mark.asyncio
+async def test_nextflow_adapter_fetches_nfcore_schema_from_revision_first(monkeypatch):
+    seen_urls: list[str] = []
+
+    def fake_load_json_url(url: str) -> dict:
+        seen_urls.append(url)
+        if "/3.24.0/" in url:
+            return {"inputs": [{"name": "input", "type": "string"}]}
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(nextflow_module, "_load_json_url", fake_load_json_url)
+    adapter = NextflowAdapter()
+
+    schema = await adapter.extract_schema("nf-core/rnaseq", version="3.24.0")
+
+    assert schema == {"inputs": [{"name": "input", "type": "string"}]}
+    assert seen_urls == [
+        "https://raw.githubusercontent.com/nf-core/rnaseq/3.24.0/nextflow_schema.json"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_nextflow_adapter_falls_back_after_remote_disconnect(monkeypatch):
+    seen_urls: list[str] = []
+
+    def fake_load_json_url(url: str) -> dict:
+        seen_urls.append(url)
+        if "/3.24.0/" in url:
+            raise RemoteDisconnected("remote end closed connection")
+        if "/master/" in url:
+            return {"inputs": [{"name": "input", "type": "string"}]}
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(nextflow_module, "_load_json_url", fake_load_json_url)
+    adapter = NextflowAdapter()
+
+    schema = await adapter.extract_schema("nf-core/rnaseq", version="3.24.0")
+
+    assert schema == {"inputs": [{"name": "input", "type": "string"}]}
+    assert seen_urls == [
+        "https://raw.githubusercontent.com/nf-core/rnaseq/3.24.0/nextflow_schema.json",
+        "https://raw.githubusercontent.com/nf-core/rnaseq/master/nextflow_schema.json",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_nextflow_adapter_falls_back_after_incomplete_read(monkeypatch):
+    seen_urls: list[str] = []
+
+    def fake_load_json_url(url: str) -> dict:
+        seen_urls.append(url)
+        if "/3.24.0/" in url:
+            raise IncompleteRead(b"{", 10)
+        if "/master/" in url:
+            return {"inputs": [{"name": "input", "type": "string"}]}
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(nextflow_module, "_load_json_url", fake_load_json_url)
+    adapter = NextflowAdapter()
+
+    schema = await adapter.extract_schema("nf-core/rnaseq", version="3.24.0")
+
+    assert schema == {"inputs": [{"name": "input", "type": "string"}]}
+    assert seen_urls == [
+        "https://raw.githubusercontent.com/nf-core/rnaseq/3.24.0/nextflow_schema.json",
+        "https://raw.githubusercontent.com/nf-core/rnaseq/master/nextflow_schema.json",
+    ]

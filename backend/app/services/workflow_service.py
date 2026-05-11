@@ -191,7 +191,11 @@ class WorkflowService:
         if source != WorkflowSource.LOCAL:
             if not name or not version or not engine:
                 raise ValueError("workflow requires name, version, and engine")
-            schema_json = await SchemaExtractor().extract(engine.value, str(source_ref))
+            schema_json = await SchemaExtractor().extract(
+                engine.value,
+                str(source_ref),
+                version=version,
+            )
 
         if not name or not version or not engine:
             raise ValueError("workflow requires name, version, and engine")

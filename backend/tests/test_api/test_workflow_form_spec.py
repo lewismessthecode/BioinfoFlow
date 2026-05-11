@@ -118,6 +118,54 @@ async def test_form_spec_lazy_backfill_for_legacy_workflow(async_client, db_sess
 
 
 @pytest.mark.asyncio
+async def test_form_spec_lazy_backfill_normalizes_nfcore_json_schema(
+    async_client,
+    db_session,
+):
+    from app.models.workflow import Workflow
+
+    legacy = Workflow(
+        name="nf-core/rnaseq",
+        source="nf-core",
+        engine="nextflow",
+        version="3.24.0",
+        source_ref="nf-core/rnaseq",
+        schema_json={
+            "allOf": [{"$ref": "#/$defs/input_output_options"}],
+            "$defs": {
+                "input_output_options": {
+                    "required": ["input", "outdir"],
+                    "properties": {
+                        "input": {
+                            "type": "string",
+                            "format": "file-path",
+                            "description": "Samplesheet.",
+                        },
+                        "outdir": {
+                            "type": "string",
+                            "format": "directory-path",
+                        },
+                    },
+                }
+            },
+        },
+        form_spec=None,
+    )
+    db_session.add(legacy)
+    await db_session.commit()
+    await db_session.refresh(legacy)
+
+    resp = await async_client.get(f"/api/v1/workflows/{legacy.id}/form-spec")
+
+    assert resp.status_code == 200, resp.json()
+    fields = {field["id"]: field for field in resp.json()["data"]["fields"]}
+    assert fields["input"]["kind"] == "file"
+    assert fields["input"]["required"] is True
+    assert fields["outdir"]["kind"] == "directory"
+    assert fields["outdir"]["platform_managed"] is True
+
+
+@pytest.mark.asyncio
 async def test_form_spec_404_for_unknown_workflow(async_client):
     resp = await async_client.get(
         "/api/v1/workflows/00000000-0000-0000-0000-000000000000/form-spec"

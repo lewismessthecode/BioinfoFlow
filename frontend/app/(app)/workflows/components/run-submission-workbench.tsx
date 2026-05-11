@@ -123,6 +123,13 @@ export function RunSubmissionWorkbench({
     setActiveTab("form")
   }, [])
 
+  const handleApplyImportedOptions = useCallback((options: { profile?: string }) => {
+    if (options.profile !== undefined) {
+      setProfile(options.profile)
+    }
+    setActiveTab("form")
+  }, [])
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <RunSubmissionHeader
@@ -166,6 +173,7 @@ export function RunSubmissionWorkbench({
                 spec={specState.spec}
                 projectId={projectId}
                 onApplyValues={handleApplyImportedValues}
+                onApplyOptions={handleApplyImportedOptions}
               />
             </TabsContent>
           </Tabs>

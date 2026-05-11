@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import uuid
+from http.client import IncompleteRead, RemoteDisconnected
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
@@ -64,15 +65,23 @@ class NextflowAdapter(EngineAdapter):
             str(log_path),
             "run",
             pipeline,
-            "-work-dir",
-            str(work_dir),
-            "-with-trace",
-            trace_path,
-            "-with-dag",
-            dag_path,
-            "-ansi-log",
-            "false",
         ]
+        revision = _optional_revision(config.get("revision"))
+        if revision:
+            cmd.extend(["-r", revision])
+
+        cmd.extend(
+            [
+                "-work-dir",
+                str(work_dir),
+                "-with-trace",
+                trace_path,
+                "-with-dag",
+                dag_path,
+                "-ansi-log",
+                "false",
+            ]
+        )
 
         profile = _optional_string(config.get("profile"))
         if not profile and is_gpu_pipeline(pipeline):
@@ -235,7 +244,10 @@ class NextflowAdapter(EngineAdapter):
             return None
 
         if _is_nfcore_source(source_value):
-            schema = await _fetch_nfcore_schema(source_value)
+            schema = await _fetch_nfcore_schema(
+                source_value,
+                revision=kwargs.get("revision") or kwargs.get("version"),
+            )
             if schema is not None:
                 return schema
 
@@ -289,6 +301,13 @@ def _optional_string(value) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _optional_revision(value) -> str | None:
+    text = _optional_string(value)
+    if not text or text.lower() == "latest":
+        return None
+    return text
 
 
 def _nextflow_log_path(config: dict, workspace: str, *, dag_path: str) -> Path:
@@ -354,19 +373,36 @@ def _nfcore_pipeline_name(source: str) -> str | None:
     return None
 
 
-async def _fetch_nfcore_schema(source: str) -> dict | None:
+async def _fetch_nfcore_schema(source: str, *, revision: object = None) -> dict | None:
     pipeline = _nfcore_pipeline_name(source)
     if not pipeline:
         return None
 
-    for branch in ("master", "main"):
+    candidates: list[str] = []
+    requested = _optional_revision(revision)
+    if requested:
+        candidates.append(requested)
+    candidates.extend(["master", "main"])
+
+    seen: set[str] = set()
+    for branch in candidates:
+        if branch in seen:
+            continue
+        seen.add(branch)
         url = (
             f"https://raw.githubusercontent.com/nf-core/{pipeline}/"
             f"{branch}/nextflow_schema.json"
         )
         try:
             payload = await asyncio.to_thread(_load_json_url, url)
-        except (HTTPError, URLError, TimeoutError, ValueError):
+        except (
+            HTTPError,
+            URLError,
+            TimeoutError,
+            IncompleteRead,
+            RemoteDisconnected,
+            ValueError,
+        ):
             continue
         if isinstance(payload, dict):
             return payload

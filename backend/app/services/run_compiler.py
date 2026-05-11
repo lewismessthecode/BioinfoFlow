@@ -256,12 +256,11 @@ class RunCompiler:
 
         # ── assemble run.config ────────────────────────────────────────────
         options = payload.options
+        config_overrides = {}
         config = RunConfigHelper.build_v1(
             params=params,
             inputs=inputs,
-            config_overrides={"profile": options.profile}
-            if options and options.profile
-            else {},
+            config_overrides=config_overrides,
             resolved_runspec=build_resolved_runspec(
                 workspace_path=workspace_path, params=params, inputs=inputs
             ),
@@ -272,6 +271,12 @@ class RunCompiler:
             ),
             timeout_seconds=options.timeout_seconds if options else None,
         )
+        if (
+            engine == WorkflowEngine.NEXTFLOW.value
+            and options
+            and _optional_text(options.profile)
+        ):
+            config["profile"] = str(options.profile).strip()
         config = self._enrich_runtime(
             config,
             workflow=workflow,
@@ -846,6 +851,15 @@ class RunCompiler:
             workflow_path = str(workflow.source_ref)
 
         config = dict(config)
+        source_value = str(getattr(workflow.source, "value", workflow.source))
+        revision = _optional_nextflow_revision(getattr(workflow, "version", None))
+        if (
+            engine == WorkflowEngine.NEXTFLOW.value
+            and source_value != "local"
+            and revision
+        ):
+            config["revision"] = revision
+            runtime["revision"] = revision
         config["runtime"] = runtime
         config["run_id"] = run_id
         config["engine"] = engine
@@ -949,6 +963,22 @@ def _render_csv(rows: Sequence[Mapping[str, str]]) -> str:
     for row in rows:
         writer.writerow({column: str(row.get(column, "")) for column in columns})
     return buffer.getvalue()
+
+
+def _optional_nextflow_revision(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() == "latest":
+        return None
+    return text
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _validate_form_values(values: dict[str, Any], spec: FormSpec) -> None:

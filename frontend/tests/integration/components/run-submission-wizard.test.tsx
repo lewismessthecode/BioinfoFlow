@@ -1,6 +1,7 @@
 import * as React from "react"
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { fireEvent, screen, waitFor } from "@testing-library/react"
+import { toast } from "sonner"
 
 import { RunSubmissionWizard } from "@/app/(app)/workflows/components/run-submission-wizard"
 import { apiRequest } from "@/lib/api"
@@ -50,6 +51,9 @@ const apiMock = apiRequest as unknown as ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   apiMock.mockReset()
+  vi.mocked(toast.error).mockReset()
+  vi.mocked(toast.success).mockReset()
+  vi.mocked(toast.info).mockReset()
   apiMock.mockImplementation((path: string) => {
     if (path.endsWith("/form-spec")) {
       return Promise.resolve({
@@ -192,6 +196,146 @@ describe("RunSubmissionWizard (new envelope)", () => {
         fastq_r1: "asset://deliveries/S1_R1.fastq.gz",
       })
     })
+  })
+
+  it("imports a Nextflow params JSON file into values and run profile", async () => {
+    apiMock.mockImplementation((path: string) => {
+      if (path.endsWith("/form-spec")) {
+        return Promise.resolve({
+          data: {
+            fields: [
+              {
+                id: "input",
+                label: "Input",
+                section: "data",
+                kind: "file",
+                required: true,
+                default: null,
+                platform_managed: false,
+                allow_roots: ["shared_data", "reference", "database", "project_data"],
+              },
+              {
+                id: "genome",
+                label: "Genome",
+                section: "params",
+                kind: "select",
+                required: false,
+                default: "GRCh38",
+                platform_managed: false,
+                options: [
+                  { value: "GRCh37", label: "GRCh37" },
+                  { value: "GRCh38", label: "GRCh38" },
+                ],
+              },
+            ],
+          },
+        })
+      }
+      if (path === "/runs") {
+        return Promise.resolve({ data: { run_id: "r-1" } })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    const nfcoreWorkflow: Workflow = {
+      id: "wf-nfcore",
+      name: "nf-core/rnaseq",
+      source: "nf-core",
+      engine: "nextflow",
+      version: "3.24.0",
+    }
+
+    const { container } = renderWithProviders(
+      <RunSubmissionWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        projectId="proj-1"
+        initialWorkflowId="wf-nfcore"
+        availableWorkflows={[nfcoreWorkflow]}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Input")).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText("workbench.inputFileTab"))
+    const importInput = container.querySelector(
+      'input[type="file"][accept*=".json"]',
+    ) as HTMLInputElement | null
+    expect(importInput).not.toBeNull()
+    const file = new File(
+      [
+        JSON.stringify({
+          pipeline: "nf-core/rnaseq",
+          revision: "9.9.9",
+          profile: "test,docker",
+          input: "asset://project/samplesheet.csv",
+          genome: "GRCh37",
+        }),
+      ],
+      "params.json",
+      { type: "application/json" },
+    )
+    fireEvent.change(importInput as HTMLInputElement, { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("asset://project/samplesheet.csv")).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText("preview"))
+
+    await waitFor(() => {
+      expect(screen.getByText(/"profile": "test,docker"/)).toBeInTheDocument()
+      expect(screen.getByText(/"input": "asset:\/\/project\/samplesheet.csv"/)).toBeInTheDocument()
+      expect(screen.queryByText(/"revision": "9.9.9"/)).not.toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText("submitRun"))
+
+    await waitFor(() => {
+      const runsCall = apiMock.mock.calls.find(([path]) => path === "/runs")
+      expect(runsCall).toBeDefined()
+      const body = JSON.parse((runsCall![1] as { body: string }).body)
+      expect(body.values).toMatchObject({
+        input: "asset://project/samplesheet.csv",
+        genome: "GRCh37",
+      })
+      expect(body.options.profile).toBe("test,docker")
+    })
+  })
+
+  it("shows an import failure toast when JSON has no matching fields or options", async () => {
+    const { container } = renderWithProviders(
+      <RunSubmissionWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        projectId="proj-1"
+        initialWorkflowId="wf-1"
+        availableWorkflows={[WORKFLOW]}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Reads")).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText("workbench.inputFileTab"))
+    const importInput = container.querySelector(
+      'input[type="file"][accept*=".json"]',
+    ) as HTMLInputElement | null
+    expect(importInput).not.toBeNull()
+    const file = new File(
+      [JSON.stringify({ pipeline: "nf-core/rnaseq", revision: "3.24.0", unknown: true })],
+      "params.json",
+      { type: "application/json" },
+    )
+    fireEvent.change(importInput as HTMLInputElement, { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("workbench.inputFileNoTarget")
+    })
+    expect(toast.success).not.toHaveBeenCalled()
   })
 
   it("uploads a prepared CSV input file into a materialized file field", async () => {

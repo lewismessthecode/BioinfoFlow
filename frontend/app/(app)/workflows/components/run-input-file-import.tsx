@@ -12,12 +12,18 @@ interface RunInputFileImportProps {
   spec: FormSpec
   projectId: string
   onApplyValues: (values: FormValues) => void
+  onApplyOptions?: (options: ImportedRunOptions) => void
+}
+
+type ImportedRunOptions = {
+  profile?: string
 }
 
 export function RunInputFileImport({
   spec,
   projectId,
   onApplyValues,
+  onApplyOptions,
 }: RunInputFileImportProps) {
   const t = useTranslations("workflows.submission")
   const inputRef = useRef<HTMLInputElement>(null)
@@ -35,8 +41,19 @@ export function RunInputFileImport({
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
           throw new Error(t("workbench.inputFileUnsupported"))
         }
-        const values = valuesFromJson(spec, parsed as Record<string, unknown>)
-        onApplyValues(values)
+        const imported = importFromJson(spec, parsed as Record<string, unknown>)
+        if (
+          Object.keys(imported.values).length === 0
+          && Object.keys(imported.options).length === 0
+        ) {
+          throw new Error(t("workbench.inputFileNoTarget"))
+        }
+        if (Object.keys(imported.values).length > 0) {
+          onApplyValues(imported.values)
+        }
+        if (Object.keys(imported.options).length > 0) {
+          onApplyOptions?.(imported.options)
+        }
         toast.success(t("workbench.inputFileImported"))
         return
       }
@@ -64,7 +81,11 @@ export function RunInputFileImport({
 
       throw new Error(t("workbench.inputFileUnsupported"))
     } catch (error) {
-      toast.error(getApiErrorMessage(error, t("workbench.inputFileImportFailed")))
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : getApiErrorMessage(error, t("workbench.inputFileImportFailed")),
+      )
     } finally {
       setIsImporting(false)
       event.target.value = ""
@@ -109,18 +130,36 @@ export function RunInputFileImport({
   )
 }
 
-function valuesFromJson(spec: FormSpec, payload: Record<string, unknown>): FormValues {
+function importFromJson(
+  spec: FormSpec,
+  payload: Record<string, unknown>,
+): { values: FormValues; options: ImportedRunOptions } {
   const byId = new Map(spec.fields.map((field) => [field.id, field]))
   const values: FormValues = {}
+  const options: ImportedRunOptions = {}
 
   for (const [rawKey, value] of Object.entries(payload)) {
+    const optionKey = rawKey.split(".").at(-1) ?? rawKey
+    if (optionKey === "pipeline" || optionKey === "revision") continue
+    if (optionKey === "profile") {
+      const profile = normalizeImportedProfile(value)
+      if (profile) options.profile = profile
+      continue
+    }
+
     const fieldId = byId.has(rawKey) ? rawKey : rawKey.split(".").at(-1) ?? rawKey
     const field = byId.get(fieldId)
     if (!field || field.platform_managed) continue
     values[field.id] = normalizeImportedValue(field, value)
   }
 
-  return values
+  return { values, options }
+}
+
+function normalizeImportedProfile(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  const text = value.trim()
+  return text || undefined
 }
 
 function normalizeImportedValue(field: FormField, value: unknown): unknown {
