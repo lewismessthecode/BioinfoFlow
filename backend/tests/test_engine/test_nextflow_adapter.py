@@ -75,7 +75,8 @@ async def test_nextflow_adapter_build_command_writes_overrides_and_resume(tmp_pa
 
     command = await adapter.build_command(config, str(workspace))
 
-    assert command[:3] == [adapter.binary, "run", "demo/main.nf"]
+    run_index = command.index("run")
+    assert command[run_index : run_index + 2] == ["run", "demo/main.nf"]
     assert "-with-trace" in command
     assert "-with-dag" in command
     assert "-profile" in command
@@ -88,6 +89,23 @@ async def test_nextflow_adapter_build_command_writes_overrides_and_resume(tmp_pa
     overrides_path = Path(command[command.index("-c") + 1])
     assert overrides_path.exists()
     assert "process.cpus = 4" in overrides_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_nextflow_adapter_build_command_routes_nextflow_log_to_audit_dir(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    adapter = NextflowAdapter()
+    config = _nextflow_config(
+        dag_path="runs/run_abc/audit/dag.dot",
+        trace_path="runs/run_abc/audit/trace.tsv",
+    )
+
+    command = await adapter.build_command(config, str(workspace))
+
+    assert command[:2] == [adapter.binary, "-log"]
+    assert command[2] == str(workspace / "runs/run_abc/audit/nextflow.log")
+    assert command[3:5] == ["run", "demo/main.nf"]
 
 
 @pytest.mark.asyncio

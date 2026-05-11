@@ -57,8 +57,11 @@ class NextflowAdapter(EngineAdapter):
         work_dir = Path(work_dir_value) if work_dir_value else nextflow_work_dir(run_id)
         trace_path = str(config.get("trace_path") or "trace.txt")
         dag_path = str(config.get("dag_path") or "dag.dot")
+        log_path = _nextflow_log_path(config, workspace, dag_path=dag_path)
         cmd = [
             self.binary,
+            "-log",
+            str(log_path),
             "run",
             pipeline,
             "-work-dir",
@@ -286,6 +289,20 @@ def _optional_string(value) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _nextflow_log_path(config: dict, workspace: str, *, dag_path: str) -> Path:
+    runtime = _runtime(config)
+    explicit = _optional_string(config.get("log_path") or runtime.get("log_path"))
+    if explicit:
+        path = Path(explicit)
+    else:
+        path = Path(dag_path).parent / "nextflow.log"
+
+    if not path.is_absolute():
+        path = Path(workspace) / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _is_valid_uuid(value: str) -> bool:
