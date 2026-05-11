@@ -18,7 +18,7 @@ function resolveDatabaseConstructor(moduleValue) {
   throw new TypeError("better-sqlite3 did not export a database constructor")
 }
 
-export function isAbiMismatchError(error) {
+function isAbiMismatchError(error) {
   const message = String(error?.message ?? "")
   return (
     message.includes("compiled against a different Node.js version") ||
@@ -26,7 +26,7 @@ export function isAbiMismatchError(error) {
   )
 }
 
-export function verifyBetterSqliteNodeAbi(loadModule) {
+function verifyBetterSqliteNodeAbi(loadModule) {
   try {
     const Database = resolveDatabaseConstructor(loadModule())
     const database = new Database(":memory:")

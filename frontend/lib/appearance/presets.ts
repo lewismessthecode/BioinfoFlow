@@ -84,7 +84,7 @@ export const APPEARANCE_TOKEN_KEYS = [
 export type AppearanceTokenKey = (typeof APPEARANCE_TOKEN_KEYS)[number]
 export type AppearanceTokens = Record<AppearanceTokenKey, string>
 
-export type AppearancePreset = {
+type AppearancePreset = {
   id: ThemePresetId
   label: string
   light: AppearanceTokens
