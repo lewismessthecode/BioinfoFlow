@@ -25,7 +25,7 @@ Bioinformatics tooling has been stuck in another era — clunky interfaces, tedi
 
 Bioinfoflow turns a workstation or a lab server into a workspace your whole team can share. It sits above Nextflow and WDL: register pipelines once, gather project data under a single `BIOINFOFLOW_HOME`, hand runs off to a built-in scheduler, and watch DAGs, logs, resource pressure, and outputs from one product surface.
 
-The bigger ambition: a single, coherent product layer above the compute — so computational biology stops being something only specialist teams can run. One sentence of natural language should be enough to launch a full analysis. With a 16 GB-class GPU (an RTX 4080 will do), even a desktop at home can finish a Parabricks WGS run and put your own genome within reach.
+The bigger ambition: a single, coherent product layer above the compute — so computational biology stops being something only specialist teams can run. One sentence of natural language should be enough to launch a full analysis. With a 16 GB-class GPU, our goal is to put a Parabricks WGS run within reach of any desktop — no cloud required.
 
 > [!TIP]
 > One-line install:
