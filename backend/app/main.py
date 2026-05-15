@@ -27,7 +27,7 @@ from app.services.run_dispatch import (
     set_run_dispatcher,
     set_run_scheduler,
 )
-from app.startup_logging import log_startup_summary
+from app.startup_logging import log_startup_banner, log_startup_summary
 from app.services.terminal_service import terminal_manager
 from app.utils.exceptions import AppError, http_error_code
 from app.utils.logging import (
@@ -46,6 +46,7 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle hooks."""
+    log_startup_banner(settings)
     logger.info("startup.begin", app=settings.app_name, version=settings.app_version)
     assert_identity_mount()
     ensure_platform_layout()

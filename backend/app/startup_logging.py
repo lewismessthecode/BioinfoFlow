@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import sys
 from os import cpu_count
 from pathlib import Path
 from typing import Any
 
 from app.utils.logging import get_logger
-
 
 _PROVIDER_KEY_FIELDS = (
     "anthropic_api_key",
@@ -18,6 +18,25 @@ _PROVIDER_KEY_FIELDS = (
     "kimi_api_key",
     "minimax_api_key",
 )
+
+_BANNER_ART = r"""
+░█▀▄░▀█▀░█▀█░▀█▀░█▀█░█▀▀░█▀█░█▀▀░█░░░█▀█░█░█
+░█▀▄░░█░░█░█░░█░░█░█░█▀▀░█░█░█▀▀░█░░░█░█░█▄█
+░▀▀░░▀▀▀░▀▀▀░▀▀▀░▀░▀░▀░░░▀▀▀░▀░░░▀▀▀░▀▀▀░▀░▀
+"""
+
+
+def build_startup_banner(settings: Any) -> str:
+    return (
+        f"{_BANNER_ART}\n"
+        "BIOINFOFLOW\n"
+        f"{settings.app_name} v{settings.app_version} - bioinformatics workflows, ready.\n"
+    )
+
+
+def log_startup_banner(settings: Any, *, stream: Any | None = None) -> None:
+    output = stream or sys.stderr
+    output.write(build_startup_banner(settings))
 
 
 def build_startup_summary(settings: Any) -> dict[str, Any]:
