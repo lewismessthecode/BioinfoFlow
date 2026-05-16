@@ -4,16 +4,10 @@ on:
   push:
     branches-ignore:
       - main
-      - dependabot/**
-      - renovate/**
-      - tmp/**
-      - wip/**
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: Branch to open as a PR
-        required: false
-        type: string
+      - "dependabot/**"
+      - "renovate/**"
+      - "tmp/**"
+      - "wip/**"
 
 permissions:
   contents: read
@@ -32,7 +26,7 @@ jobs:
     steps:
       - name: Create or update pull request
         run: |
-          branch="${{ inputs.branch || github.ref_name }}"
+          branch="$GITHUB_REF_NAME"
 
           if [ -z "$branch" ]; then
             echo "No branch name was supplied."
@@ -44,25 +38,32 @@ jobs:
             exit 0
           fi
 
-          if gh pr view "$branch" \
+          existing_count="$(gh pr list \
             --repo "$GITHUB_REPOSITORY" \
+            --head "$branch" \
             --base main \
+            --state open \
             --json number \
-            >/dev/null 2>&1; then
+            --jq 'length')"
+          if [ "$existing_count" != "0" ]; then
             echo "A pull request already exists for ${branch}."
             exit 0
           fi
 
           title="$(printf '%s' "$branch" | sed -E 's#^(codex|feature|fix|bugfix|chore|docs)/##; s#[-_/]+# #g')"
           title="$(printf '%s' "$title" | awk '{for (i=1; i<=NF; i++) $i=toupper(substr($i,1,1)) substr($i,2)} 1')"
+          body="$(cat <<BODY
+          Automated PR for branch \`$branch\`.
+
+          CI will run against this commit. Keep pushing to the same worktree branch to update this PR.
+
+          Add the \`automerge\` label after review if you want GitHub to squash-merge it automatically once required checks pass.
+          BODY
+          )"
 
           gh pr create \
             --repo "$GITHUB_REPOSITORY" \
             --base main \
             --head "$branch" \
             --title "$title" \
-            --body "Automated PR for branch \`$branch\`.
-
-CI will run against this commit. Keep pushing to the same worktree branch to update this PR.
-
-Add the \`automerge\` label after review if you want GitHub to squash-merge it automatically once required checks pass."
+            --body "$body"

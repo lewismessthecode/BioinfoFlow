@@ -23,14 +23,12 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    env:
-      AGENT_HERMES_HOME: ${{ runner.temp }}/bioinfoflow/state/hermes
-      AGENT_HERMES_STATE_DB: ${{ runner.temp }}/bioinfoflow/state/hermes/state.db
-      AUTH_MODE: dev
-      BIOINFOFLOW_HOME: ${{ runner.temp }}/bioinfoflow
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Install system tools
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0
@@ -43,9 +41,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --frozen --python 3.13
-
-      - name: Prepare runtime directories
-        run: mkdir -p "$BIOINFOFLOW_HOME/state/hermes"
 
       - name: Lint
         run: uv run ruff check .
@@ -60,18 +55,7 @@ jobs:
       run:
         working-directory: frontend
     env:
-      AUTH_LOCAL_ENABLED: "true"
-      AUTH_MODE: dev
-      AUTH_SELF_SIGNUP_ENABLED: "false"
-      BETTER_AUTH_SECRET: ci-better-auth-secret-for-github-actions
-      BETTER_AUTH_URL: http://localhost:3000
-      BIOINFOFLOW_HOME: ${{ runner.temp }}/bioinfoflow
-      BIOINFOFLOW_HOME_HOST: ${{ runner.temp }}/bioinfoflow
       CI: "true"
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
-      NEXT_PUBLIC_AUTH_LOCAL_ENABLED: "true"
-      NEXT_PUBLIC_AUTH_MODE: dev
-      NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -80,9 +64,6 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-
-      - name: Prepare runtime directories
-        run: mkdir -p "$BIOINFOFLOW_HOME/state/auth"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -98,6 +79,18 @@ jobs:
 
       - name: Build
         run: bun run build
+        env:
+          AUTH_LOCAL_ENABLED: "true"
+          AUTH_MODE: dev
+          AUTH_SELF_SIGNUP_ENABLED: "false"
+          BETTER_AUTH_SECRET: ci-better-auth-secret-for-github-actions
+          BETTER_AUTH_URL: http://localhost:3000
+          BIOINFOFLOW_HOME: /tmp/bioinfoflow
+          BIOINFOFLOW_HOME_HOST: /tmp/bioinfoflow
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+          NEXT_PUBLIC_AUTH_LOCAL_ENABLED: "true"
+          NEXT_PUBLIC_AUTH_MODE: dev
+          NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED: "false"
 
   docker:
     name: docker
