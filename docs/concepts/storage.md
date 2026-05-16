@@ -85,7 +85,7 @@ BIOINFOFLOW_HOME/projects/<project_id>/runs/<run_id>/
 
 The exact engine directory is normalized from the workflow engine name.
 
-## Path Contract v3
+## Identity-Mount Path Contract
 
 Docker execution relies on an identity mount:
 
@@ -99,6 +99,6 @@ Compose implements this as:
 - ${BIOINFOFLOW_HOME:-${PWD}/data}:${BIOINFOFLOW_HOME:-${PWD}/data}
 ```
 
-The backend checks `BIOINFOFLOW_HOME_HOST` against `BIOINFOFLOW_HOME` at startup. If they differ, startup fails with a Path Contract v3 error.
+The backend checks `BIOINFOFLOW_HOME_HOST` against `BIOINFOFLOW_HOME` at startup. If they differ, startup fails with a path contract error.
 
 This contract is what lets Nextflow, MiniWDL, backend code, and task containers share absolute paths without translation.

@@ -60,7 +60,7 @@ Compose passes these important values to the backend:
 - `DATABASE_URL=sqlite+aiosqlite:///${BIOINFOFLOW_HOME:-${PWD}/data}/state/bioinfoflow.db`
 - `BETTER_AUTH_DB_PATH=${BIOINFOFLOW_HOME:-${PWD}/data}/state/auth/better-auth.db`
 
-The backend enforces Path Contract v3: when `BIOINFOFLOW_HOME_HOST` is set, it must resolve to the same absolute path as `BIOINFOFLOW_HOME`.
+The backend enforces the identity-mount path contract: when `BIOINFOFLOW_HOME_HOST` is set, it must resolve to the same absolute path as `BIOINFOFLOW_HOME`.
 
 The backend creates platform directories on startup through `ensure_platform_layout()`:
 

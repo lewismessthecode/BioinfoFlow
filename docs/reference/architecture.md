@@ -9,7 +9,7 @@ The backend is a FastAPI app in `backend/app/main.py`.
 Startup lifecycle:
 
 1. configure logging from `backend/app/config.py`
-2. enforce Path Contract v3 with `assert_identity_mount()`
+2. enforce the `BIOINFOFLOW_HOME` identity-mount invariant with `assert_identity_mount()`
 3. create platform storage roots with `ensure_platform_layout()`
 4. initialize Hermes/agent state
 5. initialize the database and verify Alembic schema state
@@ -84,7 +84,8 @@ Docker Compose identity-mounts that path:
 - ${BIOINFOFLOW_HOME:-${PWD}/data}:${BIOINFOFLOW_HOME:-${PWD}/data}
 ```
 
-This is Path Contract v3. Backend, workflow runner, and task containers must see the same absolute paths.
+This identity mount is the path contract for workflow execution. Backend,
+workflow runner, and task containers must see the same absolute paths.
 
 Workflow execution uses a thin run service facade plus dedicated submission, DAG, lifecycle, archive, and dispatch services. New business logic should go into focused services instead of growing the facade.
 
@@ -102,4 +103,4 @@ The default flow is:
 user input -> agent service -> async runtime loop -> tool dispatch -> persisted/SSE events -> frontend
 ```
 
-Agent tools use the `BaseTool` abstract class plus `@register_tool`. Tool risk levels are `read`, `act_low`, and `act_high`.
+Agent tools use the `BaseTool` abstract class plus `@register_tool`. Tool risk levels are `read`, `act_low`, and `act_high`, with high-impact actions routed through approvals.

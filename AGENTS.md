@@ -60,7 +60,7 @@ bun run test:watch
 - Backend config is in `backend/app/config.py`; it auto-reads repo-root `.env` first, then optional `backend/.env`.
 - Frontend dev/build scripts also load the repo-root `.env`; keep frontend-only overrides in `frontend/.env.local` only when truly needed.
 - Workflow execution may require Docker, `NEXTFLOW_BIN`, and `MINIWDL_BIN` depending on the workflow engine.
-- Path Contract v3 is the current model: `BIOINFOFLOW_HOME` should be identity-mounted so host and containers see the same absolute path.
+- Bioinfoflow's path model is an identity mount: `BIOINFOFLOW_HOME` should resolve to the same absolute path on the host, backend container, workflow runner, and task containers.
 
 ## Architecture
 
@@ -69,7 +69,7 @@ bun run test:watch
 - **Run pipeline** uses a thin `RunService` facade that delegates to submission, DAG, lifecycle, archive, and dispatch services. Do not add new business logic to the facade if a dedicated service already exists.
 - **`backend/app/scheduler/`** contains the persistent scheduler: queue, slot accounting, resource monitoring, retry/timeout logic, cleanup, and completion hooks. Main endpoints are `/scheduler/status`, `/scheduler/resources`, and `/scheduler/slots`.
 - **`backend/app/engine/`** holds the workflow engine abstraction for Nextflow and WDL, including local/container execution backends and mount/path handling.
-- **`backend/app/cli/`** provides the `bif` CLI with `remote`, `local`, and `auto` transports. Prefer `--output json` when a machine-readable envelope is useful — it emits `{success, data, error?, meta?}` on stdout and a matching error envelope on stderr (parseable by automation). Standard flags: `-V/--version`, `-h/--help`, `-p/--project`, `-q/--quiet`, `-v/--verbose`, `--no-color`. Destructive verbs (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) prompt by default; pass `--force/-f` in scripts. Exit codes: `0` ok, `1` general, `2` usage, `3` backend, `4` connection.
+- **`backend/app/cli/`** provides the HTTP-only `bif` CLI for a running backend. Prefer `--output json` when a machine-readable envelope is useful — it emits `{success, data, error?, meta?}` on stdout and a matching error envelope on stderr (parseable by automation). Standard flags: `-V/--version`, `-h/--help`, `-p/--project`, `-q/--quiet`, `-v/--verbose`, `--no-color`. Destructive verbs (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) prompt by default; pass `--force/-f` in scripts. Exit codes: `0` ok, `1` general, `2` usage, `3` backend, `4` connection.
 - **`backend/app/auth/` + frontend auth routes** implement Better Auth for `personal`, `team`, and `dev` modes.
 - **`frontend/`** — Next.js 16 App Router, React 19, next-intl, Better Auth, React Flow, Radix UI, and Tailwind CSS 4.
 - Frontend data flow is REST for regular API calls, SSE for long-running events, and WebSocket for terminal sessions.
@@ -120,7 +120,7 @@ bun run test:watch
 - `NEXT_PUBLIC_API_BASE_URL` is build-time config, not runtime config.
 - `bif` is an HTTP-only client for a running backend; use `--base-url` or `BIOFLOW_API_URL` to select the API target.
 - `handle_errors` decorator re-raises `click.exceptions.ClickException` (covers `BadParameter`/`UsageError`) so Click renders proper usage errors with exit code 2 — never extend the catch-all `except Exception` branch to swallow them.
-- Path Contract v3 assumes identical host/container paths under `BIOINFOFLOW_HOME`; avoid reintroducing host/container path translation unless you are intentionally working on that subsystem.
+- The identity-mount path model assumes identical host/container paths under `BIOINFOFLOW_HOME`; avoid reintroducing host/container path translation unless you are intentionally working on that subsystem.
 - Keep per-run mount targets as siblings, not nested under a read-only parent mount, or container writes may silently break.
 - miniwdl `glob()` patterns must stay relative to the task working directory; avoid absolute output globs in WDLs.
 

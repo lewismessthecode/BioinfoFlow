@@ -1,6 +1,6 @@
 # Dependencies Codemap
-<!-- Generated: 2026-04-17 | Token estimate: ~600 -->
-**Last Updated:** 2026-04-17
+<!-- Generated: 2026-05-16 | Token estimate: ~600 -->
+**Last Updated:** 2026-05-16
 
 ## Backend (Python — pyproject.toml)
 
@@ -15,7 +15,7 @@
 ### LLM / Agent
 | Package | Purpose |
 | --- | --- |
-| LangGraph | Graph agent loop (v1 fallback) |
+| LangGraph | Older graph-based agent compatibility path |
 | langchain-core | Base interfaces |
 | langchain-anthropic | Anthropic wrapper (Claude) |
 | langchain-openai | OpenAI wrapper |

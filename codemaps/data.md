@@ -1,6 +1,6 @@
 # Data Codemap
-<!-- Generated: 2026-04-17 | Files scanned: 18 models, 18 repos, 14 schemas | Token estimate: ~800 -->
-**Last Updated:** 2026-04-17
+<!-- Generated: 2026-05-16 | Files scanned: 20 models, 20 repos, 14 schemas | Token estimate: ~800 -->
+**Last Updated:** 2026-05-16
 **Entry Points:** `backend/app/models/`, `backend/alembic/versions/*.py`, `backend/app/schemas/`, `frontend/lib/types.ts`
 
 ## Architecture
@@ -10,13 +10,13 @@ Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
                         └─ Frontend types mirror API envelopes
 ```
 
-## Path Contract v2 (migrations 0019–0021)
+## Storage Layout Migrations (0019–0021)
 - `Project` no longer carries `workspace_path` or `data_roots`.
 - New fields: `storage_mode` (`managed` | `external`), `external_root_path`, `workspace_id`, `created_by_user_id`.
 - Run artifacts live under a unified `runs/<run_id>/` layout; the database is the source of truth for locations.
-- `/storage` API + `storage_service.py` expose storage mode + external root CRUD.
+- `/storage` API + `storage_service.py` expose storage mode + external root CRUD while the identity-mount path model keeps host and container paths aligned.
 
-## Database Tables (23 Alembic migrations)
+## Database Tables (31 Alembic migration files)
 - `projects` (name, description, storage_mode, external_root_path, workspace_id, user_id, created_by_user_id, is_default)
 - `workflows` (source, engine, source_ref, entrypoint_relpath, bundle_kind, version, schema_json, submission_hint, weight, estimated_time)
 - `docker_images` (name, tag, status, pull_failure_reason)
@@ -25,6 +25,7 @@ Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
 - `messages` (role, type, content, metadata)
 - `agent_traces` (type, payload)
 - `agent_approvals` (tool_name, risk_level, status)
+- `agent_response_handles` + `agent_approval_handles` (Hermes response/approval linkage)
 - `project_workflow_bindings` (project_id, workflow_id)
 - `project_workflow_pins` (project_id, workflow_source, workflow_name, pinned_workflow_id)
 - `scheduled_tasks` (priority, state, run_id, weight)
@@ -35,7 +36,7 @@ Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
 - `workspaces` (name, mode, owner)
 - `workspace_memberships` (workspace_id, user_id, role)
 
-## ORM Models (backend/app/models, 18 files)
+## ORM Models (backend/app/models, 20 files)
 | Model | Table | Key Fields |
 | --- | --- | --- |
 | `Project` | projects | name, description, storage_mode, external_root_path, workspace_id, user_id, is_default |
@@ -47,6 +48,8 @@ Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
 | `Message` | messages | role, type, content, metadata |
 | `AgentTrace` | agent_traces | type, payload |
 | `AgentApproval` | agent_approvals | tool_name, risk_level, status |
+| `AgentResponseHandle` | agent_response_handles | Hermes response handle linkage |
+| `AgentApprovalHandle` | agent_approval_handles | Hermes approval handle linkage |
 | `ProjectWorkflowBinding` | project_workflow_bindings | project_id, workflow_id |
 | `ProjectWorkflowPin` | project_workflow_pins | project_id, workflow_source, pinned_workflow_id |
 | `ScheduledTask` | scheduled_tasks | priority, state, run_id, weight |
@@ -57,7 +60,7 @@ Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
 | `Workspace` | workspaces | name, mode, owner |
 | `WorkspaceMembership` | workspace_memberships | workspace_id, user_id, role |
 
-## Repositories (backend/app/repositories, 18 repos)
+## Repositories (backend/app/repositories, 20 repos)
 | Repository | Model | Notes |
 | --- | --- | --- |
 | `BaseRepository[T]` | Generic | CRUD + cursor pagination |
@@ -68,6 +71,8 @@ Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
 | `MessageRepository` | Message | |
 | `AgentTraceRepository` | AgentTrace | message_id filtering |
 | `ApprovalRepository` | AgentApproval | Status queries |
+| `AgentResponseHandleRepository` | AgentResponseHandle | Hermes response handle lookup |
+| `AgentApprovalHandleRepository` | AgentApprovalHandle | Hermes approval handle lookup |
 | `ImageRepository` | DockerImage | |
 | `ProjectWorkflowBindingRepository` | ProjectWorkflowBinding | Enable/disable |
 | `ProjectWorkflowPinRepository` | ProjectWorkflowPin | Version pinning |
@@ -90,7 +95,7 @@ Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
 - `project.py`: project CRUD (storage_mode fields)
 - `project_workflow.py`: workflow binding + pinning
 - `run.py`: run lifecycle + retry/resume + batch
-- `storage.py`: project storage backend + external roots (path contract v2)
+- `storage.py`: project storage backend + external roots
 - `system.py`: health + GPU metrics
 - `terminal.py`: terminal session create/close
 - `user_settings.py`: user preferences
@@ -109,7 +114,7 @@ Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
 - Terminal types: `TerminalSession`, `TerminalMessage`
 - User settings: `UserSettings`, `LLMProvider`
 
-## Alembic Migrations (23 revisions)
+## Alembic Migrations (31 files)
 | # | Description |
 |---|---|
 | 0001 | Initial schema (projects, workflows, runs, images, conversations, messages) |
@@ -131,8 +136,14 @@ Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
 | 0017 | Image pull failures + workspace/team auth tables (two heads: `0017_image_pull_failures`, `0017_workspace_team_auth`) |
 | 0018 | Merge heads (workspace/team auth + image pull failures) |
 | 0019 | Project storage fields (`storage_mode`, `external_root_path`, `workspace_id`) |
-| 0020 | Path contract v2 — unified run layout |
+| 0020 | Unified run layout |
 | 0021 | Remove `data_roots` from projects |
+| 0022 | Project `workspace_id` foreign key |
+| 0023 | Hermes agent handles + workflow form spec (two heads at this revision) |
+| 0024 | Conversation execution policy + run heartbeat/error fields (two heads at this revision) |
+| 0025 | Drop workflow `submission_hint` |
+| 0026 | Merge conversation and workflow form heads |
+| 0027 | Scheduler tasks cascade on run delete |
 
 ## External Dependencies
 - SQLAlchemy async + aiosqlite, Alembic migrations, Pydantic v2.

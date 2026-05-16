@@ -42,7 +42,9 @@ Agent Runtime lives in:
 backend/app/services/agent/runtime/
 ```
 
-The default flow is:
+The current runtime is an explicit async loop with provider selection,
+streaming, context compaction, task/todo state, skill loading, background
+commands, subagents, and tool dispatch. The default flow is:
 
 ```text
 user input -> agent service -> async runtime loop -> tool dispatch -> persisted/SSE events -> frontend
@@ -52,12 +54,12 @@ Agent tools use `BaseTool` plus `@register_tool`. Risk levels are `read`,
 `act_low`, and `act_high`, so higher-impact actions can be surfaced for review
 instead of being hidden inside a chat transcript.
 
-## Local-First Path Contract
+## Local-First Path Model
 
-Path Contract v3 requires the host, backend, workflow runner, and task
-containers to see the same absolute paths under `BIOINFOFLOW_HOME`. Docker
-Compose identity-mounts that root so workflow outputs and cached engine files
-remain inspectable from both the UI and the host shell.
+Bioinfoflow requires the host, backend, workflow runner, and task containers to
+see the same absolute paths under `BIOINFOFLOW_HOME`. Docker Compose
+identity-mounts that root so workflow outputs and cached engine files remain
+inspectable from both the UI and the host shell.
 
 See [Storage And Data Layout](concepts/storage.md) for the storage model and
 [Docker Quick Start](getting-started/docker.md) for deployment details.
