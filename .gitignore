@@ -116,6 +116,8 @@ data/
 !/docs/concepts/**
 !/docs/reference/
 !/docs/reference/**
+!/docs/development/
+!/docs/development/**
 !/docs/workflows/
 !/docs/workflows/**
 !/docs/operations/
@@ -125,6 +127,7 @@ data/
 /docs/plans/*
 !/docs/plans/2026-05-06-readme-docs-refresh.md
 !/docs/plans/2026-05-06-nfcore-rnaseq-launch-demo.md
+!/docs/plans/2026-05-16-github-ci-cd-automation.md
 docs/course-bioinfoflow-zh.html
 .gstack/
 .zsh_history

@@ -1288,8 +1288,8 @@
     "hero": {
       "tagline": "本地优先的生物信息学平台",
       "gpuPowered": "GPU 加速",
-      "title": "在家运行你的 WGS",
-      "titleSuffix": "全基因组分析。",
+      "title": "Bioinfoflow",
+      "titleSuffix": "让你在家运行 WGS。",
       "description": "使用 RTX 4090 在 2 小时内完成完整的 30X 全基因组测序分析。",
       "wgsHighlight": "✨ 个人使用免费。数据永不离开你的机器。",
       "startFree": "立即开始",
