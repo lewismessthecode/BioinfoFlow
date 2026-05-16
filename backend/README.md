@@ -13,7 +13,7 @@ cp .env.example .env
 cd backend
 uv sync
 uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 ```
 
 If startup fails with a schema message or SQLite errors like
