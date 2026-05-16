@@ -134,7 +134,7 @@ cp .env.example .env
 cd backend
 uv sync
 uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 ```
 
 If this machine has runner paths that should not live in the shared `.env`, create `backend/.env` and only put overrides there:
@@ -201,7 +201,7 @@ bun install
 Then in two terminals:
 
 ```bash
-cd backend && uv run uvicorn app.main:app --reload --port 8000
+cd backend && uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 cd frontend && bun run dev
 ```
 

@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 uv sync                                    # Install deps
 uv run alembic upgrade head                # Apply migrations
-uv run uvicorn app.main:app --reload --port 8000  # Dev server
+uv run uvicorn app.main:app --reload --reload-dir app --port 8000  # Dev server
 uv run pytest                              # All tests
 uv run pytest tests/test_api/test_runs.py -v      # Single file
 uv run pytest tests/test_api/ -v -k "test_create" # Filter by name
