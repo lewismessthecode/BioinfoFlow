@@ -23,7 +23,7 @@ Precedence:
 3. repo-root `.env`
 4. code defaults
 
-## Path Contract v3
+## Identity-Mount Path Contract
 
 Identity mount invariant:
 

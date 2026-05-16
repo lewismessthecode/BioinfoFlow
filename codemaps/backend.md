@@ -1,6 +1,6 @@
 # Backend Codemap
-<!-- Generated: 2026-04-17 | Files scanned: 216 | Token estimate: ~1000 -->
-**Last Updated:** 2026-04-17
+<!-- Generated: 2026-05-16 | Files scanned: current backend snapshot | Token estimate: ~1000 -->
+**Last Updated:** 2026-05-16
 **Entry Points:** `backend/app/main.py`, `backend/app/api/v1/router.py`, `backend/app/cli/main.py`, `backend/alembic/env.py`
 
 ## Architecture
@@ -8,7 +8,7 @@
 HTTP /api/v1
    │
    ▼
-API Routers (18) → Services → Repositories → SQLite (aiosqlite)
+API Routers (17) → Services → Repositories → SQLite (aiosqlite)
    │                  │
    │                  ├─ Workflow adapters (Nextflow / MiniWDL local / MiniWDL container)
    │                  ├─ Engine abstraction (adapter registry + backends + mounts)
@@ -17,7 +17,7 @@ API Routers (18) → Services → Repositories → SQLite (aiosqlite)
    │                  ├─ Approval workflow (ACT_HIGH gating)
    │                  ├─ Scheduler (queue + slots + resources + monitor + retry + timeout)
    │                  ├─ Run service facade (submission/dag/lifecycle/archive/dispatch)
-   │                  ├─ Storage service (path contract v2)
+   │                  ├─ Storage service (identity-mounted paths)
    │                  ├─ Batch processing
    │                  ├─ Terminal sessions (pty + WebSocket)
    │                  └─ Notifications + audit logging
@@ -31,22 +31,21 @@ API Routers (18) → Services → Repositories → SQLite (aiosqlite)
         ├─ SSE streaming + approval resolution (NDJSON in --output json)
         ├─ JSON envelope on stdout / parseable error envelope on stderr
         ├─ Confirm-by-default destructive verbs (--force/-f to skip)
-        └─ Config store (~/.config/bioinfoflow/cli.toml) + remote/local/auto transport
+        └─ Config store (~/.config/bioinfoflow/cli.toml) + HTTP RemoteTransport
 ```
 
-## API Routes (18 routers)
+## API Routes (17 routers)
 | Prefix | Module | Notes |
 | --- | --- | --- |
 | `/projects` | `projects.py` | CRUD + search + storage mode |
 | `/projects/{id}/workflows` | `project_workflows.py` | Bind/unbind + pin workflows |
 | `/workflows` | `workflows.py` | Registry + metadata + DAG + source |
 | `/files` | `files.py` | Scan/read/write/upload/download |
-| `/storage` | `storage.py` | Project storage backend + external roots (path contract v2) |
+| `/storage` | `storage.py` | Project storage backend + external roots |
 | `/images` | `images.py` | Docker images + pull + load |
-| `/demos` | `demos.py` | Demo catalog + run |
 | `/events` | `events.py` | SSE stream (filtered by conversation/run/image) |
-| `/batch` | `batch.py` | Batch run creation + status + cancel |
 | `/runs` | `runs.py` | Run lifecycle + logs + outputs + DAG + cancel/resume/retry |
+| `/runs/batch` | `batch.py` | Batch run creation + status + cancel |
 | `/notifications` | `notifications.py` | Notification config CRUD |
 | `/scheduler` | `scheduler.py` | Scheduler status + resources + slots |
 | `/agent` | `agent.py` | Conversations + messages + traces + approvals |
@@ -83,8 +82,8 @@ API Routers (18) → Services → Repositories → SQLite (aiosqlite)
 **Agent / Approval**
 | Module | Purpose |
 | --- | --- |
-| `agent/agent_service.py` | Agent orchestration (v1 + v2) |
-| `agent/graph.py` | LangGraph agent loop (v1 fallback) |
+| `agent/agent_service.py` | Agent orchestration with runtime loop + compatibility fallback |
+| `agent/graph.py` | Older LangGraph compatibility path |
 | `agent/planner.py` + `executor.py` | Task decomposition + plan execution |
 | `agent/approval_service.py` | ACT_HIGH tool gating |
 | `agent/conversation_manager.py` | Conversation state |
@@ -101,7 +100,7 @@ API Routers (18) → Services → Repositories → SQLite (aiosqlite)
 | `miniwdl_service.py` / `nextflow_service.py` | Engine helpers |
 | `file_service.py` | File scan / read / write |
 | `gpu_service.py` | GPU detection |
-| `stats_service.py` / `demo_service.py` / `demo_catalog.py` | Dashboard + demo seed |
+| `stats_service.py` | Dashboard metrics |
 | `user_settings_service.py` / `workspace_service.py` / `project_service.py` | Account + workspace ops |
 
 ## Agent Runtime (backend/app/services/agent/runtime/, 17 modules)
@@ -131,7 +130,7 @@ API Routers (18) → Services → Repositories → SQLite (aiosqlite)
 | `backend.py` | EngineEvent/EngineEventType + abstract ExecutionBackend |
 | `local.py` | LocalBackend: local process execution with event streaming |
 | `miniwdl_container_backend.py` | Containerized MiniWDL execution backend |
-| `miniwdl_mounts.py` | Host↔container mount resolution (path contract v2) |
+| `miniwdl_mounts.py` | Host↔container mount resolution for identity-mounted paths |
 | `registry.py` | Adapter registry with built-in Nextflow/WDL registration |
 | `schema_extractor.py` | Workflow schema extraction via engine adapters |
 | `adapters/nextflow.py` | NextflowAdapter: GPU detection, resume support |
@@ -156,7 +155,7 @@ API Routers (18) → Services → Repositories → SQLite (aiosqlite)
 | Module | Purpose |
 | --- | --- |
 | `main.py` | Entry point, Typer app registration |
-| `transport.py` | HTTP transport layer (remote/local/auto) |
+| `transport.py` | HTTP transport layer (`RemoteTransport`) |
 | `api_helpers.py` | Shared API call patterns |
 | `render.py` | Rich console output formatting |
 | `config_store.py` | Persistent config (TOML file) |

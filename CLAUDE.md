@@ -60,13 +60,13 @@ uv run bif open run r-abc                      # Open a page in the browser ($BI
 
 ## Environment
 
-Full setup: `docs/operations/runbook.md`. Minimum: `cp backend/.env.example backend/.env` and set `ANTHROPIC_API_KEY`. Also needs Docker daemon, `NEXTFLOW_BIN`, `MINIWDL_BIN` for workflow execution.
+Full setup: `RUNBOOK.md` and `docs/operations/runbook.md`. Minimum: copy the repo-root `.env.example` to `.env`, set one provider key, and set owner credentials. Workflow execution also needs Docker daemon access plus `NEXTFLOW_BIN` or `MINIWDL_BIN` depending on the engine.
 
-**Not in `.env.example` yet:** `AGENT_RUNTIME_V2`, `AGENT_MAX_ROUNDS`, `AGENT_COMPACT_THRESHOLD`, all `SCHEDULER_*` vars, `RUN_SCHEDULER_MODE` — defaults in `app/config.py` work for local dev.
+Scheduler and agent runtime defaults live in `app/config.py`; only add overrides to `.env` when local behavior really needs to differ.
 
 ## Architecture
 
-- **`backend/`** — FastAPI + agent orchestration. Agent Runtime (explicit async loop in `services/agent/runtime/`) is the default; v1 LangGraph StateGraph (`graph.py`) is the fallback. Core flow: User Input → Agent Service → Runtime Loop → Tools → SSE Events → Frontend. Runtime v2 modules: `loop`, `dispatch`, `llm_client`, `compact`, `todo`, `tasks`, `skills`, `subagent`, `session_state`, `system_prompt`, `background`, `messages`.
+- **`backend/`** — FastAPI + agent orchestration. Agent Runtime (explicit async loop in `services/agent/runtime/`) is the default; the older LangGraph StateGraph (`graph.py`) is a compatibility fallback. Core flow: User Input → Agent Service → Runtime Loop → Tools → SSE Events → Frontend. Runtime modules include `loop`, `dispatch`, `llm_client`, `compact`, `todo`, `tasks`, `skills`, `subagent`, `session_state`, `system_prompt`, `background`, and `messages`.
 - **`backend/app/services/run_service.py`** — RunService is a facade that delegates to `RunSubmissionService` (wizard/table/unified run creation), `RunDagService` (DAG repair + mock variants), `RunLifecycleService` (state transitions), and `RunDispatchService` (engine dispatch). All callers import from `run_service.py` — never import the sub-services directly.
 - **`backend/app/scheduler/`** — Persistent run scheduler with priority queue, retry policies, resource monitoring (CPU/mem/disk/GPU), and completion hooks. Modes: `persistent` (default), `legacy`, `local`. API: `/scheduler/status`, `/scheduler/resources`.
 - **`backend/app/engine/`** — Workflow execution via adapter pattern. `EngineAdapter` interface with Nextflow and WDL adapters. `LocalBackend` for execution, `SchemaExtractor` for workflow parameter discovery.
@@ -121,7 +121,7 @@ Three contracts govern workflow execution. Violating any of them produces silent
 
 ## Gotchas
 
-- `agent_runtime_v2` defaults to `True` — if you see `graph.py` code, that's the v1 fallback, not the active path.
+- The explicit async Agent Runtime is the active path — if you see `graph.py` code, that's the older compatibility fallback, not the default path.
 - Frontend tests: `renderAppPage` returns per-test state — never store `appTestState` in a shared variable across tests (causes flaky failures).
 - Scheduler config: 10+ env vars (`SCHEDULER_*`) — check `backend/app/config.py` lines 67-76 for all options.
 - Backend test DB: each test gets its own in-memory SQLite — no shared state, no cleanup needed.

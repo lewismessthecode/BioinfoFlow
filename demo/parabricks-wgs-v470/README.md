@@ -20,7 +20,7 @@ These local workflows are intentionally smaller than the upstream repositories. 
 
 ## Required Test Data
 
-Use absolute paths visible to the host and task containers. For Path Contract v3 testing, keep `BIOINFOFLOW_HOME` identity-mounted and avoid paths that only exist inside one side of the host/container boundary.
+Use absolute paths visible to the host and task containers. For path-contract testing, keep `BIOINFOFLOW_HOME` identity-mounted and avoid paths that only exist inside one side of the host/container boundary.
 
 Required inputs:
 
