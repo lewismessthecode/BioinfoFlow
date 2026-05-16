@@ -18,11 +18,14 @@ function resolveDatabaseConstructor(moduleValue) {
   throw new TypeError("better-sqlite3 did not export a database constructor")
 }
 
-function isAbiMismatchError(error) {
+function isRecoverableNativeBindingError(error) {
   const message = String(error?.message ?? "")
   return (
     message.includes("compiled against a different Node.js version") ||
-    message.includes("NODE_MODULE_VERSION")
+    message.includes("NODE_MODULE_VERSION") ||
+    (message.includes("Could not locate the bindings file") &&
+      Array.isArray(error?.tries) &&
+      error.tries.some((candidate) => String(candidate).endsWith("better_sqlite3.node")))
   )
 }
 
@@ -48,11 +51,11 @@ export async function ensureBetterSqliteNodeAbi({
     return { action: "ok" }
   }
 
-  if (!isAbiMismatchError(initialError)) {
+  if (!isRecoverableNativeBindingError(initialError)) {
     throw initialError
   }
 
-  log.warn("[better-sqlite3] ABI mismatch detected. Rebuilding for current Node.js...")
+  log.warn("[better-sqlite3] Native binding issue detected. Rebuilding for current Node.js...")
 
   const rebuildResult = await rebuild()
   if ((rebuildResult?.status ?? 1) !== 0) {
