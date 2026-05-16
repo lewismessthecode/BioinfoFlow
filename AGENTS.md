@@ -19,7 +19,7 @@ docker compose logs -f backend frontend
 ```bash
 uv sync
 uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 uv run pytest
 uv run pytest tests/test_api/test_runs.py -v
 uv run pytest tests/test_api/ -v -k "test_create"

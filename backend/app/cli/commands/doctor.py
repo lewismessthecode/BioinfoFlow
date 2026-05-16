@@ -16,7 +16,7 @@ from app.cli.types import ApiError, ConnectionFailed
 doctor_help = "Check backend health, scheduler, GPU, and local tool availability."
 
 _START_BACKEND_HINT = (
-    "Start backend: uv run uvicorn app.main:app --reload --port 8000 "
+    "Start backend: uv run uvicorn app.main:app --reload --reload-dir app --port 8000 "
     "(from backend/), or set --base-url / BIOFLOW_API_URL."
 )
 

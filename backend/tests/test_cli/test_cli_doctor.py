@@ -63,7 +63,7 @@ class TestDoctorHuman:
                     "ok": False,
                     "status": "fail",
                     "detail": "Cannot connect to backend",
-                    "hint": "Start backend: uv run uvicorn app.main:app --reload --port 8000",
+                    "hint": "Start backend: uv run uvicorn app.main:app --reload --reload-dir app --port 8000",
                 },
                 "scheduler": {
                     "ok": True,
@@ -149,7 +149,10 @@ class TestRunChecks:
         assert results["backend"]["ok"] is False
         assert results["backend"]["status"] == "fail"
         assert "Cannot connect" in results["backend"]["detail"]
-        assert "uv run uvicorn app.main:app --reload --port 8000" in results["backend"]["hint"]
+        assert (
+            "uv run uvicorn app.main:app --reload --reload-dir app --port 8000"
+            in results["backend"]["hint"]
+        )
         assert results["scheduler"]["ok"] is True
         assert results["scheduler"]["status"] == "skip"
         assert results["scheduler"]["detail"] == "requires backend"
