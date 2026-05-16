@@ -170,6 +170,7 @@ Use `--base-url` or `BIOFLOW_API_URL` to point at a non-default backend. See the
 
 - [Docs Home](docs/README.md)
 - [Docker Quick Start](docs/getting-started/docker.md)
+- [nf-core/rnaseq Launch Demo](demo/nfcore-rnaseq/README.md)
 - [Storage and Data Layout](docs/concepts/storage.md)
 - [CLI Reference](docs/reference/cli.md)
 - [Architecture](docs/architecture.md)

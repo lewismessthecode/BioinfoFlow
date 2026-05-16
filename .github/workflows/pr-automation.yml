@@ -1,0 +1,68 @@
+name: PR Automation
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - dependabot/**
+      - renovate/**
+      - tmp/**
+      - wip/**
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to open as a PR
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-automation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  open-pr:
+    name: open-pr
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Create or update pull request
+        run: |
+          branch="${{ inputs.branch || github.ref_name }}"
+
+          if [ -z "$branch" ]; then
+            echo "No branch name was supplied."
+            exit 1
+          fi
+
+          if [ "$branch" = "main" ]; then
+            echo "Skipping main."
+            exit 0
+          fi
+
+          if gh pr view "$branch" \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --json number \
+            >/dev/null 2>&1; then
+            echo "A pull request already exists for ${branch}."
+            exit 0
+          fi
+
+          title="$(printf '%s' "$branch" | sed -E 's#^(codex|feature|fix|bugfix|chore|docs)/##; s#[-_/]+# #g')"
+          title="$(printf '%s' "$title" | awk '{for (i=1; i<=NF; i++) $i=toupper(substr($i,1,1)) substr($i,2)} 1')"
+
+          gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head "$branch" \
+            --title "$title" \
+            --body "Automated PR for branch \`$branch\`.
+
+CI will run against this commit. Keep pushing to the same worktree branch to update this PR.
+
+Add the \`automerge\` label after review if you want GitHub to squash-merge it automatically once required checks pass."

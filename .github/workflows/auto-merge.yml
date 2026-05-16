@@ -1,0 +1,32 @@
+name: Auto Merge
+
+on:
+  pull_request_target:
+    types:
+      - labeled
+      - reopened
+      - ready_for_review
+      - synchronize
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  queue:
+    name: queue
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'automerge')
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+    steps:
+      - name: Queue squash auto-merge
+        run: gh pr merge "$PR_URL" --squash --auto --delete-branch
