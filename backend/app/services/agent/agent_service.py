@@ -239,7 +239,7 @@ class AgentService(AgentStreamingMixin, AgentMetadataMixin):
         workspace_id: str | None = None,
         model_override: str | None = None,
     ) -> dict[str, int]:
-        """Run the new agent runtime loop (v2). Returns token usage summary."""
+        """Run the new agent runtime loop. Returns token usage summary."""
         from pathlib import Path
 
         from app.services.agent.runtime import (

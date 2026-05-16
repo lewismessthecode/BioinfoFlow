@@ -12,7 +12,7 @@ API Routers (18) → Services → Repositories → SQLite (aiosqlite)
    │                  │
    │                  ├─ Workflow adapters (Nextflow / MiniWDL local / MiniWDL container)
    │                  ├─ Engine abstraction (adapter registry + backends + mounts)
-   │                  ├─ Agent Runtime v2 (async loop + 17 modules)
+   │                  ├─ Agent Runtime (async loop + 17 modules)
    │                  ├─ Planning system (Planner + Executor)
    │                  ├─ Approval workflow (ACT_HIGH gating)
    │                  ├─ Scheduler (queue + slots + resources + monitor + retry + timeout)
@@ -104,7 +104,7 @@ API Routers (18) → Services → Repositories → SQLite (aiosqlite)
 | `stats_service.py` / `demo_service.py` / `demo_catalog.py` | Dashboard + demo seed |
 | `user_settings_service.py` / `workspace_service.py` / `project_service.py` | Account + workspace ops |
 
-## Agent Runtime v2 (backend/app/services/agent/runtime/, 17 modules)
+## Agent Runtime (backend/app/services/agent/runtime/, 17 modules)
 | Module | Purpose |
 | --- | --- |
 | `loop.py` | Core async agent loop with between-turn hooks |

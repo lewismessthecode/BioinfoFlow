@@ -36,7 +36,7 @@ instead of growing a catch-all facade.
 
 ## Agent Runtime
 
-Agent Runtime v2 lives in:
+Agent Runtime lives in:
 
 ```text
 backend/app/services/agent/runtime/

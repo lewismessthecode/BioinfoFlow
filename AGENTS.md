@@ -65,7 +65,7 @@ bun run test:watch
 ## Architecture
 
 - **`backend/`** — FastAPI app with service/repository layers, SQLite via async SQLAlchemy, Alembic migrations, and a Typer-based CLI (`bif`).
-- **Agent Runtime v2** lives in `backend/app/services/agent/runtime/` and is the default runtime path. Core flow is: user input -> agent service -> async runtime loop -> tool dispatch -> SSE events -> frontend.
+- **Agent Runtime** lives in `backend/app/services/agent/runtime/` and is the default runtime path. Core flow is: user input -> agent service -> async runtime loop -> tool dispatch -> SSE events -> frontend.
 - **Run pipeline** uses a thin `RunService` facade that delegates to submission, DAG, lifecycle, archive, and dispatch services. Do not add new business logic to the facade if a dedicated service already exists.
 - **`backend/app/scheduler/`** contains the persistent scheduler: queue, slot accounting, resource monitoring, retry/timeout logic, cleanup, and completion hooks. Main endpoints are `/scheduler/status`, `/scheduler/resources`, and `/scheduler/slots`.
 - **`backend/app/engine/`** holds the workflow engine abstraction for Nextflow and WDL, including local/container execution backends and mount/path handling.

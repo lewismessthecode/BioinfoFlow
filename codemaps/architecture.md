@@ -20,7 +20,7 @@ FastAPI /api/v1  ───────────────►  SQLite (aiosq
    │  RunDagService, RunLifecycleService, RunArchiveService,
    │  RunDispatcher) — path contract v2
    │
-   ├─ Agent Runtime v2 (explicit async loop — default)
+   ├─ Agent Runtime (explicit async loop — default)
    │    ├─ Tool dispatch (BaseTool + runtime + legacy tools)
    │    ├─ LLM client + provider adapters + streaming
    │    ├─ Planner + Executor
@@ -64,7 +64,7 @@ FastAPI /api/v1  ───────────────►  SQLite (aiosq
 | `backend/app/api/v1/router.py` | API route aggregation (18 routers) | `api_router` | API route modules |
 | `backend/app/runtime/events.py` | SSE event bus | `publish_event`, `subscribe_events` | asyncio queues |
 | `backend/app/services/agent/agent_service.py` | Agent orchestration (v1 + v2) | `AgentService` | runtime, LLM clients |
-| `backend/app/services/agent/runtime/loop.py` | Agent Runtime v2 core loop | `agent_loop` | LLM client, dispatch |
+| `backend/app/services/agent/runtime/loop.py` | Agent Runtime core loop | `agent_loop` | LLM client, dispatch |
 | `backend/app/services/agent/runtime/dispatch.py` | Unified tool dispatch map | `build_dispatch` | BaseTool, runtime tools |
 | `backend/app/services/agent/runtime/llm_client.py` | Provider-agnostic LLM wrapper | `LLMClient` | provider adapters |
 | `backend/app/services/agent/runtime/llm_streaming.py` | Streaming LLM response handler | streaming helpers | httpx-sse |
@@ -100,7 +100,7 @@ FastAPI /api/v1  ───────────────►  SQLite (aiosq
 - Terminal sessions use WebSocket connections at `/terminal/sessions/{id}/ws`.
 - Services orchestrate repositories, workflow adapters, and the agent runtime.
 - **Path contract v2:** run artifacts live under a unified `runs/<run_id>/` layout; `Project.storage_mode` (`managed`/`external`) plus `external_root_path` control where they anchor. Database is the source of truth.
-- Agent Runtime v2 uses an explicit async loop with between-turn hooks, context compaction, and dynamic system prompts.
+- Agent Runtime uses an explicit async loop with between-turn hooks, context compaction, and dynamic system prompts.
 - High-risk tool calls go through ApprovalService for user confirmation.
 - Runs queue via Scheduler, dispatched through RunDispatcher when resources/slots allow, executed via Engine adapters.
 - ResourceMonitor samples CPU/mem/disk/GPU every 30s; slot tracker enforces concurrency caps; both exposed via `/scheduler/resources`.

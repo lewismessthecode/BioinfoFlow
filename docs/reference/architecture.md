@@ -90,7 +90,7 @@ Workflow execution uses a thin run service facade plus dedicated submission, DAG
 
 ## Agent Runtime
 
-Agent Runtime v2 lives under:
+Agent Runtime lives under:
 
 ```text
 backend/app/services/agent/runtime/
