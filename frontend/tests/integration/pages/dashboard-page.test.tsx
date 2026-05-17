@@ -221,4 +221,82 @@ describe("DashboardPage", () => {
       expect(cardLink.firstElementChild).toHaveClass("h-full")
     }
   })
+
+  it("surfaces readiness guidance when first-run setup is blocked", async () => {
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/stats") {
+        return {
+          data: {
+            runs: {
+              total: 0,
+              running: 0,
+              completed: 0,
+              failed: 0,
+              queued: 0,
+              pending: 0,
+              cancelled: 0,
+            },
+            workflows: { total: 0 },
+            images: { total: 0, local: 0, remote: 0, pulling: 0 },
+            projects: { total: 0 },
+            recent_runs: [],
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/system/health") {
+        return {
+          data: {
+            status: "healthy",
+            docker: { available: false, nvidia_runtime: false },
+            gpu: { available: false, parabricks_compatible: false },
+            parabricks: { image_available: false, image_name: null },
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/system/gpu") {
+        return {
+          data: {
+            available: false,
+            parabricks_compatible: false,
+            gpus: [],
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/system/readiness") {
+        return {
+          data: {
+            severity: "blocked",
+            next_action: {
+              label: "Add an AI provider key",
+              href: "/settings",
+            },
+            checks: [
+              {
+                id: "provider_key",
+                label: "AI provider key",
+                status: "fail",
+                severity: "blocking",
+                detail: "No provider key configured",
+                hint: "Set one provider key before first run.",
+              },
+            ],
+          },
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<DashboardPage />)
+
+    expect(await screen.findByText("dashboard.readiness.title")).toBeInTheDocument()
+    expect(screen.getByText("AI provider key")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Add an AI provider key" })).toHaveAttribute(
+      "href",
+      "/settings",
+    )
+  })
 })

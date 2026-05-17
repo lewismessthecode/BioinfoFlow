@@ -30,6 +30,33 @@ def _gpu_resp() -> ApiResponse:
     return make_envelope({"available": True})
 
 
+def _readiness_resp() -> ApiResponse:
+    return make_envelope(
+        {
+            "severity": "blocked",
+            "next_action": {
+                "label": "Add an AI provider key",
+                "href": "/settings",
+            },
+            "checks": [
+                {
+                    "id": "backend",
+                    "label": "Backend API",
+                    "status": "pass",
+                    "detail": "Backend is responding",
+                },
+                {
+                    "id": "provider_key",
+                    "label": "AI provider key",
+                    "status": "fail",
+                    "detail": "No provider key configured",
+                    "hint": "Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY.",
+                },
+            ],
+        }
+    )
+
+
 class TestDoctorHuman:
     def test_all_pass(self, runner: CliRunner) -> None:
         with patch("app.cli.commands.doctor._run_checks") as mock_checks:
@@ -107,7 +134,7 @@ class TestRunChecks:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_health_resp(), _scheduler_resp(), _gpu_resp()]
+            side_effect=[_readiness_resp()]
         )
         mock_client.close = AsyncMock()
 
@@ -124,7 +151,44 @@ class TestRunChecks:
         with patch("shutil.which", return_value="/usr/bin/nextflow"):
             results = await _run_checks(ctx)
         assert results["backend"]["ok"] is True
+        assert results["provider_key"]["ok"] is False
+        assert results["provider_key"]["hint"].startswith("Set ANTHROPIC_API_KEY")
         assert results["nextflow"]["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_falls_back_when_readiness_endpoint_is_missing(self) -> None:
+        from app.cli.commands.doctor import _run_checks
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[
+                ApiError(
+                    code="NOT_FOUND",
+                    message="not found",
+                    status_code=404,
+                ),
+                _health_resp(),
+                _scheduler_resp(),
+                _gpu_resp(),
+            ]
+        )
+        mock_client.close = AsyncMock()
+
+        from app.cli.context import CliContext
+        from rich.console import Console
+
+        ctx = CliContext(
+            client=mock_client,
+            output_mode="human",
+            project_id=None,
+            verbose=False,
+            console=Console(),
+        )
+        with patch("shutil.which", return_value="/usr/bin/nextflow"):
+            results = await _run_checks(ctx)
+        assert results["backend"]["ok"] is True
+        assert results["scheduler"]["ok"] is True
+        assert results["gpu"]["ok"] is True
 
     @pytest.mark.asyncio
     async def test_backend_connection_failed(self) -> None:
@@ -194,6 +258,7 @@ class TestRunChecks:
         # Backend OK, scheduler fails, GPU fails
         mock_client.get = AsyncMock(
             side_effect=[
+                ApiError(code="NOT_FOUND", message="not found", status_code=404),
                 _health_resp(),
                 ConnectionFailed("refused"),
                 ConnectionFailed("refused"),
