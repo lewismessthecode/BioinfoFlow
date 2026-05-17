@@ -323,6 +323,17 @@
     "narrativeJoin": "{parts}.",
     "dockerUnavailableTitle": "Docker is not running",
     "dockerUnavailableDescription": "Workflow execution requires Docker. Please start the Docker daemon to run pipelines.",
+    "readiness": {
+      "title": "First-run readiness",
+      "description": "Resolve the blocking checks below, then launch your first analysis. Optional warnings: {warnings}.",
+      "blockedBadge": "{count} blocker(s)",
+      "status": {
+        "pass": "Pass",
+        "fail": "Fix",
+        "warn": "Warn",
+        "skip": "Skip"
+      }
+    },
     "schedulerCard": {
       "title": "Scheduler",
       "queueDepth": "Queue Depth"

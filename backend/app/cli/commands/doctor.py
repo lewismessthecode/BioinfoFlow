@@ -71,6 +71,51 @@ async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
     results: dict[str, Any] = {}
     backend_available = False
 
+    try:
+        resp = await cli_ctx.client.get("/system/readiness")
+        readiness = resp.data or {}
+        readiness_checks = readiness.get("checks")
+        if isinstance(readiness_checks, list):
+            for check in readiness_checks:
+                if not isinstance(check, dict):
+                    continue
+                check_id = str(check.get("id") or check.get("label") or "check")
+                status = _readiness_status(str(check.get("status") or "fail"))
+                result = _result(
+                    status,
+                    str(check.get("detail") or ""),
+                    hint=check.get("hint"),
+                )
+                if check.get("label"):
+                    result["label"] = str(check["label"])
+                if check.get("docs_link"):
+                    result["docs_link"] = str(check["docs_link"])
+                results[check_id] = result
+            backend_available = True
+    except ConnectionFailed:
+        results["backend"] = _result(
+            "fail",
+            "Cannot connect to backend",
+            hint=_START_BACKEND_HINT,
+        )
+    except ApiError as exc:
+        if exc.status_code != 404:
+            results["backend"] = _result(
+                "fail",
+                exc.message,
+                hint="Check backend logs, then re-run doctor.",
+            )
+
+    if results and "backend" in results and _check_status(results["backend"]) == "fail":
+        results["scheduler"] = _result("skip", "requires backend")
+        results["gpu"] = _result("skip", "requires backend")
+        _add_local_binary_checks(results)
+        return results
+
+    if backend_available:
+        _add_local_binary_checks(results)
+        return results
+
     # Backend health
     try:
         resp = await cli_ctx.client.get("/system/health")
@@ -125,7 +170,23 @@ async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
     else:
         results["gpu"] = _result("skip", "requires backend")
 
-    # Local binaries
+    _add_local_binary_checks(results)
+
+    return results
+
+
+def _readiness_status(status: str) -> str:
+    normalized = status.lower()
+    if normalized in {"pass", "fail", "warn", "skip"}:
+        return normalized
+    if normalized == "ready":
+        return "pass"
+    if normalized == "warning":
+        return "warn"
+    return "fail"
+
+
+def _add_local_binary_checks(results: dict[str, Any]) -> None:
     for binary in ["nextflow", "miniwdl", "docker"]:
         path = shutil.which(binary)
         results[binary] = _result(
@@ -133,8 +194,6 @@ async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
             path or "not found in PATH",
             hint=None if path is not None else _binary_hint(binary),
         )
-
-    return results
 
 
 def _check_status(info: dict[str, Any]) -> str:

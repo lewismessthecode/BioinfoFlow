@@ -15,12 +15,14 @@ import {
   type DashboardStats,
   type SystemHealth,
   type GpuInfo,
+  type ReadinessStatus,
 } from "./components/dashboard-types";
 import { DashboardSkeleton } from "./components/dashboard-skeleton";
 import { StatCards } from "./components/stat-cards";
 import { RecentActivity } from "./components/recent-activity";
 import { SystemStatus } from "./components/system-status";
 import { SchedulerSummary } from "./components/scheduler-summary";
+import { ReadinessCenter } from "./components/readiness-center";
 
 export default function DashboardPage() {
   const tDashboard = useTranslations("dashboard");
@@ -30,6 +32,7 @@ export default function DashboardPage() {
   const [gpuInfo, setGpuInfo] = useState<GpuInfo | null>(null);
   const [schedulerStatus, setSchedulerStatus] =
     useState<SchedulerStatus | null>(null);
+  const [readiness, setReadiness] = useState<ReadinessStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const prefersReducedMotion = useReducedMotion();
@@ -50,12 +53,13 @@ export default function DashboardPage() {
     try {
       const minLoadTime = new Promise((resolve) => setTimeout(resolve, 500));
 
-      const [[statsRes, healthRes, gpuRes, schedulerRes]] = await Promise.all([
+      const [[statsRes, healthRes, gpuRes, schedulerRes, readinessRes]] = await Promise.all([
         Promise.all([
           apiRequest<DashboardStats>("/stats"),
           apiRequest<SystemHealth>("/system/health"),
           apiRequest<GpuInfo>("/system/gpu"),
           apiRequest<SchedulerStatus>("/scheduler/status").catch(() => null),
+          apiRequest<ReadinessStatus>("/system/readiness").catch(() => null),
         ]),
         minLoadTime,
       ]);
@@ -64,6 +68,7 @@ export default function DashboardPage() {
       setHealth(healthRes.data);
       setGpuInfo(gpuRes.data);
       setSchedulerStatus(schedulerRes?.data ?? null);
+      setReadiness(readinessRes?.data ?? null);
     } catch (error) {
       const message = getApiErrorMessage(error, tDashboard("errors.loadFailed"));
       toast.error(message);
@@ -114,6 +119,8 @@ export default function DashboardPage() {
             </AlertDescription>
           </Alert>
         )}
+
+        <ReadinessCenter readiness={readiness} />
 
         <motion.div
           initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}

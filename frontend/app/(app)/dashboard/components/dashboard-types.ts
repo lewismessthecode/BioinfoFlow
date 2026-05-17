@@ -60,6 +60,28 @@ export type GpuInfo = {
   }>;
 };
 
+export type ReadinessCheck = {
+  id: string;
+  label: string;
+  status: "pass" | "fail" | "warn" | "skip";
+  severity: "blocking" | "optional" | "info";
+  detail: string;
+  hint?: string | null;
+  docs_link?: string | null;
+  action_label?: string | null;
+  action_href?: string | null;
+};
+
+export type ReadinessStatus = {
+  severity: "ready" | "blocked";
+  next_action: {
+    label: string;
+    href: string;
+  };
+  checks: ReadinessCheck[];
+  summary?: Record<string, unknown>;
+};
+
 export function buildNarrative(
   stats: DashboardStats,
   t: (key: string, values?: Record<string, string | number>) => string,

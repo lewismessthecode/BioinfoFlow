@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import insert
+
+from app.config import settings
+from app.models.project import Project
+from app.models.project_workflow_binding import ProjectWorkflowBinding
+from app.models.workflow import Workflow
 
 
 @pytest.mark.asyncio
@@ -44,3 +50,121 @@ async def test_gpu_metrics_returns_envelope(async_client, monkeypatch):
     assert "data" in body, "Response missing 'data' field"
     assert "meta" in body, "Response missing 'meta' field"
     assert body["data"]["metrics"] == [{"index": 0, "utilization": 50}]
+
+
+@pytest.mark.asyncio
+async def test_readiness_returns_blocking_checks(async_client, monkeypatch):
+    """GET /system/readiness summarizes first-run blockers in one envelope."""
+
+    class MockDockerService:
+        async def is_available(self):
+            return False
+
+        async def check_nvidia_runtime(self):
+            return False
+
+        async def get_parabricks_image(self):
+            return None
+
+    class MockGpuService:
+        async def get_status(self):
+            return type(
+                "GpuStatus",
+                (),
+                {
+                    "available": False,
+                    "parabricks_compatible": False,
+                },
+            )()
+
+    monkeypatch.setattr("app.api.v1.system.DockerService", MockDockerService)
+    monkeypatch.setattr("app.api.v1.system.get_gpu_service", lambda: MockGpuService())
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "gemini_api_key", "")
+    monkeypatch.setattr(settings, "deepseek_api_key", "")
+
+    resp = await async_client.get("/api/v1/system/readiness")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["success"] is True
+    data = body["data"]
+    assert data["severity"] == "blocked"
+    assert data["next_action"]["href"] == "/settings"
+
+    checks = {check["id"]: check for check in data["checks"]}
+    assert checks["backend"]["status"] == "pass"
+    assert checks["docker"]["status"] == "fail"
+    assert checks["provider_key"]["status"] == "fail"
+    assert checks["project"]["status"] == "fail"
+    assert checks["workflow_binding"]["status"] == "fail"
+
+
+@pytest.mark.asyncio
+async def test_readiness_reports_ready_when_first_run_prereqs_exist(
+    async_client,
+    db_session,
+    monkeypatch,
+):
+    """Readiness becomes ready once environment and first-run entities exist."""
+
+    class MockDockerService:
+        async def is_available(self):
+            return True
+
+        async def check_nvidia_runtime(self):
+            return False
+
+        async def get_parabricks_image(self):
+            return None
+
+    class MockGpuService:
+        async def get_status(self):
+            return type(
+                "GpuStatus",
+                (),
+                {
+                    "available": False,
+                    "parabricks_compatible": False,
+                },
+            )()
+
+    monkeypatch.setattr("app.api.v1.system.DockerService", MockDockerService)
+    monkeypatch.setattr("app.api.v1.system.get_gpu_service", lambda: MockGpuService())
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+
+    await db_session.execute(
+        insert(Project).values(
+            id="00000000-0000-0000-0000-000000000101",
+            name="Ready Project",
+            user_id="user-ready",
+            workspace_id="00000000-0000-0000-0000-000000000001",
+            is_default=True,
+        )
+    )
+    await db_session.execute(
+        insert(Workflow).values(
+            id="00000000-0000-0000-0000-000000000201",
+            name="rnaseq",
+            source="local",
+            engine="nextflow",
+            version="1.0.0",
+        )
+    )
+    await db_session.execute(
+        insert(ProjectWorkflowBinding).values(
+            id="00000000-0000-0000-0000-000000000301",
+            project_id="00000000-0000-0000-0000-000000000101",
+            workflow_id="00000000-0000-0000-0000-000000000201",
+        )
+    )
+    await db_session.commit()
+
+    resp = await async_client.get("/api/v1/system/readiness")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+
+    assert data["severity"] == "ready"
+    assert data["next_action"]["href"] == "/workflows?scope=project"
+    assert all(check["status"] != "fail" for check in data["checks"])
