@@ -37,7 +37,7 @@ git commit -m "feat: add auth flow"
 git push -u origin feature/auth
 ```
 
-GitHub Actions opens a PR from `feature/auth` to `main`. Every later push to the same branch updates the PR and reruns CI:
+GitHub Actions opens a PR from `feature/auth` to `main` when the repository allows Actions to create pull requests. If that permission is disabled, `PR Automation` emits a warning and exits successfully; create the PR manually once, then every later push to the same branch updates the PR and reruns CI:
 
 ```bash
 git push
