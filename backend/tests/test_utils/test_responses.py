@@ -1,0 +1,38 @@
+from __future__ import annotations
+
+from app.utils.responses import error_response, success_response
+
+
+def test_success_response_preserves_user_requested_traceback_content():
+    stack = (
+        "Traceback (most recent call last):\n"
+        '  File "pipeline.py", line 1, in <module>\n'
+        "RuntimeError: database password leaked in traceback\n"
+    )
+
+    response = success_response({"traceback": stack})
+
+    assert response.body
+    assert b"database password" in response.body
+    assert b"[redacted]" not in response.body
+
+
+def test_error_response_redacts_traceback_details():
+    details = {
+        "nested": {
+            "stack_trace": [
+                "Traceback (most recent call last):",
+                "RuntimeError: internal path /secret",
+            ]
+        }
+    }
+
+    response = error_response(
+        code="INTERNAL_ERROR",
+        message="Internal server error",
+        details=details,
+    )
+
+    assert response.body
+    assert b"/secret" not in response.body
+    assert b"[redacted]" in response.body

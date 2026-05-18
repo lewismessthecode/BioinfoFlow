@@ -86,8 +86,8 @@ export function buildStartupSummary({
     network: {
       hostname: valueAfterFlag(args, "--hostname") || env.HOSTNAME || "0.0.0.0",
       port: valueAfterFlag(args, "--port") || env.PORT || (command === "dev" ? "3000" : "3000"),
-      api_base_url: env.NEXT_PUBLIC_API_BASE_URL || "",
-      better_auth_url: env.BETTER_AUTH_URL || "",
+      api_base_url: redactSecret(env.NEXT_PUBLIC_API_BASE_URL),
+      better_auth_url: redactSecret(env.BETTER_AUTH_URL),
     },
     auth: {
       mode: env.NEXT_PUBLIC_AUTH_MODE || env.AUTH_MODE || "",
@@ -99,9 +99,9 @@ export function buildStartupSummary({
       better_auth_secret: redactSecret(env.BETTER_AUTH_SECRET),
     },
     storage: {
-      bioinfoflow_home: env.BIOINFOFLOW_HOME || "",
-      bioinfoflow_home_host: env.BIOINFOFLOW_HOME_HOST || "",
-      better_auth_db_path: env.BETTER_AUTH_DB_PATH || "",
+      bioinfoflow_home: redactSecret(env.BIOINFOFLOW_HOME),
+      bioinfoflow_home_host: redactSecret(env.BIOINFOFLOW_HOME_HOST),
+      better_auth_db_path: redactSecret(env.BETTER_AUTH_DB_PATH),
     },
   };
 }

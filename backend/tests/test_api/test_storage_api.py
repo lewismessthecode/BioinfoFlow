@@ -99,3 +99,31 @@ async def test_storage_api_rejects_upload_to_read_only_source(
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_storage_api_rejects_parent_directory_segments(async_client, db_session):
+    project = await create_project(db_session, name="Storage API Traversal Project")
+
+    browse_resp = await async_client.get(
+        "/api/v1/storage/browse",
+        params={
+            "project_id": str(project.id),
+            "source_id": "project",
+            "path": "reads/../secrets",
+        },
+    )
+    assert browse_resp.status_code == 403
+    assert browse_resp.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    upload_resp = await async_client.post(
+        "/api/v1/storage/upload",
+        data={
+            "project_id": str(project.id),
+            "source_id": "project",
+            "path": "reads/..",
+        },
+        files={"file": ("sample.bam", b"BAM", "application/octet-stream")},
+    )
+    assert upload_resp.status_code == 403
+    assert upload_resp.json()["error"]["code"] == "PERMISSION_DENIED"

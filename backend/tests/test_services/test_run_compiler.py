@@ -142,9 +142,7 @@ async def test_resolve_path_cell_raises_compile_error_on_bad_asset():
         )
     )
     with pytest.raises(CompileError) as exc_info:
-        await compiler._resolve_path_cell(
-            "asset://project/nope.fq", project_id="p"
-        )
+        await compiler._resolve_path_cell("asset://project/nope.fq", project_id="p")
     assert exc_info.value.code == "ASSET_NOT_FOUND"
 
 
@@ -192,9 +190,7 @@ async def test_resolve_values_resolves_table_path_columns():
     )
     resolved_asset = SimpleNamespace(path="/data/a.fastq.gz")
     compiler = _make_compiler(
-        storage=SimpleNamespace(
-            resolve_asset=AsyncMock(return_value=resolved_asset)
-        )
+        storage=SimpleNamespace(resolve_asset=AsyncMock(return_value=resolved_asset))
     )
     resolved = await compiler._resolve_values(
         {
@@ -220,7 +216,9 @@ async def test_resolve_values_rejects_manual_file_outside_allowed_roots(
 ):
     compiler = _make_compiler(
         storage=SimpleNamespace(resolve_asset=AsyncMock()),
-        project_repo=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(id="p"))),
+        project_repo=SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(id="p"))
+        ),
     )
     roots = _configure_path_roots(monkeypatch, tmp_path)
     outside = roots["project_data"] / "reads.fastq.gz"
@@ -255,7 +253,9 @@ async def test_resolve_values_resolves_relative_project_data_paths(
 ):
     compiler = _make_compiler(
         storage=SimpleNamespace(resolve_asset=AsyncMock()),
-        project_repo=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(id="p"))),
+        project_repo=SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(id="p"))
+        ),
     )
     roots = _configure_path_roots(monkeypatch, tmp_path)
     target = roots["project_data"] / "reads" / "sample.fastq.gz"
@@ -284,12 +284,54 @@ async def test_resolve_values_resolves_relative_project_data_paths(
 
 
 @pytest.mark.asyncio
+async def test_resolve_values_accepts_absolute_paths_through_symlinked_alias(
+    monkeypatch, tmp_path
+):
+    compiler = _make_compiler(
+        storage=SimpleNamespace(resolve_asset=AsyncMock()),
+        project_repo=SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(id="p"))
+        ),
+    )
+    roots = _configure_path_roots(monkeypatch, tmp_path)
+    target = roots["reference"] / "hg38.fa"
+    target.write_text(">chr1\n", encoding="utf-8")
+    alias = tmp_path / "reference-alias"
+    try:
+        alias.symlink_to(roots["reference"], target_is_directory=True)
+    except OSError as exc:  # pragma: no cover - platform/filesystem dependent
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    spec = FormSpec(
+        fields=[
+            FormField(
+                id="reference",
+                label="Reference",
+                section="data",
+                kind="file",
+                allow_roots=["reference"],
+            )
+        ]
+    )
+
+    resolved = await compiler._resolve_values(
+        {"reference": str(alias / "hg38.fa")},
+        spec,
+        project_id="p",
+    )
+
+    assert resolved == {"reference": str(target.resolve())}
+
+
+@pytest.mark.asyncio
 async def test_resolve_values_resolves_file_lists_within_allowed_roots(
     monkeypatch, tmp_path
 ):
     compiler = _make_compiler(
         storage=SimpleNamespace(resolve_asset=AsyncMock()),
-        project_repo=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(id="p"))),
+        project_repo=SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(id="p"))
+        ),
     )
     roots = _configure_path_roots(monkeypatch, tmp_path)
     first = roots["project_data"] / "reads" / "sample_R1.fastq.gz"
@@ -325,7 +367,9 @@ async def test_resolve_values_resolves_table_paths_within_allowed_roots(
 ):
     compiler = _make_compiler(
         storage=SimpleNamespace(resolve_asset=AsyncMock()),
-        project_repo=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(id="p"))),
+        project_repo=SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(id="p"))
+        ),
     )
     roots = _configure_path_roots(monkeypatch, tmp_path)
     target = roots["project_data"] / "reads" / "sample.fastq.gz"
