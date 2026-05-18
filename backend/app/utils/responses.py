@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -8,6 +9,9 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 from app.schemas.common import ErrorDetail, Meta, Pagination
+
+_SENSITIVE_TRACE_KEYS = {"traceback", "stack", "stack_trace", "exc_info"}
+_REDACTED = "[redacted]"
 
 
 def _request_id(request: Request | None) -> str:
@@ -35,13 +39,22 @@ def success_response(
     pagination: Pagination | None = None,
     status: dict[str, Any] | None = None,
     status_code: int = 200,
-) -> JSONResponse:
+) -> Response:
     meta = _meta(request, pagination, status)
     if status_code in {204, 205, 304}:
         return Response(status_code=status_code)
-    return JSONResponse(
+    return Response(
         status_code=status_code,
-        content={"success": True, "data": data, "meta": meta.model_dump(mode="json")},
+        media_type="application/json",
+        content=json.dumps(
+            {
+                "success": True,
+                "data": data,
+                "meta": meta.model_dump(mode="json"),
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ),
     )
 
 
@@ -54,7 +67,9 @@ def error_response(
     request: Request | None = None,
 ) -> JSONResponse:
     meta = _meta(request)
-    error = ErrorDetail(code=code, message=message, details=details)
+    error = ErrorDetail(
+        code=code, message=message, details=_scrub_trace_payload(details)
+    )
     return JSONResponse(
         status_code=status_code,
         content={
@@ -63,3 +78,20 @@ def error_response(
             "meta": meta.model_dump(mode="json"),
         },
     )
+
+
+def _scrub_trace_payload(value: Any, *, key: str | None = None) -> Any:
+    if key and key.lower() in _SENSITIVE_TRACE_KEYS:
+        return _REDACTED
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return {
+            item_key: _scrub_trace_payload(item_value, key=str(item_key))
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_scrub_trace_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub_trace_payload(item) for item in value)
+    return value

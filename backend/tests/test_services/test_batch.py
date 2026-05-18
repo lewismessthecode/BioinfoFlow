@@ -101,7 +101,8 @@ async def test_create_batch_returns_mixed_queue_and_failure_results(
     assert result["runs"][0]["status"] == RunStatus.QUEUED.value
     assert result["runs"][0]["run_id"].startswith("run_")
     assert result["runs"][1]["status"] == RunStatus.FAILED.value
-    assert "path not found within allowed storage roots" in result["runs"][1]["error"]
+    assert result["runs"][1]["error_code"] == "COMPILE_ERROR"
+    assert result["runs"][1]["error"] == "Run input validation failed."
 
     batch = await service.get_batch(result["batch_id"])
     assert batch is not None

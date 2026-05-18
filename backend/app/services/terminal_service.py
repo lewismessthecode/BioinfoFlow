@@ -12,7 +12,9 @@ import subprocess
 import termios
 import uuid
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+
+from app.path_layout import safe_join
 
 
 @dataclass(slots=True)
@@ -225,7 +227,9 @@ class TerminalSessionManager:
         re.compile(r".*CREDENTIAL.*", re.IGNORECASE),
     ]
 
-    def _build_terminal_environment(self, *, shell: str | None = None) -> dict[str, str]:
+    def _build_terminal_environment(
+        self, *, shell: str | None = None
+    ) -> dict[str, str]:
         env = {
             k: v
             for k, v in os.environ.items()
@@ -367,13 +371,18 @@ class TerminalSessionManager:
             raise
 
     def _resolve_safe_directory(self, root: Path, candidate: str) -> Path:
-        target = Path(candidate).expanduser()
-        if not target.is_absolute():
-            target = (root / target).resolve()
-        else:
-            target = target.resolve()
-        if not target.is_relative_to(root):
-            raise PermissionError(str(target))
+        raw = str(candidate or ".").strip() or "."
+        if (
+            raw.startswith("~")
+            or PurePosixPath(raw).is_absolute()
+            or PureWindowsPath(raw).is_absolute()
+        ):
+            raise PermissionError(raw)
+        target = safe_join(
+            root,
+            raw,
+            escape_message="path escapes terminal root",
+        )
         if not target.is_dir():
             raise FileNotFoundError(str(target))
         return target

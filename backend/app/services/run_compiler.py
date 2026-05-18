@@ -25,10 +25,11 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import shutil
 from copy import deepcopy
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -604,7 +605,9 @@ class RunCompiler:
                 continue
             if field.kind == "file_list" and isinstance(value, list):
                 materialized[field_id] = [
-                    self._copy_bundle_asset_to_run(item, bundle_root=bundle_root, layout=layout)
+                    self._copy_bundle_asset_to_run(
+                        item, bundle_root=bundle_root, layout=layout
+                    )
                     for item in value
                 ]
                 continue
@@ -877,8 +880,12 @@ class RunCompiler:
 
     def _resolve_manual_path(self, raw: str, *, project, field: FormField) -> Path:
         text = raw.strip()
-        if Path(text).is_absolute():
-            candidate = Path(text).expanduser().resolve(strict=False)
+        if _is_absolute_or_home_path(text):
+            candidate = self._resolve_absolute_manual_path(
+                text,
+                project=project,
+                field=field,
+            )
             if not candidate.exists():
                 raise FileNotFoundError(f"path not found: {raw}")
             return candidate
@@ -899,7 +906,7 @@ class RunCompiler:
 
     def _validate_allowed_path(self, path: Path, *, project, field: FormField) -> None:
         allowed_roots = self._allowed_roots(project=project, field=field)
-        candidate = path.expanduser().resolve(strict=False)
+        candidate = path
         if not any(self._path_under_root(candidate, root) for root in allowed_roots):
             raise CompileError(
                 RunErrorCode.PATH_OUTSIDE_ALLOWED_ROOT,
@@ -939,6 +946,31 @@ class RunCompiler:
             seen.add(resolved)
             deduped.append(root.resolve())
         return tuple(deduped)
+
+    def _resolve_absolute_manual_path(
+        self, raw: str, *, project, field: FormField
+    ) -> Path:
+        if "\x00" in raw:
+            raise FileNotFoundError("path not found within allowed storage roots")
+
+        expanded = os.path.realpath(os.path.expanduser(raw))
+        allowed_roots = self._allowed_roots(project=project, field=field)
+        for root in allowed_roots:
+            root_real = os.path.realpath(root)
+            try:
+                is_under_root = os.path.commonpath([expanded, root_real]) == root_real
+            except ValueError:
+                is_under_root = False
+            if not is_under_root:
+                continue
+            candidate = safe_join(
+                root,
+                os.path.relpath(expanded, root_real),
+                escape_message="path escapes allowed storage roots",
+            )
+            if self._path_under_root(candidate, root):
+                return candidate
+        raise FileNotFoundError("path not found within allowed storage roots")
 
     @staticmethod
     def _path_under_root(path: Path, root: Path) -> bool:
@@ -1102,3 +1134,11 @@ def _required_container_images(schema_json: dict | None) -> list[str]:
         seen.add(image)
         images.append(image)
     return images
+
+
+def _is_absolute_or_home_path(value: str) -> bool:
+    return (
+        value.startswith("~")
+        or PurePosixPath(value).is_absolute()
+        or PureWindowsPath(value).is_absolute()
+    )

@@ -64,8 +64,8 @@ export function collectStartupSummaryEnv(env, command, args) {
     nodeEnv: env.NODE_ENV || (command === "dev" ? "development" : "production"),
     hostname: valueAfterFlag(args, "--hostname") || env.HOSTNAME || "0.0.0.0",
     port: valueAfterFlag(args, "--port") || env.PORT || (command === "dev" ? "3000" : "3000"),
-    apiBaseUrl: env.NEXT_PUBLIC_API_BASE_URL || "",
-    betterAuthUrl: env.BETTER_AUTH_URL || "",
+    apiBaseUrl: redactSecret(env.NEXT_PUBLIC_API_BASE_URL),
+    betterAuthUrl: redactSecret(env.BETTER_AUTH_URL),
     authMode: env.NEXT_PUBLIC_AUTH_MODE || env.AUTH_MODE || "",
     localAuthEnabled:
       env.NEXT_PUBLIC_AUTH_LOCAL_ENABLED || env.AUTH_LOCAL_ENABLED || "",
@@ -74,9 +74,9 @@ export function collectStartupSummaryEnv(env, command, args) {
       || env.AUTH_SELF_SIGNUP_ENABLED
       || "",
     betterAuthSecret: redactSecret(env.BETTER_AUTH_SECRET),
-    bioinfoflowHome: env.BIOINFOFLOW_HOME || "",
-    bioinfoflowHomeHost: env.BIOINFOFLOW_HOME_HOST || "",
-    betterAuthDbPath: env.BETTER_AUTH_DB_PATH || "",
+    bioinfoflowHome: redactSecret(env.BIOINFOFLOW_HOME),
+    bioinfoflowHomeHost: redactSecret(env.BIOINFOFLOW_HOME_HOST),
+    betterAuthDbPath: redactSecret(env.BETTER_AUTH_DB_PATH),
   };
 }
 

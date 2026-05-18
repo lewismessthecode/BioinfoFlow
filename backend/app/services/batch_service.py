@@ -12,6 +12,14 @@ from app.services.run_compiler import CompileError, RunCompiler, WorkflowNotEnab
 from app.services.run_service import RunService
 from app.utils.project_access import can_access_project
 
+_BATCH_SUBMISSION_ERRORS = {
+    "COMPILE_ERROR": "Run input validation failed.",
+    "WORKFLOW_NOT_ENABLED": "Workflow is not enabled for this project.",
+    "PROJECT_FILE_NOT_FOUND": "Required project file was not found.",
+    "PROJECT_FILE_FORBIDDEN": "Required project file is not accessible.",
+    "INVALID_RUN_REQUEST": "Run request is invalid.",
+}
+
 
 class BatchService:
     TERMINAL_BATCH_STATUSES = {
@@ -78,19 +86,45 @@ class BatchService:
                 await self.batch_run_repo.create(batch_id=batch.id, run_id=run.id)
                 queued += 1
                 run_results.append({"run_id": run.run_id, "status": run.status})
-            except (
-                FileNotFoundError,
-                PermissionError,
-                ValueError,
-                CompileError,
-                WorkflowNotEnabledError,
-            ) as exc:
+            except CompileError:
                 failed += 1
                 run_results.append(
-                    {
-                        "status": RunStatus.FAILED.value,
-                        "error": str(exc),
-                    }
+                    _failed_submission_result(
+                        "COMPILE_ERROR",
+                        RunStatus.FAILED.value,
+                    )
+                )
+            except WorkflowNotEnabledError:
+                failed += 1
+                run_results.append(
+                    _failed_submission_result(
+                        "WORKFLOW_NOT_ENABLED",
+                        RunStatus.FAILED.value,
+                    )
+                )
+            except FileNotFoundError:
+                failed += 1
+                run_results.append(
+                    _failed_submission_result(
+                        "PROJECT_FILE_NOT_FOUND",
+                        RunStatus.FAILED.value,
+                    )
+                )
+            except PermissionError:
+                failed += 1
+                run_results.append(
+                    _failed_submission_result(
+                        "PROJECT_FILE_FORBIDDEN",
+                        RunStatus.FAILED.value,
+                    )
+                )
+            except ValueError:
+                failed += 1
+                run_results.append(
+                    _failed_submission_result(
+                        "INVALID_RUN_REQUEST",
+                        RunStatus.FAILED.value,
+                    )
                 )
 
         batch_summary = await self.update_batch_status(batch.batch_id)
@@ -265,3 +299,11 @@ class BatchService:
             workspace_id=workspace_id,
         ):
             raise FileNotFoundError("project not found")
+
+
+def _failed_submission_result(code: str, status: str) -> dict[str, str]:
+    return {
+        "status": status,
+        "error": _BATCH_SUBMISSION_ERRORS[code],
+        "error_code": code,
+    }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from app.config import settings
 
@@ -12,10 +12,17 @@ def repo_root() -> Path:
 
 
 def resolve_repo_path(path: str | Path) -> Path:
-    candidate = Path(path).expanduser()
-    if candidate.is_absolute():
-        return candidate.resolve()
-    return (repo_root() / candidate).resolve()
+    raw = str(path or "/").strip() or "/"
+    if "\x00" in raw:
+        raise PermissionError("invalid path")
+
+    expanded = os.path.normpath(os.path.expanduser(raw))
+    posix_path = expanded.replace("\\", "/")
+    if ".." in PurePosixPath(posix_path).parts:
+        raise PermissionError("invalid path")
+    if PurePosixPath(expanded).is_absolute() or PureWindowsPath(expanded).is_absolute():
+        return Path(os.path.realpath(expanded))
+    return (repo_root() / expanded).resolve()
 
 
 def normalize_repo_path(path: str | Path) -> str:
@@ -39,11 +46,10 @@ def allowed_local_path_roots() -> tuple[Path, ...]:
 
 
 def resolve_allowed_local_path(path: str | Path) -> Path:
-    raw_path = os.path.expanduser(os.fspath(path))
-    if os.path.isabs(raw_path):
-        resolved = Path(os.path.realpath(raw_path))
-    else:
-        resolved = Path(os.path.realpath(os.path.join(str(repo_root()), raw_path)))
+    try:
+        resolved = resolve_repo_path(path)
+    except PermissionError as exc:
+        raise ValueError("local path is not allowed") from exc
 
     for root in allowed_local_path_roots():
         try:
