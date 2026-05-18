@@ -117,9 +117,10 @@ async def test_list_directories_blocklisted_path(async_client):
 @pytest.mark.asyncio
 async def test_list_directories_not_found(async_client):
     """Non-existent path returns 404."""
+    missing = Path.home() / ".bioinfoflow-definitely-missing-directory"
     resp = await async_client.get(
         "/api/v1/system/directories",
-        params={"path": "/nonexistent/path/that/does/not/exist"},
+        params={"path": str(missing)},
     )
     assert resp.status_code == 404
     body = resp.json()
@@ -127,9 +128,18 @@ async def test_list_directories_not_found(async_client):
 
 
 @pytest.mark.asyncio
+async def test_list_directories_rejects_paths_outside_allowed_roots(async_client):
+    """Absolute paths outside the configured local roots return 403."""
+    resp = await async_client.get("/api/v1/system/directories", params={"path": "/etc"})
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["success"] is False
+
+
+@pytest.mark.asyncio
 async def test_list_directories_permission_error(async_client, tmp_path):
     """Permission errors return 403."""
-    with patch("app.api.v1.system.Path.iterdir", side_effect=PermissionError("nope")):
+    with patch("pathlib.Path.iterdir", side_effect=PermissionError("nope")):
         resp = await async_client.get(
             "/api/v1/system/directories", params={"path": str(tmp_path)}
         )
