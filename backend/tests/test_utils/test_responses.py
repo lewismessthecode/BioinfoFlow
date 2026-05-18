@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import traceback
-
 from app.utils.responses import error_response, success_response
 
 
 def test_success_response_preserves_user_requested_traceback_content():
-    try:
-        raise RuntimeError("database password leaked in traceback")
-    except RuntimeError:
-        stack = traceback.format_exc()
+    stack = (
+        "Traceback (most recent call last):\n"
+        '  File "pipeline.py", line 1, in <module>\n'
+        "RuntimeError: database password leaked in traceback\n"
+    )
 
     response = success_response({"traceback": stack})
 
