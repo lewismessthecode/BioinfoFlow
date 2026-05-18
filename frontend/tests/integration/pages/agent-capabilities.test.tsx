@@ -334,7 +334,7 @@ describe("Agent capability paths", () => {
       expect(screen.getByText("Waiting for approval")).toBeInTheDocument()
     })
 
-    const toolsButton = screen.getByRole("button", { name: "Running tools (2/3)" })
+    const toolsButton = await screen.findByRole("button", { name: "Running tools (2/3)" })
     fireEvent.click(toolsButton)
     const expandedTools = toolsButton.parentElement
     expect(expandedTools).not.toBeNull()
