@@ -132,6 +132,10 @@ export function formatStartupSummary(summary) {
   ].join("\n");
 }
 
+export function formatStartupLog() {
+  return "Bioinfoflow frontend starting";
+}
+
 function valueAfterFlag(args, flag) {
   const index = args.indexOf(flag);
   if (index === -1) return "";
@@ -174,23 +178,7 @@ function runCli() {
     applyFileEnv(env, shellKeys, envFile);
   }
 
-  console.info(
-    formatStartupSummary(
-      buildStartupSummary({
-        command,
-        args,
-        frontendDir,
-        repoRoot,
-        nextBin: useStandaloneServer ? "" : nextBin,
-        serverJs: useStandaloneServer ? serverJs : "",
-        loadedEnvFiles: envFiles.map((filePath) => ({
-          path: filePath,
-          exists: fs.existsSync(filePath),
-        })),
-        startupEnv: collectStartupSummaryEnv(env, command, args),
-      }),
-    ),
-  );
+  console.info(formatStartupLog());
 
   const childArgs = useStandaloneServer
     ? [serverJs, ...args]

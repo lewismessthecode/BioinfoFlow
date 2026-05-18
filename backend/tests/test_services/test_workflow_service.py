@@ -58,6 +58,47 @@ async def test_create_local_workflow_rejects_absolute_uploaded_bundle_paths(
 
 
 @pytest.mark.asyncio
+async def test_create_local_workflow_rejects_nested_inline_entrypoint_traversal(
+    db_session,
+):
+    service = WorkflowService(db_session)
+
+    with pytest.raises(ValueError, match="entrypoint_relpath"):
+        await service.create_workflow(
+            {
+                "source": "local",
+                "engine": "nextflow",
+                "name": "unsafe-inline-nested",
+                "content": "nextflow.enable.dsl=2\nworkflow { }\n",
+                "entrypoint_relpath": "nested/../main.nf",
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_local_workflow_rejects_nested_uploaded_bundle_traversal(
+    db_session,
+):
+    service = WorkflowService(db_session)
+
+    with pytest.raises(ValueError, match="bundle file path"):
+        await service.create_workflow(
+            {
+                "source": "local",
+                "engine": "nextflow",
+                "name": "unsafe-upload-nested",
+                "entrypoint_relpath": "main.nf",
+                "bundle_files": [
+                    {
+                        "relpath": "nested/../main.nf",
+                        "content": "nextflow.enable.dsl=2\nworkflow { }\n",
+                    }
+                ],
+            }
+        )
+
+
+@pytest.mark.asyncio
 async def test_create_local_workflow_ignores_payload_id_for_bundle_paths(
     db_session, tmp_path
 ):

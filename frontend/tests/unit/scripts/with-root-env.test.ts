@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest"
 import {
   buildStartupSummary,
   collectStartupSummaryEnv,
+  formatStartupLog,
   formatStartupSummary,
   redactSecret,
 } from "@/scripts/with-root-env.mjs"
@@ -80,5 +81,9 @@ describe("with-root-env startup summary", () => {
 
     expect(JSON.stringify(env)).not.toContain("super-secret")
     expect(env.betterAuthSecret).toBe("set")
+  })
+
+  it("uses a static startup log line for the CLI log sink", () => {
+    expect(formatStartupLog()).toBe("Bioinfoflow frontend starting")
   })
 })
