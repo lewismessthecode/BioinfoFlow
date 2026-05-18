@@ -37,8 +37,8 @@ describe("with-root-env startup summary", () => {
     expect(summary.network).toEqual({
       hostname: "0.0.0.0",
       port: "5173",
-      api_base_url: "http://localhost:8000/api/v1",
-      better_auth_url: "http://localhost:5173",
+      api_base_url: "set",
+      better_auth_url: "set",
     })
     expect(summary.auth).toEqual({
       mode: "personal",
@@ -51,6 +51,8 @@ describe("with-root-env startup summary", () => {
       { path: "/repo/frontend/.env.local", exists: false },
     ])
     expect(formatStartupSummary(summary)).not.toContain("super-secret")
+    expect(formatStartupSummary(summary)).not.toContain("/srv/bioinfoflow")
+    expect(formatStartupSummary(summary)).not.toContain("localhost:8000")
   })
 
   it("redacts secret-like values by presence", () => {
