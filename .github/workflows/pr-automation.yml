@@ -61,9 +61,25 @@ jobs:
           BODY
           )"
 
+          create_output="$(mktemp)"
+          set +e
           gh pr create \
             --repo "$GITHUB_REPOSITORY" \
             --base main \
             --head "$branch" \
             --title "$title" \
-            --body "$body"
+            --body "$body" >"$create_output" 2>&1
+          create_status=$?
+          set -e
+          cat "$create_output"
+
+          if [ "$create_status" -eq 0 ]; then
+            exit 0
+          fi
+
+          if grep -q "not permitted to create or approve pull requests" "$create_output"; then
+            echo "::warning::GitHub Actions is not permitted to create pull requests in this repository. Create the PR manually or enable this permission in repository settings."
+            exit 0
+          fi
+
+          exit "$create_status"
