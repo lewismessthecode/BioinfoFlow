@@ -12,7 +12,9 @@ def test_safe_join_rejects_parent_directory_segments(tmp_path):
     root.mkdir()
 
     with pytest.raises(PermissionError, match="path escapes source"):
-        safe_join(root, "reads/../sample.fastq.gz", escape_message="path escapes source")
+        safe_join(
+            root, "reads/../sample.fastq.gz", escape_message="path escapes source"
+        )
 
 
 def test_safe_join_rejects_absolute_paths_even_inside_root(tmp_path):

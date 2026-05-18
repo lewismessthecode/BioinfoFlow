@@ -227,7 +227,9 @@ class TerminalSessionManager:
         re.compile(r".*CREDENTIAL.*", re.IGNORECASE),
     ]
 
-    def _build_terminal_environment(self, *, shell: str | None = None) -> dict[str, str]:
+    def _build_terminal_environment(
+        self, *, shell: str | None = None
+    ) -> dict[str, str]:
         env = {
             k: v
             for k, v in os.environ.items()
@@ -370,7 +372,11 @@ class TerminalSessionManager:
 
     def _resolve_safe_directory(self, root: Path, candidate: str) -> Path:
         raw = str(candidate or ".").strip() or "."
-        if raw.startswith("~") or PurePosixPath(raw).is_absolute() or PureWindowsPath(raw).is_absolute():
+        if (
+            raw.startswith("~")
+            or PurePosixPath(raw).is_absolute()
+            or PureWindowsPath(raw).is_absolute()
+        ):
             raise PermissionError(raw)
         target = safe_join(
             root,

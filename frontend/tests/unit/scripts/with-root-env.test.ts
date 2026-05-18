@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   buildStartupSummary,
+  collectStartupSummaryEnv,
   formatStartupSummary,
   redactSecret,
 } from "@/scripts/with-root-env.mjs"
@@ -59,5 +60,25 @@ describe("with-root-env startup summary", () => {
     expect(redactSecret("abc123")).toBe("set")
     expect(redactSecret("")).toBe("unset")
     expect(redactSecret(undefined)).toBe("unset")
+  })
+
+  it("derives a startup-safe env summary before formatting logs", () => {
+    const env = collectStartupSummaryEnv(
+      {
+        NODE_ENV: "production",
+        HOSTNAME: "127.0.0.1",
+        PORT: "3001",
+        NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000/api/v1",
+        BETTER_AUTH_URL: "http://localhost:3001",
+        NEXT_PUBLIC_AUTH_MODE: "team",
+        BETTER_AUTH_SECRET: "super-secret",
+        BIOINFOFLOW_HOME: "/srv/bioinfoflow",
+      },
+      "start",
+      [],
+    )
+
+    expect(JSON.stringify(env)).not.toContain("super-secret")
+    expect(env.betterAuthSecret).toBe("set")
   })
 })

@@ -59,6 +59,27 @@ export function redactSecret(value) {
   return value ? "set" : "unset";
 }
 
+export function collectStartupSummaryEnv(env, command, args) {
+  return {
+    nodeEnv: env.NODE_ENV || (command === "dev" ? "development" : "production"),
+    hostname: valueAfterFlag(args, "--hostname") || env.HOSTNAME || "0.0.0.0",
+    port: valueAfterFlag(args, "--port") || env.PORT || (command === "dev" ? "3000" : "3000"),
+    apiBaseUrl: redactSecret(env.NEXT_PUBLIC_API_BASE_URL),
+    betterAuthUrl: redactSecret(env.BETTER_AUTH_URL),
+    authMode: env.NEXT_PUBLIC_AUTH_MODE || env.AUTH_MODE || "",
+    localAuthEnabled:
+      env.NEXT_PUBLIC_AUTH_LOCAL_ENABLED || env.AUTH_LOCAL_ENABLED || "",
+    selfSignupEnabled:
+      env.NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED
+      || env.AUTH_SELF_SIGNUP_ENABLED
+      || "",
+    betterAuthSecret: redactSecret(env.BETTER_AUTH_SECRET),
+    bioinfoflowHome: redactSecret(env.BIOINFOFLOW_HOME),
+    bioinfoflowHomeHost: redactSecret(env.BIOINFOFLOW_HOME_HOST),
+    betterAuthDbPath: redactSecret(env.BETTER_AUTH_DB_PATH),
+  };
+}
+
 export function buildStartupSummary({
   command,
   args,
@@ -68,6 +89,7 @@ export function buildStartupSummary({
   serverJs,
   loadedEnvFiles,
   env,
+  startupEnv = env ? collectStartupSummaryEnv(env, command, args) : {},
   versions = { node: process.version },
 }) {
   return {
@@ -78,30 +100,27 @@ export function buildStartupSummary({
     repo_root: repoRoot,
     node: versions.node,
     runtime: {
-      node_env: env.NODE_ENV || (command === "dev" ? "development" : "production"),
+      node_env: startupEnv.nodeEnv || "",
       next_bin: nextBin,
       standalone_server: serverJs || null,
     },
     env_files: loadedEnvFiles,
     network: {
-      hostname: valueAfterFlag(args, "--hostname") || env.HOSTNAME || "0.0.0.0",
-      port: valueAfterFlag(args, "--port") || env.PORT || (command === "dev" ? "3000" : "3000"),
-      api_base_url: redactSecret(env.NEXT_PUBLIC_API_BASE_URL),
-      better_auth_url: redactSecret(env.BETTER_AUTH_URL),
+      hostname: startupEnv.hostname || "",
+      port: startupEnv.port || "",
+      api_base_url: startupEnv.apiBaseUrl || "",
+      better_auth_url: startupEnv.betterAuthUrl || "",
     },
     auth: {
-      mode: env.NEXT_PUBLIC_AUTH_MODE || env.AUTH_MODE || "",
-      local_enabled: env.NEXT_PUBLIC_AUTH_LOCAL_ENABLED || env.AUTH_LOCAL_ENABLED || "",
-      self_signup_enabled:
-        env.NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED
-        || env.AUTH_SELF_SIGNUP_ENABLED
-        || "",
-      better_auth_secret: redactSecret(env.BETTER_AUTH_SECRET),
+      mode: startupEnv.authMode || "",
+      local_enabled: startupEnv.localAuthEnabled || "",
+      self_signup_enabled: startupEnv.selfSignupEnabled || "",
+      better_auth_secret: startupEnv.betterAuthSecret || "unset",
     },
     storage: {
-      bioinfoflow_home: redactSecret(env.BIOINFOFLOW_HOME),
-      bioinfoflow_home_host: redactSecret(env.BIOINFOFLOW_HOME_HOST),
-      better_auth_db_path: redactSecret(env.BETTER_AUTH_DB_PATH),
+      bioinfoflow_home: startupEnv.bioinfoflowHome || "",
+      bioinfoflow_home_host: startupEnv.bioinfoflowHomeHost || "",
+      better_auth_db_path: startupEnv.betterAuthDbPath || "",
     },
   };
 }
@@ -168,7 +187,7 @@ function runCli() {
           path: filePath,
           exists: fs.existsSync(filePath),
         })),
-        env,
+        startupEnv: collectStartupSummaryEnv(env, command, args),
       }),
     ),
   );

@@ -22,7 +22,7 @@ from app.path_layout import (
 from app.repositories.workflow_repo import WorkflowRepository
 from app.services.workflow_form_spec import reconcile_workflow_form_spec
 from app.services.workflow_validator import WorkflowValidator
-from app.utils.repo_paths import normalize_repo_path
+from app.utils.repo_paths import resolve_allowed_local_path
 
 
 class WorkflowService:
@@ -63,7 +63,7 @@ class WorkflowService:
         schema_json: dict[str, Any] | None = None
         workflow_content: str | None = None
         bundle_kind: str | None = None
-        workflow_id = str(payload.get("id") or uuid4())
+        workflow_id = str(uuid4())
 
         if source == WorkflowSource.NFCORE:
             if not name:
@@ -88,11 +88,14 @@ class WorkflowService:
             bundle_root = workflow_bundle_home(workflow_id)
             bundle_root.parent.mkdir(parents=True, exist_ok=True)
 
-            src_bundle = normalize_repo_path(str(bundle_path)) if bundle_path else None
-            src_entry = normalize_repo_path(str(source_ref)) if source_ref else None
+            src_bundle_path = (
+                resolve_allowed_local_path(str(bundle_path)) if bundle_path else None
+            )
+            source_path = (
+                resolve_allowed_local_path(str(source_ref)) if source_ref else None
+            )
 
-            if src_bundle:
-                src_bundle_path = Path(src_bundle)
+            if src_bundle_path:
                 if not src_bundle_path.exists() or not src_bundle_path.is_dir():
                     raise FileNotFoundError("local workflow bundle path not found")
                 if bundle_root.exists():
@@ -121,16 +124,23 @@ class WorkflowService:
                     )
                 entrypoint_relpath = entrypoint_relpath or file_name
                 entrypoint_relpath = _normalize_entrypoint(entrypoint_relpath)
-                target_path = bundle_root / str(entrypoint_relpath)
+                target_path = safe_join(
+                    bundle_root,
+                    str(entrypoint_relpath),
+                    escape_message="workflow entrypoint escapes bundle",
+                )
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 target_path.write_text(content, encoding="utf-8")
-            elif src_entry:
-                source_path = Path(src_entry)
+            elif source_path:
                 if not source_path.exists() or not source_path.is_file():
                     raise FileNotFoundError("local workflow source not found")
                 entrypoint_relpath = entrypoint_relpath or file_name or source_path.name
                 entrypoint_relpath = _normalize_entrypoint(entrypoint_relpath)
-                target_path = bundle_root / str(entrypoint_relpath)
+                target_path = safe_join(
+                    bundle_root,
+                    str(entrypoint_relpath),
+                    escape_message="workflow entrypoint escapes bundle",
+                )
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_path, target_path)
             else:
@@ -139,7 +149,11 @@ class WorkflowService:
                 )
 
             entrypoint_relpath = _normalize_entrypoint(entrypoint_relpath)
-            target_path = bundle_root / entrypoint_relpath
+            target_path = safe_join(
+                bundle_root,
+                entrypoint_relpath,
+                escape_message="workflow entrypoint escapes bundle",
+            )
             if not target_path.exists() or not target_path.is_file():
                 raise FileNotFoundError("workflow entrypoint not found in bundle")
 
@@ -319,7 +333,9 @@ def _detect_bundle_entrypoint(bundle_root: Path) -> str | None:
     return None
 
 
-def _write_uploaded_bundle(bundle_root: Path, bundle_files: list[dict[str, Any]]) -> None:
+def _write_uploaded_bundle(
+    bundle_root: Path, bundle_files: list[dict[str, Any]]
+) -> None:
     if bundle_root.exists():
         shutil.rmtree(bundle_root)
     bundle_root.mkdir(parents=True, exist_ok=True)
@@ -333,7 +349,11 @@ def _write_uploaded_bundle(bundle_root: Path, bundle_files: list[dict[str, Any]]
             payload = content.encode("utf-8")
         else:
             payload = bytes(content)
-        target_path = bundle_root / relpath
+        target_path = safe_join(
+            bundle_root,
+            relpath,
+            escape_message="workflow bundle file escapes bundle",
+        )
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_bytes(payload)
 

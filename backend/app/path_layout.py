@@ -55,7 +55,9 @@ def local_workflows_root() -> Path:
 
 
 def workflow_home(workflow_id: str) -> Path:
-    return local_workflows_root() / safe_path_name(workflow_id, field_name="workflow id")
+    return local_workflows_root() / safe_path_name(
+        workflow_id, field_name="workflow id"
+    )
 
 
 def workflow_bundle_home(workflow_id: str) -> Path:
@@ -94,11 +96,15 @@ def projects_root() -> Path:
     return settings.projects_root.resolve()
 
 
-def project_home(project: Project | str, *, external_root_path: str | None = None) -> Path:
+def project_home(
+    project: Project | str, *, external_root_path: str | None = None
+) -> Path:
     if isinstance(project, str):
         if external_root_path:
             return Path(external_root_path).expanduser().resolve()
-        return (projects_root() / safe_path_name(project, field_name="project id")).resolve()
+        return (
+            projects_root() / safe_path_name(project, field_name="project id")
+        ).resolve()
 
     storage_mode = str(getattr(project, "storage_mode", "managed") or "managed")
     if storage_mode == "external":
@@ -109,35 +115,51 @@ def project_home(project: Project | str, *, external_root_path: str | None = Non
     return (projects_root() / str(project.id)).resolve()
 
 
-def project_data_root(project: Project | str, *, external_root_path: str | None = None) -> Path:
+def project_data_root(
+    project: Project | str, *, external_root_path: str | None = None
+) -> Path:
     return project_home(project, external_root_path=external_root_path) / "data"
 
 
-def project_runs_root(project: Project | str, *, external_root_path: str | None = None) -> Path:
+def project_runs_root(
+    project: Project | str, *, external_root_path: str | None = None
+) -> Path:
     return project_home(project, external_root_path=external_root_path) / "runs"
 
 
-def run_home(project: Project | str, run_id: str, *, external_root_path: str | None = None) -> Path:
-    return project_runs_root(project, external_root_path=external_root_path) / safe_path_name(
+def run_home(
+    project: Project | str, run_id: str, *, external_root_path: str | None = None
+) -> Path:
+    return project_runs_root(
+        project, external_root_path=external_root_path
+    ) / safe_path_name(
         run_id,
         field_name="run id",
     )
 
 
-def run_input_root(project: Project | str, run_id: str, *, external_root_path: str | None = None) -> Path:
+def run_input_root(
+    project: Project | str, run_id: str, *, external_root_path: str | None = None
+) -> Path:
     return run_home(project, run_id, external_root_path=external_root_path) / "input"
 
 
 def run_input_request_root(
     project: Project | str, run_id: str, *, external_root_path: str | None = None
 ) -> Path:
-    return run_input_root(project, run_id, external_root_path=external_root_path) / "request"
+    return (
+        run_input_root(project, run_id, external_root_path=external_root_path)
+        / "request"
+    )
 
 
 def run_manifest_materialized_root(
     project: Project | str, run_id: str, *, external_root_path: str | None = None
 ) -> Path:
-    return run_input_root(project, run_id, external_root_path=external_root_path) / "materialized"
+    return (
+        run_input_root(project, run_id, external_root_path=external_root_path)
+        / "materialized"
+    )
 
 
 def run_materialized_attachments_root(
@@ -153,11 +175,18 @@ def run_materialized_attachments_root(
     )
 
 
-def run_input_attachments_root(project: Project | str, run_id: str, *, external_root_path: str | None = None) -> Path:
-    return run_input_root(project, run_id, external_root_path=external_root_path) / "attachments"
+def run_input_attachments_root(
+    project: Project | str, run_id: str, *, external_root_path: str | None = None
+) -> Path:
+    return (
+        run_input_root(project, run_id, external_root_path=external_root_path)
+        / "attachments"
+    )
 
 
-def run_engine_root(project: Project | str, run_id: str, *, external_root_path: str | None = None) -> Path:
+def run_engine_root(
+    project: Project | str, run_id: str, *, external_root_path: str | None = None
+) -> Path:
     return run_home(project, run_id, external_root_path=external_root_path) / "engine"
 
 
@@ -175,15 +204,21 @@ def run_engine_workspace(
     )
 
 
-def run_results_root(project: Project | str, run_id: str, *, external_root_path: str | None = None) -> Path:
+def run_results_root(
+    project: Project | str, run_id: str, *, external_root_path: str | None = None
+) -> Path:
     return run_home(project, run_id, external_root_path=external_root_path) / "results"
 
 
-def run_audit_root(project: Project | str, run_id: str, *, external_root_path: str | None = None) -> Path:
+def run_audit_root(
+    project: Project | str, run_id: str, *, external_root_path: str | None = None
+) -> Path:
     return run_home(project, run_id, external_root_path=external_root_path) / "audit"
 
 
-def ensure_project_layout(project: Project | str, *, external_root_path: str | None = None) -> None:
+def ensure_project_layout(
+    project: Project | str, *, external_root_path: str | None = None
+) -> None:
     project_data_root(project, external_root_path=external_root_path).mkdir(
         parents=True, exist_ok=True
     )
@@ -193,7 +228,11 @@ def ensure_project_layout(project: Project | str, *, external_root_path: str | N
 
 
 def ensure_run_layout(
-    project: Project | str, run_id: str, *, engine: str, external_root_path: str | None = None
+    project: Project | str,
+    run_id: str,
+    *,
+    engine: str,
+    external_root_path: str | None = None,
 ) -> None:
     run_input_root(project, run_id, external_root_path=external_root_path).mkdir(
         parents=True, exist_ok=True
@@ -357,7 +396,10 @@ def _validated_relative_parts(value: str, *, escape_message: str) -> tuple[str, 
     normalized = _normalize_relative_path(value)
     if "\x00" in normalized:
         raise PermissionError(escape_message)
-    if PurePosixPath(normalized).is_absolute() or PureWindowsPath(normalized).is_absolute():
+    if (
+        PurePosixPath(normalized).is_absolute()
+        or PureWindowsPath(normalized).is_absolute()
+    ):
         raise PermissionError(escape_message)
 
     parts: list[str] = []
@@ -425,7 +467,9 @@ class RunLayout:
         home = run_home(project, run_id, external_root_path=external_root_path)
         return cls(
             home=home,
-            input=run_input_root(project, run_id, external_root_path=external_root_path),
+            input=run_input_root(
+                project, run_id, external_root_path=external_root_path
+            ),
             request=run_input_request_root(
                 project, run_id, external_root_path=external_root_path
             ),

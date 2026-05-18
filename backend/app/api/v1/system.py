@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +13,7 @@ from app.services.run_dispatch import get_run_scheduler
 from app.schemas.system import DirectoryEntry, DirectoryListResponse
 from app.services.docker_service import DockerService
 from app.services.gpu_service import get_gpu_service
-from app.utils.repo_paths import resolve_repo_path
+from app.utils.repo_paths import resolve_allowed_local_path
 from app.utils.responses import error_response, success_response
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -338,11 +336,15 @@ async def list_directories(
     _user=Depends(require_admin),
 ):
     """Browse local filesystem directories for admin-only external roots."""
-    raw = Path(path).expanduser()
-    if raw.is_absolute():
-        resolved = raw.resolve()
-    else:
-        resolved = resolve_repo_path(path)
+    try:
+        resolved = resolve_allowed_local_path(path)
+    except ValueError:
+        return error_response(
+            code="DIRECTORY_BLOCKED",
+            message="Directory is outside the allowed local roots",
+            status_code=403,
+            request=request,
+        )
 
     for blocked in _BLOCKLISTED_PATHS:
         if str(resolved) == blocked or str(resolved).startswith(blocked + "/"):

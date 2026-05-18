@@ -68,20 +68,22 @@ async def test_terminal_session_manager_replays_initial_output_to_late_subscribe
 ):
     shell_script = tmp_path / "prompt-shell.sh"
     shell_script.write_text(
-        "#!/bin/sh\n"
-        "printf 'bpiper/projects/demo main\\n❯ '\n"
-        "exec /bin/sh\n"
+        "#!/bin/sh\nprintf 'bpiper/projects/demo main\\n❯ '\nexec /bin/sh\n"
     )
     shell_script.chmod(0o755)
 
     manager = TerminalSessionManager(shell=str(shell_script), idle_timeout_seconds=30)
-    session = await manager.create_or_get(project_id="project-prompt", root_path=tmp_path)
+    session = await manager.create_or_get(
+        project_id="project-prompt", root_path=tmp_path
+    )
 
     try:
         await asyncio.sleep(0.2)
         queue = await manager.attach(session.id)
 
-        output = await _next_message(queue, "output", contains="bpiper/projects/demo main")
+        output = await _next_message(
+            queue, "output", contains="bpiper/projects/demo main"
+        )
         data = output["data"]
         for _ in range(4):
             if "❯" in data:
@@ -112,7 +114,9 @@ async def test_terminal_session_manager_rejects_absolute_chdir_paths(
     tmp_path: Path,
 ):
     manager = TerminalSessionManager(shell="/bin/sh", idle_timeout_seconds=30)
-    session = await manager.create_or_get(project_id="project-absolute", root_path=tmp_path)
+    session = await manager.create_or_get(
+        project_id="project-absolute", root_path=tmp_path
+    )
     try:
         with pytest.raises(PermissionError):
             await manager.change_directory(session.id, str(tmp_path.resolve()))
