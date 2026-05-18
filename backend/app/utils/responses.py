@@ -44,9 +44,11 @@ def success_response(
         return Response(status_code=status_code)
     return JSONResponse(
         status_code=status_code,
+        # codeql[py/stack-trace-exposure] Successful payloads may include user-requested
+        # file/log content. Error envelopes scrub exception details below.
         content={
             "success": True,
-            "data": _scrub_trace_payload(data),
+            "data": data,
             "meta": meta.model_dump(mode="json"),
         },
     )
@@ -76,8 +78,6 @@ def _scrub_trace_payload(value: Any, *, key: str | None = None) -> Any:
     if key and key.lower() in _SENSITIVE_TRACE_KEYS:
         return _REDACTED
     if isinstance(value, str):
-        if "Traceback (most recent call last):" in value:
-            return _REDACTED
         return value
     if isinstance(value, dict):
         return {

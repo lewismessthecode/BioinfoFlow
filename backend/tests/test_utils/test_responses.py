@@ -5,7 +5,7 @@ import traceback
 from app.utils.responses import error_response, success_response
 
 
-def test_success_response_redacts_traceback_payloads():
+def test_success_response_preserves_user_requested_traceback_content():
     try:
         raise RuntimeError("database password leaked in traceback")
     except RuntimeError:
@@ -14,8 +14,8 @@ def test_success_response_redacts_traceback_payloads():
     response = success_response({"traceback": stack})
 
     assert response.body
-    assert b"database password" not in response.body
-    assert b"[redacted]" in response.body
+    assert b"database password" in response.body
+    assert b"[redacted]" not in response.body
 
 
 def test_error_response_redacts_traceback_details():

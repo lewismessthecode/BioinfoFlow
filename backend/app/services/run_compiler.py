@@ -904,6 +904,8 @@ class RunCompiler:
 
     def _validate_allowed_path(self, path: Path, *, project, field: FormField) -> None:
         allowed_roots = self._allowed_roots(project=project, field=field)
+        # codeql[py/path-injection] The path came from asset resolution or safe_join;
+        # this resolve is followed by an allowed-root containment check.
         candidate = path.resolve(strict=False)
         if not any(self._path_under_root(candidate, root) for root in allowed_roots):
             raise CompileError(
@@ -950,12 +952,11 @@ class RunCompiler:
             raise FileNotFoundError("path not found within allowed storage roots")
 
         expanded = os.path.normpath(os.path.expanduser(raw))
+        # codeql[py/path-injection] Absolute manual paths are accepted only when their
+        # resolved target is contained by one of this field's configured storage roots.
+        candidate = Path(expanded).resolve(strict=False)
         allowed_roots = self._allowed_roots(project=project, field=field)
         for root in allowed_roots:
-            root_text = str(root)
-            if expanded != root_text and not expanded.startswith(root_text + os.sep):
-                continue
-            candidate = Path(expanded).resolve(strict=False)
             if self._path_under_root(candidate, root):
                 return candidate
         raise FileNotFoundError("path not found within allowed storage roots")
