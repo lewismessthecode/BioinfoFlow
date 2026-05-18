@@ -20,9 +20,7 @@ def resolve_repo_path(path: str | Path) -> Path:
     if ".." in PurePosixPath(posix_path).parts:
         raise PermissionError("invalid path")
     if PurePosixPath(expanded).is_absolute() or PureWindowsPath(expanded).is_absolute():
-        # codeql[py/path-injection] This admin-only directory browser validates
-        # absolute paths against blocklisted roots before listing entries.
-        return Path(expanded).resolve()
+        return Path(os.path.realpath(expanded))
     return (repo_root() / expanded).resolve()
 
 

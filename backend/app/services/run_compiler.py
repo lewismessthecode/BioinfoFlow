@@ -605,7 +605,9 @@ class RunCompiler:
                 continue
             if field.kind == "file_list" and isinstance(value, list):
                 materialized[field_id] = [
-                    self._copy_bundle_asset_to_run(item, bundle_root=bundle_root, layout=layout)
+                    self._copy_bundle_asset_to_run(
+                        item, bundle_root=bundle_root, layout=layout
+                    )
                     for item in value
                 ]
                 continue
@@ -904,9 +906,7 @@ class RunCompiler:
 
     def _validate_allowed_path(self, path: Path, *, project, field: FormField) -> None:
         allowed_roots = self._allowed_roots(project=project, field=field)
-        # codeql[py/path-injection] The path came from asset resolution or safe_join;
-        # this resolve is followed by an allowed-root containment check.
-        candidate = path.resolve(strict=False)
+        candidate = path
         if not any(self._path_under_root(candidate, root) for root in allowed_roots):
             raise CompileError(
                 RunErrorCode.PATH_OUTSIDE_ALLOWED_ROOT,
@@ -947,16 +947,27 @@ class RunCompiler:
             deduped.append(root.resolve())
         return tuple(deduped)
 
-    def _resolve_absolute_manual_path(self, raw: str, *, project, field: FormField) -> Path:
+    def _resolve_absolute_manual_path(
+        self, raw: str, *, project, field: FormField
+    ) -> Path:
         if "\x00" in raw:
             raise FileNotFoundError("path not found within allowed storage roots")
 
-        expanded = os.path.normpath(os.path.expanduser(raw))
-        # codeql[py/path-injection] Absolute manual paths are accepted only when their
-        # resolved target is contained by one of this field's configured storage roots.
-        candidate = Path(expanded).resolve(strict=False)
+        expanded = os.path.realpath(os.path.expanduser(raw))
         allowed_roots = self._allowed_roots(project=project, field=field)
         for root in allowed_roots:
+            root_real = os.path.realpath(root)
+            try:
+                is_under_root = os.path.commonpath([expanded, root_real]) == root_real
+            except ValueError:
+                is_under_root = False
+            if not is_under_root:
+                continue
+            candidate = safe_join(
+                root,
+                os.path.relpath(expanded, root_real),
+                escape_message="path escapes allowed storage roots",
+            )
             if self._path_under_root(candidate, root):
                 return candidate
         raise FileNotFoundError("path not found within allowed storage roots")

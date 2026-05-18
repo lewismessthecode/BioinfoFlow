@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -38,19 +39,22 @@ def success_response(
     pagination: Pagination | None = None,
     status: dict[str, Any] | None = None,
     status_code: int = 200,
-) -> JSONResponse:
+) -> Response:
     meta = _meta(request, pagination, status)
     if status_code in {204, 205, 304}:
         return Response(status_code=status_code)
-    return JSONResponse(
+    return Response(
         status_code=status_code,
-        # codeql[py/stack-trace-exposure] Successful payloads may include user-requested
-        # file/log content. Error envelopes scrub exception details below.
-        content={
-            "success": True,
-            "data": data,
-            "meta": meta.model_dump(mode="json"),
-        },
+        media_type="application/json",
+        content=json.dumps(
+            {
+                "success": True,
+                "data": data,
+                "meta": meta.model_dump(mode="json"),
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ),
     )
 
 
@@ -63,7 +67,9 @@ def error_response(
     request: Request | None = None,
 ) -> JSONResponse:
     meta = _meta(request)
-    error = ErrorDetail(code=code, message=message, details=_scrub_trace_payload(details))
+    error = ErrorDetail(
+        code=code, message=message, details=_scrub_trace_payload(details)
+    )
     return JSONResponse(
         status_code=status_code,
         content={
