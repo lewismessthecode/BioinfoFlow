@@ -139,7 +139,7 @@ async def test_list_directories_rejects_paths_outside_allowed_roots(async_client
 @pytest.mark.asyncio
 async def test_list_directories_permission_error(async_client, tmp_path):
     """Permission errors return 403."""
-    with patch("pathlib.Path.iterdir", side_effect=PermissionError("nope")):
+    with patch("app.api.v1.system.os.scandir", side_effect=PermissionError("nope")):
         resp = await async_client.get(
             "/api/v1/system/directories", params={"path": str(tmp_path)}
         )

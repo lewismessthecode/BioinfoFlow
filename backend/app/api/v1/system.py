@@ -404,9 +404,10 @@ async def list_directories(
             request=request,
         )
 
-    parent = str(resolved.parent) if resolved.parent != resolved else None
+    parent_path = os.path.dirname(resolved)
+    parent = parent_path if parent_path != resolved else None
     result = DirectoryListResponse(
-        path=str(resolved),
+        path=resolved,
         parent=parent,
         directories=entries,
     )
