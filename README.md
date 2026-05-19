@@ -117,6 +117,23 @@ Sign in with the bootstrap owner credentials from `.env`.
 
 For local Docker, leaving `BIOINFOFLOW_HOME` unset is the simplest path — Compose stores platform data under this repo's `data/` directory and mounts it at the same absolute path inside containers. For a shared or remote server, set `BETTER_AUTH_SECRET`, `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` before building. See the [Docker Quick Start](docs/getting-started/docker.md) and [Runbook](RUNBOOK.md).
 
+### Run with published images
+
+For a faster localhost start without rebuilding images, use the GHCR release images:
+
+```bash
+cp .env.example .env
+# edit .env: provider key and owner credentials
+cat >> .env <<'EOF'
+IMAGE_REGISTRY=ghcr.io/lewismessthecode
+IMAGE_TAG=latest
+EOF
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Published images are refreshed from `main` when backend or frontend code changes. The published frontend image is built for localhost; for a remote server, set the public URLs in `.env` and use the source-build command above.
+
 ---
 
 ## 🛠 Development
