@@ -114,6 +114,34 @@ docker compose up -d --build
 - If you leave `BIOINFOFLOW_HOME` unset, Docker Compose defaults to this repo's `data/` directory.
 - The backend creates the required platform subdirectories on startup.
 
+### Fast localhost run with published images
+
+Use this path when you want to try the latest `main` release without building images locally:
+
+```bash
+cp .env.example .env
+# edit .env: provider key and owner credentials
+cat >> .env <<'EOF'
+IMAGE_REGISTRY=ghcr.io/lewismessthecode
+IMAGE_TAG=latest
+EOF
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+The images are published by `.github/workflows/container-release.yml` after `main` receives backend or frontend code changes. The stack uses:
+
+- `ghcr.io/lewismessthecode/bioinfoflow-backend:<tag>`
+- `ghcr.io/lewismessthecode/bioinfoflow-frontend:<tag>`
+
+Available tags are `latest`, `main`, and `sha-<12-char-commit>`.
+
+The published frontend image is built with `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`, so it is intended for localhost. For a shared or remote server, set the public URL values in `.env` and run the source-build command instead:
+
+```bash
+docker compose up -d --build
+```
+
 ## 3. Local Development
 
 ### Prerequisites

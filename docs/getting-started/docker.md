@@ -49,6 +49,34 @@ Open:
 
 Sign in with the owner email and password from `.env`.
 
+## Published Images
+
+For localhost, you can skip the local image build and pull the latest images from GHCR:
+
+```bash
+cp .env.example .env
+# edit .env: provider key and owner credentials
+cat >> .env <<'EOF'
+IMAGE_REGISTRY=ghcr.io/lewismessthecode
+IMAGE_TAG=latest
+EOF
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+The release workflow publishes:
+
+- `ghcr.io/lewismessthecode/bioinfoflow-backend:<tag>`
+- `ghcr.io/lewismessthecode/bioinfoflow-frontend:<tag>`
+
+Use `latest`, `main`, or `sha-<12-char-commit>` as the tag. Images are republished from `main` only when backend or frontend code changes; docs-only changes do not create a new image.
+
+The published frontend image is built for localhost with `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`. For a shared or remote server, set the public URLs in `.env` and build from source instead:
+
+```bash
+docker compose up -d --build
+```
+
 ## What Happens At Startup
 
 If `BIOINFOFLOW_HOME` is unset, Compose uses `${PWD}/data`, where `${PWD}` is the repo root for normal local startup.

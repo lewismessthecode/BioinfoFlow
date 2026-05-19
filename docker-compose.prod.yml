@@ -15,9 +15,14 @@
 #   BIOINFOFLOW_HOME=/lustre/<user>/bpiper   # HPC
 #   BIOINFOFLOW_HOME=/mnt/efs/bpiper          # cloud
 #
-# Set IMAGE_REGISTRY and IMAGE_TAG in .env to customize images:
-#   IMAGE_REGISTRY=ghcr.io/your-username
-#   IMAGE_TAG=v1.0.0
+# Set IMAGE_REGISTRY and IMAGE_TAG in .env to use published images:
+#   IMAGE_REGISTRY=ghcr.io/lewismessthecode
+#   IMAGE_TAG=latest
+#
+# The published frontend image is built for localhost:
+#   NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+# For a remote/shared server, build from source with docker-compose.yml so the
+# frontend bundle bakes in that server's public API URL.
 
 services:
   backend:
