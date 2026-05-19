@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from pathlib import PurePosixPath
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,12 +16,52 @@ from app.services.run_dispatch import get_run_scheduler
 from app.schemas.system import DirectoryEntry, DirectoryListResponse
 from app.services.docker_service import DockerService
 from app.services.gpu_service import get_gpu_service
-from app.utils.repo_paths import resolve_allowed_local_path
+from app.utils.repo_paths import allowed_local_path_roots, repo_root
 from app.utils.responses import error_response, success_response
 
 router = APIRouter(prefix="/system", tags=["system"])
 
 _BLOCKLISTED_PATHS = frozenset({"/proc", "/sys", "/dev", "/boot"})
+
+
+def _list_allowed_directories(
+    path: str, *, show_hidden: bool
+) -> tuple[str, list[DirectoryEntry]]:
+    raw = str(path or "/").strip() or "/"
+    if "\x00" in raw:
+        raise ValueError("local path is not allowed")
+
+    normalized = raw.replace("\\", "/")
+    if ".." in PurePosixPath(normalized).parts:
+        raise ValueError("local path is not allowed")
+
+    expanded = os.path.expanduser(raw)
+    if os.path.isabs(expanded):
+        fullpath = os.path.realpath(expanded)
+    else:
+        fullpath = os.path.realpath(os.path.join(str(repo_root()), expanded))
+
+    for root in allowed_local_path_roots():
+        base_path = os.path.realpath(str(root))
+        if fullpath.startswith(base_path):
+            if os.path.commonpath([base_path, fullpath]) != base_path:
+                continue
+            for blocked in _BLOCKLISTED_PATHS:
+                if fullpath == blocked or fullpath.startswith(blocked + "/"):
+                    raise ValueError("local path is not allowed")
+            if not os.path.isdir(fullpath):
+                raise FileNotFoundError(fullpath)
+            entries = sorted(
+                (
+                    DirectoryEntry(name=item.name, path=item.path)
+                    for item in os.scandir(fullpath)
+                    if item.is_dir()
+                    and (show_hidden or not item.name.startswith("."))
+                ),
+                key=lambda e: e.name.lower(),
+            )
+            return fullpath, entries
+    raise ValueError("local path is not allowed")
 
 
 @router.get("/ping")
@@ -337,7 +380,7 @@ async def list_directories(
 ):
     """Browse local filesystem directories for admin-only external roots."""
     try:
-        resolved = resolve_allowed_local_path(path)
+        resolved, entries = _list_allowed_directories(path, show_hidden=show_hidden)
     except ValueError:
         return error_response(
             code="DIRECTORY_BLOCKED",
@@ -345,44 +388,26 @@ async def list_directories(
             status_code=403,
             request=request,
         )
-
-    for blocked in _BLOCKLISTED_PATHS:
-        if str(resolved) == blocked or str(resolved).startswith(blocked + "/"):
-            return error_response(
-                code="DIRECTORY_BLOCKED",
-                message=f"Access to {resolved} is not allowed",
-                status_code=403,
-                request=request,
-            )
-
-    if not resolved.is_dir():
+    except FileNotFoundError as exc:
+        resolved = str(exc)
         return error_response(
             code="DIRECTORY_NOT_FOUND",
             message=f"Directory not found: {resolved}",
             status_code=404,
             request=request,
         )
-
-    try:
-        entries = sorted(
-            (
-                DirectoryEntry(name=item.name, path=str(item))
-                for item in resolved.iterdir()
-                if item.is_dir() and (show_hidden or not item.name.startswith("."))
-            ),
-            key=lambda e: e.name.lower(),
-        )
     except PermissionError:
         return error_response(
             code="DIRECTORY_PERMISSION_DENIED",
-            message=f"Permission denied: {resolved}",
+            message="Permission denied",
             status_code=403,
             request=request,
         )
 
-    parent = str(resolved.parent) if resolved.parent != resolved else None
+    parent_path = os.path.dirname(resolved)
+    parent = parent_path if parent_path != resolved else None
     result = DirectoryListResponse(
-        path=str(resolved),
+        path=resolved,
         parent=parent,
         directories=entries,
     )

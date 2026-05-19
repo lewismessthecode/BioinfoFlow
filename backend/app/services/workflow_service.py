@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from uuid import uuid4
 
@@ -14,7 +16,6 @@ from app.engine.schema_extractor import (
 )
 from app.models.workflow import WorkflowEngine, WorkflowSource
 from app.path_layout import (
-    safe_join,
     workflow_bundle_home,
     workflow_home,
     workflow_metadata_path,
@@ -22,7 +23,10 @@ from app.path_layout import (
 from app.repositories.workflow_repo import WorkflowRepository
 from app.services.workflow_form_spec import reconcile_workflow_form_spec
 from app.services.workflow_validator import WorkflowValidator
-from app.utils.repo_paths import resolve_allowed_local_path
+from app.utils.repo_paths import allowed_local_path_roots, repo_root
+
+
+_SAFE_BUNDLE_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class WorkflowService:
@@ -88,19 +92,8 @@ class WorkflowService:
             bundle_root = workflow_bundle_home(workflow_id)
             bundle_root.parent.mkdir(parents=True, exist_ok=True)
 
-            src_bundle_path = (
-                resolve_allowed_local_path(str(bundle_path)) if bundle_path else None
-            )
-            source_path = (
-                resolve_allowed_local_path(str(source_ref)) if source_ref else None
-            )
-
-            if src_bundle_path:
-                if not src_bundle_path.exists() or not src_bundle_path.is_dir():
-                    raise FileNotFoundError("local workflow bundle path not found")
-                if bundle_root.exists():
-                    shutil.rmtree(bundle_root)
-                shutil.copytree(src_bundle_path, bundle_root)
+            if bundle_path:
+                _copy_allowed_workflow_bundle(str(bundle_path), bundle_root)
                 if not entrypoint_relpath:
                     if file_name:
                         entrypoint_relpath = file_name
@@ -109,12 +102,13 @@ class WorkflowService:
                 if not entrypoint_relpath:
                     raise ValueError("entrypoint_relpath is required for local bundles")
             elif bundle_files:
+                if entrypoint_relpath or file_name:
+                    entrypoint_relpath = _normalize_entrypoint(
+                        entrypoint_relpath or file_name
+                    )
                 _write_uploaded_bundle(bundle_root, bundle_files)
                 if not entrypoint_relpath:
-                    if file_name:
-                        entrypoint_relpath = file_name
-                    else:
-                        entrypoint_relpath = _detect_bundle_entrypoint(bundle_root)
+                    entrypoint_relpath = _detect_bundle_entrypoint(bundle_root)
                 if not entrypoint_relpath:
                     raise ValueError("entrypoint_relpath is required for local bundles")
             elif content:
@@ -124,32 +118,32 @@ class WorkflowService:
                     )
                 entrypoint_relpath = entrypoint_relpath or file_name
                 entrypoint_relpath = _normalize_entrypoint(entrypoint_relpath)
-                target_path = safe_join(
+                target_path = _workflow_bundle_path(
                     bundle_root,
                     str(entrypoint_relpath),
                     escape_message="workflow entrypoint escapes bundle",
                 )
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 target_path.write_text(content, encoding="utf-8")
-            elif source_path:
-                if not source_path.exists() or not source_path.is_file():
-                    raise FileNotFoundError("local workflow source not found")
-                entrypoint_relpath = entrypoint_relpath or file_name or source_path.name
+            elif source_ref:
+                entrypoint_relpath = (
+                    entrypoint_relpath or file_name or Path(str(source_ref)).name
+                )
                 entrypoint_relpath = _normalize_entrypoint(entrypoint_relpath)
-                target_path = safe_join(
+                target_path = _workflow_bundle_path(
                     bundle_root,
                     str(entrypoint_relpath),
                     escape_message="workflow entrypoint escapes bundle",
                 )
                 target_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source_path, target_path)
+                _copy_allowed_workflow_source_file(str(source_ref), target_path)
             else:
                 raise ValueError(
                     "local workflows require bundle_path, content, or source_ref"
                 )
 
             entrypoint_relpath = _normalize_entrypoint(entrypoint_relpath)
-            target_path = safe_join(
+            target_path = _workflow_bundle_path(
                 bundle_root,
                 entrypoint_relpath,
                 escape_message="workflow entrypoint escapes bundle",
@@ -281,7 +275,7 @@ class WorkflowService:
             raise ValueError("source code is only available for local workflows")
         if not workflow.entrypoint_relpath:
             raise FileNotFoundError("workflow entrypoint not configured")
-        return safe_join(
+        return _workflow_bundle_path(
             workflow_bundle_home(str(workflow.id)),
             workflow.entrypoint_relpath,
             escape_message="workflow entrypoint escapes bundle",
@@ -298,15 +292,101 @@ def _normalize_enum(value: Any, enum_cls):
 
 
 def _normalize_entrypoint(value: str | None) -> str:
+    return "/".join(
+        _normalize_bundle_relpath_parts(value, field_name="entrypoint_relpath")
+    )
+
+
+def _normalize_bundle_relpath_parts(
+    value: str | None, *, field_name: str
+) -> tuple[str, ...]:
     if not value or not str(value).strip():
-        raise ValueError("entrypoint_relpath is required")
-    candidate = Path(str(value).strip())
-    if candidate.is_absolute():
-        raise ValueError("entrypoint_relpath must stay within the bundle")
-    normalized = str(candidate).replace("\\", "/")
-    if normalized.startswith("../") or normalized == "..":
-        raise ValueError("entrypoint_relpath escapes bundle")
-    return normalized
+        raise ValueError(f"{field_name} is required")
+
+    normalized = str(value).strip().replace("\\", "/")
+    if "\x00" in normalized:
+        raise ValueError(f"{field_name} contains invalid path characters")
+    if (
+        PurePosixPath(normalized).is_absolute()
+        or PureWindowsPath(normalized).is_absolute()
+    ):
+        raise ValueError(f"{field_name} must stay within the bundle")
+
+    parts: list[str] = []
+    for part in normalized.split("/"):
+        if part in {"", "."}:
+            continue
+        if part == ".." or not _SAFE_BUNDLE_PART_RE.fullmatch(part):
+            raise ValueError(f"{field_name} must stay within the bundle")
+        parts.append(part)
+
+    if not parts:
+        raise ValueError(f"{field_name} is required")
+    return tuple(parts)
+
+
+def _workflow_bundle_path(
+    bundle_root: Path, relpath: str, *, escape_message: str
+) -> Path:
+    try:
+        parts = _normalize_bundle_relpath_parts(
+            relpath, field_name="entrypoint_relpath"
+        )
+    except ValueError as exc:
+        raise PermissionError(escape_message) from exc
+    base_path = os.path.realpath(str(bundle_root))
+    fullpath = os.path.realpath(os.path.join(base_path, *parts))
+    if fullpath != base_path and not fullpath.startswith(base_path + os.sep):
+        raise PermissionError(escape_message)
+    return Path(fullpath)
+
+
+def _normalize_workflow_import_path(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw or "\x00" in raw:
+        raise ValueError("local path is not allowed")
+
+    normalized = raw.replace("\\", "/")
+    if ".." in PurePosixPath(normalized).parts:
+        raise ValueError("local path is not allowed")
+
+    expanded = os.path.expanduser(raw)
+    if os.path.isabs(expanded):
+        fullpath = os.path.realpath(expanded)
+    else:
+        fullpath = os.path.realpath(os.path.join(str(repo_root()), expanded))
+
+    return fullpath
+
+
+def _copy_allowed_workflow_bundle(value: str, bundle_root: Path) -> None:
+    fullpath = _normalize_workflow_import_path(value)
+    for root in allowed_local_path_roots():
+        base_path = os.path.realpath(str(root))
+        if fullpath.startswith(base_path):
+            if os.path.commonpath([base_path, fullpath]) != base_path:
+                continue
+            if not os.path.isdir(fullpath):
+                raise FileNotFoundError("local workflow bundle path not found")
+            if bundle_root.exists():
+                shutil.rmtree(bundle_root)
+            shutil.copytree(fullpath, bundle_root)
+            return
+    raise ValueError("local path is not allowed")
+
+
+def _copy_allowed_workflow_source_file(value: str, target_path: Path) -> None:
+    fullpath = _normalize_workflow_import_path(value)
+    for root in allowed_local_path_roots():
+        base_path = os.path.realpath(str(root))
+        if fullpath.startswith(base_path):
+            if os.path.commonpath([base_path, fullpath]) != base_path:
+                continue
+            if not os.path.isfile(fullpath):
+                raise FileNotFoundError("local workflow source not found")
+            shutil.copy2(fullpath, target_path)
+            return
+    raise ValueError("local path is not allowed")
 
 
 def _infer_engine_from_name(filename: str) -> WorkflowEngine:
@@ -341,7 +421,11 @@ def _write_uploaded_bundle(
     bundle_root.mkdir(parents=True, exist_ok=True)
 
     for item in bundle_files:
-        relpath = _normalize_entrypoint(item.get("relpath"))
+        relpath = "/".join(
+            _normalize_bundle_relpath_parts(
+                item.get("relpath"), field_name="bundle file path"
+            )
+        )
         content = item.get("content")
         if content is None:
             raise ValueError(f"missing bundle file content for {relpath}")
@@ -349,7 +433,7 @@ def _write_uploaded_bundle(
             payload = content.encode("utf-8")
         else:
             payload = bytes(content)
-        target_path = safe_join(
+        target_path = _workflow_bundle_path(
             bundle_root,
             relpath,
             escape_message="workflow bundle file escapes bundle",
