@@ -72,7 +72,7 @@ export function ModelSelector({
           {currentModel && (
             <ProviderIcon provider={currentModel.provider} size={13} />
           )}
-          <span className="truncate">{displayLabel}</span>
+          <span className="hidden truncate sm:inline">{displayLabel}</span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>

@@ -88,7 +88,7 @@ export function ExecutionModeSelector({
           aria-label={t("triggerAriaLabel")}
         >
           {trigger.icon}
-          <span>{trigger.label}</span>
+          <span className="hidden sm:inline">{trigger.label}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64 rounded-2xl">
