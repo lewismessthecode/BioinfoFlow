@@ -33,3 +33,18 @@ def test_backend_dockerfile_installs_app_before_final_uv_sync():
         "app.engine._miniwdl_entry` cannot import the bioinfoflow backend "
         "class and task containers lose their identity mounts."
     )
+
+
+def test_backend_dockerfile_exports_app_pythonpath_for_workspace_subprocesses():
+    """Engine subprocesses run with the user workspace as cwd, not `/app`.
+
+    The production image strips source to legacy pyc files under `/app/app`,
+    then spawns miniwdl with `/app/.venv/bin/python -m app.engine._miniwdl_entry`.
+    Setting PYTHONPATH makes that module import independent of the current
+    workspace and the exact project-install mode used by uv.
+    """
+    dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'PYTHONPATH="/app"' in dockerfile
