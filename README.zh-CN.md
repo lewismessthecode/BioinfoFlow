@@ -121,6 +121,23 @@ docker compose up -d --build
 
 本地 Docker 部署最省心的做法是不要自己设 `BIOINFOFLOW_HOME` —— Compose 会把平台数据写入仓库里的 `data/` 目录，并在容器内挂载到相同的绝对路径。如果是共享或远程服务器，请在构建前设好 `BETTER_AUTH_SECRET`、`NEXT_PUBLIC_API_BASE_URL`、`BETTER_AUTH_URL`、`CORS_ORIGINS` 和 `TRUSTED_HOSTS`。详细配置见 [Docker Quick Start](docs/getting-started/docker.md) 和 [Runbook](RUNBOOK.md)。
 
+### 使用已发布镜像启动
+
+如果只是本机快速体验，可以直接拉取 GHCR 上的发布镜像，省掉本地构建：
+
+```bash
+cp .env.example .env
+# 编辑 .env：填 provider key 和 owner credentials
+cat >> .env <<'EOF'
+IMAGE_REGISTRY=ghcr.io/lewismessthecode
+IMAGE_TAG=latest
+EOF
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+发布镜像会在 `main` 上的后端或前端代码变化后刷新。当前发布版前端镜像面向 localhost 构建；如果要部署到远程服务器，请先在 `.env` 里设置公网 URL，再使用上面的源码构建方式。
+
 ---
 
 ## 🛠 本地开发
