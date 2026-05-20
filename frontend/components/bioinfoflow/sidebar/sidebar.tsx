@@ -1,11 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
-import { PanelLeftClose, PanelLeftOpen, SquarePen } from "lucide-react"
+import { PanelLeftClose, PanelLeftOpen, Search, SquarePen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
@@ -21,10 +21,12 @@ import { DeleteConfirmDialog } from "./delete-confirm-dialog"
 interface SidebarProps {
   collapsed: boolean
   onCollapsedChange?: (collapsed: boolean) => void
+  onCommandOpen?: () => void
+  runtimeMode?: unknown
   viewer?: ViewerIdentity
 }
 
-export function Sidebar({ collapsed, onCollapsedChange, viewer }: SidebarProps) {
+export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }: SidebarProps) {
   const router = useRouter()
   const { activeProjectId, activeConversationId } = useProjectContext()
   const tSidebar = useTranslations("sidebar")
@@ -75,14 +77,13 @@ export function Sidebar({ collapsed, onCollapsedChange, viewer }: SidebarProps) 
 
   return (
     <aside
-      className="flex h-full w-full flex-col border-r border-sidebar-border/85 bg-sidebar/96 backdrop-blur-2xl supports-[backdrop-filter]:bg-sidebar/92"
+      className="flex h-full w-full flex-col border-r border-sidebar-border/80 bg-sidebar/96 backdrop-blur-2xl supports-[backdrop-filter]:bg-sidebar/90"
       aria-label="Project navigation"
     >
       {/* Header: Logo + Toggle */}
       <div className={cn(
-        "flex shrink-0 items-center border-b border-border/40",
-        collapsed ? "h-12" : "h-14",
-        collapsed ? "justify-center px-2" : "justify-between px-4"
+        "flex shrink-0 items-center",
+        collapsed ? "h-[58px] justify-center px-2 pt-2" : "h-[60px] justify-between px-5"
       )}>
         {collapsed ? (
           <Tooltip>
@@ -91,29 +92,38 @@ export function Sidebar({ collapsed, onCollapsedChange, viewer }: SidebarProps) 
                 variant="ghost"
                 size="icon"
                 onClick={() => onCollapsedChange?.(false)}
-                className="h-8 w-8 text-sidebar-foreground/78 hover:bg-sidebar-accent/55 hover:text-sidebar-foreground"
+                className="group relative h-9 w-9 rounded-full text-sidebar-foreground/86 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:bg-sidebar-accent"
+                aria-label={tSidebar("openSidebar")}
               >
-                <PanelLeftOpen className="h-4.5 w-4.5" />
+                <Logo
+                  size={21}
+                  className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0"
+                />
+                <PanelLeftOpen className="h-4 w-4 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right">Expand sidebar</TooltipContent>
+            <TooltipContent side="right" sideOffset={12}>{tSidebar("openSidebar")}</TooltipContent>
           </Tooltip>
         ) : (
           <>
             <Link
               href="/agent"
               aria-label="Bioinfoflow"
-              className="flex items-center overflow-hidden rounded-2xl"
+              className="flex min-w-0 items-center gap-3 overflow-hidden rounded-2xl"
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sidebar-accent/55 text-sidebar-foreground ring-1 ring-inset ring-sidebar-border/55 transition-colors duration-200 hover:bg-sidebar-accent/75">
-                <Logo size={24} className="text-sidebar-foreground" />
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sidebar-foreground transition-colors duration-200 hover:bg-sidebar-accent/75">
+                <Logo size={21} className="text-sidebar-foreground" />
               </div>
+              <span className="truncate text-[15px] font-semibold tracking-tight text-sidebar-foreground">
+                Bioinfoflow
+              </span>
             </Link>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => onCollapsedChange?.(true)}
-              className="h-7 w-7 rounded-lg text-sidebar-foreground/72 hover:bg-sidebar-accent/55 hover:text-sidebar-foreground shrink-0"
+              className="h-[34px] w-[34px] rounded-full text-sidebar-foreground/72 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground shrink-0"
+              aria-label={tSidebar("closeSidebar")}
             >
               <PanelLeftClose className="h-4 w-4" />
             </Button>
@@ -122,51 +132,58 @@ export function Sidebar({ collapsed, onCollapsedChange, viewer }: SidebarProps) 
       </div>
 
       {/* New Conversation CTA */}
-      <div className={cn("px-3 pt-3 pb-2", collapsed && "px-2")}>
+      <div className={cn("px-3 pb-2", collapsed ? "space-y-1.5 px-2 pt-1.5" : "pt-2")}>
         {collapsed ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-full rounded-[18px] border border-border/85 bg-[color:var(--surface-elevated)] text-foreground transition-colors duration-200 hover:bg-[color:var(--accent)]"
-                onClick={handleNewAnalysis}
-              >
-                <SquarePen className="h-4.5 w-4.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{tSidebar("newAnalysis")}</TooltipContent>
-          </Tooltip>
+          <>
+            <RailButton
+              label={tSidebar("newAnalysis")}
+              onClick={handleNewAnalysis}
+              active
+              icon={<SquarePen className="h-4 w-4" />}
+            />
+            <RailButton
+              label={tSidebar("search")}
+              onClick={onCommandOpen}
+              icon={<Search className="h-4 w-4" />}
+            />
+          </>
         ) : (
-          <Button
-            className="h-11 w-full justify-start gap-3 rounded-[18px] border border-border/85 bg-[color:var(--surface-elevated)] px-3.5 text-sm font-semibold text-foreground transition-colors duration-200 hover:bg-[color:var(--accent)]"
-            onClick={handleNewAnalysis}
-          >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-secondary/75 text-foreground/72">
+          <div className="space-y-1">
+            <Button
+              className="h-[38px] w-full justify-start gap-3 rounded-full border border-transparent bg-sidebar-accent px-4 text-[13px] font-semibold text-foreground shadow-none transition-colors duration-200 hover:bg-sidebar-accent/80"
+              onClick={handleNewAnalysis}
+            >
               <SquarePen className="h-4 w-4 shrink-0" />
-            </span>
-            <span className="truncate">{tSidebar("newAnalysis")}</span>
-          </Button>
+              <span className="truncate">{tSidebar("newAnalysis")}</span>
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-[34px] w-full justify-start gap-3 rounded-full px-4 text-[13px] font-medium text-sidebar-foreground/82 transition-colors hover:bg-sidebar-accent/65 hover:text-sidebar-foreground"
+              onClick={onCommandOpen}
+            >
+              <Search className="h-4 w-4 shrink-0" />
+              <span className="truncate">{tSidebar("search")}</span>
+            </Button>
+          </div>
         )}
       </div>
 
       {/* Navigation */}
-      <div className={cn("px-3 py-2", collapsed && "px-2")}>
+      <div className={cn("px-3 py-1", collapsed && "px-2")}>
         <SidebarNav collapsed={collapsed} />
       </div>
 
       {/* Divider + Section Label */}
       {!collapsed && (
-        <div className="px-3 pb-1 pt-2">
-          <div className="border-t border-border/30" />
-          <span className="mt-2 block px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/45">
+        <div className="px-5 pb-1 pt-5">
+          <span className="block px-0 text-[13px] font-medium text-sidebar-foreground/58">
             {tSidebar("workspace")}
           </span>
         </div>
       )}
       {collapsed && (
-        <div className="px-2 py-1">
-          <div className="border-t border-border/30" />
+        <div className="px-4 py-1.5">
+          <div className="border-t border-border/35" />
         </div>
       )}
 
@@ -208,7 +225,7 @@ export function Sidebar({ collapsed, onCollapsedChange, viewer }: SidebarProps) 
       </div>
 
       {/* Bottom Section: Settings + User Menu */}
-      <div className={cn("mt-auto border-t border-border/30", collapsed ? "px-2 py-2" : "px-3 py-3")}>
+      <div className={cn("mt-auto", collapsed ? "px-2 py-3" : "px-4 py-4")}>
         <UserMenu collapsed={collapsed} viewer={viewer} />
       </div>
 
@@ -220,5 +237,38 @@ export function Sidebar({ collapsed, onCollapsedChange, viewer }: SidebarProps) 
         tCommon={tCommon}
       />
     </aside>
+  )
+}
+
+function RailButton({
+  label,
+  icon,
+  onClick,
+  active,
+}: {
+  label: string
+  icon: ReactNode
+  onClick?: () => void
+  active?: boolean
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          className={cn(
+            "flex h-9 w-full items-center justify-center rounded-full text-sidebar-foreground transition-colors",
+            active
+              ? "bg-sidebar-accent text-sidebar-foreground"
+              : "text-sidebar-foreground/82 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+          )}
+          aria-label={label}
+        >
+          {icon}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={12}>{label}</TooltipContent>
+    </Tooltip>
   )
 }

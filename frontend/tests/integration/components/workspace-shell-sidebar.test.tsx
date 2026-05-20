@@ -394,12 +394,12 @@ describe("WorkspaceShell sidebar integration", () => {
     expect(routerPushMock).toHaveBeenCalledWith("/agent")
   })
 
-  it("renders an icon-only sidebar brand without the old wordmark tile shadow", async () => {
+  it("renders the airy Bioinfoflow sidebar brand without the old tile shadow", async () => {
     renderSidebar()
 
     const logo = await screen.findByTestId("logo")
 
-    expect(screen.queryByText("Bioinfoflow")).not.toBeInTheDocument()
+    expect(screen.getByText("Bioinfoflow")).toBeInTheDocument()
     expect(logo.parentElement?.className).not.toContain("shadow-sm")
   })
 })

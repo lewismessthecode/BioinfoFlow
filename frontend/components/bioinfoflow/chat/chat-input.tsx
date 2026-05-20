@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useRef, useEffect, useCallback, useState } from "react"
-import { ArrowUp, Square, Upload } from "lucide-react"
+import { ArrowUp, Plus, Square, Upload } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,7 @@ interface ChatInputProps {
   modelSelector?: React.ReactNode
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
   centered?: boolean
+  variant?: "home" | "thread"
 }
 
 export function ChatInput({
@@ -31,12 +32,15 @@ export function ChatInput({
   modelSelector,
   textareaRef: externalRef,
   centered,
+  variant,
 }: ChatInputProps) {
   const t = useTranslations("accessibility")
   const internalRef = useRef<HTMLTextAreaElement>(null)
   const textareaRef = externalRef ?? internalRef
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const dragCounterRef = useRef(0)
+  const visualVariant = variant ?? (centered ? "home" : "thread")
 
   useEffect(() => {
     const el = textareaRef.current
@@ -89,16 +93,27 @@ export function ChatInput({
   }, [onFileDrop])
 
   const canSend = !disabled && input.trim().length > 0
+  const canAttach = !disabled && Boolean(onFileDrop)
+
+  const handleFileInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    if (files.length > 0 && onFileDrop) {
+      onFileDrop(files)
+    }
+    event.target.value = ""
+  }, [onFileDrop])
 
   return (
-    <div className={cn("mx-auto w-full", centered ? "max-w-2xl" : "max-w-3xl")}>
+    <div className={cn("mx-auto w-full", visualVariant === "home" ? "max-w-[720px]" : "max-w-3xl")}>
       <div
         className={cn(
-          "group relative rounded-2xl border bg-card shadow-sm transition-all duration-300 focus-within:border-foreground/40",
+          "group relative border bg-card transition-all duration-300 focus-within:border-foreground/30",
+          visualVariant === "home"
+            ? "rounded-[28px] px-2.5 py-1 shadow-[var(--composer-shadow)]"
+            : "rounded-[24px] px-2.5 py-1 shadow-[0_2px_7px_rgba(60,64,67,0.08),0_12px_28px_rgba(60,64,67,0.10)]",
           isDragOver
             ? "border-primary border-dashed bg-primary/5 shadow-md"
-            : "border-border hover:border-foreground/30 hover:shadow-md",
-          centered && "shadow-md",
+            : "border-border/80 hover:border-foreground/20",
         )}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -107,7 +122,7 @@ export function ChatInput({
       >
         {/* Drop overlay */}
         {isDragOver && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-primary/5 pointer-events-none">
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-[28px] bg-primary/5 pointer-events-none">
             <div className="flex items-center gap-2 text-sm text-primary">
               <Upload className="h-4 w-4" />
               <span>Drop files to upload</span>
@@ -115,56 +130,79 @@ export function ChatInput({
           </div>
         )}
 
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={disabled ? t("selectProject") : t("message")}
-          aria-label={t("message")}
-          className={cn(
-            "w-full resize-none border-0 bg-transparent shadow-none leading-relaxed outline-none focus:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/50 selection:bg-primary/20 max-h-[200px] px-5 py-3.5",
-            centered ? "text-lg min-h-[64px]" : "text-base min-h-[52px]",
-          )}
-          rows={1}
-          disabled={disabled}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="sr-only"
+          tabIndex={-1}
+          onChange={handleFileInputChange}
+          disabled={!canAttach}
+          aria-hidden="true"
         />
 
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
+        <div className="flex min-h-10 items-center gap-1.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 rounded-full text-foreground transition-colors hover:bg-secondary"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!canAttach}
+            aria-label={t("attachFiles")}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => onInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={disabled ? t("selectProject") : t("message")}
+            aria-label={t("message")}
+            className={cn(
+              "min-w-0 flex-1 resize-none border-0 bg-transparent px-1 shadow-none outline-none selection:bg-primary/20 placeholder:text-muted-foreground/70 focus:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0",
+              visualVariant === "home"
+                ? "max-h-[164px] min-h-10 py-2.5 text-[14px] leading-5"
+                : "max-h-[184px] min-h-10 py-2.5 text-[14px] leading-5",
+            )}
+            rows={1}
+            disabled={disabled}
+          />
+
+          <div className="flex shrink-0 items-center gap-1">
             {modelSelector}
           </div>
 
-          <div className="flex items-center gap-2">
-            {isStreaming ? (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-9 w-9 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground transition-colors duration-200"
-                onClick={onStop}
-                aria-label={t("stopGenerating")}
-              >
-                <Square className="h-4 w-4 fill-current text-destructive" />
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                className={`h-9 w-9 rounded-lg transition-colors duration-200 min-h-[36px] min-w-[36px] ${
-                  canSend
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                }`}
-                onClick={onSend}
-                disabled={!canSend}
-                aria-label={t("sendMessage")}
-              >
-                <ArrowUp className="h-5 w-5" />
-              </Button>
-            )}
-          </div>
+          {isStreaming ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 shrink-0 rounded-full bg-secondary text-foreground transition-colors duration-200 hover:bg-secondary/80"
+              onClick={onStop}
+              aria-label={t("stopGenerating")}
+            >
+              <Square className="h-3.5 w-3.5 fill-current text-destructive" />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              className={cn(
+                "h-8 w-8 min-h-8 min-w-8 shrink-0 rounded-full transition-colors duration-200",
+                canSend
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+              )}
+              onClick={onSend}
+              disabled={!canSend}
+              aria-label={t("sendMessage")}
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          )}
         </div>
+
       </div>
     </div>
   )

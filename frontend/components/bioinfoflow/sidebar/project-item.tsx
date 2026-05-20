@@ -75,17 +75,18 @@ export function ProjectItem({
         <TooltipTrigger asChild>
           <button
             onClick={() => onSelectProject(project)}
+            aria-label={project.name}
             className={cn(
-              "flex w-full h-9 items-center justify-center rounded-lg transition-colors",
+              "flex h-9 w-full items-center justify-center rounded-full transition-colors",
               isActive
-                ? "border border-sidebar-border/55 bg-sidebar-accent/75 text-sidebar-foreground"
-                : "text-sidebar-foreground/78 hover:bg-sidebar-accent/55 hover:text-sidebar-foreground"
+                ? "bg-sidebar-accent text-sidebar-foreground"
+                : "text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
             )}
           >
             <FolderKanban className="h-4 w-4" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="right">{project.name}</TooltipContent>
+        <TooltipContent side="right" sideOffset={12}>{project.name}</TooltipContent>
       </Tooltip>
     )
   }
@@ -109,10 +110,10 @@ export function ProjectItem({
       {/* Project Header */}
       <div
         className={cn(
-          "group flex items-center gap-1 rounded-xl border border-transparent px-2 py-1.5 text-sm transition-colors duration-150",
+          "group flex items-center gap-1 rounded-full border border-transparent px-2 py-1.5 text-[13px] transition-colors duration-150",
           isActive
-            ? "border-sidebar-border/55 bg-sidebar-accent/75 text-sidebar-foreground"
-            : "text-sidebar-foreground/82 hover:bg-sidebar-accent/55 hover:text-sidebar-foreground"
+            ? "bg-sidebar-accent text-sidebar-foreground"
+            : "text-sidebar-foreground/82 hover:bg-sidebar-accent/65 hover:text-sidebar-foreground"
         )}
       >
         <button
@@ -141,14 +142,14 @@ export function ProjectItem({
           >
             <FolderKanban className="h-3.5 w-3.5 shrink-0" />
           </span>
-          <span className={cn("truncate text-sm font-semibold", !isActive && "font-medium")}>{project.name}</span>
+          <span className={cn("truncate text-[13px] font-semibold", !isActive && "font-medium")}>{project.name}</span>
         </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0"
+              className="h-7 w-7 rounded-full opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0 hover:bg-white/70 dark:hover:bg-white/10"
               aria-label={tCommon("actions")}
             >
               <MoreVertical className="h-3 w-3" />
@@ -181,7 +182,7 @@ export function ProjectItem({
 
       {/* Expanded Conversations */}
       {isExpanded && (
-        <div className="ml-3 mt-0.5 space-y-0.5 border-l border-border/35 pl-2.5 pb-1.5">
+        <div className="ml-5 mt-1.5 space-y-0.5 border-l border-border/35 pl-3 pb-1.5">
           {isLoadingConversations ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">
               {tCommon("loading")}
@@ -211,7 +212,7 @@ export function ProjectItem({
           )}
           <button
             onClick={() => onCreateConversation(project.id)}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-xs font-medium text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/42 hover:text-sidebar-foreground"
+            className="flex w-full items-center gap-2 rounded-full px-2 py-1 text-xs font-medium text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-foreground"
           >
             <Plus className="h-3 w-3" />
             <span>{tSidebar("newConversation")}</span>

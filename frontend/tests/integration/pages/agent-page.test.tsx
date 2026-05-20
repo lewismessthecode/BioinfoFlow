@@ -84,7 +84,7 @@ describe("AgentPage", () => {
     localStorage.clear()
   })
 
-  it("restores persisted sidebar state and toggles with the keyboard shortcut", async () => {
+  it("keeps the right sidebar hidden by default and toggles with the keyboard shortcut", async () => {
     localStorage.setItem("right-sidebar-width", "512")
     localStorage.setItem("right-sidebar-collapsed", "false")
 
@@ -95,6 +95,10 @@ describe("AgentPage", () => {
     })
 
     expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:project-1|workspace:on")
+    expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true })
+
     expect(await screen.findByTestId("live-deck")).toHaveTextContent("tab:workspace")
     expect(screen.getByTestId("live-deck").parentElement?.className).toContain("animate-in")
     expect(screen.getByTestId("live-deck").parentElement?.className).toContain("slide-in-from-right-2")
@@ -108,7 +112,7 @@ describe("AgentPage", () => {
     expect(localStorage.getItem("right-sidebar-collapsed")).toBe("true")
   })
 
-  it("opens the live deck on DAG events for the selected run only", async () => {
+  it("updates DAG state without auto-opening the hidden live deck", async () => {
     let onRunDag: ((event: { data: { run_id: string; dag: { nodes: unknown[] } } }) => void) | undefined
     useEventsMock.mockImplementation((options: { onRunDag?: typeof onRunDag }) => {
       onRunDag = options.onRunDag
@@ -134,6 +138,10 @@ describe("AgentPage", () => {
       projectContext: { activeProjectId: "project-2" },
     })
 
+    expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true })
+
     expect(await screen.findByTestId("live-deck")).toHaveTextContent("dag:missing")
 
     fireEvent.click(screen.getByText("select run"))
@@ -152,10 +160,12 @@ describe("AgentPage", () => {
       onRunDag?.({ data: { run_id: "run-123", dag: { nodes: [{ id: "n1" }] } } })
     })
 
-    await waitFor(() => {
-      expect(screen.getByTestId("live-deck")).toHaveTextContent("tab:dag")
-      expect(screen.getByTestId("live-deck")).toHaveTextContent("dag:present")
-    })
+    expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true })
+
+    expect(await screen.findByTestId("live-deck")).toHaveTextContent("tab:dag")
+    expect(screen.getByTestId("live-deck")).toHaveTextContent("dag:present")
   })
 
   it("keeps inbox conversations chat-only without selecting a real project", () => {
@@ -193,7 +203,7 @@ describe("AgentPage", () => {
     await waitFor(() => {
       expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:project-9|workspace:on")
     })
-    expect(screen.getByText("toggle live deck")).toBeInTheDocument()
+    expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText("clear project"))
 

@@ -68,7 +68,7 @@ export function ExecutionModeSelector({
       }
     }
     return {
-      icon: <ShieldCheck className="h-3.5 w-3.5" aria-hidden />,
+        icon: <ShieldCheck className="h-3.5 w-3.5" aria-hidden />,
       label: t("askShort"),
       cls: "text-muted-foreground",
     }
@@ -81,7 +81,7 @@ export function ExecutionModeSelector({
           size="sm"
           variant="ghost"
           className={cn(
-            "h-8 gap-1.5 px-2 text-xs font-medium",
+            "h-8 gap-1.5 rounded-full px-2.5 text-xs font-medium hover:bg-secondary/70",
             trigger.cls,
           )}
           disabled={disabled}
@@ -91,7 +91,7 @@ export function ExecutionModeSelector({
           <span>{trigger.label}</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent align="start" className="w-64 rounded-2xl">
         <DropdownMenuLabel>{t("menuLabel")}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <ModeItem
@@ -132,7 +132,7 @@ function ModeItem({ icon, title, description, active, onSelect }: ModeItemProps)
   return (
     <DropdownMenuItem
       onClick={onSelect}
-      className="gap-3 py-2 cursor-pointer"
+      className="gap-3 py-2 cursor-pointer rounded-xl"
     >
       <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center">
         {icon}
