@@ -7,7 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=0 \
     UV_COMPILE_BYTECODE=1
 
 WORKDIR /app
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app"
 
 # ── System dependencies ──────────────────────────────────────
 # default-jre-headless (~200MB) is required for Nextflow.
