@@ -58,7 +58,7 @@ describe("SidebarNav", () => {
     expect(activeLink.className).not.toContain("ring-1")
   })
 
-  it("uses a softer selected pill closer to the reference sidebar polish", () => {
+  it("uses a flat selected pill closer to the reference sidebar polish", () => {
     usePathnameMock.mockReturnValue("/agent")
 
     render(<SidebarNav collapsed={false} />)
@@ -66,10 +66,10 @@ describe("SidebarNav", () => {
     const activeLink = screen.getByRole("link", { name: "Agent" })
     const inactiveLink = screen.getByRole("link", { name: "Dashboard" })
 
-    expect(activeLink.className).toContain("bg-sidebar-accent/75")
-    expect(activeLink.className).toContain("border-sidebar-border/55")
+    expect(activeLink.className).toContain("bg-sidebar-accent")
+    expect(activeLink.className).toContain("text-sidebar-foreground")
     expect(activeLink.className).not.toContain("bg-white")
-    expect(inactiveLink.className).toContain("hover:bg-sidebar-accent/55")
+    expect(inactiveLink.className).toContain("hover:bg-sidebar-accent/65")
     expect(inactiveLink.className).not.toContain("text-foreground/72")
   })
 })

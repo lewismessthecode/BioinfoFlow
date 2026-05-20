@@ -19,7 +19,7 @@ vi.mock("@/components/ui/tooltip", () => ({
 const noop = vi.fn()
 
 describe("ProjectItem", () => {
-  it("uses a lighter selected pill for the active project", () => {
+  it("uses a flat selected pill for the active project", () => {
     render(
       <ProjectItem
         project={{ id: "demo-project", name: "Demo", project_root: "asset://project" }}
@@ -55,8 +55,8 @@ describe("ProjectItem", () => {
     expect(projectHeader?.className).not.toContain("bg-accent")
     expect(projectHeader?.className).not.toContain("shadow-sm")
     expect(projectHeader?.className).not.toContain("ring-1")
-    expect(projectHeader?.className).toContain("bg-sidebar-accent/75")
-    expect(projectHeader?.className).toContain("border-sidebar-border/55")
+    expect(projectHeader?.className).toContain("bg-sidebar-accent")
+    expect(projectHeader?.className).toContain("text-sidebar-foreground")
     expect(projectHeader?.className).not.toContain("bg-white")
   })
 })

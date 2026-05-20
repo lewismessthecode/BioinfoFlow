@@ -11,6 +11,6 @@ describe("sidebar header styling", () => {
 
     expect(source).not.toContain("bg-white/80")
     expect(source).not.toContain("bg-white/90")
-    expect(source).toContain("bg-sidebar-accent/55")
+    expect(source).toContain("hover:bg-sidebar-accent/75")
   })
 })
