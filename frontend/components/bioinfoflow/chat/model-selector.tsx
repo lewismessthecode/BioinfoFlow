@@ -48,6 +48,7 @@ export function ModelSelector({
         size="sm"
         className="h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground/80 hover:text-foreground hover:bg-secondary/70 text-xs font-medium transition-colors"
         disabled={disabled}
+        aria-label={t("configure")}
         asChild
       >
         <Link href="/settings">
@@ -68,6 +69,7 @@ export function ModelSelector({
           disabled={disabled}
           role="combobox"
           aria-expanded={open}
+          aria-label={displayLabel}
         >
           {currentModel && (
             <ProviderIcon provider={currentModel.provider} size={13} />
