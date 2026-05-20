@@ -6,6 +6,7 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
     const labels: Record<string, string> = {
       message: "Message",
+      attachFiles: "Attach files",
       sendMessage: "Send message",
       stopGenerating: "Stop generating",
       selectProject: "Select a project first",

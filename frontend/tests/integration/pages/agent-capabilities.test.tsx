@@ -17,6 +17,7 @@ vi.mock("next-intl", () => ({
     const copy: Record<string, Record<string, string>> = {
       accessibility: {
         message: "Message",
+        attachFiles: "Attach files",
         sendMessage: "Send message",
         stopGenerating: "Stop generating",
         selectProject: "Select a project to start",

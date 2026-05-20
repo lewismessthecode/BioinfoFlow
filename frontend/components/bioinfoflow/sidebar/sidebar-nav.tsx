@@ -19,7 +19,7 @@ export function SidebarNav({ collapsed }: SidebarNavProps) {
   const tNav = useTranslations("nav")
 
   return (
-    <nav className="space-y-0.5" aria-label="Main navigation">
+    <nav className={cn(collapsed ? "space-y-1.5" : "space-y-1")} aria-label="Main navigation">
       {sidebarNavItems.map((item) => {
         const isActive =
           pathname === item.href || pathname.startsWith(`${item.href}/`)
@@ -30,17 +30,18 @@ export function SidebarNav({ collapsed }: SidebarNavProps) {
               <TooltipTrigger asChild>
                 <Link
                   href={item.href}
+                  aria-label={tNav(item.key)}
                   className={cn(
-                    "flex h-9 w-full items-center justify-center rounded-xl border border-transparent transition-colors duration-150",
+                    "flex h-9 w-full items-center justify-center rounded-full border border-transparent transition-colors duration-150",
                     isActive
-                      ? "border-sidebar-border/55 bg-sidebar-accent/75 text-sidebar-foreground"
-                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/55 hover:text-sidebar-foreground"
+                      ? "bg-sidebar-accent text-sidebar-foreground"
+                      : "text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
                   )}
                 >
                   <item.icon className="h-4 w-4" />
                 </Link>
               </TooltipTrigger>
-              <TooltipContent side="right">{tNav(item.key)}</TooltipContent>
+              <TooltipContent side="right" sideOffset={12}>{tNav(item.key)}</TooltipContent>
             </Tooltip>
           )
         }
@@ -51,15 +52,15 @@ export function SidebarNav({ collapsed }: SidebarNavProps) {
             href={item.href}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "group relative flex h-10 items-center gap-3 rounded-[18px] border border-transparent px-2.5 text-sm font-semibold transition-colors duration-150",
+              "group relative flex h-[34px] items-center gap-3 rounded-full border border-transparent px-4 text-[13px] font-medium transition-colors duration-150",
               isActive
-                ? "border-sidebar-border/55 bg-sidebar-accent/75 text-sidebar-foreground"
-                : "text-sidebar-foreground/82 hover:bg-sidebar-accent/55 hover:text-sidebar-foreground"
+                ? "bg-sidebar-accent text-sidebar-foreground"
+                : "text-sidebar-foreground/82 hover:bg-sidebar-accent/65 hover:text-sidebar-foreground"
             )}
           >
             <span
               className={cn(
-                "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-150",
+                "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-lg transition-colors duration-150",
                 isActive
                   ? "text-sidebar-foreground"
                   : "text-sidebar-foreground/76 group-hover:text-sidebar-foreground"

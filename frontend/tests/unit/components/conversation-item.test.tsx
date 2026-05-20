@@ -13,7 +13,7 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 const noop = vi.fn()
 
 describe("ConversationItem", () => {
-  it("uses lighter neutral hover styling instead of accent green", () => {
+  it("uses the Gemini-inspired neutral hover styling instead of accent green", () => {
     render(
       <ConversationItem
         conversation={{ id: "conv-1", title: "Conversation 2", pinned: false }}
@@ -32,10 +32,10 @@ describe("ConversationItem", () => {
     const row = screen.getByRole("button", { name: "Conversation 2" }).closest(".group")
     expect(row?.className).not.toContain("hover:bg-accent")
     expect(row?.className).not.toContain("text-accent-foreground")
-    expect(row?.className).toContain("hover:bg-sidebar-accent/42")
+    expect(row?.className).toContain("hover:bg-sidebar-accent/55")
   })
 
-  it("uses the softest selected pill for the active conversation", () => {
+  it("uses a flat selected pill for the active conversation", () => {
     render(
       <ConversationItem
         conversation={{ id: "conv-1", title: "Conversation 2", pinned: false }}
@@ -52,8 +52,8 @@ describe("ConversationItem", () => {
     )
 
     const row = screen.getByRole("button", { name: "Conversation 2" }).closest(".group")
-    expect(row?.className).toContain("bg-sidebar-accent/62")
-    expect(row?.className).toContain("border-sidebar-border/45")
+    expect(row?.className).toContain("bg-sidebar-accent")
+    expect(row?.className).toContain("text-sidebar-foreground")
     expect(row?.className).not.toContain("bg-white")
   })
 })

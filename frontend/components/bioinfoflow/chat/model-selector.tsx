@@ -46,8 +46,9 @@ export function ModelSelector({
       <Button
         variant="ghost"
         size="sm"
-        className="h-8 gap-1.5 rounded-lg px-2.5 text-muted-foreground/70 hover:text-foreground hover:bg-secondary/50 text-sm-tight font-medium transition-colors"
+        className="h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground/80 hover:text-foreground hover:bg-secondary/70 text-xs font-medium transition-colors"
         disabled={disabled}
+        aria-label={t("configure")}
         asChild
       >
         <Link href="/settings">
@@ -64,22 +65,23 @@ export function ModelSelector({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 gap-1.5 rounded-lg px-2.5 text-muted-foreground/70 hover:text-foreground hover:bg-secondary/50 text-sm-tight font-medium transition-colors max-w-[200px]"
+          className="h-8 max-w-[176px] gap-1.5 rounded-full px-2.5 text-muted-foreground/80 hover:text-foreground hover:bg-secondary/70 text-xs font-medium transition-colors"
           disabled={disabled}
           role="combobox"
           aria-expanded={open}
+          aria-label={displayLabel}
         >
           {currentModel && (
-            <ProviderIcon provider={currentModel.provider} size={14} />
+            <ProviderIcon provider={currentModel.provider} size={13} />
           )}
-          <span className="truncate">{displayLabel}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+          <span className="hidden truncate sm:inline">{displayLabel}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
         side="top"
-        className="w-[260px] p-0 rounded-xl overflow-hidden backdrop-blur-xl bg-background/95 border-black/5 dark:border-white/10 shadow-2xl"
+        className="w-[260px] p-0 rounded-2xl overflow-hidden backdrop-blur-xl bg-background/95 border-black/5 dark:border-white/10 shadow-2xl"
       >
         <Command>
           <CommandInput placeholder={t("searchModels")} className="h-9" />

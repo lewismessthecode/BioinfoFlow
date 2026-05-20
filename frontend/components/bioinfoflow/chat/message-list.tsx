@@ -34,8 +34,8 @@ export function MessageList({
   if (!projectId) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12">
-        <div className="rounded-xl border border-border bg-secondary/30 p-8 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary">
+        <div className="rounded-3xl border border-border/70 bg-white/70 p-8 flex flex-col items-center gap-3 text-center shadow-[0_12px_40px_rgba(60,64,67,0.08)] dark:bg-white/[0.04]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
             <FolderKanban className="h-6 w-6 text-muted-foreground" />
           </div>
           <div>
@@ -52,7 +52,7 @@ export function MessageList({
   if (isLoading) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12">
-        <div className="rounded-xl border border-border bg-secondary/30 p-6 flex justify-center">
+        <div className="rounded-3xl border border-border/70 bg-white/70 p-6 flex justify-center shadow-[0_12px_40px_rgba(60,64,67,0.08)] dark:bg-white/[0.04]">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       </div>
@@ -79,8 +79,8 @@ export function MessageList({
   const lastUserIndex = messages.findLastIndex((m) => m.role === "user")
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6">
-      <div className="space-y-4" aria-live="polite" aria-atomic="false">
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="space-y-6" aria-live="polite" aria-atomic="false">
         {messages.map((msg, i) => (
           <div key={msg.id} className="group">
             <ChatErrorBoundary label="message">

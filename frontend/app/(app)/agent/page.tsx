@@ -7,7 +7,6 @@ import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useEvents } from "@/hooks/use-events"
 import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
-import { SidebarToggle } from "@/components/ui/sidebar-toggle"
 import { useIsMobile } from "@/hooks/use-media-query"
 import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard-shortcuts-overlay"
 
@@ -45,10 +44,8 @@ function AgentPageContent({
   // Load persisted state from localStorage (runs once after hydration)
   useEffect(() => {
     const savedWidth = localStorage.getItem("right-sidebar-width")
-    const savedCollapsed = localStorage.getItem("right-sidebar-collapsed")
     /* eslint-disable react-hooks/set-state-in-effect */
     if (savedWidth) setRightSidebarWidth(Number(savedWidth))
-    if (savedCollapsed) setRightSidebarCollapsed(savedCollapsed === "true")
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [])
 
@@ -67,12 +64,7 @@ function AgentPageContent({
       if (!selectedRun) return
       if (envelope.data.run_id !== selectedRun.run_id) return
       setDag(envelope.data.dag)
-
-      // Auto-open LiveDeck when DAG data arrives
-      if (rightSidebarCollapsed && envelope.data.dag) {
-        setRightSidebarCollapsed(false)
-        setLiveDeckTab("dag")
-      }
+      if (envelope.data.dag) setLiveDeckTab("dag")
     },
   })
 
@@ -138,7 +130,7 @@ function AgentPageContent({
   }, [toggleRightSidebar, showShortcuts])
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-background">
       <ChatStream
         ref={chatRef}
         projectId={conversationProjectId}
@@ -152,9 +144,8 @@ function AgentPageContent({
         />
       )}
 
-      {/* Right Sidebar - hidden on mobile */}
-      {!isMobile && selectedProjectId && (
-        !rightSidebarCollapsed ? (
+      {/* Right Sidebar - temporarily hidden when collapsed; LiveDeck remains available for future iteration. */}
+      {!isMobile && selectedProjectId && !rightSidebarCollapsed ? (
           <div
             className="relative flex-shrink-0 animate-in slide-in-from-right-2 fade-in duration-200"
             style={{ width: rightSidebarWidth }}
@@ -170,16 +161,7 @@ function AgentPageContent({
               onRunSelect={handleRunSelect}
             />
           </div>
-        ) : (
-          <div className="flex flex-col items-center border-l border-border bg-background p-2">
-            <SidebarToggle
-              side="right"
-              collapsed={rightSidebarCollapsed}
-              onToggle={toggleRightSidebar}
-            />
-          </div>
-        )
-      )}
+      ) : null}
     </div>
   )
 }

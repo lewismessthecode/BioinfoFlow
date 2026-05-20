@@ -205,10 +205,10 @@ export const ChatStream = forwardRef<ChatStreamHandle, ChatStreamProps>(function
 
   if (isEmpty) {
     return (
-      <div className={cn("flex flex-col bg-background h-full", className)}>
-        <div className="flex-1 flex flex-col items-center justify-center px-4">
+      <div className={cn("agent-halo-surface flex h-full flex-col", className)}>
+        <div className="agent-center-stage flex flex-1 flex-col items-center justify-center px-4 pb-[11vh] pt-8">
           {/* Greeting */}
-          <h2 className="text-2xl font-semibold text-foreground mb-8 text-center animate-in fade-in duration-500">
+          <h2 className="mb-7 text-center text-[1.85rem] font-normal leading-tight tracking-normal text-foreground animate-in fade-in duration-500 md:text-[2.35rem] lg:text-[2.5rem]">
             {greeting}
           </h2>
 
@@ -226,10 +226,11 @@ export const ChatStream = forwardRef<ChatStreamHandle, ChatStreamProps>(function
             modelSelector={modelSelector}
             textareaRef={chatInputRef}
             centered
+            variant="home"
           />
 
           {/* Quick-start suggestions */}
-          <div className="mt-6 flex flex-wrap justify-center gap-3 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150">
+          <div className="mt-6 flex max-w-2xl flex-wrap justify-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150">
             {suggestions.map(({ key, descKey }, i) => {
               const Icon = SUGGESTION_ICONS[i]
               return (
@@ -237,9 +238,9 @@ export const ChatStream = forwardRef<ChatStreamHandle, ChatStreamProps>(function
                   key={key}
                   type="button"
                   onClick={() => handleSuggestionClick(tChat(`quickStart.${descKey}`))}
-                  className="group flex items-center gap-2.5 rounded-xl border border-border bg-card/50 px-4 py-3 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 hover:bg-card transition-all duration-200"
+                  className="group flex items-center gap-2 rounded-full border border-border/80 bg-white/65 px-3 py-2 text-[13px] text-muted-foreground shadow-[0_1px_2px_rgba(60,64,67,0.04)] transition-all duration-200 hover:border-foreground/20 hover:bg-white hover:text-foreground dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
                 >
-                  <Icon className="h-4 w-4 shrink-0 text-muted-foreground/70 group-hover:text-primary transition-colors" />
+                  <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70 group-hover:text-primary transition-colors" />
                   <span>{tChat(`quickStart.${key}`)}</span>
                 </button>
               )
@@ -247,7 +248,7 @@ export const ChatStream = forwardRef<ChatStreamHandle, ChatStreamProps>(function
           </div>
 
           {/* Disclaimer */}
-          <p className="mt-8 text-center text-xs text-muted-foreground/60">
+          <p className="mt-8 text-center text-xs text-muted-foreground/65">
             {tAgent("disclaimer")}
           </p>
         </div>
@@ -258,7 +259,7 @@ export const ChatStream = forwardRef<ChatStreamHandle, ChatStreamProps>(function
   // ── Conversation layout (messages present or no project) ─────────
 
   return (
-    <div className={cn("flex flex-col bg-background h-full", className)}>
+    <div className={cn("flex h-full flex-col bg-background", className)}>
       <BypassBanner
         visible={bypassActive}
         onDisable={() => {
@@ -302,7 +303,7 @@ export const ChatStream = forwardRef<ChatStreamHandle, ChatStreamProps>(function
 
       <ScrollToBottom {...scrollFabProps} />
 
-      <div className="bg-background p-4 pb-6">
+      <div className="border-t border-border/35 bg-background/88 p-4 pb-6 backdrop-blur-xl">
         {!hasConfiguredProvider && <SetupBanner className="mb-3" />}
         {!messages.length && inboxWorkspaceNotice}
         <ChatInput
@@ -315,6 +316,7 @@ export const ChatStream = forwardRef<ChatStreamHandle, ChatStreamProps>(function
           disabled={!projectId}
           modelSelector={modelSelector}
           textareaRef={chatInputRef}
+          variant="thread"
         />
         <div className="mt-2 flex items-center justify-center gap-2">
           <p className="text-xs text-muted-foreground">

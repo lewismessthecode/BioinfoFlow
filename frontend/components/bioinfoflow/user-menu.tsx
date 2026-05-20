@@ -66,13 +66,13 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
         <button
           className={
             collapsed
-              ? "group mx-auto flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-card/90 p-0 transition-colors hover:bg-sidebar-accent/70"
-              : "group flex w-full items-center gap-2 rounded-[18px] border border-transparent px-2 py-1.5 transition-colors hover:bg-sidebar-accent"
+              ? "group mx-auto flex h-9 w-9 items-center justify-center rounded-full border border-border/70 bg-card/90 p-0 transition-colors hover:bg-sidebar-accent/70"
+              : "group flex w-full items-center gap-2 rounded-full border border-transparent px-2 py-1.5 transition-colors hover:bg-sidebar-accent"
           }
           aria-label={`${userName} — ${tAccessibility("userMenu")}`}
         >
           <Avatar
-            className="h-9 w-9 ring-1 ring-border/60"
+            className={collapsed ? "h-7 w-7 ring-1 ring-border/60" : "h-8 w-8 ring-1 ring-border/60"}
             aria-hidden="true"
           >
             <AvatarImage src={userImage || undefined} alt="" />
@@ -99,7 +99,7 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
         align={collapsed ? "start" : "end"}
         side={collapsed ? "right" : "top"}
         sideOffset={8}
-        className="w-[220px] rounded-xl border border-border/50 p-1.5 shadow-lg"
+        className="w-[220px] rounded-2xl border border-border/50 p-1.5 shadow-lg"
       >
         {userEmail ? (
           <>
@@ -120,7 +120,7 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
 
         <DropdownMenuItem
           onClick={() => setMode(getNextAppearanceMode(mode, resolvedMode))}
-          className="mx-0.5 cursor-pointer rounded-lg px-2.5 py-2 focus:bg-secondary"
+          className="mx-0.5 cursor-pointer rounded-xl px-2.5 py-2 focus:bg-secondary"
         >
           <Moon className="mr-2.5 h-4 w-4 text-muted-foreground" />
           <span>
@@ -132,7 +132,7 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
 
         <DropdownMenuItem
           onClick={() => router.push("/settings")}
-          className="mx-0.5 cursor-pointer rounded-lg px-2.5 py-2 focus:bg-secondary"
+          className="mx-0.5 cursor-pointer rounded-xl px-2.5 py-2 focus:bg-secondary"
         >
           <Settings className="mr-2.5 h-4 w-4 text-muted-foreground" />
           <span>{tUserMenu("settings")}</span>
@@ -144,7 +144,7 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
 
             <DropdownMenuItem
               onClick={handleLogout}
-              className="mx-0.5 cursor-pointer rounded-lg px-2.5 py-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
+              className="mx-0.5 cursor-pointer rounded-xl px-2.5 py-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
             >
               <span>{tUserMenu("signOut")}</span>
             </DropdownMenuItem>

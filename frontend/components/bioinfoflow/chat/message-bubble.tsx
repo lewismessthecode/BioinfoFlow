@@ -111,7 +111,7 @@ export const MessageBubble = memo(function MessageBubble({
     return (
       <div className="flex justify-end">
         <div className="max-w-[85%]">
-          <div className="rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-primary-foreground">
+          <div className="rounded-[24px] bg-[#e9eef6] px-4 py-2.5 text-foreground shadow-[inset_0_0_0_1px_rgba(60,64,67,0.04)] dark:bg-white/10 dark:text-foreground">
             <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words">
               {text}
             </p>
@@ -129,7 +129,7 @@ export const MessageBubble = memo(function MessageBubble({
   }
 
   return (
-    <div className="w-full space-y-2">
+    <div className="w-full space-y-3 text-[15px] leading-relaxed">
       {grouped.map((item, i) => {
         // Tool call group
         if (Array.isArray(item)) {

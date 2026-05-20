@@ -92,8 +92,8 @@ export function ProjectList({
   }
 
   if (collapsed) {
-      return (
-      <div className="space-y-1">
+    return (
+      <div className="space-y-1.5">
         {projects.map((project) => (
           <ProjectItem
             key={project.id}
@@ -126,7 +126,7 @@ export function ProjectList({
         <button
           onClick={onOpenCreateDialog}
           aria-label={tSidebar("newProject")}
-          className="flex h-10 w-full items-center justify-center rounded-xl text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+          className="flex h-9 w-full items-center justify-center rounded-full text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
         >
           <Plus className="h-4 w-4" />
         </button>
@@ -135,12 +135,12 @@ export function ProjectList({
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       {defaultProjectId ? (
         <div
           data-testid="sidebar-recent-section"
           className={cn(
-            "rounded-xl px-1 py-1 transition-colors duration-150",
+            "rounded-2xl px-1 py-1 transition-colors duration-150",
             dropTargetProjectId === defaultProjectId && "bg-sidebar-accent/20 ring-1 ring-sidebar-border/45"
           )}
           onDragOver={(event) => {
@@ -153,7 +153,7 @@ export function ProjectList({
             handleConversationDrop(defaultProjectId)
           }}
         >
-          <div className="px-1.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/55">
+          <div className="px-2 pb-1.5 text-[13px] font-medium text-sidebar-foreground/58">
             {tSidebar("recent")}
           </div>
           <div className="space-y-0.5">
@@ -186,7 +186,7 @@ export function ProjectList({
       ) : null}
 
       {projects.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border/70 bg-[linear-gradient(180deg,rgba(148,163,184,0.08),transparent)] px-3 py-3 dark:bg-[linear-gradient(180deg,rgba(148,163,184,0.06),transparent)]">
+        <div className="rounded-3xl border border-dashed border-border/70 bg-white/55 px-4 py-4 dark:bg-white/[0.03]">
           <p className="text-sm font-semibold text-foreground">{tSidebar("noProjects")}</p>
           <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
             {tSidebar("noProjectsDescription")}
@@ -229,7 +229,7 @@ export function ProjectList({
       <button
         onClick={onOpenCreateDialog}
         className={cn(
-          "flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-sm font-semibold text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-foreground",
+          "flex w-full items-center gap-3 rounded-full px-4 py-2 text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/65 hover:text-sidebar-foreground",
         )}
       >
         <span className="flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/76">

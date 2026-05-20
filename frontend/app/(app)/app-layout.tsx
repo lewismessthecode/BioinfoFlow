@@ -24,9 +24,9 @@ import { useIsMobile } from "@/hooks/use-media-query"
 import type { ViewerIdentity } from "@/lib/auth-config"
 import { RuntimeProvider, getActiveRuntime, type RuntimeMode } from "@/lib/runtime"
 
-const LEFT_SIDEBAR_MIN = 200
-const LEFT_SIDEBAR_MAX = 400
-const LEFT_SIDEBAR_DEFAULT = 260
+const LEFT_SIDEBAR_MIN = 240
+const LEFT_SIDEBAR_MAX = 420
+const LEFT_SIDEBAR_DEFAULT = 300
 const LEFT_SIDEBAR_COLLAPSED = 56
 
 const LazyCommandPalette = dynamic(
@@ -67,6 +67,7 @@ export default function AppLayout({
   const [commandOpen, setCommandOpen] = useState(false)
   const [commandPaletteMounted, setCommandPaletteMounted] = useState(false)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
+  const [sidebarPrefsLoaded, setSidebarPrefsLoaded] = useState(false)
   const isMobile = useIsMobile()
   const terminalEnabled =
     runtime.capabilities.terminal &&
@@ -83,17 +84,20 @@ export default function AppLayout({
     /* eslint-disable react-hooks/set-state-in-effect */
     if (savedWidth) setLeftSidebarWidth(Number(savedWidth))
     if (savedCollapsed) setLeftSidebarCollapsed(savedCollapsed === "true")
+    setSidebarPrefsLoaded(true)
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [])
 
   // Persist state
   useEffect(() => {
+    if (!sidebarPrefsLoaded) return
     localStorage.setItem("left-sidebar-width", String(leftSidebarWidth))
-  }, [leftSidebarWidth])
+  }, [leftSidebarWidth, sidebarPrefsLoaded])
 
   useEffect(() => {
+    if (!sidebarPrefsLoaded) return
     localStorage.setItem("left-sidebar-collapsed", String(leftSidebarCollapsed))
-  }, [leftSidebarCollapsed])
+  }, [leftSidebarCollapsed, sidebarPrefsLoaded])
 
   const handleLeftResize = useCallback((delta: number) => {
     setLeftSidebarWidth((prev) => {
@@ -174,7 +178,7 @@ export default function AppLayout({
                 Skip to content
               </a>
 
-              <div className="flex h-screen bg-background">
+              <div className="flex h-screen bg-background text-foreground">
                 {/* Left Sidebar - Desktop */}
                 {!isMobile && (
                   <nav
@@ -185,11 +189,12 @@ export default function AppLayout({
                   >
                     <div
                       className="h-full transition-opacity duration-200"
-                      style={{ opacity: leftSidebarCollapsed ? 0.7 : 1 }}
+                      style={{ opacity: 1 }}
                     >
                       <Sidebar
                         collapsed={leftSidebarCollapsed}
                         onCollapsedChange={setLeftSidebarCollapsed}
+                        onCommandOpen={toggleCommandPalette}
                         viewer={viewer}
                         runtimeMode={runtimeMode}
                       />
@@ -203,12 +208,25 @@ export default function AppLayout({
                 {/* Left Sidebar - Mobile Drawer */}
                 {isMobile && (
                   <SidebarDrawer open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
-                    <Sidebar collapsed={false} viewer={viewer} runtimeMode={runtimeMode} />
+                    <Sidebar
+                      collapsed={false}
+                      onCommandOpen={toggleCommandPalette}
+                      viewer={viewer}
+                      runtimeMode={runtimeMode}
+                    />
                   </SidebarDrawer>
                 )}
 
                 {/* Main Content Area */}
-                <div className="flex-1 flex flex-col min-w-0">
+                <div
+                  className="flex-1 flex flex-col min-w-0 bg-background"
+                  style={{
+                    "--left-rail-compensation":
+                      !isMobile && leftSidebarCollapsed
+                        ? `${effectiveLeftWidth / 2}px`
+                        : "0px",
+                  } as React.CSSProperties}
+                >
                   <Navbar
                     onSidebarToggle={toggleLeftSidebar}
                     showHamburger={isMobile}
