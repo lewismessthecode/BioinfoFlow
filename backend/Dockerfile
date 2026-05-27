@@ -13,7 +13,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
 # ── System dependencies ──────────────────────────────────────
 # default-jre-headless (~200MB) is required for Nextflow.
 # git is required by uv when installing git+URL deps (e.g. hermes-agent).
-RUN apt-get update && \
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}/debian|g; s|http://deb.debian.org/debian-security|${APT_MIRROR}/debian-security|g" /etc/apt/sources.list.d/debian.sources; \
+    fi && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
       curl \
       default-jre-headless \

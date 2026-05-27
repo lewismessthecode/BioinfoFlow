@@ -49,6 +49,7 @@ vi.mock("next-intl/server", () => ({
       "teamCard.access": "Access",
       "teamCard.adminCreated": "Accounts are created by an admin.",
       "local.adminProvisioned": "Use the credentials provided by your administrator.",
+      "local.personalProvisioned": "Use your local credentials to continue.",
       oauthDivider: "or continue with",
       noProviders: "No sign-in providers are configured.",
       terms: "Protected workspace access only.",
@@ -62,6 +63,8 @@ vi.mock("next-intl/server", () => ({
       "preview.planningWorkflow": "Differential expression plan",
       "preview.audit": "audit",
       "preview.membersLabel": "Roles",
+      "preview.personalTitle": "Private workstation, protected by password",
+      "preview.personalDescription": "Personal mode keeps the full app behind login.",
       "preview.tagline": "Owner and admins manage members. Everyone works in one space.",
       "preview.roles.owner.name": "Owner",
       "preview.roles.owner.description": "Keeps the instance safe and recoverable.",
@@ -235,8 +238,12 @@ describe("AuthPage", () => {
     expect(screen.getByText("Sign in to continue")).toBeInTheDocument()
     expect(screen.getByTestId("email-sign-in-form")).toBeInTheDocument()
     expect(
-      screen.getByText("Use the credentials provided by your administrator."),
+      screen.getByText("Use your local credentials to continue."),
     ).toBeInTheDocument()
+    expect(
+      screen.getByText("Private workstation, protected by password"),
+    ).toBeInTheDocument()
+    expect(screen.queryByText("Shared bioinformatics operations")).not.toBeInTheDocument()
   })
 
   it("renders a personal-mode auth page without the team preview panel", async () => {
