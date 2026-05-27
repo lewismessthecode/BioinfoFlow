@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import PurePosixPath
 
@@ -11,6 +12,7 @@ from app.api.deps import get_db, require_admin
 from app.config import settings
 from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
+from app.models.user_settings import UserSettings
 from app.models.workflow import Workflow
 from app.services.run_dispatch import get_run_scheduler
 from app.schemas.system import DirectoryEntry, DirectoryListResponse
@@ -149,7 +151,7 @@ async def get_gpu_metrics(request: Request):
     )
 
 
-def _provider_key_configured() -> bool:
+def _env_provider_key_configured() -> bool:
     return any(
         bool(getattr(settings, key, "").strip())
         for key in (
@@ -164,6 +166,27 @@ def _provider_key_configured() -> bool:
             "minimax_api_key",
         )
     )
+
+
+async def _saved_provider_key_configured(db: AsyncSession) -> bool:
+    rows = await db.scalars(select(UserSettings.provider_credentials))
+    for raw_credentials in rows:
+        if not raw_credentials:
+            continue
+        try:
+            credentials = json.loads(raw_credentials)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(credentials, dict):
+            continue
+        for fields in credentials.values():
+            if isinstance(fields, dict) and str(fields.get("api_key", "")).strip():
+                return True
+    return False
+
+
+async def _provider_key_configured(db: AsyncSession) -> bool:
+    return _env_provider_key_configured() or await _saved_provider_key_configured(db)
 
 
 def _check(
@@ -217,9 +240,6 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
     nvidia_runtime = (
         await docker_service.check_nvidia_runtime() if docker_available else False
     )
-    parabricks_image = (
-        await docker_service.get_parabricks_image() if docker_available else None
-    )
 
     gpu_status = await get_gpu_service().get_status()
     scheduler = get_run_scheduler()
@@ -230,7 +250,7 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
         select(func.count()).select_from(ProjectWorkflowBinding)
     )
 
-    provider_ready = _provider_key_configured()
+    provider_ready = await _provider_key_configured(db)
     checks = [
         _check(
             "backend",
@@ -296,18 +316,6 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
             docs_link="/docs/operations/runbook",
         ),
         _check(
-            "parabricks_image",
-            "Parabricks image",
-            "pass" if parabricks_image is not None else "warn",
-            "Parabricks image is available"
-            if parabricks_image is not None
-            else "Parabricks image is not available; non-Parabricks workflows are unaffected",
-            severity="optional",
-            docs_link="/docs/workflows/parabricks-wgs",
-            action_label="Open images",
-            action_href="/images",
-        ),
-        _check(
             "project",
             "Project",
             "pass" if (project_count or 0) > 0 else "fail",
@@ -361,7 +369,6 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
                 "docker_available": docker_available,
                 "nvidia_runtime": nvidia_runtime,
                 "gpu_available": getattr(gpu_status, "available", False),
-                "parabricks_image_available": parabricks_image is not None,
                 "projects": project_count or 0,
                 "workflows": workflow_count or 0,
                 "workflow_bindings": binding_count or 0,

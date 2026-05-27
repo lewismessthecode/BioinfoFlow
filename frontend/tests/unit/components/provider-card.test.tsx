@@ -137,6 +137,16 @@ describe("ProviderCard", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith("Cleared Model")
   })
 
+  it("uses readable semantic colors for the configured status badge", () => {
+    renderCard({ isConfigured: true })
+
+    const badge = screen.getByText("Connected")
+
+    expect(badge).toHaveClass("bg-success-muted")
+    expect(badge).toHaveClass("text-success")
+    expect(badge).not.toHaveClass("bg-primary")
+  })
+
   it("surfaces both successful and failed connection tests on the real card control", async () => {
     const user = userEvent.setup()
     const onTest = vi

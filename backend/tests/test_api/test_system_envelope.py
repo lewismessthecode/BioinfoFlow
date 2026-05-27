@@ -8,6 +8,7 @@ from sqlalchemy import insert
 from app.config import settings
 from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
+from app.models.user_settings import UserSettings
 from app.models.workflow import Workflow
 
 
@@ -97,8 +98,62 @@ async def test_readiness_returns_blocking_checks(async_client, monkeypatch):
     assert checks["backend"]["status"] == "pass"
     assert checks["docker"]["status"] == "fail"
     assert checks["provider_key"]["status"] == "fail"
+    assert "parabricks_image" not in checks
     assert checks["project"]["status"] == "fail"
     assert checks["workflow_binding"]["status"] == "fail"
+
+
+@pytest.mark.asyncio
+async def test_readiness_accepts_saved_user_provider_credentials(
+    async_client,
+    db_session,
+    monkeypatch,
+):
+    """A provider key saved from settings should satisfy first-run readiness."""
+
+    class MockDockerService:
+        async def is_available(self):
+            return True
+
+        async def check_nvidia_runtime(self):
+            return False
+
+        async def get_parabricks_image(self):
+            return None
+
+    class MockGpuService:
+        async def get_status(self):
+            return type(
+                "GpuStatus",
+                (),
+                {
+                    "available": False,
+                    "parabricks_compatible": False,
+                },
+            )()
+
+    monkeypatch.setattr("app.api.v1.system.DockerService", MockDockerService)
+    monkeypatch.setattr("app.api.v1.system.get_gpu_service", lambda: MockGpuService())
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "gemini_api_key", "")
+    monkeypatch.setattr(settings, "deepseek_api_key", "")
+
+    await db_session.execute(
+        insert(UserSettings).values(
+            id="00000000-0000-0000-0000-000000000401",
+            user_id="user-with-provider",
+            provider_credentials='{"openai":{"api_key":"sk-user-key"}}',
+            selected_provider="openai",
+        )
+    )
+    await db_session.commit()
+
+    resp = await async_client.get("/api/v1/system/readiness")
+    assert resp.status_code == 200
+
+    checks = {check["id"]: check for check in resp.json()["data"]["checks"]}
+    assert checks["provider_key"]["status"] == "pass"
 
 
 @pytest.mark.asyncio
