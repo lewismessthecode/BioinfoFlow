@@ -3,7 +3,15 @@
 FROM node:22-slim AS deps
 WORKDIR /app
 
-RUN npm install -g bun
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      python3 \
+      make \
+      g++ \
+      pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g bun node-gyp
 
 COPY package.json bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache \
@@ -13,7 +21,15 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 FROM node:22-slim AS builder
 WORKDIR /app
 
-RUN npm install -g bun
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      python3 \
+      make \
+      g++ \
+      pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g bun node-gyp
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
