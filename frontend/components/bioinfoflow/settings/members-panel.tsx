@@ -56,6 +56,11 @@ type MembersPanelProps = {
   authLocalEnabled: boolean
 }
 
+type AuthClientResult<T = unknown> = {
+  data?: T | null
+  error?: { message?: string } | null
+}
+
 const ALL_TEAM_ROLES: TeamRole[] = ["owner", "admin", "member"]
 
 function resolveTeamRole(user: MemberUser): TeamRole {
@@ -66,6 +71,16 @@ function resolveTeamRole(user: MemberUser): TeamRole {
     return "admin"
   }
   return "member"
+}
+
+function assertAuthSuccess<T>(result: AuthClientResult<T> | undefined): T | null {
+  if (!result) {
+    return null
+  }
+  if (result.error) {
+    throw new Error(result.error.message || "Auth admin operation failed")
+  }
+  return result.data ?? null
 }
 
 export function MembersPanel({
@@ -103,7 +118,8 @@ export function MembersPanel({
           sortDirection: "asc",
         },
       })
-      setMembers((result.data?.users as MemberUser[]) ?? [])
+      const data = assertAuthSuccess(result)
+      setMembers(((data as { users?: MemberUser[] } | null)?.users) ?? [])
     } catch {
       toast.error(t("loadFailed"))
     } finally {
@@ -120,7 +136,7 @@ export function MembersPanel({
   const handleCreateUser = async () => {
     setCreating(true)
     try {
-      await authClient.admin.createUser({
+      const result = await authClient.admin.createUser({
         email: createForm.email,
         name: createForm.name,
         password: authLocalEnabled ? createForm.password : undefined,
@@ -129,6 +145,7 @@ export function MembersPanel({
           teamRole: createForm.teamRole,
         },
       })
+      assertAuthSuccess(result)
       toast.success(t("created"))
       setCreateOpen(false)
       setCreateForm({
@@ -160,13 +177,14 @@ export function MembersPanel({
 
     setSavingId(user.id)
     try {
-      await authClient.admin.updateUser({
+      const result = await authClient.admin.updateUser({
         userId: user.id,
         data: {
           role: toBetterAuthRole(nextRole),
           teamRole: nextRole,
         },
       })
+      assertAuthSuccess(result)
       toast.success(t("roleUpdated"))
       await loadMembers()
     } catch {
@@ -185,12 +203,14 @@ export function MembersPanel({
     setSavingId(user.id)
     try {
       if (user.banned) {
-        await authClient.admin.unbanUser({ userId: user.id })
+        const result = await authClient.admin.unbanUser({ userId: user.id })
+        assertAuthSuccess(result)
       } else {
-        await authClient.admin.banUser({
+        const result = await authClient.admin.banUser({
           userId: user.id,
           banReason: "Disabled by administrator",
         })
+        assertAuthSuccess(result)
       }
       toast.success(user.banned ? t("enabled") : t("disabled"))
       await loadMembers()
@@ -204,7 +224,8 @@ export function MembersPanel({
   const handleRevokeSessions = async (userId: string) => {
     setSavingId(userId)
     try {
-      await authClient.admin.revokeUserSessions({ userId })
+      const result = await authClient.admin.revokeUserSessions({ userId })
+      assertAuthSuccess(result)
       toast.success(t("sessionsRevoked"))
     } catch {
       toast.error(t("sessionsRevokeFailed"))
@@ -220,10 +241,11 @@ export function MembersPanel({
 
     setSavingId(passwordResetUser.id)
     try {
-      await authClient.admin.setUserPassword({
+      const result = await authClient.admin.setUserPassword({
         userId: passwordResetUser.id,
         newPassword: resetPassword,
       })
+      assertAuthSuccess(result)
       toast.success(t("passwordReset"))
       setPasswordResetUser(null)
       setResetPassword("")

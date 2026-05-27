@@ -5,11 +5,11 @@ import { useTranslations } from "next-intl"
 import { Check, ExternalLink, Loader2, X } from "lucide-react"
 import { toast } from "sonner"
 import { ProviderIcon } from "@/components/bioinfoflow/chat/provider-icons"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { StatusBadge } from "@/components/ui/status-badge"
 
 // ── API key portal URLs ────────────────────────────────────────────
 const PROVIDER_KEY_URLS: Record<string, string> = {
@@ -175,12 +175,12 @@ export function ProviderCard({
               </a>
             )}
           </div>
-          <Badge
-            variant={isConfigured ? "default" : "secondary"}
-            className="text-xs-tight font-medium"
+          <StatusBadge
+            variant={isConfigured ? "success" : "neutral"}
+            className="px-2 py-0.5"
           >
             {isConfigured ? t("status.connected") : t("status.notConfigured")}
-          </Badge>
+          </StatusBadge>
         </div>
       </CardHeader>
       <CardContent className="space-y-3 px-4 pb-4 pt-0">
