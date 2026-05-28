@@ -5,6 +5,9 @@
 - Before making changes, verify the current branch/worktree with `git branch --show-current` and `git worktree list`.
 - When writing plans or documentation, create the file on disk instead of leaving the content only in chat.
 - Before reporting completion, run the relevant verification commands for the files you changed.
+- Use Conventional Commits for all git commit messages and PR titles: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`. Format: `<type>: <imperative summary>`.
+- Treat the PR title as the canonical squash-merge commit message. When creating or updating a PR, always normalize the title to the Conventional Commits format unless the user explicitly asks otherwise.
+- Avoid vague git/PR titles such as `update`, `misc fixes`, `wip`, or `tweak`; choose the most specific valid type and a concise summary of the user-visible change.
 
 ## Commands
 
