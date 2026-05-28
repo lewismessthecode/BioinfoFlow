@@ -34,7 +34,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect image changes
+      - name: Detect release-impacting changes
         id: changes
         env:
           REQUESTED_PUBLISH: ${{ github.event.inputs.publish_images || 'auto' }}
@@ -43,24 +43,33 @@ jobs:
           set -euo pipefail
 
           publish="false"
+          smoke="false"
 
           case "$REQUESTED_PUBLISH" in
             force)
               publish="true"
+              smoke="true"
               ;;
             skip)
               publish="false"
+              smoke="false"
               ;;
             auto)
               if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
                 publish="true"
+                smoke="true"
               elif [ -z "$BEFORE_SHA" ] || printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
                 publish="true"
+                smoke="true"
               else
                 changed_files="$(mktemp)"
                 git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_files"
+
                 if grep -Eq '^(backend|frontend)/' "$changed_files"; then
                   publish="true"
+                  smoke="true"
+                elif grep -Eq '^(docker-compose\.prod\.yml|\.github/workflows/container-release\.yml)$' "$changed_files"; then
+                  smoke="true"
                 fi
               fi
               ;;
@@ -70,23 +79,166 @@ jobs:
               ;;
           esac
 
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          {
+            echo "publish=$publish"
+            echo "smoke=$smoke"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set image names
         id: images
-        if: steps.changes.outputs.publish == 'true'
+        if: steps.changes.outputs.smoke == 'true'
         run: |
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           short_sha="${GITHUB_SHA::12}"
+          smoke_tag="smoke-${short_sha}"
           {
             echo "backend=ghcr.io/${owner}/bioinfoflow-backend"
             echo "frontend=ghcr.io/${owner}/bioinfoflow-frontend"
+            echo "local_backend=bioinfoflow-backend:${smoke_tag}"
+            echo "local_frontend=bioinfoflow-frontend:${smoke_tag}"
             echo "short_sha=${short_sha}"
+            echo "smoke_tag=${smoke_tag}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        if: steps.changes.outputs.publish == 'true'
+        if: steps.changes.outputs.smoke == 'true'
         uses: docker/setup-buildx-action@v4
+
+      - name: Build backend smoke image
+        if: steps.changes.outputs.smoke == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          load: true
+          tags: ${{ steps.images.outputs.local_backend }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build frontend smoke image
+        if: steps.changes.outputs.smoke == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          load: true
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+            NEXT_PUBLIC_AUTH_MODE=personal
+            NEXT_PUBLIC_AUTH_LOCAL_ENABLED=true
+            NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
+          tags: ${{ steps.images.outputs.local_frontend }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Create smoke environment
+        id: smoke_env
+        if: steps.changes.outputs.smoke == 'true'
+        env:
+          SMOKE_TAG: ${{ steps.images.outputs.smoke_tag }}
+        run: |
+          set -euo pipefail
+
+          runner_temp_root="${RUNNER_TEMP%/}"
+          smoke_root="$runner_temp_root/container-release-smoke"
+          env_file="$smoke_root/.env"
+          repo_env_file="$GITHUB_WORKSPACE/.env"
+          repo_env_backup="$smoke_root/original.env"
+          project_name="container-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          had_repo_env="false"
+
+          rm -rf "$smoke_root"
+          mkdir -p "$smoke_root/home"
+
+          if [ -f "$repo_env_file" ]; then
+            cp "$repo_env_file" "$repo_env_backup"
+            had_repo_env="true"
+          fi
+
+          cat > "$env_file" <<EOF
+          BIOINFOFLOW_HOME=$smoke_root/home
+          IMAGE_REGISTRY=
+          IMAGE_TAG=$SMOKE_TAG
+          BACKEND_PORT=8000
+          FRONTEND_PORT=3000
+          AUTH_MODE=personal
+          AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
+          AUTH_BOOTSTRAP_OWNER_PASSWORD=changeme
+          AUTH_SELF_SIGNUP_ENABLED=false
+          BETTER_AUTH_SECRET=
+          NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+          BETTER_AUTH_URL=http://localhost:3000
+          CORS_ORIGINS=["http://localhost:3000"]
+          EOF
+
+          cp "$env_file" "$repo_env_file"
+
+          {
+            echo "env_file=$env_file"
+            echo "repo_env_file=$repo_env_file"
+            echo "repo_env_backup=$repo_env_backup"
+            echo "had_repo_env=$had_repo_env"
+            echo "project_name=$project_name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test release stack
+        if: steps.changes.outputs.smoke == 'true'
+        env:
+          SMOKE_ENV_FILE: ${{ steps.smoke_env.outputs.env_file }}
+          SMOKE_PROJECT_NAME: ${{ steps.smoke_env.outputs.project_name }}
+        run: |
+          set -euo pipefail
+
+          compose=(docker compose --project-name "$SMOKE_PROJECT_NAME" --env-file "$SMOKE_ENV_FILE" -f docker-compose.prod.yml)
+
+          show_debug() {
+            "${compose[@]}" ps || true
+            "${compose[@]}" logs --no-color --tail=200 || true
+          }
+
+          wait_for_url() {
+            local name="$1"
+            local url="$2"
+            local attempts="$3"
+
+            for attempt in $(seq 1 "$attempts"); do
+              if curl --fail --silent --show-error --location "$url" > /dev/null; then
+                echo "$name responded at $url"
+                return 0
+              fi
+
+              if [ "$attempt" -eq "$attempts" ]; then
+                echo "$name did not become ready at $url"
+                show_debug
+                return 1
+              fi
+
+              sleep 5
+            done
+          }
+
+          "${compose[@]}" up -d
+
+          wait_for_url "Backend health" "http://127.0.0.1:8000/api/v1/system/health" 36
+          wait_for_url "Frontend auth page" "http://127.0.0.1:3000/auth" 24
+
+      - name: Tear down smoke stack
+        if: always() && steps.smoke_env.outcome == 'success'
+        env:
+          SMOKE_ENV_FILE: ${{ steps.smoke_env.outputs.env_file }}
+          SMOKE_PROJECT_NAME: ${{ steps.smoke_env.outputs.project_name }}
+          SMOKE_REPO_ENV_FILE: ${{ steps.smoke_env.outputs.repo_env_file }}
+          SMOKE_REPO_ENV_BACKUP: ${{ steps.smoke_env.outputs.repo_env_backup }}
+          SMOKE_HAD_REPO_ENV: ${{ steps.smoke_env.outputs.had_repo_env }}
+        run: |
+          set -euo pipefail
+          docker compose --project-name "$SMOKE_PROJECT_NAME" --env-file "$SMOKE_ENV_FILE" -f docker-compose.prod.yml down -v --remove-orphans
+
+          if [ "$SMOKE_HAD_REPO_ENV" = "true" ]; then
+            mv "$SMOKE_REPO_ENV_BACKUP" "$SMOKE_REPO_ENV_FILE"
+          else
+            rm -f "$SMOKE_REPO_ENV_FILE"
+          fi
 
       - name: Log in to GHCR
         if: steps.changes.outputs.publish == 'true'
@@ -98,37 +250,32 @@ jobs:
 
       - name: Publish backend image
         if: steps.changes.outputs.publish == 'true'
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: true
-          tags: |
-            ${{ steps.images.outputs.backend }}:latest
-            ${{ steps.images.outputs.backend }}:main
-            ${{ steps.images.outputs.backend }}:sha-${{ steps.images.outputs.short_sha }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
+        env:
+          IMAGE_REPO: ${{ steps.images.outputs.backend }}
+          LOCAL_IMAGE: ${{ steps.images.outputs.local_backend }}
+          SHORT_SHA: ${{ steps.images.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+
+          for tag in latest main "sha-${SHORT_SHA}"; do
+            docker tag "$LOCAL_IMAGE" "${IMAGE_REPO}:${tag}"
+            docker push "${IMAGE_REPO}:${tag}"
+          done
 
       - name: Publish frontend image
         if: steps.changes.outputs.publish == 'true'
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: true
-          build-args: |
-            NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
-            NEXT_PUBLIC_AUTH_MODE=personal
-            NEXT_PUBLIC_AUTH_LOCAL_ENABLED=true
-            NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
-          tags: |
-            ${{ steps.images.outputs.frontend }}:latest
-            ${{ steps.images.outputs.frontend }}:main
-            ${{ steps.images.outputs.frontend }}:sha-${{ steps.images.outputs.short_sha }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+        env:
+          IMAGE_REPO: ${{ steps.images.outputs.frontend }}
+          LOCAL_IMAGE: ${{ steps.images.outputs.local_frontend }}
+          SHORT_SHA: ${{ steps.images.outputs.short_sha }}
+        run: |
+          set -euo pipefail
 
-      - name: Skip publish
+          for tag in latest main "sha-${SHORT_SHA}"; do
+            docker tag "$LOCAL_IMAGE" "${IMAGE_REPO}:${tag}"
+            docker push "${IMAGE_REPO}:${tag}"
+          done
+
+      - name: Skip image publish
         if: steps.changes.outputs.publish != 'true'
-        run: echo "No backend/ or frontend/ changes detected; container images were not republished."
+        run: echo "No backend/ or frontend/ source changes detected; skipped GHCR publish."

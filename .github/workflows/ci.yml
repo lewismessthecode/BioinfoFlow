@@ -17,8 +17,58 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend_python: ${{ steps.filter.outputs.backend_python }}
+      backend_python_files: ${{ steps.filter.outputs.backend_python_files }}
+      backend_image: ${{ steps.filter.outputs.backend_image }}
+      frontend_image: ${{ steps.filter.outputs.frontend_image }}
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Detect image-impacting changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          list-files: shell
+          filters: |
+            backend_python:
+              - added|modified: 'backend/**/*.py'
+            backend_image:
+              - 'backend/**'
+              - 'docker-compose.yml'
+              - 'docker-compose.prod.yml'
+              - '.env.example'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/container-release.yml'
+            frontend_image:
+              - 'frontend/**'
+              - 'docker-compose.yml'
+              - 'docker-compose.prod.yml'
+              - '.env.example'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/container-release.yml'
+            docker:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'backend/Dockerfile'
+              - 'frontend/Dockerfile'
+              - 'docker-compose.yml'
+              - 'docker-compose.prod.yml'
+              - '.env.example'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/container-release.yml'
+
   backend:
     name: backend
+    needs: changes
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,6 +91,41 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --frozen --python 3.13
+
+      - name: Format changed Python files
+        if: github.event_name == 'pull_request' && needs.changes.outputs.backend_python == 'true'
+        env:
+          CHANGED_BACKEND_PYTHON_FILES: ${{ needs.changes.outputs.backend_python_files }}
+        run: |
+          python - <<'PY'
+          import os
+          import shlex
+          import subprocess
+          import sys
+
+          repo_relative_files = shlex.split(os.environ["CHANGED_BACKEND_PYTHON_FILES"])
+          backend_relative_files = []
+
+          for path in repo_relative_files:
+              if not path.startswith("backend/"):
+                  print(f"Unexpected non-backend path from paths-filter: {path}", file=sys.stderr)
+                  raise SystemExit(1)
+              backend_relative_files.append(path.removeprefix("backend/"))
+
+          subprocess.run(
+              ["uv", "run", "ruff", "format", "--check", *backend_relative_files],
+              check=True,
+          )
+          PY
+
+      - name: Skip backend format check
+        if: github.event_name == 'pull_request' && needs.changes.outputs.backend_python != 'true'
+        run: echo "No changed backend Python files to format-check."
+
+      - name: Audit backend formatting debt
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        run: uv run ruff format --check .
 
       - name: Lint
         run: uv run ruff check .
@@ -81,7 +166,7 @@ jobs:
         run: bun run build
         env:
           AUTH_LOCAL_ENABLED: "true"
-          AUTH_MODE: dev
+          AUTH_MODE: personal
           AUTH_SELF_SIGNUP_ENABLED: "false"
           BETTER_AUTH_SECRET: ci-better-auth-secret-for-github-actions
           BETTER_AUTH_URL: http://localhost:3000
@@ -89,11 +174,55 @@ jobs:
           BIOINFOFLOW_HOME_HOST: /tmp/bioinfoflow
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
           NEXT_PUBLIC_AUTH_LOCAL_ENABLED: "true"
-          NEXT_PUBLIC_AUTH_MODE: dev
+          NEXT_PUBLIC_AUTH_MODE: personal
           NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED: "false"
+
+      - name: Install uv for smoke backend
+        if: github.event_name == 'pull_request'
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install Python for smoke backend
+        if: github.event_name == 'pull_request'
+        run: uv python install 3.13
+
+      - name: Install smoke backend dependencies
+        if: github.event_name == 'pull_request'
+        working-directory: backend
+        run: uv sync --frozen --no-dev --python 3.13
+
+      - name: Install Playwright Chromium
+        if: github.event_name == 'pull_request'
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run dev-auth navigation smoke e2e
+        if: github.event_name == 'pull_request'
+        env:
+          PLAYWRIGHT_AUTH_MODE: dev
+        run: bun run test:e2e:dev-auth:smoke
+
+      - name: Run personal-auth sign-in smoke e2e
+        if: github.event_name == 'pull_request'
+        env:
+          PLAYWRIGHT_AUTH_MODE: personal
+          AUTH_BOOTSTRAP_OWNER_EMAIL: admin@example.com
+          AUTH_BOOTSTRAP_OWNER_PASSWORD: changeme
+        run: bun run test:e2e:personal-auth:smoke
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          if-no-files-found: ignore
 
   docker:
     name: docker
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -103,6 +232,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build backend image
+        if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.backend_image == 'true'
         uses: docker/build-push-action@v7
         with:
           context: ./backend
@@ -113,6 +243,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
       - name: Build frontend image
+        if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend_image == 'true'
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
@@ -121,7 +252,7 @@ jobs:
           load: false
           build-args: |
             NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
-            NEXT_PUBLIC_AUTH_MODE=dev
+            NEXT_PUBLIC_AUTH_MODE=personal
             NEXT_PUBLIC_AUTH_LOCAL_ENABLED=true
             NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
           cache-from: type=gha,scope=frontend

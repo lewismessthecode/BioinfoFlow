@@ -2,6 +2,7 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 
+const authMode = process.env.PLAYWRIGHT_AUTH_MODE || "dev"
 const frontendRoot = process.cwd()
 const repoRoot = path.resolve(frontendRoot, "..")
 const backendRoot = path.resolve(repoRoot, "backend")
@@ -12,7 +13,7 @@ const databasePath = path.join(stateRoot, "bioinfoflow.db")
 
 const env = {
   ...process.env,
-  AUTH_MODE: "dev",
+  AUTH_MODE: authMode,
   BIOINFOFLOW_HOME: bioinfoflowHome,
   DATABASE_URL: `sqlite+aiosqlite:///${databasePath}`,
   SCHEDULER_POLL_INTERVAL: "30",

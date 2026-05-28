@@ -15,6 +15,8 @@
     "start": "node scripts/with-root-env.mjs start",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:e2e:dev-auth:smoke": "playwright test --project=chromium tests/e2e/core-navigation.spec.ts",
+    "test:e2e:personal-auth:smoke": "playwright test --project=chromium tests/e2e/auth-page-smoke.spec.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
