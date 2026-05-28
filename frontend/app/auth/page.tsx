@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { LockKeyhole, Shield } from "lucide-react"
+import { Shield } from "lucide-react"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { getTranslations } from "next-intl/server"
 import { AuthActions } from "@/components/auth/auth-actions"
@@ -80,9 +80,6 @@ export default async function AuthPage() {
               <h1 className="text-[1.4rem] font-semibold leading-tight tracking-tight text-slate-950 sm:text-[1.85rem] sm:leading-[1.08]">
                 {t("title")}
               </h1>
-              <p className="mt-1.5 max-w-xl text-[13px] leading-[1.6] text-slate-500">
-                {t("local.personalProvisioned")}
-              </p>
             </div>
 
             {/* ── Form ───────────────────────────────────── */}
@@ -114,23 +111,6 @@ export default async function AuthPage() {
               )}
 
               <p className="text-[11px] leading-5 text-slate-400">{t("terms")}</p>
-            </div>
-
-            {/* ── Hint / provisioning note ─────────────── */}
-            <div className="mt-auto px-4 pb-5 sm:px-6">
-              <div className="flex items-center gap-3 rounded-xl bg-slate-50/80 px-3.5 py-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100/80 text-emerald-700">
-                  <LockKeyhole className="size-3.5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[13px] font-medium text-slate-800">
-                    {t("preview.personalTitle")}
-                  </p>
-                  <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
-                    {t("preview.personalDescription")}
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
         </section>

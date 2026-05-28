@@ -11,7 +11,6 @@ import {
   UserRound,
 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
-import { toBetterAuthRole } from "@/lib/auth-config"
 import type { TeamRole } from "@/lib/auth-config"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -61,6 +60,10 @@ type AuthClientResult<T = unknown> = {
   error?: { message?: string } | null
 }
 
+type ApiEnvelope<T> =
+  | { success: true; data: T }
+  | { success: false; error?: { message?: string } }
+
 const ALL_TEAM_ROLES: TeamRole[] = ["owner", "admin", "member"]
 
 function resolveTeamRole(user: MemberUser): TeamRole {
@@ -83,6 +86,27 @@ function assertAuthSuccess<T>(result: AuthClientResult<T> | undefined): T | null
   return result.data ?? null
 }
 
+async function requestTeamMembers<T>(
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch("/api/team/members", {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  })
+  const payload = (await response.json()) as ApiEnvelope<T>
+  if (!response.ok || !payload.success) {
+    throw new Error(
+      payload.success
+        ? "Member operation failed"
+        : payload.error?.message || "Member operation failed",
+    )
+  }
+  return payload.data
+}
+
 export function MembersPanel({
   viewerId,
   viewerRole,
@@ -95,6 +119,7 @@ export function MembersPanel({
   const [savingId, setSavingId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [passwordResetUser, setPasswordResetUser] = useState<MemberUser | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
   const [createForm, setCreateForm] = useState({
     name: "",
     email: "",
@@ -111,15 +136,8 @@ export function MembersPanel({
   const loadMembers = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await authClient.admin.listUsers({
-        query: {
-          limit: 100,
-          sortBy: "createdAt",
-          sortDirection: "asc",
-        },
-      })
-      const data = assertAuthSuccess(result)
-      setMembers(((data as { users?: MemberUser[] } | null)?.users) ?? [])
+      const data = await requestTeamMembers<{ users?: MemberUser[] }>()
+      setMembers(data.users ?? [])
     } catch {
       toast.error(t("loadFailed"))
     } finally {
@@ -135,17 +153,17 @@ export function MembersPanel({
 
   const handleCreateUser = async () => {
     setCreating(true)
+    setCreateError(null)
     try {
-      const result = await authClient.admin.createUser({
-        email: createForm.email,
-        name: createForm.name,
-        password: authLocalEnabled ? createForm.password : undefined,
-        role: toBetterAuthRole(createForm.teamRole),
-        data: {
+      await requestTeamMembers<{ user: MemberUser }>({
+        method: "POST",
+        body: JSON.stringify({
+          email: createForm.email,
+          name: createForm.name,
+          password: authLocalEnabled ? createForm.password : undefined,
           teamRole: createForm.teamRole,
-        },
+        }),
       })
-      assertAuthSuccess(result)
       toast.success(t("created"))
       setCreateOpen(false)
       setCreateForm({
@@ -155,8 +173,10 @@ export function MembersPanel({
         teamRole: "member",
       })
       await loadMembers()
-    } catch {
-      toast.error(t("createFailed"))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("createFailed")
+      setCreateError(message)
+      toast.error(message)
     } finally {
       setCreating(false)
     }
@@ -177,18 +197,18 @@ export function MembersPanel({
 
     setSavingId(user.id)
     try {
-      const result = await authClient.admin.updateUser({
-        userId: user.id,
-        data: {
-          role: toBetterAuthRole(nextRole),
+      await requestTeamMembers<{ user: MemberUser }>({
+        method: "PATCH",
+        body: JSON.stringify({
+          action: "role",
+          userId: user.id,
           teamRole: nextRole,
-        },
+        }),
       })
-      assertAuthSuccess(result)
       toast.success(t("roleUpdated"))
       await loadMembers()
-    } catch {
-      toast.error(t("roleUpdateFailed"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("roleUpdateFailed"))
     } finally {
       setSavingId(null)
     }
@@ -202,20 +222,18 @@ export function MembersPanel({
 
     setSavingId(user.id)
     try {
-      if (user.banned) {
-        const result = await authClient.admin.unbanUser({ userId: user.id })
-        assertAuthSuccess(result)
-      } else {
-        const result = await authClient.admin.banUser({
+      await requestTeamMembers<{ user: MemberUser }>({
+        method: "PATCH",
+        body: JSON.stringify({
+          action: "disabled",
           userId: user.id,
-          banReason: "Disabled by administrator",
-        })
-        assertAuthSuccess(result)
-      }
+          disabled: !user.banned,
+        }),
+      })
       toast.success(user.banned ? t("enabled") : t("disabled"))
       await loadMembers()
-    } catch {
-      toast.error(t("statusUpdateFailed"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("statusUpdateFailed"))
     } finally {
       setSavingId(null)
     }
@@ -241,16 +259,19 @@ export function MembersPanel({
 
     setSavingId(passwordResetUser.id)
     try {
-      const result = await authClient.admin.setUserPassword({
-        userId: passwordResetUser.id,
-        newPassword: resetPassword,
+      await requestTeamMembers<{ user: MemberUser }>({
+        method: "PATCH",
+        body: JSON.stringify({
+          action: "password",
+          userId: passwordResetUser.id,
+          password: resetPassword,
+        }),
       })
-      assertAuthSuccess(result)
       toast.success(t("passwordReset"))
       setPasswordResetUser(null)
       setResetPassword("")
-    } catch {
-      toast.error(t("passwordResetFailed"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("passwordResetFailed"))
     } finally {
       setSavingId(null)
     }
@@ -389,7 +410,15 @@ export function MembersPanel({
         </CardContent>
       </Card>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open)
+          if (!open) {
+            setCreateError(null)
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("createTitle")}</DialogTitle>
@@ -454,7 +483,7 @@ export function MembersPanel({
                   }))
                 }
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label={t("fields.role")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -470,6 +499,12 @@ export function MembersPanel({
                 </SelectContent>
               </Select>
             </div>
+
+            {createError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {createError}
+              </p>
+            ) : null}
           </div>
 
           <DialogFooter>

@@ -281,8 +281,24 @@ describe("DashboardPage", () => {
                 severity: "blocking",
                 detail: "No provider key configured",
                 hint: "Set one provider key before first run.",
+                action_label: "Add an AI provider key",
+                action_href: "/settings",
+              },
+              {
+                id: "gpu",
+                label: "GPU",
+                status: "warn",
+                severity: "optional",
+                detail: "No GPU detected; CPU workflows can still run",
+                hint: "Install GPU drivers only when a workflow needs acceleration.",
               },
             ],
+            summary: {
+              provider_key_configured: false,
+              projects: 0,
+              workflows: 0,
+              workflow_bindings: 0,
+            },
           },
           meta: undefined,
         }
@@ -293,8 +309,12 @@ describe("DashboardPage", () => {
     renderAppPage(<DashboardPage />)
 
     expect(await screen.findByText("dashboard.readiness.title")).toBeInTheDocument()
+    expect(screen.getByText(/dashboard\.readiness\.progress/)).toBeInTheDocument()
+    expect(screen.getByText("dashboard.readiness.blockers")).toBeInTheDocument()
+    expect(screen.getByText("dashboard.readiness.optional")).toBeInTheDocument()
     expect(screen.getByText("AI provider key")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Add an AI provider key" })).toHaveAttribute(
+    expect(screen.getByText("GPU")).toBeInTheDocument()
+    expect(screen.getAllByRole("link", { name: "Add an AI provider key" })[0]).toHaveAttribute(
       "href",
       "/settings",
     )

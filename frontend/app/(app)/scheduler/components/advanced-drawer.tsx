@@ -74,6 +74,7 @@ function BtopPanel() {
   const rafRef = useRef<number | null>(null)
 
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle")
+  const [unavailableDetail, setUnavailableDetail] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
   const terminalTheme = useMemo(
@@ -120,7 +121,14 @@ function BtopPanel() {
 
       socket.onmessage = (event) => {
         let message:
-          | { type?: string; data?: string; code?: string; exit_code?: number }
+          | {
+              type?: string
+              data?: string
+              code?: string
+              exit_code?: number
+              message?: string
+              attempted_paths?: string[]
+            }
           | null = null
         try {
           message = JSON.parse(event.data) as typeof message
@@ -134,6 +142,10 @@ function BtopPanel() {
           return
         }
         if (message.type === "error") {
+          if (message.code === "btop_unavailable") {
+            const paths = message.attempted_paths?.filter(Boolean).join(", ")
+            setUnavailableDetail(paths ? t("advanced.attemptedPaths", { paths }) : null)
+          }
           setConnectionState(
             message.code === "btop_unavailable" ? "unavailable" : "error",
           )
@@ -211,6 +223,7 @@ function BtopPanel() {
       if (socket && socket.readyState <= WebSocket.OPEN) {
         socket.close()
       }
+      setUnavailableDetail(null)
       fitAddonRef.current = null
       terminalRef.current?.dispose()
       terminalRef.current = null
@@ -259,6 +272,7 @@ function BtopPanel() {
             </span>
             {(connectionState === "disconnected" ||
               connectionState === "exited" ||
+              connectionState === "unavailable" ||
               connectionState === "error") && (
               <Button
                 size="sm"
@@ -300,6 +314,11 @@ function BtopPanel() {
               {connectionState === "unavailable" && (
                 <div className="text-xs text-muted-foreground">
                   {t("advanced.unavailableBody")}
+                  {unavailableDetail ? (
+                    <span className="mt-2 block font-mono text-[10px] leading-4">
+                      {unavailableDetail}
+                    </span>
+                  ) : null}
                 </div>
               )}
             </div>
