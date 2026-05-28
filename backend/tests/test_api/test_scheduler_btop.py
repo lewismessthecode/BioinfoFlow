@@ -101,7 +101,12 @@ def test_ws_sends_unavailable_message_when_btop_missing() -> None:
     and renders install instructions instead of a generic error.
     """
     client = TestClient(app)
-    with patch("app.services.btop_service.shutil.which", return_value=None):
+    with (
+        patch.dict("app.services.btop_service.os.environ", {"BTOP_BIN": ""}),
+        patch("app.services.btop_service.shutil.which", return_value=None),
+        patch("app.services.btop_service.os.path.exists", return_value=False),
+        patch("app.services.btop_service.os.access", return_value=False),
+    ):
         with client.websocket_connect("/api/v1/scheduler/btop/ws") as ws:
             # Backend waits 0.5 s for an initial resize; send one so it
             # proceeds to the spawn step quickly instead of timing out.
@@ -110,7 +115,16 @@ def test_ws_sends_unavailable_message_when_btop_missing() -> None:
             assert message == {
                 "type": "error",
                 "code": "btop_unavailable",
-                "message": "btop binary not found: btop",
+                "message": (
+                    "btop not found. Attempted: /opt/homebrew/bin/btop, "
+                    "/usr/local/bin/btop, /usr/bin/btop, /bin/btop"
+                ),
+                "attempted_paths": [
+                    "/opt/homebrew/bin/btop",
+                    "/usr/local/bin/btop",
+                    "/usr/bin/btop",
+                    "/bin/btop",
+                ],
             }
             # Server closes the socket immediately after the error.
             with pytest.raises(Exception):
