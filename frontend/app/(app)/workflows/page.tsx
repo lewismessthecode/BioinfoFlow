@@ -26,6 +26,7 @@ import { ProjectGroupCard } from "./components/project-group-card"
 import { HubWorkflowsTable, ProjectWorkflowsTable } from "./components/workflow-table-views"
 import { useWorkflowActions } from "./components/use-workflow-actions"
 import { buildHubWorkflowGroups } from "@/lib/workflow-groups"
+import { celebrateOnce } from "@/lib/celebrations"
 
 const WorkflowRegisterDialog = dynamic(
   () => import("./components/workflow-register-dialog").then((m) => ({ default: m.WorkflowRegisterDialog })),
@@ -207,7 +208,14 @@ export default function WorkflowsPage() {
               <WorkflowRegisterDialog
                 open={registerOpen}
                 onOpenChange={setRegisterOpen}
-                onRegistered={(wf) => setHubWorkflows((prev) => [wf, ...prev])}
+                onRegistered={(wf) =>
+                  setHubWorkflows((prev) => {
+                    if (prev.length === 0) {
+                      celebrateOnce("first-workflow-registered")
+                    }
+                    return [wf, ...prev]
+                  })
+                }
               />
             </>
           )}

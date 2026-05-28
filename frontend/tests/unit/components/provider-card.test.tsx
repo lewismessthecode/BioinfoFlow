@@ -7,9 +7,11 @@ import type { ProviderField } from "@/components/bioinfoflow/settings/provider-c
 const {
   toastSuccessMock,
   toastErrorMock,
+  celebrateOnceMock,
 } = vi.hoisted(() => ({
   toastSuccessMock: vi.fn(),
   toastErrorMock: vi.fn(),
+  celebrateOnceMock: vi.fn(),
 }))
 
 vi.mock("next-intl", () => ({
@@ -17,6 +19,7 @@ vi.mock("next-intl", () => ({
     const labels: Record<string, string> = {
       keySaved: "API key saved",
       keyCleared: "API key cleared",
+      clearKey: "Clear API Key",
       testSuccess: "Connection succeeded",
       testFailed: "Connection failed",
       "status.connected": "Connected",
@@ -39,6 +42,10 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
   ProviderIcon: ({ provider }: { provider: string }) => <span>{provider}</span>,
+}))
+
+vi.mock("@/lib/celebrations", () => ({
+  celebrateOnce: (...args: unknown[]) => celebrateOnceMock(...args),
 }))
 
 import { ProviderCard } from "@/components/bioinfoflow/settings/provider-card"
@@ -92,6 +99,7 @@ describe("ProviderCard", () => {
   beforeEach(() => {
     toastSuccessMock.mockReset()
     toastErrorMock.mockReset()
+    celebrateOnceMock.mockReset()
   })
 
   it("persists edited non-secret fields on blur", async () => {
@@ -145,6 +153,79 @@ describe("ProviderCard", () => {
     expect(badge).toHaveClass("bg-success-muted")
     expect(badge).toHaveClass("text-success")
     expect(badge).not.toHaveClass("bg-primary")
+  })
+
+  it("celebrates only the first successful API key save", async () => {
+    const user = userEvent.setup()
+    const emptyKeyFields: ProviderField[] = [
+      {
+        name: "api_key",
+        label: "API Key",
+        value: "",
+        placeholder: "Paste your key",
+        secret: true,
+      },
+    ]
+    const { onUpdateField } = renderCard({ fields: emptyKeyFields, isConfigured: false })
+
+    const apiKeyInput = screen.getByLabelText("OpenAI API Key")
+    await user.click(apiKeyInput)
+    await user.type(apiKeyInput, "sk-new")
+    fireEvent.blur(apiKeyInput)
+
+    await waitFor(() => {
+      expect(onUpdateField).toHaveBeenCalledWith("api_key", "sk-new")
+    })
+    expect(toastSuccessMock).toHaveBeenCalledWith("API key saved")
+    expect(celebrateOnceMock).toHaveBeenCalledWith("provider-api-key-saved")
+  })
+
+  it("does not celebrate replacing or clearing an existing API key", async () => {
+    const user = userEvent.setup()
+    const { onUpdateField } = renderCard()
+
+    const apiKeyInput = screen.getByLabelText("OpenAI API Key")
+    await user.click(apiKeyInput)
+    await user.type(apiKeyInput, "sk-replacement")
+    fireEvent.blur(apiKeyInput)
+
+    await waitFor(() => {
+      expect(onUpdateField).toHaveBeenCalledWith("api_key", "sk-replacement")
+    })
+    expect(celebrateOnceMock).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTitle("Clear API Key"))
+
+    await waitFor(() => {
+      expect(onUpdateField).toHaveBeenCalledWith("api_key", "")
+    })
+    expect(celebrateOnceMock).not.toHaveBeenCalled()
+  })
+
+  it("does not celebrate when an API key save fails", async () => {
+    const user = userEvent.setup()
+    const emptyKeyFields: ProviderField[] = [
+      {
+        name: "api_key",
+        label: "API Key",
+        value: "",
+        placeholder: "Paste your key",
+        secret: true,
+      },
+    ]
+    const onUpdateField = vi.fn().mockRejectedValue(new Error("save failed"))
+
+    renderCard({ fields: emptyKeyFields, isConfigured: false, onUpdateField })
+
+    const apiKeyInput = screen.getByLabelText("OpenAI API Key")
+    await user.click(apiKeyInput)
+    await user.type(apiKeyInput, "sk-new")
+    fireEvent.blur(apiKeyInput)
+
+    await waitFor(() => {
+      expect(onUpdateField).toHaveBeenCalledWith("api_key", "sk-new")
+    })
+    expect(celebrateOnceMock).not.toHaveBeenCalled()
   })
 
   it("surfaces both successful and failed connection tests on the real card control", async () => {

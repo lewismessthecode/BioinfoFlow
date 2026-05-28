@@ -120,7 +120,7 @@ export default function DashboardPage() {
           </Alert>
         )}
 
-        <ReadinessCenter readiness={readiness} />
+        <ReadinessCenter readiness={readiness} onRefresh={fetchData} />
 
         <motion.div
           initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}

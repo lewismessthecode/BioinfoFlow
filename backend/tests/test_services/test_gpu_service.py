@@ -8,7 +8,9 @@ from app.services.gpu_service import GpuInfo, GpuService
 
 
 class FakeProcess:
-    def __init__(self, *, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0):
+    def __init__(
+        self, *, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0
+    ):
         self._stdout = stdout
         self._stderr = stderr
         self.returncode = returncode
@@ -48,7 +50,33 @@ async def test_get_status_returns_apple_silicon_when_nvidia_is_missing() -> None
 
 
 @pytest.mark.asyncio
-async def test_get_status_marks_parabricks_ready_when_gpu_and_runtime_are_available() -> None:
+async def test_get_status_reports_nvidia_runtime_when_nvidia_smi_is_missing() -> None:
+    service = GpuService()
+    service._nvidia_smi = None
+
+    async def fake_detect_apple_silicon() -> None:
+        return None
+
+    async def fake_check_docker_nvidia() -> bool:
+        return True
+
+    service._detect_apple_silicon = fake_detect_apple_silicon  # type: ignore[method-assign]
+    service._check_docker_nvidia = fake_check_docker_nvidia  # type: ignore[method-assign]
+
+    status = await service.get_status()
+
+    assert status.available is False
+    assert status.nvidia_smi_found is False
+    assert status.docker_nvidia_runtime is True
+    assert status.gpus == []
+    assert "NVIDIA container runtime is configured" in status.recommendation
+    assert "nvidia-smi" in status.recommendation
+
+
+@pytest.mark.asyncio
+async def test_get_status_marks_parabricks_ready_when_gpu_and_runtime_are_available() -> (
+    None
+):
     service = GpuService()
     service._nvidia_smi = "nvidia-smi"
 
@@ -82,7 +110,9 @@ async def test_get_status_marks_parabricks_ready_when_gpu_and_runtime_are_availa
 
 
 @pytest.mark.asyncio
-async def test_get_gpu_metrics_parses_na_fields_without_crashing(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_gpu_metrics_parses_na_fields_without_crashing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     service = GpuService()
     service._nvidia_smi = "nvidia-smi"
 

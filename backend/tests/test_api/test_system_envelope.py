@@ -104,6 +104,53 @@ async def test_readiness_returns_blocking_checks(async_client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_readiness_describes_visible_nvidia_runtime_without_claiming_no_gpu(
+    async_client,
+    monkeypatch,
+):
+    class MockDockerService:
+        async def is_available(self):
+            return True
+
+        async def check_nvidia_runtime(self):
+            return True
+
+        async def get_parabricks_image(self):
+            return None
+
+    class MockGpuService:
+        async def get_status(self):
+            return type(
+                "GpuStatus",
+                (),
+                {
+                    "available": False,
+                    "nvidia_smi_found": False,
+                    "docker_nvidia_runtime": True,
+                    "gpus": [],
+                    "parabricks_compatible": False,
+                    "recommendation": "NVIDIA container runtime is configured, but nvidia-smi is not available to the backend process.",
+                    "error": "nvidia-smi not found",
+                },
+            )()
+
+    monkeypatch.setattr("app.api.v1.system.DockerService", MockDockerService)
+    monkeypatch.setattr("app.api.v1.system.get_gpu_service", lambda: MockGpuService())
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+
+    resp = await async_client.get("/api/v1/system/readiness")
+    assert resp.status_code == 200
+
+    checks = {check["id"]: check for check in resp.json()["data"]["checks"]}
+    gpu_check = checks["gpu"]
+
+    assert gpu_check["status"] == "warn"
+    assert "No GPU detected" not in gpu_check["detail"]
+    assert "NVIDIA" in gpu_check["detail"]
+    assert "nvidia-smi" in gpu_check["hint"]
+
+
+@pytest.mark.asyncio
 async def test_readiness_accepts_saved_user_provider_credentials(
     async_client,
     db_session,

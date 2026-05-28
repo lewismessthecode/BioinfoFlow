@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { celebrateOnce } from "@/lib/celebrations"
 
 // ── API key portal URLs ────────────────────────────────────────────
 const PROVIDER_KEY_URLS: Record<string, string> = {
@@ -75,6 +76,8 @@ export function ProviderCard({
   const saveField = async (field: ProviderField, value: string) => {
     setSavingField(field.name)
     try {
+      const previousValue = field.value.trim()
+      const nextValue = value.trim()
       await onUpdateField(field.name, value)
       setTestResult(null)
       toast.success(
@@ -86,6 +89,13 @@ export function ProviderCard({
             ? t("keyCleared")
             : t("settingCleared", { field: field.label })
       )
+      if (
+        field.name === "api_key" &&
+        previousValue.length === 0 &&
+        nextValue.length > 0
+      ) {
+        celebrateOnce("provider-api-key-saved")
+      }
     } catch {
       // Error already toasted by the hook.
     } finally {

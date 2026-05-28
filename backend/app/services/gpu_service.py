@@ -11,6 +11,7 @@ import platform
 import re
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from app.utils.logging import get_logger
@@ -47,28 +48,55 @@ class GpuStatus:
 
 # Minimum VRAM required for Parabricks low-memory mode (16GB)
 PARABRICKS_MIN_VRAM_MB = 16000
+NVIDIA_SMI_PATHS = (
+    "/usr/bin/nvidia-smi",
+    "/usr/local/bin/nvidia-smi",
+    "/usr/local/nvidia/bin/nvidia-smi",
+    "/usr/local/cuda/bin/nvidia-smi",
+)
+
+
+def _find_nvidia_smi() -> str | None:
+    if path := shutil.which("nvidia-smi"):
+        return path
+    for path in NVIDIA_SMI_PATHS:
+        if Path(path).exists():
+            return path
+    return None
 
 
 class GpuService:
     """Service for detecting and checking GPU capabilities."""
 
     def __init__(self) -> None:
-        self._nvidia_smi = shutil.which("nvidia-smi")
+        self._nvidia_smi = _find_nvidia_smi()
 
     async def get_status(self) -> GpuStatus:
         """Get comprehensive GPU status for the system."""
         if not self._nvidia_smi:
+            docker_nvidia = await self._check_docker_nvidia()
             # Check for Apple Silicon on macOS
             apple_gpu = await self._detect_apple_silicon()
             if apple_gpu:
                 return GpuStatus(
                     available=True,
                     nvidia_smi_found=False,
-                    docker_nvidia_runtime=False,
+                    docker_nvidia_runtime=docker_nvidia,
                     gpus=[apple_gpu],
                     parabricks_compatible=False,
                     recommendation="Apple Silicon detected. Parabricks requires NVIDIA GPU with 16GB+ VRAM for WGS analysis.",
                     error=None,
+                )
+
+            if docker_nvidia:
+                return GpuStatus(
+                    available=False,
+                    nvidia_smi_found=False,
+                    docker_nvidia_runtime=True,
+                    gpus=[],
+                    parabricks_compatible=False,
+                    recommendation="NVIDIA container runtime is configured, but nvidia-smi is not available to the backend process. Check the backend container PATH and NVIDIA driver visibility.",
+                    error="nvidia-smi not found",
                 )
 
             return GpuStatus(

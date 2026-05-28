@@ -50,20 +50,39 @@ export type SystemHealth = {
 
 export type GpuInfo = {
   available: boolean;
+  nvidia_smi_found?: boolean;
+  docker_nvidia_runtime?: boolean;
   parabricks_compatible: boolean;
+  recommendation?: string | null;
+  error?: string | null;
   gpus: Array<{
     index: number;
     name: string;
     memory_total_mb: number;
     memory_free_mb: number;
+    driver_version?: string | null;
+    cuda_version?: string | null;
+    compute_capability?: string | null;
     gpu_type?: string;
   }>;
 };
 
+export type ReadinessCheckId =
+  | "backend"
+  | "provider_key"
+  | "docker"
+  | "scheduler"
+  | "gpu"
+  | "project"
+  | "workflow_registry"
+  | "workflow_binding";
+
+export type ReadinessCheckStatus = "pass" | "fail" | "warn" | "skip";
+
 export type ReadinessCheck = {
-  id: string;
+  id: ReadinessCheckId | string;
   label: string;
-  status: "pass" | "fail" | "warn" | "skip";
+  status: ReadinessCheckStatus;
   severity: "blocking" | "optional" | "info";
   detail: string;
   hint?: string | null;

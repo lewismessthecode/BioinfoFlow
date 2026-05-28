@@ -33,8 +33,12 @@ export function WorkspaceShellProvider({ children }: { children: React.ReactNode
   )
 }
 
+export function useOptionalWorkspaceShell() {
+  return useContext(WorkspaceShellContext)
+}
+
 export function useWorkspaceShell() {
-  const context = useContext(WorkspaceShellContext)
+  const context = useOptionalWorkspaceShell()
   if (!context) {
     throw new Error("useWorkspaceShell must be used within WorkspaceShellProvider")
   }

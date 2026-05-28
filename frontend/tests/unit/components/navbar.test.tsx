@@ -13,6 +13,8 @@ const {
   toastInfoMock,
   toastSuccessMock,
   toastErrorMock,
+  celebratePreviewMock,
+  setCelebrationsEnabledMock,
 } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   replaceMock: vi.fn(),
@@ -23,7 +25,12 @@ const {
   toastInfoMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   toastErrorMock: vi.fn(),
+  celebratePreviewMock: vi.fn(),
+  setCelebrationsEnabledMock: vi.fn(),
 }))
+
+let celebrationsEnabledState = true
+const celebrationSubscribers = new Set<(enabled: boolean) => void>()
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -66,6 +73,13 @@ vi.mock("next-intl", () => ({
         toggleTheme: "Toggle theme",
         openMenu: "Open menu",
         hidePanel: "Hide panel",
+        celebrationsOn: "Celebrations on",
+        celebrationsOff: "Celebrations off",
+      },
+      celebrations: {
+        title: "Celebrations",
+        toggle: "Enable celebrations",
+        preview: "Preview confetti",
       },
     }
     return copy[namespace]?.[key] ?? key
@@ -80,6 +94,24 @@ vi.mock("@/lib/auth-client", () => ({
 
 vi.mock("@/lib/window-utils", () => ({
   openInNewTab: (...args: unknown[]) => openInNewTabMock(...args),
+}))
+
+vi.mock("@/lib/celebrations", () => ({
+  celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
+  isCelebrationsEnabled: () => celebrationsEnabledState,
+  setCelebrationsEnabled: (enabled: boolean) => {
+    celebrationsEnabledState = enabled
+    setCelebrationsEnabledMock(enabled)
+    for (const listener of celebrationSubscribers) {
+      listener(enabled)
+    }
+  },
+  subscribeToCelebrationsPreference: (listener: (enabled: boolean) => void) => {
+    celebrationSubscribers.add(listener)
+    return () => {
+      celebrationSubscribers.delete(listener)
+    }
+  },
 }))
 
 vi.mock("sonner", () => ({
@@ -110,6 +142,23 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuSeparator: () => <hr />,
+  DropdownMenuCheckboxItem: ({
+    children,
+    checked,
+    onCheckedChange,
+  }: {
+    children: React.ReactNode
+    checked?: boolean
+    onCheckedChange?: (checked: boolean) => void
+  }) => (
+    <button
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      onClick={() => onCheckedChange?.(!checked)}
+    >
+      {children}
+    </button>
+  ),
   DropdownMenuItem: ({
     children,
     onClick,
@@ -137,6 +186,8 @@ const AUTH_VIEWER: ViewerIdentity = {
 describe("Navbar", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    celebrationsEnabledState = true
+    celebrationSubscribers.clear()
   })
 
   it("opens the docs link from the help action", async () => {
@@ -181,5 +232,26 @@ describe("Navbar", () => {
     await user.click(screen.getByRole("button", { name: "Open sidebar" }))
 
     expect(onSidebarToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it("toggles celebrations from the top-right control and updates the trigger state", async () => {
+    const user = userEvent.setup()
+    render(<Navbar viewer={AUTH_VIEWER} />)
+
+    expect(screen.getByRole("button", { name: "Celebrations on" })).toBeInTheDocument()
+
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Enable celebrations" }))
+
+    expect(setCelebrationsEnabledMock).toHaveBeenCalledWith(false)
+    expect(screen.getByRole("button", { name: "Celebrations off" })).toBeInTheDocument()
+  })
+
+  it("fires preview confetti from the top-right control", async () => {
+    const user = userEvent.setup()
+    render(<Navbar viewer={AUTH_VIEWER} />)
+
+    await user.click(screen.getByRole("button", { name: "Preview confetti" }))
+
+    expect(celebratePreviewMock).toHaveBeenCalledTimes(1)
   })
 })
