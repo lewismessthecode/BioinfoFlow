@@ -91,6 +91,11 @@ function launchCanvasConfetti() {
   const maxFrames = 80
 
   function draw() {
+    if (typeof window === "undefined") {
+      canvas.remove()
+      return
+    }
+
     frame += 1
     context.clearRect(0, 0, window.innerWidth, window.innerHeight)
 

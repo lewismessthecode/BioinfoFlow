@@ -69,4 +69,17 @@ describe("celebrations", () => {
       "1",
     )
   })
+
+  it("stops safely when the animation frame runs after window teardown", () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    }))
+
+    celebrateOnce("first-workflow")
+    vi.stubGlobal("window", undefined)
+
+    expect(() => frames[0]?.(0)).not.toThrow()
+  })
 })
