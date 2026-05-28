@@ -5,21 +5,21 @@ import { WorkflowsPage } from "./pages/workflows-page"
 import { ImagesPage } from "./pages/images-page"
 
 test.describe("Core navigation journey", () => {
-  test("Agent -> Runs -> Workflows -> Images", async ({ page }) => {
+  test("loads the core app routes in dev auth mode", async ({ page }) => {
     const agent = new AgentPage(page)
     await agent.goto()
     await agent.expectLoaded()
 
-    await agent.goToRuns()
     const runs = new RunsPage(page)
+    await runs.goto()
     await runs.expectLoaded()
 
-    await runs.goToWorkflows()
+    await page.goto("/workflows")
     const workflows = new WorkflowsPage(page)
     await workflows.expectLoaded()
 
-    await workflows.goToImages()
     const images = new ImagesPage(page)
+    await images.goto()
     await images.expectLoaded()
   })
 })

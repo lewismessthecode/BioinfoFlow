@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.session import AuthUser
@@ -38,11 +39,20 @@ class WorkspaceService:
             user_id=user.id,
         )
         if membership is None:
-            await self.membership_repo.create(
-                workspace_id=user.workspace_id,
-                user_id=user.id,
-                role=user.role,
-            )
-            return
+            try:
+                await self.membership_repo.create(
+                    workspace_id=user.workspace_id,
+                    user_id=user.id,
+                    role=user.role,
+                )
+                return
+            except IntegrityError:
+                await self.session.rollback()
+                membership = await self.membership_repo.get_for_user(
+                    workspace_id=user.workspace_id,
+                    user_id=user.id,
+                )
+                if membership is None:
+                    raise
         if membership.role != user.role:
             await self.membership_repo.update(membership, role=user.role)

@@ -8,6 +8,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.session import AuthUser
 from app.services.workspace_service import WorkspaceService
@@ -158,3 +159,39 @@ async def test_ensure_membership_noop_when_role_unchanged():
 
     member_repo.update.assert_not_called()
     member_repo.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ensure_membership_recovers_from_duplicate_create_race():
+    """When a concurrent request creates the membership first, the service should recover."""
+    mock_session = MagicMock()
+    mock_session.rollback = AsyncMock()
+    user = _make_auth_user(id="user-race", role="member")
+
+    existing_membership = MagicMock()
+    existing_membership.role = "member"
+
+    with (
+        patch("app.services.workspace_service.WorkspaceRepository") as MockWsRepo,
+        patch("app.services.workspace_service.WorkspaceMembershipRepository") as MockMemberRepo,
+    ):
+        ws_repo = MockWsRepo.return_value
+        ws_repo.get_default = AsyncMock(return_value=MagicMock())
+
+        member_repo = MockMemberRepo.return_value
+        member_repo.get_for_user = AsyncMock(side_effect=[None, existing_membership])
+        member_repo.create = AsyncMock(
+            side_effect=IntegrityError("insert", {}, Exception("duplicate"))
+        )
+        member_repo.update = AsyncMock()
+
+        service = WorkspaceService(mock_session)
+        await service.ensure_membership(user)
+
+    member_repo.create.assert_called_once_with(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="user-race",
+        role="member",
+    )
+    mock_session.rollback.assert_awaited_once()
+    member_repo.update.assert_not_called()
