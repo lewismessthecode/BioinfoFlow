@@ -328,8 +328,11 @@
     "dockerUnavailableDescription": "工作流执行需要 Docker。请启动 Docker 守护进程以运行流水线。",
     "readiness": {
       "title": "首次运行准备",
-      "description": "先处理下面的阻塞检查，然后启动你的第一次分析。可选警告：{warnings} 项。",
+      "description": "先完成必需设置。可选警告只有在工作流需要时再处理即可。可选警告：{warnings} 项。",
       "blockedBadge": "{count} 个阻塞项",
+      "progress": "{completed}/{total} 项已就绪",
+      "blockers": "首次运行前必须完成",
+      "optional": "可选检查",
       "status": {
         "pass": "通过",
         "fail": "待修复",
@@ -1699,8 +1702,9 @@
       "connected": "已连接",
       "disconnected": "连接断开",
       "exited": "btop 已退出",
-      "unavailable": "服务端未安装 btop",
-      "unavailableBody": "请在服务器上安装 btop（例如 `brew install btop` 或 `apt install btop`），然后重新打开此面板。",
+      "unavailable": "后端服务没有找到 btop",
+      "unavailableBody": "请设置 BTOP_BIN，或确认启动服务时的 PATH 包含 btop，然后重新打开此面板。",
+      "attemptedPaths": "已检查：{paths}",
       "retry": "重新连接"
     },
     "legend": {

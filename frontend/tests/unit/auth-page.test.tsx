@@ -238,15 +238,15 @@ describe("AuthPage", () => {
     expect(screen.getByText("Sign in to continue")).toBeInTheDocument()
     expect(screen.getByTestId("email-sign-in-form")).toBeInTheDocument()
     expect(
-      screen.getByText("Use your local credentials to continue."),
-    ).toBeInTheDocument()
+      screen.queryByText("Use your local credentials to continue."),
+    ).not.toBeInTheDocument()
     expect(
-      screen.getByText("Private workstation, protected by password"),
-    ).toBeInTheDocument()
+      screen.queryByText("Private workstation, protected by password"),
+    ).not.toBeInTheDocument()
     expect(screen.queryByText("Shared bioinformatics operations")).not.toBeInTheDocument()
   })
 
-  it("renders a personal-mode auth page without the team preview panel", async () => {
+  it("renders personal mode with the same simplified login card", async () => {
     mockGetSession.mockResolvedValue(null)
     mockGetServerAuthConfig.mockReturnValue({
       mode: "personal",
@@ -260,6 +260,10 @@ describe("AuthPage", () => {
     render(page as React.ReactElement)
 
     expect(screen.getByText("Personal secure")).toBeInTheDocument()
+    expect(screen.getByTestId("email-sign-in-form")).toBeInTheDocument()
     expect(screen.queryByText("Team workspace")).not.toBeInTheDocument()
+    expect(
+      screen.queryByText("Private workstation, protected by password"),
+    ).not.toBeInTheDocument()
   })
 })

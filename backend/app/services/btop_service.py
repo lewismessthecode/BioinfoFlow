@@ -13,10 +13,23 @@ from dataclasses import dataclass, field
 
 
 DEFAULT_BTOP_ARGV: tuple[str, ...] = ("btop", "-p", "1")
+COMMON_BTOP_PATHS: tuple[str, ...] = (
+    "/opt/homebrew/bin/btop",
+    "/usr/local/bin/btop",
+    "/usr/bin/btop",
+    "/bin/btop",
+)
 
 
 class BtopUnavailableError(RuntimeError):
     """Raised when the btop binary is not on PATH."""
+
+    def __init__(self, binary: str, attempted_paths: list[str]) -> None:
+        self.binary = binary
+        self.attempted_paths = attempted_paths
+        super().__init__(
+            f"{binary} not found. Attempted: {', '.join(attempted_paths)}"
+        )
 
 
 @dataclass
@@ -42,13 +55,11 @@ async def spawn_btop_session(
     lifecycle and must call :func:`terminate_session` when done.
     """
     command = tuple(argv) if argv else DEFAULT_BTOP_ARGV
-    binary = command[0]
-    if shutil.which(binary) is None:
-        raise BtopUnavailableError(binary)
+    resolved_command, _attempted = _resolve_btop_command(command)
 
     session = await asyncio.to_thread(
         _spawn_sync,
-        command=list(command),
+        command=list(resolved_command),
         env=_build_env(env),
         cols=cols,
         rows=rows,
@@ -117,6 +128,41 @@ def _build_env(override: dict[str, str] | None) -> dict[str, str]:
     if override:
         env.update(override)
     return env
+
+
+def _resolve_btop_command(command: tuple[str, ...]) -> tuple[tuple[str, ...], list[str]]:
+    binary = command[0]
+    attempted: list[str] = []
+
+    def add_attempt(path: str | None) -> None:
+        if path and path not in attempted:
+            attempted.append(path)
+
+    def executable(path: str) -> bool:
+        return os.path.exists(path) and os.access(path, os.X_OK)
+
+    configured = os.getenv("BTOP_BIN", "").strip()
+    if configured:
+        add_attempt(configured)
+        if executable(configured):
+            return (configured, *command[1:]), attempted
+
+    found = shutil.which(binary)
+    add_attempt(found)
+    if found:
+        return (found, *command[1:]), attempted
+
+    if os.path.sep in binary:
+        add_attempt(binary)
+        if executable(binary):
+            return command, attempted
+
+    for path in COMMON_BTOP_PATHS:
+        add_attempt(path)
+        if executable(path):
+            return (path, *command[1:]), attempted
+
+    raise BtopUnavailableError(binary, attempted)
 
 
 def _set_window_size(master_fd: int, packed: bytes) -> None:

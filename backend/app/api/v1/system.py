@@ -369,6 +369,7 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
                 "docker_available": docker_available,
                 "nvidia_runtime": nvidia_runtime,
                 "gpu_available": getattr(gpu_status, "available", False),
+                "provider_key_configured": provider_ready,
                 "projects": project_count or 0,
                 "workflows": workflow_count or 0,
                 "workflow_bindings": binding_count or 0,

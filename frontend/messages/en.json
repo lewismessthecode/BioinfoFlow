@@ -328,8 +328,11 @@
     "dockerUnavailableDescription": "Workflow execution requires Docker. Please start the Docker daemon to run pipelines.",
     "readiness": {
       "title": "First-run readiness",
-      "description": "Resolve the blocking checks below, then launch your first analysis. Optional warnings: {warnings}.",
+      "description": "Finish the required setup first. Optional warnings can wait unless your workflow needs them. Optional warnings: {warnings}.",
       "blockedBadge": "{count} blocker(s)",
+      "progress": "{completed} of {total} checks ready",
+      "blockers": "Required before the first run",
+      "optional": "Optional checks",
       "status": {
         "pass": "Pass",
         "fail": "Fix",
@@ -1699,8 +1702,9 @@
       "connected": "Connected",
       "disconnected": "Disconnected",
       "exited": "btop exited",
-      "unavailable": "btop is not installed on the server",
-      "unavailableBody": "Install btop on the host (e.g. `brew install btop` or `apt install btop`) and reopen this drawer.",
+      "unavailable": "btop was not found by the backend service",
+      "unavailableBody": "Set BTOP_BIN or make sure the service PATH includes btop, then reopen this drawer.",
+      "attemptedPaths": "Checked: {paths}",
       "retry": "Reconnect"
     },
     "legend": {

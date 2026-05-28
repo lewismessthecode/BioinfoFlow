@@ -9,9 +9,11 @@ import subprocess
 import pytest
 
 from app.services.btop_service import (
+    BtopUnavailableError,
     BtopSession,
     _build_env,
     _read_output,
+    _resolve_btop_command,
     resize,
     send_input,
     spawn_btop_session,
@@ -68,7 +70,7 @@ async def test_spawn_btop_session_passes_command_env_and_terminal_size(monkeypat
     )
 
     assert spawned is session
-    assert captured["command"] == ["btop", "--utf-force"]
+    assert captured["command"] == ["/usr/bin/btop", "--utf-force"]
     assert captured["cols"] == 160
     assert captured["rows"] == 48
     assert isinstance(captured["env"], dict)
@@ -87,6 +89,56 @@ def test_build_env_sets_terminal_defaults_and_preserves_overrides(monkeypatch: p
     assert env["LANG"] == "C.UTF-8"
     assert env["LC_ALL"] == "zh_CN.UTF-8"
     assert env["CUSTOM"] == "enabled"
+
+
+def test_resolve_btop_command_prefers_explicit_env_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BTOP_BIN", "/srv/tools/btop")
+    monkeypatch.setattr(
+        "app.services.btop_service.os.path.exists",
+        lambda path: path == "/srv/tools/btop",
+    )
+    monkeypatch.setattr(
+        "app.services.btop_service.os.access",
+        lambda path, mode: path == "/srv/tools/btop",
+    )
+    monkeypatch.setattr("app.services.btop_service.shutil.which", lambda binary: None)
+
+    resolved, attempted = _resolve_btop_command(("btop", "-p", "1"))
+
+    assert resolved == ("/srv/tools/btop", "-p", "1")
+    assert attempted[0] == "/srv/tools/btop"
+
+
+def test_resolve_btop_command_checks_common_install_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BTOP_BIN", raising=False)
+    monkeypatch.setattr("app.services.btop_service.shutil.which", lambda binary: None)
+    monkeypatch.setattr(
+        "app.services.btop_service.os.path.exists",
+        lambda path: path == "/opt/homebrew/bin/btop",
+    )
+    monkeypatch.setattr(
+        "app.services.btop_service.os.access",
+        lambda path, mode: path == "/opt/homebrew/bin/btop",
+    )
+
+    resolved, attempted = _resolve_btop_command(("btop", "-p", "1"))
+
+    assert resolved == ("/opt/homebrew/bin/btop", "-p", "1")
+    assert "/opt/homebrew/bin/btop" in attempted
+
+
+def test_resolve_btop_command_reports_attempted_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BTOP_BIN", "/missing/btop")
+    monkeypatch.setattr("app.services.btop_service.shutil.which", lambda binary: None)
+    monkeypatch.setattr("app.services.btop_service.os.path.exists", lambda path: False)
+    monkeypatch.setattr("app.services.btop_service.os.access", lambda path, mode: False)
+
+    with pytest.raises(BtopUnavailableError) as exc:
+        _resolve_btop_command(("btop", "-p", "1"))
+
+    assert exc.value.binary == "btop"
+    assert "/missing/btop" in exc.value.attempted_paths
+    assert "/usr/local/bin/btop" in exc.value.attempted_paths
 
 
 @pytest.mark.asyncio

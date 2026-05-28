@@ -206,7 +206,8 @@ async def btop_socket(
             {
                 "type": "error",
                 "code": "btop_unavailable",
-                "message": f"btop binary not found: {exc}",
+                "message": str(exc),
+                "attempted_paths": exc.attempted_paths,
             }
         )
         await websocket.close(code=4404)
