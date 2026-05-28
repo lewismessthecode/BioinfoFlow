@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - When writing plans or documentation, always create actual files on disk — never output plan content only in chat/plan mode, e.g. `docs/plans/plan-cli-v1.md`.
 - Always verify which branch/worktree you are on before making changes. Run `git branch --show-current` and `git worktree list` before applying fixes.
 - After implementing changes, always run the test suite before reporting completion. Fix any failures before asking for review.
+- Use Conventional Commits for all git commit messages and PR titles: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`. Format: `<type>: <imperative summary>`.
+- Treat the PR title as the canonical squash-merge commit message. When creating or updating a PR, always normalize the title to the Conventional Commits format unless the user explicitly asks otherwise.
+- Avoid vague git/PR titles such as `update`, `misc fixes`, `wip`, or `tweak`; choose the most specific valid type and a concise summary of the user-visible change.
 
 ## Commands
 
