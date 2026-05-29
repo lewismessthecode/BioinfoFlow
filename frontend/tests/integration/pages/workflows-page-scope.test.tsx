@@ -5,7 +5,7 @@ import WorkflowsPage from "@/app/(app)/workflows/page"
 import { apiRequest } from "@/lib/api"
 import { renderAppPage } from "@/tests/app-test-utils"
 
-const { pushMock, replaceMock, toastErrorMock, toastSuccessMock, toastInfoMock, toastWarningMock } =
+const { pushMock, replaceMock, toastErrorMock, toastSuccessMock, toastInfoMock, toastWarningMock, celebrateOnceMock } =
   vi.hoisted(() => ({
     pushMock: vi.fn(),
     replaceMock: vi.fn(),
@@ -13,6 +13,7 @@ const { pushMock, replaceMock, toastErrorMock, toastSuccessMock, toastInfoMock, 
     toastSuccessMock: vi.fn(),
     toastInfoMock: vi.fn(),
     toastWarningMock: vi.fn(),
+    celebrateOnceMock: vi.fn(),
   }))
 
 const translationMocks = new Map<
@@ -74,6 +75,10 @@ vi.mock("@/lib/api", async () => {
     apiRequest: vi.fn(),
   }
 })
+
+vi.mock("@/lib/celebrations", () => ({
+  celebrateOnce: (...args: unknown[]) => celebrateOnceMock(...args),
+}))
 
 vi.mock("@/app/(app)/workflows/components/workflows-skeleton", () => ({
   WorkflowsGridSkeleton: () => <div data-testid="workflows-grid-skeleton" />,
@@ -199,7 +204,15 @@ vi.mock("@/app/(app)/workflows/components/workflow-register-dialog", () => ({
   }: {
     open: boolean
     onOpenChange: (open: boolean) => void
-    onRegistered: (workflow: { id: string; name: string }) => void
+    onRegistered: (workflow: {
+      id: string
+      name: string
+      description: string
+      source: string
+      engine: string
+      version: string
+      updated_at: string
+    }) => void
   }) =>
     open ? (
       <div data-testid="workflow-register-dialog">
@@ -208,6 +221,11 @@ vi.mock("@/app/(app)/workflows/components/workflow-register-dialog", () => ({
             onRegistered({
               id: "new-wf-id",
               name: "test-workflow",
+              description: "New workflow",
+              source: "local",
+              engine: "wdl",
+              version: "1.0.0",
+              updated_at: "2026-05-28T00:00:00Z",
             })
           }
         >
@@ -247,6 +265,7 @@ describe("WorkflowsPage - scope, search, and views", () => {
     toastSuccessMock.mockReset()
     toastInfoMock.mockReset()
     toastWarningMock.mockReset()
+    celebrateOnceMock.mockReset()
     searchParamsState.scope = null
   })
 
@@ -465,6 +484,43 @@ describe("WorkflowsPage - scope, search, and views", () => {
     await waitFor(() => {
       expect(screen.getByText("test-workflow")).toBeInTheDocument()
     })
+    expect(celebrateOnceMock).toHaveBeenCalledWith("first-workflow-registered")
+  })
+
+  it("does not celebrate workflow registration when the hub already has workflows", async () => {
+    searchParamsState.scope = "hub"
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/workflows" && !options?.method) {
+        return {
+          data: [
+            {
+              id: "existing-wf",
+              name: "existing-workflow",
+              description: "Already registered",
+              source: "local",
+              engine: "wdl",
+              version: "1.0.0",
+              updated_at: "2026-03-16T00:00:00Z",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<WorkflowsPage />, {
+      projectContext: { activeProjectId: "" },
+    })
+
+    expect(await screen.findByText("existing-workflow")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "workflows.register" }))
+    fireEvent.click(screen.getByText("submit register"))
+
+    await waitFor(() => {
+      expect(screen.getByText("test-workflow")).toBeInTheDocument()
+    })
+    expect(celebrateOnceMock).not.toHaveBeenCalled()
   })
 
   it("closes the register dialog via onOpenChange", async () => {

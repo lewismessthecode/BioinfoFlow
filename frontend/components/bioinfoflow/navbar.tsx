@@ -1,6 +1,7 @@
 "use client"
 
-import { Moon, Sun, User, LogOut, HelpCircle, Command, Menu } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Command, HelpCircle, LogOut, Menu, Moon, PartyPopper, Sun, User } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { getNextAppearanceMode, useAppearance } from "@/lib/appearance/use-appearance"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -19,6 +21,12 @@ import { authClient } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
 import { buildAnonymousViewer } from "@/lib/auth-config"
 import { openInNewTab } from "@/lib/window-utils"
+import {
+  celebratePreview,
+  isCelebrationsEnabled,
+  setCelebrationsEnabled,
+  subscribeToCelebrationsPreference,
+} from "@/lib/celebrations"
 import { Breadcrumbs } from "./breadcrumbs"
 import { ConnectionStatus } from "./connection-status"
 import type { ConnectionState } from "@/hooks/use-events"
@@ -47,7 +55,15 @@ export function Navbar({
   const { mode, resolvedMode, setMode } = useAppearance()
   const tUserMenu = useTranslations("userMenu")
   const tAccessibility = useTranslations("accessibility")
+  const tCelebrations = useTranslations("celebrations")
   const currentViewer = viewer ?? buildAnonymousViewer()
+  const [celebrationsEnabled, setCelebrationsEnabledState] = useState(() =>
+    isCelebrationsEnabled(),
+  )
+
+  useEffect(() => {
+    return subscribeToCelebrationsPreference(setCelebrationsEnabledState)
+  }, [])
 
   const handleSignOut = async () => {
     if (!currentViewer.authEnabled) {
@@ -112,6 +128,50 @@ export function Navbar({
       <div className="flex items-center gap-1.5">
         {children}
         <LanguageSwitcher />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                actionButtonClassName,
+                celebrationsEnabled
+                  ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title={
+                celebrationsEnabled
+                  ? tAccessibility("celebrationsOn")
+                  : tAccessibility("celebrationsOff")
+              }
+            >
+              <PartyPopper className="h-4 w-4" />
+              <span className="sr-only">
+                {celebrationsEnabled
+                  ? tAccessibility("celebrationsOn")
+                  : tAccessibility("celebrationsOff")}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuLabel>{tCelebrations("title")}</DropdownMenuLabel>
+            <DropdownMenuCheckboxItem
+              checked={celebrationsEnabled}
+              onCheckedChange={(checked) => setCelebrationsEnabled(Boolean(checked))}
+            >
+              {tCelebrations("toggle")}
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuItem
+              onClick={() => {
+                celebratePreview()
+              }}
+              disabled={!celebrationsEnabled}
+            >
+              <PartyPopper className="h-4 w-4" />
+              {tCelebrations("preview")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           variant="ghost"
           size="icon"
