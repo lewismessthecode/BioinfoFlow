@@ -14,6 +14,7 @@ from app.services.image_service import (
     ImageService,
 )
 from app.utils.authorization import can_perform_destructive_business_action
+from app.utils.exceptions import AppError
 from app.utils.responses import error_response, success_response
 
 
@@ -95,6 +96,8 @@ async def pull_image(
             status_code=503,
             request=request,
         )
+    except AppError:
+        raise
     except Exception:  # noqa: BLE001
         return error_response(
             code="DOCKER_ERROR",
@@ -137,6 +140,8 @@ async def load_image_tarball(
             status_code=503,
             request=request,
         )
+    except AppError:
+        raise
     except Exception:  # noqa: BLE001
         return error_response(
             code="DOCKER_ERROR",
