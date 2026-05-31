@@ -28,6 +28,7 @@ interface ProjectListProps {
   onRenameProject: (project: Project, newName: string) => void
   onDuplicateProject: (project: Project) => void
   onDeleteProject: (projectId: string, projectName: string) => void
+  canDeleteWorkspaceResources?: boolean
   onOpenCreateDialog: () => void
   tSidebar: (key: string, values?: Record<string, string | number>) => string
   tCommon: (key: string) => string
@@ -54,6 +55,7 @@ export function ProjectList({
   onRenameProject,
   onDuplicateProject,
   onDeleteProject,
+  canDeleteWorkspaceResources = true,
   onOpenCreateDialog,
   tSidebar,
   tCommon,
@@ -119,6 +121,7 @@ export function ProjectList({
             onRenameProject={onRenameProject}
             onDuplicateProject={onDuplicateProject}
             onDeleteProject={onDeleteProject}
+            canDeleteWorkspaceResources={canDeleteWorkspaceResources}
             tSidebar={tSidebar}
             tCommon={tCommon}
           />
@@ -176,6 +179,7 @@ export function ProjectList({
                   onRename={onRenameConversation}
                   onTogglePin={onTogglePin}
                   onDelete={onDeleteConversation}
+                  canDelete={canDeleteWorkspaceResources}
                   tSidebar={tSidebar}
                   tCommon={tCommon}
                 />
@@ -220,6 +224,7 @@ export function ProjectList({
           onRenameProject={onRenameProject}
           onDuplicateProject={onDuplicateProject}
           onDeleteProject={onDeleteProject}
+          canDeleteWorkspaceResources={canDeleteWorkspaceResources}
           tSidebar={tSidebar}
           tCommon={tCommon}
         />

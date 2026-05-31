@@ -4,6 +4,12 @@ import { useCallback, useDeferredValue, useEffect, useRef, useState, type Change
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import { ApiError, apiRequest, getApiErrorMessage } from "@/lib/api"
+import { authClient } from "@/lib/auth-client"
+import {
+  canManageDestructiveBusinessActions,
+  clientAuthConfig,
+  resolveTeamRole,
+} from "@/lib/auth-config"
 import { formatSize } from "@/lib/format-utils"
 import type { DockerImage, ImageStatusMeta } from "@/lib/types"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
@@ -20,6 +26,12 @@ export function useImagesPage() {
   const tImages = useTranslations("images")
   const tCommon = useTranslations("common")
   const { activeProjectId } = useProjectContext()
+  const { data: session } = authClient.useSession()
+  const canDeleteImages = canManageDestructiveBusinessActions(
+    clientAuthConfig.mode,
+    session?.user ? resolveTeamRole(session.user) : "member",
+    clientAuthConfig.authEnabled,
+  )
   const [images, setImages] = useState<DockerImage[]>([])
   const [view, setView] = useState<ViewMode>("cards")
   const [search, setSearch] = useState("")
@@ -227,6 +239,10 @@ export function useImagesPage() {
   }, [tCommon])
 
   const handleDeleteLocal = useCallback((image: DockerImage) => {
+    if (!canDeleteImages) {
+      toast.error(tImages("errors.deleteForbidden"))
+      return
+    }
     toast.warning(tImages("toasts.deleteConfirmTitle", { name: image.name }), {
       description: tImages("toasts.deleteConfirmDescription", { size: formatSize(image.size_bytes) }),
       action: {
@@ -250,7 +266,7 @@ export function useImagesPage() {
         },
       },
     })
-  }, [tCommon, tImages])
+  }, [canDeleteImages, tCommon, tImages])
 
   const handleTarballFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     setTarballFile(event.target.files?.[0] ?? null)
@@ -332,6 +348,7 @@ export function useImagesPage() {
     handleCopyName,
     handleCopyPullCommand,
     handleDeleteLocal,
+    canDeleteImages,
     handleTarballFileChange,
   }
 }

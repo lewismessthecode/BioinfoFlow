@@ -13,12 +13,14 @@ from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.message_repo import MessageRepository
 from app.repositories.project_repo import ProjectRepository
 from app.runtime.events import publish_event
+from app.services.authorization_service import AuthorizationService
 from app.services.agent.agent_metadata import AgentMetadataMixin
 from app.services.agent.agent_streaming import AgentStreamingMixin
 from app.services.agent.conversation_manager import conversation_manager
 from app.services.agent.trace import AgentTraceRecorder
 from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.utils.logging import get_logger
+from app.utils.authorization import can_access_workspace_resource
 
 # Re-export so existing ``from agent_service import EVENT_MAP`` keeps working.
 from app.services.agent.agent_streaming import EVENT_MAP  # noqa: F401
@@ -30,6 +32,7 @@ class AgentService(AgentStreamingMixin, AgentMetadataMixin):
         self.project_repo = ProjectRepository(session)
         self.conversation_repo = ConversationRepository(session)
         self.message_repo = MessageRepository(session)
+        self.authorization = AuthorizationService(session)
         self.logger = get_logger(__name__)
         self._sequence_counter: int = 0
 
@@ -517,11 +520,17 @@ class AgentService(AgentStreamingMixin, AgentMetadataMixin):
         user_id: str,
         workspace_id: str | None = None,
         project_id: str | None = None,
+        user_role: str | None = None,
     ) -> None:
         conversation = await self._require_conversation(
             conversation_id,
             user_id=user_id,
             workspace_id=workspace_id,
+        )
+        await self.authorization.require_destructive_business_access(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            user_role=user_role,
         )
         if project_id and str(conversation.project_id) != project_id:
             raise PermissionDeniedError("conversation does not belong to project")
@@ -546,7 +555,7 @@ class AgentService(AgentStreamingMixin, AgentMetadataMixin):
             limit=limit,
             cursor=cursor,
             project_id=project_id,
-            user_id=None if workspace_id else user_id,
+            workspace_id=workspace_id,
         )
 
     async def get_conversation_history(
@@ -612,13 +621,18 @@ class AgentService(AgentStreamingMixin, AgentMetadataMixin):
         conversation = await self.conversation_repo.get(conversation_id)
         if not conversation:
             raise NotFoundError("conversation not found")
-        if workspace_id:
-            project = await self.project_repo.get(str(conversation.project_id))
-            if not project or str(getattr(project, "workspace_id", "")) != workspace_id:
-                raise PermissionDeniedError("conversation does not belong to workspace")
-            return conversation
-        if str(getattr(conversation, "user_id", "")) != user_id:
-            raise PermissionDeniedError("conversation does not belong to user")
+        project = await self.project_repo.get(str(conversation.project_id))
+        if not can_access_workspace_resource(
+            resource_workspace_id=(
+                str(getattr(project, "workspace_id", "") or "") if project else None
+            ),
+            user_workspace_id=workspace_id,
+            resource_owner_user_id=(
+                str(getattr(project, "user_id", "") or "") if project else None
+            ),
+            user_id=user_id,
+        ):
+            raise PermissionDeniedError("conversation does not belong to workspace")
         return conversation
 
     async def _require_project_access(
@@ -631,12 +645,13 @@ class AgentService(AgentStreamingMixin, AgentMetadataMixin):
         project = await self.project_repo.get(project_id)
         if not project:
             raise NotFoundError("project not found")
-        if workspace_id:
-            if str(getattr(project, "workspace_id", "")) != workspace_id:
-                raise PermissionDeniedError("project does not belong to workspace")
-            return project
-        if str(getattr(project, "user_id", "")) not in {"", user_id}:
-            raise PermissionDeniedError("project does not belong to user")
+        if not can_access_workspace_resource(
+            resource_workspace_id=str(getattr(project, "workspace_id", "") or ""),
+            user_workspace_id=workspace_id,
+            resource_owner_user_id=str(getattr(project, "user_id", "") or ""),
+            user_id=user_id,
+        ):
+            raise PermissionDeniedError("project does not belong to workspace")
         return project
 
     async def _load_conversation_history(
@@ -694,15 +709,11 @@ class AgentService(AgentStreamingMixin, AgentMetadataMixin):
             raise NotFoundError("conversation not found")
         if str(conversation.project_id) != project_id:
             raise PermissionDeniedError("conversation does not belong to project")
-        if workspace_id:
-            await self._require_conversation(
-                conversation_id,
-                user_id=user_id,
-                workspace_id=workspace_id,
-            )
-            return conversation
-        if str(getattr(conversation, "user_id", "")) != user_id:
-            raise PermissionDeniedError("conversation does not belong to user")
+        await self._require_conversation(
+            conversation_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         return conversation
 
     async def _generate_title(

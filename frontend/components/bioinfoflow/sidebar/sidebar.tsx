@@ -13,7 +13,10 @@ import { UserMenu } from "@/components/bioinfoflow/user-menu"
 import { CreateProjectDialog } from "@/components/bioinfoflow/create-project-dialog"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { useWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
-import type { ViewerIdentity } from "@/lib/auth-config"
+import {
+  canManageDestructiveBusinessActions,
+  type ViewerIdentity,
+} from "@/lib/auth-config"
 import { SidebarNav } from "./sidebar-nav"
 import { ProjectList } from "./project-list"
 import { DeleteConfirmDialog } from "./delete-confirm-dialog"
@@ -39,6 +42,13 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
   } | null>(null)
 
   const workspaceShell = useWorkspaceShell()
+  const canDeleteWorkspaceResources = viewer
+    ? canManageDestructiveBusinessActions(
+        viewer.mode,
+        viewer.role,
+        viewer.authEnabled,
+      )
+    : true
 
   const canCreateChat = !workspaceShell.isLoading
 
@@ -52,10 +62,12 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
   }
 
   const handleDeleteConversation = (conversationId: string, projectId: string, name: string) => {
+    if (!canDeleteWorkspaceResources) return
     setDeleteConfirm({ type: "conversation", id: conversationId, projectId, name })
   }
 
   const handleDeleteProject = (projectId: string, projectName: string) => {
+    if (!canDeleteWorkspaceResources) return
     setDeleteConfirm({ type: "project", id: projectId, projectId, name: projectName })
   }
 
@@ -210,6 +222,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
           onRenameProject={workspaceShell.handleRenameProject}
           onDuplicateProject={workspaceShell.handleDuplicateProject}
           onDeleteProject={handleDeleteProject}
+          canDeleteWorkspaceResources={canDeleteWorkspaceResources}
           onOpenCreateDialog={workspaceShell.openCreateProjectDialog}
           tSidebar={tSidebar}
           tCommon={tCommon}

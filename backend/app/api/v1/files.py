@@ -33,6 +33,8 @@ async def list_files(
     data = await service.list_files(
         project_id=project_id, path=path, recursive=recursive, pattern=pattern,
         data_root=data_root,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
     )
     return success_response(
         data.model_dump(mode="json", by_alias=True), request=request
@@ -52,7 +54,12 @@ async def read_file(
 ):
     service = FileService(db)
     data = await service.read_file(
-        project_id=project_id, path=path, lines=lines, offset=offset
+        project_id=project_id,
+        path=path,
+        lines=lines,
+        offset=offset,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
     )
     return success_response(
         data.model_dump(mode="json", by_alias=True), request=request
@@ -69,7 +76,12 @@ async def download_file(
     db: AsyncSession = Depends(get_db),
 ):
     service = FileService(db)
-    target, root = await service.resolve_path(project_id=project_id, path=path)
+    target, root = await service.resolve_path(
+        project_id=project_id,
+        path=path,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
+    )
 
     if target.is_dir():
         return error_response(
@@ -104,7 +116,11 @@ async def write_file(
 ):
     service = FileService(db)
     data = await service.write_file(
-        project_id=payload.project_id, path=payload.path, content=payload.content
+        project_id=payload.project_id,
+        path=payload.path,
+        content=payload.content,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
     )
     return success_response(data, request=request)
 
@@ -135,6 +151,8 @@ async def upload_file(
         filename=file.filename or "upload",
         content=content,
         overwrite=overwrite,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
     )
     return success_response(
         FileUploadResponse.model_validate(data).model_dump(mode="json", by_alias=True),
@@ -157,6 +175,8 @@ async def scan_directory(
         path=payload.path,
         file_types=payload.file_types,
         data_root=payload.data_root,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
     )
     return success_response(
         data.model_dump(mode="json", by_alias=True), request=request
@@ -173,5 +193,11 @@ async def delete_path(
     db: AsyncSession = Depends(get_db),
 ):
     service = FileService(db)
-    data = await service.delete_path(project_id=project_id, path=path)
+    data = await service.delete_path(
+        project_id=project_id,
+        path=path,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
+        user_role=user.role,
+    )
     return success_response(data, request=request, status_code=200)

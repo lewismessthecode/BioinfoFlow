@@ -1130,6 +1130,7 @@
       "imageNameRequired": "Please enter an image name",
       "imageNameInvalid": "Please enter a valid image name",
       "pullFailed": "Couldn't pull the image. Verify Docker is running and you have network access.",
+      "deleteForbidden": "Only admins and owners can delete shared images in team mode.",
       "deleteFailed": "Couldn't delete the image. It may be in use by a running container.",
       "deletePulling": "The image is still being pulled. Wait for the download to finish before deleting it.",
       "deleteInUse": "The image is currently used by a container. Stop the container before deleting the image."

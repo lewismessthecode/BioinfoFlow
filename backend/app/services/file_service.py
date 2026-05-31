@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.path_layout import project_home
 from app.repositories.project_repo import ProjectRepository
+from app.services.authorization_service import AuthorizationService
 from app.schemas.file import (
     DetectedSample,
     DetectedSampleFile,
@@ -21,6 +22,8 @@ from app.schemas.file import (
     FileScanResponse,
     FileType,
 )
+from app.utils.authorization import can_access_project
+from app.utils.exceptions import PermissionDeniedError
 
 
 FILE_TYPE_EXTENSIONS = {
@@ -34,16 +37,35 @@ FILE_TYPE_EXTENSIONS = {
 class FileService:
     def __init__(self, session: AsyncSession):
         self.project_repo = ProjectRepository(session)
+        self.authorization = AuthorizationService(session)
 
-    async def _workspace_root(self, project_id: str) -> Path:
-        return await self._resolve_root(project_id, data_root=None)
+    async def _workspace_root(
+        self,
+        project_id: str,
+        *,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
+    ) -> Path:
+        return await self._resolve_root(
+            project_id,
+            data_root=None,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
 
     async def _resolve_root(
-        self, project_id: str, data_root: int | None = None
+        self,
+        project_id: str,
+        data_root: int | None = None,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> Path:
         project = await self.project_repo.get(project_id)
         if not project:
             raise FileNotFoundError("project not found")
+        if not can_access_project(project, user_id=user_id, workspace_id=workspace_id):
+            raise PermissionDeniedError("project does not belong to workspace")
+        del data_root
         return project_home(project)
 
     def _safe_path(self, root: Path, relative_path: str) -> Path:
@@ -88,8 +110,15 @@ class FileService:
         recursive: bool = False,
         pattern: str | None = None,
         data_root: int | None = None,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> FileListResponse:
-        root = await self._resolve_root(project_id, data_root)
+        root = await self._resolve_root(
+            project_id,
+            data_root,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         target = self._safe_path(root, path)
 
         if not target.exists():
@@ -108,15 +137,43 @@ class FileService:
 
         return FileListResponse(path=str(Path(path)), files=files)
 
-    async def resolve_path(self, *, project_id: str, path: str) -> tuple[Path, Path]:
-        root = await self._workspace_root(project_id)
+    async def resolve_path(
+        self,
+        *,
+        project_id: str,
+        path: str,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
+    ) -> tuple[Path, Path]:
+        root = await self._workspace_root(
+            project_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         target = self._safe_path(root, path)
         if not target.exists():
             raise FileNotFoundError("path not found")
         return target, root
 
-    async def delete_path(self, *, project_id: str, path: str) -> dict:
-        root = await self._workspace_root(project_id)
+    async def delete_path(
+        self,
+        *,
+        project_id: str,
+        path: str,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
+        user_role: str | None = None,
+    ) -> dict:
+        root = await self._workspace_root(
+            project_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
+        await self.authorization.require_destructive_business_access(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            user_role=user_role,
+        )
         target = self._safe_path(root, path)
         if target == root:
             raise PermissionError("cannot delete workspace root")
@@ -136,8 +193,14 @@ class FileService:
         filename: str,
         content: bytes,
         overwrite: bool = False,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> dict:
-        root = await self._workspace_root(project_id)
+        root = await self._workspace_root(
+            project_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         normalized_path = path or filename
         target = self._safe_path(root, normalized_path)
         if target.exists():
@@ -151,9 +214,20 @@ class FileService:
         return {"path": str(target.relative_to(root))}
 
     async def read_file(
-        self, *, project_id: str, path: str, lines: int = 100, offset: int = 0
+        self,
+        *,
+        project_id: str,
+        path: str,
+        lines: int = 100,
+        offset: int = 0,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> FileReadResponse:
-        root = await self._workspace_root(project_id)
+        root = await self._workspace_root(
+            project_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         target = self._safe_path(root, path)
         if not target.exists() or not target.is_file():
             raise FileNotFoundError("file not found")
@@ -179,18 +253,41 @@ class FileService:
             truncated=truncated,
         )
 
-    async def write_file(self, *, project_id: str, path: str, content: str) -> dict:
-        root = await self._workspace_root(project_id)
+    async def write_file(
+        self,
+        *,
+        project_id: str,
+        path: str,
+        content: str,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
+    ) -> dict:
+        root = await self._workspace_root(
+            project_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         target = self._safe_path(root, path)
         target.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(target.write_text, content)
         return {"path": str(Path(path))}
 
     async def scan_directory(
-        self, *, project_id: str, path: str = ".", file_types: list[str] | None = None,
+        self,
+        *,
+        project_id: str,
+        path: str = ".",
+        file_types: list[str] | None = None,
         data_root: int | None = None,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> FileScanResponse:
-        root = await self._resolve_root(project_id, data_root)
+        root = await self._resolve_root(
+            project_id,
+            data_root,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         target = self._safe_path(root, path)
         if not target.exists() or not target.is_dir():
             raise FileNotFoundError("path not found")

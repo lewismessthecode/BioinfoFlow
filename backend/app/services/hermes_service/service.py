@@ -30,6 +30,7 @@ from app.services.hermes_service.session_store import get_hermes_session_store
 from app.services.hermes_service.tool_bridge import HermesToolRuntimeContext
 from app.utils.exceptions import ConflictError, NotFoundError, PermissionDeniedError
 from app.utils.logging import get_logger
+from app.utils.authorization import can_access_workspace_resource
 
 logger = get_logger(__name__)
 
@@ -824,16 +825,18 @@ class HermesConversationService:
         conversation = await self.conversation_repo.get(conversation_id)
         if conversation is None:
             raise NotFoundError("conversation not found")
-        if workspace_id:
-            bound_workspace = getattr(conversation, "workspace_binding_id", None)
-            if bound_workspace and str(bound_workspace) != workspace_id:
-                raise PermissionDeniedError("conversation does not belong to workspace")
-            project = await self.project_repo.get(str(conversation.project_id))
-            if project and str(getattr(project, "workspace_id", "")) != workspace_id:
-                raise PermissionDeniedError("conversation does not belong to workspace")
-            return conversation
-        if str(conversation.user_id) != user_id:
-            raise PermissionDeniedError("conversation does not belong to user")
+        project = await self.project_repo.get(str(conversation.project_id))
+        if not can_access_workspace_resource(
+            resource_workspace_id=(
+                str(getattr(project, "workspace_id", "") or "") if project else None
+            ),
+            user_workspace_id=workspace_id,
+            resource_owner_user_id=(
+                str(getattr(project, "user_id", "") or "") if project else None
+            ),
+            user_id=user_id,
+        ):
+            raise PermissionDeniedError("conversation does not belong to workspace")
         return conversation
 
     async def _require_project_access(
@@ -846,12 +849,13 @@ class HermesConversationService:
         project = await self.project_repo.get(project_id)
         if not project:
             raise NotFoundError("project not found")
-        if workspace_id:
-            if str(getattr(project, "workspace_id", "")) != workspace_id:
-                raise PermissionDeniedError("project does not belong to workspace")
-            return project
-        if getattr(project, "user_id", None) not in {None, user_id}:
-            raise PermissionDeniedError("project does not belong to user")
+        if not can_access_workspace_resource(
+            resource_workspace_id=str(getattr(project, "workspace_id", "") or ""),
+            user_workspace_id=workspace_id,
+            resource_owner_user_id=str(getattr(project, "user_id", "") or ""),
+            user_id=user_id,
+        ):
+            raise PermissionDeniedError("project does not belong to workspace")
         return project
 
     async def _resolve_workspace_root(self, project_id: str) -> str | None:

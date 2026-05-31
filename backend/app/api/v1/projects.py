@@ -7,6 +7,10 @@ from app.api.deps import get_current_user, get_db
 from app.auth.session import AuthUser
 from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
 from app.services.project_service import ProjectService
+from app.utils.authorization import (
+    can_manage_external_roots,
+    can_perform_destructive_business_action,
+)
 from app.utils.responses import error_response, success_response
 
 
@@ -46,7 +50,7 @@ async def create_project(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if payload.external_root_path and user.role not in {"admin", "owner"}:
+    if payload.external_root_path and not can_manage_external_roots(user.role):
         return error_response(
             code="FORBIDDEN",
             message="External project roots are restricted to administrators",
@@ -112,7 +116,7 @@ async def update_project(
             status_code=404,
             request=request,
         )
-    if payload.external_root_path and user.role not in {"admin", "owner"}:
+    if payload.external_root_path and not can_manage_external_roots(user.role):
         return error_response(
             code="FORBIDDEN",
             message="External project roots are restricted to administrators",
@@ -145,6 +149,13 @@ async def delete_project(
         return error_response(
             code="FORBIDDEN",
             message="Cannot delete the default project",
+            status_code=403,
+            request=request,
+        )
+    if not can_perform_destructive_business_action(user.role):
+        return error_response(
+            code="FORBIDDEN",
+            message="Deleting projects requires an administrator in team mode",
             status_code=403,
             request=request,
         )

@@ -13,6 +13,7 @@ from app.services.image_service import (
     ImageDeleteConflictError,
     ImageService,
 )
+from app.utils.authorization import can_perform_destructive_business_action
 from app.utils.responses import error_response, success_response
 
 
@@ -84,6 +85,8 @@ async def pull_image(
             tag=payload.tag or "latest",
             registry=payload.registry or "docker.io",
             project_id=str(payload.project_id) if payload.project_id else None,
+            user_id=user.id,
+            workspace_id=user.workspace_id,
         )
     except DockerUnavailableError as exc:
         return error_response(
@@ -124,6 +127,8 @@ async def load_image_tarball(
         images = await service.load_image_tarball(
             content=content,
             project_id=project_id,
+            user_id=user.id,
+            workspace_id=user.workspace_id,
         )
     except DockerUnavailableError as exc:
         return error_response(
@@ -158,6 +163,13 @@ async def delete_image(
             code="NOT_FOUND",
             message="Image not found",
             status_code=404,
+            request=request,
+        )
+    if not can_perform_destructive_business_action(user.role):
+        return error_response(
+            code="FORBIDDEN",
+            message="Deleting images requires an administrator in team mode",
+            status_code=403,
             request=request,
         )
     try:

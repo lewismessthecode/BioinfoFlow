@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.session import AuthUser, validate_session
 from app.config import settings
 from app.services.workspace_service import WorkspaceService
+from app.utils.authorization import can_manage_workspace_members
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 _ANONYMOUS_USER = AuthUser(
@@ -69,13 +70,17 @@ async def resolve_websocket_user(websocket: WebSocket, db: AsyncSession) -> Auth
 
 async def require_admin(request: Request, db: AsyncSession) -> AuthUser:
     user = await resolve_current_user(request, db)
-    if user.role not in {"owner", "admin"}:
+    if not settings.auth_is_team:
+        return user
+    if not can_manage_workspace_members(user.role):
         raise HTTPException(status_code=403, detail="Forbidden")
     return user
 
 
 async def require_owner(request: Request, db: AsyncSession) -> AuthUser:
     user = await resolve_current_user(request, db)
+    if not settings.auth_is_team:
+        return user
     if user.role != "owner":
         raise HTTPException(status_code=403, detail="Forbidden")
     return user

@@ -83,7 +83,7 @@ function ImageActionsMenu({
   onViewDetails: (image: DockerImage) => void
   onCopyName: (image: DockerImage) => void
   onCopyPullCommand: (image: DockerImage) => void
-  onDeleteLocal: (image: DockerImage) => void
+  onDeleteLocal?: ((image: DockerImage) => void) | undefined
   triggerClassName?: string
 }) {
   return (
@@ -108,8 +108,14 @@ function ImageActionsMenu({
           <Download className="h-4 w-4 mr-2" />
           {tImages("actions.copyPullCommand")}
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive" onClick={() => onDeleteLocal(image)}>{tImages("actions.deleteLocal")}</DropdownMenuItem>
+        {onDeleteLocal ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive" onClick={() => onDeleteLocal(image)}>
+              {tImages("actions.deleteLocal")}
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -134,7 +140,7 @@ export function ImageCardsGrid({
   onViewDetails: (image: DockerImage) => void
   onCopyName: (image: DockerImage) => void
   onCopyPullCommand: (image: DockerImage) => void
-  onDeleteLocal: (image: DockerImage) => void
+  onDeleteLocal?: ((image: DockerImage) => void) | undefined
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -226,7 +232,7 @@ export function ImageTable({
   onViewDetails: (image: DockerImage) => void
   onCopyName: (image: DockerImage) => void
   onCopyPullCommand: (image: DockerImage) => void
-  onDeleteLocal: (image: DockerImage) => void
+  onDeleteLocal?: ((image: DockerImage) => void) | undefined
 }) {
   const columns: DataTableColumn<DockerImage>[] = [
     {

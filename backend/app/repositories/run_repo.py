@@ -26,9 +26,12 @@ class RunRepository(BaseRepository[Run]):
         workspace_id: str | None = None,
     ) -> tuple[list[Run], Pagination]:
         stmt = select(self.model)
-        if user_id is not None:
+        if user_id is not None or workspace_id is not None:
             stmt = stmt.join(Project, Project.id == self.model.project_id)
-            stmt = stmt.where(Project.user_id == user_id)
+        if user_id is not None:
+            stmt = stmt.where(Project.user_id != "system")
+        if workspace_id is not None:
+            stmt = stmt.where(Project.workspace_id == workspace_id)
         filters = {
             "project_id": project_id,
             "workflow_id": workflow_id,
@@ -49,15 +52,18 @@ class RunRepository(BaseRepository[Run]):
         *,
         project_id: str | None = None,
         user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> list[Run]:
         """Return runs matching any of the given statuses."""
         stmt = select(self.model).where(self.model.status.in_(statuses))
         if project_id:
             stmt = stmt.where(self.model.project_id == project_id)
+        if user_id is not None or workspace_id is not None:
+            stmt = stmt.join(Project, Project.id == self.model.project_id)
         if user_id is not None:
-            stmt = stmt.join(Project, Project.id == self.model.project_id).where(
-                Project.user_id == user_id
-            )
+            stmt = stmt.where(Project.user_id != "system")
+        if workspace_id is not None:
+            stmt = stmt.where(Project.workspace_id == workspace_id)
         stmt = stmt.order_by(self.model.created_at.desc(), self.model.id.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

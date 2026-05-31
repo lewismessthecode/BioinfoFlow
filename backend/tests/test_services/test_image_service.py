@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.models.image import DockerImage, ImageStatus
+from app.models.project import Project
 from app.repositories.image_repo import ImageRepository
 from app.schemas.common import Pagination
 from app.services import image_service
@@ -13,6 +14,7 @@ from app.services.image_service import (
     ImageDeleteConflictError,
     ImageService,
 )
+from app.utils.exceptions import PermissionDeniedError
 
 
 @pytest.mark.asyncio
@@ -66,7 +68,9 @@ async def test_image_service_list_images_reports_stale_metadata_when_docker_unav
             raise RuntimeError("docker unavailable")
 
     monkeypatch.setattr(image_service, "DockerService", FakeDockerService)
-    monkeypatch.setattr(image_service.ImageService, "_last_sync_at", stale_snapshot_time)
+    monkeypatch.setattr(
+        image_service.ImageService, "_last_sync_at", stale_snapshot_time
+    )
 
     service = ImageService(db_session)
 
@@ -196,3 +200,84 @@ async def test_image_service_delete_image_rejects_images_in_use(
     assert exc_info.value.details == {
         "containers": [{"id": "container-1", "name": "analysis-runner"}]
     }
+
+
+@pytest.mark.asyncio
+async def test_image_service_pull_allows_project_context_within_same_workspace(
+    db_session, monkeypatch
+):
+    project = Project(
+        name="Image Project",
+        storage_mode="managed",
+        external_root_path=None,
+        user_id="project-owner",
+        created_by_user_id="project-owner",
+        workspace_id="workspace-a",
+    )
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    class FakeDockerService:
+        async def is_available(self) -> bool:
+            return True
+
+    captured: dict[str, object] = {}
+
+    def fake_submit(func, *args, **kwargs):
+        captured["func"] = func
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(image_service, "DockerService", FakeDockerService)
+    monkeypatch.setattr(image_service.background_tasks, "submit", fake_submit)
+
+    service = ImageService(db_session)
+
+    image = await service.pull_image(
+        name="bioinfoflow/bwa",
+        tag="v2.2.1",
+        registry="docker.io",
+        project_id=str(project.id),
+        user_id="requestor",
+        workspace_id="workspace-a",
+    )
+
+    assert image.status == ImageStatus.PULLING.value
+    assert captured["func"] == service._pull_task
+    assert captured["args"][-1] == str(project.id)
+
+
+@pytest.mark.asyncio
+async def test_image_service_pull_rejects_project_context_from_other_workspace(
+    db_session, monkeypatch
+):
+    project = Project(
+        name="Other Workspace Project",
+        storage_mode="managed",
+        external_root_path=None,
+        user_id="project-owner",
+        created_by_user_id="project-owner",
+        workspace_id="workspace-b",
+    )
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    class FakeDockerService:
+        async def is_available(self) -> bool:
+            return True
+
+    monkeypatch.setattr(image_service, "DockerService", FakeDockerService)
+
+    service = ImageService(db_session)
+
+    with pytest.raises(PermissionDeniedError, match="project does not belong"):
+        await service.pull_image(
+            name="bioinfoflow/bwa",
+            tag="v2.2.1",
+            registry="docker.io",
+            project_id=str(project.id),
+            user_id="requestor",
+            workspace_id="workspace-a",
+        )

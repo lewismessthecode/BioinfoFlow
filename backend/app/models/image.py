@@ -16,6 +16,12 @@ class ImageStatus(str, Enum):
 
 
 class DockerImage(Base, UUIDMixin, TimestampMixin):
+    """Metadata mirrored from the host Docker daemon.
+
+    Docker images are instance-level infrastructure resources, so these rows are
+    intentionally not scoped to a workspace.
+    """
+
     __tablename__ = "docker_images"
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)

@@ -25,6 +25,7 @@ interface ConversationItemProps {
   onRename: (conversation: AgentConversationRead, projectId: string, newTitle: string) => void
   onTogglePin: (conversation: AgentConversationRead, projectId: string) => void
   onDelete: (conversationId: string, projectId: string, name: string) => void
+  canDelete?: boolean
   tSidebar: (key: string, values?: Record<string, number>) => string
   tCommon: (key: string) => string
 }
@@ -41,6 +42,7 @@ export function ConversationItem({
   onRename,
   onTogglePin,
   onDelete,
+  canDelete = true,
   tSidebar,
   tCommon,
 }: ConversationItemProps) {
@@ -134,14 +136,18 @@ export function ConversationItem({
               <span className="flex items-center gap-2"><Pin className="h-3.5 w-3.5" />{tCommon("save")}</span>
             )}
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className="text-destructive"
-            onClick={() => onDelete(conversation.id, projectId, label)}
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-2" />
-            {tCommon("delete")}
-          </DropdownMenuItem>
+          {canDelete ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={() => onDelete(conversation.id, projectId, label)}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                {tCommon("delete")}
+              </DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

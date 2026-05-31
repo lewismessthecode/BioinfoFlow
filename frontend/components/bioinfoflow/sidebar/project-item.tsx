@@ -38,6 +38,7 @@ interface ProjectItemProps {
   onRenameProject: (project: Project, newName: string) => void
   onDuplicateProject: (project: Project) => void
   onDeleteProject: (projectId: string, projectName: string) => void
+  canDeleteWorkspaceResources?: boolean
   tSidebar: (key: string, values?: Record<string, string | number>) => string
   tCommon: (key: string) => string
 }
@@ -66,6 +67,7 @@ export function ProjectItem({
   onRenameProject,
   onDuplicateProject,
   onDeleteProject,
+  canDeleteWorkspaceResources = true,
   tSidebar,
   tCommon,
 }: ProjectItemProps) {
@@ -168,14 +170,18 @@ export function ProjectItem({
               <Copy className="h-3.5 w-3.5 mr-2" />
               {tCommon("duplicate") || "Duplicate"}
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive"
-              onClick={() => onDeleteProject(project.id, project.name)}
-            >
-              <Trash2 className="h-3.5 w-3.5 mr-2" />
-              {tCommon("delete")}
-            </DropdownMenuItem>
+            {canDeleteWorkspaceResources ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive"
+                  onClick={() => onDeleteProject(project.id, project.name)}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                  {tCommon("delete")}
+                </DropdownMenuItem>
+              </>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -205,6 +211,7 @@ export function ProjectItem({
                 onRename={onRenameConversation}
                 onTogglePin={onTogglePin}
                 onDelete={onDeleteConversation}
+                canDelete={canDeleteWorkspaceResources}
                 tSidebar={tSidebar}
                 tCommon={tCommon}
               />
