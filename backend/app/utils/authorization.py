@@ -25,6 +25,8 @@ def can_access_workspace_resource(
         return True
     if is_system_owned_resource(resource_owner_user_id):
         return user_id == SYSTEM_USER_ID
+    if not settings.auth_is_team and str(resource_owner_user_id or "") == str(user_id):
+        return True
     return bool(
         user_workspace_id
         and resource_workspace_id

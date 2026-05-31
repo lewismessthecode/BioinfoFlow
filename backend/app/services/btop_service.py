@@ -141,6 +141,12 @@ def _resolve_btop_command(command: tuple[str, ...]) -> tuple[tuple[str, ...], li
     def executable(path: str) -> bool:
         return os.path.exists(path) and os.access(path, os.X_OK)
 
+    if os.path.sep in binary:
+        add_attempt(binary)
+        if executable(binary):
+            return command, attempted
+        raise BtopUnavailableError(binary, attempted)
+
     configured = os.getenv("BTOP_BIN", "").strip()
     if configured:
         add_attempt(configured)
@@ -152,15 +158,11 @@ def _resolve_btop_command(command: tuple[str, ...]) -> tuple[tuple[str, ...], li
     if found:
         return (found, *command[1:]), attempted
 
-    if os.path.sep in binary:
-        add_attempt(binary)
-        if executable(binary):
-            return command, attempted
-
-    for path in COMMON_BTOP_PATHS:
-        add_attempt(path)
-        if executable(path):
-            return (path, *command[1:]), attempted
+    if binary == DEFAULT_BTOP_ARGV[0]:
+        for path in COMMON_BTOP_PATHS:
+            add_attempt(path)
+            if executable(path):
+                return (path, *command[1:]), attempted
 
     raise BtopUnavailableError(binary, attempted)
 

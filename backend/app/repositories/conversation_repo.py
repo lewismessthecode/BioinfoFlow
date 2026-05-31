@@ -19,6 +19,7 @@ class ConversationRepository(BaseRepository[Conversation]):
         cursor: str | None = None,
         project_id: str | None = None,
         workspace_id: str | None = None,
+        user_id: str | None = None,
     ) -> tuple[list[Conversation], Pagination]:
         stmt = select(self.model)
         if project_id:
@@ -28,6 +29,8 @@ class ConversationRepository(BaseRepository[Conversation]):
                 Project.workspace_id == workspace_id,
                 Project.user_id != "system",
             )
+        if user_id:
+            stmt = stmt.where(self.model.user_id == user_id)
 
         order_by = [
             desc(self.model.pinned),
@@ -72,6 +75,8 @@ class ConversationRepository(BaseRepository[Conversation]):
                 Project.workspace_id == workspace_id,
                 Project.user_id != "system",
             )
+        if user_id:
+            count_stmt = count_stmt.where(self.model.user_id == user_id)
         total_count = await self.session.scalar(
             select(func.count()).select_from(count_stmt.subquery())
         )

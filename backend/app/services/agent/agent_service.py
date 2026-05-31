@@ -632,6 +632,8 @@ class AgentService(AgentStreamingMixin, AgentMetadataMixin):
             ),
             user_id=user_id,
         ):
+            if workspace_id is None:
+                raise PermissionDeniedError("conversation does not belong to user")
             raise PermissionDeniedError("conversation does not belong to workspace")
         return conversation
 
