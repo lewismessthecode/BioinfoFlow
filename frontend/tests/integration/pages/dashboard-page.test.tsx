@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import DashboardPage from "@/app/(app)/dashboard/page"
@@ -308,8 +309,18 @@ describe("DashboardPage", () => {
 
     renderAppPage(<DashboardPage />)
 
-    expect(await screen.findByText("dashboard.readiness.title")).toBeInTheDocument()
-    expect(screen.getByText(/dashboard\.readiness\.progress/)).toBeInTheDocument()
+    const user = userEvent.setup()
+    const trigger = await screen.findByRole("button", {
+      name: "dashboard.readiness.trigger",
+    })
+
+    expect(trigger).toHaveTextContent("dashboard.readiness.title")
+    expect(trigger).toHaveTextContent("dashboard.readiness.triggerSummary:0:2")
+
+    await user.click(trigger)
+
+    expect(screen.getByRole("dialog", { name: "dashboard.readiness.drawerTitle" })).toBeInTheDocument()
+    expect(screen.getByText("dashboard.readiness.progress:0:2")).toBeInTheDocument()
     expect(screen.getByText("dashboard.readiness.blockers")).toBeInTheDocument()
     expect(screen.getByText("dashboard.readiness.optional")).toBeInTheDocument()
     expect(screen.getByText("AI provider key")).toBeInTheDocument()

@@ -95,6 +95,11 @@
       "logoutFailed": "Couldn't sign you out. Check your connection and try again."
     }
   },
+  "celebrations": {
+    "title": "Celebrations",
+    "toggle": "Enable celebrations",
+    "preview": "Preview confetti"
+  },
   "sidebar": {
     "projects": "Projects",
     "workspace": "Workspace",
@@ -315,6 +320,10 @@
     },
     "parabricksCompatible": "Parabricks Compatible",
     "noGpuDetected": "No GPU detected",
+    "gpu": {
+      "nvidiaRuntimeVisible": "NVIDIA runtime visible",
+      "detailsUnavailable": "GPU details unavailable to backend"
+    },
     "narrativeEmpty": "No runs yet — head to the Agent to start your first analysis!",
     "narrativeAllComplete": "All {total} runs completed successfully",
     "narrativeTotal": "{total} total runs",
@@ -328,13 +337,22 @@
     "dockerUnavailableDescription": "Workflow execution requires Docker. Please start the Docker daemon to run pipelines.",
     "readiness": {
       "title": "First-run readiness",
-      "description": "Finish the required setup first. Optional warnings can wait unless your workflow needs them. Optional warnings: {warnings}.",
+      "description": "Required setup must be complete before the first run. Optional warnings can wait unless your workflow needs them. Optional warnings: {warnings}.",
+      "trigger": "Open readiness checklist",
+      "triggerSummary": "{completed}/{total} ready",
+      "requiredRemaining": "{count} required remaining",
+      "optionalWarnings": "{count} optional warning(s)",
+      "drawerTitle": "Readiness checklist",
+      "drawerDescription": "Each row shows exactly what is ready and where to finish the remaining setup.",
       "blockedBadge": "{count} blocker(s)",
       "progress": "{completed} of {total} checks ready",
       "blockers": "Required before the first run",
       "optional": "Optional checks",
+      "completed": "Already ready",
+      "refresh": "Refresh status",
+      "completedLabel": "Completed: {label}",
       "status": {
-        "pass": "Pass",
+        "pass": "Ready",
         "fail": "Fix",
         "warn": "Warn",
         "skip": "Skip"
@@ -1281,7 +1299,9 @@
     "openTerminal": "Open terminal",
     "closeTerminal": "Close terminal",
     "reconnectTerminal": "Reconnect terminal",
-    "clearTerminal": "Clear terminal"
+    "clearTerminal": "Clear terminal",
+    "celebrationsOn": "Celebrations on",
+    "celebrationsOff": "Celebrations off"
   },
   "landing": {
     "announcement": {
@@ -1850,6 +1870,14 @@
       "preview": {
         "light": "Light preview",
         "dark": "Dark preview"
+      },
+      "celebrations": {
+        "title": "Celebrations",
+        "description": "Show confetti when first-time setup milestones succeed.",
+        "enabledLabel": "Enabled",
+        "disabledLabel": "Disabled",
+        "preview": "Preview confetti",
+        "reducedMotion": "Confetti is disabled while reduced motion is enabled."
       }
     },
     "title": "AI Providers",

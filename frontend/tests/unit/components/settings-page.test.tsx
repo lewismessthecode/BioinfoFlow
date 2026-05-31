@@ -21,6 +21,9 @@ const testProviderMock = vi.fn(
     model: null,
   }),
 )
+const celebratePreviewMock = vi.fn()
+let celebrationsEnabledState = true
+const celebrationSubscribers = new Set<(enabled: boolean) => void>()
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
@@ -37,6 +40,12 @@ vi.mock("next-intl", () => ({
       "appearance.presets.dark": "Dark preset",
       "appearance.preview.light": "Light preview",
       "appearance.preview.dark": "Dark preview",
+      "appearance.celebrations.title": "Celebrations",
+      "appearance.celebrations.description": "Show confetti when first-time setup milestones succeed.",
+      "appearance.celebrations.enabledLabel": "Enabled",
+      "appearance.celebrations.disabledLabel": "Disabled",
+      "appearance.celebrations.preview": "Preview confetti",
+      "appearance.celebrations.reducedMotion": "Confetti is disabled while reduced motion is enabled.",
       title: "AI Providers",
       subtitle: "Configure providers",
       apiKey: "API Key",
@@ -60,6 +69,24 @@ vi.mock("@/hooks/use-llm-settings", () => ({
 
 vi.mock("@/lib/appearance/use-appearance", () => ({
   useAppearance: vi.fn(),
+}))
+
+vi.mock("@/lib/celebrations", () => ({
+  celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
+  isCelebrationsEnabled: () => celebrationsEnabledState,
+  isReducedMotionPreferred: () => false,
+  setCelebrationsEnabled: (enabled: boolean) => {
+    celebrationsEnabledState = enabled
+    for (const listener of celebrationSubscribers) {
+      listener(enabled)
+    }
+  },
+  subscribeToCelebrationsPreference: (listener: (enabled: boolean) => void) => {
+    celebrationSubscribers.add(listener)
+    return () => {
+      celebrationSubscribers.delete(listener)
+    }
+  },
 }))
 
 vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
@@ -87,6 +114,19 @@ describe("SettingsPage", () => {
     apiRequestMock.mockReset()
     updateSettingsMock.mockReset()
     testProviderMock.mockClear()
+    celebratePreviewMock.mockReset()
+    celebrationsEnabledState = true
+    celebrationSubscribers.clear()
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
     useAppearanceMock.mockReturnValue({
       mode: "system",
       resolvedMode: "light",
@@ -222,6 +262,54 @@ describe("SettingsPage", () => {
     )
 
     expect(screen.getByText("Appearance")).toBeInTheDocument()
+  })
+
+  it("shows celebration controls in appearance and persists the preference", async () => {
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          role: "owner",
+          mode: "team",
+          canManageMembers: true,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    fireEvent.click(screen.getByText("Appearance"))
+
+    expect(screen.getByText("Celebrations")).toBeInTheDocument()
+    expect(
+      screen.getByText("Show confetti when first-time setup milestones succeed."),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true")
+
+    fireEvent.click(screen.getByRole("switch"))
+
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false")
+    expect(screen.getByText("Disabled")).toBeInTheDocument()
+  })
+
+  it("previews confetti from the appearance section", async () => {
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          role: "owner",
+          mode: "team",
+          canManageMembers: true,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    fireEvent.click(screen.getByText("Appearance"))
+    fireEvent.click(screen.getByRole("button", { name: "Preview confetti" }))
+
+    expect(celebratePreviewMock).toHaveBeenCalledTimes(1)
   })
 
   it("shows the members panel only to admins and owners", async () => {

@@ -57,8 +57,7 @@ def _list_allowed_directories(
                 (
                     DirectoryEntry(name=item.name, path=item.path)
                     for item in os.scandir(fullpath)
-                    if item.is_dir()
-                    and (show_hidden or not item.name.startswith("."))
+                    if item.is_dir() and (show_hidden or not item.name.startswith("."))
                 ),
                 key=lambda e: e.name.lower(),
             )
@@ -219,6 +218,72 @@ def _check(
     return payload
 
 
+def _gpu_readiness_check(gpu_status) -> dict[str, str]:
+    available = bool(getattr(gpu_status, "available", False))
+    nvidia_smi_found = bool(getattr(gpu_status, "nvidia_smi_found", False))
+    docker_nvidia_runtime = bool(getattr(gpu_status, "docker_nvidia_runtime", False))
+    parabricks_compatible = bool(getattr(gpu_status, "parabricks_compatible", False))
+    recommendation = getattr(gpu_status, "recommendation", None)
+    error = getattr(gpu_status, "error", None)
+    gpus = list(getattr(gpu_status, "gpus", []) or [])
+
+    if available:
+        if parabricks_compatible:
+            detail = "NVIDIA GPU is available for accelerated workflows"
+            hint = recommendation
+        elif gpus:
+            gpu_type = getattr(gpus[0], "gpu_type", "GPU")
+            detail = f"{gpu_type} detected; CPU workflows can still run"
+            hint = recommendation
+        else:
+            detail = "GPU acceleration is available"
+            hint = recommendation
+        return _check(
+            "gpu",
+            "GPU",
+            "pass",
+            detail,
+            severity="optional",
+            hint=hint,
+            docs_link="/docs/operations/runbook",
+            action_label="Open resource monitor",
+            action_href="/scheduler",
+        )
+
+    if docker_nvidia_runtime:
+        detail = "NVIDIA runtime is configured, but GPU details are not visible to the backend"
+        hint = (
+            recommendation
+            or "Check nvidia-smi visibility inside the backend process. CPU workflows can still run."
+        )
+    elif nvidia_smi_found:
+        detail = "NVIDIA tooling is installed, but no GPU details were returned"
+        hint = (
+            recommendation or "Check NVIDIA driver status. CPU workflows can still run."
+        )
+    elif error and error != "nvidia-smi not found":
+        detail = "GPU detection failed; CPU workflows can still run"
+        hint = recommendation or str(error)
+    else:
+        detail = "No GPU detected; CPU workflows can still run"
+        hint = (
+            recommendation
+            or "Install NVIDIA drivers/runtime only if this workflow requires GPU acceleration."
+        )
+
+    return _check(
+        "gpu",
+        "GPU",
+        "warn",
+        detail,
+        severity="optional",
+        hint=hint,
+        docs_link="/docs/operations/runbook",
+        action_label="Open resource monitor",
+        action_href="/scheduler",
+    )
+
+
 def _next_action(checks: list[dict[str, str]]) -> dict[str, str]:
     for check in checks:
         if check["status"] == "fail" and check["severity"] == "blocking":
@@ -302,19 +367,7 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
             action_label="Open scheduler",
             action_href="/scheduler",
         ),
-        _check(
-            "gpu",
-            "GPU",
-            "pass" if getattr(gpu_status, "available", False) else "warn",
-            "GPU is available"
-            if getattr(gpu_status, "available", False)
-            else "No GPU detected; CPU workflows can still run",
-            severity="optional",
-            hint=None
-            if getattr(gpu_status, "available", False)
-            else "Install NVIDIA drivers/runtime only if this workflow requires GPU acceleration.",
-            docs_link="/docs/operations/runbook",
-        ),
+        _gpu_readiness_check(gpu_status),
         _check(
             "project",
             "Project",

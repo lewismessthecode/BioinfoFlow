@@ -4,6 +4,9 @@ export type CelebrationMilestone =
   | "provider-key"
   | "first-project"
   | "first-workflow"
+  | "provider-api-key-saved"
+  | "first-workflow-registered"
+  | "first-workflow-bound-to-project"
 
 type ReadinessSummary = {
   provider_key_configured?: boolean
@@ -11,8 +14,26 @@ type ReadinessSummary = {
   workflows?: number
 }
 
+type ReadinessCelebrationCheck = {
+  id: string
+  status: "pass" | "fail" | "warn" | "skip"
+}
+
+type StageConfettiEmitter = {
+  x: number
+  y: number
+  count: number
+  delayFrames: number
+  velocityX: readonly [number, number]
+  velocityY: readonly [number, number]
+  drift: number
+}
+
 const STORAGE_PREFIX = "bioinfoflow:celebrated:"
+const CELEBRATIONS_ENABLED_KEY = "bioinfoflow:celebrations:enabled"
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)"
 const COLORS = ["#15b8a6", "#f4b740", "#ec5b56", "#5c8df6", "#f7f3e8"]
+const celebrationPreferenceSubscribers = new Set<(enabled: boolean) => void>()
 
 export function readinessMilestonesFromSummary(
   summary?: ReadinessSummary | null,
@@ -34,24 +55,137 @@ export function readinessMilestonesFromSummary(
   return milestones
 }
 
-export function celebrateOnce(milestone: CelebrationMilestone) {
-  if (typeof window === "undefined" || typeof document === "undefined") {
+export function celebrateReadinessTransitions(
+  previousChecks: ReadonlyArray<ReadinessCelebrationCheck> | null | undefined,
+  nextChecks: ReadonlyArray<ReadinessCelebrationCheck>,
+): void {
+  if (!previousChecks) {
     return
+  }
+
+  const previousStatus = new Map(
+    previousChecks.map((check) => [check.id, check.status]),
+  )
+
+  for (const check of nextChecks) {
+    if (check.status !== "pass") {
+      continue
+    }
+
+    const before = previousStatus.get(check.id)
+    if (before && before !== "pass") {
+      celebrateOnce(`readiness-check:${check.id}`)
+    }
+  }
+}
+
+export function isCelebrationsEnabled(): boolean {
+  if (typeof window === "undefined") {
+    return true
+  }
+
+  return window.localStorage.getItem(CELEBRATIONS_ENABLED_KEY) !== "0"
+}
+
+export function setCelebrationsEnabled(enabled: boolean): void {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  window.localStorage.setItem(CELEBRATIONS_ENABLED_KEY, enabled ? "1" : "0")
+  for (const subscriber of celebrationPreferenceSubscribers) {
+    subscriber(enabled)
+  }
+}
+
+export function subscribeToCelebrationsPreference(
+  callback: (enabled: boolean) => void,
+): () => void {
+  celebrationPreferenceSubscribers.add(callback)
+  return () => {
+    celebrationPreferenceSubscribers.delete(callback)
+  }
+}
+
+export function isReducedMotionPreferred(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false
+  }
+
+  return window.matchMedia(REDUCED_MOTION_QUERY).matches
+}
+
+export function celebrateOnce(
+  milestone: CelebrationMilestone | `readiness-check:${string}`,
+): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return false
+  }
+
+  if (!isCelebrationsEnabled()) {
+    return false
   }
 
   const key = `${STORAGE_PREFIX}${milestone}`
   if (window.localStorage.getItem(key) === "1") {
-    return
+    return false
   }
+
   window.localStorage.setItem(key, "1")
 
-  if (
-    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-  ) {
-    return
+  if (isReducedMotionPreferred()) {
+    return true
   }
 
   launchCanvasConfetti()
+  return true
+}
+
+export function celebratePreview(): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return false
+  }
+
+  if (!isCelebrationsEnabled() || isReducedMotionPreferred()) {
+    return false
+  }
+
+  launchCanvasConfetti()
+  return true
+}
+
+export function buildStageConfettiEmitters(
+  width: number,
+  height: number,
+): StageConfettiEmitter[] {
+  const stageY = height * 0.955
+  const leftBand = [0.12, 0.16, 0.22, 0.28]
+  const rightBand = [0.72, 0.78, 0.84, 0.88]
+
+  const buildBand = (
+    band: number[],
+    direction: "left" | "right",
+  ): StageConfettiEmitter[] =>
+    band.map((ratio, index) => {
+      const outward = direction === "left" ? 1 : -1
+      const horizontalMin = outward * (2.8 + index * 0.45)
+      const horizontalMax = outward * (6.4 + index * 0.65)
+
+      return {
+        x: width * ratio,
+        y: stageY + height * ((index % 2) * 0.006),
+        count: index < 2 ? 24 : 28,
+        delayFrames: index * 4,
+        velocityX:
+          direction === "left"
+            ? [horizontalMin, horizontalMax]
+            : [horizontalMax, horizontalMin],
+        velocityY: [-14.4 + index * 0.35, -8.8 + index * 0.2],
+        drift: outward * (0.05 + index * 0.018),
+      }
+    })
+
+  return [...buildBand(leftBand, "left"), ...buildBand(rightBand, "right")]
 }
 
 function launchCanvasConfetti() {
@@ -76,53 +210,73 @@ function launchCanvasConfetti() {
   canvas.height = Math.floor(window.innerHeight * scale)
   context.scale(scale, scale)
 
-  const particles = Array.from({ length: 64 }, (_, index) => ({
-    x: window.innerWidth * (0.38 + Math.random() * 0.24),
-    y: window.innerHeight * 0.22,
-    vx: (Math.random() - 0.5) * 7,
-    vy: -6 - Math.random() * 6,
-    gravity: 0.28 + Math.random() * 0.08,
-    size: 5 + Math.random() * 5,
-    rotation: Math.random() * Math.PI,
-    color: COLORS[index % COLORS.length],
-  }))
+  const emitters = buildStageConfettiEmitters(
+    window.innerWidth,
+    window.innerHeight,
+  )
+
+  const particles = emitters.flatMap((emitter, emitterIndex) =>
+    Array.from({ length: emitter.count }, (_, particleIndex) => ({
+      x: emitter.x,
+      y: emitter.y,
+      delayFrames: emitter.delayFrames + Math.floor(particleIndex / 6),
+      vx:
+        emitter.velocityX[0] +
+        Math.random() * (emitter.velocityX[1] - emitter.velocityX[0]),
+      vy:
+        emitter.velocityY[0] +
+        Math.random() * (emitter.velocityY[1] - emitter.velocityY[0]),
+      gravity: 0.15 + Math.random() * 0.04,
+      drift: emitter.drift + (Math.random() - 0.5) * 0.09,
+      drag: 0.995 - Math.random() * 0.003,
+      size: 6 + Math.random() * 8.5,
+      height: 3.5 + Math.random() * 4.8,
+      rotation: Math.random() * Math.PI,
+      rotationVelocity: 0.08 + Math.random() * 0.16,
+      opacity: 0.96,
+      color: COLORS[(emitterIndex * 3 + particleIndex) % COLORS.length],
+    })),
+  )
 
   let frame = 0
-  const maxFrames = 80
+  const maxFrames = 176
 
   function draw() {
-    if (typeof window === "undefined") {
-      canvas.remove()
-      return
-    }
-
     frame += 1
     context.clearRect(0, 0, window.innerWidth, window.innerHeight)
 
     for (const particle of particles) {
-      particle.x += particle.vx
+      if (frame < particle.delayFrames) {
+        continue
+      }
+
+      particle.vx *= particle.drag
+      particle.x += particle.vx + particle.drift
       particle.y += particle.vy
       particle.vy += particle.gravity
-      particle.rotation += 0.16
+      particle.rotation += particle.rotationVelocity
+      particle.opacity = Math.max(0, particle.opacity - 0.0038)
 
       context.save()
       context.translate(particle.x, particle.y)
       context.rotate(particle.rotation)
+      context.globalAlpha = particle.opacity
       context.fillStyle = particle.color
       context.fillRect(
         -particle.size / 2,
-        -particle.size / 2,
+        -particle.height / 2,
         particle.size,
-        particle.size * 0.62,
+        particle.height,
       )
       context.restore()
     }
 
     if (frame < maxFrames) {
       requestAnimationFrame(draw)
-    } else {
-      canvas.remove()
+      return
     }
+
+    canvas.remove()
   }
 
   requestAnimationFrame(draw)

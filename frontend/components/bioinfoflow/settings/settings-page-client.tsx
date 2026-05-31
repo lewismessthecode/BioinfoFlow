@@ -8,6 +8,7 @@ import {
   Monitor,
   Moon,
   Palette,
+  PartyPopper,
   ShieldCheck,
   Sun,
   User,
@@ -28,6 +29,7 @@ import { useAppearance } from "@/lib/appearance/use-appearance"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -40,6 +42,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import { apiRequest } from "@/lib/api"
 import { authClient } from "@/lib/auth-client"
+import {
+  celebratePreview,
+  isCelebrationsEnabled,
+  isReducedMotionPreferred,
+  setCelebrationsEnabled as persistCelebrationsEnabled,
+  subscribeToCelebrationsPreference,
+} from "@/lib/celebrations"
 import type { AuthMode, TeamRole } from "@/lib/auth-config"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -373,6 +382,12 @@ export default function SettingsPageClient({
   const [newPassword, setNewPassword] = useState("")
   const [savingPassword, setSavingPassword] = useState(false)
   const [activeSection, setActiveSection] = useState<SettingsSection>("account")
+  const [celebrationsEnabled, setCelebrationsEnabledState] = useState(() =>
+    isCelebrationsEnabled(),
+  )
+  const [reducedMotion, setReducedMotion] = useState(() =>
+    isReducedMotionPreferred(),
+  )
 
   useEffect(() => {
     if (activeSection !== "providers") return
@@ -380,6 +395,29 @@ export default function SettingsPageClient({
       .then(({ data }) => setProviders(data))
       .catch(() => toast.error(t("testFailed")))
   }, [activeSection, t])
+
+  useEffect(() => {
+    return subscribeToCelebrationsPreference(setCelebrationsEnabledState)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return
+    }
+
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
+    const updateReducedMotion = () => {
+      setReducedMotion(isReducedMotionPreferred())
+    }
+
+    mediaQuery.addEventListener?.("change", updateReducedMotion)
+    mediaQuery.addListener?.(updateReducedMotion)
+
+    return () => {
+      mediaQuery.removeEventListener?.("change", updateReducedMotion)
+      mediaQuery.removeListener?.(updateReducedMotion)
+    }
+  }, [])
 
   if (isLoading || !settings) {
     return (
@@ -689,6 +727,58 @@ export default function SettingsPageClient({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-border/70 bg-secondary/35 p-4">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary">
+                        <PartyPopper className="size-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold text-foreground">
+                            {t("appearance.celebrations.title")}
+                          </p>
+                          <span className="rounded-full border border-border/70 bg-background px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            {celebrationsEnabled
+                              ? t("appearance.celebrations.enabledLabel")
+                              : t("appearance.celebrations.disabledLabel")}
+                          </span>
+                        </div>
+                        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                          {t("appearance.celebrations.description")}
+                        </p>
+                        {reducedMotion ? (
+                          <p className="text-xs text-muted-foreground">
+                            {t("appearance.celebrations.reducedMotion")}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          celebratePreview()
+                        }}
+                        disabled={!celebrationsEnabled || reducedMotion}
+                      >
+                        <PartyPopper className="size-4" />
+                        {t("appearance.celebrations.preview")}
+                      </Button>
+                      <Switch
+                        aria-label={t("appearance.celebrations.title")}
+                        checked={celebrationsEnabled}
+                        onCheckedChange={(checked) =>
+                          persistCelebrationsEnabled(Boolean(checked))
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
