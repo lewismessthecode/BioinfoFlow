@@ -37,6 +37,7 @@ from app.repositories.run_repo import RunRepository
 from app.repositories.workflow_repo import WorkflowRepository
 from app.runtime.events import publish_run_status
 from app.scheduler.cleanup import WorkDirCleaner
+from app.services.authorization_service import AuthorizationService
 from app.services.audit_service import AuditService
 from app.services.run_archive import RunArchiveService
 from app.services.run_dispatch import (
@@ -79,6 +80,7 @@ class RunLifecycleService:
         self.workflow_repo = WorkflowRepository(session)
         self.binding_repo = ProjectWorkflowBindingRepository(session)
         self.profile_service = RunProfileService()
+        self.authorization = AuthorizationService(session)
         self._dispatcher = dispatcher or get_run_dispatcher()
         self._archive = RunArchiveService(self.project_repo)
 
@@ -334,9 +336,15 @@ class RunLifecycleService:
         *,
         user_id: str | None = None,
         workspace_id: str | None = None,
+        user_role: str | None = None,
     ) -> dict:
         run = await self._require_run(run_id)
         await self._require_run_access(run, user_id, workspace_id=workspace_id)
+        await self.authorization.require_destructive_business_access(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            user_role=user_role,
+        )
         project = await self.project_repo.get(run.project_id)
         if not project:
             raise FileNotFoundError("project not found")
@@ -527,9 +535,15 @@ class RunLifecycleService:
         delete_outputs: bool = False,
         user_id: str | None = None,
         workspace_id: str | None = None,
+        user_role: str | None = None,
     ) -> None:
         run = await self._require_run(run_id)
         await self._require_run_access(run, user_id, workspace_id=workspace_id)
+        await self.authorization.require_destructive_business_access(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            user_role=user_role,
+        )
         if delete_outputs:
             await self._archive.delete_outputs(run)
         await self.repo.delete_scheduler_tasks(run.run_id)

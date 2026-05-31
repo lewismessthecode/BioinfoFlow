@@ -14,14 +14,27 @@ class StatsService:
     def __init__(self, session: AsyncSession):
         self._repo = StatsRepository(session)
 
-    async def get_dashboard_stats(self, *, user_id: str | None = None) -> dict:
+    async def get_dashboard_stats(
+        self,
+        *,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
+    ) -> dict:
         """Return aggregated dashboard statistics, scoped to *user_id*."""
-        by_status = await self._repo.get_run_counts_by_status(user_id=user_id)
+        by_status = await self._repo.get_run_counts_by_status(
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         workflows_total = await self._repo.get_workflow_count()
         images_by_status = await self._repo.get_image_counts_by_status()
-        projects_total = await self._repo.get_project_count(user_id=user_id)
+        projects_total = await self._repo.get_project_count(
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         recent_run_models = await self._repo.get_recent_runs(
-            limit=5, user_id=user_id
+            limit=5,
+            user_id=user_id,
+            workspace_id=workspace_id,
         )
 
         runs_stats = {

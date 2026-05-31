@@ -28,6 +28,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
+import { authClient } from "@/lib/auth-client";
+import {
+  canManageDestructiveBusinessActions,
+  clientAuthConfig,
+  resolveTeamRole,
+} from "@/lib/auth-config";
 import { getCurrentRuntime } from "@/lib/runtime";
 import { cn } from "@/lib/utils";
 import { formatSize } from "@/lib/format-utils";
@@ -83,10 +89,17 @@ export function RunDetailContent({
 }: RunDetailContentProps) {
   const tRuns = useTranslations("runs");
   const tCommon = useTranslations("common");
+  const { data: session } = authClient.useSession();
   const { openTerminal, chdir } = useTerminalDock();
   const runtime = getCurrentRuntime();
   const terminalEnabled = runtime.capabilities.terminal;
-  const destructiveActionsEnabled = runtime.capabilities.destructiveActions;
+  const destructiveActionsEnabled =
+    runtime.capabilities.destructiveActions &&
+    canManageDestructiveBusinessActions(
+      clientAuthConfig.mode,
+      session?.user ? resolveTeamRole(session.user) : "member",
+      clientAuthConfig.authEnabled,
+    );
 
   const outputTree = useMemo(
     () => buildOutputTree(outputs?.files ?? []),

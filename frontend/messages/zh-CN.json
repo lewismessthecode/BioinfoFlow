@@ -1148,6 +1148,7 @@
       "imageNameRequired": "请输入镜像名称",
       "imageNameInvalid": "请输入有效的镜像名称",
       "pullFailed": "无法拉取镜像。请确认 Docker 正在运行且网络连接正常。",
+      "deleteForbidden": "团队模式下只有管理员和所有者可以删除共享镜像。",
       "deleteFailed": "无法删除镜像。该镜像可能正在被运行中的容器使用。",
       "deletePulling": "镜像仍在拉取中，请等待下载结束后再删除。",
       "deleteInUse": "镜像当前正被容器使用，请先停止相关容器再删除。"

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from app.api.deps import get_current_user
 from app.api.v1.events import stream_events
 from app.auth.session import AuthUser
 from app.models.conversation import Conversation
+from app.models.image import DockerImage, ImageStatus
 from app.models.project import Project
 from app.models.run import Run, RunStatus
+from app.config import settings
 from app.utils.exceptions import PermissionDeniedError
 
 
@@ -15,14 +18,20 @@ OTHER_USER_ID = "other-user"
 DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
 
 
-async def _create_project_for_user(db_session, *, name: str, user_id: str) -> Project:
+async def _create_project_for_user(
+    db_session,
+    *,
+    name: str,
+    user_id: str,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> Project:
     project = Project(
         name=name,
         storage_mode="managed",
         external_root_path=None,
         user_id=user_id,
         created_by_user_id=user_id,
-        workspace_id=DEFAULT_WORKSPACE_ID,
+        workspace_id=workspace_id,
     )
     db_session.add(project)
     await db_session.commit()
@@ -61,6 +70,35 @@ async def _create_run_for_project(
     await db_session.commit()
     await db_session.refresh(run)
     return run
+
+
+async def _create_global_image(
+    db_session,
+    *,
+    name: str = "ubuntu",
+    tag: str = "22.04",
+) -> DockerImage:
+    image = DockerImage(
+        name=name,
+        tag=tag,
+        full_name=f"{name}:{tag}",
+        registry="docker.io",
+        status=ImageStatus.LOCAL.value,
+    )
+    db_session.add(image)
+    await db_session.commit()
+    await db_session.refresh(image)
+    return image
+
+
+def _auth_user(*, user_id: str, role: str = "member") -> AuthUser:
+    return AuthUser(
+        id=user_id,
+        name=f"User {user_id}",
+        email=f"{user_id}@bioinfoflow.test",
+        role=role,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
 
 
 @pytest.mark.asyncio
@@ -182,15 +220,41 @@ async def test_create_conversation_preserves_creator_but_is_workspace_shared(
 
 
 @pytest.mark.asyncio
-async def test_runs_are_scoped_to_project_owner(async_client, db_session):
-    """Runs are user-scoped via their parent project.
+async def test_global_conversation_list_is_workspace_scoped(async_client, db_session):
+    shared_project = await _create_project_for_user(
+        db_session,
+        name="Shared Conversation Project",
+        user_id=OTHER_USER_ID,
+    )
+    other_workspace_project = await _create_project_for_user(
+        db_session,
+        name="Other Workspace Conversation Project",
+        user_id=OTHER_USER_ID,
+        workspace_id="00000000-0000-0000-0000-000000000002",
+    )
 
-    Per the 2026-04-17 security review, RunRepository.list and the
-    single-run access check must filter by Project.user_id so that
-    cross-user run visibility (previously implicit via workspace sharing)
-    is closed off. Workspace-level sharing remains only for the Project
-    surface itself.
-    """
+    await _create_conversation_for_user(
+        db_session,
+        project_id=str(shared_project.id),
+        user_id=OTHER_USER_ID,
+        title="Shared Workspace Conversation",
+    )
+    await _create_conversation_for_user(
+        db_session,
+        project_id=str(other_workspace_project.id),
+        user_id=OTHER_USER_ID,
+        title="Other Workspace Conversation",
+    )
+
+    resp = await async_client.get("/api/v1/agent/conversations")
+    assert resp.status_code == 200
+    titles = [item["title"] for item in resp.json()["data"]]
+    assert "Shared Workspace Conversation" in titles
+    assert "Other Workspace Conversation" not in titles
+
+
+@pytest.mark.asyncio
+async def test_runs_are_workspace_shared(async_client, db_session):
     my_project = await _create_project_for_user(
         db_session,
         name="My Run Project",
@@ -212,10 +276,10 @@ async def test_runs_are_scoped_to_project_owner(async_client, db_session):
     assert list_resp.status_code == 200
     run_ids = [r["run_id"] for r in list_resp.json()["data"]]
     assert "r-mine-001" in run_ids
-    assert "r-other-001" not in run_ids
+    assert "r-other-001" in run_ids
 
     get_resp = await async_client.get(f"/api/v1/runs/{other_run.run_id}")
-    assert get_resp.status_code in (403, 404)
+    assert get_resp.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -273,14 +337,7 @@ async def test_event_stream_rejects_workspace_access_for_system_owned_project(
 
 
 @pytest.mark.asyncio
-async def test_run_dag_is_scoped_to_project_owner(async_client, db_session):
-    """RunDagService enforces ownership just like RunLifecycleService.
-
-    Regression guard for a gap where `_require_run_access` in
-    RunDagService accepted `user_id` but never checked it, leaving
-    /runs/{id}/dag readable across users even after the rest of the
-    2026-04-17 security fixes landed.
-    """
+async def test_run_dag_is_workspace_shared(async_client, db_session):
     other_project = await _create_project_for_user(
         db_session,
         name="Other DAG Project",
@@ -291,4 +348,119 @@ async def test_run_dag_is_scoped_to_project_owner(async_client, db_session):
     )
 
     dag_resp = await async_client.get(f"/api/v1/runs/{other_run.run_id}/dag")
-    assert dag_resp.status_code in (403, 404)
+    assert dag_resp.status_code in (200, 404)
+
+
+@pytest.mark.asyncio
+async def test_team_member_cannot_delete_shared_resources(
+    async_client, db_session, app, monkeypatch
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id=DEV_USER_ID,
+        role="member",
+    )
+
+    project = await _create_project_for_user(
+        db_session,
+        name="Team Shared Project",
+        user_id=OTHER_USER_ID,
+    )
+    conversation = await _create_conversation_for_user(
+        db_session,
+        project_id=str(project.id),
+        user_id=OTHER_USER_ID,
+        title="Shared Conversation",
+    )
+    run = await _create_run_for_project(
+        db_session,
+        project_id=str(project.id),
+        run_id="r-team-shared-001",
+    )
+    image = await _create_global_image(db_session)
+
+    project_resp = await async_client.delete(f"/api/v1/projects/{project.id}")
+    conversation_resp = await async_client.delete(
+        f"/api/v1/agent/conversations/{conversation.id}"
+    )
+    run_resp = await async_client.delete(f"/api/v1/runs/{run.run_id}")
+    image_resp = await async_client.delete(f"/api/v1/images/{image.id}")
+
+    assert project_resp.status_code == 403
+    assert conversation_resp.status_code == 403
+    assert run_resp.status_code == 403
+    assert image_resp.status_code == 403
+
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.asyncio
+async def test_team_admin_can_delete_shared_resources(
+    async_client, db_session, app, monkeypatch
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id=DEV_USER_ID,
+        role="admin",
+    )
+
+    project = await _create_project_for_user(
+        db_session,
+        name="Team Admin Project",
+        user_id=OTHER_USER_ID,
+    )
+    conversation = await _create_conversation_for_user(
+        db_session,
+        project_id=str(project.id),
+        user_id=OTHER_USER_ID,
+        title="Admin Shared Conversation",
+    )
+    run = await _create_run_for_project(
+        db_session,
+        project_id=str(project.id),
+        run_id="r-team-admin-001",
+    )
+    image = await _create_global_image(
+        db_session,
+        name="debian",
+        tag="12",
+    )
+
+    conversation_resp = await async_client.delete(
+        f"/api/v1/agent/conversations/{conversation.id}"
+    )
+    run_resp = await async_client.delete(f"/api/v1/runs/{run.run_id}")
+    image_resp = await async_client.delete(f"/api/v1/images/{image.id}")
+
+    assert conversation_resp.status_code == 204
+    assert run_resp.status_code == 204
+    assert image_resp.status_code == 204
+
+    project_resp = await async_client.delete(f"/api/v1/projects/{project.id}")
+    assert project_resp.status_code == 204
+
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.asyncio
+async def test_workspace_stats_include_shared_runs_and_images(async_client, db_session):
+    project = await _create_project_for_user(
+        db_session,
+        name="Stats Shared Project",
+        user_id=OTHER_USER_ID,
+    )
+    await _create_run_for_project(
+        db_session,
+        project_id=str(project.id),
+        run_id="r-stats-shared-001",
+    )
+    await _create_global_image(db_session, name="stats-image", tag="1")
+
+    resp = await async_client.get("/api/v1/stats")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["projects"]["total"] >= 1
+    assert data["runs"]["total"] >= 1
+    assert data["images"]["total"] >= 1

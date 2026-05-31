@@ -96,11 +96,13 @@ class RunDagService:
         project_id: str | None = None,
         dry_run: bool = False,
         user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> dict:
         runs = await self._select_runs_for_dag_repair(
             run_ids=run_ids,
             project_id=project_id,
             user_id=user_id,
+            workspace_id=workspace_id,
         )
 
         results: list[dict] = []
@@ -137,9 +139,14 @@ class RunDagService:
         *,
         variants: list[str] | None = None,
         user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> dict:
         source_run = await self._require_run(source_run_id)
-        await self._require_run_access(source_run, user_id)
+        await self._require_run_access(
+            source_run,
+            user_id,
+            workspace_id=workspace_id,
+        )
         source_dag = await self._resolve_repairable_dag(source_run)
         if not source_dag.get("nodes"):
             raise FileNotFoundError("dag not found")
@@ -274,12 +281,17 @@ class RunDagService:
         run_ids: list[str] | None,
         project_id: str | None,
         user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> list[Run]:
         if run_ids:
             runs: list[Run] = []
             for run_id in run_ids:
                 run = await self._require_run(run_id)
-                await self._require_run_access(run, user_id)
+                await self._require_run_access(
+                    run,
+                    user_id,
+                    workspace_id=workspace_id,
+                )
                 runs.append(run)
             return runs
 
@@ -292,6 +304,7 @@ class RunDagService:
             statuses,
             project_id=project_id,
             user_id=user_id,
+            workspace_id=workspace_id,
         )
         return [await self._normalize_run_status(run) for run in runs]
 

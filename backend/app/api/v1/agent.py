@@ -31,7 +31,7 @@ from app.services.agent.approval_service import ApprovalService
 from app.services.agent.trace_service import AgentTraceService
 from app.services.hermes_service.service import HermesConversationService
 from app.services.project_service import ProjectService
-from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
+from app.utils.exceptions import BadRequestError, NotFoundError
 from app.utils.rate_limit import agent_rate_limiter
 from app.utils.responses import error_response, success_response
 
@@ -282,6 +282,7 @@ async def delete_conversation(
         conversation_id=conversation_id,
         user_id=user.id,
         workspace_id=user.workspace_id,
+        user_role=user.role,
     )
     return success_response(None, request=request, status_code=204)
 
@@ -408,15 +409,14 @@ def _serialize_approval(approval) -> dict:
     )
 
 
-async def _require_conversation_owned(
-    db: AsyncSession, conversation_id: str, user_id: str
+async def _require_conversation_accessed(
+    db: AsyncSession, conversation_id: str, user: AuthUser
 ):
-    conversation = await ConversationRepository(db).get(conversation_id)
-    if conversation is None:
-        raise NotFoundError(f"Conversation not found: {conversation_id}")
-    if conversation.user_id != user_id:
-        raise PermissionDeniedError("You do not have access to this conversation.")
-    return conversation
+    return await AgentService(db)._require_conversation(
+        conversation_id,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
+    )
 
 
 @router.post("/approvals/{approval_id}/resolve")
@@ -540,7 +540,7 @@ async def list_conversation_approvals(
             cursor=cursor,
         )
     else:
-        await _require_conversation_owned(db, conversation_id, user.id)
+        await _require_conversation_accessed(db, conversation_id, user)
         service = ApprovalService(db)
         approvals, pagination = await service.list_for_conversation(
             conversation_id,
@@ -579,7 +579,7 @@ async def list_pending_approvals(
             workspace_id=user.workspace_id,
         )
     else:
-        await _require_conversation_owned(db, conversation_id, user.id)
+        await _require_conversation_accessed(db, conversation_id, user)
         service = ApprovalService(db)
         approvals = await service.get_pending_for_conversation(conversation_id)
 

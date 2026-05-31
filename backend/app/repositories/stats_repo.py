@@ -21,7 +21,7 @@ class StatsRepository:
         self.session = session
 
     async def get_run_counts_by_status(
-        self, *, user_id: str | None = None
+        self, *, user_id: str | None = None, workspace_id: str | None = None
     ) -> dict[str, int]:
         """Return ``{status: count}`` for all runs, optionally scoped to *user_id*.
 
@@ -29,10 +29,12 @@ class StatsRepository:
         that user are counted.
         """
         stmt = select(Run.status, func.count(Run.id))
+        if user_id is not None or workspace_id is not None:
+            stmt = stmt.join(Project, Project.id == Run.project_id)
         if user_id is not None:
-            stmt = stmt.join(Project, Project.id == Run.project_id).where(
-                Project.user_id == user_id
-            )
+            stmt = stmt.where(Project.user_id != "system")
+        if workspace_id is not None:
+            stmt = stmt.where(Project.workspace_id == workspace_id)
         stmt = stmt.group_by(Run.status)
         result = await self.session.execute(stmt)
         return dict(result.all())
@@ -43,22 +45,28 @@ class StatsRepository:
 
     async def get_image_counts_by_status(self) -> dict[str, int]:
         """Return ``{status: count}`` for Docker images."""
-        result = await self.session.execute(
-            select(DockerImage.status, func.count(DockerImage.id)).group_by(
-                DockerImage.status
-            )
-        )
+        stmt = select(DockerImage.status, func.count(DockerImage.id))
+        stmt = stmt.group_by(DockerImage.status)
+        result = await self.session.execute(stmt)
         return dict(result.all())
 
-    async def get_project_count(self, *, user_id: str | None = None) -> int:
+    async def get_project_count(
+        self, *, user_id: str | None = None, workspace_id: str | None = None
+    ) -> int:
         stmt = select(func.count(Project.id))
         if user_id is not None:
-            stmt = stmt.where(Project.user_id == user_id)
+            stmt = stmt.where(Project.user_id != "system")
+        if workspace_id is not None:
+            stmt = stmt.where(Project.workspace_id == workspace_id)
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 
     async def get_recent_runs(
-        self, *, limit: int = 5, user_id: str | None = None
+        self,
+        *,
+        limit: int = 5,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> list[Run]:
         """Return the most recent *limit* Run model instances.
 
@@ -66,10 +74,12 @@ class StatsRepository:
         that user are returned.
         """
         stmt = select(Run)
+        if user_id is not None or workspace_id is not None:
+            stmt = stmt.join(Project, Project.id == Run.project_id)
         if user_id is not None:
-            stmt = stmt.join(Project, Project.id == Run.project_id).where(
-                Project.user_id == user_id
-            )
+            stmt = stmt.where(Project.user_id != "system")
+        if workspace_id is not None:
+            stmt = stmt.where(Project.workspace_id == workspace_id)
         stmt = stmt.order_by(Run.created_at.desc()).limit(limit)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

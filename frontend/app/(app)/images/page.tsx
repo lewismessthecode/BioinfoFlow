@@ -59,6 +59,7 @@ export default function ImagesPage() {
     handleCopyName,
     handleCopyPullCommand,
     handleDeleteLocal,
+    canDeleteImages,
     handleTarballFileChange,
   } = useImagesPage()
 
@@ -179,7 +180,7 @@ export default function ImagesPage() {
             onViewDetails={handleViewDetails}
             onCopyName={handleCopyName}
             onCopyPullCommand={handleCopyPullCommand}
-            onDeleteLocal={handleDeleteLocal}
+            onDeleteLocal={canDeleteImages ? handleDeleteLocal : undefined}
           />
         ) : (
           <ImageTable
@@ -190,7 +191,7 @@ export default function ImagesPage() {
             onViewDetails={handleViewDetails}
             onCopyName={handleCopyName}
             onCopyPullCommand={handleCopyPullCommand}
-            onDeleteLocal={handleDeleteLocal}
+            onDeleteLocal={canDeleteImages ? handleDeleteLocal : undefined}
           />
         )}
 

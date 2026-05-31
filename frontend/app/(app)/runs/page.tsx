@@ -6,6 +6,12 @@ import Link from "next/link"
 import { AnimatePresence } from "framer-motion"
 import { useTranslations } from "next-intl"
 import { Search, Filter, Eye, FileText, RotateCcw, XCircle, Trash2, ChevronLeft, ChevronRight, ChevronDown, Play, Layers, Bell } from "lucide-react"
+import { authClient } from "@/lib/auth-client"
+import {
+  canManageDestructiveBusinessActions,
+  clientAuthConfig,
+  resolveTeamRole,
+} from "@/lib/auth-config"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -72,6 +78,12 @@ function RunInlineDetailLoadingRow() {
 }
 
 export default function RunsPage() {
+  const { data: session } = authClient.useSession()
+  const canDeleteWorkspaceRuns = canManageDestructiveBusinessActions(
+    clientAuthConfig.mode,
+    session?.user ? resolveTeamRole(session.user) : "member",
+    clientAuthConfig.authEnabled,
+  )
   const {
     tRuns,
     tStatus,
@@ -195,6 +207,7 @@ export default function RunsPage() {
           onResume={handleResume}
           onCancel={confirmCancel}
           onDelete={handleDelete}
+          canDelete={canDeleteWorkspaceRuns}
         />
       ),
     },
@@ -412,6 +425,7 @@ function RunRowActions({
   onResume,
   onCancel,
   onDelete,
+  canDelete,
 }: {
   run: Run
   tRuns: (key: string) => string
@@ -420,9 +434,9 @@ function RunRowActions({
   onResume: (run: Run) => void
   onCancel: (run: Run) => void
   onDelete: (run: Run) => void
+  canDelete: boolean
 }) {
-  const destructiveActionsEnabled =
-    getCurrentRuntime().capabilities.destructiveActions
+  const destructiveActionsEnabled = getCurrentRuntime().capabilities.destructiveActions
 
   return (
     <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
@@ -472,6 +486,7 @@ function RunRowActions({
         </Button>
       )}
       {destructiveActionsEnabled &&
+        canDelete &&
         (run.status === "completed" || run.status === "failed" || run.status === "cancelled") && (
         <Button
           variant="ghost"

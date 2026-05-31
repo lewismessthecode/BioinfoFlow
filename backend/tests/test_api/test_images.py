@@ -11,6 +11,7 @@ from app.services.image_service import (
     DockerUnavailableError,
     ImageDeleteConflictError,
 )
+from app.utils.exceptions import PermissionDeniedError
 
 
 @dataclass
@@ -166,6 +167,35 @@ async def test_images_service_errors_have_stable_docker_error_semantics(
 
     assert resp.status_code == 500
     assert resp.json()["error"]["code"] == "DOCKER_ERROR"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("route", "payload"),
+    [
+        ("/api/v1/images/pull", {"json": {"name": "bioinfoflow/bwa", "tag": "v2.2.1"}}),
+        (
+            "/api/v1/images/load",
+            {"files": {"file": ("image.tar", b"tarball", "application/x-tar")}},
+        ),
+    ],
+)
+async def test_images_app_errors_escape_docker_error_catch_all(
+    async_client, monkeypatch, route, payload
+):
+    async def fake_pull(self, **kwargs):
+        raise PermissionDeniedError("project does not belong to workspace")
+
+    async def fake_load(self, **kwargs):
+        raise PermissionDeniedError("project does not belong to workspace")
+
+    monkeypatch.setattr(image_service.ImageService, "pull_image", fake_pull)
+    monkeypatch.setattr(image_service.ImageService, "load_image_tarball", fake_load)
+
+    resp = await async_client.post(route, **payload)
+
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "PERMISSION_DENIED"
 
 
 @pytest.mark.asyncio

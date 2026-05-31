@@ -142,9 +142,19 @@ async def test_get_dashboard_stats_passes_user_id_to_repo():
         service = StatsService(mock_session)
         await service.get_dashboard_stats(user_id="user-42")
 
-    repo.get_run_counts_by_status.assert_called_once_with(user_id="user-42")
-    repo.get_project_count.assert_called_once_with(user_id="user-42")
-    repo.get_recent_runs.assert_called_once_with(limit=5, user_id="user-42")
+    repo.get_run_counts_by_status.assert_called_once_with(
+        user_id="user-42",
+        workspace_id=None,
+    )
+    repo.get_project_count.assert_called_once_with(
+        user_id="user-42",
+        workspace_id=None,
+    )
+    repo.get_recent_runs.assert_called_once_with(
+        limit=5,
+        user_id="user-42",
+        workspace_id=None,
+    )
 
 
 @pytest.mark.asyncio

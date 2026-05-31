@@ -23,5 +23,8 @@ async def get_stats(
     Returns counts and recent activity for the dashboard overview.
     """
     service = StatsService(db)
-    data = await service.get_dashboard_stats(user_id=user.id)
+    data = await service.get_dashboard_stats(
+        user_id=user.id,
+        workspace_id=user.workspace_id,
+    )
     return success_response(data, request=request)

@@ -7,10 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
 from app.models.image import ImageStatus
+from app.repositories.project_repo import ProjectRepository
 from app.repositories.image_repo import ImageRepository
 from app.runtime.background_tasks import background_tasks
 from app.runtime.events import publish_image_progress
 from app.services.docker_service import DockerImageInfo, DockerService
+from app.utils.authorization import can_access_project
+from app.utils.exceptions import PermissionDeniedError
 
 # Backward-compatible alias for tests while image work moves off the run queue.
 task_runner = background_tasks
@@ -21,9 +24,7 @@ class DockerUnavailableError(RuntimeError):
 
 
 class ImageDeleteConflictError(RuntimeError):
-    def __init__(
-        self, code: str, message: str, *, details: dict | None = None
-    ) -> None:
+    def __init__(self, code: str, message: str, *, details: dict | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.details = details
@@ -35,7 +36,9 @@ class ImageService:
     _sync_ttl_seconds = 30
 
     def __init__(self, session: AsyncSession):
+        self.session = session
         self.repo = ImageRepository(session)
+        self.project_repo = ProjectRepository(session)
         self.docker = DockerService()
 
     async def list_images(
@@ -54,14 +57,22 @@ class ImageService:
             except DockerUnavailableError:
                 docker_status = "unavailable"
         images, pagination = await self.repo.list(
-            limit=limit, cursor=cursor, search=search, status=status
+            limit=limit,
+            cursor=cursor,
+            search=search,
+            status=status,
         )
         last_synced_at = self.__class__._last_sync_at
-        return images, pagination, {
-            "docker": docker_status,
-            "images_stale": docker_status == "unavailable" and last_synced_at is not None,
-            "last_synced_at": last_synced_at,
-        }
+        return (
+            images,
+            pagination,
+            {
+                "docker": docker_status,
+                "images_stale": docker_status == "unavailable"
+                and last_synced_at is not None,
+                "last_synced_at": last_synced_at,
+            },
+        )
 
     async def get_image(self, image_id: str):
         return await self.repo.get(image_id)
@@ -73,9 +84,16 @@ class ImageService:
         tag: str = "latest",
         registry: str = "docker.io",
         project_id: str | None = None,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ):
         if not await self.docker.is_available():
             raise DockerUnavailableError("docker unavailable")
+        await self._validate_project_context(
+            project_id=project_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
         full_name = f"{name}:{tag}"
         existing = await self.repo.get_by_full_name(full_name)
         if existing:
@@ -137,7 +155,14 @@ class ImageService:
         *,
         content: bytes,
         project_id: str | None = None,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ):
+        await self._validate_project_context(
+            project_id=project_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
         tags = await self.docker.load_image(content)
         images = []
         for tag in tags:
@@ -169,7 +194,11 @@ class ImageService:
     def _touch_sync(self) -> None:
         self.__class__._last_sync_at = datetime.now(timezone.utc)
 
-    async def _sync_local_images(self, *, force: bool = False) -> None:
+    async def _sync_local_images(
+        self,
+        *,
+        force: bool = False,
+    ) -> None:
         if not force and not self._sync_expired():
             return
         if self.__class__._sync_lock is None:
@@ -210,7 +239,8 @@ class ImageService:
 
     async def _prune_remote_images(self, local_full_names: set[str]) -> None:
         remotes = await self.repo.list_not_in_full_names(
-            local_full_names, statuses=[ImageStatus.REMOTE.value]
+            local_full_names,
+            statuses=[ImageStatus.REMOTE.value],
         )
         for image in remotes:
             await self.repo.delete(image)
@@ -361,3 +391,20 @@ class ImageService:
 
     async def _persist_image(self, repo: ImageRepository, image, **data):
         return await repo.update_all(image, **data)
+
+    async def _validate_project_context(
+        self,
+        *,
+        project_id: str | None,
+        workspace_id: str | None,
+        user_id: str | None,
+    ) -> None:
+        if not project_id or (user_id is None and workspace_id is None):
+            return
+        project = await self.project_repo.get(project_id)
+        if project is None or not can_access_project(
+            project,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        ):
+            raise PermissionDeniedError("project does not belong to workspace")

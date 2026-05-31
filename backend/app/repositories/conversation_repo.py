@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import and_, desc, func, or_, select
 
 from app.models.conversation import Conversation
+from app.models.project import Project
 from app.repositories.base import BaseRepository
 from app.utils.pagination import decode_cursor, encode_cursor, normalize_cursor_value
 from app.schemas.common import Pagination
@@ -17,11 +18,17 @@ class ConversationRepository(BaseRepository[Conversation]):
         limit: int = 20,
         cursor: str | None = None,
         project_id: str | None = None,
+        workspace_id: str | None = None,
         user_id: str | None = None,
     ) -> tuple[list[Conversation], Pagination]:
         stmt = select(self.model)
         if project_id:
             stmt = stmt.where(self.model.project_id == project_id)
+        elif workspace_id:
+            stmt = stmt.join(Project, Project.id == self.model.project_id).where(
+                Project.workspace_id == workspace_id,
+                Project.user_id != "system",
+            )
         if user_id:
             stmt = stmt.where(self.model.user_id == user_id)
 
@@ -61,6 +68,13 @@ class ConversationRepository(BaseRepository[Conversation]):
         count_stmt = select(self.model.id)
         if project_id:
             count_stmt = count_stmt.where(self.model.project_id == project_id)
+        elif workspace_id:
+            count_stmt = count_stmt.join(
+                Project, Project.id == self.model.project_id
+            ).where(
+                Project.workspace_id == workspace_id,
+                Project.user_id != "system",
+            )
         if user_id:
             count_stmt = count_stmt.where(self.model.user_id == user_id)
         total_count = await self.session.scalar(

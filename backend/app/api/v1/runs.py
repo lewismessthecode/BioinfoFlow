@@ -260,6 +260,7 @@ async def repair_run_dags(
         project_id=project_id,
         dry_run=dry_run,
         user_id=user.id,
+        workspace_id=user.workspace_id,
     )
     return success_response(data, request=request)
 
@@ -278,7 +279,10 @@ async def create_mock_dag_variants(
         [item.strip() for item in variants.split(",")] if variants else None
     )
     data = await service.create_mock_dag_variants(
-        run_id, variants=parsed_variants, user_id=user.id
+        run_id,
+        variants=parsed_variants,
+        user_id=user.id,
+        workspace_id=user.workspace_id,
     )
     return success_response(data, request=request, status_code=201)
 
@@ -402,6 +406,7 @@ async def cleanup_run(
         run_id,
         user_id=user.id,
         workspace_id=user.workspace_id,
+        user_role=user.role,
     )
     return success_response(data, request=request)
 
@@ -438,5 +443,6 @@ async def delete_run(
         delete_outputs=delete_outputs,
         user_id=user.id,
         workspace_id=user.workspace_id,
+        user_role=user.role,
     )
     return success_response(None, request=request, status_code=204)
