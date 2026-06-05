@@ -1,5 +1,6 @@
 import { createRef } from "react"
 import { act, fireEvent, render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -80,6 +81,20 @@ vi.mock("next-intl", () => ({
         evening: "Good morning ☀️ What data shall we explore?",
         lateNight: "Good morning ☀️ What data shall we explore?",
         morning: "Good morning ☀️ What data shall we explore?",
+      },
+      executionMode: {
+        approveAllDescription: "Also prompt on low-risk writes. Strictest mode.",
+        approveAllShort: "Approve all",
+        approveAllTitle: "Approve all actions",
+        askDescription: "Prompt before running high-risk tools like runs, shell, and code execution.",
+        askShort: "Ask",
+        askTitle: "Ask (Default)",
+        bypassDescription: "Never prompt. The agent runs every tool automatically.",
+        bypassShort: "Bypass",
+        bypassTitle: "Bypass all approvals",
+        changeFailed: "Could not change execution mode.",
+        menuLabel: "Tool execution mode",
+        triggerAriaLabel: "Change execution mode",
       },
       welcome: {
         blankDescription: "Start empty",
@@ -441,12 +456,20 @@ describe("AgentCoreChat", () => {
     expect(sendTurn).toHaveBeenCalledWith("Summarize MultiQC")
   })
 
-  it("updates permission mode from the composer controls", () => {
+  it("restores the explained permission mode menu and updates AgentCore permission_mode", async () => {
+    const user = userEvent.setup()
     render(<AgentCoreChat projectId="project-1" workspaceEnabled />)
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Tool permissions" }), {
-      target: { value: "bypass" },
-    })
+    await user.click(screen.getByRole("button", { name: "Change execution mode" }))
+
+    expect(await screen.findByText("Tool execution mode")).toBeInTheDocument()
+    expect(screen.getByText("Ask (Default)")).toBeInTheDocument()
+    expect(screen.getByText("Prompt before running high-risk tools like runs, shell, and code execution.")).toBeInTheDocument()
+    expect(screen.getByText("Approve all actions")).toBeInTheDocument()
+    expect(screen.getByText("Also prompt on low-risk writes. Strictest mode.")).toBeInTheDocument()
+    expect(screen.getByText("Bypass all approvals")).toBeInTheDocument()
+
+    await user.click(screen.getByText("Bypass all approvals"))
 
     expect(updateSessionSettings).toHaveBeenCalledWith({
       permissionMode: "bypass",

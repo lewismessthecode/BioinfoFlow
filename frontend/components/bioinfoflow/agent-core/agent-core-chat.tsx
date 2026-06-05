@@ -21,12 +21,22 @@ import {
   ThumbsUp,
   Upload,
   X,
+  Zap,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
+import { toast } from "sonner"
 
 import { WelcomeCard } from "@/components/bioinfoflow/welcome-card"
 import { ChatInput } from "@/components/bioinfoflow/chat/chat-input"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useAgentCore } from "@/hooks/use-agent-core"
 import { useLlmCatalog } from "@/hooks/use-llm-catalog"
@@ -119,7 +129,7 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
         permissionMode={activePermissionMode}
         modelProfileId={activeModelProfileId}
         onPermissionModeChange={(permissionMode) => {
-          void updateSessionSettings({ permissionMode })
+          return updateSessionSettings({ permissionMode })
         }}
         onModelProfileChange={(defaultModelProfileId) => {
           void updateSessionSettings({ defaultModelProfileId })
@@ -311,7 +321,7 @@ function AgentComposerControls({
   profiles: LlmModelProfile[]
   permissionMode: AgentPermissionMode
   modelProfileId: string | null
-  onPermissionModeChange: (mode: AgentPermissionMode) => void
+  onPermissionModeChange: (mode: AgentPermissionMode) => void | Promise<unknown>
   onModelProfileChange: (profileId: string | null) => void
 }) {
   const t = useTranslations("agentCore")
@@ -353,24 +363,146 @@ function AgentComposerControls({
           })}
         </select>
       </label>
-      <label className="relative flex items-center" title={t("permissionMode")}>
-        <ShieldCheck className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
-        <span className="sr-only">{t("permissionMode")}</span>
-        <select
-          aria-label={t("permissionMode")}
-          className="h-8 max-w-[150px] appearance-none rounded-full border border-transparent bg-secondary/70 py-0 pl-7 pr-6 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-secondary hover:text-foreground focus:border-ring focus:ring-2 focus:ring-ring/35 disabled:opacity-50"
-          disabled={disabled}
-          value={permissionMode}
-          onChange={(event) =>
-            onPermissionModeChange(event.currentTarget.value as AgentPermissionMode)
-          }
-        >
-          <option value="guarded_auto">{t("permissionGuarded")}</option>
-          <option value="ask_each_action">{t("permissionAskEach")}</option>
-          <option value="bypass">{t("permissionBypass")}</option>
-        </select>
-      </label>
+      <AgentPermissionModeSelector
+        disabled={disabled}
+        value={permissionMode}
+        onChange={onPermissionModeChange}
+      />
     </div>
+  )
+}
+
+function AgentPermissionModeSelector({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: AgentPermissionMode
+  onChange: (mode: AgentPermissionMode) => void | Promise<void>
+  disabled?: boolean
+}) {
+  const t = useTranslations("executionMode")
+  const active = value
+
+  const handleSelect = async (next: AgentPermissionMode) => {
+    if (next === active) return
+    try {
+      await onChange(next)
+    } catch {
+      toast.error(t("changeFailed"))
+    }
+  }
+
+  const trigger = useMemo(() => {
+    if (active === "bypass") {
+      return {
+        icon: <Zap className="h-3.5 w-3.5" aria-hidden />,
+        label: t("bypassShort"),
+        cls: "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300",
+      }
+    }
+    if (active === "ask_each_action") {
+      return {
+        icon: <ShieldAlert className="h-3.5 w-3.5" aria-hidden />,
+        label: t("approveAllShort"),
+        cls: "text-foreground",
+      }
+    }
+    return {
+      icon: <ShieldCheck className="h-3.5 w-3.5" aria-hidden />,
+      label: t("askShort"),
+      cls: "text-muted-foreground hover:text-foreground",
+    }
+  }, [active, t])
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className={cn(
+            "h-8 gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors hover:bg-secondary/70",
+            trigger.cls,
+          )}
+          disabled={disabled}
+          aria-label={t("triggerAriaLabel")}
+          title={t("menuLabel")}
+        >
+          {trigger.icon}
+          <span className="hidden sm:inline">{trigger.label}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="w-80 rounded-[22px] border-border/80 bg-popover p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.16)]"
+      >
+        <DropdownMenuLabel className="px-4 py-3 text-[15px] font-semibold text-foreground">
+          {t("menuLabel")}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator className="mx-2 my-0" />
+        <PermissionModeItem
+          icon={<ShieldCheck className="h-4 w-4" />}
+          title={t("askTitle")}
+          description={t("askDescription")}
+          active={active === "guarded_auto"}
+          onSelect={() => void handleSelect("guarded_auto")}
+        />
+        <PermissionModeItem
+          icon={<ShieldAlert className="h-4 w-4" />}
+          title={t("approveAllTitle")}
+          description={t("approveAllDescription")}
+          active={active === "ask_each_action"}
+          onSelect={() => void handleSelect("ask_each_action")}
+        />
+        <PermissionModeItem
+          icon={<Zap className="h-4 w-4 text-amber-500" />}
+          title={t("bypassTitle")}
+          description={t("bypassDescription")}
+          active={active === "bypass"}
+          onSelect={() => void handleSelect("bypass")}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function PermissionModeItem({
+  icon,
+  title,
+  description,
+  active,
+  onSelect,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  active: boolean
+  onSelect: () => void
+}) {
+  return (
+    <DropdownMenuItem
+      onClick={onSelect}
+      className="my-1 cursor-pointer items-start gap-3 rounded-2xl px-3 py-3 focus:bg-muted/70"
+    >
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted/70 text-muted-foreground">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium leading-5 text-foreground">
+            {title}
+          </span>
+          {active ? (
+            <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-hidden />
+          ) : null}
+        </div>
+        <p className="whitespace-normal text-xs leading-5 text-muted-foreground">
+          {description}
+        </p>
+      </div>
+    </DropdownMenuItem>
   )
 }
 
