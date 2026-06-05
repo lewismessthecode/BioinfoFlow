@@ -5,11 +5,11 @@ from typing import Any
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.bioinformatics import (
     ImageCardService,
+    ResultInterpretationService,
     RunDiagnosisService,
     RunPreflightService,
     WorkflowCardService,
 )
-from app.services.bioinformatics.results import ResultInterpretationService
 
 
 class BuildWorkflowCardTool:

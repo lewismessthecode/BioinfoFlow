@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -157,3 +158,20 @@ def test_new_agent_core_tools_do_not_call_own_fastapi_over_http() -> None:
         paths=AGENT_EXECUTION_PATHS,
         globs=[],
     ) == {}
+
+
+def test_backend_service_source_paths_are_not_gitignored() -> None:
+    service_sources = sorted(
+        path
+        for path in (BACKEND_APP / "services").rglob("*.py")
+        if "__pycache__" not in path.parts
+    )
+    result = subprocess.run(
+        ["git", "check-ignore", "-v", *[str(path) for path in service_sources]],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1, result.stdout
