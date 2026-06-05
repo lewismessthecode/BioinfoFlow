@@ -1,7 +1,5 @@
 import type { FormSpec } from "@/lib/form-spec"
 import type {
-  AgentConversationHistory,
-  AgentConversationRead,
   AuditLogEntry,
   DagData,
   DockerImage,
@@ -14,6 +12,7 @@ import type {
   SchedulerStatus,
   Workflow,
 } from "@/lib/types"
+import type { AgentCoreSession } from "@/lib/agent-core"
 import type {
   DashboardStats,
   GpuInfo,
@@ -22,7 +21,7 @@ import type {
 import type { DemoScenario, DemoFileNode } from "./scenario"
 
 const DEMO_PROJECT_ID = "project-demo"
-const DEMO_CONVERSATION_ID = "conv-demo-main"
+const DEMO_AGENT_SESSION_ID = "agent-session-demo-main"
 
 const demoProject: Project = {
   id: DEMO_PROJECT_ID,
@@ -215,21 +214,22 @@ const formSpec: FormSpec = {
   ],
 }
 
-const conversation: AgentConversationRead = {
-  id: DEMO_CONVERSATION_ID,
+const agentSession: AgentCoreSession = {
+  id: DEMO_AGENT_SESSION_ID,
   project_id: DEMO_PROJECT_ID,
+  workspace_id: "workspace-demo",
+  user_id: "demo-user",
   title: "RNA-seq dry run",
-  execution_policy: "auto",
+  role_profile: "bioinformatics_engineer",
+  permission_mode: "guarded_auto",
+  automation_mode: "assisted",
+  default_model_profile_id: null,
+  status: "active",
+  metadata: {
+    demo_source: "seeded",
+  },
   created_at: "2026-04-24T09:01:00Z",
   updated_at: "2026-04-24T09:01:00Z",
-}
-
-const conversationHistory: AgentConversationHistory = {
-  conversation_id: DEMO_CONVERSATION_ID,
-  project_id: DEMO_PROJECT_ID,
-  title: conversation.title,
-  execution_policy: "auto",
-  messages: [],
 }
 
 const seededRuns: Run[] = [
@@ -616,11 +616,8 @@ export const DEMO_RUNTIME_SCENARIO: DemoScenario = {
   formSpecs: {
     "wf-rnaseq-quant-mini": formSpec,
   },
-  conversations: {
-    [DEMO_PROJECT_ID]: [conversation],
-  },
-  conversationHistory: {
-    [DEMO_CONVERSATION_ID]: conversationHistory,
+  agentSessions: {
+    [DEMO_PROJECT_ID]: [agentSession],
   },
   runs: seededRuns,
   runLogs: seededRunLogs,

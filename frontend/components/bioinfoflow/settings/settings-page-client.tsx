@@ -19,6 +19,7 @@ import {
   ProviderCard,
   type ProviderField,
 } from "@/components/bioinfoflow/settings/provider-card"
+import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-panel"
 import { MembersPanel } from "@/components/bioinfoflow/settings/members-panel"
 import {
   appearancePresetIds,
@@ -536,7 +537,9 @@ export default function SettingsPageClient({
         <div
           className={cn(
             "mx-auto w-full space-y-6 p-6",
-            activeSection === "appearance" ? "max-w-5xl" : "max-w-2xl",
+            activeSection === "appearance" || activeSection === "providers"
+              ? "max-w-5xl"
+              : "max-w-2xl",
           )}
         >
           {/* ── Account Section ────────────────────────── */}
@@ -792,6 +795,8 @@ export default function SettingsPageClient({
                 <h3 className="text-base font-semibold text-foreground">{t("title")}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">{t("subtitle")}</p>
               </div>
+
+              <LlmCatalogPanel />
 
               <div className="space-y-3">
                 {providers.map((provider) => {

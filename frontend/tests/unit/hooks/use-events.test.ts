@@ -56,17 +56,16 @@ describe("useEvents", () => {
     vi.unstubAllGlobals()
   })
 
-  it("connects to the filtered stream URL and forwards parsed agent events", () => {
-    const onAgentEvent = vi.fn()
+  it("connects to the filtered stream URL and forwards parsed run events", () => {
+    const onRunStatus = vi.fn()
     const onOpen = vi.fn()
 
     const { result } = renderHook(() =>
       useEvents({
         projectId: "project-1",
-        conversationId: "conversation-1",
         runId: "run-1",
         imageId: "image-1",
-        onAgentEvent,
+        onRunStatus,
         onOpen,
       })
     )
@@ -77,7 +76,6 @@ describe("useEvents", () => {
     const source = MockEventSource.instances[0]
     expect(source.url).toContain("/api/v1/events/stream")
     expect(source.url).toContain("project_id=project-1")
-    expect(source.url).toContain("conversation_id=conversation-1")
     expect(source.url).toContain("run_id=run-1")
     expect(source.url).toContain("image_id=image-1")
     expect(source.options).toEqual({ withCredentials: true })
@@ -91,18 +89,18 @@ describe("useEvents", () => {
     expect(onOpen).toHaveBeenCalledTimes(1)
 
     const envelope = {
-      event: "agent.message",
-      conversation_id: "conversation-1",
-      data: { content: "hello" },
+      event: "run.status",
+      run_id: "run-1",
+      data: { run_id: "run-1", status: "running" },
     }
 
     act(() => {
-      source.emit("agent.message", envelope)
-      source.emit("agent.message", "{bad-json")
+      source.emit("run.status", envelope)
+      source.emit("run.status", "{bad-json")
     })
 
-    expect(onAgentEvent).toHaveBeenCalledTimes(1)
-    expect(onAgentEvent).toHaveBeenCalledWith(envelope)
+    expect(onRunStatus).toHaveBeenCalledTimes(1)
+    expect(onRunStatus).toHaveBeenCalledWith(envelope)
   })
 
   it("reconnects after a closed event source error", () => {

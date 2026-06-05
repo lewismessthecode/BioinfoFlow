@@ -51,49 +51,11 @@ uv run bif agent send "analyze samples" -p proj  # Prints conversation ID + resu
 uv run bif open run r-abc                      # Open a page in the browser ($BIOFLOW_WEB_URL)
 ```
 
-**Backend target.** `bif` is an HTTP-only client for a running backend. Start `uvicorn app.main:app` locally, or select another API with `--base-url` / `BIOFLOW_API_URL`.
-
-**Output contract.** `--output human` (default) renders Rich tables/panels on stdout. `--output json` (or `BIOFLOW_OUTPUT=json`) emits a `{success, data, error?, meta?}` envelope on **stdout**, and CLI-handled runtime errors such as `ConnectionFailed` as a parseable `{success:false, error:{code,message,...}}` envelope on **stderr**. Click usage errors (`BadParameter`, `UsageError`) keep Click's standard usage rendering and exit code 2. Streaming commands (`run watch`, `events stream`, `run logs --follow`) emit NDJSON.
-
-**Standard flags** (root): `-V/--version`, `-h/--help`, `-p/--project`, `-q/--quiet`, `-v/--verbose`, `--no-color` (also honors `NO_COLOR`), `--base-url`, `--output`. Resolution order for every overridable setting: CLI flag → env var (`BIOFLOW_API_URL`, `BIOFLOW_PROJECT`, `BIOFLOW_OUTPUT`, `BIOFLOW_WEB_URL`) → `~/.config/bioinfoflow/cli.toml` → built-in default.
-
-**Exit codes.** `0` ok · `1` general · `2` bad usage / spec / Click `BadParameter` · `3` backend/API error · `4` connection failure.
-
-**Destructive commands** (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) prompt in human mode; pass `--force/-f` to skip in scripts.
-
 ## Environment
 
 Full setup: `RUNBOOK.md` and `docs/operations/runbook.md`. Minimum: copy the repo-root `.env.example` to `.env`, set one provider key, and set owner credentials. Workflow execution also needs Docker daemon access plus `NEXTFLOW_BIN` or `MINIWDL_BIN` depending on the engine.
 
 Scheduler and agent runtime defaults live in `app/config.py`; only add overrides to `.env` when local behavior really needs to differ.
-
-## Architecture
-
-- **`backend/`** — FastAPI + agent orchestration. Agent Runtime (explicit async loop in `services/agent/runtime/`) is the default; the older LangGraph StateGraph (`graph.py`) is a compatibility fallback. Core flow: User Input → Agent Service → Runtime Loop → Tools → SSE Events → Frontend. Runtime modules include `loop`, `dispatch`, `llm_client`, `compact`, `todo`, `tasks`, `skills`, `subagent`, `session_state`, `system_prompt`, `background`, and `messages`.
-- **`backend/app/services/run_service.py`** — RunService is a facade that delegates to `RunSubmissionService` (wizard/table/unified run creation), `RunDagService` (DAG repair + mock variants), `RunLifecycleService` (state transitions), and `RunDispatchService` (engine dispatch). All callers import from `run_service.py` — never import the sub-services directly.
-- **`backend/app/scheduler/`** — Persistent run scheduler with priority queue, retry policies, resource monitoring (CPU/mem/disk/GPU), and completion hooks. Modes: `persistent` (default), `legacy`, `local`. API: `/scheduler/status`, `/scheduler/resources`.
-- **`backend/app/engine/`** — Workflow execution via adapter pattern. `EngineAdapter` interface with Nextflow and WDL adapters. `LocalBackend` for execution, `SchemaExtractor` for workflow parameter discovery.
-- **`backend/app/cli/`** — `bif` CLI (Typer + Rich). HTTP-only transport via `RemoteTransport`. Commands for projects, workflows, runs (incl. `outputs`, `batch`), agent (incl. `approvals`), files, events, system, doctor, config. `errors.handle_errors` is the standard command decorator: it closes the API client, emits a JSON envelope on stderr in `--output json` mode, and re-raises Click `BadParameter`/`UsageError` so usage errors keep exit code 2.
-- **`frontend/`** — Next.js 16 App Router, React 19, React Flow DAG visualization, Radix UI + Tailwind CSS 4. Auth via Better Auth. i18n via next-intl (en, zh-CN).
-- **Communication:** REST for CRUD, SSE (`EventBus`) for long-running operations (agent, runs, image pulls), WebSocket for terminal sessions (`/terminal/sessions/{id}/ws`).
-- **Database:** SQLite via async SQLAlchemy (`aiosqlite`). ORM models in `models/`, repositories in `repositories/`, schemas in `schemas/`, migrations via Alembic.
-- **Config:** Backend `app/config.py` (Pydantic Settings, 40+ env vars). LLM providers: Anthropic (default), OpenAI, Gemini — auto-selected by available API keys. Frontend: `NEXT_PUBLIC_API_BASE_URL`.
-- **Backend layers:** API routes (`api/v1/`) → Services (`services/`) → Repositories (`repositories/`) → Models (`models/`). Schemas in `schemas/`. Services must NOT use `session.execute()` directly — delegate to repository methods.
-
-For detailed architecture, component listings, data models, and current file counts, read **`codemaps/`** (`architecture.md`, `backend.md`, `frontend.md`, `data.md`, `dependencies.md`).
-
-## Engine Contracts
-
-Three contracts govern workflow execution. Violating any of them produces silent or misleading failures. All have regression tests; do not weaken them without reading those tests and the comments inside the relevant files first.
-
-**Path Contract (identity mount).** `BIOINFOFLOW_HOME == BIOINFOFLOW_HOME_HOST`, enforced at startup by `assert_identity_mount()` (`backend/app/path_layout.py:192`). Host path == container path everywhere — no translation layer in code. Per-run mounts (`runs/{run_id}/input` ro, `runs/{run_id}/results` rw) are **siblings, never nested under `project_root`** — Docker Swarm silently demotes a rw child whose parent is mounted ro. Locked by `test_configured_run_mounts_never_nests_targets`.
-
-**Image Contract (UID alignment).** Every task container runs with `--user {backend_uid}:{backend_gid}` regardless of the image's `USER` directive. WDL: `[task_runtime] as_user = true` in the cfg generated by `_write_runner_cfg` (`backend/app/engine/adapters/wdl.py`). Bioinformatics images (e.g. `deaf:V2.0.9.9` ships `USER 1000`) cannot write to root-owned shared dirs otherwise.
-
-**Runtime Contract (engine integration).**
-- WDL is invoked via `python -m app.engine._miniwdl_entry run ...`, **not** the raw `miniwdl` binary. The entry module pre-registers `BioinfoflowSwarmContainer` in miniwdl's `_backends` dict, bypassing flaky `importlib.metadata` entry-point discovery.
-- `BioinfoflowSwarmContainer.host_path` extends miniwdl's work-dir-only output validation to accept paths under platform-declared rw mounts — so production WDLs declaring `File foo = "${outdir}/x"` work. Paths outside those mounts still go through miniwdl's stock check (the `/etc/passwd`-style escape guard stays).
-- WDL adapter parses miniwdl's universal `wdl.w:WORKFLOW.t:call-TASK ...` log lines into `EngineEventType.TASK_UPDATE` events that drive the live DAG. Authoritative signals only: `task setup` → submitted, `docker task running` → running, `NOTICE done` → completed (NOT `docker task exit :: state: "complete"` — false-positive when post-task validation later fails), `ERROR ... failed` → failed.
 
 ## Testing
 
@@ -108,8 +70,6 @@ Three contracts govern workflow execution. Violating any of them produces silent
 
 ## Conventions
 
-- API responses: `{ success, data, error, meta }` envelope.
-- Agent tools: `BaseTool` abstract class + `@register_tool` decorator. Risk levels: `read`, `act_low`, `act_high`. `act_high` triggers the approval workflow.
 - Frontend routing: `app/(app)/` is the protected layout (dashboard, workflows, runs, agent, scheduler, images). Auth pages under `app/auth/`.
 - For complex features or significant refactors, write a plan doc in `docs/plans/`.
 
@@ -138,33 +98,26 @@ Three contracts govern workflow execution. Violating any of them produces silent
 
 ## Maintenance
 
-- **Pruning cadence:** Run `/codebase-pruning` every 2 weeks or after major features. Reports go to `docs/reviews/prune-{date}.md`.
 - **Codemap refresh:** Update `codemaps/*.md` statistics when file counts drift by >10%. The generated dates in comment headers track staleness.
 - **Dead code detection:** `bun run lint:dead-code` (frontend, via knip). Backend relies on manual review during pruning.
 
-## Frontend Development Rules
-
-1. **i18n sync is mandatory.** Every new UI string must be added to BOTH `messages/en.json` AND `messages/zh-CN.json` in the same commit. Verify the key lands in the correct namespace — never add keys to the wrong section.
-2. **Invoke design skills** (`/frontend-design`, `/web-design-guidelines`, `/vercel-react-best-practices`...) when creating or modifying visual components. Do not design UI elements without skill guidance.
-3. **Reuse before creating.** Before writing a new component, search for existing components with similar functionality on the same page. Extract shared pieces (e.g. `WorkflowPills`) instead of duplicating styling across siblings.
-4. **First-principles simplicity.** Think from actual user scenarios and native tool conventions. Avoid over-engineering — if an existing component covers the need, use it. 奥卡姆剃刀: 如无必要，勿增实体。
-5. **Responsive and contained.** New elements must fit within the viewport without scrolling or overflow. Use flex-fill (`flex-1 min-h-0`) instead of fixed pixel heights inside dialogs/panels. Always test at `sm:max-w-4xl` dialog size.
-6. **Visual hierarchy matters.** Establish clear text hierarchy: primary name (bold, larger), secondary metadata (colored pill badges), tertiary info (muted, smaller). Don't flatten everything to the same font size/weight.
-
-## Design Context
-
-See `.impeccable.md` for full details. Key principles:
-
-- **Brand:** Smart, Minimal, Powerful. References: Linear, Vercel.
-- **Users:** Mixed technical levels — PIs wanting simplicity to postdocs wanting full control.
-- **Aesthetic:** Refined Scientific Minimalism. Dark mode is the primary design target.
-- **Principles:**
-  1. Progressive disclosure over feature walls.
-  2. Information hierarchy is non-negotiable (primary > secondary > tertiary).
-  3. Motion with purpose (150ms fast / 250ms normal / 400ms ceremonial). Respect `prefers-reduced-motion`.
-  4. Density when needed, breathing room when not.
-  5. Dark mode is home — design dark-first, then adapt for light.
-- **Accessibility:** WCAG 2.1 AA. Focus rings, keyboard nav, reduced-motion, semantic color never alone.
-
 ## Compacting
 When compacting, always preserve the full list of modified files and any test commands.
+
+<!-- rtk-instructions v2 -->
+# RTK (Rust Token Killer) - Token-Optimized Commands
+
+## Golden Rule
+
+**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it. If not, it passes through unchanged. This means RTK is always safe to use.
+
+**Important**: Even in command chains with `&&`, use `rtk`:
+```bash
+# ❌ Wrong
+git add . && git commit -m "msg" && git push
+
+# ✅ Correct
+rtk git add . && rtk git commit -m "msg" && rtk git push
+```
+
+<!-- /rtk-instructions -->

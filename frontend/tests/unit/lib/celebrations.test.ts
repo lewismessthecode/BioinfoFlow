@@ -121,6 +121,32 @@ describe("celebrations", () => {
     expect(window.localStorage.getItem("bioinfoflow:celebrated:preview")).toBeNull()
   })
 
+  it("stops a delayed animation frame when the canvas has been removed", () => {
+    const clearRect = vi.fn()
+    let frameCallback: FrameRequestCallback | null = null
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frameCallback = callback
+      return 1
+    })
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      clearRect,
+      fillRect: vi.fn(),
+      restore: vi.fn(),
+      rotate: vi.fn(),
+      save: vi.fn(),
+      scale: vi.fn(),
+      translate: vi.fn(),
+      fillStyle: "",
+    } as unknown as CanvasRenderingContext2D)
+
+    celebratePreview()
+    document.body.innerHTML = ""
+
+    frameCallback?.(0)
+
+    expect(clearRect).not.toHaveBeenCalled()
+  })
+
   it("suppresses preview confetti when reduced motion is preferred", () => {
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
       matches: true,

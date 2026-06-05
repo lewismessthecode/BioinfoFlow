@@ -2,13 +2,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createDemoRuntime, setActiveRuntimeForTests } from "@/lib/runtime"
 import type {
-  AgentEventData,
-  EventEnvelope,
   Project,
   Run,
   RunStatusEvent,
   Workflow,
 } from "@/lib/types"
+import type {
+  AgentCoreAction,
+  AgentCoreArtifact,
+  AgentCoreEvent,
+  AgentCoreMemory,
+  AgentCoreSession,
+  AgentCoreTurn,
+} from "@/lib/agent-core"
+import type {
+  LlmModel,
+  LlmModelProfile,
+  LlmProvider,
+  LlmProviderTestResult,
+} from "@/lib/llm"
 
 describe("createDemoRuntime", () => {
   beforeEach(() => {
@@ -82,21 +94,65 @@ describe("createDemoRuntime", () => {
     unsubscribe()
   })
 
-  it("accepts an agent message and replays scripted agent events", async () => {
+  it("creates an AgentCore turn and exposes the event ledger", async () => {
     const runtime = createDemoRuntime()
-    const onAgentEvent = vi.fn<(event: EventEnvelope<AgentEventData>) => void>()
 
-    const unsubscribe = runtime.subscribe({
-      projectId: "project-demo",
-      onAgentEvent,
-    })
-
-    const response = await runtime.request<{
-      conversation_id: string
-      response_id: string
-      message_id: string
-      status: string
-    }>("/agent/message", {
+    const sessionResponse = await runtime.request<AgentCoreSession>(
+      "/agent/sessions",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: "project-demo",
+          title: "AgentCore demo",
+          permission_mode: "guarded_auto",
+          automation_mode: "assisted",
+        }),
+      },
+    )
+    const turnResponse = await runtime.request<AgentCoreTurn>(
+      `/agent/sessions/${sessionResponse.data.id}/turns`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          input_text: "Run the seeded RNA-seq demo.",
+        }),
+      },
+    )
+    const eventsResponse = await runtime.request<AgentCoreEvent[]>(
+      `/agent/turns/${turnResponse.data.id}/events`,
+    )
+    const artifactsResponse = await runtime.request<AgentCoreArtifact[]>(
+      `/agent/turns/${turnResponse.data.id}/artifacts`,
+    )
+    const memoriesResponse = await runtime.request<AgentCoreMemory[]>(
+      "/agent/memories",
+      {
+        params: {
+          project_id: "project-demo",
+          status: "proposed",
+        },
+      },
+    )
+    const actionId = String(
+      eventsResponse.data.find((event) => event.type === "action.waiting_decision")
+        ?.payload.action_id,
+    )
+    const actionDecisionResponse = await runtime.request<AgentCoreAction>(
+      `/agent/actions/${actionId}/decision`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          decision: "approve",
+        }),
+      },
+    )
+    const memoryDecisionResponse = await runtime.request<AgentCoreMemory>(
+      `/agent/memories/${memoriesResponse.data[0]?.id}/accept`,
+      {
+        method: "POST",
+      },
+    )
+    const rejectedLegacyMessage = runtime.request("/agent/message", {
       method: "POST",
       body: JSON.stringify({
         project_id: "project-demo",
@@ -104,22 +160,65 @@ describe("createDemoRuntime", () => {
       }),
     })
 
-    expect(response.data.conversation_id).toBe("conv-demo-main")
-    expect(response.data.status).toBe("accepted")
+    await expect(rejectedLegacyMessage).rejects.toMatchObject({ status: 404 })
+    expect(sessionResponse.data.id).toMatch(/^agent-session-demo-/)
+    expect(turnResponse.data.status).toBe("completed")
+    expect(turnResponse.data.final_text).toContain("seeded RNA-seq demo workflow")
+    expect(eventsResponse.data.map((event) => event.type)).toEqual([
+      "turn.created",
+      "turn.started",
+      "assistant.thinking.summary",
+      "user_input.requested",
+      "user_input.resolved",
+      "action.requested",
+      "action.waiting_decision",
+      "action.completed",
+      "artifact.created",
+      "memory.proposed",
+      "assistant.text.completed",
+      "turn.completed",
+    ])
+    expect(artifactsResponse.data[0]?.title).toContain("demo run")
+    expect(
+      eventsResponse.data.find((event) => event.type === "user_input.requested")
+        ?.payload.question,
+    ).toContain("reference")
+    expect(memoriesResponse.data[0]?.type).toBe("run_lesson")
+    expect(actionDecisionResponse.data.permission_decision).toMatchObject({
+      decision: "approve",
+    })
+    expect(memoryDecisionResponse.data.status).toBe("accepted")
 
     await vi.runAllTimersAsync()
+  })
 
-    expect(
-      onAgentEvent.mock.calls.some(
-        ([event]) =>
-          event.event === "agent.text_delta" &&
-          event.data.content?.includes("live deck and runs view"),
-      ),
-    ).toBe(true)
-    expect(
-      onAgentEvent.mock.calls.some(([event]) => event.event === "agent.done"),
-    ).toBe(true)
+  it("serves platform LLM catalog endpoints in demo mode", async () => {
+    const runtime = createDemoRuntime()
 
-    unsubscribe()
+    const providersResponse = await runtime.request<LlmProvider[]>("/llm/providers")
+    const modelsResponse = await runtime.request<LlmModel[]>("/llm/models")
+    const profilesResponse = await runtime.request<LlmModelProfile[]>(
+      "/llm/model-profiles",
+    )
+    const testResponse = await runtime.request<LlmProviderTestResult>(
+      `/llm/providers/${providersResponse.data[0]?.id}/test`,
+      { method: "POST" },
+    )
+    const createdResponse = await runtime.request<LlmProvider>("/llm/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "OpenRouter Shared",
+        kind: "openrouter",
+        base_url: "https://openrouter.ai/api/v1",
+        api_key_ref: "env:OPENROUTER_API_KEY",
+        scope: "workspace",
+      }),
+    })
+
+    expect(providersResponse.data[0]?.name).toBe("Demo OpenAI Compatible")
+    expect(modelsResponse.data[0]?.display_name).toBe("Demo Bio Coder")
+    expect(profilesResponse.data[0]?.task_type).toBe("agent_core")
+    expect(testResponse.data.success).toBe(true)
+    expect(createdResponse.data.name).toBe("OpenRouter Shared")
   })
 })

@@ -40,27 +40,16 @@ def test_relative_sqlite_database_url_is_resolved_to_backend_root() -> None:
     assert settings.database_url.endswith("/backend/bioinfoflow.db")
 
 
-def test_hermes_home_derives_state_db_when_state_db_is_unset() -> None:
+def test_legacy_hermes_agent_settings_are_ignored() -> None:
     settings = Settings(
         _env_file=None,
         agent_hermes_home="~/bioinfoflow-home/hermes-managed",
-        agent_hermes_state_db="",
-    )
-
-    assert settings.agent_hermes_home.endswith("/bioinfoflow-home/hermes-managed")
-    assert settings.agent_hermes_state_db.endswith(
-        "/bioinfoflow-home/hermes-managed/state.db"
-    )
-
-
-def test_explicit_hermes_state_db_becomes_the_managed_home_root() -> None:
-    settings = Settings(
-        _env_file=None,
-        agent_hermes_home="~/ignored-home",
         agent_hermes_state_db="~/bioinfoflow-home/custom-hermes/runtime.db",
+        agent_engine="hermes_service",
+        agent_hermes_max_concurrency=12,
     )
 
-    assert settings.agent_hermes_home.endswith("/bioinfoflow-home/custom-hermes")
-    assert settings.agent_hermes_state_db.endswith(
-        "/bioinfoflow-home/custom-hermes/runtime.db"
-    )
+    assert not hasattr(settings, "agent_hermes_home")
+    assert not hasattr(settings, "agent_hermes_state_db")
+    assert not hasattr(settings, "agent_engine")
+    assert not hasattr(settings, "agent_hermes_max_concurrency")

@@ -4,7 +4,7 @@
  * Defines the NDJSON recording format and replay state.
  */
 
-import type { SSEEvent } from "@/lib/chat-types"
+import type { AgentCoreEvent } from "@/lib/agent-core"
 import type { DagData, RunStatus } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ export type RecordedEventType =
   | "agent.thinking_delta"
   | "agent.tool_call_start"
   | "agent.tool_call_end"
-  | "agent.message"
+  | "agent.text.completed"
   | "agent.done"
   | "agent.error"
   | "run.status"
@@ -41,8 +41,17 @@ export type RecordedEventType =
 export type ReplayStatus = "idle" | "playing" | "paused" | "finished"
 
 // ---------------------------------------------------------------------------
-// Mapped SSE event (after converting from recording format)
+// Mapped AgentCore replay event (after converting from recording format)
 // ---------------------------------------------------------------------------
+
+export type DemoAgentReplayEvent = {
+  type: AgentCoreEvent["type"]
+  source_id: string
+  payload: Record<string, unknown>
+  final_text_delta?: string
+  final_text?: string
+  error_message?: string
+}
 
 export type DemoRunStatus = {
   run_id: string
@@ -68,7 +77,7 @@ export type DemoRunLog = {
 
 /** Parsed event dispatched by the replay engine. */
 export type DemoEvent =
-  | { kind: "agent"; sseEvent: SSEEvent }
+  | { kind: "agent"; agentEvent: DemoAgentReplayEvent }
   | { kind: "user_message"; text: string }
   | { kind: "run_status"; data: DemoRunStatus }
   | { kind: "run_dag"; data: DemoRunDag }

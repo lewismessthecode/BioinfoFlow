@@ -15,14 +15,12 @@ type UseEventsOptions = Parameters<
 
 export function useEvents({
   projectId,
-  conversationId,
   runId,
   imageId,
   onRunStatus,
   onRunLog,
   onRunDag,
   onImageProgress,
-  onAgentEvent,
   onOpen,
   onError,
 }: UseEventsOptions) {
@@ -33,7 +31,6 @@ export function useEvents({
     onRunLog,
     onRunDag,
     onImageProgress,
-    onAgentEvent,
     onOpen,
     onError,
   })
@@ -44,7 +41,6 @@ export function useEvents({
       onRunLog,
       onRunDag,
       onImageProgress,
-      onAgentEvent,
       onOpen,
       onError,
     }
@@ -53,7 +49,6 @@ export function useEvents({
     onRunLog,
     onRunDag,
     onImageProgress,
-    onAgentEvent,
     onOpen,
     onError,
   ])
@@ -67,7 +62,6 @@ export function useEvents({
 
     const unsubscribe = runtime.subscribe({
       projectId,
-      conversationId,
       runId,
       imageId,
       onRunStatus: (event) => {
@@ -81,9 +75,6 @@ export function useEvents({
       },
       onImageProgress: (event) => {
         handlersRef.current.onImageProgress?.(event)
-      },
-      onAgentEvent: (event) => {
-        handlersRef.current.onAgentEvent?.(event)
       },
       onOpen: () => {
         setConnectionState("connected")
@@ -101,7 +92,6 @@ export function useEvents({
     }
   }, [
     projectId,
-    conversationId,
     runId,
     imageId,
   ])

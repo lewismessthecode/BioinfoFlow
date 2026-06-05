@@ -57,37 +57,46 @@ function parseRecordedEvent(recorded: RecordedEvent): DemoEvent | null {
   const messageId = (data.id as string) || "demo-msg"
 
   switch (event) {
-    case "agent.text_delta":
+    case "agent.text_delta": {
+      const content = (data.content as string) || ""
       return {
         kind: "agent",
-        sseEvent: {
-          type: "text_delta",
-          messageId,
-          content: (data.content as string) || "",
+        agentEvent: {
+          type: "assistant.text.delta",
+          source_id: messageId,
+          payload: { text_delta: content },
+          final_text_delta: content,
         },
       }
+    }
 
     case "agent.thinking_delta":
       return {
         kind: "agent",
-        sseEvent: {
-          type: "thinking_delta",
-          messageId,
-          content: (data.content as string) || "",
+        agentEvent: {
+          type: "assistant.thinking.delta",
+          source_id: messageId,
+          payload: {
+            text_delta: (data.content as string) || "",
+          },
         },
       }
 
     case "agent.tool_call_start": {
       const meta = (data.metadata as Record<string, unknown>) || data
+      const actionId = (meta.id as string) || "demo-action"
       return {
         kind: "agent",
-        sseEvent: {
-          type: "tool_call_start",
-          messageId,
-          metadata: {
-            id: (meta.id as string) || "",
+        agentEvent: {
+          type: "action.started",
+          source_id: messageId,
+          payload: {
+            action_id: actionId,
             name: (meta.name as string) || "",
-            args: (meta.args as Record<string, unknown>) || {},
+            kind: "tool",
+            risk_level: "act_low",
+            input_preview: formatToolInputPreview(meta),
+            input: (meta.args as Record<string, unknown>) || {},
           },
         },
       }
@@ -95,47 +104,59 @@ function parseRecordedEvent(recorded: RecordedEvent): DemoEvent | null {
 
     case "agent.tool_call_end": {
       const meta = (data.metadata as Record<string, unknown>) || data
+      const actionId = (meta.id as string) || "demo-action"
       return {
         kind: "agent",
-        sseEvent: {
-          type: "tool_call_end",
-          messageId,
-          metadata: {
-            id: (meta.id as string) || "",
+        agentEvent: {
+          type: (meta.is_error as boolean) ? "action.failed" : "action.completed",
+          source_id: messageId,
+          payload: {
+            action_id: actionId,
             name: (meta.name as string) || "",
+            kind: "tool",
+            risk_level: "act_low",
             result: (meta.result as string) || "",
-            is_error: (meta.is_error as boolean) || false,
             duration_ms: (meta.duration_ms as number) || 0,
           },
         },
       }
     }
 
-    case "agent.message":
+    case "agent.text.completed": {
+      const content = (data.content as string) || ""
       return {
         kind: "agent",
-        sseEvent: {
-          type: "text",
-          messageId,
-          content: (data.content as string) || "",
+        agentEvent: {
+          type: "assistant.text.completed",
+          source_id: messageId,
+          payload: { text: content },
+          final_text: content,
         },
       }
+    }
 
     case "agent.done":
       return {
         kind: "agent",
-        sseEvent: { type: "done", messageId },
-      }
-
-    case "agent.error":
-      return {
-        kind: "agent",
-        sseEvent: {
-          type: "error",
-          messageId,
-          content: (data.content as string) || "An error occurred",
+        agentEvent: {
+          type: "turn.completed",
+          source_id: messageId,
+          payload: {},
         },
       }
+
+    case "agent.error": {
+      const errorMessage = (data.content as string) || "An error occurred"
+      return {
+        kind: "agent",
+        agentEvent: {
+          type: "turn.failed",
+          source_id: messageId,
+          payload: { error_message: errorMessage },
+          error_message: errorMessage,
+        },
+      }
+    }
 
     case "user.message":
       return {
@@ -180,6 +201,13 @@ function parseRecordedEvent(recorded: RecordedEvent): DemoEvent | null {
     default:
       return null
   }
+}
+
+function formatToolInputPreview(meta: Record<string, unknown>): string {
+  const name = (meta.name as string) || "tool"
+  const args = (meta.args as Record<string, unknown>) || {}
+  const serialized = JSON.stringify(args)
+  return `${name} ${serialized}`.slice(0, 240)
 }
 
 // ---------------------------------------------------------------------------

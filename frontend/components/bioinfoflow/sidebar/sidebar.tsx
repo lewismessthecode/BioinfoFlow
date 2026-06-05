@@ -217,7 +217,6 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
           onMoveConversation={workspaceShell.handleMoveConversation}
           onCreateConversation={workspaceShell.handleCreateConversation}
           onRenameConversation={workspaceShell.handleRenameConversation}
-          onTogglePin={workspaceShell.handleTogglePin}
           onDeleteConversation={handleDeleteConversation}
           onRenameProject={workspaceShell.handleRenameProject}
           onDuplicateProject={workspaceShell.handleDuplicateProject}

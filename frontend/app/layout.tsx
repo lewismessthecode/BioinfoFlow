@@ -1,6 +1,5 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
-import { DM_Sans, Geist_Mono, IBM_Plex_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Agentation } from "agentation"
 import { NextIntlClientProvider } from "next-intl"
@@ -9,12 +8,6 @@ import { AppearanceProvider } from "@/lib/appearance/provider"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
 
-const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans" })
-const geistMono = Geist_Mono({
-  subsets: ["latin"],
-  variable: "--font-terminal-mono",
-})
-const ibmPlexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-ibm-plex-mono" })
 const iconVersion = "20260408-3"
 const siteUrl = "https://www.bioinfoflow.com"
 const previewImage = {
@@ -96,7 +89,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang={locale} suppressHydrationWarning>
-      <body className={`${dmSans.variable} ${ibmPlexMono.variable} ${geistMono.variable} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:text-foreground focus:shadow-lg focus:outline-none"

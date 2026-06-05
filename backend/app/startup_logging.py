@@ -91,14 +91,15 @@ def build_startup_summary(settings: Any) -> dict[str, Any]:
             "safety_memory_gb": float(settings.scheduler_safety_memory_gb),
             "safety_disk_gb": float(settings.scheduler_safety_disk_gb),
         },
-        "agent": {
-            "provider": str(settings.agent_provider),
-            "engine": str(settings.agent_engine),
-            "model": str(settings.agent_model),
+        "agent_core": {
+            "runtime": "agent_core",
+            "default_provider": str(settings.agent_provider),
+            "default_model": str(settings.agent_model),
             "max_tokens": int(settings.agent_max_tokens),
+            "max_rounds": int(settings.agent_max_rounds),
+            "compact_threshold": int(settings.agent_compact_threshold),
+            "sandbox_enabled": bool(settings.agent_sandbox_enabled),
             "observability": bool(settings.agent_observability),
-            "hermes_max_concurrency": int(settings.agent_hermes_max_concurrency),
-            "hermes_state_db": str(settings.agent_hermes_state_db),
             "langsmith_tracing": bool(
                 settings.langsmith_tracing or settings.langsmith_tracing_v2
             ),

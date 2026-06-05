@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { StatusBadge } from "@/components/ui/status-badge"
-import { celebrateOnce } from "@/lib/celebrations"
+import { emitReadinessRefresh } from "@/lib/readiness-events"
 
 // ── API key portal URLs ────────────────────────────────────────────
 const PROVIDER_KEY_URLS: Record<string, string> = {
@@ -89,12 +89,8 @@ export function ProviderCard({
             ? t("keyCleared")
             : t("settingCleared", { field: field.label })
       )
-      if (
-        field.name === "api_key" &&
-        previousValue.length === 0 &&
-        nextValue.length > 0
-      ) {
-        celebrateOnce("provider-api-key-saved")
+      if (field.name === "api_key" && previousValue !== nextValue) {
+        emitReadinessRefresh("provider-key-saved")
       }
     } catch {
       // Error already toasted by the hook.

@@ -5,7 +5,7 @@ import WorkflowsPage from "@/app/(app)/workflows/page"
 import { ApiError, apiRequest } from "@/lib/api"
 import { renderAppPage } from "@/tests/app-test-utils"
 
-const { pushMock, replaceMock, toastErrorMock, toastSuccessMock, toastInfoMock, toastWarningMock, celebrateOnceMock } =
+const { pushMock, replaceMock, toastErrorMock, toastSuccessMock, toastInfoMock, toastWarningMock, emitReadinessRefreshMock } =
   vi.hoisted(() => ({
     pushMock: vi.fn(),
     replaceMock: vi.fn(),
@@ -13,7 +13,7 @@ const { pushMock, replaceMock, toastErrorMock, toastSuccessMock, toastInfoMock, 
     toastSuccessMock: vi.fn(),
     toastInfoMock: vi.fn(),
     toastWarningMock: vi.fn(),
-    celebrateOnceMock: vi.fn(),
+    emitReadinessRefreshMock: vi.fn(),
   }))
 
 const translationMocks = new Map<
@@ -76,8 +76,8 @@ vi.mock("@/lib/api", async () => {
   }
 })
 
-vi.mock("@/lib/celebrations", () => ({
-  celebrateOnce: (...args: unknown[]) => celebrateOnceMock(...args),
+vi.mock("@/lib/readiness-events", () => ({
+  emitReadinessRefresh: (...args: unknown[]) => emitReadinessRefreshMock(...args),
 }))
 
 vi.mock("@/app/(app)/workflows/components/workflows-skeleton", () => ({
@@ -261,7 +261,7 @@ describe("WorkflowsPage - hub actions", () => {
     toastSuccessMock.mockReset()
     toastInfoMock.mockReset()
     toastWarningMock.mockReset()
-    celebrateOnceMock.mockReset()
+    emitReadinessRefreshMock.mockReset()
     searchParamsState.scope = null
   })
 
@@ -315,7 +315,7 @@ describe("WorkflowsPage - hub actions", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith(
       "workflows.toasts.addedToProject:nf-core/viral-mini-nf"
     )
-    expect(celebrateOnceMock).toHaveBeenCalledWith("first-workflow-bound-to-project")
+    expect(emitReadinessRefreshMock).toHaveBeenCalledWith("workflow-bound")
   })
 
   it("shows an error toast when binding a workflow fails", async () => {
@@ -357,7 +357,7 @@ describe("WorkflowsPage - hub actions", () => {
     await waitFor(() => {
       expect(toastErrorMock).toHaveBeenCalledWith("Bind failed")
     })
-    expect(celebrateOnceMock).not.toHaveBeenCalled()
+    expect(emitReadinessRefreshMock).not.toHaveBeenCalled()
   })
 
   it("renders registered workflows without catalog overlays in hub scope", async () => {

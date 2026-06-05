@@ -13,7 +13,6 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import app.database as app_database
 import app.runtime.jobs as runtime_jobs
-import app.services.hermes_service.session_store as hermes_session_store
 from app.config import settings
 from app.api.deps import get_db
 from app.database import Base, stamp_database_revision
@@ -55,20 +54,6 @@ def _bioinfoflow_home(tmp_path, monkeypatch):
     home = tmp_path / "bioinfoflow-home"
     home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(settings, "bioinfoflow_home", str(home))
-
-
-@pytest.fixture(autouse=True)
-def _hermes_state_home(tmp_path, monkeypatch):
-    state_db = tmp_path / "hermes" / "state.db"
-    state_db.parent.mkdir(parents=True, exist_ok=True)
-    hermes_session_store._SESSION_STORES.clear()
-    hermes_session_store._SESSION_STORE = None
-    monkeypatch.setattr(settings, "agent_hermes_home", str(state_db.parent))
-    monkeypatch.setattr(settings, "agent_hermes_state_db", str(state_db))
-    monkeypatch.setenv("HERMES_HOME", str(state_db.parent))
-    yield
-    hermes_session_store._SESSION_STORES.clear()
-    hermes_session_store._SESSION_STORE = None
 
 
 @pytest_asyncio.fixture

@@ -43,7 +43,7 @@ export function useLlmSettings() {
     try {
       const { data } = await apiRequest<UserLlmSettings>("/user-settings")
       setSettings(data)
-      // Sync selected model to localStorage for use by sendAgentMessage
+      // Keep the selected model available for AgentCore clients during reloads.
       if (data.selected_model) {
         localStorage.setItem("bioinfoflow:selected-model", data.selected_model)
       }

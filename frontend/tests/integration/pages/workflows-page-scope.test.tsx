@@ -5,7 +5,7 @@ import WorkflowsPage from "@/app/(app)/workflows/page"
 import { apiRequest } from "@/lib/api"
 import { renderAppPage } from "@/tests/app-test-utils"
 
-const { pushMock, replaceMock, toastErrorMock, toastSuccessMock, toastInfoMock, toastWarningMock, celebrateOnceMock } =
+const { pushMock, replaceMock, toastErrorMock, toastSuccessMock, toastInfoMock, toastWarningMock, emitReadinessRefreshMock } =
   vi.hoisted(() => ({
     pushMock: vi.fn(),
     replaceMock: vi.fn(),
@@ -13,7 +13,7 @@ const { pushMock, replaceMock, toastErrorMock, toastSuccessMock, toastInfoMock, 
     toastSuccessMock: vi.fn(),
     toastInfoMock: vi.fn(),
     toastWarningMock: vi.fn(),
-    celebrateOnceMock: vi.fn(),
+    emitReadinessRefreshMock: vi.fn(),
   }))
 
 const translationMocks = new Map<
@@ -76,8 +76,8 @@ vi.mock("@/lib/api", async () => {
   }
 })
 
-vi.mock("@/lib/celebrations", () => ({
-  celebrateOnce: (...args: unknown[]) => celebrateOnceMock(...args),
+vi.mock("@/lib/readiness-events", () => ({
+  emitReadinessRefresh: (...args: unknown[]) => emitReadinessRefreshMock(...args),
 }))
 
 vi.mock("@/app/(app)/workflows/components/workflows-skeleton", () => ({
@@ -265,7 +265,7 @@ describe("WorkflowsPage - scope, search, and views", () => {
     toastSuccessMock.mockReset()
     toastInfoMock.mockReset()
     toastWarningMock.mockReset()
-    celebrateOnceMock.mockReset()
+    emitReadinessRefreshMock.mockReset()
     searchParamsState.scope = null
   })
 
@@ -484,10 +484,10 @@ describe("WorkflowsPage - scope, search, and views", () => {
     await waitFor(() => {
       expect(screen.getByText("test-workflow")).toBeInTheDocument()
     })
-    expect(celebrateOnceMock).toHaveBeenCalledWith("first-workflow-registered")
+    expect(emitReadinessRefreshMock).toHaveBeenCalledWith("workflow-registered")
   })
 
-  it("does not celebrate workflow registration when the hub already has workflows", async () => {
+  it("refreshes readiness after workflow registration when the hub already has workflows", async () => {
     searchParamsState.scope = "hub"
     apiRequestMock.mockImplementation(async (path, options) => {
       if (path === "/workflows" && !options?.method) {
@@ -520,7 +520,7 @@ describe("WorkflowsPage - scope, search, and views", () => {
     await waitFor(() => {
       expect(screen.getByText("test-workflow")).toBeInTheDocument()
     })
-    expect(celebrateOnceMock).not.toHaveBeenCalled()
+    expect(emitReadinessRefreshMock).toHaveBeenCalledWith("workflow-registered")
   })
 
   it("closes the register dialog via onOpenChange", async () => {

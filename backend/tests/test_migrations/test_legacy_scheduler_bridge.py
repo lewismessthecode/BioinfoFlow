@@ -35,6 +35,23 @@ def test_legacy_revision_file_exists_for_old_local_databases():
     assert 'revision = "0005_workflow_launch_defaults"' in content
 
 
+def test_agent_core_cleanup_revision_drops_legacy_agent_tables():
+    revision_file = VERSIONS_DIR / "0029_drop_legacy_agent_tables.py"
+    assert revision_file.exists()
+    content = revision_file.read_text()
+
+    assert 'revision = "0029_drop_legacy_agent_tables"' in content
+    for table_name in (
+        "agent_approval_handles",
+        "agent_response_handles",
+        "agent_approvals",
+        "agent_traces",
+        "messages",
+        "conversations",
+    ):
+        assert table_name in content
+
+
 _LEGACY_DB = BACKEND_DIR / "bioinfoflow.db"
 
 
@@ -96,11 +113,12 @@ def test_old_local_database_can_upgrade_to_head(tmp_path: Path):
         assert "workspace_id" in project_columns
         assert "is_default" in project_columns
 
-        conversation_columns = {
-            row[1]
-            for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
-        }
-        assert "created_by_user_id" in conversation_columns
+        assert "conversations" not in tables
+        assert "messages" not in tables
+        assert "agent_traces" not in tables
+        assert "agent_approvals" not in tables
+        assert "agent_response_handles" not in tables
+        assert "agent_approval_handles" not in tables
 
         assert "workspaces" in tables
         assert "workspace_memberships" in tables

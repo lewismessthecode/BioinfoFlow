@@ -7,11 +7,11 @@ import type { ProviderField } from "@/components/bioinfoflow/settings/provider-c
 const {
   toastSuccessMock,
   toastErrorMock,
-  celebrateOnceMock,
+  emitReadinessRefreshMock,
 } = vi.hoisted(() => ({
   toastSuccessMock: vi.fn(),
   toastErrorMock: vi.fn(),
-  celebrateOnceMock: vi.fn(),
+  emitReadinessRefreshMock: vi.fn(),
 }))
 
 vi.mock("next-intl", () => ({
@@ -44,8 +44,8 @@ vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
   ProviderIcon: ({ provider }: { provider: string }) => <span>{provider}</span>,
 }))
 
-vi.mock("@/lib/celebrations", () => ({
-  celebrateOnce: (...args: unknown[]) => celebrateOnceMock(...args),
+vi.mock("@/lib/readiness-events", () => ({
+  emitReadinessRefresh: (...args: unknown[]) => emitReadinessRefreshMock(...args),
 }))
 
 import { ProviderCard } from "@/components/bioinfoflow/settings/provider-card"
@@ -99,7 +99,7 @@ describe("ProviderCard", () => {
   beforeEach(() => {
     toastSuccessMock.mockReset()
     toastErrorMock.mockReset()
-    celebrateOnceMock.mockReset()
+    emitReadinessRefreshMock.mockReset()
   })
 
   it("persists edited non-secret fields on blur", async () => {
@@ -155,7 +155,7 @@ describe("ProviderCard", () => {
     expect(badge).not.toHaveClass("bg-primary")
   })
 
-  it("celebrates only the first successful API key save", async () => {
+  it("refreshes readiness after a successful API key save", async () => {
     const user = userEvent.setup()
     const emptyKeyFields: ProviderField[] = [
       {
@@ -177,10 +177,10 @@ describe("ProviderCard", () => {
       expect(onUpdateField).toHaveBeenCalledWith("api_key", "sk-new")
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("API key saved")
-    expect(celebrateOnceMock).toHaveBeenCalledWith("provider-api-key-saved")
+    expect(emitReadinessRefreshMock).toHaveBeenCalledWith("provider-key-saved")
   })
 
-  it("does not celebrate replacing or clearing an existing API key", async () => {
+  it("refreshes readiness when replacing or clearing an existing API key", async () => {
     const user = userEvent.setup()
     const { onUpdateField } = renderCard()
 
@@ -192,17 +192,17 @@ describe("ProviderCard", () => {
     await waitFor(() => {
       expect(onUpdateField).toHaveBeenCalledWith("api_key", "sk-replacement")
     })
-    expect(celebrateOnceMock).not.toHaveBeenCalled()
+    expect(emitReadinessRefreshMock).toHaveBeenCalledWith("provider-key-saved")
 
     await user.click(screen.getByTitle("Clear API Key"))
 
     await waitFor(() => {
       expect(onUpdateField).toHaveBeenCalledWith("api_key", "")
     })
-    expect(celebrateOnceMock).not.toHaveBeenCalled()
+    expect(emitReadinessRefreshMock).toHaveBeenCalledTimes(2)
   })
 
-  it("does not celebrate when an API key save fails", async () => {
+  it("does not refresh readiness when an API key save fails", async () => {
     const user = userEvent.setup()
     const emptyKeyFields: ProviderField[] = [
       {
@@ -225,7 +225,7 @@ describe("ProviderCard", () => {
     await waitFor(() => {
       expect(onUpdateField).toHaveBeenCalledWith("api_key", "sk-new")
     })
-    expect(celebrateOnceMock).not.toHaveBeenCalled()
+    expect(emitReadinessRefreshMock).not.toHaveBeenCalled()
   })
 
   it("surfaces both successful and failed connection tests on the real card control", async () => {

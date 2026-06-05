@@ -32,12 +32,12 @@ def _settings(tmp_path: Path):
         scheduler_safety_memory_gb=2.0,
         scheduler_safety_disk_gb=10.0,
         agent_provider="auto",
-        agent_engine="hermes_service",
         agent_model="claude-sonnet-4-6",
         agent_max_tokens=16384,
+        agent_max_rounds=50,
+        agent_compact_threshold=50000,
+        agent_sandbox_enabled=False,
         agent_observability=True,
-        agent_hermes_max_concurrency=4,
-        agent_hermes_state_db=str(home / "state" / "hermes" / "state.db"),
         langsmith_tracing=True,
         cors_origins=["http://localhost:5173"],
         cors_origin_regex=r"^https?://localhost",
@@ -75,12 +75,19 @@ def test_build_startup_summary_surfaces_operational_config_without_secrets(tmp_p
     assert summary["auth"] == {
         "mode": "personal",
         "enabled": True,
-        "better_auth_db_path": str(tmp_path / "bioinfoflow" / "state" / "auth" / "better-auth.db"),
+        "better_auth_db_path": str(
+            tmp_path / "bioinfoflow" / "state" / "auth" / "better-auth.db"
+        ),
     }
     assert summary["storage"]["roots"]["deliveries"].endswith("/sources/deliveries")
     assert summary["workflow_engines"]["nextflow_bin"] == "/usr/local/bin/nextflow"
     assert summary["scheduler"]["max_concurrency"] == 4
-    assert summary["agent"]["engine"] == "hermes_service"
+    assert summary["agent_core"]["runtime"] == "agent_core"
+    assert summary["agent_core"]["default_provider"] == "auto"
+    assert summary["agent_core"]["default_model"] == "claude-sonnet-4-6"
+    assert "agent" not in summary
+    assert "hermes" not in repr(summary).lower()
+    assert "legacy" not in repr(summary).lower()
     assert summary["network"]["cors_origins"] == ["http://localhost:5173"]
     assert summary["uploads"]["max_file_upload_mb"] == 100
     assert summary["providers"]["anthropic_api_key"] == "set"

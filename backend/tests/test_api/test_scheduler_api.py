@@ -112,18 +112,10 @@ async def test_app_lifespan_raises_when_scheduler_storage_is_unavailable(
         del self
         return None
 
-    async def noop_reconcile_stale_hermes_responses(session, stale_before):
-        del session, stale_before
-        return 0
-
     monkeypatch.setattr("app.main.RunScheduler.start", fail_scheduler_start)
     monkeypatch.setattr(
         "app.main.WorkspaceService.ensure_default_workspace",
         noop_ensure_default_workspace,
-    )
-    monkeypatch.setattr(
-        "app.main.reconcile_stale_hermes_responses",
-        noop_reconcile_stale_hermes_responses,
     )
 
     from app.api.deps import get_db

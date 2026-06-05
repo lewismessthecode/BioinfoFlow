@@ -69,8 +69,20 @@ class TestHelp:
     def test_agent_help(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["agent", "--help"])
         assert result.exit_code == 0
-        for sub in ["send", "chat", "history", "status", "cancel", "trace"]:
+        for sub in [
+            "send",
+            "chat",
+            "events",
+            "stream",
+            "cancel",
+            "session",
+            "turn",
+            "action",
+            "artifacts",
+        ]:
             assert sub in result.stdout
+        for legacy_sub in ["history", "status", "trace", "approvals"]:
+            assert legacy_sub not in result.stdout
 
 
 class TestFlagValidation:

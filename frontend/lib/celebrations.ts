@@ -205,14 +205,17 @@ function launchCanvasConfetti() {
     return
   }
 
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const scheduleFrame = window.requestAnimationFrame.bind(window)
   const scale = window.devicePixelRatio || 1
-  canvas.width = Math.floor(window.innerWidth * scale)
-  canvas.height = Math.floor(window.innerHeight * scale)
+  canvas.width = Math.floor(viewportWidth * scale)
+  canvas.height = Math.floor(viewportHeight * scale)
   context.scale(scale, scale)
 
   const emitters = buildStageConfettiEmitters(
-    window.innerWidth,
-    window.innerHeight,
+    viewportWidth,
+    viewportHeight,
   )
 
   const particles = emitters.flatMap((emitter, emitterIndex) =>
@@ -242,8 +245,12 @@ function launchCanvasConfetti() {
   const maxFrames = 176
 
   function draw() {
+    if (!canvas.isConnected) {
+      return
+    }
+
     frame += 1
-    context.clearRect(0, 0, window.innerWidth, window.innerHeight)
+    context.clearRect(0, 0, viewportWidth, viewportHeight)
 
     for (const particle of particles) {
       if (frame < particle.delayFrames) {
@@ -272,12 +279,12 @@ function launchCanvasConfetti() {
     }
 
     if (frame < maxFrames) {
-      requestAnimationFrame(draw)
+      scheduleFrame(draw)
       return
     }
 
     canvas.remove()
   }
 
-  requestAnimationFrame(draw)
+  scheduleFrame(draw)
 }

@@ -23,7 +23,8 @@ router = APIRouter(prefix="/events", tags=["events"])
 async def stream_events(
     request: Request,
     project_id: str,
-    conversation_id: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
     run_id: str | None = None,
     image_id: str | None = None,
     user: AuthUser = Depends(get_current_user),
@@ -55,7 +56,9 @@ async def stream_events(
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
                     continue
-                if conversation_id and event.get("conversation_id") != conversation_id:
+                if session_id and event.get("session_id") != session_id:
+                    continue
+                if turn_id and event.get("turn_id") != turn_id:
                     continue
                 if run_id and event.get("run_id") != run_id:
                     continue

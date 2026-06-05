@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db
 from app.auth.session import AuthUser
 from app.schemas.user_settings import UserSettingsUpdate
-from app.services.agent.runtime.providers import PROVIDER_REGISTRY
+from app.services.llm.providers import PROVIDER_REGISTRY
 from app.services.user_settings_service import UserSettingsService
 from app.utils.responses import error_response, success_response
 

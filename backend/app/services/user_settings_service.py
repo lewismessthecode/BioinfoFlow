@@ -15,7 +15,7 @@ from app.schemas.user_settings import (
     UserSettingsRead,
     UserSettingsUpdate,
 )
-from app.services.agent.runtime.providers import (
+from app.services.llm.providers import (
     PROVIDER_REGISTRY,
     normalize_openai_compatible_base_url,
 )

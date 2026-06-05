@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,9 +18,7 @@ from app.runtime.task_runner import task_runner
 from app.scheduler.config import SchedulerConfig
 from app.scheduler.monitor import ResourceMonitor
 from app.scheduler.scheduler import RunScheduler
-from app.services.hermes_service.home import ensure_hermes_home_environment
 from app.services.workspace_service import WorkspaceService
-from app.services.hermes_service.service import reconcile_stale_hermes_responses
 from app.services.run_dispatch import (
     SchedulerDispatcher,
     set_run_dispatcher,
@@ -52,8 +49,6 @@ async def lifespan(app: FastAPI):
     ensure_platform_layout()
     log_startup_summary(settings)
     logger.info("startup.platform_layout.ready")
-    ensure_hermes_home_environment(state_db_path=settings.agent_hermes_state_db)
-    logger.info("startup.hermes_home.ready", state_db=settings.agent_hermes_state_db)
     await init_db()
     await verify_database_schema_current()
     logger.info("startup.database.ready")
@@ -62,12 +57,6 @@ async def lifespan(app: FastAPI):
         await workspace_service.ensure_default_workspace()
         await session.commit()
     logger.info("startup.workspace.ready")
-    async with app.state_db_session() as session:
-        await reconcile_stale_hermes_responses(
-            session,
-            stale_before=datetime.now(timezone.utc) - timedelta(minutes=1),
-        )
-    logger.info("startup.hermes_responses.reconciled")
     scheduler: RunScheduler | None = None
     monitor: ResourceMonitor | None = None
     monitor = ResourceMonitor(sample_interval=30.0)

@@ -18,22 +18,23 @@ import {
   type ReactNode,
 } from "react"
 
-import type { ChatMessage } from "@/lib/chat-types"
+import type { AgentCoreEvent, AgentCoreTurn } from "@/lib/agent-core"
 import type { DagData, RunStatus } from "@/lib/types"
-import { applySSEEvent, createClientMessageId, createUserMessage } from "@/lib/chat-utils"
 import {
   parseNDJSON,
   scheduleReplay,
 } from "./replay-engine"
-import type { DemoEvent, ReplayStatus } from "./types"
+import type { DemoAgentReplayEvent, DemoEvent, ReplayStatus } from "./types"
 
 // ---------------------------------------------------------------------------
 // Context shape
 // ---------------------------------------------------------------------------
 
 type DemoContextValue = {
-  /** Chat messages (accumulated during replay). */
-  messages: ChatMessage[]
+  /** AgentCore turns accumulated during replay. */
+  turns: AgentCoreTurn[]
+  /** AgentCore event ledger accumulated during replay. */
+  events: AgentCoreEvent[]
   /** Current DAG data. */
   dag: DagData | null
   /** Current run status. */
@@ -71,7 +72,8 @@ export function DemoReplayProvider({
   autoPlay = true,
   children,
 }: DemoReplayProviderProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [turns, setTurns] = useState<AgentCoreTurn[]>([])
+  const [agentEvents, setAgentEvents] = useState<AgentCoreEvent[]>([])
   const [dag, setDag] = useState<DagData | null>(null)
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null)
   const [currentTask, setCurrentTask] = useState<string | null>(null)
@@ -80,22 +82,129 @@ export function DemoReplayProvider({
   const [isStreaming, setIsStreaming] = useState(false)
 
   const cancelRef = useRef<(() => void) | null>(null)
-  const events = useMemo(() => parseNDJSON(recording), [recording])
+  const activeTurnIdRef = useRef<string | null>(null)
+  const turnCounterRef = useRef(0)
+  const eventSeqRef = useRef(0)
+  const recordedEvents = useMemo(() => parseNDJSON(recording), [recording])
+
+  const createEvent = useCallback((
+    turnId: string,
+    type: string,
+    payload: Record<string, unknown>,
+  ): AgentCoreEvent => {
+    const timestamp = new Date().toISOString()
+    eventSeqRef.current += 1
+    return {
+      id: `demo-event-${eventSeqRef.current}`,
+      session_id: DEMO_AGENT_SESSION_ID,
+      turn_id: turnId,
+      seq: eventSeqRef.current,
+      type,
+      payload,
+      visibility: "user",
+      schema_version: 1,
+      created_at: timestamp,
+      updated_at: timestamp,
+    }
+  }, [])
+
+  const startTurn = useCallback((inputText: string) => {
+    const timestamp = new Date().toISOString()
+    turnCounterRef.current += 1
+    const turnId = `demo-turn-${turnCounterRef.current}`
+    activeTurnIdRef.current = turnId
+
+    const turn: AgentCoreTurn = {
+      id: turnId,
+      session_id: DEMO_AGENT_SESSION_ID,
+      project_id: "project-demo",
+      workspace_id: "workspace-demo",
+      user_id: "demo-user",
+      input_text: inputText,
+      input_parts: null,
+      status: "running",
+      model_profile_snapshot: {
+        profile: "demo-agent-core",
+        provider: "demo",
+      },
+      final_text: "",
+      token_usage: null,
+      error_code: null,
+      error_message: null,
+      created_at: timestamp,
+      updated_at: timestamp,
+      started_at: timestamp,
+      completed_at: null,
+    }
+
+    const createdEvent = createEvent(turnId, "turn.created", {
+      input_text: inputText,
+    })
+    const startedEvent = createEvent(turnId, "turn.started", {})
+
+    setTurns((prev) => [...prev, turn])
+    setAgentEvents((prev) => [...prev, createdEvent, startedEvent])
+    return turnId
+  }, [createEvent])
+
+  const ensureActiveTurn = useCallback(() => {
+    return activeTurnIdRef.current ?? startTurn("Run the BioinfoFlow demo")
+  }, [startTurn])
+
+  const applyAgentEvent = useCallback((agentEvent: DemoAgentReplayEvent) => {
+    const turnId = ensureActiveTurn()
+    const event = createEvent(turnId, agentEvent.type, {
+      ...agentEvent.payload,
+      source_id: agentEvent.source_id,
+    })
+
+    setAgentEvents((prev) => [...prev, event])
+    setTurns((prev) =>
+      prev.map((turn) => {
+        if (turn.id !== turnId) return turn
+
+        const timestamp = new Date().toISOString()
+        const next: AgentCoreTurn = {
+          ...turn,
+          updated_at: timestamp,
+        }
+
+        if (agentEvent.final_text_delta) {
+          next.final_text = `${next.final_text ?? ""}${agentEvent.final_text_delta}`
+        }
+        if (agentEvent.final_text !== undefined) {
+          next.final_text = agentEvent.final_text
+        }
+        if (agentEvent.error_message) {
+          next.status = "failed"
+          next.error_message = agentEvent.error_message
+          next.completed_at = timestamp
+        } else if (agentEvent.type === "turn.completed") {
+          next.status = "completed"
+          next.completed_at = timestamp
+        }
+
+        return next
+      }),
+    )
+
+    setIsStreaming(
+      agentEvent.type !== "turn.completed" &&
+      agentEvent.type !== "turn.failed",
+    )
+  }, [createEvent, ensureActiveTurn])
 
   const handleEvent = useCallback((event: DemoEvent, index: number, total: number) => {
     setProgress(total > 0 ? (index + 1) / total : 1)
 
     switch (event.kind) {
       case "agent":
-        setIsStreaming(event.sseEvent.type !== "done")
-        setMessages((prev) => applySSEEvent(prev, event.sseEvent))
+        applyAgentEvent(event.agentEvent)
         break
 
       case "user_message":
-        setMessages((prev) => [
-          ...prev,
-          createUserMessage(createClientMessageId(), event.text),
-        ])
+        startTurn(event.text)
+        setIsStreaming(true)
         break
 
       case "run_status":
@@ -111,26 +220,30 @@ export function DemoReplayProvider({
         // Logs are informational — we don't render them in the demo v1
         break
     }
-  }, [])
+  }, [applyAgentEvent, startTurn])
 
   const play = useCallback(() => {
     // Cancel any existing playback
     cancelRef.current?.()
 
     // Reset state
-    setMessages([])
+    setTurns([])
+    setAgentEvents([])
     setDag(null)
     setRunStatus(null)
     setCurrentTask(null)
     setProgress(0)
     setIsStreaming(false)
     setStatus("playing")
+    activeTurnIdRef.current = null
+    turnCounterRef.current = 0
+    eventSeqRef.current = 0
 
-    cancelRef.current = scheduleReplay(events, {
+    cancelRef.current = scheduleReplay(recordedEvents, {
       onEvent: handleEvent,
       onFinish: () => setStatus("finished"),
     })
-  }, [events, handleEvent])
+  }, [recordedEvents, handleEvent])
 
   const pause = useCallback(() => {
     cancelRef.current?.()
@@ -155,7 +268,8 @@ export function DemoReplayProvider({
   return (
     <DemoContext.Provider
       value={{
-        messages,
+        turns,
+        events: agentEvents,
         dag,
         runStatus,
         currentTask,
@@ -170,6 +284,8 @@ export function DemoReplayProvider({
     </DemoContext.Provider>
   )
 }
+
+const DEMO_AGENT_SESSION_ID = "agent-session-demo-replay"
 
 // ---------------------------------------------------------------------------
 // Hook

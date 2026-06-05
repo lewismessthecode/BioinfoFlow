@@ -11,7 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import type { Project, AgentConversationRead } from "@/lib/types"
+import type { AgentCoreSession } from "@/lib/agent-core"
+import type { Project } from "@/lib/types"
 import { ConversationItem } from "./conversation-item"
 
 interface ProjectItemProps {
@@ -20,20 +21,19 @@ interface ProjectItemProps {
   isExpanded: boolean
   collapsed: boolean
   isDropTarget?: boolean
-  conversations: AgentConversationRead[]
+  conversations: AgentCoreSession[]
   isLoadingConversations: boolean
   activeConversationId: string
   onToggleExpand: (projectId: string) => void
   onSelectProject: (project: Project) => void
-  onSelectConversation: (conversation: AgentConversationRead, projectId: string) => void
-  onConversationDragStart: (conversation: AgentConversationRead, projectId: string) => void
+  onSelectConversation: (conversation: AgentCoreSession, projectId: string) => void
+  onConversationDragStart: (conversation: AgentCoreSession, projectId: string) => void
   onConversationDragEnd: () => void
   onConversationDrop: (projectId: string) => void
   onConversationDragOver: (projectId: string) => void
   onConversationDragLeave: (projectId: string) => void
   onCreateConversation: (projectId: string) => void
-  onRenameConversation: (conversation: AgentConversationRead, projectId: string, newTitle: string) => void
-  onTogglePin: (conversation: AgentConversationRead, projectId: string) => void
+  onRenameConversation: (conversation: AgentCoreSession, projectId: string, newTitle: string) => void
   onDeleteConversation: (conversationId: string, projectId: string, name: string) => void
   onRenameProject: (project: Project, newName: string) => void
   onDuplicateProject: (project: Project) => void
@@ -62,7 +62,6 @@ export function ProjectItem({
   onConversationDragLeave,
   onCreateConversation,
   onRenameConversation,
-  onTogglePin,
   onDeleteConversation,
   onRenameProject,
   onDuplicateProject,
@@ -209,7 +208,6 @@ export function ProjectItem({
                 onDragEnd={onConversationDragEnd}
                 onSelect={onSelectConversation}
                 onRename={onRenameConversation}
-                onTogglePin={onTogglePin}
                 onDelete={onDeleteConversation}
                 canDelete={canDeleteWorkspaceResources}
                 tSidebar={tSidebar}

@@ -1,18 +1,25 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
-import type { AgentConversationHistory, AgentConversationRead, Project } from "@/lib/types"
+import {
+  deleteAgentSession,
+  listAgentSessions,
+  updateAgentSession,
+  type AgentCoreSession,
+} from "@/lib/agent-core"
+import type { Project } from "@/lib/types"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import {
-  clearStoredConversationId,
-  getStoredConversationId,
-  listenForConversationUpdates,
-  setStoredConversationId,
-  sortConversations,
-} from "@/lib/conversations"
+  clearStoredAgentSessionId,
+  getStoredAgentSessionId,
+  listenForAgentSessionUpdates,
+  setStoredAgentSessionId,
+  sortAgentSessions,
+} from "@/lib/agent-core/session-storage"
+import { emitReadinessRefresh } from "@/lib/readiness-events"
 
 export function useSidebarData(tSidebar: (key: string, values?: Record<string, string>) => string) {
   const {
@@ -30,11 +37,10 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
-  const [projectConversations, setProjectConversations] = useState<Map<string, AgentConversationRead[]>>(new Map())
+  const [projectConversations, setProjectConversations] = useState<Map<string, AgentCoreSession[]>>(new Map())
   const [loadingProjects, setLoadingProjects] = useState<Set<string>>(new Set())
   const [defaultProject, setDefaultProject] = useState<Project | null>(null)
-  const [inboxConversations, setInboxConversations] = useState<AgentConversationRead[]>([])
-  const draftConversationIdsRef = useRef(new Set<string>())
+  const [inboxConversations, setInboxConversations] = useState<AgentCoreSession[]>([])
 
   const fetchProjects = useCallback(async () => {
     setIsLoading(true)
@@ -59,27 +65,27 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   const fetchConversationsForProject = useCallback(async (projectId: string) => {
     setLoadingProjects((prev) => new Set(prev).add(projectId))
     try {
-      const { data } = await apiRequest<AgentConversationRead[]>("/agent/conversations", {
-        params: { project_id: projectId, limit: 50 },
-      })
-      const sorted = sortConversations(data)
+      const data = await listAgentSessions(projectId)
+      const sorted = sortAgentSessions(data)
       setProjectConversations((prev) => new Map(prev).set(projectId, sorted))
 
       if (projectId === selectedProjectId || projectId === conversationProjectId) {
-        const storedId = getStoredConversationId(projectId)
+        const storedId = getStoredAgentSessionId(projectId)
         const preferredId = activeConversationId || storedId
-        const match = data.find((item) => item.id === preferredId)
-        if (match) {
-          setActiveConversationId(match.id)
-          if (match.id !== storedId) {
-            setStoredConversationId(projectId, match.id)
+        if (preferredId) {
+          const match = data.find((item) => item.id === preferredId)
+          if (match) {
+            setActiveConversationId(match.id)
+            if (match.id !== storedId) {
+              setStoredAgentSessionId(projectId, match.id)
+            }
+          } else {
+            setActiveConversationId("")
+            clearStoredAgentSessionId(projectId)
           }
-        } else if (data[0]) {
-          setActiveConversationId(data[0].id)
-          setStoredConversationId(projectId, data[0].id)
         } else {
           setActiveConversationId("")
-          clearStoredConversationId(projectId)
+          clearStoredAgentSessionId(projectId)
         }
       }
     } catch (error) {
@@ -152,11 +158,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   }, [defaultProject, projectConversations])
 
   useEffect(() => {
-    return listenForConversationUpdates((conversation) => {
-      if (conversation.title?.trim()) {
-        draftConversationIdsRef.current.delete(conversation.id)
-      }
-
+    return listenForAgentSessionUpdates((conversation) => {
       setProjectConversations((prev) => {
         const existing = prev.get(conversation.project_id)
         if (!existing) return prev
@@ -165,64 +167,10 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
           item.id === conversation.id ? { ...item, ...conversation } : item
         )
 
-        return new Map(prev).set(conversation.project_id, sortConversations(next))
+        return new Map(prev).set(conversation.project_id, sortAgentSessions(next))
       })
     })
   }, [])
-
-  const discardActiveDraftConversation = useCallback(async () => {
-    if (!activeConversationId) return
-
-    const projectId = conversationProjectId || selectedProjectId
-    if (!projectId) return
-
-    const conversations = projectConversations.get(projectId) || []
-    const conversation = conversations.find((item) => item.id === activeConversationId)
-    if (!conversation || conversation.title?.trim()) {
-      draftConversationIdsRef.current.delete(activeConversationId)
-      return
-    }
-
-    const draftId = activeConversationId
-    let shouldDiscard = draftConversationIdsRef.current.has(draftId)
-    if (!shouldDiscard) {
-      try {
-        const { data } = await apiRequest<AgentConversationHistory>(
-          `/agent/conversations/${draftId}`,
-        )
-        shouldDiscard = data.messages.length === 0
-      } catch {
-        return
-      }
-    }
-    if (!shouldDiscard) return
-
-    draftConversationIdsRef.current.delete(draftId)
-    try {
-      await apiRequest(`/agent/conversations/${draftId}`, { method: "DELETE" })
-    } catch {
-      return
-    }
-
-    setProjectConversations((prev) => {
-      const existing = prev.get(projectId) || []
-      return new Map(prev).set(projectId, existing.filter((item) => item.id !== draftId))
-    })
-    if (activeConversationId === draftId) {
-      clearStoredConversationId(projectId)
-      setActiveConversationId("")
-      if (conversationProjectId === projectId) {
-        setConversationProjectId("")
-      }
-    }
-  }, [
-    activeConversationId,
-    conversationProjectId,
-    projectConversations,
-    selectedProjectId,
-    setActiveConversationId,
-    setConversationProjectId,
-  ])
 
   const toggleProjectExpanded = (projectId: string) => {
     setExpandedProjects((prev) => {
@@ -276,6 +224,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       setConversationProjectId(data.id)
       setActiveConversationId("")
       toast.success(tSidebar("toasts.projectCreated", { name: data.name }))
+      emitReadinessRefresh("project-created")
     } catch (error) {
       const message = getApiErrorMessage(error, tSidebar("errors.createProjectFailed"))
       toast.error(message)
@@ -333,7 +282,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     }
   }
 
-  const handleSelectConversation = (conversation: AgentConversationRead, projectId: string) => {
+  const handleSelectConversation = (conversation: AgentCoreSession, projectId: string) => {
     if (defaultProject?.id === projectId) {
       setSelectedProjectId("")
     } else {
@@ -341,52 +290,38 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     }
     setConversationProjectId(projectId)
     setActiveConversationId(conversation.id)
-    setStoredConversationId(projectId, conversation.id)
+    setStoredAgentSessionId(projectId, conversation.id)
     router.push("/agent")
   }
 
   const handleCreateConversation = async (projectId?: string) => {
     try {
-      await discardActiveDraftConversation()
-      const targetId = projectId || selectedProjectId
-      const { data } = await apiRequest<AgentConversationRead>("/agent/conversations", {
-        method: "POST",
-        body: JSON.stringify(targetId ? { project_id: targetId } : {}),
-      })
+      const targetId = projectId || selectedProjectId || defaultProject?.id
+      if (!targetId) {
+        toast.error(tSidebar("errors.selectProjectFirst"))
+        return
+      }
 
-      const resolvedProjectId = data.project_id
-      setProjectConversations((prev) => {
-        const existing = prev.get(resolvedProjectId) || []
-        return new Map(prev).set(resolvedProjectId, [data, ...existing])
-      })
-
-      if (defaultProject?.id === resolvedProjectId) {
+      if (defaultProject?.id === targetId) {
         setSelectedProjectId("")
       } else {
-        setSelectedProjectId(resolvedProjectId)
+        setSelectedProjectId(targetId)
       }
-      setConversationProjectId(resolvedProjectId)
-      setActiveConversationId(data.id)
-      draftConversationIdsRef.current.add(data.id)
-      setStoredConversationId(resolvedProjectId, data.id)
+      setConversationProjectId(targetId)
+      setActiveConversationId("")
+      clearStoredAgentSessionId(targetId)
       router.push("/agent")
     } catch (error) {
       toast.error(getApiErrorMessage(error, tSidebar("errors.createConversationFailed")))
     }
   }
 
-  const handleRenameConversation = async (conversation: AgentConversationRead, projectId: string, newTitle: string) => {
+  const handleRenameConversation = async (conversation: AgentCoreSession, projectId: string, newTitle: string) => {
     const trimmed = newTitle.trim()
     if (!trimmed || trimmed === conversation.title) return
 
     try {
-      const { data } = await apiRequest<AgentConversationRead>(
-        `/agent/conversations/${conversation.id}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ title: trimmed }),
-        }
-      )
+      const data = await updateAgentSession(conversation.id, { title: trimmed })
       setProjectConversations((prev) => {
         const existing = prev.get(projectId) || []
         return new Map(prev).set(projectId, existing.map((item) => (item.id === conversation.id ? data : item)))
@@ -394,24 +329,6 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       toast.success(tSidebar("toasts.conversationRenamed"))
     } catch (error) {
       toast.error(getApiErrorMessage(error, tSidebar("errors.renameConversationFailed")))
-    }
-  }
-
-  const handleTogglePin = async (conversation: AgentConversationRead, projectId: string) => {
-    try {
-      const { data } = await apiRequest<AgentConversationRead>(
-        `/agent/conversations/${conversation.id}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ pinned: !conversation.pinned }),
-        }
-      )
-      setProjectConversations((prev) => {
-        const existing = prev.get(projectId) || []
-        return new Map(prev).set(projectId, existing.map((item) => (item.id === conversation.id ? data : item)))
-      })
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, tSidebar("errors.updateConversationFailed")))
     }
   }
 
@@ -430,6 +347,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       setConversationProjectId(created.id)
       setActiveConversationId("")
       toast.success(tSidebar("toasts.projectCreated", { name: created.name }))
+      emitReadinessRefresh("project-created")
     } catch (error) {
       const message = getApiErrorMessage(error, tSidebar("errors.createProjectFailed"))
       toast.error(message)
@@ -439,7 +357,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
 
   const handleDeleteConversation = async (conversationId: string, projectId: string) => {
     try {
-      await apiRequest(`/agent/conversations/${conversationId}`, { method: "DELETE" })
+      await deleteAgentSession(conversationId)
       setProjectConversations((prev) => {
         const existing = prev.get(projectId) || []
         return new Map(prev).set(projectId, existing.filter((item) => item.id !== conversationId))
@@ -449,7 +367,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
         if (conversationProjectId === projectId) {
           setConversationProjectId("")
         }
-        clearStoredConversationId(projectId)
+        clearStoredAgentSessionId(projectId)
       }
     } catch (error) {
       const message = getApiErrorMessage(error, tSidebar("errors.deleteConversationFailed"))
@@ -459,27 +377,10 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   }
 
   const handleMoveConversation = async (conversationId: string, fromProjectId: string, targetProjectId: string) => {
-    try {
-      await apiRequest(`/agent/conversations/${conversationId}/move`, {
-        method: "PATCH",
-        body: JSON.stringify({ target_project_id: targetProjectId }),
-      })
-      setProjectConversations((prev) => {
-        const next = new Map(prev)
-        const fromList = (next.get(fromProjectId) || []).filter((c) => c.id !== conversationId)
-        next.set(fromProjectId, fromList)
-        return next
-      })
-      fetchConversationsForProject(targetProjectId)
-      if (activeConversationId === conversationId) {
-        setSelectedProjectId(targetProjectId)
-        setConversationProjectId(targetProjectId)
-        setStoredConversationId(targetProjectId, conversationId)
-      }
-      toast.success(tSidebar("toasts.conversationMoved") || "Conversation moved")
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to move conversation"))
-    }
+    void conversationId
+    void fromProjectId
+    void targetProjectId
+    toast.error(tSidebar("errors.updateConversationFailed"))
   }
 
   return {
@@ -500,7 +401,6 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     handleSelectConversation,
     handleCreateConversation,
     handleRenameConversation,
-    handleTogglePin,
     handleDeleteConversation,
     handleMoveConversation,
   }

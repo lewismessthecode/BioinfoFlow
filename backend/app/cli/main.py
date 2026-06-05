@@ -130,7 +130,6 @@ def main(
 # -- Register subcommands ---------------------------------------------------
 
 from app.cli.commands.agent import agent_app  # noqa: E402
-from app.cli.commands.agent_approvals import approvals_app  # noqa: E402
 from app.cli.commands.config_cmd import config_app  # noqa: E402
 from app.cli.commands.doctor import doctor  # noqa: E402
 from app.cli.commands.events import events_app  # noqa: E402
@@ -156,8 +155,6 @@ run_app.add_typer(outputs_app, name="outputs")
 run_app.add_typer(batch_app, name="batch")
 app.add_typer(run_app, name="run")
 
-# Nest agent sub-apps
-agent_app.add_typer(approvals_app, name="approvals")
 app.add_typer(agent_app, name="agent")
 
 app.command("doctor", help="Check backend health, scheduler, GPU, and local tools.")(

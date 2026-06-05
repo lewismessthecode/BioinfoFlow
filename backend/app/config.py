@@ -31,8 +31,6 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     debug: bool = False
     repo_root: str = str(REPO_ROOT)
-    agent_hermes_home: str = "~/.bioinfoflow/hermes"
-    agent_hermes_state_db: str = ""
     bioinfoflow_home: str = "data"
     # Path Contract v3: identity-mount invariant. When the backend runs in a
     # container, BIOINFOFLOW_HOME_HOST must equal BIOINFOFLOW_HOME (the compose
@@ -51,43 +49,6 @@ class Settings(BaseSettings):
         if not value or not str(value).strip():
             return str(REPO_ROOT)
         return str(value).strip()
-
-    @field_validator("agent_hermes_home", mode="before")
-    @classmethod
-    def normalize_hermes_home(cls, value: Any) -> str:
-        raw = (
-            value
-            if value is not None and str(value).strip()
-            else "~/.bioinfoflow/hermes"
-        )
-        path = Path(str(raw).strip()).expanduser()
-        if not path.is_absolute():
-            path = (Path(__file__).resolve().parents[1] / path).resolve()
-        return str(path)
-
-    @field_validator("agent_hermes_state_db", mode="before")
-    @classmethod
-    def normalize_hermes_state_db(cls, value: Any) -> str:
-        if value is None or not str(value).strip():
-            return ""
-        raw = str(value).strip()
-        path = Path(str(raw).strip()).expanduser()
-        if not path.is_absolute():
-            path = (Path(__file__).resolve().parents[1] / path).resolve()
-        return str(path)
-
-    @model_validator(mode="after")
-    def reconcile_hermes_paths(self):
-        if self.agent_hermes_state_db:
-            state_db = Path(self.agent_hermes_state_db).expanduser()
-            self.agent_hermes_state_db = str(state_db)
-            self.agent_hermes_home = str(state_db.parent)
-            return self
-
-        home = Path(self.agent_hermes_home).expanduser()
-        self.agent_hermes_home = str(home)
-        self.agent_hermes_state_db = str(home / "state.db")
-        return self
 
     @field_validator("bioinfoflow_home", mode="before")
     @classmethod
@@ -122,7 +83,6 @@ class Settings(BaseSettings):
 
     # Agent / LLM
     agent_provider: str = "auto"
-    agent_engine: str = "legacy"
     agent_sandbox_enabled: bool = False  # Enable OS-level sandboxing for code execution
     agent_model: str = "claude-sonnet-4-6"  # Global model override
     agent_max_tokens: int = 16384
@@ -130,7 +90,6 @@ class Settings(BaseSettings):
     agent_log_truncate_chars: int = 1200
     agent_max_rounds: int = 50  # Loop safety limit
     agent_compact_threshold: int = 50000  # Auto-compact token threshold
-    agent_hermes_max_concurrency: int = 4
 
     # Provider API keys (read by PROVIDER_REGISTRY via env vars)
     # Keep these for backward compat with existing .env files.
@@ -192,16 +151,6 @@ class Settings(BaseSettings):
         if value is None:
             return "gemini"
         return str(value).strip().lower()
-
-    @field_validator("agent_engine", mode="before")
-    @classmethod
-    def normalize_agent_engine(cls, value: Any) -> str:
-        if value is None:
-            return "legacy"
-        normalized = str(value).strip().lower()
-        if normalized in {"legacy", "hermes_service"}:
-            return normalized
-        return "legacy"
 
     @field_validator("auth_mode", mode="before")
     @classmethod

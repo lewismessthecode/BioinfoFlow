@@ -3,27 +3,27 @@
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Plus } from "lucide-react"
-import type { Project, AgentConversationRead } from "@/lib/types"
+import type { AgentCoreSession } from "@/lib/agent-core"
+import type { Project } from "@/lib/types"
 import { ProjectItem } from "./project-item"
 import { ConversationItem } from "./conversation-item"
 
 interface ProjectListProps {
   projects: Project[]
-  inboxConversations: AgentConversationRead[]
+  inboxConversations: AgentCoreSession[]
   defaultProjectId?: string
   expandedProjects: Set<string>
-  projectConversations: Map<string, AgentConversationRead[]>
+  projectConversations: Map<string, AgentCoreSession[]>
   loadingProjects: Set<string>
   collapsed: boolean
   activeProjectId: string
   activeConversationId: string
   onToggleExpand: (projectId: string) => void
   onSelectProject: (project: Project) => void
-  onSelectConversation: (conversation: AgentConversationRead, projectId: string) => void
+  onSelectConversation: (conversation: AgentCoreSession, projectId: string) => void
   onMoveConversation: (conversationId: string, fromProjectId: string, targetProjectId: string) => void
   onCreateConversation: (projectId: string) => void
-  onRenameConversation: (conversation: AgentConversationRead, projectId: string, newTitle: string) => void
-  onTogglePin: (conversation: AgentConversationRead, projectId: string) => void
+  onRenameConversation: (conversation: AgentCoreSession, projectId: string, newTitle: string) => void
   onDeleteConversation: (conversationId: string, projectId: string, name: string) => void
   onRenameProject: (project: Project, newName: string) => void
   onDuplicateProject: (project: Project) => void
@@ -50,7 +50,6 @@ export function ProjectList({
   onMoveConversation,
   onCreateConversation,
   onRenameConversation,
-  onTogglePin,
   onDeleteConversation,
   onRenameProject,
   onDuplicateProject,
@@ -66,7 +65,7 @@ export function ProjectList({
   } | null>(null)
   const [dropTargetProjectId, setDropTargetProjectId] = useState<string | null>(null)
 
-  const handleConversationDragStart = (conversation: AgentConversationRead, projectId: string) => {
+  const handleConversationDragStart = (conversation: AgentCoreSession, projectId: string) => {
     setDraggingConversation({ id: conversation.id, projectId })
   }
 
@@ -116,7 +115,6 @@ export function ProjectList({
             onConversationDragLeave={handleConversationDragLeave}
             onCreateConversation={onCreateConversation}
             onRenameConversation={onRenameConversation}
-            onTogglePin={onTogglePin}
             onDeleteConversation={onDeleteConversation}
             onRenameProject={onRenameProject}
             onDuplicateProject={onDuplicateProject}
@@ -177,7 +175,6 @@ export function ProjectList({
                   onDragEnd={handleConversationDragEnd}
                   onSelect={onSelectConversation}
                   onRename={onRenameConversation}
-                  onTogglePin={onTogglePin}
                   onDelete={onDeleteConversation}
                   canDelete={canDeleteWorkspaceResources}
                   tSidebar={tSidebar}
@@ -219,7 +216,6 @@ export function ProjectList({
           onConversationDragLeave={handleConversationDragLeave}
           onCreateConversation={onCreateConversation}
           onRenameConversation={onRenameConversation}
-          onTogglePin={onTogglePin}
           onDeleteConversation={onDeleteConversation}
           onRenameProject={onRenameProject}
           onDuplicateProject={onDuplicateProject}
