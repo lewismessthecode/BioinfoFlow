@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
-import { celebrateOnce } from "@/lib/celebrations"
+import { emitReadinessRefresh } from "@/lib/readiness-events"
 import type { ProjectWorkflowGroup, Workflow } from "@/lib/types"
 
 export function useWorkflowActions({
@@ -49,7 +49,7 @@ export function useWorkflowActions({
     try {
       await apiRequest(`/projects/${activeProjectId}/workflows/${workflow.id}:bind`, { method: "POST" })
       toast.success(tWorkflows("toasts.addedToProject", { name: formatWorkflowName(workflow) }))
-      celebrateOnce("first-workflow-bound-to-project")
+      emitReadinessRefresh("workflow-bound")
       if (scope === "project") {
         await fetchProjectWorkflows()
       }

@@ -48,14 +48,6 @@ vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
   }),
 }))
 
-vi.mock("@/lib/celebrations", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/celebrations")>("@/lib/celebrations")
-  return {
-    ...actual,
-    celebrateReadinessTransitions: vi.fn(),
-  }
-})
-
 function blockedReadiness(): ReadinessStatus {
   return {
     severity: "blocked",

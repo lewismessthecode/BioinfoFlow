@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -24,7 +24,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { celebrateReadinessTransitions } from "@/lib/celebrations";
 import { cn } from "@/lib/utils";
 import type { ReadinessCheck, ReadinessStatus } from "./dashboard-types";
 
@@ -203,19 +202,8 @@ function ChecklistSection({
 export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) {
   const tDashboard = useTranslations("dashboard");
   const workspaceShell = useOptionalWorkspaceShell();
-  const previousChecksRef = useRef<Array<Pick<ReadinessCheck, "id" | "status">> | null>(null);
   const [open, setOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  useEffect(() => {
-    if (!readiness?.checks) return;
-
-    celebrateReadinessTransitions(previousChecksRef.current, readiness.checks);
-    previousChecksRef.current = readiness.checks.map((check) => ({
-      id: check.id,
-      status: check.status,
-    }));
-  }, [readiness?.checks]);
 
   if (!readiness) return null;
 
