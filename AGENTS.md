@@ -1,134 +1,174 @@
 # AGENTS.md
 
-## Workflow Rules
+This file is the working guide for coding agents in Bioinfoflow. Keep it short,
+actionable, and specific to this repo.
 
-- Before making changes, verify the current branch/worktree with `git branch --show-current` and `git worktree list`.
-- When writing plans or documentation, create the file on disk instead of leaving the content only in chat.
-- Before reporting completion, run the relevant verification commands for the files you changed.
-- Use Conventional Commits for all git commit messages and PR titles: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`. Format: `<type>: <imperative summary>`.
-- Treat the PR title as the canonical squash-merge commit message. When creating or updating a PR, always normalize the title to the Conventional Commits format unless the user explicitly asks otherwise.
-- Avoid vague git/PR titles such as `update`, `misc fixes`, `wip`, or `tweak`; choose the most specific valid type and a concise summary of the user-visible change.
+## First Steps
 
-## Commands
+- Always run `rtk git branch --show-current` and `rtk git worktree list` before
+  editing. This worktree may be detached.
+- Inspect the relevant code before changing it. Prefer `rtk rg` and
+  `rtk rg --files` for search.
+- Preserve user or generated changes. Do not revert unrelated dirty files.
+- For significant features, refactors, or architectural decisions, write the
+  plan to `docs/plans/` instead of keeping it only in chat.
+- Before reporting completion, run verification commands that match the files
+  changed and mention any commands that could not be run.
 
-### Repo setup / Docker (from repo root)
+## RTK Rule
+
+Prefix every shell command with `rtk`, even inside command chains:
+
 ```bash
-cp .env.example .env
-docker compose up -d --build
-docker compose logs -f backend frontend
+rtk git status --short
+rtk git add AGENTS.md && rtk git commit -m "docs: update agent guide"
 ```
 
-### Backend (from `backend/`)
-```bash
-uv sync
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --reload-dir app --port 8000
-uv run pytest
-uv run pytest tests/test_api/test_runs.py -v
-uv run pytest tests/test_api/ -v -k "test_create"
-uv run ruff check .
-uv run ruff format .
-uv run bif --version                    # CLI version (also -V)
-uv run bif --help                       # also -h
-uv run bif doctor                       # backend + scheduler + GPU + local tool checks
-uv run bif project list
-uv run bif config use-project proj-123  # default project (also -p / $BIOFLOW_PROJECT)
-uv run bif --output json run show r-abc # JSON envelope on stdout, errors on stderr
-uv run bif run cancel r-abc --force     # destructive verbs prompt unless -f
-```
+If RTK has a compact filter, it uses it. Otherwise it passes the command through.
 
-### Frontend (from `frontend/`)
-```bash
-bun install
-bun run dev
-bun run build
-bun run start
-bun run lint
-bun run lint:i18n
-bun run lint:dead-code
-bun run test
-bun run test:coverage
-bun run test:watch
-```
+## Project Shape
 
-## Environment
-
+- Bioinfoflow is a local agentic control plane for Nextflow and WDL pipelines.
+- Backend: FastAPI, SQLAlchemy async, Alembic, Typer CLI, scheduler/runtime code.
+- Frontend: Next.js 16, React 19, next-intl, Better Auth, Vitest, ESLint.
+- Workflow execution depends on Docker, Nextflow, MiniWDL, and an identity-mounted
+  `BIOINFOFLOW_HOME`.
 - Canonical setup and troubleshooting live in `RUNBOOK.md`.
-- The repo-root `.env` is the default source of truth for both Docker and local development.
-- `backend/.env` and `frontend/.env.local` are optional machine-local overrides only.
-- Effective precedence is: shell env > package-local override > repo-root `.env` > code defaults.
-- Minimum useful setup: set `BIOINFOFLOW_HOME`, one provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`), and owner credentials for auth bootstrap.
-- Better Auth uses `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, and the shared auth DB path. `AUTH_MODE` supports `personal`, `team`, and `dev`.
-- `NEXT_PUBLIC_*` values are baked into the frontend at build time. After changing them, restart `bun run dev` or rebuild Docker/frontend.
-- Backend config is in `backend/app/config.py`; it auto-reads repo-root `.env` first, then optional `backend/.env`.
-- Frontend dev/build scripts also load the repo-root `.env`; keep frontend-only overrides in `frontend/.env.local` only when truly needed.
-- Workflow execution may require Docker, `NEXTFLOW_BIN`, and `MINIWDL_BIN` depending on the workflow engine.
-- Bioinfoflow's path model is an identity mount: `BIOINFOFLOW_HOME` should resolve to the same absolute path on the host, backend container, workflow runner, and task containers.
 
-## Testing
+## Repo Map
 
-### Backend (`backend/tests/`)
-- `pytest` + `pytest-asyncio`.
-- `conftest.py` provides `async_client` and a per-test in-memory SQLite session override.
-- Important suites include `test_api/`, `test_agent/`, `test_scheduler/`, `test_services/`, `test_engine/`, and repository coverage.
-- Run from `backend/` with `uv run pytest`.
+- `backend/app/api/`: HTTP endpoints.
+- `backend/app/services/`: business logic. Use repositories for DB access.
+- `backend/app/repositories/`: database access boundaries.
+- `backend/app/models/` and `backend/alembic/`: schema and migrations.
+- `backend/app/scheduler/`, `backend/app/runtime/`, `backend/app/engine/`:
+  run scheduling and workflow execution.
+- `backend/app/cli/`: `bif` CLI commands.
+- `frontend/app/(app)/`: protected app routes.
+- `frontend/app/auth/`: public auth routes.
+- `frontend/messages/`: locale files.
+- `demo/`: runnable workflow demos.
+- `docs/`: architecture, user docs, plans, and references.
 
-### Frontend (`frontend/tests/`)
-- Vitest + Testing Library (`jsdom`).
-- Test groupings include `tests/unit/`, `tests/integration/`, and `tests/smoke/`.
-- `renderAppPage` from `tests/app-test-utils.tsx` returns `{ ...renderResult, appTestState }`.
-- Coverage is enforced via `@vitest/coverage-v8` with an 80% threshold.
+## Common Commands
 
-## Conventions
+Repo setup / Docker, from repo root:
 
-- New UI strings must be added to both `frontend/messages/en.json` and `frontend/messages/zh-CN.json` in the same change.
-- Services should go through repository methods for DB access; avoid introducing direct `session.execute()` calls in service-layer business logic.
-- `frontend/app/(app)/` is the protected application layout; auth pages live under `frontend/app/auth/`.
-- Prefer service-specific modules over growing catch-all files; `run_service.py` should stay a delegating facade.
-- For complex features or significant refactors, write a plan doc in `docs/plans/`.
+```bash
+rtk cp .env.example .env
+rtk docker compose up -d --build
+rtk docker compose logs -f backend frontend
+```
 
-## Workflow
+Backend, from `backend/`:
 
-- **DB schema change:** update models -> `uv run alembic revision --autogenerate -m "desc"` -> `uv run alembic upgrade head`.
-- **New agent tool:** subclass `BaseTool` + `@register_tool` -> register it in the runtime dispatch map.
-- **New scheduler hook:** add it in `backend/app/scheduler/hooks.py` and cover it in `backend/tests/test_scheduler/`.
-- **New CLI command:** add it under `backend/app/cli/commands/` and register it from `backend/app/cli/main.py`.
-- **New frontend route:** add it under `frontend/app/(app)/` unless it is intentionally public/auth-related.
-- **New UI copy:** update both locale files, then run `bun run lint:i18n`.
-- **New plan/doc:** save it under the repo path it belongs to (`docs/plans/`, feature docs, runbooks, etc.), not just in chat.
-- **Frontend env change:** if you touched `NEXT_PUBLIC_*`, restart dev or rebuild before assuming the change is live.
+```bash
+rtk uv sync
+rtk uv run alembic upgrade head
+rtk uv run uvicorn app.main:app --reload --reload-dir app --port 8000
+rtk uv run pytest
+rtk uv run ruff check .
+rtk uv run ruff format .
+rtk uv run bif --version
+rtk uv run bif doctor
+```
 
-## Gotchas
+Frontend, from `frontend/`:
 
+```bash
+rtk bun install
+rtk bun run dev
+rtk bun run build
+rtk bun run lint
+rtk bun run lint:i18n
+rtk bun run lint:dead-code
+rtk bun run test
+rtk bun run test:coverage
+```
+
+## Verification Matrix
+
+- Backend change: `rtk uv run pytest` and `rtk uv run ruff check .` from
+  `backend/`. Narrow test runs are fine while iterating; run broader checks
+  before completion when the blast radius is unclear.
+- Frontend change: `rtk bun run lint` and `rtk bun run test` from `frontend/`.
+- New or changed UI copy: update both `frontend/messages/en.json` and
+  `frontend/messages/zh-CN.json`, then run `rtk bun run lint:i18n`.
+- Dead-code-sensitive frontend refactors: run `rtk bun run lint:dead-code`.
+- DB schema change: create and apply an Alembic migration, then run backend tests.
+- Docs-only change: inspect the changed Markdown and run a lightweight check such
+  as `rtk git diff --check`.
+
+## Backend Conventions
+
+- Services should call repository methods instead of introducing direct
+  `session.execute()` business logic.
+- Prefer service-specific modules over growing catch-all files. Keep
+  `run_service.py` as a delegating facade.
+- New CLI commands live under `backend/app/cli/commands/` and are registered from
+  `backend/app/cli/main.py`.
+- New agent tools implement the `AgentTool` Protocol from
+  `backend/app/services/agent_core/tools/specs.py`, live under the matching
+  `tools/` subpackage, and are imported/registered in
+  `backend/app/services/agent_core/tools/__init__.py`.
+- New scheduler hooks go in `backend/app/scheduler/hooks.py` with tests under
+  `backend/tests/test_scheduler/`.
+- `handle_errors` must continue re-raising Click exceptions so usage errors exit
+  with code 2.
+
+## Frontend Conventions
+
+- Put protected routes under `frontend/app/(app)/`; keep auth pages under
+  `frontend/app/auth/`.
+- Any user-facing string must be present in both locale files.
 - `renderAppPage` returns per-test state; never share `appTestState` across tests.
-- Backend tests use isolated in-memory SQLite databases per test, so there is no shared DB state to rely on.
-- `BETTER_AUTH_URL` must match the browser origin exactly or auth callbacks will fail.
-- `TRUSTED_HOSTS` and `CORS_ORIGINS` must match the actual deployment host/origin when exposing the app remotely.
-- `NEXT_PUBLIC_API_BASE_URL` is build-time config, not runtime config.
-- `bif` is an HTTP-only client for a running backend; use `--base-url` or `BIOFLOW_API_URL` to select the API target.
-- `handle_errors` decorator re-raises `click.exceptions.ClickException` (covers `BadParameter`/`UsageError`) so Click renders proper usage errors with exit code 2 — never extend the catch-all `except Exception` branch to swallow them.
-- The identity-mount path model assumes identical host/container paths under `BIOINFOFLOW_HOME`; avoid reintroducing host/container path translation unless you are intentionally working on that subsystem.
-- Keep per-run mount targets as siblings, not nested under a read-only parent mount, or container writes may silently break.
-- miniwdl `glob()` patterns must stay relative to the task working directory; avoid absolute output globs in WDLs.
+- `NEXT_PUBLIC_*` values are baked at build time. Restart `bun run dev` or rebuild
+  after changing them.
+
+## Environment Model
+
+- Repo-root `.env` is the default source for Docker and local development.
+- `backend/.env` and `frontend/.env.local` are optional machine-local overrides.
+- Precedence: shell env > package-local override > repo-root `.env` > code
+  defaults.
+- For local Docker, `BIOINFOFLOW_HOME` may be omitted and defaults under `data/`.
+  Set it only when the platform data root must live outside the repo.
+- Minimum useful setup: one provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY`, or `DEEPSEEK_API_KEY`) and auth bootstrap owner credentials.
+- Better Auth uses `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, and the shared auth DB
+  path. `AUTH_MODE` supports `personal`, `team`, and `dev`.
+- `BETTER_AUTH_URL`, `TRUSTED_HOSTS`, and `CORS_ORIGINS` must match the actual
+  browser origin/deployment host.
+
+## Workflow Gotchas
+
+- The path model is an identity mount: `BIOINFOFLOW_HOME` should resolve to the
+  same absolute path on host, backend container, workflow runner, and task
+  containers.
+- Keep `allow_path_translation` off except for emergency debugging of a broken
+  identity-mount deployment.
+- Keep per-run mount targets as siblings, not nested under a read-only parent
+  mount.
+- miniwdl `glob()` patterns must stay relative to the task working directory.
+- `bif` is an HTTP-only client for a running backend. Use `--base-url` or
+  `BIOFLOW_API_URL` to select the API target.
+- Backend tests use isolated temporary SQLite databases through
+  `backend/tests/conftest.py`; repository-only tests may still use in-memory
+  SQLite.
+
+## Git and PRs
+
+- Use Conventional Commits for commits and PR titles:
+  `<type>: <imperative summary>`.
+- Valid types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`.
+- Avoid vague titles such as `update`, `misc fixes`, `wip`, or `tweak`.
+- Treat the PR title as the canonical squash-merge commit message. Normalize it
+  unless the user explicitly asks otherwise.
 
 ## Compacting
 
-When compacting, always preserve the full list of modified files and any test commands.
+When compacting, preserve:
 
-<!-- rtk-instructions v2 -->
-# RTK (Rust Token Killer) - Token-Optimized Commands
-
-## Golden Rule
-
-**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it. If not, it passes through unchanged. This means RTK is always safe to use.
-
-**Important**: Even in command chains with `&&`, use `rtk`:
-```bash
-# ❌ Wrong
-git add . && git commit -m "msg" && git push
-
-# ✅ Correct
-rtk git add . && rtk git commit -m "msg" && rtk git push
-```
-
-<!-- /rtk-instructions -->
+- The full list of modified files.
+- Verification commands already run and their results.
+- Commands still worth running next.
