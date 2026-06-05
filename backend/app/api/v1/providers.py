@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from app.schemas.user_settings import ModelInfo
-from app.services.agent.runtime.providers import PROVIDER_REGISTRY
+from app.services.llm.providers import PROVIDER_REGISTRY
 from app.utils.responses import success_response
 
 router = APIRouter(prefix="/providers", tags=["providers"])

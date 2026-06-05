@@ -1,0 +1,211 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+PermissionMode = Literal["ask_each_action", "guarded_auto", "bypass"]
+AutomationMode = Literal["advise_only", "assisted", "autonomous"]
+SessionStatus = Literal["active", "archived", "deleted"]
+TurnStatus = Literal[
+    "queued",
+    "running",
+    "waiting_user",
+    "waiting_approval",
+    "completed",
+    "failed",
+    "cancelled",
+]
+EventVisibility = Literal["user", "internal", "audit"]
+ActionKind = Literal[
+    "tool",
+    "platform",
+    "shell",
+    "code",
+    "workflow",
+    "run",
+    "memory",
+    "config",
+    "subagent",
+]
+ActionStatus = Literal[
+    "requested",
+    "waiting_decision",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "rejected",
+]
+RiskLevel = Literal["read", "act_low", "act_high", "destructive", "external", "critical"]
+ActionDecision = Literal["approve", "reject", "modify"]
+MemoryStatus = Literal["proposed", "accepted", "rejected", "disabled"]
+
+
+class AgentSessionCreate(BaseModel):
+    project_id: UUID
+    title: str | None = None
+    role_profile: str = "bioinformatician"
+    permission_mode: PermissionMode = "guarded_auto"
+    automation_mode: AutomationMode = "assisted"
+    default_model_profile_id: UUID | None = None
+    metadata: dict | None = None
+
+
+class AgentSessionUpdate(BaseModel):
+    title: str | None = None
+    role_profile: str | None = None
+    permission_mode: PermissionMode | None = None
+    automation_mode: AutomationMode | None = None
+    default_model_profile_id: UUID | None = None
+    status: SessionStatus | None = None
+    metadata: dict | None = None
+
+
+class AgentSessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    workspace_id: UUID
+    user_id: str
+    title: str | None = None
+    role_profile: str
+    permission_mode: PermissionMode
+    automation_mode: AutomationMode
+    default_model_profile_id: UUID | None = None
+    status: SessionStatus
+    metadata: dict | None = Field(default=None, validation_alias="session_metadata")
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentTurnCreate(BaseModel):
+    input_text: str
+    input_parts: list[dict] | None = None
+    model_profile_id: UUID | None = None
+    metadata: dict | None = None
+
+
+class AgentTurnRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    session_id: UUID
+    project_id: UUID
+    workspace_id: UUID
+    user_id: str
+    input_text: str
+    input_parts: list[dict] | None = None
+    status: TurnStatus
+    model_profile_snapshot: dict | None = None
+    final_text: str | None = None
+    token_usage: dict | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class AgentEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    session_id: UUID
+    turn_id: UUID
+    seq: int
+    type: str
+    payload: dict
+    visibility: EventVisibility
+    schema_version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentActionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    session_id: UUID
+    turn_id: UUID
+    parent_action_id: UUID | None = None
+    kind: ActionKind
+    name: str
+    input: dict
+    input_preview: str | None = None
+    redacted_input: dict | None = None
+    risk_level: RiskLevel
+    risk_reasons: list | None = None
+    read_scope: list | None = None
+    write_scope: list | None = None
+    affected_resources: list | None = None
+    permission_decision: dict | None = None
+    status: ActionStatus
+    result: dict | None = None
+    error: dict | None = None
+    audit_summary: str | None = None
+    rollback_hint: str | None = None
+    artifact_policy: dict | None = None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class AgentActionDecisionRequest(BaseModel):
+    decision: ActionDecision
+    note: str | None = None
+    modified_input: dict | None = None
+
+
+class AgentArtifactRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    session_id: UUID
+    turn_id: UUID
+    action_id: UUID | None = None
+    type: str
+    title: str
+    summary: str | None = None
+    payload: dict | None = None
+    file_path: str | None = None
+    resource_ref: dict | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentMemoryProposalCreate(BaseModel):
+    project_id: UUID | None = None
+    session_id: UUID | None = None
+    scope: str
+    type: str
+    content: dict
+    source: dict | None = None
+    confidence: int | None = Field(default=None, ge=0, le=100)
+
+
+class AgentMemoryDecisionRequest(BaseModel):
+    note: str | None = None
+
+
+class AgentMemoryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None = None
+    session_id: UUID | None = None
+    scope: str
+    type: str
+    content: dict
+    source: dict | None = None
+    confidence: int | None = None
+    status: MemoryStatus
+    created_at: datetime
+    updated_at: datetime

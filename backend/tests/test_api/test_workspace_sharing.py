@@ -5,7 +5,7 @@ import pytest
 from app.api.deps import get_current_user
 from app.api.v1.events import stream_events
 from app.auth.session import AuthUser
-from app.models.conversation import Conversation
+from app.models.agent_core import AgentSession
 from app.models.image import DockerImage, ImageStatus
 from app.models.project import Project
 from app.models.run import Run, RunStatus
@@ -39,19 +39,27 @@ async def _create_project_for_user(
     return project
 
 
-async def _create_conversation_for_user(
-    db_session, *, project_id: str, user_id: str, title: str = "Test conversation"
-) -> Conversation:
-    conversation = Conversation(
+async def _create_agent_session_for_user(
+    db_session,
+    *,
+    project_id: str,
+    user_id: str,
+    title: str = "Test session",
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> AgentSession:
+    session = AgentSession(
         project_id=project_id,
+        workspace_id=workspace_id,
         title=title,
         user_id=user_id,
-        created_by_user_id=user_id,
+        role_profile="bioinformatician",
+        permission_mode="guarded_auto",
+        automation_mode="assisted",
     )
-    db_session.add(conversation)
+    db_session.add(session)
     await db_session.commit()
-    await db_session.refresh(conversation)
-    return conversation
+    await db_session.refresh(session)
+    return session
 
 
 async def _create_run_for_project(
@@ -178,79 +186,92 @@ async def test_can_access_and_update_project_created_by_another_user(
 
 
 @pytest.mark.asyncio
-async def test_create_conversation_preserves_creator_but_is_workspace_shared(
+async def test_create_agent_session_records_owner_and_is_user_scoped(
     async_client, db_session
 ):
     project = await _create_project_for_user(
         db_session,
-        name="Conversation Project",
+        name="AgentCore Session Project",
         user_id=DEV_USER_ID,
     )
     resp = await async_client.post(
-        "/api/v1/agent/conversations",
+        "/api/v1/agent/sessions",
         json={"project_id": str(project.id), "title": "Shared chat"},
     )
     assert resp.status_code == 201
-    conv_id = resp.json()["data"]["id"]
+    session_id = resp.json()["data"]["id"]
 
-    from app.repositories.conversation_repo import ConversationRepository
+    from app.repositories.agent_core_repo import AgentSessionRepository
 
-    conversation = await ConversationRepository(db_session).get(conv_id)
-    assert conversation is not None
-    assert conversation.user_id == DEV_USER_ID
-    assert conversation.created_by_user_id == DEV_USER_ID
+    session = await AgentSessionRepository(db_session).get(session_id)
+    assert session is not None
+    assert session.user_id == DEV_USER_ID
+    assert str(session.workspace_id) == DEFAULT_WORKSPACE_ID
 
-    other_conv = await _create_conversation_for_user(
+    other_session = await _create_agent_session_for_user(
         db_session,
         project_id=str(project.id),
         user_id=OTHER_USER_ID,
-        title="Teammate Conversation",
+        title="Teammate Session",
     )
     list_resp = await async_client.get(
-        "/api/v1/agent/conversations",
+        "/api/v1/agent/sessions",
         params={"project_id": str(project.id)},
     )
     assert list_resp.status_code == 200
     titles = [c["title"] for c in list_resp.json()["data"]]
     assert "Shared chat" in titles
-    assert "Teammate Conversation" in titles
+    assert "Teammate Session" not in titles
 
-    get_resp = await async_client.get(f"/api/v1/agent/conversations/{other_conv.id}")
-    assert get_resp.status_code == 200
+    get_resp = await async_client.get(f"/api/v1/agent/sessions/{other_session.id}")
+    assert get_resp.status_code == 403
 
 
 @pytest.mark.asyncio
-async def test_global_conversation_list_is_workspace_scoped(async_client, db_session):
+async def test_global_agent_session_list_is_user_scoped(async_client, db_session):
     shared_project = await _create_project_for_user(
         db_session,
-        name="Shared Conversation Project",
+        name="Shared Session Project",
         user_id=OTHER_USER_ID,
     )
     other_workspace_project = await _create_project_for_user(
         db_session,
-        name="Other Workspace Conversation Project",
+        name="Other Workspace Session Project",
         user_id=OTHER_USER_ID,
         workspace_id="00000000-0000-0000-0000-000000000002",
     )
 
-    await _create_conversation_for_user(
+    my_project = await _create_project_for_user(
+        db_session,
+        name="My Session Project",
+        user_id=DEV_USER_ID,
+    )
+    await _create_agent_session_for_user(
+        db_session,
+        project_id=str(my_project.id),
+        user_id=DEV_USER_ID,
+        title="My AgentCore Session",
+    )
+    await _create_agent_session_for_user(
         db_session,
         project_id=str(shared_project.id),
         user_id=OTHER_USER_ID,
-        title="Shared Workspace Conversation",
+        title="Shared Workspace Session",
     )
-    await _create_conversation_for_user(
+    await _create_agent_session_for_user(
         db_session,
         project_id=str(other_workspace_project.id),
         user_id=OTHER_USER_ID,
-        title="Other Workspace Conversation",
+        title="Other Workspace Session",
+        workspace_id="00000000-0000-0000-0000-000000000002",
     )
 
-    resp = await async_client.get("/api/v1/agent/conversations")
+    resp = await async_client.get("/api/v1/agent/sessions")
     assert resp.status_code == 200
     titles = [item["title"] for item in resp.json()["data"]]
-    assert "Shared Workspace Conversation" in titles
-    assert "Other Workspace Conversation" not in titles
+    assert "My AgentCore Session" in titles
+    assert "Shared Workspace Session" not in titles
+    assert "Other Workspace Session" not in titles
 
 
 @pytest.mark.asyncio
@@ -367,30 +388,17 @@ async def test_team_member_cannot_delete_shared_resources(
         name="Team Shared Project",
         user_id=OTHER_USER_ID,
     )
-    conversation = await _create_conversation_for_user(
-        db_session,
-        project_id=str(project.id),
-        user_id=OTHER_USER_ID,
-        title="Shared Conversation",
-    )
     run = await _create_run_for_project(
         db_session,
         project_id=str(project.id),
         run_id="r-team-shared-001",
     )
-    image = await _create_global_image(db_session)
 
     project_resp = await async_client.delete(f"/api/v1/projects/{project.id}")
-    conversation_resp = await async_client.delete(
-        f"/api/v1/agent/conversations/{conversation.id}"
-    )
     run_resp = await async_client.delete(f"/api/v1/runs/{run.run_id}")
-    image_resp = await async_client.delete(f"/api/v1/images/{image.id}")
 
     assert project_resp.status_code == 403
-    assert conversation_resp.status_code == 403
     assert run_resp.status_code == 403
-    assert image_resp.status_code == 403
 
     app.dependency_overrides.pop(get_current_user, None)
 
@@ -411,32 +419,15 @@ async def test_team_admin_can_delete_shared_resources(
         name="Team Admin Project",
         user_id=OTHER_USER_ID,
     )
-    conversation = await _create_conversation_for_user(
-        db_session,
-        project_id=str(project.id),
-        user_id=OTHER_USER_ID,
-        title="Admin Shared Conversation",
-    )
     run = await _create_run_for_project(
         db_session,
         project_id=str(project.id),
         run_id="r-team-admin-001",
     )
-    image = await _create_global_image(
-        db_session,
-        name="debian",
-        tag="12",
-    )
 
-    conversation_resp = await async_client.delete(
-        f"/api/v1/agent/conversations/{conversation.id}"
-    )
     run_resp = await async_client.delete(f"/api/v1/runs/{run.run_id}")
-    image_resp = await async_client.delete(f"/api/v1/images/{image.id}")
 
-    assert conversation_resp.status_code == 204
     assert run_resp.status_code == 204
-    assert image_resp.status_code == 204
 
     project_resp = await async_client.delete(f"/api/v1/projects/{project.id}")
     assert project_resp.status_code == 204

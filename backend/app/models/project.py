@@ -27,9 +27,6 @@ class Project(Base, UUIDMixin, TimestampMixin):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     runs = relationship("Run", back_populates="project", cascade="all, delete")
-    conversations = relationship(
-        "Conversation", back_populates="project", cascade="all, delete"
-    )
     workspace = relationship("Workspace", back_populates="projects")
 
     @property

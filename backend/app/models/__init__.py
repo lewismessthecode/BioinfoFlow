@@ -1,21 +1,28 @@
 from app.models.base import Base, GUID, TimestampMixin, UUIDMixin
-from app.models.agent_trace import AgentTrace
-from app.models.audit_log import AuditLog
-from app.models.approval import AgentApproval, ApprovalType
-from app.models.agent_approval_handle import (
-    AgentApprovalHandle,
-    AgentApprovalHandleStatus,
+from app.models.agent_core import (
+    AgentAction,
+    AgentActionStatus,
+    AgentArtifact,
+    AgentEvent,
+    AgentEventVisibility,
+    AgentMemory,
+    AgentMemoryStatus,
+    AgentSession,
+    AgentSessionStatus,
+    AgentTurn,
+    AgentTurnStatus,
 )
-from app.models.agent_response_handle import AgentResponseHandle, AgentResponseStatus
+from app.models.audit_log import AuditLog
 from app.enums import ApprovalStatus
 from app.models.batch import Batch, BatchRun, BatchStatus
-from app.models.conversation import (
-    Conversation,
-    ConversationStorageBackend,
-    PolicyMode,
-)
 from app.models.image import DockerImage, ImageStatus
-from app.models.message import Message, MessageRole, MessageType
+from app.models.llm import (
+    LlmModel,
+    LlmModelProfile,
+    LlmProvider,
+    LlmProviderKind,
+    LlmProviderScope,
+)
 from app.models.notification import NotificationConfig
 from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
@@ -32,6 +39,22 @@ __all__ = [
     "GUID",
     "TimestampMixin",
     "UUIDMixin",
+    "AgentSession",
+    "AgentSessionStatus",
+    "AgentTurn",
+    "AgentTurnStatus",
+    "AgentEvent",
+    "AgentEventVisibility",
+    "AgentAction",
+    "AgentActionStatus",
+    "AgentArtifact",
+    "AgentMemory",
+    "AgentMemoryStatus",
+    "LlmProvider",
+    "LlmProviderKind",
+    "LlmProviderScope",
+    "LlmModel",
+    "LlmModelProfile",
     "Project",
     "ProjectWorkflowBinding",
     "ProjectWorkflowPin",
@@ -46,21 +69,8 @@ __all__ = [
     "TaskState",
     "DockerImage",
     "ImageStatus",
-    "Conversation",
-    "ConversationStorageBackend",
-    "PolicyMode",
-    "Message",
-    "MessageRole",
-    "MessageType",
-    "AgentTrace",
     "AuditLog",
-    "AgentApproval",
-    "AgentApprovalHandle",
-    "AgentApprovalHandleStatus",
-    "AgentResponseHandle",
-    "AgentResponseStatus",
     "ApprovalStatus",
-    "ApprovalType",
     "Batch",
     "BatchRun",
     "BatchStatus",

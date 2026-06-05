@@ -57,7 +57,8 @@ def build_event(
     event: str,
     project_id: str,
     data: dict[str, Any] | None = None,
-    conversation_id: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
     run_id: str | None = None,
     image_id: str | None = None,
 ) -> dict[str, Any]:
@@ -68,8 +69,10 @@ def build_event(
         "timestamp": _utc_timestamp(),
         "data": data or {},
     }
-    if conversation_id:
-        payload["conversation_id"] = conversation_id
+    if session_id:
+        payload["session_id"] = session_id
+    if turn_id:
+        payload["turn_id"] = turn_id
     if run_id:
         payload["run_id"] = run_id
     if image_id:
@@ -85,7 +88,8 @@ async def publish_event(
     event: str,
     project_id: str,
     data: dict[str, Any] | None = None,
-    conversation_id: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
     run_id: str | None = None,
     image_id: str | None = None,
 ) -> None:
@@ -93,7 +97,8 @@ async def publish_event(
         event=event,
         project_id=project_id,
         data=data,
-        conversation_id=conversation_id,
+        session_id=session_id,
+        turn_id=turn_id,
         run_id=run_id,
         image_id=image_id,
     )
@@ -175,82 +180,4 @@ async def publish_run_dag(run) -> None:
         project_id=str(run.project_id),
         data={"run_id": run.run_id, "dag": dag},
         run_id=run.run_id,
-    )
-
-
-# ========== Agent approval events ==========
-
-
-async def publish_approval_requested(
-    *,
-    project_id: str,
-    conversation_id: str,
-    approval_id: str,
-    step_id: str,
-    approval_type: str,
-    tool: str,
-    description: str,
-    risk: str,
-    payload: dict[str, Any] | None = None,
-) -> None:
-    """Publish an event when an approval is requested.
-
-    Args:
-        project_id: Project ID
-        conversation_id: Conversation ID
-        approval_id: Approval ID
-        step_id: Plan step ID
-        approval_type: Type of approval (run, file_diff, code_exec)
-        tool: Tool name that requires approval
-        description: Human-readable description of the step
-        risk: Risk level of the tool
-        payload: Additional context data
-    """
-    data = {
-        "approval_id": approval_id,
-        "step_id": step_id,
-        "approval_type": approval_type,
-        "tool": tool,
-        "description": description,
-        "risk": risk,
-        "payload": payload or {},
-    }
-    await publish_event(
-        event="agent.approval.requested",
-        project_id=project_id,
-        conversation_id=conversation_id,
-        data=data,
-    )
-
-
-async def publish_approval_resolved(
-    *,
-    project_id: str,
-    conversation_id: str,
-    approval_id: str,
-    step_id: str,
-    status: str,
-    resolved_by: str | None = None,
-) -> None:
-    """Publish an event when an approval is resolved.
-
-    Args:
-        project_id: Project ID
-        conversation_id: Conversation ID
-        approval_id: Approval ID
-        step_id: Plan step ID
-        status: Resolution status (approved, rejected)
-        resolved_by: User or system that resolved
-    """
-    data = {
-        "approval_id": approval_id,
-        "step_id": step_id,
-        "status": status,
-        "resolved_by": resolved_by,
-    }
-    await publish_event(
-        event="agent.approval.resolved",
-        project_id=project_id,
-        conversation_id=conversation_id,
-        data=data,
     )
