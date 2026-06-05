@@ -17,8 +17,96 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: backend
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend_changed: ${{ steps.detect.outputs.backend_changed }}
+      frontend_changed: ${{ steps.detect.outputs.frontend_changed }}
+      docker_changed: ${{ steps.detect.outputs.docker_changed }}
+      docs_only: ${{ steps.detect.outputs.docs_only }}
+      run_full: ${{ steps.detect.outputs.run_full }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          run_full="false"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_NAME" = "push" ]; then
+            run_full="true"
+          fi
+
+          changed_files="$(mktemp)"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git diff --name-only "$PR_BASE_SHA" "$GITHUB_SHA" > "$changed_files"
+          elif [ -n "${BEFORE_SHA:-}" ] && ! printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
+            git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_files"
+          else
+            git ls-files > "$changed_files"
+            run_full="true"
+          fi
+
+          backend_changed="$run_full"
+          frontend_changed="$run_full"
+          docker_changed="$run_full"
+          docs_only="false"
+
+          if [ "$run_full" != "true" ]; then
+            backend_changed="false"
+            frontend_changed="false"
+            docker_changed="false"
+
+            if grep -Eq '^(backend/|\.env\.example$)' "$changed_files"; then
+              backend_changed="true"
+            fi
+
+            if grep -Eq '^(frontend/|\.env\.example$)' "$changed_files"; then
+              frontend_changed="true"
+            fi
+
+            if grep -Eq '^(backend/Dockerfile|frontend/Dockerfile|docker-compose(\.prod)?\.yml|backend/(pyproject\.toml|uv\.lock)|frontend/(package\.json|bun\.lock)|\.github/workflows/(ci|container-release)\.yml)$' "$changed_files"; then
+              docker_changed="true"
+            fi
+
+            if grep -Eq '^\.github/workflows/ci\.yml$' "$changed_files"; then
+              backend_changed="true"
+              frontend_changed="true"
+              docker_changed="true"
+            fi
+
+            if [ -s "$changed_files" ] && ! grep -Ev '^(docs/|codemaps/|\.github/ISSUES/|\.github/ISSUE_TEMPLATE/|README\.md$|RUNBOOK\.md$|AGENTS\.md$|.*\.md$)' "$changed_files" >/dev/null; then
+              docs_only="true"
+            fi
+          fi
+
+          {
+            echo "backend_changed=$backend_changed"
+            echo "frontend_changed=$frontend_changed"
+            echo "docker_changed=$docker_changed"
+            echo "docs_only=$docs_only"
+            echo "run_full=$run_full"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "backend_changed=$backend_changed"
+          echo "frontend_changed=$frontend_changed"
+          echo "docker_changed=$docker_changed"
+          echo "docs_only=$docs_only"
+          echo "run_full=$run_full"
+
+  backend-checks:
+    name: backend checks
+    needs: changes
+    if: needs.changes.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -48,8 +136,42 @@ jobs:
       - name: Test
         run: uv run pytest
 
-  frontend:
-    name: frontend
+  backend:
+    name: backend
+    needs:
+      - changes
+      - backend-checks
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report backend status
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          BACKEND_CHANGED: ${{ needs.changes.outputs.backend_changed }}
+          BACKEND_RESULT: ${{ needs.backend-checks.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CHANGES_RESULT" = "failure" ] || [ "$CHANGES_RESULT" = "cancelled" ]; then
+            echo "Change detection did not pass: $CHANGES_RESULT"
+            exit 1
+          fi
+
+          if [ "$BACKEND_RESULT" = "failure" ] || [ "$BACKEND_RESULT" = "cancelled" ]; then
+            echo "Backend checks did not pass: $BACKEND_RESULT"
+            exit 1
+          fi
+
+          if [ "$BACKEND_CHANGED" = "true" ]; then
+            echo "Backend checks passed."
+          else
+            echo "No backend-impacting changes detected; backend checks skipped."
+          fi
+
+  frontend-lint:
+    name: frontend lint
+    needs: changes
+    if: needs.changes.outputs.frontend_changed == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -74,8 +196,52 @@ jobs:
       - name: Check i18n coverage
         run: bun run lint:i18n
 
+  frontend-test:
+    name: frontend test
+    needs: changes
+    if: needs.changes.outputs.frontend_changed == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Test
         run: bun run test
+
+  frontend-build:
+    name: frontend build
+    needs: changes
+    if: needs.changes.outputs.frontend_changed == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Build
         run: bun run build
@@ -92,8 +258,48 @@ jobs:
           NEXT_PUBLIC_AUTH_MODE: dev
           NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED: "false"
 
-  docker:
-    name: docker
+  frontend:
+    name: frontend
+    needs:
+      - changes
+      - frontend-lint
+      - frontend-test
+      - frontend-build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report frontend status
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend_changed }}
+          LINT_RESULT: ${{ needs.frontend-lint.result }}
+          TEST_RESULT: ${{ needs.frontend-test.result }}
+          BUILD_RESULT: ${{ needs.frontend-build.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CHANGES_RESULT" = "failure" ] || [ "$CHANGES_RESULT" = "cancelled" ]; then
+            echo "Change detection did not pass: $CHANGES_RESULT"
+            exit 1
+          fi
+
+          for result in "$LINT_RESULT" "$TEST_RESULT" "$BUILD_RESULT"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "Frontend checks did not pass: lint=$LINT_RESULT test=$TEST_RESULT build=$BUILD_RESULT"
+              exit 1
+            fi
+          done
+
+          if [ "$FRONTEND_CHANGED" = "true" ]; then
+            echo "Frontend checks passed."
+          else
+            echo "No frontend-impacting changes detected; frontend checks skipped."
+          fi
+
+  docker-build:
+    name: docker build
+    needs: changes
+    if: needs.changes.outputs.docker_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -126,3 +332,35 @@ jobs:
             NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+  docker:
+    name: docker
+    needs:
+      - changes
+      - docker-build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report docker status
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          DOCKER_CHANGED: ${{ needs.changes.outputs.docker_changed }}
+          DOCKER_RESULT: ${{ needs.docker-build.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CHANGES_RESULT" = "failure" ] || [ "$CHANGES_RESULT" = "cancelled" ]; then
+            echo "Change detection did not pass: $CHANGES_RESULT"
+            exit 1
+          fi
+
+          if [ "$DOCKER_RESULT" = "failure" ] || [ "$DOCKER_RESULT" = "cancelled" ]; then
+            echo "Docker build did not pass: $DOCKER_RESULT"
+            exit 1
+          fi
+
+          if [ "$DOCKER_CHANGED" = "true" ]; then
+            echo "Docker build passed."
+          else
+            echo "No Docker-impacting changes detected; Docker build skipped."
+          fi

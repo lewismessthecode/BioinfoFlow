@@ -25,9 +25,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: publish
+  detect:
+    name: detect image changes
     runs-on: ubuntu-latest
+    outputs:
+      publish_backend: ${{ steps.changes.outputs.publish_backend }}
+      publish_frontend: ${{ steps.changes.outputs.publish_frontend }}
+      backend_image: ${{ steps.images.outputs.backend }}
+      frontend_image: ${{ steps.images.outputs.frontend }}
+      short_sha: ${{ steps.images.outputs.short_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -42,25 +48,35 @@ jobs:
         run: |
           set -euo pipefail
 
-          publish="false"
+          publish_backend="false"
+          publish_frontend="false"
 
           case "$REQUESTED_PUBLISH" in
             force)
-              publish="true"
+              publish_backend="true"
+              publish_frontend="true"
               ;;
             skip)
-              publish="false"
+              publish_backend="false"
+              publish_frontend="false"
               ;;
             auto)
               if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-                publish="true"
-              elif [ -z "$BEFORE_SHA" ] || printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
-                publish="true"
+                publish_backend="true"
+                publish_frontend="true"
+              elif [ -z "${BEFORE_SHA:-}" ] || printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
+                publish_backend="true"
+                publish_frontend="true"
               else
                 changed_files="$(mktemp)"
                 git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_files"
-                if grep -Eq '^(backend|frontend)/' "$changed_files"; then
-                  publish="true"
+
+                if grep -Eq '^backend/' "$changed_files"; then
+                  publish_backend="true"
+                fi
+
+                if grep -Eq '^frontend/' "$changed_files"; then
+                  publish_frontend="true"
                 fi
               fi
               ;;
@@ -70,11 +86,16 @@ jobs:
               ;;
           esac
 
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          {
+            echo "publish_backend=$publish_backend"
+            echo "publish_frontend=$publish_frontend"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "publish_backend=$publish_backend"
+          echo "publish_frontend=$publish_frontend"
 
       - name: Set image names
         id: images
-        if: steps.changes.outputs.publish == 'true'
         run: |
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           short_sha="${GITHUB_SHA::12}"
@@ -84,12 +105,19 @@ jobs:
             echo "short_sha=${short_sha}"
           } >> "$GITHUB_OUTPUT"
 
+  publish-backend:
+    name: publish backend
+    needs: detect
+    if: needs.detect.outputs.publish_backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Set up Docker Buildx
-        if: steps.changes.outputs.publish == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        if: steps.changes.outputs.publish == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -97,21 +125,38 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish backend image
-        if: steps.changes.outputs.publish == 'true'
         uses: docker/build-push-action@v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ${{ steps.images.outputs.backend }}:latest
-            ${{ steps.images.outputs.backend }}:main
-            ${{ steps.images.outputs.backend }}:sha-${{ steps.images.outputs.short_sha }}
+            ${{ needs.detect.outputs.backend_image }}:latest
+            ${{ needs.detect.outputs.backend_image }}:main
+            ${{ needs.detect.outputs.backend_image }}:sha-${{ needs.detect.outputs.short_sha }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
+  publish-frontend:
+    name: publish frontend
+    needs: detect
+    if: needs.detect.outputs.publish_frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish frontend image
-        if: steps.changes.outputs.publish == 'true'
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
@@ -123,12 +168,17 @@ jobs:
             NEXT_PUBLIC_AUTH_LOCAL_ENABLED=true
             NEXT_PUBLIC_AUTH_SELF_SIGNUP_ENABLED=false
           tags: |
-            ${{ steps.images.outputs.frontend }}:latest
-            ${{ steps.images.outputs.frontend }}:main
-            ${{ steps.images.outputs.frontend }}:sha-${{ steps.images.outputs.short_sha }}
+            ${{ needs.detect.outputs.frontend_image }}:latest
+            ${{ needs.detect.outputs.frontend_image }}:main
+            ${{ needs.detect.outputs.frontend_image }}:sha-${{ needs.detect.outputs.short_sha }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
+  skip-publish:
+    name: skip publish
+    needs: detect
+    if: needs.detect.outputs.publish_backend != 'true' && needs.detect.outputs.publish_frontend != 'true'
+    runs-on: ubuntu-latest
+    steps:
       - name: Skip publish
-        if: steps.changes.outputs.publish != 'true'
         run: echo "No backend/ or frontend/ changes detected; container images were not republished."

@@ -72,6 +72,7 @@ JSON
 echo "Done."
 echo
 echo "Required checks: backend, frontend, docker"
+echo "The CI workflow keeps these contexts stable and skips heavy work inside the workflow when a PR does not touch the matching area."
 echo "Required approvals: ${REQUIRED_APPROVALS}"
 echo
 echo "For a team repo, rerun with REQUIRED_APPROVALS=1 after adding collaborators:"
