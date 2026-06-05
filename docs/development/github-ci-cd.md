@@ -4,11 +4,23 @@ This repository uses GitHub Actions to make worktree branches flow through PRs, 
 
 ## What Runs
 
-- `CI` runs on every branch push, PR to `main`, and manual dispatch.
+- `CI` runs on PRs to `main`, pushes to `main`, and manual dispatch.
 - `CodeQL` runs on PRs to `main`, pushes to `main`, weekly schedule, and manual dispatch.
 - `Container Release` publishes backend and frontend Docker images to GHCR after code reaches `main`.
 - `PR Automation` opens a PR to `main` when you push a non-main branch.
 - `Auto Merge` queues a squash merge when a reviewed PR has the `automerge` label.
+
+## CI Change Detection
+
+The `CI` workflow always produces the protected `backend`, `frontend`, and `docker` status checks. Do not add workflow-level `paths-ignore` or skip the whole workflow for PRs; GitHub branch protection waits forever if a required check never appears.
+
+Heavy work is skipped inside the workflow instead:
+
+- `backend checks` runs only when PR changes touch `backend/` or shared env defaults.
+- `frontend lint`, `frontend test`, and `frontend build` run in parallel only when PR changes touch `frontend/` or shared env defaults.
+- `docker build` runs only when Dockerfiles, compose files, dependency locks/manifests, or the CI/release workflows change.
+- Pushes to `main` and manual dispatches run the full CI path.
+- Docs-only PRs still get successful `backend`, `frontend`, and `docker` checks, but the expensive jobs are skipped.
 
 ## Required Checks
 
@@ -19,6 +31,8 @@ The protected `main` branch expects these status checks:
 - `docker`
 
 The `scripts/github/configure-repo.sh` script configures these checks through the GitHub API.
+
+Keep these three check names stable. If the internal CI job graph changes, make the required checks summary jobs rather than changing branch protection for every implementation detail.
 
 ## Worktree Flow
 
@@ -37,7 +51,9 @@ git commit -m "feat: add auth flow"
 git push -u origin feature/auth
 ```
 
-GitHub Actions opens a PR from `feature/auth` to `main` when the repository allows Actions to create pull requests. If that permission is disabled, `PR Automation` emits a warning and exits successfully; create the PR manually once, then every later push to the same branch updates the PR and reruns CI:
+GitHub Actions opens a PR from `feature/auth` to `main` when the repository allows Actions to create pull requests. The PR title is normalized to the Conventional Commits format and is treated as the future squash-merge title. Existing open PRs for the same branch are updated if the latest commit provides a better conventional title.
+
+If that permission is disabled, `PR Automation` emits a warning and exits successfully; create the PR manually once, then every later push to the same branch updates the PR and reruns CI:
 
 ```bash
 git push
@@ -77,7 +93,7 @@ The recommended daily path is still squash merge. Rebase merge remains available
 
 ## Published Images
 
-After a successful merge to `main`, images are pushed to:
+After a successful merge to `main`, changed images are pushed to:
 
 ```text
 ghcr.io/lewismessthecode/bioinfoflow-backend
@@ -91,3 +107,5 @@ latest
 main
 sha-<12-char-sha>
 ```
+
+The release workflow publishes backend and frontend independently. Backend-only changes publish only the backend image, frontend-only changes publish only the frontend image, and changes on both sides publish both images in parallel. Manual `workflow_dispatch` with `publish_images=force` publishes both images; `publish_images=skip` publishes neither.
