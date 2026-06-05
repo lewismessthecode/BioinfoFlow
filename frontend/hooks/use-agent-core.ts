@@ -13,6 +13,8 @@ import {
   listAgentTurnEvents,
   listAgentTurns,
   rejectAgentMemory,
+  updateAgentSession,
+  type UpdateAgentSessionInput,
 } from "@/lib/agent-core"
 import type {
   AgentCoreAction,
@@ -21,13 +23,39 @@ import type {
   AgentCoreMemory,
   AgentCoreSession,
   AgentCoreTurn,
+  AgentPermissionMode,
 } from "@/lib/agent-core"
+import {
+  emitAgentSessionUpdated,
+  getStoredDraftModelProfileId,
+  getStoredDraftPermissionMode,
+  setStoredDraftModelProfileId,
+  setStoredDraftPermissionMode,
+} from "@/lib/agent-core/session-storage"
 
 export type AgentCoreHookStatus = "idle" | "running" | "error"
 
-export function useAgentCore(projectId?: string) {
+type UseAgentCoreOptions = {
+  activeSessionId?: string | null
+  onActiveSessionIdChange?: (sessionId: string) => void
+}
+
+const DEFAULT_PERMISSION_MODE: AgentPermissionMode = "guarded_auto"
+
+export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = {}) {
+  const isControlled = Object.prototype.hasOwnProperty.call(options, "activeSessionId")
+  const onActiveSessionIdChange = options.onActiveSessionIdChange
+  const controlledActiveSessionId =
+    options.activeSessionId && options.activeSessionId.length > 0
+      ? options.activeSessionId
+      : null
   const [sessions, setSessions] = useState<AgentCoreSession[]>([])
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [uncontrolledActiveSessionId, setUncontrolledActiveSessionId] =
+    useState<string | null>(null)
+  const [draftPermissionMode, setDraftPermissionMode] = useState<AgentPermissionMode>(
+    DEFAULT_PERMISSION_MODE,
+  )
+  const [draftModelProfileId, setDraftModelProfileId] = useState<string | null>(null)
   const [turns, setTurns] = useState<AgentCoreTurn[]>([])
   const [events, setEvents] = useState<AgentCoreEvent[]>([])
   const [artifactsByTurn, setArtifactsByTurn] = useState<
@@ -37,10 +65,27 @@ export function useAgentCore(projectId?: string) {
   const [isLoading, setIsLoading] = useState(true)
   const [status, setStatus] = useState<AgentCoreHookStatus>("idle")
   const [error, setError] = useState<Error | null>(null)
+  const activeSessionId = isControlled
+    ? controlledActiveSessionId
+    : uncontrolledActiveSessionId
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [activeSessionId, sessions],
+  )
+  const activePermissionMode = activeSession?.permission_mode ?? draftPermissionMode
+  const activeModelProfileId =
+    activeSession?.default_model_profile_id ?? draftModelProfileId
+
+  const setActiveSessionId = useCallback(
+    (sessionId: string | null) => {
+      if (isControlled) {
+        onActiveSessionIdChange?.(sessionId ?? "")
+        return
+      }
+      setUncontrolledActiveSessionId(sessionId)
+    },
+    [isControlled, onActiveSessionIdChange],
   )
 
   const clearTurnState = useCallback(() => {
@@ -48,6 +93,18 @@ export function useAgentCore(projectId?: string) {
     setEvents([])
     setArtifactsByTurn(new Map())
   }, [])
+
+  useEffect(() => {
+    if (!projectId) {
+      setDraftPermissionMode(DEFAULT_PERMISSION_MODE)
+      setDraftModelProfileId(null)
+      return
+    }
+    setDraftPermissionMode(
+      getStoredDraftPermissionMode(projectId) ?? DEFAULT_PERMISSION_MODE,
+    )
+    setDraftModelProfileId(getStoredDraftModelProfileId(projectId))
+  }, [projectId])
 
   const refreshMemories = useCallback(async () => {
     if (!projectId) {
@@ -78,11 +135,20 @@ export function useAgentCore(projectId?: string) {
     try {
       const nextSessions = await listAgentSessions(projectId)
       setSessions(nextSessions)
-      setActiveSessionId((current) =>
-        nextSessions.some((session) => session.id === current)
-          ? current
-          : nextSessions[0]?.id ?? null,
-      )
+      if (isControlled) {
+        if (
+          controlledActiveSessionId &&
+          !nextSessions.some((session) => session.id === controlledActiveSessionId)
+        ) {
+          setActiveSessionId(null)
+        }
+      } else {
+        setUncontrolledActiveSessionId((current) =>
+          nextSessions.some((session) => session.id === current)
+            ? current
+            : nextSessions[0]?.id ?? null,
+        )
+      }
       await refreshMemories()
     } catch (caught) {
       setError(caught instanceof Error ? caught : new Error("Failed to load AgentCore sessions"))
@@ -90,7 +156,14 @@ export function useAgentCore(projectId?: string) {
     } finally {
       setIsLoading(false)
     }
-  }, [clearTurnState, projectId, refreshMemories])
+  }, [
+    clearTurnState,
+    controlledActiveSessionId,
+    isControlled,
+    projectId,
+    refreshMemories,
+    setActiveSessionId,
+  ])
 
   useEffect(() => {
     void refreshSessions()
@@ -142,13 +215,21 @@ export function useAgentCore(projectId?: string) {
     const created = await createAgentSession({
       projectId,
       title: "New analysis",
-      permissionMode: "guarded_auto",
+      permissionMode: draftPermissionMode,
       automationMode: "assisted",
+      defaultModelProfileId: draftModelProfileId ?? undefined,
     })
     setSessions((current) => [created, ...current])
     setActiveSessionId(created.id)
+    emitAgentSessionUpdated(created)
     return created
-  }, [activeSession, projectId])
+  }, [
+    activeSession,
+    draftModelProfileId,
+    draftPermissionMode,
+    projectId,
+    setActiveSessionId,
+  ])
 
   const sendTurn = useCallback(
     async (inputText: string) => {
@@ -247,10 +328,54 @@ export function useAgentCore(projectId?: string) {
     }
   }, [])
 
+  const updateSessionSettings = useCallback(
+    async (updates: UpdateAgentSessionInput) => {
+      if (activeSession) {
+        setError(null)
+        try {
+          const updated = await updateAgentSession(activeSession.id, updates)
+          setSessions((current) =>
+            current.map((session) =>
+              session.id === updated.id ? updated : session,
+            ),
+          )
+          emitAgentSessionUpdated(updated)
+          return updated
+        } catch (caught) {
+          setStatus("error")
+          setError(
+            caught instanceof Error
+              ? caught
+              : new Error("Failed to update AgentCore session"),
+          )
+          return null
+        }
+      }
+
+      if (updates.permissionMode) {
+        setDraftPermissionMode(updates.permissionMode)
+        if (projectId) {
+          setStoredDraftPermissionMode(projectId, updates.permissionMode)
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "defaultModelProfileId")) {
+        const profileId = updates.defaultModelProfileId ?? null
+        setDraftModelProfileId(profileId)
+        if (projectId) {
+          setStoredDraftModelProfileId(projectId, profileId)
+        }
+      }
+      return null
+    },
+    [activeSession, projectId],
+  )
+
   return {
     sessions,
     activeSession,
     activeSessionId,
+    activePermissionMode,
+    activeModelProfileId,
     turns,
     events,
     artifactsByTurn,
@@ -261,6 +386,7 @@ export function useAgentCore(projectId?: string) {
     refreshSessions,
     refreshTurns,
     setActiveSessionId,
+    updateSessionSettings,
     sendTurn,
     approveAction,
     rejectAction,

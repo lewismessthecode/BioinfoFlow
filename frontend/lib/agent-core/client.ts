@@ -29,6 +29,16 @@ export type CreateAgentTurnInput = {
   metadata?: Record<string, unknown>
 }
 
+export type UpdateAgentSessionInput = {
+  title?: string
+  roleProfile?: string
+  permissionMode?: AgentPermissionMode
+  automationMode?: AgentAutomationMode
+  defaultModelProfileId?: string | null
+  status?: AgentCoreSession["status"]
+  metadata?: Record<string, unknown> | null
+}
+
 export const listAgentSessions = async (projectId?: string) => {
   const response = await apiRequest<AgentCoreSession[]>("/agent/sessions", {
     params: projectId ? { project_id: projectId } : undefined,
@@ -54,15 +64,19 @@ export const createAgentSession = async (input: CreateAgentSessionInput) => {
 
 export const updateAgentSession = async (
   sessionId: string,
-  updates: {
-    title?: string
-    status?: AgentCoreSession["status"]
-    metadata?: Record<string, unknown> | null
-  },
+  updates: UpdateAgentSessionInput,
 ) => {
   const response = await apiRequest<AgentCoreSession>(`/agent/sessions/${sessionId}`, {
     method: "PATCH",
-    body: JSON.stringify(updates),
+    body: JSON.stringify({
+      title: updates.title,
+      role_profile: updates.roleProfile,
+      permission_mode: updates.permissionMode,
+      automation_mode: updates.automationMode,
+      default_model_profile_id: updates.defaultModelProfileId,
+      status: updates.status,
+      metadata: updates.metadata,
+    }),
   })
   return response.data
 }

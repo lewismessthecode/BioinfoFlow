@@ -14,13 +14,15 @@ import {
 } from "@/components/ui/command"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
 import {
-  createAgentSession,
   listAgentSessions,
   type AgentCoreSession,
 } from "@/lib/agent-core"
 import type { Project, Run } from "@/lib/types"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
-import { setStoredAgentSessionId } from "@/lib/agent-core/session-storage"
+import {
+  clearStoredAgentSessionId,
+  setStoredAgentSessionId,
+} from "@/lib/agent-core/session-storage"
 import { getRecentConversations } from "@/lib/recent-conversations"
 import { toast } from "sonner"
 
@@ -104,20 +106,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         toast.error(tPalette("errors.createConversationFailed"))
         return
       }
-      const data = await createAgentSession({
-        projectId: targetProjectId,
-        permissionMode: "guarded_auto",
-        automationMode: "assisted",
-      })
-      const resolvedProjectId = String(data.project_id)
+      const resolvedProjectId = String(targetProjectId)
       if (resolvedProjectId === defaultProjectId) {
         setSelectedProjectId("")
       } else {
         setSelectedProjectId(resolvedProjectId)
       }
       setConversationProjectId(resolvedProjectId)
-      setActiveConversationId(data.id)
-      setStoredAgentSessionId(resolvedProjectId, data.id)
+      setActiveConversationId("")
+      clearStoredAgentSessionId(resolvedProjectId)
       onOpenChange(false)
       router.push("/agent")
     } catch (error) {

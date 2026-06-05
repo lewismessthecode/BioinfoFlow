@@ -1,8 +1,17 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { createRef } from "react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { AgentCoreChat } from "@/components/bioinfoflow/agent-core/agent-core-chat"
+import {
+  AgentCoreChat,
+  type AgentCoreChatHandle,
+} from "@/components/bioinfoflow/agent-core/agent-core-chat"
 import { useAgentCore } from "@/hooks/use-agent-core"
+import { useLlmCatalog } from "@/hooks/use-llm-catalog"
+
+const { clearStoredAgentSessionIdMock } = vi.hoisted(() => ({
+  clearStoredAgentSessionIdMock: vi.fn(),
+}))
 
 vi.mock("next-intl", () => ({
   useTranslations: (namespace: string) => {
@@ -39,6 +48,28 @@ vi.mock("next-intl", () => ({
         sessionPending: "Session will be created on first message",
         title: "AgentCore",
         user: "You",
+        auditToggle: "View events",
+        modelProfile: "Model profile",
+        modelProfileAuto: "Auto model",
+        permissionMode: "Tool permissions",
+        permissionAskEach: "Ask every time",
+        permissionBypass: "Bypass approvals",
+        permissionGuarded: "Ask on risk",
+        quickDiagnose: "Diagnose failure",
+        quickPreflight: "Preflight run",
+        quickQc: "Review MultiQC",
+      },
+      welcome: {
+        blankDescription: "Start empty",
+        blankName: "Blank project",
+        customProject: "Create custom project",
+        eyebrow: "Welcome",
+        rnaseqDescription: "RNA-seq",
+        rnaseqName: "RNA-seq",
+        subtitle: "Create a project to begin.",
+        title: "Set up your first bioinformatics workspace",
+        wgsDescription: "WGS",
+        wgsName: "WGS",
       },
     }
     return (key: string, values?: Record<string, string>) =>
@@ -53,10 +84,21 @@ vi.mock("@/hooks/use-agent-core", () => ({
   useAgentCore: vi.fn(),
 }))
 
+vi.mock("@/hooks/use-llm-catalog", () => ({
+  useLlmCatalog: vi.fn(),
+}))
+
+vi.mock("@/lib/agent-core/session-storage", () => ({
+  clearStoredAgentSessionId: (...args: unknown[]) =>
+    clearStoredAgentSessionIdMock(...args),
+}))
+
 describe("AgentCoreChat", () => {
   const useAgentCoreMock = vi.mocked(useAgentCore)
+  const useLlmCatalogMock = vi.mocked(useLlmCatalog)
   const sendTurn = vi.fn()
   const setActiveSessionId = vi.fn()
+  const updateSessionSettings = vi.fn()
   const approveAction = vi.fn()
   const rejectAction = vi.fn()
   const acceptMemory = vi.fn()
@@ -65,10 +107,50 @@ describe("AgentCoreChat", () => {
   beforeEach(() => {
     sendTurn.mockReset()
     setActiveSessionId.mockReset()
+    updateSessionSettings.mockReset()
     approveAction.mockReset()
     rejectAction.mockReset()
     acceptMemory.mockReset()
     rejectMemory.mockReset()
+    clearStoredAgentSessionIdMock.mockReset()
+    useLlmCatalogMock.mockReturnValue({
+      providers: [],
+      models: [
+        {
+          id: "model-1",
+          provider_id: "provider-1",
+          model_id: "bio-coder",
+          display_name: "Bio Coder",
+          supports_tools: true,
+          supports_streaming: true,
+          supports_vision: false,
+          supports_json_schema: true,
+          supports_reasoning: true,
+          created_at: "2026-06-04T00:00:00Z",
+          updated_at: "2026-06-04T00:00:00Z",
+        },
+      ],
+      profiles: [
+        {
+          id: "profile-1",
+          name: "Bio Agent",
+          task_type: "agent_core",
+          primary_model_id: "model-1",
+          fallback_model_ids: null,
+          scope: "user",
+          enabled: true,
+          created_at: "2026-06-04T00:00:00Z",
+          updated_at: "2026-06-04T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      createProvider: vi.fn(),
+      setProviderEnabled: vi.fn(),
+      testProvider: vi.fn(),
+    })
     useAgentCoreMock.mockReturnValue({
       sessions: [
         {
@@ -103,6 +185,8 @@ describe("AgentCoreChat", () => {
         updated_at: "2026-06-04T00:00:00Z",
       },
       activeSessionId: "session-12345678",
+      activePermissionMode: "guarded_auto",
+      activeModelProfileId: null,
       turns: [
         {
           id: "turn-1",
@@ -251,6 +335,7 @@ describe("AgentCoreChat", () => {
       refreshSessions: vi.fn(),
       refreshTurns: vi.fn(),
       setActiveSessionId,
+      updateSessionSettings,
       sendTurn,
       approveAction,
       rejectAction,
@@ -259,14 +344,17 @@ describe("AgentCoreChat", () => {
     })
   })
 
-  it("renders AgentCore turns and event ledger", () => {
+  it("renders AgentCore turns with collapsed event audit", () => {
     render(<AgentCoreChat projectId="project-1" workspaceEnabled />)
 
-    expect(screen.getByText("Session session-")).toBeInTheDocument()
+    expect(screen.queryByText("Session session-")).not.toBeInTheDocument()
     expect(screen.getByText("Check FASTQ quality")).toBeInTheDocument()
     expect(
       screen.getByText("FASTQ pairing and QC look ready for preflight."),
     ).toBeInTheDocument()
+    expect(screen.getByText("View events")).toBeInTheDocument()
+    expect(screen.queryByText("Event ledger")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText("View events"))
     expect(screen.getByText("Event ledger")).toBeInTheDocument()
     expect(screen.getByText("turn.created")).toBeInTheDocument()
     expect(screen.getByText("assistant.text.completed")).toBeInTheDocument()
@@ -324,11 +412,71 @@ describe("AgentCoreChat", () => {
     expect(sendTurn).toHaveBeenCalledWith("Summarize MultiQC")
   })
 
-  it("shows a project selection state without creating a legacy chat surface", () => {
-    render(<AgentCoreChat />)
+  it("updates permission mode from the composer controls", () => {
+    render(<AgentCoreChat projectId="project-1" workspaceEnabled />)
 
-    expect(screen.getByText("Select a project")).toBeInTheDocument()
-    expect(screen.getByText("Choose a project from the sidebar.")).toBeInTheDocument()
-    expect(useAgentCoreMock).toHaveBeenCalledWith(undefined)
+    fireEvent.change(screen.getByRole("combobox", { name: "Tool permissions" }), {
+      target: { value: "bypass" },
+    })
+
+    expect(updateSessionSettings).toHaveBeenCalledWith({
+      permissionMode: "bypass",
+    })
+  })
+
+  it("renders the project welcome card when no project is selected", () => {
+    const onQuickCreateProject = vi.fn()
+    const onOpenCreateProjectDialog = vi.fn()
+
+    render(
+      <AgentCoreChat
+        onQuickCreateProject={onQuickCreateProject}
+        onOpenCreateProjectDialog={onOpenCreateProjectDialog}
+      />,
+    )
+
+    expect(screen.getByText("Set up your first bioinformatics workspace")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Blank project/ })).toBeInTheDocument()
+    expect(useAgentCoreMock).toHaveBeenCalledWith(undefined, expect.any(Object))
+  })
+
+  it("shows a centered draft composer when a project has no turns", () => {
+    useAgentCoreMock.mockReturnValue({
+      ...useAgentCoreMock(),
+      activeSession: null,
+      activeSessionId: null,
+      activePermissionMode: "guarded_auto",
+      activeModelProfileId: null,
+      turns: [],
+      events: [],
+      artifactsByTurn: new Map(),
+      proposedMemories: [],
+    })
+
+    render(<AgentCoreChat projectId="project-1" workspaceEnabled />)
+
+    expect(screen.getByText("Start a controlled analysis")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Preflight run" })).toBeInTheDocument()
+    expect(screen.queryByText("Session will be created on first message")).not.toBeInTheDocument()
+  })
+
+  it("clears the stored project session when starting a new draft from the chat handle", () => {
+    const ref = createRef<AgentCoreChatHandle>()
+
+    render(
+      <AgentCoreChat
+        ref={ref}
+        projectId="project-1"
+        activeSessionId="session-12345678"
+        workspaceEnabled
+      />,
+    )
+
+    act(() => {
+      ref.current?.newConversation()
+    })
+
+    expect(setActiveSessionId).toHaveBeenCalledWith(null)
+    expect(clearStoredAgentSessionIdMock).toHaveBeenCalledWith("project-1")
   })
 })

@@ -168,7 +168,7 @@ describe("AgentPage", () => {
     expect(screen.getByTestId("live-deck")).toHaveTextContent("dag:present")
   })
 
-  it("keeps inbox conversations chat-only without selecting a real project", () => {
+  it("keeps inbox conversations off the live deck while allowing draft chat", () => {
     renderAppPage(<AgentPage />, {
       projectContext: {
         selectedProjectId: "",
@@ -176,7 +176,7 @@ describe("AgentPage", () => {
       },
     })
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-default|workspace:off")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-default|workspace:on")
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
   })
 

@@ -16,9 +16,26 @@ vi.mock("@/lib/api", async () => {
 
 describe("useAgentCore", () => {
   const apiRequestMock = vi.mocked(apiRequest)
+  const session = (overrides: Record<string, unknown> = {}) => ({
+    id: "session-1",
+    project_id: "project-1",
+    workspace_id: "workspace-1",
+    user_id: "dev",
+    title: "Existing analysis",
+    role_profile: "bioinformatician",
+    permission_mode: "guarded_auto",
+    automation_mode: "assisted",
+    default_model_profile_id: null,
+    status: "active",
+    metadata: null,
+    created_at: "2026-06-04T00:00:00Z",
+    updated_at: "2026-06-04T00:00:00Z",
+    ...overrides,
+  })
 
   beforeEach(() => {
     apiRequestMock.mockReset()
+    window.localStorage.clear()
   })
 
   it("creates sessions and turns through AgentCore APIs without using legacy message endpoint", async () => {
@@ -311,5 +328,151 @@ describe("useAgentCore", () => {
         ([path]) => path === "/agent/memories/memory-1/reject",
       ),
     ).toBe(true)
+  })
+
+  it("keeps a controlled draft selected until the first message creates a session", async () => {
+    const onActiveSessionIdChange = vi.fn()
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/agent/sessions" && !options?.method) {
+        return { data: [session({ id: "session-existing" })], meta: undefined }
+      }
+      if (path === "/agent/memories" && !options?.method) {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/sessions" && options?.method === "POST") {
+        return {
+          data: session({
+            id: "session-created",
+            title: "New analysis",
+            permission_mode: "ask_each_action",
+            default_model_profile_id: "profile-1",
+          }),
+          meta: undefined,
+        }
+      }
+      if (path === "/agent/sessions/session-created/turns" && options?.method === "POST") {
+        return {
+          data: {
+            id: "turn-created",
+            session_id: "session-created",
+            project_id: "project-1",
+            workspace_id: "workspace-1",
+            user_id: "dev",
+            input_text: "Draft run",
+            input_parts: null,
+            status: "completed",
+            model_profile_snapshot: null,
+            final_text: "Ready.",
+            token_usage: null,
+            error_code: null,
+            error_message: null,
+            created_at: "2026-06-04T00:00:01Z",
+            updated_at: "2026-06-04T00:00:01Z",
+            started_at: null,
+            completed_at: null,
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/agent/turns/turn-created/events") {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/turns/turn-created/artifacts") {
+        return { data: [], meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({
+      activeProjectId: "project-1",
+      selectedProjectId: "project-1",
+    })
+    const { result } = renderHook(
+      () =>
+        useAgentCore("project-1", {
+          activeSessionId: "",
+          onActiveSessionIdChange,
+        }),
+      { wrapper: Wrapper },
+    )
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.activeSession).toBeNull()
+    expect(
+      apiRequestMock.mock.calls.some(
+        ([path]) => path === "/agent/sessions/session-existing/turns",
+      ),
+    ).toBe(false)
+
+    act(() => {
+      result.current.updateSessionSettings({
+        permissionMode: "ask_each_action",
+        defaultModelProfileId: "profile-1",
+      })
+    })
+    await act(async () => {
+      await result.current.sendTurn("Draft run")
+    })
+
+    const createSessionCall = apiRequestMock.mock.calls.find(
+      ([path, options]) => path === "/agent/sessions" && options?.method === "POST",
+    )
+    expect(JSON.parse(createSessionCall?.[1]?.body as string)).toMatchObject({
+      project_id: "project-1",
+      permission_mode: "ask_each_action",
+      default_model_profile_id: "profile-1",
+    })
+    expect(onActiveSessionIdChange).toHaveBeenCalledWith("session-created")
+  })
+
+  it("patches persisted session settings instead of writing draft storage", async () => {
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/agent/sessions" && !options?.method) {
+        return { data: [session()], meta: undefined }
+      }
+      if (path === "/agent/sessions/session-1/turns" && !options?.method) {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/memories" && !options?.method) {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/sessions/session-1" && options?.method === "PATCH") {
+        return {
+          data: session({
+            permission_mode: "bypass",
+            default_model_profile_id: "profile-2",
+          }),
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({
+      activeProjectId: "project-1",
+      selectedProjectId: "project-1",
+    })
+    const { result } = renderHook(
+      () => useAgentCore("project-1", { activeSessionId: "session-1" }),
+      { wrapper: Wrapper },
+    )
+
+    await waitFor(() => expect(result.current.activeSession?.id).toBe("session-1"))
+    await act(async () => {
+      await result.current.updateSessionSettings({
+        permissionMode: "bypass",
+        defaultModelProfileId: "profile-2",
+      })
+    })
+
+    expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1", {
+      method: "PATCH",
+      body: JSON.stringify({
+        permission_mode: "bypass",
+        default_model_profile_id: "profile-2",
+      }),
+    })
+    expect(result.current.activePermissionMode).toBe("bypass")
+    expect(result.current.activeModelProfileId).toBe("profile-2")
   })
 })

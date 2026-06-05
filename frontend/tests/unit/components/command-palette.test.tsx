@@ -8,6 +8,7 @@ const {
   setSelectedProjectIdMock,
   setConversationProjectIdMock,
   setActiveConversationIdMock,
+  clearStoredAgentSessionIdMock,
   setStoredAgentSessionIdMock,
   translateMock,
   toastErrorMock,
@@ -17,6 +18,7 @@ const {
   setSelectedProjectIdMock: vi.fn(),
   setConversationProjectIdMock: vi.fn(),
   setActiveConversationIdMock: vi.fn(),
+  clearStoredAgentSessionIdMock: vi.fn(),
   setStoredAgentSessionIdMock: vi.fn(),
   translateMock: vi.fn((key: string, values?: Record<string, string | number>) => {
     const labels: Record<string, string> = {
@@ -68,6 +70,7 @@ vi.mock("@/lib/agent-core/session-storage", async () => {
   const actual = await vi.importActual<typeof import("@/lib/agent-core/session-storage")>("@/lib/agent-core/session-storage")
   return {
     ...actual,
+    clearStoredAgentSessionId: clearStoredAgentSessionIdMock,
     setStoredAgentSessionId: setStoredAgentSessionIdMock,
   }
 })
@@ -140,6 +143,7 @@ describe("CommandPalette", () => {
     setSelectedProjectIdMock.mockReset()
     setConversationProjectIdMock.mockReset()
     setActiveConversationIdMock.mockReset()
+    clearStoredAgentSessionIdMock.mockReset()
     setStoredAgentSessionIdMock.mockReset()
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
@@ -166,24 +170,7 @@ describe("CommandPalette", () => {
         }
       }
       if (path === "/agent/sessions" && options?.method === "POST") {
-        return {
-          data: {
-            id: "session-1",
-            project_id: "project-default",
-            workspace_id: "workspace-1",
-            user_id: "dev",
-            title: "Untitled",
-            role_profile: "bioinformatician",
-            permission_mode: "guarded_auto",
-            automation_mode: "assisted",
-            default_model_profile_id: null,
-            status: "active",
-            metadata: null,
-            created_at: "2026-06-04T00:00:00Z",
-            updated_at: "2026-06-04T00:00:00Z",
-          },
-          meta: undefined,
-        }
+        throw new Error("New conversations should start as local drafts")
       }
       if (path === "/workflows" || path === "/runs" || path === "/agent/sessions") {
         return { data: [], meta: undefined }
@@ -192,7 +179,7 @@ describe("CommandPalette", () => {
     })
   })
 
-  it("creates a new conversation in the default project without loading demo data", async () => {
+  it("starts a draft conversation in the default project without loading demo data", async () => {
     render(<CommandPalette open onOpenChange={vi.fn()} />)
 
     expect(await screen.findByText("New Conversation")).toBeInTheDocument()
@@ -205,21 +192,14 @@ describe("CommandPalette", () => {
         ([path, options]) =>
           path === "/agent/sessions" && options?.method === "POST"
       )
-      expect(postCall).toBeDefined()
-      expect(JSON.parse(postCall?.[1]?.body as string)).toMatchObject({
-        project_id: "project-default",
-        permission_mode: "guarded_auto",
-        automation_mode: "assisted",
-      })
+      expect(postCall).toBeUndefined()
     })
 
     expect(setSelectedProjectIdMock).toHaveBeenCalledWith("")
     expect(setConversationProjectIdMock).toHaveBeenCalledWith("project-default")
-    expect(setActiveConversationIdMock).toHaveBeenCalledWith("session-1")
-    expect(setStoredAgentSessionIdMock).toHaveBeenCalledWith(
-      "project-default",
-      "session-1"
-    )
+    expect(setActiveConversationIdMock).toHaveBeenCalledWith("")
+    expect(clearStoredAgentSessionIdMock).toHaveBeenCalledWith("project-default")
+    expect(setStoredAgentSessionIdMock).not.toHaveBeenCalled()
     expect(apiRequestMock).not.toHaveBeenCalledWith("/demos", expect.anything())
   })
 })

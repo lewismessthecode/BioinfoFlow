@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
 import {
-  createAgentSession,
   deleteAgentSession,
   listAgentSessions,
   updateAgentSession,
@@ -20,6 +19,7 @@ import {
   setStoredAgentSessionId,
   sortAgentSessions,
 } from "@/lib/agent-core/session-storage"
+import { emitReadinessRefresh } from "@/lib/readiness-events"
 
 export function useSidebarData(tSidebar: (key: string, values?: Record<string, string>) => string) {
   const {
@@ -72,15 +72,17 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       if (projectId === selectedProjectId || projectId === conversationProjectId) {
         const storedId = getStoredAgentSessionId(projectId)
         const preferredId = activeConversationId || storedId
-        const match = data.find((item) => item.id === preferredId)
-        if (match) {
-          setActiveConversationId(match.id)
-          if (match.id !== storedId) {
-            setStoredAgentSessionId(projectId, match.id)
+        if (preferredId) {
+          const match = data.find((item) => item.id === preferredId)
+          if (match) {
+            setActiveConversationId(match.id)
+            if (match.id !== storedId) {
+              setStoredAgentSessionId(projectId, match.id)
+            }
+          } else {
+            setActiveConversationId("")
+            clearStoredAgentSessionId(projectId)
           }
-        } else if (data[0]) {
-          setActiveConversationId(data[0].id)
-          setStoredAgentSessionId(projectId, data[0].id)
         } else {
           setActiveConversationId("")
           clearStoredAgentSessionId(projectId)
@@ -222,6 +224,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       setConversationProjectId(data.id)
       setActiveConversationId("")
       toast.success(tSidebar("toasts.projectCreated", { name: data.name }))
+      emitReadinessRefresh("project-created")
     } catch (error) {
       const message = getApiErrorMessage(error, tSidebar("errors.createProjectFailed"))
       toast.error(message)
@@ -298,26 +301,15 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
         toast.error(tSidebar("errors.selectProjectFirst"))
         return
       }
-      const data = await createAgentSession({
-        projectId: targetId,
-        permissionMode: "guarded_auto",
-        automationMode: "assisted",
-      })
 
-      const resolvedProjectId = data.project_id
-      setProjectConversations((prev) => {
-        const existing = prev.get(resolvedProjectId) || []
-        return new Map(prev).set(resolvedProjectId, [data, ...existing])
-      })
-
-      if (defaultProject?.id === resolvedProjectId) {
+      if (defaultProject?.id === targetId) {
         setSelectedProjectId("")
       } else {
-        setSelectedProjectId(resolvedProjectId)
+        setSelectedProjectId(targetId)
       }
-      setConversationProjectId(resolvedProjectId)
-      setActiveConversationId(data.id)
-      setStoredAgentSessionId(resolvedProjectId, data.id)
+      setConversationProjectId(targetId)
+      setActiveConversationId("")
+      clearStoredAgentSessionId(targetId)
       router.push("/agent")
     } catch (error) {
       toast.error(getApiErrorMessage(error, tSidebar("errors.createConversationFailed")))
@@ -355,6 +347,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       setConversationProjectId(created.id)
       setActiveConversationId("")
       toast.success(tSidebar("toasts.projectCreated", { name: created.name }))
+      emitReadinessRefresh("project-created")
     } catch (error) {
       const message = getApiErrorMessage(error, tSidebar("errors.createProjectFailed"))
       toast.error(message)

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { AgentCoreChat, type AgentCoreChatHandle } from "@/components/bioinfoflow/agent-core/agent-core-chat"
 import { LiveDeck } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
+import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useEvents } from "@/hooks/use-events"
 import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
@@ -15,13 +16,14 @@ const RIGHT_SIDEBAR_MAX = 600
 const RIGHT_SIDEBAR_DEFAULT = 400
 
 export default function AgentPage() {
-  const { selectedProjectId, conversationProjectId } = useProjectContext()
+  const { selectedProjectId, conversationProjectId, activeConversationId } = useProjectContext()
 
   return (
     <AgentPageContent
-      key={`${selectedProjectId || "no-selected"}:${conversationProjectId || "no-conversation-project"}`}
+      key={`${selectedProjectId || "no-selected"}:${conversationProjectId || "no-conversation-project"}:${activeConversationId || "draft"}`}
       selectedProjectId={selectedProjectId}
       conversationProjectId={conversationProjectId}
+      activeConversationId={activeConversationId}
     />
   )
 }
@@ -29,12 +31,16 @@ export default function AgentPage() {
 function AgentPageContent({
   selectedProjectId,
   conversationProjectId,
+  activeConversationId,
 }: {
   selectedProjectId: string
   conversationProjectId: string
+  activeConversationId: string
 }) {
   const isMobile = useIsMobile()
   const chatRef = useRef<AgentCoreChatHandle>(null)
+  const workspaceShell = useOptionalWorkspaceShell()
+  const { setActiveConversationId } = useProjectContext()
   const [liveDeckTab, setLiveDeckTab] = useState<"workspace" | "dag" | "monitor">("workspace")
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
@@ -134,7 +140,11 @@ function AgentPageContent({
       <AgentCoreChat
         ref={chatRef}
         projectId={conversationProjectId}
-        workspaceEnabled={Boolean(selectedProjectId)}
+        activeSessionId={activeConversationId}
+        onActiveSessionIdChange={setActiveConversationId}
+        workspaceEnabled={Boolean(conversationProjectId)}
+        onQuickCreateProject={workspaceShell?.handleQuickCreateProject}
+        onOpenCreateProjectDialog={workspaceShell?.openCreateProjectDialog}
         className="flex-1"
       />
       {showShortcuts && (
