@@ -65,19 +65,6 @@ bun run test:watch
 - Workflow execution may require Docker, `NEXTFLOW_BIN`, and `MINIWDL_BIN` depending on the workflow engine.
 - Bioinfoflow's path model is an identity mount: `BIOINFOFLOW_HOME` should resolve to the same absolute path on the host, backend container, workflow runner, and task containers.
 
-## Architecture
-
-- **`backend/`** — FastAPI app with service/repository layers, SQLite via async SQLAlchemy, Alembic migrations, and a Typer-based CLI (`bif`).
-- **Agent Runtime** lives in `backend/app/services/agent/runtime/` and is the default runtime path. Core flow is: user input -> agent service -> async runtime loop -> tool dispatch -> SSE events -> frontend.
-- **Run pipeline** uses a thin `RunService` facade that delegates to submission, DAG, lifecycle, archive, and dispatch services. Do not add new business logic to the facade if a dedicated service already exists.
-- **`backend/app/scheduler/`** contains the persistent scheduler: queue, slot accounting, resource monitoring, retry/timeout logic, cleanup, and completion hooks. Main endpoints are `/scheduler/status`, `/scheduler/resources`, and `/scheduler/slots`.
-- **`backend/app/engine/`** holds the workflow engine abstraction for Nextflow and WDL, including local/container execution backends and mount/path handling.
-- **`backend/app/cli/`** provides the HTTP-only `bif` CLI for a running backend. Prefer `--output json` when a machine-readable envelope is useful — it emits `{success, data, error?, meta?}` on stdout and a matching error envelope on stderr (parseable by automation). Standard flags: `-V/--version`, `-h/--help`, `-p/--project`, `-q/--quiet`, `-v/--verbose`, `--no-color`. Destructive verbs (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) prompt by default; pass `--force/-f` in scripts. Exit codes: `0` ok, `1` general, `2` usage, `3` backend, `4` connection.
-- **`backend/app/auth/` + frontend auth routes** implement Better Auth for `personal`, `team`, and `dev` modes.
-- **`frontend/`** — Next.js 16 App Router, React 19, next-intl, Better Auth, React Flow, Radix UI, and Tailwind CSS 4.
-- Frontend data flow is REST for regular API calls, SSE for long-running events, and WebSocket for terminal sessions.
-- Detailed project maps live in `codemaps/` (`architecture.md`, `backend.md`, `frontend.md`, `data.md`, `dependencies.md`).
-
 ## Testing
 
 ### Backend (`backend/tests/`)
@@ -94,8 +81,6 @@ bun run test:watch
 
 ## Conventions
 
-- API responses use the `{ success, data, error, meta }` envelope.
-- Agent tools use the `BaseTool` abstract class plus `@register_tool`; risk levels are `read`, `act_low`, and `act_high`.
 - New UI strings must be added to both `frontend/messages/en.json` and `frontend/messages/zh-CN.json` in the same change.
 - Services should go through repository methods for DB access; avoid introducing direct `session.execute()` calls in service-layer business logic.
 - `frontend/app/(app)/` is the protected application layout; auth pages live under `frontend/app/auth/`.
@@ -115,7 +100,6 @@ bun run test:watch
 
 ## Gotchas
 
-- `CLAUDE.md` contains useful workflow and engine notes, but parts of its env/setup section are stale; prefer `RUNBOOK.md`, `.env.example`, and `backend/app/config.py` when they disagree.
 - `renderAppPage` returns per-test state; never share `appTestState` across tests.
 - Backend tests use isolated in-memory SQLite databases per test, so there is no shared DB state to rely on.
 - `BETTER_AUTH_URL` must match the browser origin exactly or auth callbacks will fail.
@@ -130,3 +114,21 @@ bun run test:watch
 ## Compacting
 
 When compacting, always preserve the full list of modified files and any test commands.
+
+<!-- rtk-instructions v2 -->
+# RTK (Rust Token Killer) - Token-Optimized Commands
+
+## Golden Rule
+
+**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it. If not, it passes through unchanged. This means RTK is always safe to use.
+
+**Important**: Even in command chains with `&&`, use `rtk`:
+```bash
+# ❌ Wrong
+git add . && git commit -m "msg" && git push
+
+# ✅ Correct
+rtk git add . && rtk git commit -m "msg" && rtk git push
+```
+
+<!-- /rtk-instructions -->
