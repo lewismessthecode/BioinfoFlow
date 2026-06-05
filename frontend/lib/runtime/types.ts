@@ -1,5 +1,4 @@
 import type {
-  AgentEventData,
   ApiMeta,
   EventEnvelope,
   ImageProgressEvent,
@@ -36,14 +35,12 @@ export type RuntimeRequestResult<T> = {
 
 export type RuntimeEventSubscription = {
   projectId?: string | null
-  conversationId?: string | null
   runId?: string | null
   imageId?: string | null
   onRunStatus?: (event: EventEnvelope<RunStatusEvent>) => void
   onRunLog?: (event: EventEnvelope<RunLogEvent>) => void
   onRunDag?: (event: EventEnvelope<RunDagEvent>) => void
   onImageProgress?: (event: EventEnvelope<ImageProgressEvent>) => void
-  onAgentEvent?: (event: EventEnvelope<AgentEventData>) => void
   onOpen?: () => void
   onError?: (event: Event) => void
 }

@@ -1,7 +1,5 @@
 import type { FormSpec } from "@/lib/form-spec"
 import type {
-  AgentConversationHistory,
-  AgentConversationRead,
   AuditLogEntry,
   DagData,
   DockerImage,
@@ -14,6 +12,7 @@ import type {
   SchedulerStatus,
   Workflow,
 } from "@/lib/types"
+import type { AgentCoreSession } from "@/lib/agent-core"
 import type {
   DashboardStats,
   GpuInfo,
@@ -47,8 +46,7 @@ export type DemoScenario = {
   workflowDag: Record<string, DagData>
   workflowSource: Record<string, string>
   formSpecs: Record<string, FormSpec>
-  conversations: Record<string, AgentConversationRead[]>
-  conversationHistory: Record<string, AgentConversationHistory>
+  agentSessions: Record<string, AgentCoreSession[]>
   runs: Run[]
   runLogs: Record<string, RunLogs>
   runOutputs: Record<string, RunOutputs>

@@ -1,17 +1,19 @@
 "use client"
 
-import { useRef } from "react"
+import { useMemo, useRef } from "react"
 import { Play, RotateCcw, ExternalLink } from "lucide-react"
 import { useDemoReplay } from "@/lib/demo/demo-context"
-import { MessageList } from "@/components/bioinfoflow/chat/message-list"
+import { AgentCoreTurnBlock } from "@/components/bioinfoflow/agent-core/agent-core-chat"
 import { DagPanel } from "@/components/bioinfoflow/dag/dag-panel"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import type { AgentCoreEvent } from "@/lib/agent-core"
 
 export default function DemoPage() {
   const {
-    messages,
+    turns,
+    events,
     dag,
     runStatus,
     currentTask,
@@ -22,6 +24,7 @@ export default function DemoPage() {
   } = useDemoReplay()
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const eventsByTurn = useMemo(() => groupEventsByTurn(events), [events])
 
   const statusLabel =
     status === "idle"
@@ -87,7 +90,7 @@ export default function DemoPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-4">
-            {messages.length === 0 && status === "idle" ? (
+            {turns.length === 0 && status === "idle" ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center space-y-3">
                   <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-muted">
@@ -99,14 +102,26 @@ export default function DemoPage() {
                 </div>
               </div>
             ) : (
-              <MessageList
-                messages={messages}
-                status={isStreaming ? "streaming" : "idle"}
-                isLoading={false}
-                projectId="demo"
-                messagesEndRef={messagesEndRef}
-                onRegenerate={() => {}}
-              />
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+                {turns.map((turn) => (
+                  <AgentCoreTurnBlock
+                    key={turn.id}
+                    turn={turn}
+                    events={eventsByTurn.get(turn.id) ?? []}
+                    artifacts={[]}
+                    memories={[]}
+                    onApproveAction={() => undefined}
+                    onRejectAction={() => undefined}
+                    onAcceptMemory={() => undefined}
+                    onRejectMemory={() => undefined}
+                  />
+                ))}
+                {isStreaming ? (
+                  <div className="text-xs font-medium text-muted-foreground">
+                    AgentCore is streaming...
+                  </div>
+                ) : null}
+              </div>
             )}
             <div ref={messagesEndRef} />
           </div>
@@ -161,4 +176,14 @@ export default function DemoPage() {
       )}
     </>
   )
+}
+
+function groupEventsByTurn(events: AgentCoreEvent[]) {
+  const grouped = new Map<string, AgentCoreEvent[]>()
+  for (const event of events) {
+    const list = grouped.get(event.turn_id) ?? []
+    list.push(event)
+    grouped.set(event.turn_id, list)
+  }
+  return grouped
 }

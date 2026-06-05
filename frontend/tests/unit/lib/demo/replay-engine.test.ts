@@ -49,7 +49,12 @@ describe("demo replay engine", () => {
       2,
       {
         kind: "agent",
-        sseEvent: { type: "text_delta", messageId: "msg-1", content: "S" },
+        agentEvent: {
+          type: "assistant.text.delta",
+          source_id: "msg-1",
+          payload: { text_delta: "S" },
+          final_text_delta: "S",
+        },
       },
       1,
       4,
@@ -71,7 +76,11 @@ describe("demo replay engine", () => {
       4,
       {
         kind: "agent",
-        sseEvent: { type: "done", messageId: "msg-1" },
+        agentEvent: {
+          type: "turn.completed",
+          source_id: "msg-1",
+          payload: {},
+        },
       },
       3,
       4,
@@ -84,7 +93,7 @@ describe("demo replay engine", () => {
 
     const events: RecordedEvent[] = [
       { t: 0, event: "user.message", data: { content: "step 1" } },
-      { t: 1000, event: "agent.message", data: { id: "msg-1", content: "step 2" } },
+      { t: 1000, event: "agent.text.completed", data: { id: "msg-1", content: "step 2" } },
     ]
 
     const onEvent = vi.fn()

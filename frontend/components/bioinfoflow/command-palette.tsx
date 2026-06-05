@@ -13,9 +13,14 @@ import {
   CommandSeparator,
 } from "@/components/ui/command"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
-import type { AgentConversationRead, Project, Run } from "@/lib/types"
+import {
+  createAgentSession,
+  listAgentSessions,
+  type AgentCoreSession,
+} from "@/lib/agent-core"
+import type { Project, Run } from "@/lib/types"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
-import { setStoredConversationId } from "@/lib/conversations"
+import { setStoredAgentSessionId } from "@/lib/agent-core/session-storage"
 import { getRecentConversations } from "@/lib/recent-conversations"
 import { toast } from "sonner"
 
@@ -36,7 +41,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [projects, setProjects] = useState<Project[]>([])
   const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null)
   const [runs, setRuns] = useState<Run[]>([])
-  const [conversations, setConversations] = useState<AgentConversationRead[]>([])
+  const [conversations, setConversations] = useState<AgentCoreSession[]>([])
 
   const fetchPaletteData = useCallback(async () => {
     try {
@@ -51,14 +56,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         apiRequest<Run[]>("/runs", {
           params: { limit: 20, project_id: selectedProjectId || undefined },
         }),
-        apiRequest<AgentConversationRead[]>("/agent/conversations", {
-          params: { limit: 30 },
-        }),
+        listAgentSessions(),
       ])
       setProjects(projectsResponse.data.filter((project) => !project.is_default))
       setDefaultProjectId(defaultProjectResponse?.data?.id ?? null)
       setRuns(runsResponse.data)
-      setConversations(conversationsResponse.data)
+      setConversations(conversationsResponse)
     } catch (error) {
       const message = getApiErrorMessage(error, tPalette("errors.loadFailed"))
       toast.error(message)
@@ -80,7 +83,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     router.push("/agent")
   }
 
-  const handleSelectConversation = (conversation: AgentConversationRead) => {
+  const handleSelectConversation = (conversation: AgentCoreSession) => {
     const projectId = String(conversation.project_id)
     if (projectId === defaultProjectId) {
       setSelectedProjectId("")
@@ -89,17 +92,22 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }
     setConversationProjectId(projectId)
     setActiveConversationId(conversation.id)
-    setStoredConversationId(projectId, conversation.id)
+    setStoredAgentSessionId(projectId, conversation.id)
     onOpenChange(false)
     router.push("/agent")
   }
 
   const handleNewConversation = async () => {
     try {
-      const targetProjectId = selectedProjectId || null
-      const { data } = await apiRequest<AgentConversationRead>("/agent/conversations", {
-        method: "POST",
-        body: JSON.stringify(targetProjectId ? { project_id: targetProjectId } : {}),
+      const targetProjectId = selectedProjectId || defaultProjectId
+      if (!targetProjectId) {
+        toast.error(tPalette("errors.createConversationFailed"))
+        return
+      }
+      const data = await createAgentSession({
+        projectId: targetProjectId,
+        permissionMode: "guarded_auto",
+        automationMode: "assisted",
       })
       const resolvedProjectId = String(data.project_id)
       if (resolvedProjectId === defaultProjectId) {
@@ -109,7 +117,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       }
       setConversationProjectId(resolvedProjectId)
       setActiveConversationId(data.id)
-      setStoredConversationId(resolvedProjectId, data.id)
+      setStoredAgentSessionId(resolvedProjectId, data.id)
       onOpenChange(false)
       router.push("/agent")
     } catch (error) {
@@ -153,7 +161,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     }
                     setConversationProjectId(item.projectId)
                     setActiveConversationId(item.id)
-                    setStoredConversationId(item.projectId, item.id)
+                    setStoredAgentSessionId(item.projectId, item.id)
                     onOpenChange(false)
                     router.push("/agent")
                   }}

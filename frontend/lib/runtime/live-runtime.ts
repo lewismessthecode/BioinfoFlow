@@ -2,7 +2,6 @@ import type { AppRuntime, RuntimeEventSubscription } from "./types"
 
 import { buildLiveApiUrl, buildLiveWebSocketUrl, liveRequest } from "./request-core"
 import type {
-  AgentEventData,
   EventEnvelope,
   ImageProgressEvent,
   RunDagEvent,
@@ -50,7 +49,6 @@ function subscribeLive(options: RuntimeEventSubscription) {
     const nextSource = new EventSource(
       buildLiveApiUrl("/events/stream", {
         project_id: options.projectId,
-        conversation_id: options.conversationId || undefined,
         run_id: options.runId || undefined,
         image_id: options.imageId || undefined,
       }),
@@ -85,28 +83,6 @@ function subscribeLive(options: RuntimeEventSubscription) {
       "image.progress",
       options.onImageProgress,
     )
-
-    const agentEvents = [
-      "agent.thinking",
-      "agent.thinking_content",
-      "agent.plan",
-      "agent.artifact",
-      "agent.message",
-      "agent.done",
-      "agent.cancelled",
-      "agent.error",
-      "agent.text_delta",
-      "agent.thinking_delta",
-      "agent.tool_call_start",
-      "agent.tool_call_progress",
-      "agent.tool_call_end",
-      "agent.approval.requested",
-      "agent.approval.resolved",
-    ] as const
-
-    agentEvents.forEach((eventName) => {
-      bind<AgentEventData>(nextSource, eventName, options.onAgentEvent)
-    })
   }
 
   connect()

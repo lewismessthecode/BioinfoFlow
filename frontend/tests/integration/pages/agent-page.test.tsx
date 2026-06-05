@@ -19,16 +19,16 @@ vi.mock("@/hooks/use-media-query", () => ({
   useIsMobile: () => useIsMobileMock(),
 }))
 
-vi.mock("@/components/bioinfoflow/chat-stream", () => ({
-  ChatStream: ({
+vi.mock("@/components/bioinfoflow/agent-core/agent-core-chat", () => ({
+  AgentCoreChat: ({
     projectId,
     workspaceEnabled,
   }: {
     projectId?: string
     workspaceEnabled?: boolean
   }) => (
-    <div data-testid="chat-stream">
-      chat:{projectId || "none"}|workspace:{workspaceEnabled ? "on" : "off"}
+    <div data-testid="agent-core-chat">
+      agent-core:{projectId || "none"}|workspace:{workspaceEnabled ? "on" : "off"}
     </div>
   ),
 }))
@@ -94,7 +94,7 @@ describe("AgentPage", () => {
       projectContext: { activeProjectId: "project-1" },
     })
 
-    expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:project-1|workspace:on")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-1|workspace:on")
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true })
@@ -176,7 +176,7 @@ describe("AgentPage", () => {
       },
     })
 
-    expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:project-default|workspace:off")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-default|workspace:off")
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
   })
 
@@ -195,20 +195,20 @@ describe("AgentPage", () => {
       },
     )
 
-    expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:none|workspace:off")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:off")
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText("select project"))
 
     await waitFor(() => {
-      expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:project-9|workspace:on")
+      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-9|workspace:on")
     })
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText("clear project"))
 
     await waitFor(() => {
-      expect(screen.getByTestId("chat-stream")).toHaveTextContent("chat:none|workspace:off")
+      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:off")
     })
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
   })

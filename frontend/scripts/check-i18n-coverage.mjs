@@ -194,12 +194,6 @@ const CHECKS = [
       /Select run/,
     ],
   },
-  {
-    file: "frontend/components/bioinfoflow/chat/message-list.tsx",
-    forbidden: [
-      /\bYou\b/,
-    ],
-  },
 ]
 
 function formatMatchLine(line) {

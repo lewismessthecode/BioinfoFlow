@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ChatStream, type ChatStreamHandle } from "@/components/bioinfoflow/chat-stream"
+import { AgentCoreChat, type AgentCoreChatHandle } from "@/components/bioinfoflow/agent-core/agent-core-chat"
 import { LiveDeck } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useEvents } from "@/hooks/use-events"
@@ -34,7 +34,7 @@ function AgentPageContent({
   conversationProjectId: string
 }) {
   const isMobile = useIsMobile()
-  const chatRef = useRef<ChatStreamHandle>(null)
+  const chatRef = useRef<AgentCoreChatHandle>(null)
   const [liveDeckTab, setLiveDeckTab] = useState<"workspace" | "dag" | "monitor">("workspace")
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
@@ -131,7 +131,7 @@ function AgentPageContent({
 
   return (
     <div className="flex h-full bg-background">
-      <ChatStream
+      <AgentCoreChat
         ref={chatRef}
         projectId={conversationProjectId}
         workspaceEnabled={Boolean(selectedProjectId)}

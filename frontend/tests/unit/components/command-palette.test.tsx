@@ -8,7 +8,7 @@ const {
   setSelectedProjectIdMock,
   setConversationProjectIdMock,
   setActiveConversationIdMock,
-  setStoredConversationIdMock,
+  setStoredAgentSessionIdMock,
   translateMock,
   toastErrorMock,
   toastSuccessMock,
@@ -17,7 +17,7 @@ const {
   setSelectedProjectIdMock: vi.fn(),
   setConversationProjectIdMock: vi.fn(),
   setActiveConversationIdMock: vi.fn(),
-  setStoredConversationIdMock: vi.fn(),
+  setStoredAgentSessionIdMock: vi.fn(),
   translateMock: vi.fn((key: string, values?: Record<string, string | number>) => {
     const labels: Record<string, string> = {
       searchPlaceholder: "Search",
@@ -64,11 +64,11 @@ vi.mock("@/components/bioinfoflow/project-context", () => ({
   }),
 }))
 
-vi.mock("@/lib/conversations", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/conversations")>("@/lib/conversations")
+vi.mock("@/lib/agent-core/session-storage", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/agent-core/session-storage")>("@/lib/agent-core/session-storage")
   return {
     ...actual,
-    setStoredConversationId: setStoredConversationIdMock,
+    setStoredAgentSessionId: setStoredAgentSessionIdMock,
   }
 })
 
@@ -140,7 +140,7 @@ describe("CommandPalette", () => {
     setSelectedProjectIdMock.mockReset()
     setConversationProjectIdMock.mockReset()
     setActiveConversationIdMock.mockReset()
-    setStoredConversationIdMock.mockReset()
+    setStoredAgentSessionIdMock.mockReset()
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
 
@@ -165,17 +165,27 @@ describe("CommandPalette", () => {
           meta: undefined,
         }
       }
-      if (path === "/agent/conversations" && options?.method === "POST") {
+      if (path === "/agent/sessions" && options?.method === "POST") {
         return {
           data: {
-            id: "conversation-1",
+            id: "session-1",
             project_id: "project-default",
+            workspace_id: "workspace-1",
+            user_id: "dev",
             title: "Untitled",
+            role_profile: "bioinformatician",
+            permission_mode: "guarded_auto",
+            automation_mode: "assisted",
+            default_model_profile_id: null,
+            status: "active",
+            metadata: null,
+            created_at: "2026-06-04T00:00:00Z",
+            updated_at: "2026-06-04T00:00:00Z",
           },
           meta: undefined,
         }
       }
-      if (path === "/workflows" || path === "/runs" || path === "/agent/conversations") {
+      if (path === "/workflows" || path === "/runs" || path === "/agent/sessions") {
         return { data: [], meta: undefined }
       }
       throw new Error(`Unexpected path: ${path}`)
@@ -193,18 +203,22 @@ describe("CommandPalette", () => {
     await waitFor(() => {
       const postCall = apiRequestMock.mock.calls.find(
         ([path, options]) =>
-          path === "/agent/conversations" && options?.method === "POST"
+          path === "/agent/sessions" && options?.method === "POST"
       )
       expect(postCall).toBeDefined()
-      expect(JSON.parse(postCall?.[1]?.body as string)).toEqual({})
+      expect(JSON.parse(postCall?.[1]?.body as string)).toMatchObject({
+        project_id: "project-default",
+        permission_mode: "guarded_auto",
+        automation_mode: "assisted",
+      })
     })
 
     expect(setSelectedProjectIdMock).toHaveBeenCalledWith("")
     expect(setConversationProjectIdMock).toHaveBeenCalledWith("project-default")
-    expect(setActiveConversationIdMock).toHaveBeenCalledWith("conversation-1")
-    expect(setStoredConversationIdMock).toHaveBeenCalledWith(
+    expect(setActiveConversationIdMock).toHaveBeenCalledWith("session-1")
+    expect(setStoredAgentSessionIdMock).toHaveBeenCalledWith(
       "project-default",
-      "conversation-1"
+      "session-1"
     )
     expect(apiRequestMock).not.toHaveBeenCalledWith("/demos", expect.anything())
   })

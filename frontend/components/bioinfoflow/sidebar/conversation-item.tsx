@@ -2,28 +2,26 @@
 
 import { useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { MessageSquare, MoreVertical, Pin, PinOff, Trash2 } from "lucide-react"
+import { MessageSquare, MoreVertical, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import type { AgentConversationRead } from "@/lib/types"
+import type { AgentCoreSession } from "@/lib/agent-core"
 
 interface ConversationItemProps {
-  conversation: AgentConversationRead
+  conversation: AgentCoreSession
   projectId: string
   index: number
   isActive: boolean
   isDragging?: boolean
-  onSelect: (conversation: AgentConversationRead, projectId: string) => void
-  onDragStart?: (conversation: AgentConversationRead, projectId: string) => void
+  onSelect: (conversation: AgentCoreSession, projectId: string) => void
+  onDragStart?: (conversation: AgentCoreSession, projectId: string) => void
   onDragEnd?: () => void
-  onRename: (conversation: AgentConversationRead, projectId: string, newTitle: string) => void
-  onTogglePin: (conversation: AgentConversationRead, projectId: string) => void
+  onRename: (conversation: AgentCoreSession, projectId: string, newTitle: string) => void
   onDelete: (conversationId: string, projectId: string, name: string) => void
   canDelete?: boolean
   tSidebar: (key: string, values?: Record<string, number>) => string
@@ -40,7 +38,6 @@ export function ConversationItem({
   onDragStart,
   onDragEnd,
   onRename,
-  onTogglePin,
   onDelete,
   canDelete = true,
   tSidebar,
@@ -65,7 +62,7 @@ export function ConversationItem({
 
   return (
     <div
-      draggable={!isEditing}
+      draggable={false}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move"
         event.dataTransfer.setData(
@@ -111,7 +108,6 @@ export function ConversationItem({
             <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-sidebar-foreground/72" />
           )}
           <span className="truncate leading-snug py-0.5">{label}</span>
-          {conversation.pinned && <Pin className="h-3 w-3 text-muted-foreground flex-shrink-0 ml-auto" />}
         </button>
       )}
       <DropdownMenu>
@@ -129,16 +125,8 @@ export function ConversationItem({
           <DropdownMenuItem onClick={startRename}>
             {tCommon("edit")}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onTogglePin(conversation, projectId)}>
-            {conversation.pinned ? (
-              <span className="flex items-center gap-2"><PinOff className="h-3.5 w-3.5" />{tCommon("clear")}</span>
-            ) : (
-              <span className="flex items-center gap-2"><Pin className="h-3.5 w-3.5" />{tCommon("save")}</span>
-            )}
-          </DropdownMenuItem>
           {canDelete ? (
             <>
-              <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive"
                 onClick={() => onDelete(conversation.id, projectId, label)}

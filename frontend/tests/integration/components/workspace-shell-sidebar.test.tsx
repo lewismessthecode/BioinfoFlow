@@ -325,7 +325,7 @@ describe("WorkspaceShell sidebar integration", () => {
         return { data: defaultProject, meta: undefined }
       }
 
-      if (path === "/agent/conversations") {
+      if (path === "/agent/sessions") {
         const projectId = String(options?.params?.project_id ?? "")
         return {
           data: [...(conversationsState.get(projectId) ?? [])],

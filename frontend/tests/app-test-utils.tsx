@@ -13,12 +13,12 @@ type ProjectContextState = {
 }
 
 export type AppTestState = {
-  chatStreamProps: Record<string, unknown>
+  agentSurfaceProps: Record<string, unknown>
 }
 
 type RenderAppPageOptions = {
   projectContext?: Partial<ProjectContextState>
-  chatStreamProps?: Record<string, unknown>
+  agentSurfaceProps?: Record<string, unknown>
 }
 
 const defaultProjectContext: ProjectContextState = {
@@ -93,7 +93,7 @@ export function renderAppPage(
   options: RenderAppPageOptions = {}
 ) {
   const appTestState: AppTestState = {
-    chatStreamProps: options.chatStreamProps ?? {},
+    agentSurfaceProps: options.agentSurfaceProps ?? {},
   }
 
   return {

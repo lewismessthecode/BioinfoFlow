@@ -317,59 +317,12 @@ export type DockerImage = {
   updated_at?: string
 }
 
-export type AgentMessageType =
-  | "text" | "thinking" | "thinking_content" | "artifact" | "plan" | "status" | "completion"
-  | "text_delta" | "thinking_delta" | "tool_call_start" | "tool_call_progress" | "tool_call_end" | "error"
-
-type AgentMessageRole = "user" | "agent" | "system"
-
-export type AgentMessageRead = {
-  id: string
-  role: AgentMessageRole
-  type: AgentMessageType
-  content?: string | null
-  metadata?: Record<string, unknown> | null
-  created_at?: string
-}
-
-export type ExecutionPolicy = "auto" | "approve_all" | "bypass"
-
-export type AgentConversationRead = {
-  id: string
-  project_id: string
-  title?: string | null
-  pinned?: boolean | null
-  storage_backend?: string | null
-  workspace_binding_id?: string | null
-  execution_policy?: ExecutionPolicy | null
-  created_at?: string
-  updated_at?: string
-}
-
-export type AgentConversationHistory = {
-  conversation_id: string
-  project_id: string
-  title?: string | null
-  pinned?: boolean | null
-  storage_backend?: string | null
-  execution_policy?: ExecutionPolicy | null
-  messages: AgentMessageRead[]
-}
-
-export type AgentMessageResponse = {
-  message_id?: string | null
-  conversation_id: string
-  response_id?: string | null
-  status: string
-}
-
 export type EventEnvelope<T = unknown> = {
   id: string
   event: string
   project_id: string
   timestamp: string
   data: T
-  conversation_id?: string
   run_id?: string
   image_id?: string
 }
@@ -430,18 +383,4 @@ export type DagData = {
 export type RunDagEvent = {
   run_id: string
   dag: DagData
-}
-
-export type AgentEventData = {
-  id: string
-  type: AgentMessageType
-  content?: string | null
-  metadata?: Record<string, unknown> | null
-  response_id?: string | null
-  approval_id?: string | null
-  status?: string | null
-  payload?: Record<string, unknown> | null
-  tool?: string | null
-  approval_type?: string | null
-  risk?: string | null
 }
