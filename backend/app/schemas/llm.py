@@ -25,8 +25,6 @@ class LlmProviderCreate(BaseModel):
     base_url: str | None = None
     api_key_ref: str | None = None
     scope: ProviderScope = "user"
-    workspace_id: UUID | None = None
-    user_id: str | None = None
     enabled: bool = True
     metadata: dict | None = None
 
@@ -37,8 +35,6 @@ class LlmProviderUpdate(BaseModel):
     base_url: str | None = None
     api_key_ref: str | None = None
     scope: ProviderScope | None = None
-    workspace_id: UUID | None = None
-    user_id: str | None = None
     enabled: bool | None = None
     metadata: dict | None = None
 
@@ -127,8 +123,6 @@ class LlmModelProfileCreate(BaseModel):
     routing_policy: dict | None = None
     permission_overrides: dict | None = None
     scope: ProviderScope = "user"
-    workspace_id: UUID | None = None
-    user_id: str | None = None
     enabled: bool = True
     metadata: dict | None = None
 
@@ -144,8 +138,6 @@ class LlmModelProfileUpdate(BaseModel):
     routing_policy: dict | None = None
     permission_overrides: dict | None = None
     scope: ProviderScope | None = None
-    workspace_id: UUID | None = None
-    user_id: str | None = None
     enabled: bool | None = None
     metadata: dict | None = None
 

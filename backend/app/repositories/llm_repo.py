@@ -45,6 +45,17 @@ class LlmModelRepository(BaseRepository[LlmModel]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_for_providers(self, provider_ids: list[str]) -> list[LlmModel]:
+        if not provider_ids:
+            return []
+        stmt = (
+            select(self.model)
+            .where(self.model.provider_id.in_(provider_ids))
+            .order_by(self.model.display_name, self.model.model_id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
 
 class LlmModelProfileRepository(BaseRepository[LlmModelProfile]):
     model = LlmModelProfile

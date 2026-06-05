@@ -28,6 +28,15 @@ def _dump(model) -> dict:
     return model.model_dump(mode="json")
 
 
+def _with_user_context(data: dict, user: AuthUser) -> dict:
+    return {
+        **data,
+        "workspace_id": user.workspace_id,
+        "user_id": user.id,
+        "role": user.role,
+    }
+
+
 @router.get("/providers")
 async def list_providers(
     request: Request,
@@ -56,9 +65,7 @@ async def create_provider(
     db: AsyncSession = Depends(get_db),
 ):
     service = LlmCatalogService(db)
-    data = payload.model_dump()
-    data["workspace_id"] = data.get("workspace_id") or user.workspace_id
-    data["user_id"] = data.get("user_id") or user.id
+    data = _with_user_context(payload.model_dump(), user)
     provider = await service.create_provider(data)
     return success_response(
         _dump(LlmProviderRead.model_validate(provider)),
@@ -72,12 +79,13 @@ async def update_provider(
     provider_id: str,
     payload: LlmProviderUpdate,
     request: Request,
+    user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = LlmCatalogService(db)
     provider = await service.update_provider(
         provider_id,
-        payload.model_dump(exclude_unset=True),
+        _with_user_context(payload.model_dump(exclude_unset=True), user),
     )
     return success_response(_dump(LlmProviderRead.model_validate(provider)), request=request)
 
@@ -86,10 +94,16 @@ async def update_provider(
 async def test_provider(
     provider_id: str,
     request: Request,
+    user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = LlmCatalogService(db)
-    provider = await service.test_provider(provider_id)
+    provider = await service.test_provider(
+        provider_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        role=user.role,
+    )
     status = provider.test_status or {}
     result = LlmProviderTestResult(
         provider_id=provider.id,
@@ -105,10 +119,15 @@ async def test_provider(
 async def list_models(
     request: Request,
     provider_id: str | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = LlmCatalogService(db)
-    models = await service.list_models(provider_id=provider_id)
+    models = await service.list_models(
+        provider_id=provider_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
     return success_response(
         [_dump(LlmModelRead.model_validate(model)) for model in models],
         request=request,
@@ -119,10 +138,11 @@ async def list_models(
 async def create_model(
     payload: LlmModelCreate,
     request: Request,
+    user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = LlmCatalogService(db)
-    model = await service.create_model(payload.model_dump())
+    model = await service.create_model(_with_user_context(payload.model_dump(), user))
     return success_response(
         _dump(LlmModelRead.model_validate(model)),
         request=request,
@@ -135,10 +155,14 @@ async def update_model(
     model_id: str,
     payload: LlmModelUpdate,
     request: Request,
+    user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = LlmCatalogService(db)
-    model = await service.update_model(model_id, payload.model_dump(exclude_unset=True))
+    model = await service.update_model(
+        model_id,
+        _with_user_context(payload.model_dump(exclude_unset=True), user),
+    )
     return success_response(_dump(LlmModelRead.model_validate(model)), request=request)
 
 
@@ -170,9 +194,7 @@ async def create_model_profile(
     db: AsyncSession = Depends(get_db),
 ):
     service = LlmCatalogService(db)
-    data = payload.model_dump()
-    data["workspace_id"] = data.get("workspace_id") or user.workspace_id
-    data["user_id"] = data.get("user_id") or user.id
+    data = _with_user_context(payload.model_dump(), user)
     profile = await service.create_profile(data)
     return success_response(
         _dump(LlmModelProfileRead.model_validate(profile)),
@@ -186,12 +208,13 @@ async def update_model_profile(
     profile_id: str,
     payload: LlmModelProfileUpdate,
     request: Request,
+    user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = LlmCatalogService(db)
     profile = await service.update_profile(
         profile_id,
-        payload.model_dump(exclude_unset=True),
+        _with_user_context(payload.model_dump(exclude_unset=True), user),
     )
     return success_response(
         _dump(LlmModelProfileRead.model_validate(profile)),
