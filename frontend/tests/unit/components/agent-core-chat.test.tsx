@@ -23,6 +23,9 @@ vi.mock("next-intl", () => ({
         sendMessage: "Send message",
         stopGenerating: "Stop generating",
       },
+      agent: {
+        disclaimer: "Bioinfoflow Agents can make mistakes. Verify important results.",
+      },
       agentCore: {
         acceptMemory: "Accept memory",
         actionApproval: "Approval required",
@@ -55,9 +58,28 @@ vi.mock("next-intl", () => ({
         permissionAskEach: "Ask every time",
         permissionBypass: "Bypass approvals",
         permissionGuarded: "Ask on risk",
+        reactionCopy: "Copy response",
+        reactionDislike: "Dislike response",
+        reactionLike: "Like response",
+        reactionMore: "More response actions",
+        reactionRegenerate: "Regenerate response",
         quickDiagnose: "Diagnose failure",
         quickPreflight: "Preflight run",
         quickQc: "Review MultiQC",
+      },
+      chat: {
+        "quickStart.askQuestion": "Ask a question",
+        "quickStart.askQuestionDescription": "Describe your analysis needs in plain language",
+        "quickStart.tryDemo": "Try a demo",
+        "quickStart.tryDemoDescription": "Run a pre-configured pipeline",
+        "quickStart.upload": "Upload data",
+        "quickStart.uploadDescription": "Start with your own FASTQ, BAM, or VCF files",
+      },
+      greeting: {
+        afternoon: "Good morning ☀️ What data shall we explore?",
+        evening: "Good morning ☀️ What data shall we explore?",
+        lateNight: "Good morning ☀️ What data shall we explore?",
+        morning: "Good morning ☀️ What data shall we explore?",
       },
       welcome: {
         blankDescription: "Start empty",
@@ -348,10 +370,17 @@ describe("AgentCoreChat", () => {
     render(<AgentCoreChat projectId="project-1" workspaceEnabled />)
 
     expect(screen.queryByText("Session session-")).not.toBeInTheDocument()
+    expect(screen.queryByText("You")).not.toBeInTheDocument()
+    expect(screen.queryByText("AgentCore")).not.toBeInTheDocument()
     expect(screen.getByText("Check FASTQ quality")).toBeInTheDocument()
     expect(
       screen.getByText("FASTQ pairing and QC look ready for preflight."),
     ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Like response" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Dislike response" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Regenerate response" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Copy response" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "More response actions" })).toBeInTheDocument()
     expect(screen.getByText("View events")).toBeInTheDocument()
     expect(screen.queryByText("Event ledger")).not.toBeInTheDocument()
     fireEvent.click(screen.getByText("View events"))
@@ -440,7 +469,7 @@ describe("AgentCoreChat", () => {
     expect(useAgentCoreMock).toHaveBeenCalledWith(undefined, expect.any(Object))
   })
 
-  it("shows a centered draft composer when a project has no turns", () => {
+  it("restores the Gemini-style halo welcome composer when a project has no turns", () => {
     useAgentCoreMock.mockReturnValue({
       ...useAgentCoreMock(),
       activeSession: null,
@@ -455,8 +484,14 @@ describe("AgentCoreChat", () => {
 
     render(<AgentCoreChat projectId="project-1" workspaceEnabled />)
 
-    expect(screen.getByText("Start a controlled analysis")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Preflight run" })).toBeInTheDocument()
+    expect(screen.getByText("Good morning ☀️ What data shall we explore?")).toBeInTheDocument()
+    expect(screen.getByText("Upload data")).toBeInTheDocument()
+    expect(screen.getByText("Try a demo")).toBeInTheDocument()
+    expect(screen.getByText("Ask a question")).toBeInTheDocument()
+    expect(screen.getByText("Bioinfoflow Agents can make mistakes. Verify important results.")).toBeInTheDocument()
+    expect(document.querySelector(".agent-halo-surface")).toBeInTheDocument()
+    expect(document.querySelector(".agent-center-stage")).toBeInTheDocument()
+    expect(screen.queryByText("Start a controlled analysis")).not.toBeInTheDocument()
     expect(screen.queryByText("Session will be created on first message")).not.toBeInTheDocument()
   })
 

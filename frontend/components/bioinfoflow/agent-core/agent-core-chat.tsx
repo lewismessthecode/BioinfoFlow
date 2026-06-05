@@ -4,17 +4,22 @@ import type React from "react"
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react"
 import {
   Activity,
-  Bot,
   Brain,
   Check,
   CircleHelp,
   ClipboardList,
+  Copy,
   Cpu,
   FileText,
+  FlaskConical,
+  MessageCircle,
+  MoreHorizontal,
+  RefreshCw,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
-  User,
+  ThumbsDown,
+  ThumbsUp,
+  Upload,
   X,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
@@ -34,6 +39,8 @@ import type {
   AgentPermissionMode,
 } from "@/lib/agent-core"
 import type { LlmModel, LlmModelProfile } from "@/lib/llm"
+
+const SUGGESTION_ICONS = [Upload, FlaskConical, MessageCircle] as const
 
 type AgentCoreChatProps = {
   projectId?: string
@@ -140,8 +147,16 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
       )
     }
 
+    const isDraft = !isLoading && turns.length === 0
+
     return (
-      <div className={cn("flex h-full flex-col bg-background", className)}>
+      <div
+        className={cn(
+          "flex h-full flex-col bg-background",
+          isDraft && "agent-halo-surface",
+          className,
+        )}
+      >
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
           {isLoading ? (
             <div className="text-sm text-muted-foreground">{t("loading")}</div>
@@ -157,7 +172,7 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
               textareaRef={textareaRef}
             />
           ) : (
-            <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 py-6">
               {turns.map((turn) => (
                 <AgentCoreTurnBlock
                   key={turn.id}
@@ -219,38 +234,20 @@ function DraftWelcome({
   status: "idle" | "running" | "error"
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
 }) {
-  const t = useTranslations("agentCore")
-  const prompts = [
-    { label: t("quickPreflight"), value: t("quickPreflightPrompt") },
-    { label: t("quickQc"), value: t("quickQcPrompt") },
-    { label: t("quickDiagnose"), value: t("quickDiagnosePrompt") },
+  const tAgent = useTranslations("agent")
+  const tChat = useTranslations("chat")
+  const greeting = useTimeGreeting()
+  const suggestions = [
+    { key: "upload" as const, descKey: "uploadDescription" as const },
+    { key: "tryDemo" as const, descKey: "tryDemoDescription" as const },
+    { key: "askQuestion" as const, descKey: "askQuestionDescription" as const },
   ]
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col items-center justify-center gap-5 text-center">
-      <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border/70 bg-muted/35 text-muted-foreground">
-        <Sparkles className="h-5 w-5" />
-      </div>
-      <div>
-        <h2 className="text-2xl font-semibold tracking-normal text-foreground">
-          {t("emptyTitle")}
-        </h2>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-          {t("emptyDescription")}
-        </p>
-      </div>
-      <div className="flex flex-wrap justify-center gap-2">
-        {prompts.map((prompt) => (
-          <button
-            key={prompt.label}
-            type="button"
-            className="rounded-full border border-border/70 bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
-            onClick={() => onInputChange(prompt.value)}
-          >
-            {prompt.label}
-          </button>
-        ))}
-      </div>
+    <div className="agent-center-stage mx-auto flex min-h-full w-full flex-col items-center justify-center px-2 pb-[11vh] pt-8 text-center">
+      <h2 className="mb-7 text-center text-[1.85rem] font-normal leading-tight tracking-normal text-foreground animate-in fade-in duration-500 md:text-[2.35rem] lg:text-[2.5rem]">
+        {greeting}
+      </h2>
       <div className="w-full">
         <ChatInput
           input={input}
@@ -264,8 +261,38 @@ function DraftWelcome({
           variant="home"
         />
       </div>
+      <div className="mt-6 flex max-w-2xl flex-wrap justify-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150">
+        {suggestions.map(({ key, descKey }, index) => {
+          const Icon = SUGGESTION_ICONS[index]
+          return (
+            <button
+              key={key}
+              type="button"
+              className="group flex items-center gap-2 rounded-full border border-border/80 bg-white/65 px-3 py-2 text-[13px] text-muted-foreground shadow-[0_1px_2px_rgba(60,64,67,0.04)] transition-all duration-200 hover:border-foreground/20 hover:bg-white hover:text-foreground dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
+              onClick={() => onInputChange(tChat(`quickStart.${descKey}`))}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-primary" />
+              <span>{tChat(`quickStart.${key}`)}</span>
+            </button>
+          )
+        })}
+      </div>
+      <p className="mt-8 text-center text-xs text-muted-foreground/65">
+        {tAgent("disclaimer")}
+      </p>
     </div>
   )
+}
+
+function useTimeGreeting() {
+  const t = useTranslations("greeting")
+  return useMemo(() => {
+    const hour = new Date().getHours()
+    if (hour >= 5 && hour < 12) return t("morning")
+    if (hour >= 12 && hour < 17) return t("afternoon")
+    if (hour >= 17 && hour < 22) return t("evening")
+    return t("lateNight")
+  }, [t])
 }
 
 function AgentComposerControls({
@@ -370,25 +397,18 @@ export function AgentCoreTurnBlock({
   const actions = useMemo(() => extractActionTimeline(events), [events])
   const questions = useMemo(() => extractUserQuestions(events), [events])
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-5">
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-[22px] bg-secondary px-4 py-3 text-sm text-foreground">
-          <div className="mb-1 flex items-center gap-2 text-xs font-medium text-muted-foreground/80">
-            <User className="h-3.5 w-3.5" />
-            {t("user")}
-          </div>
-          <p className="whitespace-pre-wrap leading-6">{turn.input_text}</p>
+        <div className="max-w-[85%] rounded-[28px] bg-[#f0eeee] px-5 py-3.5 text-[15px] text-foreground shadow-[inset_0_0_0_1px_rgba(60,64,67,0.03)] dark:bg-white/10">
+          <p className="whitespace-pre-wrap break-words leading-relaxed">{turn.input_text}</p>
         </div>
       </div>
       <div className="flex justify-start">
-        <div className="max-w-[88%] rounded-[22px] px-1 py-2 text-sm text-foreground">
-          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Bot className="h-3.5 w-3.5" />
-            {t("assistant")}
-          </div>
-          <p className="whitespace-pre-wrap leading-6">
+        <div className="w-full max-w-[78%] px-1 py-1 text-[15px] text-foreground">
+          <p className="whitespace-pre-wrap break-words leading-7">
             {turn.final_text || turn.error_message || t("noFinalText")}
           </p>
+          <AssistantTurnActions />
           <UserQuestionsPanel questions={questions} />
           <ActionTimeline
             actions={actions}
@@ -404,6 +424,34 @@ export function AgentCoreTurnBlock({
           <EventLedger events={events} />
         </div>
       </div>
+    </div>
+  )
+}
+
+function AssistantTurnActions() {
+  const t = useTranslations("agentCore")
+  const buttons = [
+    { label: t("reactionLike"), icon: ThumbsUp },
+    { label: t("reactionDislike"), icon: ThumbsDown },
+    { label: t("reactionRegenerate"), icon: RefreshCw },
+    { label: t("reactionCopy"), icon: Copy },
+    { label: t("reactionMore"), icon: MoreHorizontal },
+  ]
+
+  return (
+    <div className="mt-3 flex items-center gap-1 text-muted-foreground">
+      {buttons.map(({ label, icon: Icon }) => (
+        <Button
+          key={label}
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-full text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+          aria-label={label}
+        >
+          <Icon className="h-4 w-4" />
+        </Button>
+      ))}
     </div>
   )
 }
