@@ -70,12 +70,11 @@ export function useLlmSettings() {
   }, [])
 
   useEffect(() => {
-    const load = async () => {
+    void (async () => {
       setIsLoading(true)
       await Promise.all([fetchSettings(), fetchModels()])
       setIsLoading(false)
-    }
-    load()
+    })()
   }, [fetchSettings, fetchModels])
 
   const updateSettings = useCallback(
@@ -126,7 +125,11 @@ export function useLlmSettings() {
   const hasConfiguredProvider =
     settings !== null && settings.configured_providers.length > 0
 
-  const selectedModel = settings?.selected_model || ""
+  const selectedModel =
+    settings?.selected_model ||
+    (typeof window !== "undefined"
+      ? window.localStorage.getItem("bioinfoflow:selected-model") || ""
+      : "")
 
   // Flat list of all available models with provider info
   const allModels = models.flatMap((pm) =>
@@ -143,6 +146,8 @@ export function useLlmSettings() {
     updateSettings,
     setSelectedModel,
     testProvider,
-    refetch: fetchSettings,
+    refetch: async () => {
+      await Promise.all([fetchSettings(), fetchModels()])
+    },
   }
 }

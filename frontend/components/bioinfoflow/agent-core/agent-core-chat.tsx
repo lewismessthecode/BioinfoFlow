@@ -28,6 +28,7 @@ import { toast } from "sonner"
 
 import { WelcomeCard } from "@/components/bioinfoflow/welcome-card"
 import { ChatInput } from "@/components/bioinfoflow/chat/chat-input"
+import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -39,7 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useAgentCore } from "@/hooks/use-agent-core"
-import { useLlmCatalog } from "@/hooks/use-llm-catalog"
+import { useLlmSettings } from "@/hooks/use-llm-settings"
 import { clearStoredAgentSessionId } from "@/lib/agent-core/session-storage"
 import type {
   AgentCoreArtifact,
@@ -48,7 +49,6 @@ import type {
   AgentCoreTurn,
   AgentPermissionMode,
 } from "@/lib/agent-core"
-import type { LlmModel, LlmModelProfile } from "@/lib/llm"
 
 const SUGGESTION_ICONS = [Upload, FlaskConical, MessageCircle] as const
 
@@ -81,7 +81,12 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
     const t = useTranslations("agentCore")
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const [input, setInput] = useState("")
-    const { profiles, models, isLoading: catalogLoading } = useLlmCatalog()
+    const {
+      models,
+      selectedModel,
+      isLoading: settingsLoading,
+      setSelectedModel,
+    } = useLlmSettings()
     const {
       turns,
       events,
@@ -93,7 +98,6 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
       sendTurn,
       setActiveSessionId,
       activePermissionMode,
-      activeModelProfileId,
       updateSessionSettings,
       approveAction,
       rejectAction,
@@ -123,16 +127,15 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
     const composerControls = (
       <AgentComposerControls
         disabled={disabled}
-        isCatalogLoading={catalogLoading}
         models={models}
-        profiles={profiles}
+        selectedModel={selectedModel}
+        isModelLoading={settingsLoading}
         permissionMode={activePermissionMode}
-        modelProfileId={activeModelProfileId}
+        onSelectedModelChange={(model) => {
+          void setSelectedModel(model)
+        }}
         onPermissionModeChange={(permissionMode) => {
           return updateSessionSettings({ permissionMode })
-        }}
-        onModelProfileChange={(defaultModelProfileId) => {
-          void updateSessionSettings({ defaultModelProfileId })
         }}
       />
     )
@@ -307,62 +310,35 @@ function useTimeGreeting() {
 
 function AgentComposerControls({
   disabled,
-  isCatalogLoading,
   models,
-  profiles,
+  selectedModel,
   permissionMode,
-  modelProfileId,
+  isModelLoading,
+  onSelectedModelChange,
   onPermissionModeChange,
-  onModelProfileChange,
 }: {
   disabled: boolean
-  isCatalogLoading: boolean
-  models: LlmModel[]
-  profiles: LlmModelProfile[]
+  models: ReturnType<typeof useLlmSettings>["models"]
+  selectedModel: string
   permissionMode: AgentPermissionMode
-  modelProfileId: string | null
+  isModelLoading: boolean
+  onSelectedModelChange: (model: string) => void
   onPermissionModeChange: (mode: AgentPermissionMode) => void | Promise<unknown>
-  onModelProfileChange: (profileId: string | null) => void
 }) {
   const t = useTranslations("agentCore")
-  const modelsById = useMemo(
-    () => new Map(models.map((model) => [model.id, model])),
-    [models],
-  )
-  const enabledProfiles = profiles.filter((profile) => profile.enabled)
 
   return (
     <div className="flex items-center gap-1">
-      <label className="relative flex items-center" title={t("modelProfile")}>
-        <Cpu className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
-        <span className="sr-only">{t("modelProfile")}</span>
-        <select
-          aria-label={t("modelProfile")}
-          className="h-8 max-w-[150px] appearance-none rounded-full border border-transparent bg-secondary/70 py-0 pl-7 pr-6 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-secondary hover:text-foreground focus:border-ring focus:ring-2 focus:ring-ring/35 disabled:opacity-50"
-          disabled={disabled || isCatalogLoading}
-          value={modelProfileId ?? "auto"}
-          onChange={(event) =>
-            onModelProfileChange(
-              event.currentTarget.value === "auto"
-                ? null
-                : event.currentTarget.value,
-            )
-          }
-        >
-          <option value="auto">{t("modelProfileAuto")}</option>
-          {enabledProfiles.map((profile) => {
-            const model = modelsById.get(profile.primary_model_id)
-            const label = model
-              ? `${profile.name} / ${model.display_name}`
-              : profile.name
-            return (
-              <option key={profile.id} value={profile.id}>
-                {label}
-              </option>
-            )
-          })}
-        </select>
-      </label>
+      <div className="flex items-center gap-1 rounded-full border border-border/60 bg-background/75 p-1 shadow-[0_6px_16px_rgba(15,23,42,0.06)] backdrop-blur">
+        <Cpu className="ml-2 h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+        <ModelSelector
+          models={models}
+          selectedModel={selectedModel}
+          onSelectModel={onSelectedModelChange}
+          disabled={disabled || isModelLoading}
+          allowAuto
+        />
+      </div>
       <AgentPermissionModeSelector
         disabled={disabled}
         value={permissionMode}

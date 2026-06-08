@@ -33,11 +33,11 @@ type ReadinessCenterProps = {
 };
 
 type ReadinessCounts = {
-  total: number;
-  completed: number;
+  requiredTotal: number;
+  requiredCompleted: number;
   blockers: number;
   optionalWarnings: number;
-  progress: number;
+  requiredProgress: number;
 };
 
 const statusIcon = {
@@ -55,8 +55,11 @@ const statusVariant = {
 } as const;
 
 function getCounts(checks: ReadinessCheck[]): ReadinessCounts {
-  const total = checks.length;
-  const completed = checks.filter((check) => check.status === "pass").length;
+  const requiredChecks = checks.filter((check) => check.severity === "blocking");
+  const requiredTotal = requiredChecks.length;
+  const requiredCompleted = requiredChecks.filter(
+    (check) => check.status === "pass",
+  ).length;
   const blockers = checks.filter(
     (check) => check.status === "fail" && check.severity === "blocking",
   ).length;
@@ -65,11 +68,12 @@ function getCounts(checks: ReadinessCheck[]): ReadinessCounts {
   ).length;
 
   return {
-    total,
-    completed,
+    requiredTotal,
+    requiredCompleted,
     blockers,
     optionalWarnings,
-    progress: total > 0 ? Math.round((completed / total) * 100) : 0,
+    requiredProgress:
+      requiredTotal > 0 ? Math.round((requiredCompleted / requiredTotal) * 100) : 0,
   };
 }
 
@@ -249,8 +253,8 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
                 </span>
                 <StatusBadge variant={counts.blockers > 0 ? "warning" : "neutral"}>
                   {tDashboard("readiness.triggerSummary", {
-                    completed: counts.completed,
-                    total: counts.total,
+                    completed: counts.requiredCompleted,
+                    total: counts.requiredTotal,
                   })}
                 </StatusBadge>
               </span>
@@ -289,8 +293,8 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto bg-background/95 p-5">
           <div className="flex flex-col gap-2 rounded-2xl border border-border/70 bg-muted/25 p-3">
             <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-              <span>{tDashboard("readiness.progress", { completed: counts.completed, total: counts.total })}</span>
-              <span>{counts.progress}%</span>
+              <span>{tDashboard("readiness.progress", { completed: counts.requiredCompleted, total: counts.requiredTotal })}</span>
+              <span>{counts.requiredProgress}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div
@@ -298,7 +302,7 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
                   "h-full rounded-full transition-[width] duration-300",
                   counts.blockers > 0 ? "bg-warning" : "bg-success",
                 )}
-                style={{ width: `${counts.progress}%` }}
+                style={{ width: `${counts.requiredProgress}%` }}
               />
             </div>
           </div>

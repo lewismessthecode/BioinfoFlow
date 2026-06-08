@@ -23,6 +23,7 @@ interface ModelSelectorProps {
   selectedModel: string
   onSelectModel: (model: string) => void
   disabled?: boolean
+  allowAuto?: boolean
 }
 
 export function ModelSelector({
@@ -30,6 +31,7 @@ export function ModelSelector({
   selectedModel,
   onSelectModel,
   disabled = false,
+  allowAuto = false,
 }: ModelSelectorProps) {
   const t = useTranslations("settings.modelSelector")
   const [open, setOpen] = useState(false)
@@ -39,7 +41,7 @@ export function ModelSelector({
     .flatMap((pm) => pm.models.map((m) => ({ ...m, provider: pm.provider })))
     .find((m) => m.id === selectedModel)
 
-  const displayLabel = currentModel?.name ?? t("noProviders")
+  const displayLabel = currentModel?.name ?? (allowAuto ? t("auto") : t("noProviders"))
 
   if (models.length === 0) {
     return (
@@ -87,6 +89,29 @@ export function ModelSelector({
           <CommandInput placeholder={t("searchModels")} className="h-9" />
           <CommandList>
             <CommandEmpty>{t("noProviders")}</CommandEmpty>
+            {allowAuto ? (
+              <>
+                <CommandGroup heading={t("section")}>
+                  <CommandItem
+                    value={t("auto")}
+                    onSelect={() => {
+                      onSelectModel("")
+                      setOpen(false)
+                    }}
+                    className="flex items-center justify-between px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <SettingsIcon className="h-3.5 w-3.5 opacity-60" />
+                      <span className="text-sm">{t("auto")}</span>
+                    </div>
+                    {selectedModel === "" ? (
+                      <Check className="h-3.5 w-3.5 text-primary" />
+                    ) : null}
+                  </CommandItem>
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            ) : null}
             {models.map((providerGroup, index) => (
               <div key={providerGroup.provider}>
                 {index > 0 && <CommandSeparator />}
