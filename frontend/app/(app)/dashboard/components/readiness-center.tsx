@@ -235,19 +235,22 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <CardRoot variant={tone} className="mb-5 bg-card/80 backdrop-blur">
+      <CardRoot
+        variant={tone}
+        className="mb-5 overflow-hidden border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.88))] shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur dark:bg-[linear-gradient(180deg,rgba(17,24,39,0.96),rgba(15,23,42,0.92))]"
+      >
         <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
             aria-label={tDashboard("readiness.trigger")}
-            className="group flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="group flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-2.5 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => setOpen(true)}
           >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-warning-border bg-warning-muted text-warning">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-warning-border/60 bg-warning-muted/70 text-warning shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
               <Rocket className="size-4" aria-hidden="true" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="flex flex-wrap items-center gap-2">
+              <span className="flex flex-wrap items-center gap-2.5">
                 <span className="text-sm font-semibold text-foreground">
                   {tDashboard("readiness.title")}
                 </span>
@@ -257,6 +260,13 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
                     total: counts.requiredTotal,
                   })}
                 </StatusBadge>
+                {counts.optionalWarnings > 0 ? (
+                  <StatusBadge variant="neutral">
+                    {tDashboard("readiness.optionalWarnings", {
+                      count: counts.optionalWarnings,
+                    })}
+                  </StatusBadge>
+                ) : null}
               </span>
               <span className="mt-1 block text-xs leading-5 text-muted-foreground">
                 {counts.blockers > 0
@@ -274,7 +284,7 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
 
       <SheetContent
         side="right"
-        className="flex w-[min(520px,92vw)] flex-col gap-0 overflow-hidden sm:max-w-none"
+        className="flex w-[min(560px,92vw)] flex-col gap-0 overflow-hidden border-l border-border/70 bg-background/98 shadow-[-24px_0_60px_rgba(15,23,42,0.12)] sm:max-w-none"
       >
         <SheetHeader className="border-b border-border/70 p-5 pr-12">
           <div className="flex items-center gap-3">
@@ -291,12 +301,12 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
         </SheetHeader>
 
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto bg-background/95 p-5">
-          <div className="flex flex-col gap-2 rounded-2xl border border-border/70 bg-muted/25 p-3">
+          <div className="flex flex-col gap-2 rounded-[20px] border border-border/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,0.88))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] dark:bg-[linear-gradient(180deg,rgba(17,24,39,0.7),rgba(15,23,42,0.92))]">
             <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
               <span>{tDashboard("readiness.progress", { completed: counts.requiredCompleted, total: counts.requiredTotal })}</span>
               <span>{counts.requiredProgress}%</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-2 overflow-hidden rounded-full bg-muted/85">
               <div
                 className={cn(
                   "h-full rounded-full transition-[width] duration-300",
@@ -324,7 +334,7 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
           />
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-border/70 p-4">
+        <div className="flex items-center justify-between gap-3 border-t border-border/70 bg-background/96 p-4">
           <p className="text-xs leading-5 text-muted-foreground">
             {tDashboard("readiness.description", { warnings: counts.optionalWarnings })}
           </p>

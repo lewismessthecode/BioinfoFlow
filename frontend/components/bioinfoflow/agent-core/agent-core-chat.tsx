@@ -325,12 +325,10 @@ function AgentComposerControls({
   onSelectedModelChange: (model: string) => void
   onPermissionModeChange: (mode: AgentPermissionMode) => void | Promise<unknown>
 }) {
-  const t = useTranslations("agentCore")
-
   return (
     <div className="flex items-center gap-1">
-      <div className="flex items-center gap-1 rounded-full border border-border/60 bg-background/75 p-1 shadow-[0_6px_16px_rgba(15,23,42,0.06)] backdrop-blur">
-        <Cpu className="ml-2 h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+      <div className="flex items-center gap-1 rounded-full border border-border/55 bg-white/72 p-1 shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur dark:bg-white/[0.04]">
+        <Cpu className="ml-2 h-3.5 w-3.5 text-muted-foreground/80" aria-hidden />
         <ModelSelector
           models={models}
           selectedModel={selectedModel}
@@ -399,7 +397,7 @@ function AgentPermissionModeSelector({
           size="sm"
           variant="ghost"
           className={cn(
-            "h-8 gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors hover:bg-secondary/70",
+            "h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium shadow-[0_8px_20px_rgba(15,23,42,0.06)] backdrop-blur transition-colors hover:bg-background",
             trigger.cls,
           )}
           disabled={disabled}

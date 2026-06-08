@@ -48,7 +48,7 @@ export function ModelSelector({
       <Button
         variant="ghost"
         size="sm"
-        className="h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground/80 hover:text-foreground hover:bg-secondary/70 text-xs font-medium transition-colors"
+        className="h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-muted-foreground/80 shadow-[0_8px_20px_rgba(15,23,42,0.06)] backdrop-blur transition-colors hover:bg-background hover:text-foreground text-xs font-medium"
         disabled={disabled}
         aria-label={t("configure")}
         asChild
@@ -67,7 +67,7 @@ export function ModelSelector({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 max-w-[176px] gap-1.5 rounded-full px-2.5 text-muted-foreground/80 hover:text-foreground hover:bg-secondary/70 text-xs font-medium transition-colors"
+          className="h-9 max-w-[196px] gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-muted-foreground/80 shadow-[0_8px_20px_rgba(15,23,42,0.06)] backdrop-blur transition-colors hover:bg-background hover:text-foreground text-xs font-medium"
           disabled={disabled}
           role="combobox"
           aria-expanded={open}
@@ -83,7 +83,7 @@ export function ModelSelector({
       <PopoverContent
         align="start"
         side="top"
-        className="w-[260px] p-0 rounded-2xl overflow-hidden backdrop-blur-xl bg-background/95 border-black/5 dark:border-white/10 shadow-2xl"
+        className="w-[280px] overflow-hidden rounded-[22px] border border-border/70 bg-background/96 p-0 shadow-[0_22px_60px_rgba(15,23,42,0.18)] backdrop-blur-xl"
       >
         <Command>
           <CommandInput placeholder={t("searchModels")} className="h-9" />
