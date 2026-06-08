@@ -6,6 +6,7 @@ from app.models.agent_core import (
     AgentAction,
     AgentArtifact,
     AgentEvent,
+    AgentMessage,
     AgentMemory,
     AgentSession,
     AgentSessionStatus,
@@ -56,11 +57,31 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         return list(result.scalars().all())
 
 
+class AgentMessageRepository(BaseRepository[AgentMessage]):
+    model = AgentMessage
+
+    async def next_ordering_index(self, session_id: str) -> int:
+        stmt = select(func.max(self.model.ordering_index)).where(
+            self.model.session_id == session_id
+        )
+        current = await self.session.scalar(stmt)
+        return int(current or 0) + 1
+
+    async def list_for_session(self, session_id: str) -> list[AgentMessage]:
+        stmt = (
+            select(self.model)
+            .where(self.model.session_id == session_id)
+            .order_by(self.model.ordering_index, self.model.created_at, self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+
 class AgentEventRepository(BaseRepository[AgentEvent]):
     model = AgentEvent
 
-    async def next_seq(self, turn_id: str) -> int:
-        stmt = select(func.max(self.model.seq)).where(self.model.turn_id == turn_id)
+    async def next_seq(self, session_id: str) -> int:
+        stmt = select(func.max(self.model.seq)).where(self.model.session_id == session_id)
         current = await self.session.scalar(stmt)
         return int(current or 0) + 1
 
@@ -87,7 +108,7 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
         stmt = (
             select(self.model)
             .where(self.model.session_id == session_id, self.model.seq > after_seq)
-            .order_by(self.model.created_at, self.model.id)
+            .order_by(self.model.seq)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

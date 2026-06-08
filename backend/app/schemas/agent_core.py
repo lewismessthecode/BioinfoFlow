@@ -51,7 +51,7 @@ class AgentModelSelection(BaseModel):
 
 
 class AgentSessionCreate(BaseModel):
-    project_id: UUID
+    project_id: UUID | None = None
     title: str | None = None
     role_profile: str = "bioinformatician"
     permission_mode: PermissionMode = "guarded_auto"
@@ -76,7 +76,7 @@ class AgentSessionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    project_id: UUID
+    project_id: UUID | None = None
     workspace_id: UUID
     user_id: str
     title: str | None = None
@@ -84,6 +84,12 @@ class AgentSessionRead(BaseModel):
     permission_mode: PermissionMode
     automation_mode: AutomationMode
     default_model_profile_id: UUID | None = None
+    runtime_mode: str = "api"
+    prompt_snapshot: dict | None = None
+    toolset_policy: dict | None = None
+    context_policy: dict | None = None
+    compression_state: dict | None = None
+    lineage: dict | None = None
     model_selection: AgentModelSelection | None = None
     status: SessionStatus
     metadata: dict | None = Field(default=None, validation_alias="session_metadata")
@@ -104,7 +110,7 @@ class AgentTurnRead(BaseModel):
 
     id: UUID
     session_id: UUID
-    project_id: UUID
+    project_id: UUID | None = None
     workspace_id: UUID
     user_id: str
     input_text: str
@@ -114,6 +120,11 @@ class AgentTurnRead(BaseModel):
     model_profile_snapshot: dict | None = None
     final_text: str | None = None
     token_usage: dict | None = None
+    termination_reason: str | None = None
+    loop_state: dict | None = None
+    iteration_count: int = 0
+    budget_snapshot: dict | None = None
+    interrupt_requested_at: datetime | None = None
     error_code: str | None = None
     error_message: str | None = None
     created_at: datetime
@@ -127,7 +138,7 @@ class AgentEventRead(BaseModel):
 
     id: UUID
     session_id: UUID
-    turn_id: UUID
+    turn_id: UUID | None = None
     seq: int
     type: str
     payload: dict
@@ -146,9 +157,12 @@ class AgentActionRead(BaseModel):
     parent_action_id: UUID | None = None
     kind: ActionKind
     name: str
+    tool_call_id: str | None = None
     input: dict
+    normalized_input: dict | None = None
     input_preview: str | None = None
     redacted_input: dict | None = None
+    exposure_policy: dict | None = None
     risk_level: RiskLevel
     risk_reasons: list | None = None
     read_scope: list | None = None
@@ -157,6 +171,9 @@ class AgentActionRead(BaseModel):
     permission_decision: dict | None = None
     status: ActionStatus
     result: dict | None = None
+    output_ref: dict | None = None
+    output_summary: str | None = None
+    requires_resume: bool = False
     error: dict | None = None
     audit_summary: str | None = None
     rollback_hint: str | None = None
