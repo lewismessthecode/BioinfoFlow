@@ -475,4 +475,141 @@ describe("useAgentCore", () => {
     expect(result.current.activePermissionMode).toBe("bypass")
     expect(result.current.activeModelProfileId).toBe("profile-2")
   })
+
+  it("persists selected model metadata for a draft session before the first message", async () => {
+    const onActiveSessionIdChange = vi.fn()
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/agent/sessions" && !options?.method) {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/memories" && !options?.method) {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/sessions" && options?.method === "POST") {
+        return {
+          data: session({
+            id: "session-created",
+            title: "New analysis",
+            metadata: { selected_model: "gpt-5.4" },
+          }),
+          meta: undefined,
+        }
+      }
+      if (path === "/agent/sessions/session-created/turns" && options?.method === "POST") {
+        return {
+          data: {
+            id: "turn-created",
+            session_id: "session-created",
+            project_id: "project-1",
+            workspace_id: "workspace-1",
+            user_id: "dev",
+            input_text: "Draft run",
+            input_parts: null,
+            status: "completed",
+            model_profile_snapshot: null,
+            final_text: "Ready.",
+            token_usage: null,
+            error_code: null,
+            error_message: null,
+            created_at: "2026-06-04T00:00:01Z",
+            updated_at: "2026-06-04T00:00:01Z",
+            started_at: null,
+            completed_at: null,
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/agent/turns/turn-created/events") {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/turns/turn-created/artifacts") {
+        return { data: [], meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({
+      activeProjectId: "project-1",
+      selectedProjectId: "project-1",
+    })
+    const { result } = renderHook(
+      () =>
+        useAgentCore("project-1", {
+          activeSessionId: "",
+          onActiveSessionIdChange,
+        }),
+      { wrapper: Wrapper },
+    )
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    await act(async () => {
+      await result.current.updateSessionSettings({
+        metadata: { selected_model: "gpt-5.4" },
+      })
+    })
+    await act(async () => {
+      await result.current.sendTurn("Draft run")
+    })
+
+    const createSessionCall = apiRequestMock.mock.calls.find(
+      ([path, options]) => path === "/agent/sessions" && options?.method === "POST",
+    )
+    expect(JSON.parse(createSessionCall?.[1]?.body as string)).toMatchObject({
+      metadata: { selected_model: "gpt-5.4" },
+    })
+    expect(onActiveSessionIdChange).toHaveBeenCalledWith("session-created")
+  })
+
+  it("patches selected model metadata onto an existing session", async () => {
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/agent/sessions" && !options?.method) {
+        return {
+          data: [session({ metadata: { selected_model: "gpt-4o-mini" } })],
+          meta: undefined,
+        }
+      }
+      if (path === "/agent/sessions/session-1/turns" && !options?.method) {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/memories" && !options?.method) {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/sessions/session-1" && options?.method === "PATCH") {
+        return {
+          data: session({
+            metadata: { selected_model: "gpt-5.4" },
+          }),
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({
+      activeProjectId: "project-1",
+      selectedProjectId: "project-1",
+    })
+    const { result } = renderHook(
+      () => useAgentCore("project-1", { activeSessionId: "session-1" }),
+      { wrapper: Wrapper },
+    )
+
+    await waitFor(() => expect(result.current.activeSession?.id).toBe("session-1"))
+    await act(async () => {
+      await result.current.updateSessionSettings({
+        metadata: { selected_model: "gpt-5.4" },
+      })
+    })
+
+    expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1", {
+      method: "PATCH",
+      body: JSON.stringify({
+        metadata: { selected_model: "gpt-5.4" },
+      }),
+    })
+    expect(result.current.activeSession?.metadata).toEqual({
+      selected_model: "gpt-5.4",
+    })
+  })
 })

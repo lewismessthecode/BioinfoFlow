@@ -130,36 +130,14 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   }, [selectedProjectId, projects, fetchProjects])
 
   useEffect(() => {
-    if (selectedProjectId) {
-      const activeProject = projects.find((project) => project.id === selectedProjectId)
-      if (activeProject && !activeProject.is_default) {
-        setStoredLastUsedProjectId(activeProject.id)
-      }
+    if (!selectedProjectId) {
       return
     }
-
-    if (projects.length === 0) {
-      return
+    const activeProject = projects.find((project) => project.id === selectedProjectId)
+    if (activeProject && !activeProject.is_default) {
+      setStoredLastUsedProjectId(activeProject.id)
     }
-
-    const regularProjects = projects.filter((project) => !project.is_default)
-    if (regularProjects.length === 0) {
-      setStoredLastUsedProjectId(null)
-      return
-    }
-
-    const storedProjectId = getStoredLastUsedProjectId()
-    const storedProject = regularProjects.find((project) => project.id === storedProjectId)
-    if (storedProject) {
-      selectProjectForWorkspace(storedProject.id)
-      return
-    }
-
-    const fallbackProject = regularProjects[0]
-    if (fallbackProject) {
-      selectProjectForWorkspace(fallbackProject.id)
-    }
-  }, [projects, selectedProjectId, selectProjectForWorkspace])
+  }, [projects, selectedProjectId])
 
   useEffect(() => {
     if (!selectedProjectId) return

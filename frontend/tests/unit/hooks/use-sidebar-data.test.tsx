@@ -108,75 +108,9 @@ describe("useSidebarData", () => {
       ])
     )
 
-    expect(result.current.project.selectedProjectId).toBe("project-a")
-    expect(result.current.project.conversationProjectId).toBe("project-a")
-    expect(result.current.project.activeProjectName).toBe("Alpha")
-  })
-
-  it("restores the last used regular project into the assistant workspace", async () => {
-    const projects: Project[] = [
-      { id: "project-default", name: "Recent", project_root: "asset://project", storage_mode: "managed", is_default: true },
-      { id: "project-2", name: "Beta", project_root: "asset://project", storage_mode: "managed" },
-      { id: "project-1", name: "Alpha", project_root: "asset://project", storage_mode: "managed" },
-    ]
-
-    window.localStorage.setItem("bioinfoflow:last-used-project", "project-2")
-
-    apiRequestMock.mockImplementation(async (path) => {
-      if (path === "/projects") {
-        return { data: projects, meta: undefined }
-      }
-      if (path === "/projects/default") {
-        return { data: projects[0], meta: undefined }
-      }
-      if (path === "/agent/sessions") {
-        return { data: [], meta: undefined }
-      }
-      throw new Error(`Unexpected path: ${path}`)
-    })
-
-    const Wrapper = createAppWrapper()
-    const { result } = renderHook(
-      () => ({ sidebar: useSidebarData(tSidebar), project: useProjectContext() }),
-      { wrapper: Wrapper }
-    )
-
-    await waitFor(() => expect(result.current.project.selectedProjectId).toBe("project-2"))
-    expect(result.current.project.conversationProjectId).toBe("project-2")
-    expect(window.localStorage.getItem("bioinfoflow:last-used-project")).toBe("project-2")
-  })
-
-  it("falls back to the first regular project when the stored project no longer exists", async () => {
-    const projects: Project[] = [
-      { id: "project-default", name: "Recent", project_root: "asset://project", storage_mode: "managed", is_default: true },
-      { id: "project-b", name: "Beta", project_root: "asset://project", storage_mode: "managed" },
-      { id: "project-a", name: "Alpha", project_root: "asset://project", storage_mode: "managed" },
-    ]
-
-    window.localStorage.setItem("bioinfoflow:last-used-project", "project-missing")
-
-    apiRequestMock.mockImplementation(async (path) => {
-      if (path === "/projects") {
-        return { data: projects, meta: undefined }
-      }
-      if (path === "/projects/default") {
-        return { data: projects[0], meta: undefined }
-      }
-      if (path === "/agent/sessions") {
-        return { data: [], meta: undefined }
-      }
-      throw new Error(`Unexpected path: ${path}`)
-    })
-
-    const Wrapper = createAppWrapper()
-    const { result } = renderHook(
-      () => ({ sidebar: useSidebarData(tSidebar), project: useProjectContext() }),
-      { wrapper: Wrapper }
-    )
-
-    await waitFor(() => expect(result.current.project.selectedProjectId).toBe("project-a"))
-    expect(result.current.project.conversationProjectId).toBe("project-a")
-    expect(window.localStorage.getItem("bioinfoflow:last-used-project")).toBe("project-a")
+    expect(result.current.project.selectedProjectId).toBe("")
+    expect(result.current.project.conversationProjectId).toBe("")
+    expect(result.current.project.activeProjectName).toBe("")
   })
 
   it("restores the stored conversation for the active project when available", async () => {

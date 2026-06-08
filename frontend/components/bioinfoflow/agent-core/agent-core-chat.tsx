@@ -88,6 +88,7 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
       setSelectedModel,
     } = useLlmSettings()
     const {
+      activeSession,
       turns,
       events,
       artifactsByTurn,
@@ -133,6 +134,20 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
         permissionMode={activePermissionMode}
         onSelectedModelChange={(model) => {
           void setSelectedModel(model)
+          const currentMetadata =
+            activeSession?.metadata && typeof activeSession.metadata === "object"
+              ? activeSession.metadata
+              : {}
+          const nextMetadata = { ...currentMetadata }
+          if (model) {
+            nextMetadata.selected_model = model
+          } else {
+            delete nextMetadata.selected_model
+          }
+          void updateSessionSettings({
+            metadata:
+              Object.keys(nextMetadata).length > 0 ? nextMetadata : null,
+          })
         }}
         onPermissionModeChange={(permissionMode) => {
           return updateSessionSettings({ permissionMode })

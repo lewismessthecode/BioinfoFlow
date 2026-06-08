@@ -56,6 +56,9 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
     DEFAULT_PERMISSION_MODE,
   )
   const [draftModelProfileId, setDraftModelProfileId] = useState<string | null>(null)
+  const [draftMetadata, setDraftMetadata] = useState<Record<string, unknown> | null>(
+    null,
+  )
   const [turns, setTurns] = useState<AgentCoreTurn[]>([])
   const [events, setEvents] = useState<AgentCoreEvent[]>([])
   const [artifactsByTurn, setArtifactsByTurn] = useState<
@@ -98,6 +101,7 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
     if (!projectId) {
       setDraftPermissionMode(DEFAULT_PERMISSION_MODE)
       setDraftModelProfileId(null)
+      setDraftMetadata(null)
       return
     }
     setDraftPermissionMode(
@@ -218,6 +222,7 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
       permissionMode: draftPermissionMode,
       automationMode: "assisted",
       defaultModelProfileId: draftModelProfileId ?? undefined,
+      metadata: draftMetadata ?? undefined,
     })
     setSessions((current) => [created, ...current])
     setActiveSessionId(created.id)
@@ -225,6 +230,7 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
     return created
   }, [
     activeSession,
+    draftMetadata,
     draftModelProfileId,
     draftPermissionMode,
     projectId,
@@ -364,6 +370,9 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
         if (projectId) {
           setStoredDraftModelProfileId(projectId, profileId)
         }
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "metadata")) {
+        setDraftMetadata((updates.metadata as Record<string, unknown> | null) ?? null)
       }
       return null
     },

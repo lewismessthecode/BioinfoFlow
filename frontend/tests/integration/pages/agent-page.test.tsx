@@ -10,6 +10,7 @@ let mockRunToSelect: Record<string, unknown> | null = null
 
 const useEventsMock = vi.fn()
 const useIsMobileMock = vi.fn(() => false)
+const workspaceShellMock = vi.fn(() => undefined)
 
 vi.mock("@/hooks/use-events", () => ({
   useEvents: (...args: unknown[]) => useEventsMock(...args),
@@ -17,6 +18,10 @@ vi.mock("@/hooks/use-events", () => ({
 
 vi.mock("@/hooks/use-media-query", () => ({
   useIsMobile: () => useIsMobileMock(),
+}))
+
+vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
+  useOptionalWorkspaceShell: () => workspaceShellMock(),
 }))
 
 vi.mock("@/components/bioinfoflow/agent-core/agent-core-chat", () => ({
@@ -82,6 +87,8 @@ describe("AgentPage", () => {
   beforeEach(() => {
     mockRunToSelect = null
     localStorage.clear()
+    workspaceShellMock.mockReset()
+    workspaceShellMock.mockReturnValue(undefined)
   })
 
   it("keeps the right sidebar hidden by default and toggles with the keyboard shortcut", async () => {
@@ -211,5 +218,28 @@ describe("AgentPage", () => {
       expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:off")
     })
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
+  })
+
+  it("restores the last used project only on the agent page when projects already exist", async () => {
+    localStorage.setItem("bioinfoflow:last-used-project", "project-9")
+    workspaceShellMock.mockReturnValue({
+      projects: [
+        { id: "project-1", name: "Alpha" },
+        { id: "project-9", name: "Omega" },
+      ],
+      defaultProject: { id: "project-default", name: "Recent", is_default: true },
+    })
+
+    renderAppPage(<AgentPage />, {
+      projectContext: {
+        selectedProjectId: "",
+        conversationProjectId: "",
+        activeProjectId: "",
+      },
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-9|workspace:on")
+    })
   })
 })
