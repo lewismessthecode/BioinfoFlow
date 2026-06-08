@@ -1,10 +1,12 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { AgentCoreChat, type AgentCoreChatHandle } from "@/components/bioinfoflow/agent-core/agent-core-chat"
+import {
+  AgentWorkbench,
+  type AgentWorkbenchHandle,
+} from "@/components/bioinfoflow/agent-runtime/agent-workbench"
 import { LiveDeck } from "@/components/bioinfoflow/live-deck"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
-import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useEvents } from "@/hooks/use-events"
 import type { DagData, Run } from "@/lib/types"
 import { ResizeHandle } from "@/components/ui/resize-handle"
@@ -38,8 +40,7 @@ function AgentPageContent({
   activeConversationId: string
 }) {
   const isMobile = useIsMobile()
-  const chatRef = useRef<AgentCoreChatHandle>(null)
-  const workspaceShell = useOptionalWorkspaceShell()
+  const chatRef = useRef<AgentWorkbenchHandle>(null)
   const { setActiveConversationId } = useProjectContext()
   const [liveDeckTab, setLiveDeckTab] = useState<"workspace" | "dag" | "monitor">("workspace")
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
@@ -136,14 +137,12 @@ function AgentPageContent({
 
   return (
     <div className="flex h-full bg-background">
-      <AgentCoreChat
+      <AgentWorkbench
         ref={chatRef}
-        projectId={conversationProjectId}
+        projectId={conversationProjectId || null}
         activeSessionId={activeConversationId}
         onActiveSessionIdChange={setActiveConversationId}
-        workspaceEnabled={Boolean(conversationProjectId)}
-        onQuickCreateProject={workspaceShell?.handleQuickCreateProject}
-        onOpenCreateProjectDialog={workspaceShell?.openCreateProjectDialog}
+        workspaceEnabled
         className="flex-1"
       />
       {showShortcuts && (

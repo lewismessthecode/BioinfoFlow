@@ -2159,6 +2159,27 @@
     "acceptMemory": "接受记忆",
     "rejectMemory": "拒绝记忆"
   },
+  "agentRuntime": {
+    "title": "Agent Harness",
+    "draftSession": "草稿会话",
+    "projectSession": "项目会话",
+    "workspaceSession": "工作区会话",
+    "emptyTitle": "从运行时开始",
+    "emptyDescription": "请求工作流检查、运行诊断、项目设置，或一次受控的平台动作。",
+    "pendingResponse": "正在等待 loop 完成...",
+    "composerPlaceholder": "描述下一次 harness turn...",
+    "toolActivity": "工具活动",
+    "noToolActivity": "还没有工具调用。",
+    "approvals": "审批",
+    "noApprovals": "没有待审批动作。",
+    "approve": "批准",
+    "reject": "拒绝",
+    "artifacts": "产物",
+    "artifact": "产物",
+    "noArtifacts": "还没有产物。",
+    "memory": "记忆",
+    "noMemory": "还没有记忆事件。"
+  },
   "agent": {
     "disclaimer": "Bioinfoflow 智能助手可能犯错，请核实重要结果。",
     "selectProjectHint": "从侧边栏选择项目以开始对话",

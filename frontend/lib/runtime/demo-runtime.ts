@@ -421,6 +421,22 @@ function deleteAgentCoreSession(
   state.agentTurnsBySession.delete(sessionId)
 }
 
+function findAgentCoreTurn(state: DemoRuntimeState, turnId: string) {
+  for (const turns of state.agentTurnsBySession.values()) {
+    const turn = turns.find((item) => item.id === turnId)
+    if (turn) return turn
+  }
+  return null
+}
+
+function replaceAgentCoreTurn(state: DemoRuntimeState, turn: AgentCoreTurn) {
+  const turns = state.agentTurnsBySession.get(turn.session_id) ?? []
+  state.agentTurnsBySession.set(
+    turn.session_id,
+    turns.map((item) => (item.id === turn.id ? turn : item)),
+  )
+}
+
 function appendAgentCoreEvent(
   state: DemoRuntimeState,
   turn: AgentCoreTurn,
@@ -1622,6 +1638,29 @@ function createDemoRuntimeInternal(): AppRuntime {
       }
     }
 
+    if (path === "/agent/toolsets" && method === "GET") {
+      return {
+        data: {
+          toolsets: [
+            {
+              name: "default",
+              tools: ["projects.list", "workflows.list", "runs.list", "runs.logs"],
+            },
+            {
+              name: "execution",
+              tools: [
+                "projects.list",
+                "workflows.list",
+                "runs.list",
+                "runs.logs",
+                "execution.shell",
+              ],
+            },
+          ],
+        } as T,
+      }
+    }
+
     if (path === "/agent/sessions" && method === "POST") {
       const projectId =
         typeof bodyJson?.project_id === "string" && bodyJson.project_id
@@ -1684,6 +1723,25 @@ function createDemoRuntimeInternal(): AppRuntime {
       return { data: null as T }
     }
 
+    const agentSessionStateMatch = matchPath(
+      /^\/agent\/sessions\/([^/]+)\/state$/,
+      path,
+    )
+    if (agentSessionStateMatch && method === "GET") {
+      const [sessionId] = agentSessionStateMatch
+      const session = findAgentCoreSession(state, sessionId)
+      if (!session) throw new ApiError("Agent session not found", { status: 404 })
+      const turns = state.agentTurnsBySession.get(sessionId) ?? []
+      const events = turns.flatMap((turn) => state.agentEventsByTurn.get(turn.id) ?? [])
+      return {
+        data: {
+          session: clone(session),
+          turns: clone(turns),
+          events: clone(events).sort((a, b) => a.seq - b.seq),
+        } as T,
+      }
+    }
+
     const agentSessionTurnsMatch = matchPath(
       /^\/agent\/sessions\/([^/]+)\/turns$/,
       path,
@@ -1719,6 +1777,29 @@ function createDemoRuntimeInternal(): AppRuntime {
         (event) => event.seq > afterSeq,
       )
       return { data: clone(events) as T }
+    }
+
+    const agentTurnInterruptMatch = matchPath(
+      /^\/agent\/turns\/([^/]+)\/interrupt$/,
+      path,
+    )
+    if (agentTurnInterruptMatch && method === "POST") {
+      const [turnId] = agentTurnInterruptMatch
+      const turn = findAgentCoreTurn(state, turnId)
+      if (!turn) throw new ApiError("Agent turn not found", { status: 404 })
+      const interrupted: AgentCoreTurn = {
+        ...turn,
+        status: "cancelled",
+        error_code: null,
+        error_message: null,
+        updated_at: nowStamp(),
+        completed_at: nowStamp(),
+      }
+      replaceAgentCoreTurn(state, interrupted)
+      appendAgentCoreEvent(state, interrupted, "turn.interrupted", {
+        termination_reason: "interrupted",
+      })
+      return { data: clone(interrupted) as T }
     }
 
     const agentTurnArtifactsMatch = matchPath(

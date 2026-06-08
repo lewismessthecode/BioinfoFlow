@@ -24,8 +24,8 @@ vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
   useOptionalWorkspaceShell: () => workspaceShellMock(),
 }))
 
-vi.mock("@/components/bioinfoflow/agent-core/agent-core-chat", () => ({
-  AgentCoreChat: ({
+vi.mock("@/components/bioinfoflow/agent-runtime/agent-workbench", () => ({
+  AgentWorkbench: ({
     projectId,
     workspaceEnabled,
   }: {
@@ -202,7 +202,7 @@ describe("AgentPage", () => {
       },
     )
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:off")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:on")
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText("select project"))
@@ -215,7 +215,7 @@ describe("AgentPage", () => {
     fireEvent.click(screen.getByText("clear project"))
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:off")
+      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:on")
     })
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
   })
@@ -238,6 +238,6 @@ describe("AgentPage", () => {
       },
     })
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:off")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:on")
   })
 })
