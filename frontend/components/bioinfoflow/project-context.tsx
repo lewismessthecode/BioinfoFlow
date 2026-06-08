@@ -10,6 +10,7 @@ type ProjectContextValue = {
   setConversationProjectId: (projectId: string) => void
   activeProjectId: string
   setActiveProjectId: (projectId: string) => void
+  selectWorkspaceProject: (projectId: string) => void
   activeConversationId: string
   setActiveConversationId: (conversationId: string) => void
   activeProjectName: string

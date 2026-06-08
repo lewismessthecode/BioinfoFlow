@@ -20,6 +20,7 @@ import type {
   AgentCoreAction,
   AgentCoreArtifact,
   AgentCoreEvent,
+  AgentModelSelection,
   AgentCoreMemory,
   AgentCoreSession,
   AgentCoreTurn,
@@ -56,9 +57,8 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
     DEFAULT_PERMISSION_MODE,
   )
   const [draftModelProfileId, setDraftModelProfileId] = useState<string | null>(null)
-  const [draftMetadata, setDraftMetadata] = useState<Record<string, unknown> | null>(
-    null,
-  )
+  const [draftModelSelection, setDraftModelSelection] =
+    useState<AgentModelSelection | null>(null)
   const [turns, setTurns] = useState<AgentCoreTurn[]>([])
   const [events, setEvents] = useState<AgentCoreEvent[]>([])
   const [artifactsByTurn, setArtifactsByTurn] = useState<
@@ -79,6 +79,7 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
   const activePermissionMode = activeSession?.permission_mode ?? draftPermissionMode
   const activeModelProfileId =
     activeSession?.default_model_profile_id ?? draftModelProfileId
+  const activeModelSelection = activeSession?.model_selection ?? draftModelSelection
 
   const setActiveSessionId = useCallback(
     (sessionId: string | null) => {
@@ -101,7 +102,7 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
     if (!projectId) {
       setDraftPermissionMode(DEFAULT_PERMISSION_MODE)
       setDraftModelProfileId(null)
-      setDraftMetadata(null)
+      setDraftModelSelection(null)
       return
     }
     setDraftPermissionMode(
@@ -213,7 +214,7 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
     })
   }, [activeSessionId, clearTurnState, refreshTurns])
 
-  const ensureSession = useCallback(async () => {
+  const ensureSession = useCallback(async (modelSelection?: AgentModelSelection | null) => {
     if (!projectId) throw new Error("Project is required to create an AgentCore session")
     if (activeSession) return activeSession
     const created = await createAgentSession({
@@ -222,7 +223,7 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
       permissionMode: draftPermissionMode,
       automationMode: "assisted",
       defaultModelProfileId: draftModelProfileId ?? undefined,
-      metadata: draftMetadata ?? undefined,
+      modelSelection: modelSelection ?? draftModelSelection ?? undefined,
     })
     setSessions((current) => [created, ...current])
     setActiveSessionId(created.id)
@@ -230,25 +231,29 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
     return created
   }, [
     activeSession,
-    draftMetadata,
     draftModelProfileId,
+    draftModelSelection,
     draftPermissionMode,
     projectId,
     setActiveSessionId,
   ])
 
   const sendTurn = useCallback(
-    async (inputText: string) => {
+    async (
+      inputText: string,
+      options?: { modelSelection?: AgentModelSelection | null },
+    ) => {
       const text = inputText.trim()
       if (!text) return null
 
       setStatus("running")
       setError(null)
       try {
-        const session = await ensureSession()
+        const session = await ensureSession(options?.modelSelection)
         const turn = await createAgentTurn({
           sessionId: session.id,
           inputText: text,
+          modelSelection: options?.modelSelection,
         })
         setTurns((current) => [...current, turn])
         const [turnEvents, turnArtifacts] = await Promise.all([
@@ -371,8 +376,8 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
           setStoredDraftModelProfileId(projectId, profileId)
         }
       }
-      if (Object.prototype.hasOwnProperty.call(updates, "metadata")) {
-        setDraftMetadata((updates.metadata as Record<string, unknown> | null) ?? null)
+      if (Object.prototype.hasOwnProperty.call(updates, "modelSelection")) {
+        setDraftModelSelection(updates.modelSelection ?? null)
       }
       return null
     },
@@ -385,6 +390,7 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
     activeSessionId,
     activePermissionMode,
     activeModelProfileId,
+    activeModelSelection,
     turns,
     events,
     artifactsByTurn,

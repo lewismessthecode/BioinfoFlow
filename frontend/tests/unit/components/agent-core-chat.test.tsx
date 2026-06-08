@@ -140,13 +140,13 @@ vi.mock("@/lib/agent-core/session-storage", () => ({
 
 vi.mock("@/components/bioinfoflow/chat/model-selector", () => ({
   ModelSelector: (props: {
-    selectedModel: string
-    onSelectModel: (model: string) => void
+    selectedModel: { provider: string; model: string } | null
+    onSelectModel: (model: { provider: string; model: string } | null) => void
   }) => {
     modelSelectorPropsMock(props)
     return (
-      <button onClick={() => props.onSelectModel("")}>
-        model-selector:{props.selectedModel || "auto"}
+      <button onClick={() => props.onSelectModel(null)}>
+        model-selector:{props.selectedModel?.model || "auto"}
       </button>
     )
   },
@@ -195,7 +195,7 @@ describe("AgentCoreChat", () => {
       ],
       isLoading: false,
       hasConfiguredProvider: true,
-      selectedModel: "gpt-5.4",
+      selectedModel: { provider: "openai", model: "gpt-5.4" },
       updateSettings: vi.fn(),
       setSelectedModel,
       testProvider: vi.fn(),
@@ -237,6 +237,7 @@ describe("AgentCoreChat", () => {
       activeSessionId: "session-12345678",
       activePermissionMode: "guarded_auto",
       activeModelProfileId: null,
+      activeModelSelection: { provider: "openai", model: "gpt-5.4" },
       turns: [
         {
           id: "turn-1",
@@ -444,6 +445,88 @@ describe("AgentCoreChat", () => {
     expect(screen.getByText(/reference_genome/)).toBeInTheDocument()
   })
 
+  it("shows the turn error message instead of an empty final-text placeholder", () => {
+    useAgentCoreMock.mockReturnValueOnce({
+      sessions: [
+        {
+          id: "session-12345678",
+          project_id: "project-1",
+          workspace_id: "workspace-1",
+          user_id: "user-1",
+          title: "RNA-seq review",
+          role_profile: "bioinformatician",
+          permission_mode: "guarded_auto",
+          automation_mode: "assisted",
+          default_model_profile_id: null,
+          status: "active",
+          metadata: null,
+          created_at: "2026-06-04T00:00:00Z",
+          updated_at: "2026-06-04T00:00:00Z",
+        },
+      ],
+      activeSession: {
+        id: "session-12345678",
+        project_id: "project-1",
+        workspace_id: "workspace-1",
+        user_id: "user-1",
+        title: "RNA-seq review",
+        role_profile: "bioinformatician",
+        permission_mode: "guarded_auto",
+        automation_mode: "assisted",
+        default_model_profile_id: null,
+        status: "active",
+        metadata: null,
+        created_at: "2026-06-04T00:00:00Z",
+        updated_at: "2026-06-04T00:00:00Z",
+      },
+      activeSessionId: "session-12345678",
+      activePermissionMode: "guarded_auto",
+      activeModelProfileId: null,
+      activeModelSelection: { provider: "openai", model: "gpt-5.4" },
+      turns: [
+        {
+          id: "turn-failed",
+          session_id: "session-12345678",
+          project_id: "project-1",
+          workspace_id: "workspace-1",
+          user_id: "user-1",
+          input_text: "Run alignment",
+          input_parts: null,
+          status: "failed",
+          model_profile_snapshot: null,
+          final_text: null,
+          token_usage: null,
+          error_code: "model_request_failed",
+          error_message: "Provider timed out",
+          created_at: "2026-06-04T00:00:01Z",
+          updated_at: "2026-06-04T00:00:01Z",
+          started_at: "2026-06-04T00:00:01Z",
+          completed_at: "2026-06-04T00:00:02Z",
+        },
+      ],
+      events: [],
+      artifactsByTurn: new Map(),
+      proposedMemories: [],
+      isLoading: false,
+      status: "idle",
+      error: null,
+      sendTurn,
+      setActiveSessionId,
+      updateSessionSettings,
+      approveAction,
+      rejectAction,
+      acceptMemory,
+      rejectMemory,
+    })
+
+    render(<AgentCoreChat projectId="project-1" workspaceEnabled />)
+
+    expect(screen.getByText("Provider timed out")).toBeInTheDocument()
+    expect(
+      screen.queryByText("No final response was recorded for this turn."),
+    ).not.toBeInTheDocument()
+  })
+
   it("dispatches action and memory decisions", () => {
     render(<AgentCoreChat projectId="project-1" workspaceEnabled />)
 
@@ -466,7 +549,9 @@ describe("AgentCoreChat", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Send message" }))
 
-    expect(sendTurn).toHaveBeenCalledWith("Summarize MultiQC")
+    expect(sendTurn).toHaveBeenCalledWith("Summarize MultiQC", {
+      modelSelection: { provider: "openai", model: "gpt-5.4" },
+    })
   })
 
   it("restores the explained permission mode menu and updates AgentCore permission_mode", async () => {
@@ -498,7 +583,7 @@ describe("AgentCoreChat", () => {
 
     await user.click(screen.getAllByText("model-selector:gpt-5.4")[0]!)
 
-    expect(setSelectedModel).toHaveBeenCalledWith("")
+    expect(setSelectedModel).toHaveBeenCalledWith(null)
     expect(modelSelectorPropsMock).toHaveBeenCalled()
   })
 

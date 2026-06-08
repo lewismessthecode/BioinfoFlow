@@ -197,35 +197,35 @@ async def _provider_key_configured(db: AsyncSession) -> bool:
 
 def _check(
     check_id: str,
-    label: str,
     status: str,
-    detail: str,
     *,
     severity: str = "blocking",
-    hint: str | None = None,
+    facts: dict | None = None,
     docs_link: str | None = None,
-    action_label: str | None = None,
-    action_href: str | None = None,
-) -> dict[str, str]:
+    action: dict | None = None,
+) -> dict:
     payload = {
         "id": check_id,
-        "label": label,
         "status": status,
         "severity": severity,
-        "detail": detail,
+        "facts": facts or {},
     }
-    if hint:
-        payload["hint"] = hint
     if docs_link:
         payload["docs_link"] = docs_link
-    if action_label:
-        payload["action_label"] = action_label
-    if action_href:
-        payload["action_href"] = action_href
+    if action:
+        payload["action"] = action
     return payload
 
 
-def _gpu_readiness_check(gpu_status) -> dict[str, str]:
+def _route_action(href: str) -> dict[str, str]:
+    return {"kind": "route", "href": href}
+
+
+def _dialog_action(dialog: str) -> dict[str, str]:
+    return {"kind": "dialog", "dialog": dialog}
+
+
+def _gpu_readiness_check(gpu_status) -> dict:
     available = bool(getattr(gpu_status, "available", False))
     detected = bool(getattr(gpu_status, "detected", available))
     nvidia_smi_found = bool(getattr(gpu_status, "nvidia_smi_found", False))
@@ -240,68 +240,71 @@ def _gpu_readiness_check(gpu_status) -> dict[str, str]:
     recommendation = getattr(gpu_status, "recommendation", None)
     error = getattr(gpu_status, "error", None)
     gpus = list(getattr(gpu_status, "gpus", []) or [])
+    gpu_names = [
+        str(getattr(gpu, "name", "")).strip()
+        for gpu in gpus
+        if str(getattr(gpu, "name", "")).strip()
+    ]
+
+    host_signal = "none"
+    if nvidia_smi_found:
+        host_signal = "nvidia_smi"
+    if docker_nvidia_runtime:
+        host_signal = "nvidia_runtime"
+    if detected or gpu_names:
+        host_signal = "gpu_detected"
 
     if usable_for_gpu_workflows:
-        if parabricks_compatible:
-            detail = "NVIDIA GPU is ready for accelerated workflows"
-            hint = recommendation
-        elif gpus:
-            detail = "NVIDIA GPU is visible and can be routed to GPU workflows"
-            hint = recommendation
         status = "pass"
     elif detected and runtime_visible_to_backend and gpus:
-        gpu_type = getattr(gpus[0], "gpu_type", "GPU")
-        detail = f"{gpu_type} detected on this machine"
-        hint = recommendation
         status = "warn"
     elif detected and runtime_visible_to_backend:
-        detail = "Local GPU detected; CPU workflows can still run"
-        hint = recommendation
         status = "warn"
     elif docker_nvidia_runtime:
-        detail = "NVIDIA runtime is configured, but GPU details are not visible to the backend"
-        hint = (
-            recommendation
-            or "Check nvidia-smi visibility inside the backend process. CPU workflows can still run."
-        )
         status = "warn"
     elif nvidia_smi_found:
-        detail = "NVIDIA tooling is installed, but no GPU details were returned"
-        hint = (
-            recommendation or "Check NVIDIA driver status. CPU workflows can still run."
-        )
         status = "warn"
     elif error and error != "nvidia-smi not found":
-        detail = "GPU detection failed; CPU workflows can still run"
-        hint = recommendation or str(error)
         status = "warn"
     else:
-        detail = "No GPU detected; CPU workflows can still run"
-        hint = (
-            recommendation
-            or "Install NVIDIA drivers/runtime only if this workflow requires GPU acceleration."
-        )
         status = "warn"
 
     return _check(
         "gpu",
-        "GPU",
         status,
-        detail,
         severity="optional",
-        hint=hint,
+        facts={
+            "available": available,
+            "detected": detected,
+            "host_signal": host_signal,
+            "nvidia_smi_found": nvidia_smi_found,
+            "docker_nvidia_runtime": docker_nvidia_runtime,
+            "runtime_visible_to_backend": runtime_visible_to_backend,
+            "backend_visibility": "visible"
+            if runtime_visible_to_backend
+            else "hidden",
+            "usable_for_gpu_workflows": usable_for_gpu_workflows,
+            "workflow_usability": "ready"
+            if usable_for_gpu_workflows
+            else "optional",
+            "parabricks_compatible": parabricks_compatible,
+            "gpu_count": len(gpus),
+            "gpu_names": gpu_names,
+            "recommendation": recommendation,
+            "error": error,
+        },
         docs_link="/docs/operations/runbook",
-        action_label="Open resource monitor",
-        action_href="/scheduler",
+        action=_route_action("/scheduler"),
     )
 
 
-def _next_action(checks: list[dict[str, str]]) -> dict[str, str]:
+def _next_action(checks: list[dict]) -> dict[str, str]:
     for check in checks:
         if check["status"] == "fail" and check["severity"] == "blocking":
+            action = check.get("action") or {}
             return {
-                "label": check.get("action_label") or "Resolve first-run blocker",
-                "href": check.get("action_href") or "/dashboard",
+                "label": "Resolve first-run blocker",
+                "href": action.get("href") or "/dashboard",
             }
     return {
         "label": "Run a workflow",
@@ -331,93 +334,50 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
     checks = [
         _check(
             "backend",
-            "Backend API",
             "pass",
-            "Backend is responding",
             severity="info",
+            facts={"available": True},
             docs_link="/docs/getting-started/docker",
         ),
         _check(
             "provider_key",
-            "AI provider key",
             "pass" if provider_ready else "fail",
-            "At least one AI provider key is configured"
-            if provider_ready
-            else "No AI provider key is configured",
-            hint=None
-            if provider_ready
-            else "Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or another supported provider key.",
+            facts={"configured": provider_ready},
             docs_link="/docs/getting-started/docker",
-            action_label="Add an AI provider key",
-            action_href="/settings",
+            action=_route_action("/settings"),
         ),
         _check(
             "docker",
-            "Docker",
             "pass" if docker_available else "fail",
-            "Docker is available"
-            if docker_available
-            else "Docker is not reachable from the backend",
-            hint=None
-            if docker_available
-            else "Start Docker Desktop or the Docker daemon, then re-run readiness.",
+            facts={"available": docker_available},
             docs_link="/docs/getting-started/docker",
-            action_label="Open image inventory",
-            action_href="/images",
+            action=_route_action("/images"),
         ),
         _check(
             "scheduler",
-            "Scheduler",
             "pass" if scheduler is not None else "fail",
-            "Persistent scheduler is active"
-            if scheduler is not None
-            else "Persistent scheduler is not available",
-            hint=None
-            if scheduler is not None
-            else "Restart the backend and check scheduler startup logs.",
+            facts={"available": scheduler is not None},
             docs_link="/docs/operations/runbook",
-            action_label="Open scheduler",
-            action_href="/scheduler",
+            action=_route_action("/scheduler"),
         ),
         _gpu_readiness_check(gpu_status),
         _check(
             "project",
-            "Project",
             "pass" if (project_count or 0) > 0 else "fail",
-            f"{project_count or 0} project(s) exist"
-            if (project_count or 0) > 0
-            else "No project exists yet",
-            hint=None
-            if (project_count or 0) > 0
-            else "Create a project before launching the first run.",
-            action_label="Create a project",
-            action_href="/dashboard",
+            facts={"count": project_count or 0},
+            action=_dialog_action("create_project"),
         ),
         _check(
             "workflow_registry",
-            "Workflow registry",
             "pass" if (workflow_count or 0) > 0 else "fail",
-            f"{workflow_count or 0} workflow(s) registered"
-            if (workflow_count or 0) > 0
-            else "No workflows are registered yet",
-            hint=None
-            if (workflow_count or 0) > 0
-            else "Register or import a workflow from the workflow hub.",
-            action_label="Open workflow hub",
-            action_href="/workflows?scope=hub",
+            facts={"count": workflow_count or 0},
+            action=_route_action("/workflows?scope=hub"),
         ),
         _check(
             "workflow_binding",
-            "Project workflow binding",
             "pass" if (binding_count or 0) > 0 else "fail",
-            f"{binding_count or 0} project workflow binding(s) exist"
-            if (binding_count or 0) > 0
-            else "No workflow is enabled for a project yet",
-            hint=None
-            if (binding_count or 0) > 0
-            else "Bind a workflow to a project before submitting a run.",
-            action_label="Enable a workflow",
-            action_href="/workflows?scope=hub",
+            facts={"count": binding_count or 0},
+            action=_route_action("/workflows?scope=hub"),
         ),
     ]
 

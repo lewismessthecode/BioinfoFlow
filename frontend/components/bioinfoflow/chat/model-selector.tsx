@@ -15,13 +15,13 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command"
-import type { ProviderModels } from "@/hooks/use-llm-settings"
+import type { ModelSelection, ProviderModels } from "@/hooks/use-llm-settings"
 import { ProviderIcon } from "./provider-icons"
 
 interface ModelSelectorProps {
   models: ProviderModels[]
-  selectedModel: string
-  onSelectModel: (model: string) => void
+  selectedModel: ModelSelection | null
+  onSelectModel: (selection: ModelSelection | null) => void
   disabled?: boolean
   allowAuto?: boolean
 }
@@ -39,7 +39,11 @@ export function ModelSelector({
   // Find the display name for the current selection
   const currentModel = models
     .flatMap((pm) => pm.models.map((m) => ({ ...m, provider: pm.provider })))
-    .find((m) => m.id === selectedModel)
+    .find(
+      (m) =>
+        m.id === selectedModel?.model &&
+        m.provider === selectedModel?.provider,
+    )
 
   const displayLabel = currentModel?.name ?? (allowAuto ? t("auto") : t("noProviders"))
 
@@ -94,17 +98,17 @@ export function ModelSelector({
                 <CommandGroup heading={t("section")}>
                   <CommandItem
                     value={t("auto")}
-                    onSelect={() => {
-                      onSelectModel("")
-                      setOpen(false)
-                    }}
+                      onSelect={() => {
+                        onSelectModel(null)
+                        setOpen(false)
+                      }}
                     className="flex items-center justify-between px-3 py-2"
                   >
                     <div className="flex items-center gap-2.5">
                       <SettingsIcon className="h-3.5 w-3.5 opacity-60" />
                       <span className="text-sm">{t("auto")}</span>
                     </div>
-                    {selectedModel === "" ? (
+                    {selectedModel === null ? (
                       <Check className="h-3.5 w-3.5 text-primary" />
                     ) : null}
                   </CommandItem>
@@ -123,7 +127,10 @@ export function ModelSelector({
                       key={model.id}
                       value={`${providerGroup.provider} ${model.name}`}
                       onSelect={() => {
-                        onSelectModel(model.id)
+                        onSelectModel({
+                          provider: providerGroup.provider,
+                          model: model.id,
+                        })
                         setOpen(false)
                       }}
                       className="flex items-center justify-between px-3 py-2"
@@ -132,7 +139,8 @@ export function ModelSelector({
                         <ProviderIcon provider={providerGroup.provider} size={14} />
                         <span className="text-sm">{model.name}</span>
                       </div>
-                      {selectedModel === model.id && (
+                      {selectedModel?.provider === providerGroup.provider &&
+                      selectedModel?.model === model.id && (
                         <Check className="h-3.5 w-3.5 text-primary" />
                       )}
                     </CommandItem>

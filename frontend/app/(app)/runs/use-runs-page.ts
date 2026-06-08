@@ -28,7 +28,7 @@ export function useRunsPage() {
   const tRuns = useTranslations("runs")
   const tStatus = useTranslations("status")
   const tCommon = useTranslations("common")
-  const { activeProjectId, setActiveProjectId } = useProjectContext()
+  const { activeProjectId, selectWorkspaceProject } = useProjectContext()
   const [runs, setRuns] = useState<Run[]>([])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -58,9 +58,9 @@ export function useRunsPage() {
 
   useEffect(() => {
     if (urlProjectId && urlProjectId !== activeProjectId) {
-      setActiveProjectId(urlProjectId)
+      selectWorkspaceProject(urlProjectId)
     }
-  }, [urlProjectId, activeProjectId, setActiveProjectId])
+  }, [urlProjectId, activeProjectId, selectWorkspaceProject])
 
   useEffect(() => {
     setScope(resolveRunsScope(urlScope, effectiveProjectId))

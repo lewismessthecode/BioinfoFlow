@@ -81,14 +81,15 @@ export type ReadinessCheckStatus = "pass" | "fail" | "warn" | "skip";
 
 export type ReadinessCheck = {
   id: ReadinessCheckId | string;
-  label: string;
   status: ReadinessCheckStatus;
   severity: "blocking" | "optional" | "info";
-  detail: string;
-  hint?: string | null;
+  facts?: Record<string, unknown>;
   docs_link?: string | null;
-  action_label?: string | null;
-  action_href?: string | null;
+  action?: {
+    kind: "route" | "dialog";
+    href?: string | null;
+    dialog?: string | null;
+  } | null;
 };
 
 export type ReadinessStatus = {

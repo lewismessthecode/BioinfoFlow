@@ -51,7 +51,7 @@ describe("ModelSelector", () => {
     render(
       <ModelSelector
         models={models}
-        selectedModel="gpt-4o-mini"
+        selectedModel={{ provider: "openai", model: "gpt-4o-mini" }}
         onSelectModel={vi.fn()}
       />,
     )
@@ -66,7 +66,7 @@ describe("ModelSelector", () => {
     render(
       <ModelSelector
         models={[]}
-        selectedModel=""
+        selectedModel={null}
         onSelectModel={vi.fn()}
       />,
     )

@@ -220,7 +220,7 @@ describe("AgentPage", () => {
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
   })
 
-  it("restores the last used project only on the agent page when projects already exist", async () => {
+  it("leaves project restoration to the workspace shell instead of restoring inside AgentPage", async () => {
     localStorage.setItem("bioinfoflow:last-used-project", "project-9")
     workspaceShellMock.mockReturnValue({
       projects: [
@@ -238,8 +238,6 @@ describe("AgentPage", () => {
       },
     })
 
-    await waitFor(() => {
-      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-9|workspace:on")
-    })
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:off")
   })
 })

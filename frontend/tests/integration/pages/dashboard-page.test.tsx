@@ -271,27 +271,35 @@ describe("DashboardPage", () => {
           data: {
             severity: "blocked",
             next_action: {
-              label: "Add an AI provider key",
+              kind: "route",
               href: "/settings",
             },
             checks: [
               {
                 id: "provider_key",
-                label: "AI provider key",
                 status: "fail",
                 severity: "blocking",
-                detail: "No provider key configured",
-                hint: "Set one provider key before first run.",
-                action_label: "Add an AI provider key",
-                action_href: "/settings",
+                facts: {
+                  configured: false,
+                },
+                action: {
+                  kind: "route",
+                  href: "/settings",
+                },
               },
               {
                 id: "gpu",
-                label: "GPU",
                 status: "warn",
                 severity: "optional",
-                detail: "No GPU detected; CPU workflows can still run",
-                hint: "Install GPU drivers only when a workflow needs acceleration.",
+                facts: {
+                  nvidia_smi_found: false,
+                  docker_nvidia_runtime: false,
+                  runtime_visible_to_backend: false,
+                  usable_for_gpu_workflows: false,
+                  gpu_count: 0,
+                  gpu_names: [],
+                  error: "nvidia-smi not found",
+                },
               },
             ],
             summary: {
@@ -323,11 +331,12 @@ describe("DashboardPage", () => {
     expect(screen.getByText("dashboard.readiness.progress:0:1")).toBeInTheDocument()
     expect(screen.getByText("dashboard.readiness.blockers")).toBeInTheDocument()
     expect(screen.getByText("dashboard.readiness.optional")).toBeInTheDocument()
-    expect(screen.getByText("AI provider key")).toBeInTheDocument()
-    expect(screen.getByText("GPU")).toBeInTheDocument()
-    expect(screen.getAllByRole("link", { name: "Add an AI provider key" })[0]).toHaveAttribute(
-      "href",
-      "/settings",
-    )
+    expect(screen.getByText("dashboard.readiness.checks.provider_key.label")).toBeInTheDocument()
+    expect(screen.getByText("dashboard.readiness.checks.gpu.label")).toBeInTheDocument()
+    expect(
+      screen.getAllByRole("link", {
+        name: "dashboard.readiness.checks.provider_key.action",
+      })[0],
+    ).toHaveAttribute("href", "/settings")
   })
 })

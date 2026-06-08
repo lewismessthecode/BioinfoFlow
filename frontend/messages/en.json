@@ -356,6 +356,74 @@
         "fail": "Fix",
         "warn": "Warn",
         "skip": "Skip"
+      },
+      "checks": {
+        "backend": {
+          "label": "Backend API",
+          "detail": {
+            "pass": "The backend is responding."
+          }
+        },
+        "provider_key": {
+          "label": "AI Provider Key",
+          "action": "Add provider key",
+          "detail": {
+            "pass": "At least one provider key is configured.",
+            "fail": "Add any supported provider key before starting the first conversation or run."
+          }
+        },
+        "docker": {
+          "label": "Docker",
+          "action": "Open images",
+          "detail": {
+            "pass": "Docker is reachable from the backend.",
+            "fail": "The backend cannot reach Docker. Start Docker Desktop or the Docker daemon, then refresh."
+          }
+        },
+        "scheduler": {
+          "label": "Scheduler",
+          "action": "Open scheduler",
+          "detail": {
+            "pass": "The persistent scheduler is active.",
+            "fail": "The scheduler is unavailable. Restart the backend and inspect scheduler startup logs."
+          }
+        },
+        "gpu": {
+          "label": "GPU",
+          "action": "Open resource monitor",
+          "detail": {
+            "ready": "GPU acceleration is available for workflows now. Visible devices: {names}",
+            "visible": "The backend can see {count} GPU(s): {names}. GPU remains optional until a workflow needs it.",
+            "runtimeHidden": "The host exposes an NVIDIA container runtime, but this Bioinfoflow deployment has not surfaced GPU devices into the backend container yet. Enable the GPU compose override on GPU hosts. {recommendation}",
+            "hostOnly": "NVIDIA tooling exists on the machine, but the backend container still cannot inspect GPU devices. Bioinfoflow only auto-detects GPUs that are already exposed into the container. {recommendation}",
+            "error": "GPU detection returned an error, but CPU workflows still work. Details: {error}",
+            "cpuOnly": "No GPU is visible to the backend. CPU workflows are still fully supported, and GPU remains optional."
+          }
+        },
+        "project": {
+          "label": "Project",
+          "action": "Create project",
+          "detail": {
+            "pass": "{count} project(s) already exist.",
+            "fail": "Create at least one project so the assistant and runs can attach to a real workspace."
+          }
+        },
+        "workflow_registry": {
+          "label": "Workflow Registry",
+          "action": "Open workflow hub",
+          "detail": {
+            "pass": "{count} workflow(s) are already registered.",
+            "fail": "No workflows are registered yet. Import or register one from the workflow hub."
+          }
+        },
+        "workflow_binding": {
+          "label": "Workflow Binding",
+          "action": "Enable workflow",
+          "detail": {
+            "pass": "{count} workflow binding(s) already exist.",
+            "fail": "No workflow is enabled for a project yet. Bind a workflow to a project before the first run."
+          }
+        }
       }
     },
     "schedulerCard": {

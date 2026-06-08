@@ -9,6 +9,7 @@ import type {
   AgentCoreTurn,
   AgentPermissionMode,
   AgentAutomationMode,
+  AgentModelSelection,
 } from "@/lib/agent-core/types"
 
 export type CreateAgentSessionInput = {
@@ -18,6 +19,7 @@ export type CreateAgentSessionInput = {
   permissionMode?: AgentPermissionMode
   automationMode?: AgentAutomationMode
   defaultModelProfileId?: string
+  modelSelection?: AgentModelSelection | null
   metadata?: Record<string, unknown>
 }
 
@@ -26,6 +28,7 @@ export type CreateAgentTurnInput = {
   inputText: string
   inputParts?: Array<Record<string, unknown>>
   modelProfileId?: string
+  modelSelection?: AgentModelSelection | null
   metadata?: Record<string, unknown>
 }
 
@@ -35,6 +38,7 @@ export type UpdateAgentSessionInput = {
   permissionMode?: AgentPermissionMode
   automationMode?: AgentAutomationMode
   defaultModelProfileId?: string | null
+  modelSelection?: AgentModelSelection | null
   status?: AgentCoreSession["status"]
   metadata?: Record<string, unknown> | null
 }
@@ -56,6 +60,7 @@ export const createAgentSession = async (input: CreateAgentSessionInput) => {
       permission_mode: input.permissionMode,
       automation_mode: input.automationMode,
       default_model_profile_id: input.defaultModelProfileId,
+      model_selection: input.modelSelection,
       metadata: input.metadata,
     }),
   })
@@ -74,6 +79,7 @@ export const updateAgentSession = async (
       permission_mode: updates.permissionMode,
       automation_mode: updates.automationMode,
       default_model_profile_id: updates.defaultModelProfileId,
+      model_selection: updates.modelSelection,
       status: updates.status,
       metadata: updates.metadata,
     }),
@@ -94,6 +100,7 @@ export const createAgentTurn = async (input: CreateAgentTurnInput) => {
         input_text: input.inputText,
         input_parts: input.inputParts,
         model_profile_id: input.modelProfileId,
+        model_selection: input.modelSelection,
         metadata: input.metadata,
       }),
     },

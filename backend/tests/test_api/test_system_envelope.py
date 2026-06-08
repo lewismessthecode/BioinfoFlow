@@ -156,9 +156,10 @@ async def test_readiness_describes_visible_nvidia_runtime_without_claiming_no_gp
     gpu_check = checks["gpu"]
 
     assert gpu_check["status"] == "warn"
-    assert "No GPU detected" not in gpu_check["detail"]
-    assert "NVIDIA" in gpu_check["detail"]
-    assert "nvidia-smi" in gpu_check["hint"]
+    assert gpu_check["facts"]["docker_nvidia_runtime"] is True
+    assert gpu_check["facts"]["runtime_visible_to_backend"] is False
+    assert gpu_check["facts"]["host_signal"] == "nvidia_runtime"
+    assert "nvidia-smi" in gpu_check["facts"]["recommendation"]
 
 
 @pytest.mark.asyncio

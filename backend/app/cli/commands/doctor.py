@@ -79,15 +79,14 @@ async def _run_checks(cli_ctx: CliContext) -> dict[str, Any]:
             for check in readiness_checks:
                 if not isinstance(check, dict):
                     continue
-                check_id = str(check.get("id") or check.get("label") or "check")
+                check_id = str(check.get("id") or "check")
                 status = _readiness_status(str(check.get("status") or "fail"))
+                detail, hint = _readiness_detail(check_id, check)
                 result = _result(
                     status,
-                    str(check.get("detail") or ""),
-                    hint=check.get("hint"),
+                    detail,
+                    hint=hint,
                 )
-                if check.get("label"):
-                    result["label"] = str(check["label"])
                 if check.get("docs_link"):
                     result["docs_link"] = str(check["docs_link"])
                 results[check_id] = result
@@ -212,6 +211,69 @@ def _result(status: str, detail: str, *, hint: str | None = None) -> dict[str, A
     if hint:
         result["hint"] = hint
     return result
+
+
+def _readiness_detail(check_id: str, check: dict[str, Any]) -> tuple[str, str | None]:
+    facts = check.get("facts") if isinstance(check.get("facts"), dict) else {}
+
+    if check_id == "backend":
+        return "Backend is responding", None
+    if check_id == "provider_key":
+        if facts.get("configured"):
+            return "At least one AI provider key is configured", None
+        return (
+            "No AI provider key is configured",
+            "Add a supported provider key from Settings before the first run.",
+        )
+    if check_id == "docker":
+        if facts.get("available"):
+            return "Docker is available", None
+        return (
+            "Docker is not reachable from the backend",
+            "Start Docker Desktop or the Docker daemon, then re-run doctor.",
+        )
+    if check_id == "scheduler":
+        if facts.get("available"):
+            return "Persistent scheduler is active", None
+        return (
+            "Persistent scheduler is unavailable",
+            "Restart the backend and inspect scheduler startup logs.",
+        )
+    if check_id == "project":
+        count = int(facts.get("count") or 0)
+        if count > 0:
+            return f"{count} project(s) exist", None
+        return "No project exists yet", "Create a project before the first run."
+    if check_id == "workflow_registry":
+        count = int(facts.get("count") or 0)
+        if count > 0:
+            return f"{count} workflow(s) registered", None
+        return "No workflows are registered yet", "Import or register a workflow."
+    if check_id == "workflow_binding":
+        count = int(facts.get("count") or 0)
+        if count > 0:
+            return f"{count} project workflow binding(s) exist", None
+        return (
+            "No workflow is enabled for a project yet",
+            "Bind a workflow to a project before submitting a run.",
+        )
+    if check_id == "gpu":
+        if facts.get("usable_for_gpu_workflows"):
+            gpu_names = ", ".join(facts.get("gpu_names") or [])
+            return f"GPU workflows are ready ({gpu_names or 'GPU visible'})", None
+        if facts.get("runtime_visible_to_backend") and int(facts.get("gpu_count") or 0) > 0:
+            gpu_names = ", ".join(facts.get("gpu_names") or [])
+            return (
+                f"GPU visible to backend ({gpu_names or 'optional capability'})",
+                "GPU is optional unless your workflow requires acceleration.",
+            )
+        if facts.get("docker_nvidia_runtime"):
+            return (
+                "NVIDIA runtime detected on host, but GPU is not exposed to backend",
+                str(facts.get("recommendation") or "Enable the GPU compose override."),
+            )
+        return "No GPU is visible to the backend", "CPU workflows can still run normally."
+    return "", None
 
 
 def _binary_hint(binary: str) -> str:

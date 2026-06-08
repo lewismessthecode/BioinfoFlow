@@ -9,7 +9,6 @@ import {
   CircleHelp,
   ClipboardList,
   Copy,
-  Cpu,
   FileText,
   FlaskConical,
   MessageCircle,
@@ -46,6 +45,7 @@ import type {
   AgentCoreArtifact,
   AgentCoreEvent,
   AgentCoreMemory,
+  AgentModelSelection,
   AgentCoreTurn,
   AgentPermissionMode,
 } from "@/lib/agent-core"
@@ -88,7 +88,6 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
       setSelectedModel,
     } = useLlmSettings()
     const {
-      activeSession,
       turns,
       events,
       artifactsByTurn,
@@ -98,6 +97,7 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
       error,
       sendTurn,
       setActiveSessionId,
+      activeModelSelection,
       activePermissionMode,
       updateSessionSettings,
       approveAction,
@@ -132,21 +132,10 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
         selectedModel={selectedModel}
         isModelLoading={settingsLoading}
         permissionMode={activePermissionMode}
-        onSelectedModelChange={(model) => {
-          void setSelectedModel(model)
-          const currentMetadata =
-            activeSession?.metadata && typeof activeSession.metadata === "object"
-              ? activeSession.metadata
-              : {}
-          const nextMetadata = { ...currentMetadata }
-          if (model) {
-            nextMetadata.selected_model = model
-          } else {
-            delete nextMetadata.selected_model
-          }
+        onSelectedModelChange={(modelSelection) => {
+          void setSelectedModel(modelSelection)
           void updateSessionSettings({
-            metadata:
-              Object.keys(nextMetadata).length > 0 ? nextMetadata : null,
+            modelSelection,
           })
         }}
         onPermissionModeChange={(permissionMode) => {
@@ -158,7 +147,9 @@ export const AgentCoreChat = forwardRef<AgentCoreChatHandle, AgentCoreChatProps>
     const handleSend = () => {
       const text = input.trim()
       if (!text) return
-      void sendTurn(text)
+      void sendTurn(text, {
+        modelSelection: selectedModel ?? activeModelSelection ?? null,
+      })
       setInput("")
     }
 
@@ -334,24 +325,21 @@ function AgentComposerControls({
 }: {
   disabled: boolean
   models: ReturnType<typeof useLlmSettings>["models"]
-  selectedModel: string
+  selectedModel: AgentModelSelection | null
   permissionMode: AgentPermissionMode
   isModelLoading: boolean
-  onSelectedModelChange: (model: string) => void
+  onSelectedModelChange: (model: AgentModelSelection | null) => void
   onPermissionModeChange: (mode: AgentPermissionMode) => void | Promise<unknown>
 }) {
   return (
     <div className="flex items-center gap-1">
-      <div className="flex items-center gap-1 rounded-full border border-border/55 bg-white/72 p-1 shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur dark:bg-white/[0.04]">
-        <Cpu className="ml-2 h-3.5 w-3.5 text-muted-foreground/80" aria-hidden />
-        <ModelSelector
-          models={models}
-          selectedModel={selectedModel}
-          onSelectModel={onSelectedModelChange}
-          disabled={disabled || isModelLoading}
-          allowAuto
-        />
-      </div>
+      <ModelSelector
+        models={models}
+        selectedModel={selectedModel}
+        onSelectModel={onSelectedModelChange}
+        disabled={disabled || isModelLoading}
+        allowAuto
+      />
       <AgentPermissionModeSelector
         disabled={disabled}
         value={permissionMode}

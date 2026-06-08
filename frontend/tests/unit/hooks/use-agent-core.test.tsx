@@ -545,7 +545,7 @@ describe("useAgentCore", () => {
 
     await act(async () => {
       await result.current.updateSessionSettings({
-        metadata: { selected_model: "gpt-5.4" },
+        modelSelection: { provider: "openai", model: "gpt-5.4" },
       })
     })
     await act(async () => {
@@ -556,7 +556,7 @@ describe("useAgentCore", () => {
       ([path, options]) => path === "/agent/sessions" && options?.method === "POST",
     )
     expect(JSON.parse(createSessionCall?.[1]?.body as string)).toMatchObject({
-      metadata: { selected_model: "gpt-5.4" },
+      model_selection: { provider: "openai", model: "gpt-5.4" },
     })
     expect(onActiveSessionIdChange).toHaveBeenCalledWith("session-created")
   })

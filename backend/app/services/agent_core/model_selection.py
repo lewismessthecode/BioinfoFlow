@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from typing import Any
+
+from app.services.llm.providers import PROVIDER_REGISTRY
+from app.services.llm.providers import infer_provider_from_model
+
+
+def normalize_model_selection(
+    selection: dict[str, Any] | None,
+) -> dict[str, str] | None:
+    if not isinstance(selection, dict):
+        return None
+
+    provider = str(selection.get("provider") or "").strip().lower()
+    model = str(selection.get("model") or "").strip()
+    if not model:
+        return None
+    if provider == "auto":
+        provider = ""
+    if provider and provider not in PROVIDER_REGISTRY:
+        provider = ""
+    if not provider:
+        provider = infer_provider_from_model(model)
+    return {"provider": provider, "model": model}
+
+
+def session_model_selection_from_metadata(
+    metadata: dict[str, Any] | None,
+) -> dict[str, str] | None:
+    if not isinstance(metadata, dict):
+        return None
+
+    normalized = normalize_model_selection(metadata.get("model_selection"))
+    if normalized:
+        return normalized
+
+    legacy_model = str(metadata.get("selected_model") or "").strip()
+    if not legacy_model:
+        return None
+
+    legacy_provider = str(metadata.get("selected_provider") or "").strip().lower()
+    return normalize_model_selection(
+        {"provider": legacy_provider, "model": legacy_model}
+    )
+
+
+def session_metadata_with_model_selection(
+    metadata: dict[str, Any] | None,
+    model_selection: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    next_metadata = dict(metadata or {})
+    normalized = normalize_model_selection(model_selection)
+    if normalized:
+        next_metadata["model_selection"] = normalized
+        next_metadata.pop("selected_model", None)
+        next_metadata.pop("selected_provider", None)
+        return next_metadata
+
+    next_metadata.pop("model_selection", None)
+    next_metadata.pop("selected_model", None)
+    next_metadata.pop("selected_provider", None)
+    return next_metadata or None
