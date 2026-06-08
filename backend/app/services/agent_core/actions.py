@@ -26,6 +26,7 @@ class AgentActionService:
         kind: str,
         name: str,
         input: dict | None = None,
+        normalized_input: dict | None = None,
         requested_risk: RiskLevel | None = None,
         permission_mode: str = "guarded_auto",
         automation_mode: str = "assisted",
@@ -34,6 +35,8 @@ class AgentActionService:
         write_scope: list | None = None,
         rollback_hint: str | None = None,
         artifact_policy: dict | None = None,
+        tool_call_id: str | None = None,
+        exposure_policy: dict | None = None,
     ):
         turn = await self.turn_repo.get(turn_id)
         if turn is None:
@@ -57,9 +60,12 @@ class AgentActionService:
             turn_id=str(turn.id),
             kind=kind,
             name=name,
+            tool_call_id=tool_call_id,
             input=action_input,
+            normalized_input=normalized_input,
             input_preview=input_preview,
             redacted_input=action_input,
+            exposure_policy=exposure_policy,
             risk_level=risk.level,
             risk_reasons=risk.reasons,
             read_scope=read_scope,

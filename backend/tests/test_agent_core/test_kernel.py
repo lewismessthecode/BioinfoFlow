@@ -48,12 +48,13 @@ async def test_agent_core_no_tool_runtime_writes_ordered_events(db_session, monk
         user_id="dev",
         title="Kernel",
     )
-    turn = await service.create_turn(
+    turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
         input_text="Summarize this run.",
     )
+    turn = await service.runtime.run_turn(str(turn.id))
 
     assert turn.status == "completed"
     assert turn.final_text
@@ -105,12 +106,13 @@ async def test_agent_core_no_tool_runtime_persists_visible_failure(db_session, m
         user_id="dev",
         title="Kernel",
     )
-    turn = await service.create_turn(
+    turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
         input_text="Summarize this run.",
     )
+    turn = await service.runtime.run_turn(str(turn.id))
 
     assert turn.status == "failed"
     assert turn.final_text is None

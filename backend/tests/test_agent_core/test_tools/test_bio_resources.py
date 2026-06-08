@@ -76,7 +76,7 @@ async def _bio_context(db_session) -> tuple[AgentToolDispatcher, AgentToolContex
         user_id="dev",
         title="Bio tools",
     )
-    turn = await core.create_turn(
+    turn = await core.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",

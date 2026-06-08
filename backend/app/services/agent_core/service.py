@@ -17,12 +17,11 @@ from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.model_selection import session_metadata_with_model_selection
+from app.services.agent_core.runner import enqueue_turn_resume, enqueue_turn_run
 from app.services.agent_core.runtime import AgentCoreRuntime
-from app.services.agent_core.tools import (
-    AgentToolContext,
-    AgentToolDispatcher,
-    build_default_tool_registry,
-)
+from app.services.agent_core.context import default_system_prompt_snapshot
+from app.services.agent_core.tools.toolsets import DEFAULT_TOOLSET_POLICY
+from app.services.agent_core.transcript import AgentTranscriptStore, text_part
 from app.utils.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
 
 
@@ -52,14 +51,15 @@ class AgentCoreService:
         model_selection: dict | None = None,
         metadata: dict | None = None,
     ):
-        project = await self.project_repo.get(project_id)
-        if project is None:
-            raise NotFoundError(f"Project not found: {project_id}")
-        if str(project.workspace_id) != str(workspace_id):
-            raise PermissionDeniedError("Project is not in the current workspace")
+        if project_id is not None:
+            project = await self.project_repo.get(project_id)
+            if project is None:
+                raise NotFoundError(f"Project not found: {project_id}")
+            if str(project.workspace_id) != str(workspace_id):
+                raise PermissionDeniedError("Project is not in the current workspace")
 
         return await self.session_repo.create(
-            project_id=str(project.id),
+            project_id=str(project_id) if project_id else None,
             workspace_id=workspace_id,
             user_id=user_id,
             title=title,
@@ -67,6 +67,12 @@ class AgentCoreService:
             permission_mode=permission_mode,
             automation_mode=automation_mode,
             default_model_profile_id=default_model_profile_id,
+            runtime_mode="api",
+            prompt_snapshot=default_system_prompt_snapshot().as_dict(),
+            toolset_policy=DEFAULT_TOOLSET_POLICY,
+            context_policy={"memory": "accepted_project_scope", "transcript": "canonical"},
+            compression_state={"enabled": False},
+            lineage={"parent_session_id": None},
             session_metadata=session_metadata_with_model_selection(
                 metadata, model_selection
             ),
@@ -148,7 +154,7 @@ class AgentCoreService:
         )
         await self.session_repo.update_all(session, status=AgentSessionStatus.DELETED)
 
-    async def create_turn(
+    async def create_turn_record(
         self,
         *,
         session_id: str,
@@ -167,7 +173,7 @@ class AgentCoreService:
         )
         turn = await self.turn_repo.create(
             session_id=str(session.id),
-            project_id=str(session.project_id),
+            project_id=str(session.project_id) if session.project_id else None,
             workspace_id=str(session.workspace_id),
             user_id=user_id,
             input_text=input_text,
@@ -178,6 +184,15 @@ class AgentCoreService:
                 "requested_model_selection": model_selection,
                 "metadata": metadata or {},
             },
+            budget_snapshot={"max_iterations": 0, "used_iterations": 0},
+            loop_state={"state": "queued"},
+        )
+        await AgentTranscriptStore(self.db).append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="user",
+            parts=input_parts or [text_part(input_text)],
+            metadata={"turn_id": str(turn.id)},
         )
         await self.ledger.append(
             session_id=str(session.id),
@@ -185,7 +200,32 @@ class AgentCoreService:
             type=AgentEventType.TURN_CREATED,
             payload={"input_text": input_text},
         )
-        return await self.runtime.run_no_tool_turn(str(turn.id)) or turn
+        return turn
+
+    async def create_turn(
+        self,
+        *,
+        session_id: str,
+        workspace_id: str,
+        user_id: str,
+        input_text: str,
+        input_parts: list[dict] | None = None,
+        model_profile_id: str | None = None,
+        model_selection: dict | None = None,
+        metadata: dict | None = None,
+    ):
+        turn = await self.create_turn_record(
+            session_id=session_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            input_text=input_text,
+            input_parts=input_parts,
+            model_profile_id=model_profile_id,
+            model_selection=model_selection,
+            metadata=metadata,
+        )
+        enqueue_turn_run(str(turn.id))
+        return turn
 
     async def list_turns(
         self,
@@ -244,6 +284,35 @@ class AgentCoreService:
         )
         return updated
 
+    async def interrupt_turn(
+        self,
+        *,
+        turn_id: str,
+        workspace_id: str,
+        user_id: str,
+    ):
+        turn = await self.require_turn(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        now = datetime.now(timezone.utc)
+        updated = await self.turn_repo.update_all(
+            turn,
+            status=AgentTurnStatus.CANCELLED,
+            interrupt_requested_at=now,
+            termination_reason="interrupted",
+            completed_at=now,
+            loop_state={"termination_reason": "interrupted"},
+        )
+        await self.ledger.append(
+            session_id=str(updated.session_id),
+            turn_id=str(updated.id),
+            type=AgentEventType.TURN_INTERRUPTED,
+            payload={"termination_reason": "interrupted"},
+        )
+        return updated
+
     async def list_events_for_turn(
         self,
         *,
@@ -290,7 +359,7 @@ class AgentCoreService:
         action = await self.action_repo.get(action_id)
         if action is None:
             raise NotFoundError(f"Agent action not found: {action_id}")
-        turn = await self.require_turn(
+        await self.require_turn(
             turn_id=str(action.turn_id),
             workspace_id=workspace_id,
             user_id=user_id,
@@ -312,6 +381,7 @@ class AgentCoreService:
         updated = await self.action_repo.update_all(
             action,
             input=next_input,
+            normalized_input=next_input,
             redacted_input=next_input,
             permission_decision={
                 "decision": decision,
@@ -326,25 +396,27 @@ class AgentCoreService:
             type=AgentEventType.ACTION_DECISION_RECORDED,
             payload={"action_id": str(action.id), "decision": decision, "note": note},
         )
-        if decision in {"approve", "modify"} and updated.kind == "tool":
-            result = await AgentToolDispatcher(
-                self.db,
-                build_default_tool_registry(),
-            ).resume_action(
-                action_id=str(updated.id),
-                context=AgentToolContext(
-                    db=self.db,
-                    workspace_id=workspace_id,
-                    user_id=user_id,
-                    session_id=str(updated.session_id),
-                    turn_id=str(turn.id),
-                ),
-            )
-            resumed = await self.action_repo.get(result.action_id)
-            if resumed is None:
-                raise NotFoundError(f"Agent action not found after resume: {result.action_id}")
-            return resumed
+        if decision in {"approve", "modify", "reject"} and updated.kind == "tool":
+            enqueue_turn_resume(str(updated.id))
         return updated
+
+    async def resume_action(
+        self,
+        *,
+        action_id: str,
+        workspace_id: str,
+        user_id: str,
+    ):
+        action = await self.action_repo.get(action_id)
+        if action is None:
+            raise NotFoundError(f"Agent action not found: {action_id}")
+        await self.require_turn(
+            turn_id=str(action.turn_id),
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        enqueue_turn_resume(str(action.id))
+        return action
 
     async def list_artifacts_for_session(
         self,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -47,12 +47,18 @@ class AgentMemoryStatus:
     DISABLED = "disabled"
 
 
+class AgentMessageStatus:
+    DRAFT = "draft"
+    COMMITTED = "committed"
+    SUPERSEDED = "superseded"
+
+
 class AgentSession(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "agent_sessions"
 
-    project_id: Mapped[str] = mapped_column(
+    project_id: Mapped[str | None] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     workspace_id: Mapped[str] = mapped_column(
@@ -70,6 +76,12 @@ class AgentSession(Base, UUIDMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
+    runtime_mode: Mapped[str] = mapped_column(String(40), nullable=False, default="api")
+    prompt_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    toolset_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    context_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    compression_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    lineage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
@@ -83,6 +95,11 @@ class AgentSession(Base, UUIDMixin, TimestampMixin):
     default_model_profile = relationship("LlmModelProfile")
     turns = relationship(
         "AgentTurn",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+    messages = relationship(
+        "AgentMessage",
         back_populates="session",
         cascade="all, delete-orphan",
     )
@@ -111,9 +128,9 @@ class AgentTurn(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    project_id: Mapped[str] = mapped_column(
+    project_id: Mapped[str | None] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     workspace_id: Mapped[str] = mapped_column(
@@ -133,6 +150,14 @@ class AgentTurn(Base, UUIDMixin, TimestampMixin):
     model_profile_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     final_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    termination_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    loop_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    iteration_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    budget_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    interrupt_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -156,12 +181,45 @@ class AgentTurn(Base, UUIDMixin, TimestampMixin):
         back_populates="turn",
         cascade="all, delete-orphan",
     )
+    messages = relationship(
+        "AgentMessage",
+        back_populates="turn",
+        cascade="all, delete-orphan",
+    )
+
+
+class AgentMessage(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "agent_messages"
+
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    turn_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_turns.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    content_parts: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    message_metadata: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default=AgentMessageStatus.COMMITTED,
+        index=True,
+    )
+    ordering_index: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+
+    session = relationship("AgentSession", back_populates="messages")
+    turn = relationship("AgentTurn", back_populates="messages")
 
 
 class AgentEvent(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "agent_events"
     __table_args__ = (
-        UniqueConstraint("turn_id", "seq", name="uq_agent_events_turn_seq"),
+        UniqueConstraint("session_id", "seq", name="uq_agent_events_session_seq"),
     )
 
     session_id: Mapped[str] = mapped_column(
@@ -169,9 +227,9 @@ class AgentEvent(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    turn_id: Mapped[str] = mapped_column(
+    turn_id: Mapped[str | None] = mapped_column(
         ForeignKey("agent_turns.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -209,9 +267,12 @@ class AgentAction(Base, UUIDMixin, TimestampMixin):
     )
     kind: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    tool_call_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     input: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    normalized_input: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     input_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
     redacted_input: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    exposure_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     risk_level: Mapped[str] = mapped_column(String(30), nullable=False, default="read")
     risk_reasons: Mapped[list | None] = mapped_column(JSON, nullable=True)
     read_scope: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -225,6 +286,9 @@ class AgentAction(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    output_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    output_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requires_resume: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     audit_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     rollback_hint: Mapped[str | None] = mapped_column(Text, nullable=True)

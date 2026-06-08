@@ -28,7 +28,7 @@ async def _create_completed_turn(db_session) -> tuple[AgentCoreService, str]:
         user_id="dev",
         title="Actions",
     )
-    turn = await core.create_turn(
+    turn = await core.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",

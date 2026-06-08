@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 
@@ -13,6 +15,17 @@ async def _create_project(async_client) -> str:
     )
     assert resp.status_code == 201
     return resp.json()["data"]["id"]
+
+
+async def _wait_for_turn(async_client, turn_id: str) -> dict:
+    for _ in range(40):
+        resp = await async_client.get(f"/api/v1/agent/turns/{turn_id}")
+        assert resp.status_code == 200
+        turn = resp.json()["data"]
+        if turn["status"] in {"completed", "failed", "cancelled", "waiting_approval"}:
+            return turn
+        await asyncio.sleep(0.05)
+    raise AssertionError("agent turn did not reach a terminal or waiting state")
 
 
 @pytest.mark.asyncio
@@ -82,6 +95,9 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
     assert create_turn.status_code == 202
     turn = create_turn.json()["data"]
     assert turn["session_id"] == session["id"]
+    assert turn["status"] == "queued"
+
+    turn = await _wait_for_turn(async_client, turn["id"])
     assert turn["status"] == "completed"
     assert turn["final_text"] == "Mocked model reply."
     assert turn["model_selection"] == {
@@ -111,12 +127,18 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
         "turn.completed",
     ]
 
-    stream = await async_client.get(
-        f"/api/v1/agent/sessions/{session['id']}/stream"
-    )
-    assert stream.status_code == 200
-    assert "event: turn.created" in stream.text
-    assert "event: ready" in stream.text
+    stream_lines: list[str] = []
+    async with async_client.stream(
+        "GET",
+        f"/api/v1/agent/sessions/{session['id']}/stream?follow=false",
+    ) as stream:
+        assert stream.status_code == 200
+        async for line in stream.aiter_lines():
+            stream_lines.append(line)
+            if line == "event: ready":
+                break
+    assert "event: turn.created" in stream_lines
+    assert "event: ready" in stream_lines
 
     artifacts = await async_client.get(
         f"/api/v1/agent/sessions/{session['id']}/artifacts"

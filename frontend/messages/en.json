@@ -2159,6 +2159,27 @@
     "acceptMemory": "Accept memory",
     "rejectMemory": "Reject memory"
   },
+  "agentRuntime": {
+    "title": "Agent Harness",
+    "draftSession": "Draft session",
+    "projectSession": "Project session",
+    "workspaceSession": "Workspace session",
+    "emptyTitle": "Start from the runtime",
+    "emptyDescription": "Ask for a workflow check, run diagnosis, project setup, or a controlled platform action.",
+    "pendingResponse": "Waiting for the loop to finish...",
+    "composerPlaceholder": "Describe the next harness turn...",
+    "toolActivity": "Tool activity",
+    "noToolActivity": "No tool calls yet.",
+    "approvals": "Approvals",
+    "noApprovals": "No pending approvals.",
+    "approve": "Approve",
+    "reject": "Reject",
+    "artifacts": "Artifacts",
+    "artifact": "Artifact",
+    "noArtifacts": "No artifacts yet.",
+    "memory": "Memory",
+    "noMemory": "No memory events yet."
+  },
   "agent": {
     "disclaimer": "Bioinfoflow Agents can make mistakes. Verify important results.",
     "selectProjectHint": "Choose a project from the sidebar to start chatting",
