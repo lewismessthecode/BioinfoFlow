@@ -16,7 +16,26 @@ async def _create_project(async_client) -> str:
 
 
 @pytest.mark.asyncio
-async def test_agent_core_session_turn_event_and_artifact_contract(async_client):
+async def test_agent_core_session_turn_event_and_artifact_contract(async_client, monkeypatch):
+    async def fake_completion(*args, **kwargs):
+        class FakeUsage:
+            def model_dump(self):
+                return {"prompt_tokens": 6, "completion_tokens": 10, "total_tokens": 16}
+
+        class FakeMessage:
+            content = "Mocked model reply."
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = FakeUsage()
+
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+
     project_id = await _create_project(async_client)
 
     create_session = await async_client.post(
@@ -26,13 +45,27 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client)
             "title": "WGS triage",
             "permission_mode": "guarded_auto",
             "automation_mode": "assisted",
+            "model_selection": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-6",
+            },
             "metadata": {"batch": "b001"},
         },
     )
     assert create_session.status_code == 201
     session = create_session.json()["data"]
     assert session["title"] == "WGS triage"
-    assert session["metadata"] == {"batch": "b001"}
+    assert session["metadata"] == {
+        "batch": "b001",
+        "model_selection": {
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-6",
+        },
+    }
+    assert session["model_selection"] == {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+    }
     assert session["permission_mode"] == "guarded_auto"
 
     list_sessions = await async_client.get("/api/v1/agent/sessions")
@@ -50,7 +83,16 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client)
     turn = create_turn.json()["data"]
     assert turn["session_id"] == session["id"]
     assert turn["status"] == "completed"
-    assert "AgentCore session is active" in turn["final_text"]
+    assert turn["final_text"] == "Mocked model reply."
+    assert turn["model_selection"] == {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+    }
+    assert turn["model_profile_snapshot"]["resolved_model_selection"] == {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+    }
+    assert turn["model_profile_snapshot"]["resolved_model_source"] == "session"
 
     list_turns = await async_client.get(
         f"/api/v1/agent/sessions/{session['id']}/turns"
@@ -63,6 +105,7 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client)
     assert [item["type"] for item in events.json()["data"]] == [
         "turn.created",
         "turn.started",
+        "model.selected",
         "assistant.thinking.summary",
         "assistant.text.completed",
         "turn.completed",

@@ -45,6 +45,11 @@ ActionDecision = Literal["approve", "reject", "modify"]
 MemoryStatus = Literal["proposed", "accepted", "rejected", "disabled"]
 
 
+class AgentModelSelection(BaseModel):
+    provider: str
+    model: str
+
+
 class AgentSessionCreate(BaseModel):
     project_id: UUID
     title: str | None = None
@@ -52,6 +57,7 @@ class AgentSessionCreate(BaseModel):
     permission_mode: PermissionMode = "guarded_auto"
     automation_mode: AutomationMode = "assisted"
     default_model_profile_id: UUID | None = None
+    model_selection: AgentModelSelection | None = None
     metadata: dict | None = None
 
 
@@ -61,6 +67,7 @@ class AgentSessionUpdate(BaseModel):
     permission_mode: PermissionMode | None = None
     automation_mode: AutomationMode | None = None
     default_model_profile_id: UUID | None = None
+    model_selection: AgentModelSelection | None = None
     status: SessionStatus | None = None
     metadata: dict | None = None
 
@@ -77,6 +84,7 @@ class AgentSessionRead(BaseModel):
     permission_mode: PermissionMode
     automation_mode: AutomationMode
     default_model_profile_id: UUID | None = None
+    model_selection: AgentModelSelection | None = None
     status: SessionStatus
     metadata: dict | None = Field(default=None, validation_alias="session_metadata")
     created_at: datetime
@@ -87,6 +95,7 @@ class AgentTurnCreate(BaseModel):
     input_text: str
     input_parts: list[dict] | None = None
     model_profile_id: UUID | None = None
+    model_selection: AgentModelSelection | None = None
     metadata: dict | None = None
 
 
@@ -101,6 +110,7 @@ class AgentTurnRead(BaseModel):
     input_text: str
     input_parts: list[dict] | None = None
     status: TurnStatus
+    model_selection: AgentModelSelection | None = None
     model_profile_snapshot: dict | None = None
     final_text: str | None = None
     token_usage: dict | None = None

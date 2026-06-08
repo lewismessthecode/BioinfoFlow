@@ -57,6 +57,7 @@ vi.mock("@/components/bioinfoflow/project-context", () => ({
     setConversationProjectId: setConversationProjectIdMock,
     activeProjectId: "",
     setActiveProjectId: setSelectedProjectIdMock,
+    selectWorkspaceProject: setSelectedProjectIdMock,
     activeConversationId: "",
     setActiveConversationId: setActiveConversationIdMock,
     activeProjectName: "",

@@ -89,14 +89,119 @@ function groupChecks(checks: ReadinessCheck[]) {
   };
 }
 
-function actionHrefFor(check: ReadinessCheck): string | null {
-  if (check.id === "gpu") {
-    return check.action_href ?? "/scheduler";
+function readBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+function readNumber(value: unknown): number {
+  return typeof value === "number" ? value : 0;
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function readStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+}
+
+function labelForCheck(
+  tDashboard: ReturnType<typeof useTranslations>,
+  check: ReadinessCheck,
+) {
+  return tDashboard(`readiness.checks.${check.id}.label`);
+}
+
+function descriptionForCheck(
+  tDashboard: ReturnType<typeof useTranslations>,
+  check: ReadinessCheck,
+) {
+  const facts = check.facts ?? {};
+
+  switch (check.id) {
+    case "backend":
+      return tDashboard("readiness.checks.backend.detail.pass");
+    case "provider_key":
+      return tDashboard(
+        `readiness.checks.provider_key.detail.${readBoolean(facts.configured) ? "pass" : "fail"}`,
+      );
+    case "docker":
+      return tDashboard(
+        `readiness.checks.docker.detail.${readBoolean(facts.available) ? "pass" : "fail"}`,
+      );
+    case "scheduler":
+      return tDashboard(
+        `readiness.checks.scheduler.detail.${readBoolean(facts.available) ? "pass" : "fail"}`,
+      );
+    case "project":
+      return readNumber(facts.count) > 0
+        ? tDashboard("readiness.checks.project.detail.pass", { count: readNumber(facts.count) })
+        : tDashboard("readiness.checks.project.detail.fail");
+    case "workflow_registry":
+      return readNumber(facts.count) > 0
+        ? tDashboard("readiness.checks.workflow_registry.detail.pass", {
+            count: readNumber(facts.count),
+          })
+        : tDashboard("readiness.checks.workflow_registry.detail.fail");
+    case "workflow_binding":
+      return readNumber(facts.count) > 0
+        ? tDashboard("readiness.checks.workflow_binding.detail.pass", {
+            count: readNumber(facts.count),
+          })
+        : tDashboard("readiness.checks.workflow_binding.detail.fail");
+    case "gpu": {
+      const gpuCount = readNumber(facts.gpu_count);
+      const names = readStringList(facts.gpu_names).join(", ");
+      const recommendation = readString(facts.recommendation);
+      const error = readString(facts.error);
+
+      if (readBoolean(facts.usable_for_gpu_workflows)) {
+        return tDashboard("readiness.checks.gpu.detail.ready", {
+          count: gpuCount,
+          names,
+        });
+      }
+      if (readBoolean(facts.runtime_visible_to_backend) && gpuCount > 0) {
+        return tDashboard("readiness.checks.gpu.detail.visible", {
+          count: gpuCount,
+          names,
+        });
+      }
+      if (readBoolean(facts.docker_nvidia_runtime)) {
+        return tDashboard("readiness.checks.gpu.detail.runtimeHidden", {
+          recommendation,
+        });
+      }
+      if (readBoolean(facts.nvidia_smi_found)) {
+        return tDashboard("readiness.checks.gpu.detail.hostOnly", {
+          recommendation,
+        });
+      }
+      if (error && error !== "nvidia-smi not found") {
+        return tDashboard("readiness.checks.gpu.detail.error", { error });
+      }
+      return tDashboard("readiness.checks.gpu.detail.cpuOnly");
+    }
+    default:
+      return "";
   }
+}
+
+function actionHrefFor(check: ReadinessCheck): string | null {
   if (check.id === "workflow_binding") {
     return "/workflows?scope=hub";
   }
-  return check.action_href ?? null;
+  return check.action?.kind === "route" ? (check.action.href ?? null) : null;
+}
+
+function actionLabelForCheck(
+  tDashboard: ReturnType<typeof useTranslations>,
+  check: ReadinessCheck,
+) {
+  if (!check.action) return null;
+  return tDashboard(`readiness.checks.${check.id}.action`);
 }
 
 function SetupItem({
@@ -110,11 +215,12 @@ function SetupItem({
   const Icon = statusIcon[check.status];
   const isComplete = check.status === "pass";
   const actionHref = actionHrefFor(check);
-  const actionLabel = check.action_label;
-  const description = check.hint || check.detail;
+  const actionLabel = actionLabelForCheck(tDashboard, check);
+  const description = descriptionForCheck(tDashboard, check);
+  const label = labelForCheck(tDashboard, check);
   const rowLabel = isComplete
-    ? tDashboard("readiness.completedLabel", { label: check.label })
-    : `${check.label}: ${tDashboard(`readiness.status.${check.status}`)}`;
+    ? tDashboard("readiness.completedLabel", { label })
+    : `${label}: ${tDashboard(`readiness.status.${check.status}`)}`;
 
   return (
     <li
@@ -146,7 +252,7 @@ function SetupItem({
                 isComplete && "line-through text-muted-foreground decoration-muted-foreground/70",
               )}
             >
-              {check.label}
+              {label}
             </p>
             <StatusBadge
               variant={statusVariant[check.status]}
@@ -159,7 +265,7 @@ function SetupItem({
             {description}
           </p>
         </div>
-        {!isComplete && actionLabel && check.id === "project" ? (
+        {!isComplete && actionLabel && check.action?.kind === "dialog" ? (
           <Button size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={onProjectAction}>
             {actionLabel}
             <ArrowRight data-icon="inline-end" aria-hidden="true" />

@@ -113,6 +113,41 @@ docker compose up -d --build
 - `BIOINFOFLOW_HOME` is identity-mounted into the same absolute path on host and in containers.
 - If you leave `BIOINFOFLOW_HOME` unset, Docker Compose defaults to this repo's `data/` directory.
 - The backend creates the required platform subdirectories on startup.
+- GPU detection is automatic only after the host GPU has been exposed into the backend container. Bioinfoflow will not enable Docker GPU passthrough on its own.
+
+### Optional GPU enablement
+
+Keep the base stack CPU-safe by default. On a GPU host, opt in with the compose override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+For published images:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml pull
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d
+```
+
+What this does:
+
+- requests `gpus: all` for the backend container
+- exposes NVIDIA utility/compute capabilities so readiness checks can see `nvidia-smi`
+- keeps CPU-only hosts working because the override is never loaded unless you ask for it
+
+What it does not do:
+
+- it does not manufacture GPU access if the host lacks the NVIDIA Container Toolkit
+- it does not make GPU a required readiness item
+- it does not change your workflow routing unless the host runtime is genuinely available
+
+If the server has NVIDIA GPUs but the readiness drawer still says the backend cannot see them, verify:
+
+- `nvidia-smi` works on the host
+- Docker has the NVIDIA runtime / toolkit installed
+- you started Compose with `-f docker-compose.gpu.yml`
+- you rebuilt or restarted the backend container after enabling the override
 
 ### Fast localhost run with published images
 

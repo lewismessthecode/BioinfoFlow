@@ -14,7 +14,6 @@ import { KeyboardShortcutsOverlay } from "@/components/bioinfoflow/chat/keyboard
 const RIGHT_SIDEBAR_MIN = 300
 const RIGHT_SIDEBAR_MAX = 600
 const RIGHT_SIDEBAR_DEFAULT = 400
-const LAST_USED_PROJECT_STORAGE_KEY = "bioinfoflow:last-used-project"
 
 export default function AgentPage() {
   const { selectedProjectId, conversationProjectId, activeConversationId } = useProjectContext()
@@ -41,40 +40,12 @@ function AgentPageContent({
   const isMobile = useIsMobile()
   const chatRef = useRef<AgentCoreChatHandle>(null)
   const workspaceShell = useOptionalWorkspaceShell()
-  const { setActiveConversationId, setActiveProjectId } = useProjectContext()
+  const { setActiveConversationId } = useProjectContext()
   const [liveDeckTab, setLiveDeckTab] = useState<"workspace" | "dag" | "monitor">("workspace")
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT)
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(true)
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [dag, setDag] = useState<DagData | null>(null)
-
-  // Load persisted state from localStorage (runs once after hydration)
-  useEffect(() => {
-    if (selectedProjectId || conversationProjectId) {
-      return
-    }
-
-    const regularProjects =
-      workspaceShell?.projects?.filter((project) => !project.is_default) ?? []
-    if (regularProjects.length === 0) {
-      return
-    }
-
-    const storedProjectId =
-      window.localStorage.getItem(LAST_USED_PROJECT_STORAGE_KEY) ?? ""
-    const restoredProject =
-      regularProjects.find((project) => project.id === storedProjectId) ??
-      regularProjects[0]
-
-    if (restoredProject) {
-      setActiveProjectId(restoredProject.id)
-    }
-  }, [
-    conversationProjectId,
-    selectedProjectId,
-    setActiveProjectId,
-    workspaceShell?.projects,
-  ])
 
   useEffect(() => {
     const savedWidth = localStorage.getItem("right-sidebar-width")

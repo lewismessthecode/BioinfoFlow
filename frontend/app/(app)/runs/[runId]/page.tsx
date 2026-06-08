@@ -38,7 +38,7 @@ export default function RunDetailPage() {
   const tRuns = useTranslations("runs");
   const tStatus = useTranslations("status");
   const tCommon = useTranslations("common");
-  const { activeProjectId, setActiveProjectId } = useProjectContext();
+  const { activeProjectId, selectWorkspaceProject } = useProjectContext();
 
   const runId = params.runId;
   const [run, setRun] = useState<Run | null>(null);
@@ -124,8 +124,8 @@ export default function RunDetailPage() {
     if (!run?.project_id || run.project_id === activeProjectId) {
       return;
     }
-    setActiveProjectId(run.project_id);
-  }, [activeProjectId, run?.project_id, setActiveProjectId]);
+    selectWorkspaceProject(run.project_id);
+  }, [activeProjectId, run?.project_id, selectWorkspaceProject]);
 
   // SSE for real-time updates
   const { connectionState } = useEvents({

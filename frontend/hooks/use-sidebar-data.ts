@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
 import {
@@ -43,10 +43,12 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     setConversationProjectId,
     activeConversationId,
     setActiveConversationId,
+    selectWorkspaceProject,
     setActiveProjectName,
     setActiveConversationTitle,
   } = useProjectContext()
   const router = useRouter()
+  const pathname = usePathname()
 
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -55,12 +57,6 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   const [loadingProjects, setLoadingProjects] = useState<Set<string>>(new Set())
   const [defaultProject, setDefaultProject] = useState<Project | null>(null)
   const [inboxConversations, setInboxConversations] = useState<AgentCoreSession[]>([])
-
-  const selectProjectForWorkspace = useCallback((projectId: string) => {
-    setSelectedProjectId(projectId)
-    setConversationProjectId(projectId)
-    setActiveConversationId("")
-  }, [setActiveConversationId, setConversationProjectId, setSelectedProjectId])
 
   const fetchProjects = useCallback(async () => {
     setIsLoading(true)
@@ -138,6 +134,30 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       setStoredLastUsedProjectId(activeProject.id)
     }
   }, [projects, selectedProjectId])
+
+  useEffect(() => {
+    const onAgentRoute = pathname === "/agent" || pathname.startsWith("/agent/")
+    if (!onAgentRoute) return
+    if (selectedProjectId || conversationProjectId) return
+
+    const regularProjects = projects.filter((project) => !project.is_default)
+    if (regularProjects.length === 0) return
+
+    const storedProjectId = getStoredLastUsedProjectId()
+    const restoredProject =
+      regularProjects.find((project) => project.id === storedProjectId) ??
+      regularProjects[0]
+
+    if (restoredProject) {
+      selectWorkspaceProject(restoredProject.id)
+    }
+  }, [
+    conversationProjectId,
+    pathname,
+    projects,
+    selectWorkspaceProject,
+    selectedProjectId,
+  ])
 
   useEffect(() => {
     if (!selectedProjectId) return
@@ -218,7 +238,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   }
 
   const handleSelectProject = (project: Project) => {
-    selectProjectForWorkspace(project.id)
+    selectWorkspaceProject(project.id)
     if (!expandedProjects.has(project.id)) {
       toggleProjectExpanded(project.id)
     }
@@ -248,7 +268,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       })
 
       setProjects((prev) => [data, ...prev])
-      selectProjectForWorkspace(data.id)
+      selectWorkspaceProject(data.id)
       toast.success(tSidebar("toasts.projectCreated", { name: data.name }))
       emitReadinessRefresh("project-created")
     } catch (error) {
@@ -374,7 +394,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       })
 
       setProjects((prev) => [created, ...prev])
-      selectProjectForWorkspace(created.id)
+      selectWorkspaceProject(created.id)
       toast.success(tSidebar("toasts.projectCreated", { name: created.name }))
       emitReadinessRefresh("project-created")
     } catch (error) {

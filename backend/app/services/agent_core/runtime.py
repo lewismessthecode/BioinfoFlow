@@ -1,30 +1,56 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
+from typing import Any
 
+from litellm import acompletion
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.agent_core import AgentTurnStatus
-from app.repositories.agent_core_repo import AgentTurnRepository
+from app.repositories.agent_core_repo import AgentSessionRepository, AgentTurnRepository
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.model_selection import (
+    normalize_model_selection,
+    session_model_selection_from_metadata,
+)
+from app.services.llm.providers import (
+    PROVIDER_REGISTRY,
+    litellm_model_name,
+    normalize_openai_compatible_base_url,
+)
+from app.services.user_settings_service import UserSettingsService
 
 
 class AgentCoreRuntime:
     def __init__(self, session: AsyncSession):
         self.turn_repo = AgentTurnRepository(session)
+        self.session_repo = AgentSessionRepository(session)
         self.ledger = AgentEventLedger(session)
+        self.user_settings = UserSettingsService(session)
 
     async def run_no_tool_turn(self, turn_id: str):
         turn = await self.turn_repo.get(turn_id)
         if turn is None:
             return None
 
+        session = await self.session_repo.get(str(turn.session_id))
+        if session is None:
+            return await self._fail_turn(
+                turn,
+                error_message="Agent session could not be loaded for this turn.",
+                error_code="session_not_found",
+            )
+
         now = datetime.now(timezone.utc)
         turn = await self.turn_repo.update_all(
             turn,
             status=AgentTurnStatus.RUNNING,
             started_at=now,
+            error_code=None,
+            error_message=None,
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -32,22 +58,61 @@ class AgentCoreRuntime:
             type=AgentEventType.TURN_STARTED,
             payload={},
         )
+
+        resolved = await self._resolve_model_selection(turn=turn, session=session)
+        if resolved is None:
+            return await self._fail_turn(
+                turn,
+                error_message=(
+                    "No usable model is configured. Select a provider/model in Settings, "
+                    "or configure a deployment default."
+                ),
+                error_code="model_selection_missing",
+            )
+
+        snapshot = dict(turn.model_profile_snapshot or {})
+        snapshot["resolved_model_selection"] = {
+            "provider": resolved["provider"],
+            "model": resolved["model"],
+        }
+        snapshot["resolved_model_source"] = resolved["source"]
+        turn = await self.turn_repo.update_all(turn, model_profile_snapshot=snapshot)
+        await self.ledger.append(
+            session_id=str(turn.session_id),
+            turn_id=str(turn.id),
+            type=AgentEventType.MODEL_SELECTED,
+            payload={
+                "provider": resolved["provider"],
+                "model": resolved["model"],
+                "source": resolved["source"],
+            },
+        )
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             type=AgentEventType.ASSISTANT_THINKING_SUMMARY,
             payload={
                 "summary": (
-                    "AgentCore accepted the turn and recorded it in the event "
-                    "ledger. Tool execution and model routing are enabled in "
-                    "later phases."
+                    f"Routing this turn to {resolved['provider']} / {resolved['model']} "
+                    f"from {resolved['source']}."
                 )
             },
         )
-        final_text = (
-            "AgentCore session is active. I recorded your request and the "
-            "new event ledger is ready for model routing and tool execution."
-        )
+
+        try:
+            final_text, token_usage = await self._generate_text(
+                session=session,
+                turn=turn,
+                provider=resolved["provider"],
+                model=resolved["model"],
+            )
+        except Exception as exc:
+            return await self._fail_turn(
+                turn,
+                error_message=str(exc),
+                error_code="model_request_failed",
+            )
+
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -59,6 +124,7 @@ class AgentCoreRuntime:
             turn,
             status=AgentTurnStatus.COMPLETED,
             final_text=final_text,
+            token_usage=token_usage,
             completed_at=completed_at,
         )
         await self.ledger.append(
@@ -66,5 +132,191 @@ class AgentCoreRuntime:
             turn_id=str(turn.id),
             type=AgentEventType.TURN_COMPLETED,
             payload={"final_text": final_text},
+        )
+        return turn
+
+    async def _resolve_model_selection(self, *, turn, session) -> dict[str, str] | None:
+        snapshot = turn.model_profile_snapshot or {}
+        candidates: list[tuple[str, dict[str, str] | None]] = [
+            ("turn", normalize_model_selection(snapshot.get("requested_model_selection"))),
+            (
+                "session",
+                session_model_selection_from_metadata(
+                    getattr(session, "session_metadata", None)
+                ),
+            ),
+            ("user_settings", await self._user_settings_selection(turn.user_id)),
+            ("deployment_default", self._deployment_default_selection()),
+        ]
+        for source, selection in candidates:
+            if selection:
+                return {
+                    "provider": selection["provider"],
+                    "model": selection["model"],
+                    "source": source,
+                }
+        return None
+
+    async def _user_settings_selection(self, user_id: str) -> dict[str, str] | None:
+        settings_payload = await self.user_settings.get_settings(user_id)
+        if not settings_payload.selected_model:
+            return None
+        return normalize_model_selection(
+            {
+                "provider": settings_payload.selected_provider,
+                "model": settings_payload.selected_model,
+            }
+        )
+
+    def _deployment_default_selection(self) -> dict[str, str] | None:
+        model = str(settings.agent_model or "").strip()
+        provider = str(settings.agent_provider or "").strip().lower()
+        if not model and provider in PROVIDER_REGISTRY:
+            model = PROVIDER_REGISTRY[provider].default_model
+        if not model:
+            return None
+        return normalize_model_selection({"provider": provider, "model": model})
+
+    async def _generate_text(
+        self,
+        *,
+        session,
+        turn,
+        provider: str,
+        model: str,
+    ) -> tuple[str, dict[str, Any] | None]:
+        request_args = await self._provider_request_args(
+            user_id=turn.user_id,
+            provider=provider,
+            model=model,
+        )
+        response = await acompletion(
+            model=litellm_model_name(provider, model),
+            messages=await self._build_messages(session_id=str(session.id), turn=turn),
+            max_tokens=settings.agent_max_tokens,
+            **request_args,
+        )
+        final_text = self._extract_response_text(response)
+        if not final_text:
+            raise RuntimeError(
+                "The selected model completed without returning visible text."
+            )
+        return final_text, self._extract_token_usage(response)
+
+    async def _provider_request_args(
+        self,
+        *,
+        user_id: str,
+        provider: str,
+        model: str,
+    ) -> dict[str, Any]:
+        cfg = PROVIDER_REGISTRY.get(provider)
+        if cfg is None:
+            raise RuntimeError(f"Unsupported model provider: {provider}")
+
+        credentials = await self.user_settings.get_raw_credentials(user_id, provider)
+        request_args: dict[str, Any] = {}
+
+        api_key = str(credentials.get("api_key") or "").strip()
+        if not api_key:
+            api_key = str(cfg.static_api_key or "").strip()
+        if not api_key and cfg.env_key_var:
+            api_key = str(os.getenv(cfg.env_key_var) or "").strip()
+        if provider == "anthropic" and not api_key:
+            api_key = str(os.getenv("ANTHROPIC_AUTH_TOKEN") or "").strip()
+        if api_key:
+            request_args["api_key"] = api_key
+
+        base_url = str(credentials.get("base_url") or "").strip()
+        if not base_url and cfg.env_base_url_var:
+            base_url = str(os.getenv(cfg.env_base_url_var) or "").strip()
+        if not base_url:
+            base_url = str(cfg.base_url or "").strip()
+        if cfg.prefix == "openai/" and base_url:
+            base_url = normalize_openai_compatible_base_url(base_url)
+        if base_url:
+            request_args["api_base"] = base_url
+
+        if provider == "openai" and model.startswith("gpt-5"):
+            request_args["reasoning_effort"] = settings.agent_thinking_effort
+
+        return request_args
+
+    async def _build_messages(self, *, session_id: str, turn) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
+        try:
+            prior_turns = await self.turn_repo.list_for_session(session_id)
+        except Exception:
+            prior_turns = []
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "You are Bioinfoflow AgentCore, a concise bioinformatics assistant. "
+                    "Answer directly, stay accurate, and mention uncertainty plainly."
+                ),
+            }
+        )
+        for prior_turn in prior_turns:
+            if str(prior_turn.id) == str(turn.id):
+                continue
+            if prior_turn.input_text:
+                messages.append({"role": "user", "content": prior_turn.input_text})
+            if prior_turn.final_text:
+                messages.append({"role": "assistant", "content": prior_turn.final_text})
+        messages.append({"role": "user", "content": turn.input_text})
+        return messages
+
+    def _extract_response_text(self, response: Any) -> str:
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            return ""
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", "")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text.strip())
+                else:
+                    text = getattr(item, "text", None)
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text.strip())
+            return "\n".join(parts).strip()
+        return ""
+
+    def _extract_token_usage(self, response: Any) -> dict[str, Any] | None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return None
+        if hasattr(usage, "model_dump"):
+            return usage.model_dump()
+        if isinstance(usage, dict):
+            return usage
+        return {
+            key: value
+            for key, value in vars(usage).items()
+            if not key.startswith("_")
+        }
+
+    async def _fail_turn(self, turn, *, error_message: str, error_code: str):
+        completed_at = datetime.now(timezone.utc)
+        turn = await self.turn_repo.update_all(
+            turn,
+            status=AgentTurnStatus.FAILED,
+            final_text=None,
+            completed_at=completed_at,
+            error_code=error_code,
+            error_message=error_message,
+        )
+        await self.ledger.append(
+            session_id=str(turn.session_id),
+            turn_id=str(turn.id),
+            type=AgentEventType.TURN_FAILED,
+            payload={"error_message": error_message, "error_code": error_code},
         )
         return turn

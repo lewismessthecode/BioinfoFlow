@@ -58,6 +58,12 @@ export function createAppWrapper(projectContext?: Partial<ProjectContextState>) 
     const [activeConversationTitle, setActiveConversationTitle] = useState(
       initialState.activeConversationTitle
     )
+    const selectWorkspaceProject = (projectId: string) => {
+      setActiveProjectId(projectId)
+      setSelectedProjectId(projectId)
+      setConversationProjectId(projectId)
+      setActiveConversationId("")
+    }
 
     return (
       <ProjectProvider
@@ -67,11 +73,8 @@ export function createAppWrapper(projectContext?: Partial<ProjectContextState>) 
           conversationProjectId,
           setConversationProjectId,
           activeProjectId: selectedProjectId || activeProjectId,
-          setActiveProjectId: (projectId: string) => {
-            setActiveProjectId(projectId)
-            setSelectedProjectId(projectId)
-            setConversationProjectId(projectId)
-          },
+          setActiveProjectId: selectWorkspaceProject,
+          selectWorkspaceProject,
           activeConversationId,
           setActiveConversationId,
           activeProjectName,

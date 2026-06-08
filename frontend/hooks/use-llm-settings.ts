@@ -24,6 +24,11 @@ export type UserLlmSettings = {
   configured_providers: string[]
 }
 
+export type ModelSelection = {
+  provider: string
+  model: string
+}
+
 type ProviderTestResult = {
   provider: string
   success: boolean
@@ -34,6 +39,54 @@ type ProviderTestResult = {
 const isUnauthorizedError = (error: unknown) =>
   error instanceof ApiError && error.status === 401
 
+const MODEL_STORAGE_KEY = "bioinfoflow:selected-model"
+const PROVIDER_STORAGE_KEY = "bioinfoflow:selected-provider"
+
+function getStoredSelection(): ModelSelection | null {
+  if (typeof window === "undefined") return null
+  const provider = window.localStorage.getItem(PROVIDER_STORAGE_KEY) || ""
+  const model = window.localStorage.getItem(MODEL_STORAGE_KEY) || ""
+  if (!provider || !model) return null
+  return { provider, model }
+}
+
+function persistSelection(selection: ModelSelection | null) {
+  if (typeof window === "undefined") return
+  if (selection) {
+    window.localStorage.setItem(PROVIDER_STORAGE_KEY, selection.provider)
+    window.localStorage.setItem(MODEL_STORAGE_KEY, selection.model)
+    return
+  }
+  window.localStorage.removeItem(PROVIDER_STORAGE_KEY)
+  window.localStorage.removeItem(MODEL_STORAGE_KEY)
+}
+
+function resolveSelection(
+  settings: UserLlmSettings | null,
+  models: ProviderModels[],
+): ModelSelection | null {
+  if (settings?.selected_provider && settings.selected_provider !== "auto" && settings.selected_model) {
+    return {
+      provider: settings.selected_provider,
+      model: settings.selected_model,
+    }
+  }
+
+  if (settings?.selected_model) {
+    const matchedProvider = models.find((providerGroup) =>
+      providerGroup.models.some((model) => model.id === settings.selected_model),
+    )
+    if (matchedProvider) {
+      return {
+        provider: matchedProvider.provider,
+        model: settings.selected_model,
+      }
+    }
+  }
+
+  return getStoredSelection()
+}
+
 export function useLlmSettings() {
   const [settings, setSettings] = useState<UserLlmSettings | null>(null)
   const [models, setModels] = useState<ProviderModels[]>([])
@@ -43,10 +96,6 @@ export function useLlmSettings() {
     try {
       const { data } = await apiRequest<UserLlmSettings>("/user-settings")
       setSettings(data)
-      // Keep the selected model available for AgentCore clients during reloads.
-      if (data.selected_model) {
-        localStorage.setItem("bioinfoflow:selected-model", data.selected_model)
-      }
     } catch (error) {
       if (isUnauthorizedError(error)) {
         setSettings(null)
@@ -115,9 +164,12 @@ export function useLlmSettings() {
   }, [])
 
   const setSelectedModel = useCallback(
-    async (model: string) => {
-      localStorage.setItem("bioinfoflow:selected-model", model)
-      await updateSettings({ selected_model: model })
+    async (selection: ModelSelection | null) => {
+      persistSelection(selection)
+      await updateSettings({
+        selected_provider: selection?.provider ?? "auto",
+        selected_model: selection?.model ?? "",
+      })
     },
     [updateSettings]
   )
@@ -125,11 +177,11 @@ export function useLlmSettings() {
   const hasConfiguredProvider =
     settings !== null && settings.configured_providers.length > 0
 
-  const selectedModel =
-    settings?.selected_model ||
-    (typeof window !== "undefined"
-      ? window.localStorage.getItem("bioinfoflow:selected-model") || ""
-      : "")
+  const selectedModel = resolveSelection(settings, models)
+
+  useEffect(() => {
+    persistSelection(selectedModel)
+  }, [selectedModel])
 
   // Flat list of all available models with provider info
   const allModels = models.flatMap((pm) =>

@@ -21,6 +21,12 @@ describe("ProjectContext", () => {
       const [activeConversationId, setActiveConversationId] = useState("conversation-1")
       const [activeProjectName, setActiveProjectName] = useState("Project One")
       const [activeConversationTitle, setActiveConversationTitle] = useState("Initial Chat")
+      const selectWorkspaceProject = (projectId: string) => {
+        setActiveProjectId(projectId)
+        setSelectedProjectId(projectId)
+        setConversationProjectId(projectId)
+        setActiveConversationId("")
+      }
 
       return (
         <ProjectProvider
@@ -30,7 +36,8 @@ describe("ProjectContext", () => {
             conversationProjectId,
             setConversationProjectId,
             activeProjectId,
-            setActiveProjectId,
+            setActiveProjectId: selectWorkspaceProject,
+            selectWorkspaceProject,
             activeConversationId,
             setActiveConversationId,
             activeProjectName,
@@ -51,8 +58,6 @@ describe("ProjectContext", () => {
 
     act(() => {
       result.current.setActiveProjectId("project-2")
-      result.current.setSelectedProjectId("project-2")
-      result.current.setConversationProjectId("project-2")
       result.current.setActiveConversationId("conversation-2")
       result.current.setActiveProjectName("Project Two")
       result.current.setActiveConversationTitle("Updated Chat")

@@ -356,6 +356,74 @@
         "fail": "待修复",
         "warn": "警告",
         "skip": "跳过"
+      },
+      "checks": {
+        "backend": {
+          "label": "后端 API",
+          "detail": {
+            "pass": "后端服务响应正常。"
+          }
+        },
+        "provider_key": {
+          "label": "AI Provider Key",
+          "action": "添加 Provider Key",
+          "detail": {
+            "pass": "至少已有一个 Provider Key 可用。",
+            "fail": "首次开始对话或运行前，请先配置任意一个受支持的 Provider Key。"
+          }
+        },
+        "docker": {
+          "label": "Docker",
+          "action": "打开镜像页",
+          "detail": {
+            "pass": "后端可以正常访问 Docker。",
+            "fail": "后端当前无法访问 Docker。请先启动 Docker Desktop 或 Docker daemon，再刷新状态。"
+          }
+        },
+        "scheduler": {
+          "label": "调度器",
+          "action": "打开调度器",
+          "detail": {
+            "pass": "持久化调度器已启动。",
+            "fail": "调度器当前不可用。请重启后端并检查调度器启动日志。"
+          }
+        },
+        "gpu": {
+          "label": "GPU",
+          "action": "打开资源监控",
+          "detail": {
+            "ready": "GPU 加速当前已经可供工作流使用。可见设备：{names}",
+            "visible": "后端已经可以看到 {count} 张 GPU：{names}。在工作流明确需要前，GPU 仍然只是可选能力。",
+            "runtimeHidden": "宿主机已经具备 NVIDIA 容器运行时，但这套 Bioinfoflow 部署还没有把 GPU 设备显式暴露给 backend 容器。GPU 服务器上需要启用 GPU compose override。{recommendation}",
+            "hostOnly": "机器上已有 NVIDIA 工具链，但 backend 容器仍然无法读取 GPU 设备。Bioinfoflow 只会自动检测已经暴露进容器的 GPU，不会替你自动改运行时。{recommendation}",
+            "error": "GPU 探测出现错误，但 CPU 工作流仍可正常运行。详情：{error}",
+            "cpuOnly": "后端当前看不到 GPU。CPU 工作流依然完全可用，而且 GPU 本身是可选能力。"
+          }
+        },
+        "project": {
+          "label": "项目",
+          "action": "创建项目",
+          "detail": {
+            "pass": "当前已有 {count} 个项目。",
+            "fail": "请先创建至少一个项目，这样助手和运行记录才能绑定到真实工作区。"
+          }
+        },
+        "workflow_registry": {
+          "label": "工作流注册表",
+          "action": "打开工作流中心",
+          "detail": {
+            "pass": "当前已有 {count} 个已注册工作流。",
+            "fail": "当前还没有已注册工作流。请先从工作流中心导入或注册一个。"
+          }
+        },
+        "workflow_binding": {
+          "label": "项目工作流绑定",
+          "action": "启用工作流",
+          "detail": {
+            "pass": "当前已有 {count} 个项目工作流绑定。",
+            "fail": "当前还没有为项目启用任何工作流。首次运行前请先把工作流绑定到项目。"
+          }
+        }
       }
     },
     "schedulerCard": {

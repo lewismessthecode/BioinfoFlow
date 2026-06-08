@@ -16,6 +16,7 @@ from app.repositories.agent_core_repo import (
 from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.model_selection import session_metadata_with_model_selection
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools import (
     AgentToolContext,
@@ -48,6 +49,7 @@ class AgentCoreService:
         permission_mode: str = "guarded_auto",
         automation_mode: str = "assisted",
         default_model_profile_id: str | None = None,
+        model_selection: dict | None = None,
         metadata: dict | None = None,
     ):
         project = await self.project_repo.get(project_id)
@@ -65,7 +67,9 @@ class AgentCoreService:
             permission_mode=permission_mode,
             automation_mode=automation_mode,
             default_model_profile_id=default_model_profile_id,
-            session_metadata=metadata,
+            session_metadata=session_metadata_with_model_selection(
+                metadata, model_selection
+            ),
         )
 
     async def list_sessions(
@@ -119,8 +123,15 @@ class AgentCoreService:
         ):
             if key in updates:
                 update_data[key] = updates[key]
-        if "metadata" in updates:
-            update_data["session_metadata"] = updates["metadata"]
+        if "metadata" in updates or "model_selection" in updates:
+            update_data["session_metadata"] = session_metadata_with_model_selection(
+                session.session_metadata if hasattr(session, "session_metadata") else None,
+                updates.get("model_selection"),
+            )
+            if "metadata" in updates:
+                update_data["session_metadata"] = session_metadata_with_model_selection(
+                    updates["metadata"], updates.get("model_selection")
+                )
         return await self.session_repo.update_all(session, **update_data)
 
     async def delete_session(
@@ -146,6 +157,7 @@ class AgentCoreService:
         input_text: str,
         input_parts: list[dict] | None = None,
         model_profile_id: str | None = None,
+        model_selection: dict | None = None,
         metadata: dict | None = None,
     ):
         session = await self.require_session(
@@ -163,6 +175,7 @@ class AgentCoreService:
             status=AgentTurnStatus.QUEUED,
             model_profile_snapshot={
                 "requested_model_profile_id": model_profile_id,
+                "requested_model_selection": model_selection,
                 "metadata": metadata or {},
             },
         )

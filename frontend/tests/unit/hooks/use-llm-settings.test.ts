@@ -71,7 +71,10 @@ describe("useLlmSettings", () => {
 
     expect(result.current.settings).toEqual(MOCK_SETTINGS)
     expect(result.current.models).toEqual(MOCK_MODELS)
-    expect(result.current.selectedModel).toBe("claude-sonnet-4-20250514")
+    expect(result.current.selectedModel).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-4-20250514",
+    })
     expect(result.current.hasConfiguredProvider).toBe(true)
   })
 
@@ -123,7 +126,7 @@ describe("useLlmSettings", () => {
     expect(result.current.settings).toBeNull()
     expect(result.current.models).toEqual([])
     expect(result.current.hasConfiguredProvider).toBe(false)
-    expect(result.current.selectedModel).toBe("")
+    expect(result.current.selectedModel).toBeNull()
   })
 
   it("treats unauthorized initial loads as a silent unauthenticated state", async () => {
@@ -143,7 +146,7 @@ describe("useLlmSettings", () => {
     expect(result.current.settings).toBeNull()
     expect(result.current.models).toEqual([])
     expect(result.current.hasConfiguredProvider).toBe(false)
-    expect(result.current.selectedModel).toBe("")
+    expect(result.current.selectedModel).toBeNull()
     expect(consoleErrorSpy).not.toHaveBeenCalled()
   })
 

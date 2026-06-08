@@ -19,6 +19,11 @@ export type AgentActionStatus =
   | "rejected"
 export type AgentActionDecision = "approve" | "reject" | "modify"
 
+export type AgentModelSelection = {
+  provider: string
+  model: string
+}
+
 export type AgentCoreSession = {
   id: string
   project_id: string
@@ -29,6 +34,7 @@ export type AgentCoreSession = {
   permission_mode: AgentPermissionMode
   automation_mode: AgentAutomationMode
   default_model_profile_id?: string | null
+  model_selection?: AgentModelSelection | null
   status: AgentSessionStatus
   metadata?: Record<string, unknown> | null
   created_at: string
@@ -44,6 +50,7 @@ export type AgentCoreTurn = {
   input_text: string
   input_parts?: Array<Record<string, unknown>> | null
   status: AgentTurnStatus
+  model_selection?: AgentModelSelection | null
   model_profile_snapshot?: Record<string, unknown> | null
   final_text?: string | null
   token_usage?: Record<string, unknown> | null

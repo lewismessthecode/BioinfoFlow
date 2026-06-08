@@ -70,6 +70,11 @@ export default function AppLayout({
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [sidebarPrefsLoaded, setSidebarPrefsLoaded] = useState(false)
   const isMobile = useIsMobile()
+  const selectWorkspaceProject = useCallback((projectId: string) => {
+    setSelectedProjectId(projectId)
+    setConversationProjectId(projectId)
+    setActiveConversationId("")
+  }, [])
   const terminalEnabled =
     runtime.capabilities.terminal &&
     Boolean(selectedProjectId) &&
@@ -155,7 +160,8 @@ export default function AppLayout({
           conversationProjectId,
           setConversationProjectId,
           activeProjectId: selectedProjectId,
-          setActiveProjectId: setSelectedProjectId,
+          setActiveProjectId: selectWorkspaceProject,
+          selectWorkspaceProject,
           activeConversationId,
           setActiveConversationId,
           activeProjectName,

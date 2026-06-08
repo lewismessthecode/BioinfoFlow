@@ -370,9 +370,14 @@ describe("WorkspaceShell sidebar integration", () => {
     fireEvent.click(within(deleteDialog).getByRole("button", { name: "common.delete" }))
 
     await waitFor(() => expect(screen.queryByRole("button", { name: "Beta" })).not.toBeInTheDocument())
-    expect(screen.getByTestId("selected-project-id")).toHaveTextContent("")
-    expect(screen.getByTestId("conversation-project-id")).toHaveTextContent("")
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-project-id")).toHaveTextContent("project-created-1"),
+    )
+    expect(screen.getByTestId("conversation-project-id")).toHaveTextContent("project-created-1")
     expect(screen.getByTestId("active-conversation-id")).toHaveTextContent("")
+    await waitFor(() =>
+      expect(screen.getByTestId("active-project-name")).toHaveTextContent("Gamma"),
+    )
   })
 
   it("selects a conversation from the sidebar and syncs project context before navigating", async () => {
@@ -392,6 +397,21 @@ describe("WorkspaceShell sidebar integration", () => {
     expect(screen.getByTestId("active-project-name")).toHaveTextContent("Alpha")
     expect(screen.getByTestId("active-conversation-title")).toHaveTextContent("Alpha thread")
     expect(routerPushMock).toHaveBeenCalledWith("/agent")
+  })
+
+  it("restores the last used regular project into workspace context on /agent", async () => {
+    window.localStorage.setItem("bioinfoflow:last-used-project", "project-beta")
+
+    renderSidebar()
+
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-project-id")).toHaveTextContent("project-beta"),
+    )
+    expect(screen.getByTestId("conversation-project-id")).toHaveTextContent("project-beta")
+    expect(screen.getByTestId("active-conversation-id")).toHaveTextContent("")
+    await waitFor(() =>
+      expect(screen.getByTestId("active-project-name")).toHaveTextContent("Beta"),
+    )
   })
 
   it("renders the airy Bioinfoflow sidebar brand without the old tile shadow", async () => {

@@ -41,16 +41,13 @@ def _readiness_resp() -> ApiResponse:
             "checks": [
                 {
                     "id": "backend",
-                    "label": "Backend API",
                     "status": "pass",
-                    "detail": "Backend is responding",
+                    "facts": {"available": True},
                 },
                 {
                     "id": "provider_key",
-                    "label": "AI provider key",
                     "status": "fail",
-                    "detail": "No provider key configured",
-                    "hint": "Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY.",
+                    "facts": {"configured": False},
                 },
             ],
         }
@@ -152,7 +149,7 @@ class TestRunChecks:
             results = await _run_checks(ctx)
         assert results["backend"]["ok"] is True
         assert results["provider_key"]["ok"] is False
-        assert results["provider_key"]["hint"].startswith("Set ANTHROPIC_API_KEY")
+        assert results["provider_key"]["hint"].startswith("Add a supported provider key")
         assert results["nextflow"]["ok"] is True
 
     @pytest.mark.asyncio

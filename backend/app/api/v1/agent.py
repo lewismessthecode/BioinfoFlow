@@ -14,6 +14,7 @@ from app.schemas.agent_core import (
     AgentActionRead,
     AgentArtifactRead,
     AgentEventRead,
+    AgentModelSelection,
     AgentMemoryDecisionRequest,
     AgentMemoryProposalCreate,
     AgentMemoryRead,
@@ -24,6 +25,10 @@ from app.schemas.agent_core import (
     AgentTurnRead,
 )
 from app.services.agent_core import AgentCoreService, AgentMemoryService
+from app.services.agent_core.model_selection import (
+    normalize_model_selection,
+    session_model_selection_from_metadata,
+)
 from app.utils.responses import success_response
 
 
@@ -35,11 +40,35 @@ def _dump(model) -> dict:
 
 
 def _session_read(session) -> AgentSessionRead:
-    return AgentSessionRead.model_validate(session)
+    model_selection = session_model_selection_from_metadata(
+        getattr(session, "session_metadata", None)
+    )
+    return AgentSessionRead.model_validate(session).model_copy(
+        update={
+            "model_selection": (
+                AgentModelSelection.model_validate(model_selection)
+                if model_selection
+                else None
+            )
+        }
+    )
 
 
 def _turn_read(turn) -> AgentTurnRead:
-    return AgentTurnRead.model_validate(turn)
+    snapshot = getattr(turn, "model_profile_snapshot", None) or {}
+    model_selection = normalize_model_selection(
+        snapshot.get("resolved_model_selection")
+        or snapshot.get("requested_model_selection")
+    )
+    return AgentTurnRead.model_validate(turn).model_copy(
+        update={
+            "model_selection": (
+                AgentModelSelection.model_validate(model_selection)
+                if model_selection
+                else None
+            )
+        }
+    )
 
 
 def _event_read(event) -> AgentEventRead:
@@ -77,6 +106,11 @@ async def create_session(
         default_model_profile_id=(
             str(payload.default_model_profile_id)
             if payload.default_model_profile_id
+            else None
+        ),
+        model_selection=(
+            payload.model_selection.model_dump()
+            if payload.model_selection
             else None
         ),
         metadata=payload.metadata,
@@ -174,6 +208,11 @@ async def create_turn(
         input_text=payload.input_text,
         input_parts=payload.input_parts,
         model_profile_id=str(payload.model_profile_id) if payload.model_profile_id else None,
+        model_selection=(
+            payload.model_selection.model_dump()
+            if payload.model_selection
+            else None
+        ),
         metadata=payload.metadata,
     )
     return success_response(_dump(_turn_read(turn)), request=request, status_code=202)

@@ -17,6 +17,7 @@ const { pushMock, toastErrorMock, toastSuccessMock, emitReadinessRefreshMock } =
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
+  usePathname: () => "/agent",
 }))
 
 vi.mock("sonner", () => ({
@@ -108,9 +109,9 @@ describe("useSidebarData", () => {
       ])
     )
 
-    expect(result.current.project.selectedProjectId).toBe("")
-    expect(result.current.project.conversationProjectId).toBe("")
-    expect(result.current.project.activeProjectName).toBe("")
+    expect(result.current.project.selectedProjectId).toBe("project-a")
+    expect(result.current.project.conversationProjectId).toBe("project-a")
+    expect(result.current.project.activeProjectName).toBe("Alpha")
   })
 
   it("restores the stored conversation for the active project when available", async () => {
