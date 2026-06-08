@@ -19,3 +19,6 @@ class AgentToolRegistry:
 
     def list_specs(self):
         return [tool.spec for tool in self._tools.values()]
+
+    def names(self) -> set[str]:
+        return set(self._tools)

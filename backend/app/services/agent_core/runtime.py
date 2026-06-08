@@ -7,9 +7,11 @@ from typing import Any
 from litellm import acompletion
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.services.agent_core.core.loop as loop_module
 from app.config import settings
 from app.models.agent_core import AgentTurnStatus
 from app.repositories.agent_core_repo import AgentSessionRepository, AgentTurnRepository
+from app.services.agent_core.core import AgentLoopController
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.model_selection import (
@@ -23,6 +25,8 @@ from app.services.llm.providers import (
 )
 from app.services.user_settings_service import UserSettingsService
 
+_ORIGINAL_ACOMPLETION = acompletion
+
 
 class AgentCoreRuntime:
     def __init__(self, session: AsyncSession):
@@ -32,9 +36,18 @@ class AgentCoreRuntime:
         self.user_settings = UserSettingsService(session)
 
     async def run_no_tool_turn(self, turn_id: str):
+        return await self.run_turn(turn_id)
+
+    async def run_turn(self, turn_id: str):
         turn = await self.turn_repo.get(turn_id)
         if turn is None:
             return None
+        if turn.status in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            return turn
 
         session = await self.session_repo.get(str(turn.session_id))
         if session is None:
@@ -99,41 +112,95 @@ class AgentCoreRuntime:
             },
         )
 
-        try:
-            final_text, token_usage = await self._generate_text(
-                session=session,
-                turn=turn,
+        if acompletion is not _ORIGINAL_ACOMPLETION:
+            loop_module.acompletion = acompletion
+        result = await AgentLoopController(self.turn_repo.session).run_turn(
+            turn_id=str(turn.id),
+            provider=resolved["provider"],
+            model=resolved["model"],
+            request_args=await self._provider_request_args(
+                user_id=turn.user_id,
                 provider=resolved["provider"],
                 model=resolved["model"],
-            )
-        except Exception as exc:
+            ),
+        )
+        fresh_turn = await self.turn_repo.get(str(turn.id))
+        if fresh_turn is None:
+            return None
+        return await AgentLoopController(self.turn_repo.session).complete_turn_from_result(
+            turn=fresh_turn,
+            result=result,
+        )
+
+    async def resume_turn_after_action(self, action_id: str):
+        from app.repositories.agent_core_repo import AgentActionRepository
+
+        action = await AgentActionRepository(self.turn_repo.session).get(action_id)
+        if action is None:
+            return None
+        turn = await self.turn_repo.get(str(action.turn_id))
+        if turn is None:
+            return None
+        if turn.status in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            return turn
+
+        session = await self.session_repo.get(str(turn.session_id))
+        if session is None:
             return await self._fail_turn(
                 turn,
-                error_message=str(exc),
-                error_code="model_request_failed",
+                error_message="Agent session could not be loaded for this turn.",
+                error_code="session_not_found",
             )
 
-        await self.ledger.append(
-            session_id=str(turn.session_id),
-            turn_id=str(turn.id),
-            type=AgentEventType.ASSISTANT_TEXT_COMPLETED,
-            payload={"text": final_text},
-        )
-        completed_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
         turn = await self.turn_repo.update_all(
             turn,
-            status=AgentTurnStatus.COMPLETED,
-            final_text=final_text,
-            token_usage=token_usage,
-            completed_at=completed_at,
+            status=AgentTurnStatus.RUNNING,
+            started_at=turn.started_at or now,
+            completed_at=None,
+            error_code=None,
+            error_message=None,
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
-            type=AgentEventType.TURN_COMPLETED,
-            payload={"final_text": final_text},
+            type=AgentEventType.TURN_STARTED,
+            payload={"resume_action_id": action_id},
         )
-        return turn
+
+        resolved = await self._resolve_model_selection(turn=turn, session=session)
+        if resolved is None:
+            return await self._fail_turn(
+                turn,
+                error_message=(
+                    "No usable model is configured. Select a provider/model in Settings, "
+                    "or configure a deployment default."
+                ),
+                error_code="model_selection_missing",
+            )
+        if acompletion is not _ORIGINAL_ACOMPLETION:
+            loop_module.acompletion = acompletion
+        result = await AgentLoopController(self.turn_repo.session).resume_turn_from_action(
+            action_id=action_id,
+            provider=resolved["provider"],
+            model=resolved["model"],
+            request_args=await self._provider_request_args(
+                user_id=turn.user_id,
+                provider=resolved["provider"],
+                model=resolved["model"],
+            ),
+        )
+        fresh_turn = await self.turn_repo.get(str(turn.id))
+        if fresh_turn is None:
+            return None
+        return await AgentLoopController(self.turn_repo.session).complete_turn_from_result(
+            turn=fresh_turn,
+            result=result,
+        )
 
     async def _resolve_model_selection(self, *, turn, session) -> dict[str, str] | None:
         snapshot = turn.model_profile_snapshot or {}
@@ -310,6 +377,7 @@ class AgentCoreRuntime:
             status=AgentTurnStatus.FAILED,
             final_text=None,
             completed_at=completed_at,
+            termination_reason="model_failed",
             error_code=error_code,
             error_message=error_message,
         )

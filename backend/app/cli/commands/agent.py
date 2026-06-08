@@ -12,7 +12,7 @@ import typer
 from app.cli.api_helpers import api_delete, api_get, api_post
 from app.cli.context import CliContext
 from app.cli.errors import handle_errors
-from app.cli.helpers import require_project, unpack_ctx
+from app.cli.helpers import unpack_ctx
 from app.cli.render import Renderer
 from app.cli.types import ApiError, ApiResponse
 
@@ -67,10 +67,9 @@ def session_create(
 ) -> None:
     """Create an AgentCore session."""
     cli_ctx, r = unpack_ctx(ctx)
-    pid = require_project(cli_ctx, project_id)
     payload = _compact(
         {
-            "project_id": pid,
+            "project_id": project_id or cli_ctx.project_id,
             "title": title,
             "role_profile": role_profile,
             "permission_mode": permission_mode,
@@ -115,6 +114,18 @@ def session_show(
     cli_ctx, r = unpack_ctx(ctx)
     resp = cli_ctx.run(api_get(cli_ctx, f"/agent/sessions/{session_id}"))
     _render_session(r, resp)
+
+
+@session_app.command("state")
+@handle_errors
+def session_state(
+    ctx: typer.Context,
+    session_id: str = typer.Argument(help="AgentCore session ID"),
+) -> None:
+    """Show the durable AgentCore session state projection."""
+    cli_ctx, r = unpack_ctx(ctx)
+    resp = cli_ctx.run(api_get(cli_ctx, f"/agent/sessions/{session_id}/state"))
+    r.emit_json(resp) if r.is_json else _render_state(r, resp)
 
 
 @session_app.command("delete")
@@ -246,6 +257,18 @@ def turn_cancel(
     r.success(f"Agent turn {turn_id} cancelled.", raw=resp)
 
 
+@turn_app.command("interrupt")
+@handle_errors
+def turn_interrupt(
+    ctx: typer.Context,
+    turn_id: str = typer.Argument(help="AgentCore turn ID"),
+) -> None:
+    """Interrupt an AgentCore turn through the harness interrupt path."""
+    cli_ctx, r = unpack_ctx(ctx)
+    resp = cli_ctx.run(api_post(cli_ctx, f"/agent/turns/{turn_id}/interrupt"))
+    r.success(f"Agent turn {turn_id} interrupted.", raw=resp)
+
+
 @agent_app.command("cancel")
 @handle_errors
 def agent_cancel(
@@ -254,6 +277,25 @@ def agent_cancel(
 ) -> None:
     """Cancel an AgentCore turn."""
     turn_cancel(ctx, turn_id)
+
+
+@agent_app.command("interrupt")
+@handle_errors
+def agent_interrupt(
+    ctx: typer.Context,
+    turn_id: str = typer.Argument(help="AgentCore turn ID"),
+) -> None:
+    """Interrupt an AgentCore turn."""
+    turn_interrupt(ctx, turn_id)
+
+
+@agent_app.command("toolsets")
+@handle_errors
+def agent_toolsets(ctx: typer.Context) -> None:
+    """List AgentCore toolsets exposed by the backend."""
+    cli_ctx, r = unpack_ctx(ctx)
+    resp = cli_ctx.run(api_get(cli_ctx, "/agent/toolsets"))
+    r.emit_json(resp) if r.is_json else _render_toolsets(r, resp)
 
 
 # -- Action commands ---------------------------------------------------------
@@ -378,8 +420,10 @@ async def _ensure_session(
     """Return an AgentCore session ID, creating a session when needed."""
     if session_id:
         return session_id, False
-    pid = require_project(cli_ctx, project_id)
-    resp = await cli_ctx.client.post("/agent/sessions", {"project_id": pid})
+    resp = await cli_ctx.client.post(
+        "/agent/sessions",
+        _compact({"project_id": project_id or cli_ctx.project_id}),
+    )
     sid = _response_id(resp, "session")
     return sid, True
 
@@ -472,8 +516,6 @@ async def _stream_events(
         {"after_seq": after_seq},
     ):
         r.stream_event(event)
-        if event.event == "ready":
-            break
 
 
 # -- Shared render/utility helpers ------------------------------------------
@@ -557,6 +599,40 @@ def _render_artifact(r: Renderer, resp: ApiResponse) -> None:
         },
         title="Agent Artifact",
         raw=resp,
+    )
+
+
+def _render_state(r: Renderer, resp: ApiResponse) -> None:
+    data = resp.data if isinstance(resp.data, dict) else {}
+    session = data.get("session") if isinstance(data.get("session"), dict) else {}
+    turns = data.get("turns") if isinstance(data.get("turns"), list) else []
+    events = data.get("events") if isinstance(data.get("events"), list) else []
+    r.detail(
+        {
+            "Session": session.get("id", ""),
+            "Project": session.get("project_id", ""),
+            "Runtime": session.get("runtime_mode", ""),
+            "Turns": str(len(turns)),
+            "Events": str(len(events)),
+            "Last seq": str(events[-1].get("seq", 0) if events else 0),
+        },
+        title="Agent State",
+        raw=resp,
+    )
+
+
+def _render_toolsets(r: Renderer, resp: ApiResponse) -> None:
+    data = resp.data if isinstance(resp.data, dict) else {}
+    rows = data.get("toolsets") if isinstance(data.get("toolsets"), list) else []
+    normalized = [
+        {"name": row.get("name"), "tools": ", ".join(row.get("tools") or [])}
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    r.table(
+        [{"key": "name", "header": "Toolset"}, {"key": "tools", "header": "Tools"}],
+        normalized,
+        resp,
     )
 
 

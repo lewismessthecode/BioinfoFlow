@@ -34,7 +34,7 @@ async def _memory_context(db_session):
         user_id="dev",
         title="Memory",
     )
-    turn = await core.create_turn(
+    turn = await core.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",

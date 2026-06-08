@@ -6,6 +6,7 @@ from app.services.agent_core.tools.bio import (
     RunPreflightTool,
 )
 from app.services.agent_core.tools.dispatcher import AgentToolDispatcher
+from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.agent_core.tools.execution import ExecuteShellTool
 from app.services.agent_core.tools.memory import ListMemoriesTool, ProposeMemoryTool
 from app.services.agent_core.tools.platform import (
@@ -22,6 +23,7 @@ from app.services.agent_core.tools.skills import (
     LoadSkillTool,
 )
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
+from app.services.agent_core.tools.toolsets import ToolsetExposure
 
 
 def build_default_tool_registry() -> AgentToolRegistry:
@@ -48,7 +50,9 @@ def build_default_tool_registry() -> AgentToolRegistry:
 __all__ = [
     "AgentToolContext",
     "AgentToolDispatcher",
+    "AgentToolExecutor",
     "AgentToolRegistry",
     "AgentToolSpec",
+    "ToolsetExposure",
     "build_default_tool_registry",
 ]

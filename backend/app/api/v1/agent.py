@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import AsyncGenerator
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.database as app_database
 from app.api.deps import get_current_user, get_db
 from app.auth.session import AuthUser
 from app.schemas.agent_core import (
@@ -29,6 +31,8 @@ from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_model_selection_from_metadata,
 )
+from app.services.agent_core.tools import build_default_tool_registry
+from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.utils.responses import success_response
 
 
@@ -96,7 +100,7 @@ async def create_session(
 ):
     service = AgentCoreService(db)
     session = await service.create_session(
-        project_id=str(payload.project_id),
+        project_id=str(payload.project_id) if payload.project_id else None,
         workspace_id=user.workspace_id,
         user_id=user.id,
         title=payload.title,
@@ -269,6 +273,76 @@ async def cancel_turn(
     return success_response(_dump(_turn_read(turn)), request=request)
 
 
+@router.post("/turns/{turn_id}/interrupt")
+async def interrupt_turn(
+    turn_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AgentCoreService(db)
+    turn = await service.interrupt_turn(
+        turn_id=turn_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return success_response(_dump(_turn_read(turn)), request=request)
+
+
+@router.get("/sessions/{session_id}/state")
+async def get_session_state(
+    session_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AgentCoreService(db)
+    session = await service.require_session(
+        session_id=session_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    turns = await service.list_turns(
+        session_id=session_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    events = await service.list_events_for_session(
+        session_id=session_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return success_response(
+        {
+            "session": _dump(_session_read(session)),
+            "turns": [_dump(_turn_read(turn)) for turn in turns],
+            "events": [_dump(_event_read(event)) for event in events],
+        },
+        request=request,
+    )
+
+
+@router.get("/toolsets")
+async def list_toolsets(request: Request):
+    registry = build_default_tool_registry()
+    exposure = ToolsetExposure(registry)
+    return success_response(
+        {
+            "toolsets": [
+                {
+                    "name": "default",
+                    "tools": [spec.name for spec in exposure.exposed_specs(policy={"name": "default"})],
+                },
+                {
+                    "name": "execution",
+                    "tools": [spec.name for spec in exposure.exposed_specs(policy={"name": "execution"})],
+                },
+            ]
+        },
+        request=request,
+    )
+
+
 @router.get("/turns/{turn_id}/events")
 async def list_turn_events(
     turn_id: str,
@@ -292,27 +366,57 @@ async def list_turn_events(
 
 @router.get("/sessions/{session_id}/stream")
 async def stream_session_events(
+    request: Request,
     session_id: str,
     after_seq: int = Query(default=0, ge=0),
+    follow: bool = Query(default=True),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = AgentCoreService(db)
-    events = await service.list_events_for_session(
+    await service.require_session(
         session_id=session_id,
         workspace_id=user.workspace_id,
         user_id=user.id,
-        after_seq=after_seq,
     )
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        for event in events:
-            payload = _dump(_event_read(event))
-            yield f"id: {payload['id']}\n"
-            yield f"event: {payload['type']}\n"
-            yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
-        yield "event: ready\n"
-        yield 'data: {"status":"replayed"}\n\n'
+        cursor = after_seq
+        ready_sent = False
+        idle_seconds = 0.0
+        poll_seconds = 0.5
+        heartbeat_seconds = 15.0
+        while True:
+            if await request.is_disconnected():
+                break
+            async with app_database.async_session_maker() as stream_db:
+                stream_service = AgentCoreService(stream_db)
+                events = await stream_service.list_events_for_session(
+                    session_id=session_id,
+                    workspace_id=user.workspace_id,
+                    user_id=user.id,
+                    after_seq=cursor,
+                )
+            for event in events:
+                payload = _dump(_event_read(event))
+                cursor = max(cursor, int(payload["seq"]))
+                yield f"id: {payload['id']}\n"
+                yield f"event: {payload['type']}\n"
+                yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+            if not ready_sent:
+                yield "event: ready\n"
+                yield 'data: {"status":"streaming"}\n\n'
+                ready_sent = True
+                if not follow:
+                    break
+            if events:
+                idle_seconds = 0.0
+            else:
+                idle_seconds += poll_seconds
+                if idle_seconds >= heartbeat_seconds:
+                    yield ": ping\n\n"
+                    idle_seconds = 0.0
+            await asyncio.sleep(poll_seconds)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -333,6 +437,22 @@ async def decide_action(
         decision=payload.decision,
         note=payload.note,
         modified_input=payload.modified_input,
+    )
+    return success_response(_dump(_action_read(action)), request=request)
+
+
+@router.post("/actions/{action_id}/resume")
+async def resume_action(
+    action_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AgentCoreService(db)
+    action = await service.resume_action(
+        action_id=action_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
     )
     return success_response(_dump(_action_read(action)), request=request)
 

@@ -39,7 +39,7 @@ async def _shell_context(db_session) -> tuple[AgentToolDispatcher, AgentToolCont
         user_id="dev",
         title="Shell",
     )
-    turn = await core.create_turn(
+    turn = await core.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
@@ -113,8 +113,9 @@ async def test_shell_tool_blocks_dangerous_commands_even_in_bypass(db_session):
 
 
 @pytest.mark.asyncio
-async def test_shell_tool_resumes_after_approval_and_registers_output_artifact(db_session):
+async def test_shell_tool_resumes_after_approval_and_registers_output_artifact(db_session, monkeypatch):
     dispatcher, context, workspace_root = await _shell_context(db_session)
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda _action_id: None)
 
     pending = await dispatcher.dispatch(
         tool_name="execution.shell",
@@ -127,14 +128,16 @@ async def test_shell_tool_resumes_after_approval_and_registers_output_artifact(d
     )
     assert pending.status == "waiting_decision"
 
-    resumed = await AgentCoreService(db_session).decide_action(
+    decided = await AgentCoreService(db_session).decide_action(
         action_id=pending.action_id,
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
         decision="approve",
         note="approved for test",
     )
+    assert decided.status == "requested"
 
+    resumed = await dispatcher.resume_action(action_id=pending.action_id, context=context)
     assert resumed.status == "completed"
     assert resumed.result["exit_code"] == 0
     assert resumed.result["stdout"].strip() == "before-approval"
@@ -162,8 +165,9 @@ async def test_shell_tool_resumes_after_approval_and_registers_output_artifact(d
 
 
 @pytest.mark.asyncio
-async def test_shell_tool_uses_modified_input_when_approval_changes_command(db_session):
+async def test_shell_tool_uses_modified_input_when_approval_changes_command(db_session, monkeypatch):
     dispatcher, context, workspace_root = await _shell_context(db_session)
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda _action_id: None)
 
     pending = await dispatcher.dispatch(
         tool_name="execution.shell",
@@ -175,7 +179,7 @@ async def test_shell_tool_uses_modified_input_when_approval_changes_command(db_s
         permission_mode="guarded_auto",
     )
 
-    resumed = await AgentCoreService(db_session).decide_action(
+    decided = await AgentCoreService(db_session).decide_action(
         action_id=pending.action_id,
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
@@ -186,7 +190,9 @@ async def test_shell_tool_uses_modified_input_when_approval_changes_command(db_s
             "cwd": str(workspace_root),
         },
     )
+    assert decided.status == "requested"
 
+    resumed = await dispatcher.resume_action(action_id=pending.action_id, context=context)
     assert resumed.status == "completed"
     assert resumed.result["stdout"].strip() == "new-command"
     action = await AgentActionRepository(db_session).get(pending.action_id)

@@ -34,7 +34,7 @@ async def test_projects_list_tool_runs_through_action_ledger(db_session):
         user_id="dev",
         title="Tools",
     )
-    turn = await core.create_turn(
+    turn = await core.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
