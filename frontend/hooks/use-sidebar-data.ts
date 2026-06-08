@@ -21,6 +21,20 @@ import {
 } from "@/lib/agent-core/session-storage"
 import { emitReadinessRefresh } from "@/lib/readiness-events"
 
+const LAST_USED_PROJECT_STORAGE_KEY = "bioinfoflow:last-used-project"
+
+function getStoredLastUsedProjectId(): string {
+  return window.localStorage.getItem(LAST_USED_PROJECT_STORAGE_KEY) ?? ""
+}
+
+function setStoredLastUsedProjectId(projectId: string | null) {
+  if (projectId) {
+    window.localStorage.setItem(LAST_USED_PROJECT_STORAGE_KEY, projectId)
+    return
+  }
+  window.localStorage.removeItem(LAST_USED_PROJECT_STORAGE_KEY)
+}
+
 export function useSidebarData(tSidebar: (key: string, values?: Record<string, string>) => string) {
   const {
     selectedProjectId,
@@ -41,6 +55,12 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   const [loadingProjects, setLoadingProjects] = useState<Set<string>>(new Set())
   const [defaultProject, setDefaultProject] = useState<Project | null>(null)
   const [inboxConversations, setInboxConversations] = useState<AgentCoreSession[]>([])
+
+  const selectProjectForWorkspace = useCallback((projectId: string) => {
+    setSelectedProjectId(projectId)
+    setConversationProjectId(projectId)
+    setActiveConversationId("")
+  }, [setActiveConversationId, setConversationProjectId, setSelectedProjectId])
 
   const fetchProjects = useCallback(async () => {
     setIsLoading(true)
@@ -108,6 +128,16 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     if (projects.some((project) => project.id === selectedProjectId)) return
     fetchProjects()
   }, [selectedProjectId, projects, fetchProjects])
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      return
+    }
+    const activeProject = projects.find((project) => project.id === selectedProjectId)
+    if (activeProject && !activeProject.is_default) {
+      setStoredLastUsedProjectId(activeProject.id)
+    }
+  }, [projects, selectedProjectId])
 
   useEffect(() => {
     if (!selectedProjectId) return
@@ -188,9 +218,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   }
 
   const handleSelectProject = (project: Project) => {
-    setSelectedProjectId(project.id)
-    setConversationProjectId(project.id)
-    setActiveConversationId("")
+    selectProjectForWorkspace(project.id)
     if (!expandedProjects.has(project.id)) {
       toggleProjectExpanded(project.id)
     }
@@ -220,9 +248,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       })
 
       setProjects((prev) => [data, ...prev])
-      setSelectedProjectId(data.id)
-      setConversationProjectId(data.id)
-      setActiveConversationId("")
+      selectProjectForWorkspace(data.id)
       toast.success(tSidebar("toasts.projectCreated", { name: data.name }))
       emitReadinessRefresh("project-created")
     } catch (error) {
@@ -268,6 +294,9 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     try {
       await apiRequest(`/projects/${projectId}`, { method: "DELETE" })
       setProjects((prev) => prev.filter((item) => item.id !== projectId))
+      if (getStoredLastUsedProjectId() === projectId) {
+        setStoredLastUsedProjectId(null)
+      }
       if (selectedProjectId === projectId) {
         setSelectedProjectId("")
       }
@@ -287,6 +316,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       setSelectedProjectId("")
     } else {
       setSelectedProjectId(projectId)
+      setStoredLastUsedProjectId(projectId)
     }
     setConversationProjectId(projectId)
     setActiveConversationId(conversation.id)
@@ -306,6 +336,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
         setSelectedProjectId("")
       } else {
         setSelectedProjectId(targetId)
+        setStoredLastUsedProjectId(targetId)
       }
       setConversationProjectId(targetId)
       setActiveConversationId("")
@@ -343,9 +374,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       })
 
       setProjects((prev) => [created, ...prev])
-      setSelectedProjectId(created.id)
-      setConversationProjectId(created.id)
-      setActiveConversationId("")
+      selectProjectForWorkspace(created.id)
       toast.success(tSidebar("toasts.projectCreated", { name: created.name }))
       emitReadinessRefresh("project-created")
     } catch (error) {

@@ -27,8 +27,11 @@ async def test_gpu_metrics_returns_envelope(async_client, monkeypatch):
                 (),
                 {
                     "available": False,
+                    "detected": False,
                     "nvidia_smi_found": False,
                     "docker_nvidia_runtime": False,
+                    "runtime_visible_to_backend": False,
+                    "usable_for_gpu_workflows": False,
                     "parabricks_compatible": False,
                     "recommendation": "No GPU",
                     "error": None,
@@ -74,6 +77,7 @@ async def test_readiness_returns_blocking_checks(async_client, monkeypatch):
                 (),
                 {
                     "available": False,
+                    "detected": False,
                     "parabricks_compatible": False,
                 },
             )()
@@ -101,6 +105,10 @@ async def test_readiness_returns_blocking_checks(async_client, monkeypatch):
     assert "parabricks_image" not in checks
     assert checks["project"]["status"] == "fail"
     assert checks["workflow_binding"]["status"] == "fail"
+    assert data["summary"]["required_total"] == 6
+    assert data["summary"]["required_completed"] == 1
+    assert data["summary"]["optional_total"] == 1
+    assert data["summary"]["optional_warnings"] == 1
 
 
 @pytest.mark.asyncio
@@ -125,8 +133,11 @@ async def test_readiness_describes_visible_nvidia_runtime_without_claiming_no_gp
                 (),
                 {
                     "available": False,
+                    "detected": False,
                     "nvidia_smi_found": False,
                     "docker_nvidia_runtime": True,
+                    "runtime_visible_to_backend": False,
+                    "usable_for_gpu_workflows": False,
                     "gpus": [],
                     "parabricks_compatible": False,
                     "recommendation": "NVIDIA container runtime is configured, but nvidia-smi is not available to the backend process.",
@@ -175,6 +186,7 @@ async def test_readiness_accepts_saved_user_provider_credentials(
                 (),
                 {
                     "available": False,
+                    "detected": False,
                     "parabricks_compatible": False,
                 },
             )()
@@ -228,6 +240,7 @@ async def test_readiness_reports_ready_when_first_run_prereqs_exist(
                 (),
                 {
                     "available": False,
+                    "detected": False,
                     "parabricks_compatible": False,
                 },
             )()

@@ -1939,6 +1939,8 @@
       "dismiss": "关闭"
     },
     "modelSelector": {
+      "auto": "自动选择",
+      "section": "路由",
       "noProviders": "无可用模型",
       "configure": "配置服务商",
       "searchModels": "搜索模型..."

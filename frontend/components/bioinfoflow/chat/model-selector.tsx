@@ -23,6 +23,7 @@ interface ModelSelectorProps {
   selectedModel: string
   onSelectModel: (model: string) => void
   disabled?: boolean
+  allowAuto?: boolean
 }
 
 export function ModelSelector({
@@ -30,6 +31,7 @@ export function ModelSelector({
   selectedModel,
   onSelectModel,
   disabled = false,
+  allowAuto = false,
 }: ModelSelectorProps) {
   const t = useTranslations("settings.modelSelector")
   const [open, setOpen] = useState(false)
@@ -39,14 +41,14 @@ export function ModelSelector({
     .flatMap((pm) => pm.models.map((m) => ({ ...m, provider: pm.provider })))
     .find((m) => m.id === selectedModel)
 
-  const displayLabel = currentModel?.name ?? t("noProviders")
+  const displayLabel = currentModel?.name ?? (allowAuto ? t("auto") : t("noProviders"))
 
   if (models.length === 0) {
     return (
       <Button
         variant="ghost"
         size="sm"
-        className="h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground/80 hover:text-foreground hover:bg-secondary/70 text-xs font-medium transition-colors"
+        className="h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-muted-foreground/80 shadow-[0_8px_20px_rgba(15,23,42,0.06)] backdrop-blur transition-colors hover:bg-background hover:text-foreground text-xs font-medium"
         disabled={disabled}
         aria-label={t("configure")}
         asChild
@@ -65,7 +67,7 @@ export function ModelSelector({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 max-w-[176px] gap-1.5 rounded-full px-2.5 text-muted-foreground/80 hover:text-foreground hover:bg-secondary/70 text-xs font-medium transition-colors"
+          className="h-9 max-w-[196px] gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-muted-foreground/80 shadow-[0_8px_20px_rgba(15,23,42,0.06)] backdrop-blur transition-colors hover:bg-background hover:text-foreground text-xs font-medium"
           disabled={disabled}
           role="combobox"
           aria-expanded={open}
@@ -81,12 +83,35 @@ export function ModelSelector({
       <PopoverContent
         align="start"
         side="top"
-        className="w-[260px] p-0 rounded-2xl overflow-hidden backdrop-blur-xl bg-background/95 border-black/5 dark:border-white/10 shadow-2xl"
+        className="w-[280px] overflow-hidden rounded-[22px] border border-border/70 bg-background/96 p-0 shadow-[0_22px_60px_rgba(15,23,42,0.18)] backdrop-blur-xl"
       >
         <Command>
           <CommandInput placeholder={t("searchModels")} className="h-9" />
           <CommandList>
             <CommandEmpty>{t("noProviders")}</CommandEmpty>
+            {allowAuto ? (
+              <>
+                <CommandGroup heading={t("section")}>
+                  <CommandItem
+                    value={t("auto")}
+                    onSelect={() => {
+                      onSelectModel("")
+                      setOpen(false)
+                    }}
+                    className="flex items-center justify-between px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <SettingsIcon className="h-3.5 w-3.5 opacity-60" />
+                      <span className="text-sm">{t("auto")}</span>
+                    </div>
+                    {selectedModel === "" ? (
+                      <Check className="h-3.5 w-3.5 text-primary" />
+                    ) : null}
+                  </CommandItem>
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            ) : null}
             {models.map((providerGroup, index) => (
               <div key={providerGroup.provider}>
                 {index > 0 && <CommandSeparator />}

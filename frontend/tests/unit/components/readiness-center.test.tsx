@@ -145,12 +145,12 @@ describe("ReadinessCenter", () => {
 
     render(<ReadinessCenter readiness={blockedReadiness()} onRefresh={onRefreshMock} />)
 
-    expect(screen.getByRole("button", { name: /open readiness checklist/i })).toHaveTextContent("4/8 ready")
+    expect(screen.getByRole("button", { name: /open readiness checklist/i })).toHaveTextContent("3/6 ready")
 
     await user.click(screen.getByRole("button", { name: /open readiness checklist/i }))
 
     expect(screen.getByRole("dialog", { name: "Readiness checklist" })).toBeInTheDocument()
-    expect(screen.getByText("4 of 8 checks ready")).toBeInTheDocument()
+    expect(screen.getByText("3 of 6 checks ready")).toBeInTheDocument()
 
     for (const label of [
       "Backend API",

@@ -8,10 +8,11 @@ import {
   type AgentCoreChatHandle,
 } from "@/components/bioinfoflow/agent-core/agent-core-chat"
 import { useAgentCore } from "@/hooks/use-agent-core"
-import { useLlmCatalog } from "@/hooks/use-llm-catalog"
+import { useLlmSettings } from "@/hooks/use-llm-settings"
 
-const { clearStoredAgentSessionIdMock } = vi.hoisted(() => ({
+const { clearStoredAgentSessionIdMock, modelSelectorPropsMock } = vi.hoisted(() => ({
   clearStoredAgentSessionIdMock: vi.fn(),
+  modelSelectorPropsMock: vi.fn(),
 }))
 
 vi.mock("next-intl", () => ({
@@ -82,6 +83,13 @@ vi.mock("next-intl", () => ({
         lateNight: "Good morning ☀️ What data shall we explore?",
         morning: "Good morning ☀️ What data shall we explore?",
       },
+      "settings.modelSelector": {
+        auto: "Auto select",
+        section: "Routing",
+        noProviders: "No model available",
+        configure: "Configure providers",
+        searchModels: "Search models...",
+      },
       executionMode: {
         approveAllDescription: "Also prompt on low-risk writes. Strictest mode.",
         approveAllShort: "Approve all",
@@ -121,8 +129,8 @@ vi.mock("@/hooks/use-agent-core", () => ({
   useAgentCore: vi.fn(),
 }))
 
-vi.mock("@/hooks/use-llm-catalog", () => ({
-  useLlmCatalog: vi.fn(),
+vi.mock("@/hooks/use-llm-settings", () => ({
+  useLlmSettings: vi.fn(),
 }))
 
 vi.mock("@/lib/agent-core/session-storage", () => ({
@@ -130,12 +138,27 @@ vi.mock("@/lib/agent-core/session-storage", () => ({
     clearStoredAgentSessionIdMock(...args),
 }))
 
+vi.mock("@/components/bioinfoflow/chat/model-selector", () => ({
+  ModelSelector: (props: {
+    selectedModel: string
+    onSelectModel: (model: string) => void
+  }) => {
+    modelSelectorPropsMock(props)
+    return (
+      <button onClick={() => props.onSelectModel("")}>
+        model-selector:{props.selectedModel || "auto"}
+      </button>
+    )
+  },
+}))
+
 describe("AgentCoreChat", () => {
   const useAgentCoreMock = vi.mocked(useAgentCore)
-  const useLlmCatalogMock = vi.mocked(useLlmCatalog)
+  const useLlmSettingsMock = vi.mocked(useLlmSettings)
   const sendTurn = vi.fn()
   const setActiveSessionId = vi.fn()
   const updateSessionSettings = vi.fn()
+  const setSelectedModel = vi.fn()
   const approveAction = vi.fn()
   const rejectAction = vi.fn()
   const acceptMemory = vi.fn()
@@ -150,43 +173,33 @@ describe("AgentCoreChat", () => {
     acceptMemory.mockReset()
     rejectMemory.mockReset()
     clearStoredAgentSessionIdMock.mockReset()
-    useLlmCatalogMock.mockReturnValue({
-      providers: [],
+    modelSelectorPropsMock.mockReset()
+    setSelectedModel.mockReset()
+    useLlmSettingsMock.mockReturnValue({
+      settings: null,
       models: [
         {
-          id: "model-1",
-          provider_id: "provider-1",
-          model_id: "bio-coder",
-          display_name: "Bio Coder",
-          supports_tools: true,
-          supports_streaming: true,
-          supports_vision: false,
-          supports_json_schema: true,
-          supports_reasoning: true,
-          created_at: "2026-06-04T00:00:00Z",
-          updated_at: "2026-06-04T00:00:00Z",
+          provider: "openai",
+          label: "OpenAI",
+          models: [
+            {
+              id: "gpt-5.4",
+              name: "GPT-5.4",
+              context_window: 200000,
+            },
+          ],
         },
       ],
-      profiles: [
-        {
-          id: "profile-1",
-          name: "Bio Agent",
-          task_type: "agent_core",
-          primary_model_id: "model-1",
-          fallback_model_ids: null,
-          scope: "user",
-          enabled: true,
-          created_at: "2026-06-04T00:00:00Z",
-          updated_at: "2026-06-04T00:00:00Z",
-        },
+      allModels: [
+        { id: "gpt-5.4", name: "GPT-5.4", context_window: 200000, provider: "openai" },
       ],
       isLoading: false,
-      isMutating: false,
-      error: null,
-      refresh: vi.fn(),
-      createProvider: vi.fn(),
-      setProviderEnabled: vi.fn(),
+      hasConfiguredProvider: true,
+      selectedModel: "gpt-5.4",
+      updateSettings: vi.fn(),
+      setSelectedModel,
       testProvider: vi.fn(),
+      refetch: vi.fn(),
     })
     useAgentCoreMock.mockReturnValue({
       sessions: [
@@ -474,6 +487,19 @@ describe("AgentCoreChat", () => {
     expect(updateSessionSettings).toHaveBeenCalledWith({
       permissionMode: "bypass",
     })
+  })
+
+  it("uses configured provider models for the assistant model selector", async () => {
+    const user = userEvent.setup()
+
+    render(<AgentCoreChat projectId="project-1" workspaceEnabled />)
+
+    expect(screen.getAllByText("model-selector:gpt-5.4").length).toBeGreaterThan(0)
+
+    await user.click(screen.getAllByText("model-selector:gpt-5.4")[0]!)
+
+    expect(setSelectedModel).toHaveBeenCalledWith("")
+    expect(modelSelectorPropsMock).toHaveBeenCalled()
   })
 
   it("renders the project welcome card when no project is selected", () => {

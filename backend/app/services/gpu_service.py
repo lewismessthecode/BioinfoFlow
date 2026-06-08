@@ -38,8 +38,11 @@ class GpuStatus:
     """Overall GPU status for the system."""
 
     available: bool
+    detected: bool
     nvidia_smi_found: bool
     docker_nvidia_runtime: bool
+    runtime_visible_to_backend: bool
+    usable_for_gpu_workflows: bool
     gpus: list[GpuInfo]
     parabricks_compatible: bool
     recommendation: str
@@ -80,32 +83,41 @@ class GpuService:
             if apple_gpu:
                 return GpuStatus(
                     available=True,
+                    detected=True,
                     nvidia_smi_found=False,
                     docker_nvidia_runtime=docker_nvidia,
+                    runtime_visible_to_backend=True,
+                    usable_for_gpu_workflows=False,
                     gpus=[apple_gpu],
                     parabricks_compatible=False,
-                    recommendation="Apple Silicon detected. Parabricks requires NVIDIA GPU with 16GB+ VRAM for WGS analysis.",
+                    recommendation="Apple Silicon GPU detected automatically. CPU workflows remain available, but NVIDIA-only workflows such as Parabricks still require an NVIDIA GPU runtime.",
                     error=None,
                 )
 
             if docker_nvidia:
                 return GpuStatus(
                     available=False,
+                    detected=False,
                     nvidia_smi_found=False,
                     docker_nvidia_runtime=True,
+                    runtime_visible_to_backend=False,
+                    usable_for_gpu_workflows=False,
                     gpus=[],
                     parabricks_compatible=False,
-                    recommendation="NVIDIA container runtime is configured, but nvidia-smi is not available to the backend process. Check the backend container PATH and NVIDIA driver visibility.",
+                    recommendation="NVIDIA container runtime is configured, but nvidia-smi is not available to the backend process. Check container GPU passthrough, PATH, and driver visibility.",
                     error="nvidia-smi not found",
                 )
 
             return GpuStatus(
                 available=False,
+                detected=False,
                 nvidia_smi_found=False,
                 docker_nvidia_runtime=False,
+                runtime_visible_to_backend=False,
+                usable_for_gpu_workflows=False,
                 gpus=[],
                 parabricks_compatible=False,
-                recommendation="Install NVIDIA drivers to enable GPU acceleration.",
+                recommendation="No GPU runtime is visible to the backend. CPU workflows can still run, and GPU acceleration will be detected automatically once the host and container runtime expose it.",
                 error="nvidia-smi not found",
             )
 
@@ -116,8 +128,11 @@ class GpuService:
             if not gpus:
                 return GpuStatus(
                     available=False,
+                    detected=False,
                     nvidia_smi_found=True,
                     docker_nvidia_runtime=docker_nvidia,
+                    runtime_visible_to_backend=False,
+                    usable_for_gpu_workflows=False,
                     gpus=[],
                     parabricks_compatible=False,
                     recommendation="No NVIDIA GPU detected. A GPU with 16GB+ VRAM is required.",
@@ -133,15 +148,18 @@ class GpuService:
             if parabricks_compatible:
                 recommendation = f"Ready for Parabricks WGS! {compatible_gpus[0].name} with {compatible_gpus[0].memory_total_mb // 1024}GB VRAM detected."
             elif compatible_gpus and not docker_nvidia:
-                recommendation = "GPU detected but Docker NVIDIA runtime is not installed. Run: nvidia-ctk runtime configure --runtime=docker"
+                recommendation = "NVIDIA GPU detected, but container GPU passthrough is not enabled. Configure the Docker NVIDIA runtime so Bioinfoflow jobs can use the host GPU."
             else:
                 max_vram = max(g.memory_total_mb for g in gpus) if gpus else 0
-                recommendation = f"GPU has {max_vram // 1024}GB VRAM. Parabricks requires 16GB+ for optimal performance."
+                recommendation = f"NVIDIA GPU detected with {max_vram // 1024}GB VRAM. GPU-aware workflows can be routed here automatically once the required runtime is available."
 
             return GpuStatus(
                 available=True,
+                detected=True,
                 nvidia_smi_found=True,
                 docker_nvidia_runtime=docker_nvidia,
+                runtime_visible_to_backend=True,
+                usable_for_gpu_workflows=docker_nvidia,
                 gpus=gpus,
                 parabricks_compatible=parabricks_compatible,
                 recommendation=recommendation,
@@ -151,8 +169,11 @@ class GpuService:
             logger.error("gpu.detection_failed", error=str(e))
             return GpuStatus(
                 available=False,
+                detected=False,
                 nvidia_smi_found=True,
                 docker_nvidia_runtime=False,
+                runtime_visible_to_backend=False,
+                usable_for_gpu_workflows=False,
                 gpus=[],
                 parabricks_compatible=False,
                 recommendation="GPU detection failed. Check NVIDIA drivers.",

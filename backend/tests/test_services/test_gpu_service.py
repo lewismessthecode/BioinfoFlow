@@ -41,12 +41,15 @@ async def test_get_status_returns_apple_silicon_when_nvidia_is_missing() -> None
     status = await service.get_status()
 
     assert status.available is True
+    assert status.detected is True
     assert status.nvidia_smi_found is False
     assert status.docker_nvidia_runtime is False
+    assert status.runtime_visible_to_backend is True
+    assert status.usable_for_gpu_workflows is False
     assert status.parabricks_compatible is False
     assert len(status.gpus) == 1
     assert status.gpus[0].gpu_type == "Apple Silicon"
-    assert "Apple Silicon detected" in status.recommendation
+    assert "Apple Silicon GPU detected automatically" in status.recommendation
 
 
 @pytest.mark.asyncio
@@ -66,11 +69,14 @@ async def test_get_status_reports_nvidia_runtime_when_nvidia_smi_is_missing() ->
     status = await service.get_status()
 
     assert status.available is False
+    assert status.detected is False
     assert status.nvidia_smi_found is False
     assert status.docker_nvidia_runtime is True
+    assert status.runtime_visible_to_backend is False
+    assert status.usable_for_gpu_workflows is False
     assert status.gpus == []
     assert "NVIDIA container runtime is configured" in status.recommendation
-    assert "nvidia-smi" in status.recommendation
+    assert "GPU passthrough" in status.recommendation
 
 
 @pytest.mark.asyncio
@@ -102,8 +108,11 @@ async def test_get_status_marks_parabricks_ready_when_gpu_and_runtime_are_availa
     status = await service.get_status()
 
     assert status.available is True
+    assert status.detected is True
     assert status.nvidia_smi_found is True
     assert status.docker_nvidia_runtime is True
+    assert status.runtime_visible_to_backend is True
+    assert status.usable_for_gpu_workflows is True
     assert status.parabricks_compatible is True
     assert status.error is None
     assert "Ready for Parabricks WGS" in status.recommendation

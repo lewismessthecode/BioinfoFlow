@@ -1939,6 +1939,8 @@
       "dismiss": "Dismiss"
     },
     "modelSelector": {
+      "auto": "Auto select",
+      "section": "Routing",
       "noProviders": "No model available",
       "configure": "Configure providers",
       "searchModels": "Search models..."

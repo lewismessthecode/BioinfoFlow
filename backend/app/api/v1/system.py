@@ -115,8 +115,15 @@ async def get_gpu_status(request: Request):
     return success_response(
         {
             "available": status.available,
+            "detected": getattr(status, "detected", status.available),
             "nvidia_smi_found": status.nvidia_smi_found,
             "docker_nvidia_runtime": status.docker_nvidia_runtime,
+            "runtime_visible_to_backend": getattr(
+                status, "runtime_visible_to_backend", bool(status.gpus)
+            ),
+            "usable_for_gpu_workflows": getattr(
+                status, "usable_for_gpu_workflows", status.parabricks_compatible
+            ),
             "parabricks_compatible": status.parabricks_compatible,
             "recommendation": status.recommendation,
             "error": status.error,
@@ -220,61 +227,66 @@ def _check(
 
 def _gpu_readiness_check(gpu_status) -> dict[str, str]:
     available = bool(getattr(gpu_status, "available", False))
+    detected = bool(getattr(gpu_status, "detected", available))
     nvidia_smi_found = bool(getattr(gpu_status, "nvidia_smi_found", False))
     docker_nvidia_runtime = bool(getattr(gpu_status, "docker_nvidia_runtime", False))
+    runtime_visible_to_backend = bool(
+        getattr(gpu_status, "runtime_visible_to_backend", False)
+    )
+    usable_for_gpu_workflows = bool(
+        getattr(gpu_status, "usable_for_gpu_workflows", False)
+    )
     parabricks_compatible = bool(getattr(gpu_status, "parabricks_compatible", False))
     recommendation = getattr(gpu_status, "recommendation", None)
     error = getattr(gpu_status, "error", None)
     gpus = list(getattr(gpu_status, "gpus", []) or [])
 
-    if available:
+    if usable_for_gpu_workflows:
         if parabricks_compatible:
-            detail = "NVIDIA GPU is available for accelerated workflows"
+            detail = "NVIDIA GPU is ready for accelerated workflows"
             hint = recommendation
         elif gpus:
-            gpu_type = getattr(gpus[0], "gpu_type", "GPU")
-            detail = f"{gpu_type} detected; CPU workflows can still run"
+            detail = "NVIDIA GPU is visible and can be routed to GPU workflows"
             hint = recommendation
-        else:
-            detail = "GPU acceleration is available"
-            hint = recommendation
-        return _check(
-            "gpu",
-            "GPU",
-            "pass",
-            detail,
-            severity="optional",
-            hint=hint,
-            docs_link="/docs/operations/runbook",
-            action_label="Open resource monitor",
-            action_href="/scheduler",
-        )
-
-    if docker_nvidia_runtime:
+        status = "pass"
+    elif detected and runtime_visible_to_backend and gpus:
+        gpu_type = getattr(gpus[0], "gpu_type", "GPU")
+        detail = f"{gpu_type} detected on this machine"
+        hint = recommendation
+        status = "warn"
+    elif detected and runtime_visible_to_backend:
+        detail = "Local GPU detected; CPU workflows can still run"
+        hint = recommendation
+        status = "warn"
+    elif docker_nvidia_runtime:
         detail = "NVIDIA runtime is configured, but GPU details are not visible to the backend"
         hint = (
             recommendation
             or "Check nvidia-smi visibility inside the backend process. CPU workflows can still run."
         )
+        status = "warn"
     elif nvidia_smi_found:
         detail = "NVIDIA tooling is installed, but no GPU details were returned"
         hint = (
             recommendation or "Check NVIDIA driver status. CPU workflows can still run."
         )
+        status = "warn"
     elif error and error != "nvidia-smi not found":
         detail = "GPU detection failed; CPU workflows can still run"
         hint = recommendation or str(error)
+        status = "warn"
     else:
         detail = "No GPU detected; CPU workflows can still run"
         hint = (
             recommendation
             or "Install NVIDIA drivers/runtime only if this workflow requires GPU acceleration."
         )
+        status = "warn"
 
     return _check(
         "gpu",
         "GPU",
-        "warn",
+        status,
         detail,
         severity="optional",
         hint=hint,
@@ -413,15 +425,33 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
         check["status"] == "fail" and check["severity"] == "blocking"
         for check in checks
     )
+    required_checks = [check for check in checks if check["severity"] == "blocking"]
+    required_completed = sum(1 for check in required_checks if check["status"] == "pass")
+    optional_checks = [check for check in checks if check["severity"] == "optional"]
     return success_response(
         {
             "severity": "blocked" if blocked else "ready",
             "next_action": _next_action(checks),
             "checks": checks,
             "summary": {
+                "required_total": len(required_checks),
+                "required_completed": required_completed,
+                "optional_total": len(optional_checks),
+                "optional_warnings": sum(
+                    1 for check in optional_checks if check["status"] != "pass"
+                ),
                 "docker_available": docker_available,
                 "nvidia_runtime": nvidia_runtime,
                 "gpu_available": getattr(gpu_status, "available", False),
+                "gpu_detected": getattr(
+                    gpu_status, "detected", getattr(gpu_status, "available", False)
+                ),
+                "gpu_runtime_visible_to_backend": getattr(
+                    gpu_status, "runtime_visible_to_backend", False
+                ),
+                "gpu_usable_for_workflows": getattr(
+                    gpu_status, "usable_for_gpu_workflows", False
+                ),
                 "provider_key_configured": provider_ready,
                 "projects": project_count or 0,
                 "workflows": workflow_count or 0,
