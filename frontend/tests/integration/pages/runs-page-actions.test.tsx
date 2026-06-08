@@ -328,7 +328,10 @@ describe("RunsPage - run actions", () => {
       projectContext: { activeProjectId: "project-url" },
     })
 
-    expect(await screen.findByTestId("run-inline-detail")).toHaveTextContent("detail-run:run-1")
+    expect(await screen.findByTestId("run-inline-detail-loading")).toBeInTheDocument()
+    expect(
+      await screen.findByTestId("run-inline-detail", {}, { timeout: 3000 }),
+    ).toHaveTextContent("detail-run:run-1")
 
     await waitFor(() => {
       expect(toastErrorMock).toHaveBeenCalledWith("detail load failed")
