@@ -21,7 +21,7 @@ vi.mock("next-intl", () => ({
   useTranslations: (namespace: string) => (key: string) => {
     const copy: Record<string, Record<string, string>> = {
       sidebar: {
-        newAnalysis: "New Analysis",
+        newConversation: "New Conversation",
         workspace: "Workspace",
       },
       common: {
@@ -105,16 +105,16 @@ describe("Sidebar", () => {
     })
   })
 
-  it("uses New Analysis as the primary CTA", () => {
+  it("uses New Conversation as the primary CTA", () => {
     render(<Sidebar collapsed={false} />)
 
-    expect(screen.getByRole("button", { name: "New Analysis" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "New Conversation" })).toBeInTheDocument()
   })
 
-  it("renders the New Analysis CTA without elevated styling", () => {
+  it("renders the New Conversation CTA without elevated styling", () => {
     render(<Sidebar collapsed={false} />)
 
-    const button = screen.getByRole("button", { name: "New Analysis" })
+    const button = screen.getByRole("button", { name: "New Conversation" })
     expect(button.className).not.toContain("shadow-sm")
   })
 

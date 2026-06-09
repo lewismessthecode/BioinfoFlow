@@ -16,7 +16,7 @@ const permissionModes = new Set<AgentPermissionMode>([
   "bypass",
 ])
 
-export type AgentCoreSessionUpdateDetail = Pick<
+type AgentCoreSessionUpdateDetail = Pick<
   AgentCoreSession,
   "id" | "project_id" | "title" | "created_at" | "updated_at"
 >

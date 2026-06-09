@@ -24,6 +24,7 @@ interface ModelSelectorProps {
   onSelectModel: (selection: ModelSelection | null) => void
   disabled?: boolean
   allowAuto?: boolean
+  variant?: "default" | "composer"
 }
 
 export function ModelSelector({
@@ -32,9 +33,17 @@ export function ModelSelector({
   onSelectModel,
   disabled = false,
   allowAuto = false,
+  variant = "default",
 }: ModelSelectorProps) {
   const t = useTranslations("settings.modelSelector")
   const [open, setOpen] = useState(false)
+  const isComposer = variant === "composer"
+  const triggerClassName = isComposer
+    ? "h-9 max-w-[196px] gap-1 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+    : "h-9 max-w-[196px] gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
+  const configureClassName = isComposer
+    ? "h-9 gap-1 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+    : "h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
 
   // Find the display name for the current selection
   const currentModel = models
@@ -52,12 +61,13 @@ export function ModelSelector({
       <Button
         variant="ghost"
         size="sm"
-        className="h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-muted-foreground/80 shadow-[0_8px_20px_rgba(15,23,42,0.06)] backdrop-blur transition-colors hover:bg-background hover:text-foreground text-xs font-medium"
+        className={configureClassName}
         disabled={disabled}
         aria-label={t("configure")}
+        data-variant={variant}
         asChild
       >
-        <Link href="/settings">
+        <Link href="/settings?section=providers">
           <SettingsIcon className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">{t("configure")}</span>
         </Link>
@@ -71,11 +81,12 @@ export function ModelSelector({
         <Button
           variant="ghost"
           size="sm"
-          className="h-9 max-w-[196px] gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-muted-foreground/80 shadow-[0_8px_20px_rgba(15,23,42,0.06)] backdrop-blur transition-colors hover:bg-background hover:text-foreground text-xs font-medium"
+          className={triggerClassName}
           disabled={disabled}
           role="combobox"
           aria-expanded={open}
           aria-label={displayLabel}
+          data-variant={variant}
         >
           {currentModel && (
             <ProviderIcon provider={currentModel.provider} size={13} />
@@ -87,7 +98,7 @@ export function ModelSelector({
       <PopoverContent
         align="start"
         side="top"
-        className="w-[280px] overflow-hidden rounded-[22px] border border-border/70 bg-background/96 p-0 shadow-[0_22px_60px_rgba(15,23,42,0.18)] backdrop-blur-xl"
+        className="w-[280px] overflow-hidden rounded-[22px] border border-border/70 bg-background/96 p-0 shadow-2xl shadow-foreground/10 backdrop-blur-xl"
       >
         <Command>
           <CommandInput placeholder={t("searchModels")} className="h-9" />
@@ -130,6 +141,7 @@ export function ModelSelector({
                         onSelectModel({
                           provider: providerGroup.provider,
                           model: model.id,
+                          model_id: model.model_id,
                         })
                         setOpen(false)
                       }}
@@ -153,7 +165,7 @@ export function ModelSelector({
               <CommandItem
                 onSelect={() => {
                   setOpen(false)
-                  window.location.href = "/settings"
+                  window.location.href = "/settings?section=providers"
                 }}
                 className="px-3 py-2"
               >

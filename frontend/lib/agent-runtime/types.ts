@@ -11,8 +11,10 @@ export type AgentTurnStatus =
   | "cancelled"
 
 export type AgentModelSelection = {
-  provider: string
-  model: string
+  provider?: string | null
+  model?: string | null
+  model_id?: string | null
+  profile_id?: string | null
 }
 
 export type AgentRuntimeSession = {

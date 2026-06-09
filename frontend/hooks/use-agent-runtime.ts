@@ -35,6 +35,7 @@ export function useAgentRuntime(
   const activeSessionId = isControlled
     ? options.activeSessionId || null
     : uncontrolledSessionId
+  const isControlledDraft = isControlled && options.activeSessionId === ""
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? state.session,
     [activeSessionId, sessions, state.session],
@@ -56,6 +57,10 @@ export function useAgentRuntime(
     try {
       const nextSessions = await listAgentRuntimeSessions(projectId)
       setSessions(nextSessions)
+      if (isControlledDraft) {
+        dispatch({ type: "session.selected", session: null })
+        return
+      }
       const nextActive =
         activeSessionId && nextSessions.some((session) => session.id === activeSessionId)
           ? activeSessionId
@@ -68,7 +73,7 @@ export function useAgentRuntime(
         message: error instanceof Error ? error.message : "Failed to load sessions",
       })
     }
-  }, [activeSessionId, projectId, setActiveSessionId])
+  }, [activeSessionId, isControlledDraft, projectId, setActiveSessionId])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -120,7 +125,6 @@ export function useAgentRuntime(
       if (activeSession) return activeSession
       const created = await createAgentRuntimeSession({
         projectId: projectId || null,
-        title: projectId ? "New analysis" : "Workspace analysis",
         permissionMode: "guarded_auto",
         modelSelection,
       })

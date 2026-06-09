@@ -104,6 +104,7 @@ vi.mock("@/components/bioinfoflow/sidebar/sidebar-drawer", () => ({
 
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
   WorkspaceShellProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useWorkspaceShell: () => ({ navbarActions: null }),
 }))
 
 vi.mock("@/components/bioinfoflow/command-palette", () => ({

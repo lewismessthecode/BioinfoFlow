@@ -75,5 +75,25 @@ describe("ModelSelector", () => {
       "aria-label",
       "Configure providers",
     )
+    expect(screen.getByRole("link", { name: "Configure providers" })).toHaveAttribute(
+      "href",
+      "/settings?section=providers",
+    )
+  })
+
+  it("uses a borderless composer trigger variant while keeping the combobox name", () => {
+    render(
+      <ModelSelector
+        models={models}
+        selectedModel={{ provider: "openai", model: "gpt-4o-mini" }}
+        onSelectModel={vi.fn()}
+        variant="composer"
+      />,
+    )
+
+    expect(screen.getByRole("combobox", { name: "GPT-4o mini" })).toHaveAttribute(
+      "data-variant",
+      "composer",
+    )
   })
 })

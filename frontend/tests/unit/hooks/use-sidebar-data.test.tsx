@@ -109,9 +109,11 @@ describe("useSidebarData", () => {
       ])
     )
 
-    expect(result.current.project.selectedProjectId).toBe("project-a")
-    expect(result.current.project.conversationProjectId).toBe("project-a")
-    expect(result.current.project.activeProjectName).toBe("Alpha")
+    await waitFor(() => {
+      expect(result.current.project.selectedProjectId).toBe("project-a")
+      expect(result.current.project.conversationProjectId).toBe("project-a")
+      expect(result.current.project.activeProjectName).toBe("Alpha")
+    })
   })
 
   it("restores the stored conversation for the active project when available", async () => {

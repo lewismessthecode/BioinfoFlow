@@ -52,7 +52,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
 
   const canCreateChat = !workspaceShell.isLoading
 
-  const handleNewAnalysis = () => {
+  const handleNewConversation = () => {
     if (canCreateChat) {
       workspaceShell.handleCreateConversation(activeProjectId || undefined)
       return
@@ -148,8 +148,8 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
         {collapsed ? (
           <>
             <RailButton
-              label={tSidebar("newAnalysis")}
-              onClick={handleNewAnalysis}
+              label={tSidebar("newConversation")}
+              onClick={handleNewConversation}
               active
               icon={<SquarePen className="h-4 w-4" />}
             />
@@ -163,10 +163,10 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
           <div className="space-y-1">
             <Button
               className="h-[38px] w-full justify-start gap-3 rounded-full border border-transparent bg-sidebar-accent px-4 text-[13px] font-semibold text-foreground shadow-none transition-colors duration-200 hover:bg-sidebar-accent/80"
-              onClick={handleNewAnalysis}
+              onClick={handleNewConversation}
             >
               <SquarePen className="h-4 w-4 shrink-0" />
-              <span className="truncate">{tSidebar("newAnalysis")}</span>
+              <span className="truncate">{tSidebar("newConversation")}</span>
             </Button>
             <Button
               variant="ghost"

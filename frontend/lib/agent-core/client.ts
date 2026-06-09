@@ -12,7 +12,7 @@ import type {
   AgentModelSelection,
 } from "@/lib/agent-core/types"
 
-export type CreateAgentSessionInput = {
+type CreateAgentSessionInput = {
   projectId: string
   title?: string
   roleProfile?: string
@@ -23,7 +23,7 @@ export type CreateAgentSessionInput = {
   metadata?: Record<string, unknown>
 }
 
-export type CreateAgentTurnInput = {
+type CreateAgentTurnInput = {
   sessionId: string
   inputText: string
   inputParts?: Array<Record<string, unknown>>
@@ -185,20 +185,6 @@ export const rejectAgentMemory = async (
 ) => {
   const response = await apiRequest<AgentCoreMemory>(
     `/agent/memories/${memoryId}/reject`,
-    {
-      method: "POST",
-      body: JSON.stringify({ note: options?.note }),
-    },
-  )
-  return response.data
-}
-
-export const disableAgentMemory = async (
-  memoryId: string,
-  options?: { note?: string },
-) => {
-  const response = await apiRequest<AgentCoreMemory>(
-    `/agent/memories/${memoryId}/disable`,
     {
       method: "POST",
       body: JSON.stringify({ note: options?.note }),
