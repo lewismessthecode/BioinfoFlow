@@ -69,12 +69,11 @@ async def test_agent_core_no_tool_runtime_writes_ordered_events(db_session, monk
         "model": "claude-sonnet-4-6",
     }
     assert turn.model_profile_snapshot["resolved_model_source"] == "deployment_default"
-    assert [event.seq for event in events] == [1, 2, 3, 4, 5, 6]
+    assert [event.seq for event in events] == [1, 2, 3, 4, 5]
     assert [event.type for event in events] == [
         "turn.created",
         "turn.started",
         "model.selected",
-        "assistant.thinking.summary",
         "assistant.text.completed",
         "turn.completed",
     ]

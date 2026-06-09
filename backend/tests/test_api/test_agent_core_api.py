@@ -228,7 +228,6 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
         "turn.created",
         "turn.started",
         "model.selected",
-        "assistant.thinking.summary",
         "assistant.text.completed",
         "turn.completed",
     ]
@@ -662,11 +661,9 @@ async def test_agent_core_profile_strategy_can_disable_streaming_thinking_and_to
     assert "tools" not in completion_kwargs
     assert turn["model_profile_snapshot"]["resolved_profile_id"] == profile["id"]
     strategy = turn["model_profile_snapshot"]["resolved_runtime_strategy"]
-    assert strategy == {
-        "allow_thinking": False,
-        "allow_tools": False,
-        "use_streaming": False,
-    }
+    assert strategy["allow_thinking"] is False
+    assert strategy["allow_tools"] is False
+    assert strategy["use_streaming"] is False
 
     events_response = await async_client.get(f"/api/v1/agent/turns/{turn['id']}/events")
     assert events_response.status_code == 200

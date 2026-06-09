@@ -21,7 +21,6 @@ from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, R
 from app.services.agent_core.core.stream_adapter import (
     StreamCompletionResult,
     StreamToolCall,
-    collect_stream_result,
     extract_reasoning_delta,
     extract_text_delta,
     extract_tool_call_deltas,
@@ -390,6 +389,7 @@ class AgentLoopController:
         thinking_parts: list[str] = []
         text_index = 0
         thinking_index = 0
+        thinking_completed = False
         seen_tool_calls: dict[int, StreamToolCall] = {}
         usage: dict[str, Any] | None = None
 
@@ -414,6 +414,18 @@ class AgentLoopController:
 
             text_delta = extract_text_delta(chunk)
             if text_delta:
+                if allow_thinking and thinking_parts and not thinking_completed:
+                    await self.ledger.append(
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                        type=AgentEventType.ASSISTANT_THINKING_COMPLETED,
+                        payload={
+                            "message_id": message_id,
+                            "content": "".join(thinking_parts).strip(),
+                            "index": max(thinking_index - 1, 0),
+                        },
+                    )
+                    thinking_completed = True
                 text_parts.append(text_delta)
                 await self.ledger.append(
                     session_id=str(agent_session.id),
@@ -429,6 +441,19 @@ class AgentLoopController:
                 text_index += 1
 
             for delta in extract_tool_call_deltas(chunk):
+                if allow_thinking and thinking_parts and not thinking_completed:
+                    await self.ledger.append(
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                        type=AgentEventType.ASSISTANT_THINKING_COMPLETED,
+                        payload={
+                            "message_id": message_id,
+                            "content": "".join(thinking_parts).strip(),
+                            "index": max(thinking_index - 1, 0),
+                        },
+                    )
+                    thinking_completed = True
+                seen_before = delta.index in seen_tool_calls
                 state = seen_tool_calls.setdefault(
                     delta.index,
                     StreamToolCall(
@@ -437,12 +462,12 @@ class AgentLoopController:
                         index=delta.index,
                     ),
                 )
-                started = state.call_id and state.name
+                started_before = bool(state.call_id and state.name) if seen_before else False
                 if delta.call_id:
                     state.call_id = delta.call_id
                 if delta.name:
                     state.name = delta.name
-                if not started and state.call_id and state.name:
+                if not started_before and state.call_id and state.name:
                     await self.ledger.append(
                         session_id=str(agent_session.id),
                         turn_id=str(turn.id),
@@ -473,7 +498,7 @@ class AgentLoopController:
                     )
 
         thinking_text = "".join(thinking_parts).strip()
-        if allow_thinking and thinking_text:
+        if allow_thinking and thinking_text and not thinking_completed:
             await self.ledger.append(
                 session_id=str(agent_session.id),
                 turn_id=str(turn.id),
