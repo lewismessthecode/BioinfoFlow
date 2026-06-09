@@ -1,24 +1,16 @@
 "use client"
 
 import { useMemo } from "react"
-import {
-  Check,
-  ChevronRight,
-  FileText,
-  Folder,
-  Play,
-  TerminalSquare,
-  Wrench,
-  X,
-} from "lucide-react"
+import { Check, FileText, Wrench, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
-import type { AgentRuntimeEvent } from "@/lib/agent-runtime"
+import type { AgentRuntimeEvent, AgentRuntimeTimelineEntry } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
 type RuntimeSidecarProps = {
   events: AgentRuntimeEvent[]
+  timeline: AgentRuntimeTimelineEntry[]
   isRunning: boolean
   onClose: () => void
   onDecision: (actionId: string, decision: "approve" | "reject") => void
@@ -27,6 +19,7 @@ type RuntimeSidecarProps = {
 
 export function RuntimeSidecar({
   events,
+  timeline,
   isRunning,
   onClose,
   onDecision,
@@ -34,41 +27,11 @@ export function RuntimeSidecar({
 }: RuntimeSidecarProps) {
   const t = useTranslations("agentRuntime")
   const pendingActions = usePendingActions(events)
-  const toolEvents = useMemo(
-    () => events.filter((event) => event.type.startsWith("action.")),
-    [events],
-  )
+  const currentEntry = timeline.at(-1) ?? null
   const artifactEvents = useMemo(
-    () => events.filter((event) => event.type === "artifact.created"),
+    () => events.filter((event) => event.type === "artifact.created").slice(-5).reverse(),
     [events],
   )
-  const recentEvents = useMemo(
-    () => events.filter((event) => event.visibility !== "internal").slice(-6).reverse(),
-    [events],
-  )
-
-  const cards = [
-    {
-      label: t("sidecar.files"),
-      value: String(countEvents(events, ["file.", "workspace."])),
-      icon: Folder,
-    },
-    {
-      label: t("sidecar.runs"),
-      value: isRunning ? t("sidecar.active") : String(countEvents(events, ["turn."])),
-      icon: Play,
-    },
-    {
-      label: t("sidecar.tools"),
-      value: String(toolEvents.length),
-      icon: TerminalSquare,
-    },
-    {
-      label: t("sidecar.artifacts"),
-      value: String(artifactEvents.length),
-      icon: FileText,
-    },
-  ]
 
   return (
     <aside
@@ -79,12 +42,7 @@ export function RuntimeSidecar({
       data-testid="runtime-sidecar"
     >
       <div className="flex h-14 items-center justify-between border-b border-border/60 px-4">
-        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
-            <Wrench className="h-3.5 w-3.5" />
-          </span>
-          {t("sidecar.title")}
-        </div>
+        <div className="text-sm font-medium text-foreground">{t("sidecar.title")}</div>
         <Button
           type="button"
           variant="ghost"
@@ -139,58 +97,67 @@ export function RuntimeSidecar({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-2">
-          {cards.map((card) => (
-            <div
-              key={card.label}
-              className="rounded-[18px] border border-border/70 bg-muted/25 p-3"
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <card.icon className="h-4 w-4 text-muted-foreground" />
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60" />
-              </div>
-              <div className="text-sm font-medium text-foreground">{card.label}</div>
-              <div className="mt-1 text-xs text-muted-foreground">{card.value}</div>
+        <div className="grid gap-4">
+          <section className="rounded-[20px] border border-border/70 bg-muted/25 p-3">
+            <div className="mb-2 text-xs font-medium text-muted-foreground">
+              {t("sidecar.currentThinking")}
             </div>
-          ))}
-        </div>
+            {currentEntry?.assistant.thinking?.content ? (
+              <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+                {currentEntry.assistant.thinking.content}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {isRunning ? t("pendingResponse") : t("sidecar.noActivity")}
+              </p>
+            )}
+          </section>
 
-        <div className="mt-5">
-          <div className="mb-2 text-xs font-medium text-muted-foreground">
-            {t("sidecar.progress")}
-          </div>
-          {recentEvents.length > 0 ? (
-            <ol className="grid gap-2">
-              {recentEvents.map((event) => (
-                <li
-                  key={event.id}
-                  className="rounded-2xl border border-border/70 bg-background px-3 py-2"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-xs font-medium text-foreground">
-                      {formatEventTitle(event)}
-                    </span>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      #{event.seq}
-                    </span>
-                  </div>
-                  {event.payload.summary || event.payload.name || event.payload.title ? (
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {String(
-                        event.payload.summary ||
-                          event.payload.name ||
-                          event.payload.title,
-                      )}
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border/70 px-3 py-5 text-center text-xs text-muted-foreground">
-              {t("sidecar.noActivity")}
+          <section className="rounded-[20px] border border-border/70 bg-muted/25 p-3">
+            <div className="mb-2 text-xs font-medium text-muted-foreground">
+              {t("sidecar.currentToolCalls")}
             </div>
-          )}
+            {currentEntry?.assistant.toolCalls.length ? (
+              <div className="grid gap-2">
+                {currentEntry.assistant.toolCalls.map((toolCall) => (
+                  <div
+                    key={toolCall.callId}
+                    className="rounded-2xl border border-border/70 bg-card px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Wrench className="h-4 w-4 text-muted-foreground" />
+                      <span>{toolCall.name}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("sidecar.noActivity")}</p>
+            )}
+          </section>
+
+          <section className="rounded-[20px] border border-border/70 bg-muted/25 p-3">
+            <div className="mb-2 text-xs font-medium text-muted-foreground">
+              {t("sidecar.artifacts")}
+            </div>
+            {artifactEvents.length ? (
+              <div className="grid gap-2">
+                {artifactEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-2xl border border-border/70 bg-card px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      <span>{String(event.payload.title || event.payload.type || "Artifact")}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("sidecar.noActivity")}</p>
+            )}
+          </section>
         </div>
       </div>
     </aside>
@@ -202,12 +169,22 @@ export function hasPendingRuntimeAction(events: AgentRuntimeEvent[]) {
 }
 
 export function hasRuntimeActivity(events: AgentRuntimeEvent[]) {
-  return events.some(
-    (event) =>
-      event.type.startsWith("action.") ||
-      event.type.startsWith("memory.") ||
-      event.type === "artifact.created" ||
-      event.type.startsWith("turn."),
+  return events.some((event) =>
+    [
+      "assistant.text.delta",
+      "assistant.text.completed",
+      "assistant.thinking.delta",
+      "assistant.thinking.completed",
+      "assistant.tool_call.started",
+      "assistant.tool_call.delta",
+      "assistant.tool_call.completed",
+      "action.requested",
+      "action.waiting_decision",
+      "action.started",
+      "action.completed",
+      "action.failed",
+      "artifact.created",
+    ].includes(event.type),
   )
 }
 
@@ -231,17 +208,4 @@ function getPendingActions(events: AgentRuntimeEvent[]) {
       const actionId = String(event.payload.action_id || "")
       return actionId && !completed.has(actionId)
     })
-}
-
-function countEvents(events: AgentRuntimeEvent[], prefixes: string[]) {
-  return events.filter((event) =>
-    prefixes.some((prefix) => event.type.startsWith(prefix)),
-  ).length
-}
-
-function formatEventTitle(event: AgentRuntimeEvent) {
-  return event.type
-    .split(".")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ")
 }

@@ -2154,6 +2154,7 @@
     "send": "发送消息",
     "stop": "停止回复",
     "pendingResponse": "正在处理...",
+    "thinking": "思考过程",
     "approve": "批准",
     "reject": "拒绝",
     "attachMenu": {
@@ -2184,6 +2185,8 @@
       "artifacts": "产物",
       "active": "进行中",
       "progress": "进度",
+      "currentThinking": "当前思考",
+      "currentToolCalls": "当前工具调用",
       "needsDecision": "需要你确认",
       "noActivity": "还没有活动"
     }

@@ -169,7 +169,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         >
           {hasConversation ? (
             <>
-              <AgentTranscript turns={state.turns} />
+              <AgentTranscript timeline={state.timeline} />
               <div
                 className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-4 pt-10 sm:px-6"
                 data-testid="agent-composer-shell"
@@ -212,6 +212,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             {sidecarVisible ? (
               <RuntimeSidecar
                 events={state.events}
+                timeline={state.timeline}
                 isRunning={isRunning}
                 onClose={closeSidecar}
                 onDecision={decideAction}

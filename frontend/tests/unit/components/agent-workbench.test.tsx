@@ -7,6 +7,7 @@ import type {
   AgentRuntimeEvent,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
+import { buildAgentRuntimeTimeline } from "@/lib/agent-runtime"
 
 const useAgentRuntimeMock = vi.fn()
 const useLlmSettingsMock = vi.fn()
@@ -21,6 +22,10 @@ vi.mock("next-intl", () => ({
       send: "Send message",
       stop: "Stop response",
       pendingResponse: "Working on it...",
+      thinking: "Thinking",
+      showThinking: "Show thinking",
+      hideThinking: "Hide thinking",
+      toolCalls: "Tool calls",
       approve: "Approve",
       reject: "Reject",
       "turnStatus.running": "Working",
@@ -35,6 +40,8 @@ vi.mock("next-intl", () => ({
       "sidecar.artifacts": "Artifacts",
       "sidecar.active": "Active",
       "sidecar.progress": "Progress",
+      "sidecar.currentThinking": "Current thinking",
+      "sidecar.currentToolCalls": "Current tool calls",
       "sidecar.needsDecision": "Needs your decision",
       "sidecar.noActivity": "No activity yet",
       "attachMenu.attachFiles": "Attach files",
@@ -130,6 +137,7 @@ function setupRuntime({
       session: null,
       turns,
       events,
+      timeline: buildAgentRuntimeTimeline(turns, events),
       status,
       error: null,
     },
@@ -200,6 +208,7 @@ describe("AgentWorkbench", () => {
         session: null,
         turns: [],
         events: [],
+        timeline: [],
         status: "idle",
         error: null,
       },
@@ -249,7 +258,76 @@ describe("AgentWorkbench", () => {
     expect(screen.getByTestId("agent-sidecar-column")).toBeInTheDocument()
     expect(screen.getByTestId("agent-workbench-main")).toBeInTheDocument()
     expect(screen.getByText("Run")).toBeInTheDocument()
-    expect(screen.getByText("Tools")).toBeInTheDocument()
+    expect(screen.getByText("Current tool calls")).toBeInTheDocument()
+  })
+
+  it("renders thinking and tool-call activity in the transcript and sidecar", async () => {
+    setupRuntime({
+      turns: [{ ...baseTurn, status: "running", final_text: null }],
+      events: [
+        {
+          id: "event-thinking",
+          session_id: "session-1",
+          turn_id: "turn-1",
+          seq: 1,
+          type: "assistant.thinking.completed",
+          payload: {
+            message_id: "message-1",
+            content: "Inspecting the project state.",
+            index: 0,
+          },
+          visibility: "user",
+          schema_version: 1,
+          created_at: "2026-06-09T00:00:00Z",
+          updated_at: "2026-06-09T00:00:00Z",
+        },
+        {
+          id: "event-tool",
+          session_id: "session-1",
+          turn_id: "turn-1",
+          seq: 2,
+          type: "assistant.tool_call.completed",
+          payload: {
+            message_id: "message-1",
+            call_id: "call-1",
+            name: "projects__list",
+            arguments: { limit: 1 },
+            status: "completed",
+            index: 0,
+          },
+          visibility: "user",
+          schema_version: 1,
+          created_at: "2026-06-09T00:00:00Z",
+          updated_at: "2026-06-09T00:00:00Z",
+        },
+        {
+          id: "event-text",
+          session_id: "session-1",
+          turn_id: "turn-1",
+          seq: 3,
+          type: "assistant.text.completed",
+          payload: {
+            message_id: "message-1",
+            text: "Project scan complete.",
+            content: "Project scan complete.",
+            index: 0,
+          },
+          visibility: "user",
+          schema_version: 1,
+          created_at: "2026-06-09T00:00:00Z",
+          updated_at: "2026-06-09T00:00:00Z",
+        },
+      ],
+      status: "running",
+    })
+
+    render(<AgentWorkbench />)
+
+    expect(await screen.findByText("Thinking")).toBeInTheDocument()
+    expect(screen.getByText("Project scan complete.")).toBeInTheDocument()
+    expect(screen.getAllByText("projects__list").length).toBeGreaterThan(0)
+    expect(screen.getByText("Current thinking")).toBeInTheDocument()
+    expect(screen.getByText("Current tool calls")).toBeInTheDocument()
   })
 
   it("keeps normal activity dismissed after the user closes the sidecar", async () => {

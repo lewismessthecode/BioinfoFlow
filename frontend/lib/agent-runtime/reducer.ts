@@ -2,13 +2,16 @@ import type {
   AgentRuntimeEvent,
   AgentRuntimeSession,
   AgentRuntimeStatePayload,
+  AgentRuntimeTimelineEntry,
   AgentRuntimeTurn,
 } from "./types"
+import { buildAgentRuntimeTimeline } from "./timeline"
 
 export type AgentRuntimeViewState = {
   session: AgentRuntimeSession | null
   turns: AgentRuntimeTurn[]
   events: AgentRuntimeEvent[]
+  timeline: AgentRuntimeTimelineEntry[]
   status: "idle" | "loading" | "running" | "error"
   error: string | null
 }
@@ -26,6 +29,7 @@ export const initialAgentRuntimeState: AgentRuntimeViewState = {
   session: null,
   turns: [],
   events: [],
+  timeline: [],
   status: "idle",
   error: null,
 }
@@ -42,6 +46,10 @@ export function agentRuntimeReducer(
         session: action.payload.session,
         turns: action.payload.turns,
         events: sortEvents(dedupeEvents(action.payload.events)),
+        timeline: buildAgentRuntimeTimeline(
+          action.payload.turns,
+          sortEvents(dedupeEvents(action.payload.events)),
+        ),
         status: hasRunningTurn(action.payload.turns) ? "running" : "idle",
         error: null,
       }
@@ -56,13 +64,18 @@ export function agentRuntimeReducer(
       return {
         ...state,
         turns,
+        timeline: buildAgentRuntimeTimeline(turns, state.events),
         status: hasRunningTurn(turns) ? "running" : "idle",
         error: null,
       }
     }
     case "event.append": {
       const events = sortEvents(dedupeEvents([...state.events, action.event]))
-      return { ...state, events }
+      return {
+        ...state,
+        events,
+        timeline: buildAgentRuntimeTimeline(state.turns, events),
+      }
     }
     case "error":
       return { ...state, status: "error", error: action.message }

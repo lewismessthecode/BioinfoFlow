@@ -2154,6 +2154,7 @@
     "send": "Send message",
     "stop": "Stop response",
     "pendingResponse": "Working on it...",
+    "thinking": "Thinking",
     "approve": "Approve",
     "reject": "Reject",
     "attachMenu": {
@@ -2184,6 +2185,8 @@
       "artifacts": "Artifacts",
       "active": "Active",
       "progress": "Progress",
+      "currentThinking": "Current thinking",
+      "currentToolCalls": "Current tool calls",
       "needsDecision": "Needs your decision",
       "noActivity": "No activity yet"
     }

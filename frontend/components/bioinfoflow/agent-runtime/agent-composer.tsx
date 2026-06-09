@@ -1,6 +1,6 @@
 "use client"
 
-import { forwardRef } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react"
 import {
   ClipboardCheck,
   FolderOpen,
@@ -66,6 +66,23 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
   ) {
     const t = useTranslations("agentRuntime")
     const canSubmit = !disabled && value.trim().length > 0
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+    useImperativeHandle(ref, () => textareaRef.current as HTMLTextAreaElement, [])
+
+    const resizeTextarea = (textarea: HTMLTextAreaElement) => {
+      const maxHeight = 160
+      textarea.style.height = "0px"
+      const nextHeight = Math.min(textarea.scrollHeight, maxHeight)
+      textarea.style.height = `${nextHeight}px`
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden"
+    }
+
+    useEffect(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      resizeTextarea(textarea)
+    }, [value])
 
     return (
       <div
@@ -108,19 +125,24 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           </DropdownMenuContent>
         </DropdownMenu>
         <textarea
-          ref={ref}
+          ref={textareaRef}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => {
+            resizeTextarea(event.currentTarget)
+            onChange(event.target.value)
+          }}
           onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            if (event.nativeEvent.isComposing) return
+            if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault()
               onSubmit()
             }
           }}
           placeholder={t("composerPlaceholder")}
-          className="max-h-40 min-h-11 flex-1 resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-h-11 flex-1 resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground"
           rows={1}
           disabled={disabled}
+          style={{ overflowY: "hidden" }}
         />
         <div className="hidden shrink-0 sm:block">
           <ModelSelector
