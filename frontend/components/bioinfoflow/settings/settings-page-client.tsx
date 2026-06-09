@@ -15,10 +15,6 @@ import {
   Users,
 } from "lucide-react"
 import { Logo } from "@/components/bioinfoflow/logo"
-import {
-  ProviderCard,
-  type ProviderField,
-} from "@/components/bioinfoflow/settings/provider-card"
 import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-panel"
 import { MembersPanel } from "@/components/bioinfoflow/settings/members-panel"
 import {
@@ -38,10 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useLlmSettings } from "@/hooks/use-llm-settings"
-import { apiRequest } from "@/lib/api"
 import { authClient } from "@/lib/auth-client"
 import {
   celebratePreview,
@@ -53,17 +46,6 @@ import {
 import type { AuthMode, TeamRole } from "@/lib/auth-config"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-
-type ProviderFieldName = ProviderField["name"]
-
-type ProviderMeta = {
-  id: string
-  label: string
-  credential_type: string
-  credential_fields?: ProviderFieldName[]
-  base_url?: string | null
-  default_model?: string | null
-}
 
 type SettingsPageClientProps = {
   viewer: {
@@ -368,7 +350,6 @@ export default function SettingsPageClient({
   viewer,
 }: SettingsPageClientProps) {
   const t = useTranslations("settings")
-  const { settings, isLoading, updateSettings, testProvider } = useLlmSettings()
   const {
     mode,
     setMode,
@@ -378,7 +359,6 @@ export default function SettingsPageClient({
     setLightPreset,
     setDarkPreset,
   } = useAppearance()
-  const [providers, setProviders] = useState<ProviderMeta[]>([])
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [savingPassword, setSavingPassword] = useState(false)
@@ -391,14 +371,14 @@ export default function SettingsPageClient({
   )
 
   useEffect(() => {
-    if (activeSection !== "providers") return
-    apiRequest<ProviderMeta[]>("/providers")
-      .then(({ data }) => setProviders(data))
-      .catch(() => toast.error(t("testFailed")))
-  }, [activeSection, t])
+    return subscribeToCelebrationsPreference(setCelebrationsEnabledState)
+  }, [])
 
   useEffect(() => {
-    return subscribeToCelebrationsPreference(setCelebrationsEnabledState)
+    const section = new URLSearchParams(window.location.search).get("section")
+    if (section === "appearance" || section === "providers" || section === "members") {
+      setActiveSection(section)
+    }
   }, [])
 
   useEffect(() => {
@@ -419,57 +399,6 @@ export default function SettingsPageClient({
       mediaQuery.removeListener?.(updateReducedMotion)
     }
   }, [])
-
-  if (isLoading || !settings) {
-    return (
-      <div className="h-full space-y-4 overflow-y-auto p-6">
-        <Skeleton className="h-6 w-40" />
-        {[1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-28 w-full rounded-xl" />
-        ))}
-      </div>
-    )
-  }
-
-  const fallbackCredentialFields = (
-    provider: ProviderMeta,
-  ): ProviderFieldName[] => {
-    const fields: ProviderFieldName[] = []
-
-    if (provider.credential_type !== "base_url_only") {
-      fields.push("api_key")
-    }
-    if (
-      provider.credential_type === "api_key_and_base_url" ||
-      provider.credential_type === "base_url_only"
-    ) {
-      fields.push("base_url")
-    }
-    if (provider.id === "ollama") {
-      fields.push("model")
-    }
-
-    return fields
-  }
-
-  const getFieldLabel = (field: ProviderFieldName) => {
-    if (field === "api_key") return t("apiKey")
-    if (field === "base_url") return t("baseUrl")
-    return t("model")
-  }
-
-  const getFieldPlaceholder = (
-    provider: ProviderMeta,
-    field: ProviderFieldName,
-  ) => {
-    if (field === "api_key") {
-      return t("apiKeyPlaceholder", { prefix: "" })
-    }
-    if (field === "base_url") {
-      return provider.base_url || t("baseUrlPlaceholder")
-    }
-    return provider.default_model || t("modelPlaceholder")
-  }
 
   const handleChangePassword = async (
     event: React.FormEvent<HTMLFormElement>,
@@ -515,7 +444,18 @@ export default function SettingsPageClient({
               <li key={item.key}>
                 <button
                   type="button"
-                  onClick={() => setActiveSection(item.key)}
+                  onClick={() => {
+                    setActiveSection(item.key)
+                    if (typeof window !== "undefined") {
+                      const url = new URL(window.location.href)
+                      if (item.key === "account") {
+                        url.searchParams.delete("section")
+                      } else {
+                        url.searchParams.set("section", item.key)
+                      }
+                      window.history.replaceState(null, "", `${url.pathname}${url.search}`)
+                    }
+                  }}
                   className={cn(
                     "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
                     activeSection === item.key
@@ -797,41 +737,6 @@ export default function SettingsPageClient({
               </div>
 
               <LlmCatalogPanel />
-
-              <div className="space-y-3">
-                {providers.map((provider) => {
-                  const fieldNames =
-                    provider.credential_fields?.length
-                      ? provider.credential_fields
-                      : fallbackCredentialFields(provider)
-
-                  const fields: ProviderField[] = fieldNames.map((fieldName) => ({
-                    name: fieldName,
-                    label: getFieldLabel(fieldName),
-                    value: settings.provider_credentials[provider.id]?.[fieldName] ?? "",
-                    placeholder: getFieldPlaceholder(provider, fieldName),
-                    secret: fieldName === "api_key",
-                  }))
-
-                  return (
-                    <ProviderCard
-                      key={provider.id}
-                      provider={provider.id}
-                      label={provider.label}
-                      fields={fields}
-                      isConfigured={settings.configured_providers.includes(provider.id)}
-                      onUpdateField={async (fieldName, value) => {
-                        await updateSettings({
-                          provider_credentials: {
-                            [provider.id]: { [fieldName]: value },
-                          },
-                        })
-                      }}
-                      onTest={async () => await testProvider(provider.id)}
-                    />
-                  )
-                })}
-              </div>
             </>
           )}
 

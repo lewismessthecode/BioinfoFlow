@@ -32,24 +32,65 @@ const MOCK_MODELS: ProviderModels[] = [
     provider: "anthropic",
     label: "Anthropic",
     models: [
-      { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", context_window: 200000 },
-      { id: "claude-haiku-3", name: "Claude Haiku 3", context_window: 200000 },
+      {
+        id: "claude-sonnet-4-20250514",
+        name: "Claude Sonnet 4",
+        context_window: 200000,
+        model_id: "model-sonnet",
+      },
+      {
+        id: "claude-haiku-3",
+        name: "Claude Haiku 3",
+        context_window: 200000,
+        model_id: "model-haiku",
+      },
     ],
   },
 ]
+
+const MOCK_CONFIGURATION = {
+  summary: {
+    provider_count: 1,
+    configured_provider_count: 1,
+    available_provider_count: 1,
+    model_count: 2,
+    profile_count: 0,
+  },
+  providers: [
+    {
+      id: "provider-anthropic",
+      name: "Anthropic",
+      kind: "anthropic",
+      credential: { configured: true, available: true },
+    },
+  ],
+  models: [
+    {
+      id: "model-sonnet",
+      provider_id: "provider-anthropic",
+      model_id: "claude-sonnet-4-20250514",
+      display_name: "Claude Sonnet 4",
+      context_length: 200000,
+    },
+    {
+      id: "model-haiku",
+      provider_id: "provider-anthropic",
+      model_id: "claude-haiku-3",
+      display_name: "Claude Haiku 3",
+      context_length: 200000,
+    },
+  ],
+  profiles: [],
+}
 
 describe("useLlmSettings", () => {
   beforeEach(() => {
     localStorage.clear()
     mockApiRequest.mockReset()
 
-    // Default: settings and models both resolve
     mockApiRequest.mockImplementation((path: string) => {
-      if (path === "/user-settings") {
-        return Promise.resolve({ data: MOCK_SETTINGS })
-      }
-      if (path === "/user-settings/models") {
-        return Promise.resolve({ data: MOCK_MODELS })
+      if (path === "/llm/configuration") {
+        return Promise.resolve({ data: MOCK_CONFIGURATION })
       }
       return Promise.resolve({ data: null })
     })
@@ -74,6 +115,7 @@ describe("useLlmSettings", () => {
     expect(result.current.selectedModel).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-4-20250514",
+      model_id: "model-sonnet",
     })
     expect(result.current.hasConfiguredProvider).toBe(true)
   })
@@ -90,12 +132,14 @@ describe("useLlmSettings", () => {
         id: "claude-sonnet-4-20250514",
         name: "Claude Sonnet 4",
         context_window: 200000,
+        model_id: "model-sonnet",
         provider: "anthropic",
       },
       {
         id: "claude-haiku-3",
         name: "Claude Haiku 3",
         context_window: 200000,
+        model_id: "model-haiku",
         provider: "anthropic",
       },
     ])
@@ -114,6 +158,7 @@ describe("useLlmSettings", () => {
   })
 
   it("handles API errors gracefully without crashing", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     mockApiRequest.mockRejectedValue(new Error("Network error"))
 
     const { result } = renderHook(() => useLlmSettings())
@@ -124,6 +169,61 @@ describe("useLlmSettings", () => {
 
     // Should still be usable with null/empty defaults
     expect(result.current.settings).toBeNull()
+    expect(result.current.models).toEqual([])
+    expect(result.current.hasConfiguredProvider).toBe(false)
+    expect(result.current.selectedModel).toBeNull()
+    expect(result.current.configurationUnavailable).toBe(true)
+    expect(result.current.configurationError).toBe("LLM configuration is unavailable")
+    expect(consoleErrorSpy).not.toHaveBeenCalled()
+  })
+
+  it("filters out configured env providers that are not available to the runtime", async () => {
+    mockApiRequest.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({
+          data: {
+            summary: {
+              provider_count: 1,
+              configured_provider_count: 1,
+              available_provider_count: 0,
+              model_count: 1,
+              profile_count: 0,
+            },
+            providers: [
+              {
+                id: "provider-env",
+                name: "Env Gateway",
+                kind: "openai_compatible",
+                credential: {
+                  source: "env",
+                  configured: true,
+                  available: false,
+                  env_var_name: "MISSING_MODEL_KEY",
+                },
+              },
+            ],
+            models: [
+              {
+                id: "model-env",
+                provider_id: "provider-env",
+                model_id: "env-model",
+                display_name: "Env Model",
+                context_length: 128000,
+              },
+            ],
+            profiles: [],
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+
+    const { result } = renderHook(() => useLlmSettings())
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
     expect(result.current.models).toEqual([])
     expect(result.current.hasConfiguredProvider).toBe(false)
     expect(result.current.selectedModel).toBeNull()
@@ -147,6 +247,7 @@ describe("useLlmSettings", () => {
     expect(result.current.models).toEqual([])
     expect(result.current.hasConfiguredProvider).toBe(false)
     expect(result.current.selectedModel).toBeNull()
+    expect(result.current.configurationUnavailable).toBe(false)
     expect(consoleErrorSpy).not.toHaveBeenCalled()
   })
 
@@ -155,11 +256,10 @@ describe("useLlmSettings", () => {
       if (path.startsWith("/user-settings/test/")) {
         return Promise.reject(new Error("Connection refused"))
       }
-      // still resolve settings/models for mount
-      if (path === "/user-settings") {
-        return Promise.resolve({ data: MOCK_SETTINGS })
+      if (path === "/llm/configuration") {
+        return Promise.resolve({ data: MOCK_CONFIGURATION })
       }
-      return Promise.resolve({ data: MOCK_MODELS })
+      return Promise.resolve({ data: null })
     })
 
     const { result } = renderHook(() => useLlmSettings())

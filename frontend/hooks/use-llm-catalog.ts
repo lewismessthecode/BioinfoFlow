@@ -4,14 +4,17 @@ import { useCallback, useEffect, useState } from "react"
 
 import {
   createLlmProvider,
-  listLlmModelProfiles,
-  listLlmModels,
-  listLlmProviders,
+  discoverLlmProviderModels,
+  getLlmConfiguration,
   testLlmProvider,
+  updateLlmProviderCredential,
   updateLlmProvider,
   type CreateLlmProviderInput,
+  type UpdateLlmProviderCredentialInput,
 } from "@/lib/llm"
 import type {
+  LlmConfiguredProvider,
+  LlmConfiguration,
   LlmModel,
   LlmModelProfile,
   LlmProvider,
@@ -20,8 +23,10 @@ import type {
 
 export function useLlmCatalog() {
   const [providers, setProviders] = useState<LlmProvider[]>([])
+  const [configuredProviders, setConfiguredProviders] = useState<LlmConfiguredProvider[]>([])
   const [models, setModels] = useState<LlmModel[]>([])
   const [profiles, setProfiles] = useState<LlmModelProfile[]>([])
+  const [configuration, setConfiguration] = useState<LlmConfiguration | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isMutating, setIsMutating] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -30,14 +35,12 @@ export function useLlmCatalog() {
     setIsLoading(true)
     setError(null)
     try {
-      const [nextProviders, nextModels, nextProfiles] = await Promise.all([
-        listLlmProviders(),
-        listLlmModels(),
-        listLlmModelProfiles(),
-      ])
-      setProviders(nextProviders)
-      setModels(nextModels)
-      setProfiles(nextProfiles)
+      const nextConfiguration = await getLlmConfiguration()
+      setConfiguration(nextConfiguration)
+      setConfiguredProviders(nextConfiguration.providers)
+      setProviders(nextConfiguration.providers)
+      setModels(nextConfiguration.models)
+      setProfiles(nextConfiguration.profiles)
     } catch (caught) {
       setError(caught instanceof Error ? caught : new Error("Failed to load LLM catalog"))
     } finally {
@@ -85,6 +88,24 @@ export function useLlmCatalog() {
     [refresh],
   )
 
+  const updateProvider = useCallback(
+    async (providerId: string, updates: Parameters<typeof updateLlmProvider>[1]) => {
+      setIsMutating(true)
+      setError(null)
+      try {
+        const updated = await updateLlmProvider(providerId, updates)
+        await refresh()
+        return updated
+      } catch (caught) {
+        setError(caught instanceof Error ? caught : new Error("Failed to update LLM provider"))
+        return null
+      } finally {
+        setIsMutating(false)
+      }
+    },
+    [refresh],
+  )
+
   const testProvider = useCallback(
     async (providerId: string): Promise<LlmProviderTestResult | null> => {
       setIsMutating(true)
@@ -103,16 +124,57 @@ export function useLlmCatalog() {
     [refresh],
   )
 
+  const discoverModels = useCallback(
+    async (providerId: string): Promise<LlmModel[] | null> => {
+      setIsMutating(true)
+      setError(null)
+      try {
+        const discovered = await discoverLlmProviderModels(providerId)
+        await refresh()
+        return discovered
+      } catch (caught) {
+        setError(caught instanceof Error ? caught : new Error("Failed to discover LLM models"))
+        return null
+      } finally {
+        setIsMutating(false)
+      }
+    },
+    [refresh],
+  )
+
+  const updateCredential = useCallback(
+    async (providerId: string, input: UpdateLlmProviderCredentialInput) => {
+      setIsMutating(true)
+      setError(null)
+      try {
+        const credential = await updateLlmProviderCredential(providerId, input)
+        await refresh()
+        return credential
+      } catch (caught) {
+        setError(caught instanceof Error ? caught : new Error("Failed to update LLM provider credential"))
+        return null
+      } finally {
+        setIsMutating(false)
+      }
+    },
+    [refresh],
+  )
+
   return {
     providers,
+    configuredProviders,
     models,
     profiles,
+    configuration,
     isLoading,
     isMutating,
     error,
     refresh,
     createProvider,
+    updateProvider,
     setProviderEnabled,
     testProvider,
+    discoverModels,
+    updateCredential,
   }
 }

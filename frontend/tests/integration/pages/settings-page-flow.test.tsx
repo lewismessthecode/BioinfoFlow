@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -70,6 +70,18 @@ vi.mock("next-intl", () => ({
       "account.passwordChangeFailed": "Password change failed",
       "account.modes.team": "Team",
       "members.roles.owner": "Owner",
+      "providerCards.loading": "Loading providers...",
+      "providerCards.save": "Save",
+      "providerCards.saving": "Saving...",
+      "providerCards.apiKeyPlaceholder": "Paste API key",
+      "providerCards.savedKeyPlaceholder": "Key saved. Paste a new key to replace it.",
+      "providerCards.endpointPlaceholder": "Endpoint URL",
+      "providerCards.getApiKey": `Get API key${values?.provider ? ` for ${values.provider}` : ""}`,
+      "providerCards.configured": "Configured",
+      "providerCards.notConfigured": "Not configured",
+      "providerCards.noKeyRequired": "No key required",
+      "providerCards.saved": "Provider saved",
+      "providerCards.saveFailed": "Provider could not be saved",
     }
     if (key === "appearance.activePreset") {
       return `Current preset: ${values?.preset ?? ""}`
@@ -166,19 +178,134 @@ describe("Settings page flow", () => {
       refetch: vi.fn(),
     })
 
-    apiRequestMock.mockImplementation(async (path) => {
-      if (path === "/providers") {
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/llm/configuration") {
         return {
-          data: [
-            {
-              id: "openai",
-              label: "OpenAI",
-              credential_type: "api_key_and_base_url",
-              credential_fields: ["api_key", "base_url", "model"],
-              base_url: "https://api.openai.com/v1",
-              default_model: "gpt-5.4",
+          data: {
+            summary: {
+              provider_count: 1,
+              configured_provider_count: 1,
+              available_provider_count: 1,
+              model_count: 1,
+              profile_count: 1,
             },
-          ],
+            providers: [
+              {
+                id: "llm-provider-1",
+                name: "OpenAI",
+                kind: "openai",
+                base_url: "https://api.openai.com/v1",
+                api_key_ref: null,
+                scope: "workspace",
+                workspace_id: "workspace-1",
+                user_id: null,
+                enabled: true,
+                test_status: { success: true, latency_ms: 42 },
+                metadata: null,
+                credential: {
+                  provider_id: "llm-provider-1",
+                  source: "env",
+                  configured: true,
+                  available: true,
+                  env_var_name: "OPENAI_API_KEY",
+                  fingerprint: null,
+                  masked_hint: "env:OPENAI_API_KEY",
+                  updated_at: "2026-06-04T00:00:00Z",
+                },
+                created_at: "2026-06-04T00:00:00Z",
+                updated_at: "2026-06-04T00:00:00Z",
+              },
+            ],
+            models: [
+              {
+                id: "llm-model-1",
+                provider_id: "llm-provider-1",
+                model_id: "gpt-5.4",
+                display_name: "GPT-5.4",
+                context_length: 1000000,
+                max_output_tokens: 16384,
+                supports_tools: true,
+                supports_streaming: true,
+                supports_vision: true,
+                supports_json_schema: true,
+                supports_reasoning: true,
+                default_temperature: null,
+                default_top_p: null,
+                cost_metadata: null,
+                metadata: null,
+                created_at: "2026-06-04T00:00:00Z",
+                updated_at: "2026-06-04T00:00:00Z",
+              },
+            ],
+            profiles: [
+              {
+                id: "llm-profile-1",
+                name: "Agent default",
+                task_type: "agent_core",
+                primary_model_id: "llm-model-1",
+                fallback_model_ids: [],
+                reasoning_budget: 4096,
+                max_tokens: 8192,
+                cost_ceiling: null,
+                routing_policy: { fallback: "on_error" },
+                permission_overrides: null,
+                scope: "workspace",
+                workspace_id: "workspace-1",
+                user_id: null,
+                enabled: true,
+                metadata: null,
+                created_at: "2026-06-04T00:00:00Z",
+                updated_at: "2026-06-04T00:00:00Z",
+              },
+            ],
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/llm/providers/llm-provider-1/test") {
+        return {
+          data: {
+            provider_id: "llm-provider-1",
+            success: true,
+            model: "gpt-5.4",
+            error: null,
+            latency_ms: 42,
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/llm/providers" && options?.method === "POST") {
+        return {
+          data: {
+            id: "llm-provider-2",
+            name: "OpenRouter Shared",
+            kind: "openrouter",
+            base_url: "https://openrouter.ai/api/v1",
+            api_key_ref: null,
+            scope: "workspace",
+            workspace_id: "workspace-1",
+            user_id: null,
+            enabled: true,
+            test_status: null,
+            metadata: null,
+            created_at: "2026-06-04T00:00:01Z",
+            updated_at: "2026-06-04T00:00:01Z",
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/llm/providers/llm-provider-2/credential" && options?.method === "PUT") {
+        return {
+          data: {
+            provider_id: "llm-provider-2",
+            source: "env",
+            configured: true,
+            available: true,
+            env_var_name: "OPENROUTER_API_KEY",
+            fingerprint: null,
+            masked_hint: "env:OPENROUTER_API_KEY",
+            updated_at: "2026-06-04T00:00:01Z",
+          },
           meta: undefined,
         }
       }
@@ -218,23 +345,10 @@ describe("Settings page flow", () => {
     expect(toastSuccessMock).toHaveBeenCalledWith("Password changed")
   })
 
-  it("loads provider cards, saves field edits, and reports both successful and failed connection tests", async () => {
+  it("loads provider cards and saves a write-only credential", async () => {
     const user = userEvent.setup()
-    testProviderMock
-      .mockResolvedValueOnce({
-        success: true,
-        error: null,
-        provider: "openai",
-        model: "gpt-5.4",
-      })
-      .mockResolvedValueOnce({
-        success: false,
-        error: "Upstream 503",
-        provider: "openai",
-        model: null,
-      })
 
-    const { container } = render(
+    render(
       <SettingsPageClient
         viewer={{
           id: "owner-1",
@@ -249,41 +363,27 @@ describe("Settings page flow", () => {
     )
 
     await user.click(screen.getByRole("button", { name: "AI Providers" }))
-    expect(await screen.findByText("OpenAI")).toBeInTheDocument()
+    expect(await screen.findByRole("group", { name: "OpenAI" })).toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "OpenRouter" })).toBeInTheDocument()
+    expect(screen.getByText("env:OPENAI_API_KEY")).toBeInTheDocument()
+    expect(screen.queryByText("Agent default")).not.toBeInTheDocument()
 
-    const baseUrlInput = screen.getByLabelText("OpenAI Base URL")
-    await user.click(baseUrlInput)
-    await user.clear(baseUrlInput)
-    await user.type(baseUrlInput, "https://proxy.internal/v1")
-    fireEvent.blur(baseUrlInput)
+    const openRouterCard = screen.getByRole("group", { name: "OpenRouter" })
+    await user.type(within(openRouterCard).getByLabelText("OpenRouter API key"), "sk-openrouter")
+    await user.click(within(openRouterCard).getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
-      expect(updateSettingsMock).toHaveBeenCalledWith({
-        provider_credentials: {
-          openai: {
-            base_url: "https://proxy.internal/v1",
-          },
-        },
-      })
-    })
-
-    const providerCard = screen.getByText("OpenAI").closest("[data-slot='card']")
-    expect(providerCard).not.toBeNull()
-
-    const testButton = within(providerCard!).getByRole("button", { name: "testConnection" })
-
-    await user.click(testButton)
-    await waitFor(() => {
-      expect(testProviderMock).toHaveBeenCalledWith("openai")
-      expect(toastSuccessMock).toHaveBeenCalledWith("Connection succeeded")
-      expect(container.querySelector("svg.text-green-500")).not.toBeNull()
-    })
-
-    await user.click(testButton)
-    await waitFor(() => {
-      expect(testProviderMock).toHaveBeenCalledTimes(2)
-      expect(toastErrorMock).toHaveBeenCalledWith("Upstream 503")
-      expect(container.querySelector("svg.text-destructive")).not.toBeNull()
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "/llm/providers",
+        expect.objectContaining({ method: "POST" }),
+      )
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "/llm/providers/llm-provider-2/credential",
+        expect.objectContaining({
+          method: "PUT",
+          body: expect.stringContaining("sk-openrouter"),
+        }),
+      )
     })
   })
 

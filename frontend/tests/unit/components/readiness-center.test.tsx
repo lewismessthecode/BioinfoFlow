@@ -39,7 +39,7 @@ vi.mock("next-intl", () => ({
       "readiness.checks.backend.label": "Backend API",
       "readiness.checks.backend.detail.pass": "Backend is responding",
       "readiness.checks.provider_key.label": "AI provider key",
-      "readiness.checks.provider_key.action": "Add an AI provider key",
+      "readiness.checks.provider_key.action": "Configure providers",
       "readiness.checks.provider_key.detail.pass": "Provider key configured",
       "readiness.checks.provider_key.detail.fail": "No provider key configured",
       "readiness.checks.docker.label": "Docker",
@@ -86,8 +86,8 @@ function blockedReadiness(): ReadinessStatus {
   return {
     severity: "blocked",
     next_action: {
-      label: "Add an AI provider key",
-      href: "/settings",
+      label: "Configure providers",
+      href: "/settings?section=providers",
     },
     checks: [
       {
@@ -101,7 +101,7 @@ function blockedReadiness(): ReadinessStatus {
         status: "fail",
         severity: "blocking",
         facts: { configured: false },
-        action: { kind: "route", href: "/settings" },
+        action: { kind: "route", href: "/settings?section=providers" },
       },
       {
         id: "docker",
@@ -207,7 +207,7 @@ describe("ReadinessCenter", () => {
 
     await user.click(screen.getByRole("button", { name: /open readiness checklist/i }))
 
-    expect(screen.getByRole("link", { name: /add an ai provider key/i })).toHaveAttribute("href", "/settings")
+    expect(screen.getByRole("link", { name: /configure providers/i })).toHaveAttribute("href", "/settings?section=providers")
     expect(screen.getByRole("link", { name: /enable a workflow/i })).toHaveAttribute("href", "/workflows?scope=hub")
     expect(screen.getByRole("link", { name: /open resource monitor/i })).toHaveAttribute("href", "/scheduler")
 
