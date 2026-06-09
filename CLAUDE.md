@@ -139,6 +139,10 @@ rtk bun run test:coverage
   path. `AUTH_MODE` supports `personal`, `team`, and `dev`.
 - `BETTER_AUTH_URL`, `TRUSTED_HOSTS`, and `CORS_ORIGINS` must match the actual
   browser origin/deployment host.
+- For browser UI checks in a fresh worktree, update that worktree's repo-root
+  `.env` to use `AUTH_MODE=dev` before starting backend/frontend services. This
+  keeps protected app routes such as `/agent` from redirecting to `/auth` during
+  local visual verification. Restart the dev servers after changing `.env`.
 
 ## Workflow Gotchas
 
