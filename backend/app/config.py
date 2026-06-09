@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     qwen_api_key: str = ""
     kimi_api_key: str = ""
     minimax_api_key: str = ""
+    bioinfoflow_credential_key: str = ""
 
     # Extended thinking
     agent_thinking_enabled: bool = True

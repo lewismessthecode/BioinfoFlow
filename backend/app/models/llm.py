@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -11,6 +11,7 @@ class LlmProviderKind:
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
     OPENROUTER = "openrouter"
+    DEEPSEEK = "deepseek"
     OLLAMA = "ollama"
     VLLM = "vllm"
     OPENAI_COMPATIBLE = "openai_compatible"
@@ -20,6 +21,12 @@ class LlmProviderScope:
     GLOBAL = "global"
     WORKSPACE = "workspace"
     USER = "user"
+
+
+class LlmCredentialSource:
+    NONE = "none"
+    ENV = "env"
+    STORED = "stored"
 
 
 class LlmProvider(Base, UUIDMixin, TimestampMixin):
@@ -54,6 +61,37 @@ class LlmProvider(Base, UUIDMixin, TimestampMixin):
         back_populates="provider",
         cascade="all, delete-orphan",
     )
+    credential = relationship(
+        "LlmProviderCredential",
+        back_populates="provider",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class LlmProviderCredential(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "llm_provider_credentials"
+    __table_args__ = (
+        UniqueConstraint("provider_id", name="uq_llm_provider_credentials_provider_id"),
+    )
+
+    provider_id: Mapped[str] = mapped_column(
+        ForeignKey("llm_providers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=LlmCredentialSource.NONE,
+    )
+    env_var_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    encrypted_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    masked_hint: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    provider = relationship("LlmProvider", back_populates="credential")
 
 
 class LlmModel(Base, UUIDMixin, TimestampMixin):

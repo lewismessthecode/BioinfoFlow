@@ -223,7 +223,7 @@ def _readiness_detail(check_id: str, check: dict[str, Any]) -> tuple[str, str | 
             return "At least one AI provider key is configured", None
         return (
             "No AI provider key is configured",
-            "Add a supported provider key from Settings before the first run.",
+            "Configure a supported AI provider from Settings > AI Providers before the first run.",
         )
     if check_id == "docker":
         if facts.get("available"):

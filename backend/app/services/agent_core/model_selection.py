@@ -12,6 +12,13 @@ def normalize_model_selection(
     if not isinstance(selection, dict):
         return None
 
+    model_id = str(selection.get("model_id") or "").strip()
+    profile_id = str(selection.get("profile_id") or "").strip()
+    if model_id:
+        return {"model_id": model_id}
+    if profile_id:
+        return {"profile_id": profile_id}
+
     provider = str(selection.get("provider") or "").strip().lower()
     model = str(selection.get("model") or "").strip()
     if not model:

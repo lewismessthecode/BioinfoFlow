@@ -129,12 +129,25 @@ class TestAgentSession:
 
 
 class TestAgentSend:
-    def test_send_requires_project_when_session_is_missing(
+    def test_send_creates_workspace_session_when_project_is_missing(
         self, runner: CliRunner
     ) -> None:
-        result = runner.invoke(app, ["agent", "send", "hello"])
+        session_resp = make_envelope(_session_payload())
+        turn_resp = make_envelope(_turn_payload())
 
-        assert result.exit_code != 0
+        with patch(
+            "app.cli.client.ApiClient.post",
+            new_callable=AsyncMock,
+            side_effect=[session_resp, turn_resp],
+        ) as post:
+            result = runner.invoke(app, ["agent", "send", "hello"])
+
+        assert result.exit_code == 0
+        assert [call.args[0] for call in post.await_args_list] == [
+            "/agent/sessions",
+            "/agent/sessions/session-1/turns",
+        ]
+        assert post.await_args_list[0].args[1] == {}
 
     def test_send_uses_existing_session_and_turn_endpoint(
         self, runner: CliRunner
@@ -185,12 +198,15 @@ class TestAgentSend:
 
 
 class TestAgentChat:
-    def test_chat_requires_project_when_session_is_missing(
+    def test_chat_allows_workspace_session_when_project_is_missing(
         self, runner: CliRunner
     ) -> None:
-        result = runner.invoke(app, ["agent", "chat"])
+        with patch(f"{_A}._chat_loop", new_callable=AsyncMock) as loop:
+            result = runner.invoke(app, ["agent", "chat"])
 
-        assert result.exit_code != 0
+        assert result.exit_code == 0
+        loop.assert_called_once()
+        assert loop.call_args.args[2] is None
 
     def test_chat_starts_loop(self, runner: CliRunner) -> None:
         with patch(f"{_A}._chat_loop", new_callable=AsyncMock) as loop:

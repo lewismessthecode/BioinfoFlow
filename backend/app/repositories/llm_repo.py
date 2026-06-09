@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-from sqlalchemy import desc, select
+from sqlalchemy import and_, desc, or_, select
 
-from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
+from app.models.llm import (
+    LlmModel,
+    LlmModelProfile,
+    LlmProvider,
+    LlmProviderCredential,
+)
 from app.repositories.base import BaseRepository
 
 
@@ -32,6 +37,23 @@ class LlmProviderRepository(BaseRepository[LlmProvider]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_visible(
+        self,
+        provider_id: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+        enabled_only: bool = False,
+    ) -> LlmProvider | None:
+        stmt = select(self.model).where(
+            self.model.id == provider_id,
+            _visible_provider_clause(self.model, workspace_id=workspace_id, user_id=user_id),
+        )
+        if enabled_only:
+            stmt = stmt.where(self.model.enabled.is_(True))
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
 
 class LlmModelRepository(BaseRepository[LlmModel]):
     model = LlmModel
@@ -44,6 +66,42 @@ class LlmModelRepository(BaseRepository[LlmModel]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_by_provider_model(
+        self,
+        *,
+        provider_id: str,
+        model_id: str,
+    ) -> LlmModel | None:
+        stmt = select(self.model).where(
+            self.model.provider_id == provider_id,
+            self.model.model_id == model_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_visible(
+        self,
+        model_id: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+    ) -> LlmModel | None:
+        stmt = (
+            select(self.model)
+            .join(LlmProvider, self.model.provider_id == LlmProvider.id)
+            .where(
+                self.model.id == model_id,
+                LlmProvider.enabled.is_(True),
+                _visible_provider_clause(
+                    LlmProvider,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                ),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def list_for_providers(self, provider_ids: list[str]) -> list[LlmModel]:
         if not provider_ids:
@@ -82,3 +140,52 @@ class LlmModelProfileRepository(BaseRepository[LlmModelProfile]):
         stmt = stmt.order_by(self.model.task_type, self.model.name)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_visible(
+        self,
+        profile_id: str,
+        *,
+        workspace_id: str,
+        user_id: str,
+        enabled_only: bool = False,
+    ) -> LlmModelProfile | None:
+        stmt = select(self.model).where(
+            self.model.id == profile_id,
+            _visible_provider_clause(self.model, workspace_id=workspace_id, user_id=user_id),
+        )
+        if enabled_only:
+            stmt = stmt.where(self.model.enabled.is_(True))
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+
+class LlmProviderCredentialRepository(BaseRepository[LlmProviderCredential]):
+    model = LlmProviderCredential
+
+    async def get_for_provider(
+        self,
+        provider_id: str,
+    ) -> LlmProviderCredential | None:
+        stmt = select(self.model).where(self.model.provider_id == provider_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+
+def _visible_provider_clause(resource, *, workspace_id: str, user_id: str):
+    return or_(
+        and_(
+            resource.scope == "global",
+            resource.workspace_id.is_(None),
+            resource.user_id.is_(None),
+        ),
+        and_(
+            resource.scope == "workspace",
+            resource.workspace_id == workspace_id,
+            resource.user_id.is_(None),
+        ),
+        and_(
+            resource.scope == "user",
+            resource.workspace_id == workspace_id,
+            resource.user_id == user_id,
+        ),
+    )

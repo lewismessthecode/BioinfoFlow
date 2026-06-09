@@ -12,11 +12,30 @@ ProviderKind = Literal[
     "anthropic",
     "gemini",
     "openrouter",
+    "deepseek",
     "ollama",
     "vllm",
     "openai_compatible",
 ]
 ProviderScope = Literal["global", "workspace", "user"]
+CredentialSource = Literal["none", "env", "stored"]
+
+
+class LlmProviderCredentialUpdate(BaseModel):
+    source: CredentialSource
+    env_var_name: str | None = None
+    secret: str | None = None
+
+
+class LlmProviderCredentialRead(BaseModel):
+    provider_id: UUID
+    source: CredentialSource
+    configured: bool
+    available: bool
+    env_var_name: str | None = None
+    fingerprint: str | None = None
+    masked_hint: str | None = None
+    updated_at: datetime | None = None
 
 
 class LlmProviderCreate(BaseModel):
@@ -170,3 +189,22 @@ class LlmProviderTestResult(BaseModel):
     model: str | None = None
     error: str | None = None
     latency_ms: int | None = None
+
+
+class LlmConfigurationSummary(BaseModel):
+    provider_count: int
+    configured_provider_count: int
+    available_provider_count: int = 0
+    model_count: int
+    profile_count: int
+
+
+class LlmConfiguredProviderRead(LlmProviderRead):
+    credential: LlmProviderCredentialRead
+
+
+class LlmConfigurationRead(BaseModel):
+    summary: LlmConfigurationSummary
+    providers: list[LlmConfiguredProviderRead]
+    models: list[LlmModelRead]
+    profiles: list[LlmModelProfileRead]

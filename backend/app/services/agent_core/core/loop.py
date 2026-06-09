@@ -49,6 +49,7 @@ class AgentLoopController:
         provider: str,
         model: str,
         request_args: dict[str, Any],
+        supports_tools: bool = True,
     ) -> LoopResult:
         turn = await self.turns.get(turn_id)
         if turn is None:
@@ -70,11 +71,15 @@ class AgentLoopController:
             )
 
         budget = IterationBudget(max_iterations=_max_iterations())
-        visible_tools = self.executor.exposure.exposed_specs(
-            policy=agent_session.toolset_policy,
-            role="orchestrator",
+        visible_tools = (
+            self.executor.exposure.exposed_specs(
+                policy=agent_session.toolset_policy,
+                role="orchestrator",
+            )
+            if supports_tools
+            else []
         )
-        tool_payload = provider_tool_specs(visible_tools)
+        tool_payload = provider_tool_specs(visible_tools) if supports_tools else []
         token_usage: dict[str, Any] | None = None
 
         while budget.consume():
@@ -87,16 +92,18 @@ class AgentLoopController:
                 )
 
             try:
-                response = await acompletion(
-                    model=litellm_model_name(provider, model),
-                    messages=await self.context.provider_messages(
+                completion_kwargs = {
+                    "model": litellm_model_name(provider, model),
+                    "messages": await self.context.provider_messages(
                         agent_session=agent_session,
                         turn=turn,
                     ),
-                    max_tokens=settings.agent_max_tokens,
-                    tools=tool_payload or None,
+                    "max_tokens": settings.agent_max_tokens,
                     **request_args,
-                )
+                }
+                if supports_tools and tool_payload:
+                    completion_kwargs["tools"] = tool_payload
+                response = await acompletion(**completion_kwargs)
             except Exception as exc:
                 return LoopResult(
                     termination_reason="model_failed",
@@ -207,6 +214,7 @@ class AgentLoopController:
         provider: str,
         model: str,
         request_args: dict[str, Any],
+        supports_tools: bool = True,
     ) -> LoopResult:
         action = await self.actions.get(action_id)
         if action is None:
@@ -272,6 +280,7 @@ class AgentLoopController:
             turn_id=str(turn.id),
             provider=provider,
             model=model,
+            supports_tools=supports_tools,
             request_args=request_args,
         )
 

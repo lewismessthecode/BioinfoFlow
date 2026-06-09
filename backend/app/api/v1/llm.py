@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
+from app.api.error_handler import handle_api_errors
 from app.auth.session import AuthUser
 from app.schemas.llm import (
     LlmModelCreate,
@@ -12,6 +13,10 @@ from app.schemas.llm import (
     LlmModelProfileUpdate,
     LlmModelRead,
     LlmModelUpdate,
+    LlmConfigurationRead,
+    LlmConfiguredProviderRead,
+    LlmProviderCredentialRead,
+    LlmProviderCredentialUpdate,
     LlmProviderCreate,
     LlmProviderRead,
     LlmProviderTestResult,
@@ -38,6 +43,7 @@ def _with_user_context(data: dict, user: AuthUser) -> dict:
 
 
 @router.get("/providers")
+@handle_api_errors
 async def list_providers(
     request: Request,
     user: AuthUser = Depends(get_current_user),
@@ -57,7 +63,44 @@ async def list_providers(
     )
 
 
+@router.get("/configuration")
+@handle_api_errors
+async def get_configuration(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = LlmCatalogService(db)
+    configuration = await service.configuration(
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    providers = [
+        LlmConfiguredProviderRead.model_validate(
+            {
+                **LlmProviderRead.model_validate(item["provider"]).model_dump(mode="json"),
+                "credential": item["credential"],
+            }
+        )
+        for item in configuration["providers"]
+    ]
+    payload = LlmConfigurationRead(
+        summary=configuration["summary"],
+        providers=providers,
+        models=[
+            LlmModelRead.model_validate(model)
+            for model in configuration["models"]
+        ],
+        profiles=[
+            LlmModelProfileRead.model_validate(profile)
+            for profile in configuration["profiles"]
+        ],
+    )
+    return success_response(_dump(payload), request=request)
+
+
 @router.post("/providers")
+@handle_api_errors
 async def create_provider(
     payload: LlmProviderCreate,
     request: Request,
@@ -74,7 +117,31 @@ async def create_provider(
     )
 
 
+@router.put("/providers/{provider_id}/credential")
+@handle_api_errors
+async def upsert_provider_credential(
+    provider_id: str,
+    payload: LlmProviderCredentialUpdate,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = LlmCatalogService(db)
+    provider, credential = await service.upsert_provider_credential(
+        provider_id,
+        payload.model_dump(exclude_unset=True),
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        role=user.role,
+    )
+    read = LlmProviderCredentialRead.model_validate(
+        service.credential_read_dict(provider, credential)
+    )
+    return success_response(_dump(read), request=request)
+
+
 @router.patch("/providers/{provider_id}")
+@handle_api_errors
 async def update_provider(
     provider_id: str,
     payload: LlmProviderUpdate,
@@ -91,6 +158,7 @@ async def update_provider(
 
 
 @router.post("/providers/{provider_id}/test")
+@handle_api_errors
 async def test_provider(
     provider_id: str,
     request: Request,
@@ -115,7 +183,29 @@ async def test_provider(
     return success_response(_dump(result), request=request)
 
 
+@router.post("/providers/{provider_id}/discover-models")
+@handle_api_errors
+async def discover_provider_models(
+    provider_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = LlmCatalogService(db)
+    models = await service.discover_models(
+        provider_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        role=user.role,
+    )
+    return success_response(
+        [_dump(LlmModelRead.model_validate(model)) for model in models],
+        request=request,
+    )
+
+
 @router.get("/models")
+@handle_api_errors
 async def list_models(
     request: Request,
     provider_id: str | None = Query(default=None),
@@ -135,6 +225,7 @@ async def list_models(
 
 
 @router.post("/models")
+@handle_api_errors
 async def create_model(
     payload: LlmModelCreate,
     request: Request,
@@ -151,6 +242,7 @@ async def create_model(
 
 
 @router.patch("/models/{model_id}")
+@handle_api_errors
 async def update_model(
     model_id: str,
     payload: LlmModelUpdate,
@@ -167,6 +259,7 @@ async def update_model(
 
 
 @router.get("/model-profiles")
+@handle_api_errors
 async def list_model_profiles(
     request: Request,
     user: AuthUser = Depends(get_current_user),
@@ -187,6 +280,7 @@ async def list_model_profiles(
 
 
 @router.post("/model-profiles")
+@handle_api_errors
 async def create_model_profile(
     payload: LlmModelProfileCreate,
     request: Request,
@@ -204,6 +298,7 @@ async def create_model_profile(
 
 
 @router.patch("/model-profiles/{profile_id}")
+@handle_api_errors
 async def update_model_profile(
     profile_id: str,
     payload: LlmModelProfileUpdate,

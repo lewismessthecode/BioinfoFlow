@@ -10,6 +10,7 @@ from app.repositories.agent_core_repo import (
 from app.repositories.llm_repo import (
     LlmModelProfileRepository,
     LlmModelRepository,
+    LlmProviderCredentialRepository,
     LlmProviderRepository,
 )
 from app.repositories.audit_repo import AuditRepository
@@ -28,6 +29,7 @@ __all__ = [
     "AgentArtifactRepository",
     "AgentMemoryRepository",
     "LlmProviderRepository",
+    "LlmProviderCredentialRepository",
     "LlmModelRepository",
     "LlmModelProfileRepository",
     "AuditRepository",

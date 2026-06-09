@@ -46,8 +46,10 @@ MemoryStatus = Literal["proposed", "accepted", "rejected", "disabled"]
 
 
 class AgentModelSelection(BaseModel):
-    provider: str
-    model: str
+    provider: str | None = None
+    model: str | None = None
+    model_id: UUID | None = None
+    profile_id: UUID | None = None
 
 
 class AgentSessionCreate(BaseModel):

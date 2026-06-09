@@ -35,8 +35,8 @@ def _readiness_resp() -> ApiResponse:
         {
             "severity": "blocked",
             "next_action": {
-                "label": "Add an AI provider key",
-                "href": "/settings",
+                "label": "Configure providers",
+                "href": "/settings?section=providers",
             },
             "checks": [
                 {
@@ -149,7 +149,7 @@ class TestRunChecks:
             results = await _run_checks(ctx)
         assert results["backend"]["ok"] is True
         assert results["provider_key"]["ok"] is False
-        assert results["provider_key"]["hint"].startswith("Add a supported provider key")
+        assert results["provider_key"]["hint"].startswith("Configure a supported AI provider")
         assert results["nextflow"]["ok"] is True
 
     @pytest.mark.asyncio

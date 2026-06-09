@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from app.api.deps import get_current_user
@@ -160,6 +161,216 @@ async def test_llm_provider_model_and_profile_contract(async_client):
     list_profiles = await async_client.get("/api/v1/llm/model-profiles")
     assert list_profiles.status_code == 200
     assert [item["id"] for item in list_profiles.json()["data"]] == [profile["id"]]
+
+
+@pytest.mark.asyncio
+async def test_llm_configuration_uses_write_only_provider_credentials(async_client):
+    create_provider = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Private OpenAI Gateway",
+            "kind": "openai_compatible",
+            "base_url": "https://models.internal.example/v1",
+        },
+    )
+    assert create_provider.status_code == 201
+    provider = create_provider.json()["data"]
+
+    set_credential = await async_client.put(
+        f"/api/v1/llm/providers/{provider['id']}/credential",
+        json={
+            "source": "stored",
+            "secret": "sk-test-provider-secret-value",
+        },
+    )
+    assert set_credential.status_code == 200
+    credential = set_credential.json()["data"]
+    assert credential["source"] == "stored"
+    assert credential["configured"] is True
+    assert credential["available"] is True
+    assert credential["masked_hint"].endswith("alue")
+    assert "secret" not in credential
+    assert "encrypted_secret" not in credential
+
+    create_model = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": provider["id"],
+            "model_id": "bio-agent-large",
+            "display_name": "Bio Agent Large",
+            "context_length": 128000,
+            "supports_tools": True,
+            "supports_streaming": True,
+        },
+    )
+    assert create_model.status_code == 201
+    model = create_model.json()["data"]
+
+    create_profile = await async_client.post(
+        "/api/v1/llm/model-profiles",
+        json={
+            "name": "Agent default",
+            "task_type": "agent_core",
+            "primary_model_id": model["id"],
+            "max_tokens": 8192,
+        },
+    )
+    assert create_profile.status_code == 201
+
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    assert configuration.status_code == 200
+    payload = configuration.json()["data"]
+    assert payload["summary"]["provider_count"] == 1
+    assert payload["summary"]["configured_provider_count"] == 1
+    assert payload["summary"]["available_provider_count"] == 1
+    assert payload["summary"]["model_count"] == 1
+    assert payload["providers"][0]["credential"]["configured"] is True
+    assert payload["providers"][0]["credential"]["available"] is True
+    assert payload["providers"][0]["credential"]["masked_hint"].endswith("alue")
+    assert payload["models"][0]["provider_id"] == provider["id"]
+    assert payload["profiles"][0]["primary_model_id"] == model["id"]
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_credential_accepts_env_reference(async_client, monkeypatch):
+    monkeypatch.delenv("LOCAL_MODEL_API_KEY", raising=False)
+    create_provider = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Env Gateway",
+            "kind": "openai_compatible",
+            "base_url": "http://localhost:11434/v1",
+        },
+    )
+    assert create_provider.status_code == 201
+    provider = create_provider.json()["data"]
+
+    response = await async_client.put(
+        f"/api/v1/llm/providers/{provider['id']}/credential",
+        json={
+            "source": "env",
+            "env_var_name": "LOCAL_MODEL_API_KEY",
+        },
+    )
+
+    assert response.status_code == 200
+    credential = response.json()["data"]
+    assert credential == {
+        "provider_id": provider["id"],
+        "source": "env",
+        "configured": True,
+        "available": False,
+        "env_var_name": "LOCAL_MODEL_API_KEY",
+        "fingerprint": None,
+        "masked_hint": "env:LOCAL_MODEL_API_KEY",
+        "updated_at": credential["updated_at"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_env_credential_is_available_when_env_exists(
+    async_client,
+    monkeypatch,
+):
+    monkeypatch.setenv("LOCAL_MODEL_API_KEY", "local-secret")
+    create_provider = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Env Gateway Ready",
+            "kind": "openai_compatible",
+            "base_url": "http://localhost:11434/v1",
+        },
+    )
+    assert create_provider.status_code == 201
+    provider = create_provider.json()["data"]
+
+    response = await async_client.put(
+        f"/api/v1/llm/providers/{provider['id']}/credential",
+        json={
+            "source": "env",
+            "env_var_name": "LOCAL_MODEL_API_KEY",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["configured"] is True
+    assert response.json()["data"]["available"] is True
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_validation_errors_return_422(async_client):
+    response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Bad provider",
+            "kind": "openai_compatible",
+            "base_url": "not-a-url",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_ollama_provider_discovers_local_models(async_client, monkeypatch):
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str):
+            assert url == "http://127.0.0.1:11434/api/tags"
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {
+                            "name": "deepseek-r1:latest",
+                            "model": "deepseek-r1:latest",
+                            "details": {"parameter_size": "8.2B"},
+                        }
+                    ]
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Local Ollama",
+            "kind": "ollama",
+            "base_url": "http://localhost:11434",
+        },
+    )
+    assert provider_response.status_code == 201
+    provider = provider_response.json()["data"]
+
+    response = await async_client.post(
+        f"/api/v1/llm/providers/{provider['id']}/discover-models",
+    )
+
+    assert response.status_code == 200
+    models = response.json()["data"]
+    assert len(models) == 1
+    assert models[0]["provider_id"] == provider["id"]
+    assert models[0]["model_id"] == "deepseek-r1:latest"
+    assert models[0]["display_name"] == "DeepSeek R1"
+    assert models[0]["supports_reasoning"] is True
+
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    assert configuration.status_code == 200
+    assert any(
+        model["model_id"] == "deepseek-r1:latest"
+        for model in configuration.json()["data"]["models"]
+    )
 
 
 @pytest.mark.asyncio
