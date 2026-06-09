@@ -5,6 +5,7 @@ from app.models.llm import LlmCredentialSource, LlmProviderCredential
 from app.services.llm.credentials import (
     credential_available,
     encrypt_secret,
+    fingerprint_secret,
     to_credential_read_dict,
 )
 
@@ -61,3 +62,17 @@ def test_none_credential_can_be_available_for_no_auth_providers():
 
     assert payload["configured"] is False
     assert payload["available"] is True
+
+
+def test_fingerprint_secret_is_keyed_and_stable(monkeypatch):
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "test-credential-key")
+    monkeypatch.setattr(settings, "auth_mode", "personal")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+
+    first = fingerprint_secret("sk-test-secret")
+    second = fingerprint_secret("sk-test-secret")
+    different = fingerprint_secret("sk-other-secret")
+
+    assert first == second
+    assert first != different
+    assert len(first) == 32

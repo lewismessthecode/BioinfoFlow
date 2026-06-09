@@ -56,7 +56,11 @@ def mask_secret(secret: str) -> str:
 
 
 def fingerprint_secret(secret: str) -> str:
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
+    return hashlib.blake2b(
+        secret.encode("utf-8"),
+        key=_fingerprint_key(),
+        digest_size=16,
+    ).hexdigest()
 
 
 def encrypt_secret(secret: str) -> str:
@@ -88,6 +92,10 @@ def resolve_credential_material(
 
 def _fernet() -> Fernet:
     return Fernet(_credential_key())
+
+
+def _fingerprint_key() -> bytes:
+    return _credential_key()
 
 
 def _credential_key() -> bytes:

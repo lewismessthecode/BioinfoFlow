@@ -169,7 +169,7 @@ describe("LlmCatalogPanel", () => {
         kind: "openai_compatible",
         baseUrl: "https://api.x.ai/v1",
         apiKeyRef: null,
-        scope: "workspace",
+        scope: "user",
         enabled: true,
         metadata: { providerSlug: "grok", authMode: "stored" },
       })
@@ -220,7 +220,7 @@ describe("LlmCatalogPanel", () => {
         kind: "vllm",
         baseUrl: "http://localhost:8000/v1",
         apiKeyRef: null,
-        scope: "workspace",
+        scope: "user",
         enabled: true,
         metadata: { providerSlug: "vllm", authMode: "none" },
       })

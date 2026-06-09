@@ -373,6 +373,7 @@ describe("SettingsPage", () => {
         }
       }
       if (path === "/llm/providers" && options?.method === "POST") {
+        expect(options.body).toContain('"scope":"user"')
         return {
           data: {
             id: "llm-provider-2",

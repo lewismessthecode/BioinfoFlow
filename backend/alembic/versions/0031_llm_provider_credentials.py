@@ -7,10 +7,10 @@ Create Date: 2026-06-08
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
-import base64
 from pathlib import Path
 import uuid
 
@@ -381,7 +381,7 @@ def _migrate_legacy_user_settings() -> None:
                     "id": str(uuid.uuid4()),
                     "provider_id": provider_id,
                     "secret": _encrypt_secret(api_key),
-                    "fingerprint": hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16],
+                    "fingerprint": _fingerprint_secret(api_key),
                     "masked_hint": _mask_secret(api_key),
                     "updated_by": user_id,
                 },
@@ -424,6 +424,14 @@ def _mask_secret(secret: str) -> str:
 
 def _encrypt_secret(secret: str) -> str:
     return Fernet(_credential_key()).encrypt(secret.encode("utf-8")).decode("utf-8")
+
+
+def _fingerprint_secret(secret: str) -> str:
+    return hashlib.blake2b(
+        secret.encode("utf-8"),
+        key=_credential_key(),
+        digest_size=16,
+    ).hexdigest()
 
 
 def _credential_key() -> bytes:

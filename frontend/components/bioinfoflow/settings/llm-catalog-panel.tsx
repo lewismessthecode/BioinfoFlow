@@ -187,7 +187,7 @@ export function LlmCatalogPanel() {
           kind: spec.kind,
           baseUrl,
           apiKeyRef: null,
-          scope: "workspace",
+          scope: "user",
           enabled: true,
           metadata,
         })
@@ -255,7 +255,7 @@ export function LlmCatalogPanel() {
       kind: spec.kind,
       baseUrl,
       apiKeyRef: null,
-      scope: "workspace",
+      scope: "user",
       enabled: true,
       metadata,
     })
