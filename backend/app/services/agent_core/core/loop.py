@@ -17,6 +17,16 @@ from app.repositories.agent_core_repo import (
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.budget import IterationBudget
 from app.services.agent_core.core.interrupt import is_interrupt_requested
+from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, RuntimeStrategy
+from app.services.agent_core.core.stream_adapter import (
+    StreamCompletionResult,
+    StreamToolCall,
+    collect_stream_result,
+    extract_reasoning_delta,
+    extract_text_delta,
+    extract_tool_call_deltas,
+    extract_response_thinking,
+)
 from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
@@ -49,7 +59,9 @@ class AgentLoopController:
         provider: str,
         model: str,
         request_args: dict[str, Any],
-        supports_tools: bool = True,
+        capabilities: RuntimeCapabilities = RuntimeCapabilities(),
+        strategy: RuntimeStrategy = RuntimeStrategy(),
+        max_tokens: int | None = None,
     ) -> LoopResult:
         turn = await self.turns.get(turn_id)
         if turn is None:
@@ -71,15 +83,16 @@ class AgentLoopController:
             )
 
         budget = IterationBudget(max_iterations=_max_iterations())
+        tools_enabled = capabilities.supports_tools and strategy.allow_tools
         visible_tools = (
             self.executor.exposure.exposed_specs(
                 policy=agent_session.toolset_policy,
                 role="orchestrator",
             )
-            if supports_tools
+            if tools_enabled
             else []
         )
-        tool_payload = provider_tool_specs(visible_tools) if supports_tools else []
+        tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
         token_usage: dict[str, Any] | None = None
 
         while budget.consume():
@@ -98,11 +111,13 @@ class AgentLoopController:
                         agent_session=agent_session,
                         turn=turn,
                     ),
-                    "max_tokens": settings.agent_max_tokens,
+                    "max_tokens": max_tokens or settings.agent_max_tokens,
                     **request_args,
                 }
-                if supports_tools and tool_payload:
+                if tools_enabled and tool_payload:
                     completion_kwargs["tools"] = tool_payload
+                if capabilities.supports_streaming and strategy.use_streaming:
+                    completion_kwargs["stream"] = True
                 response = await acompletion(**completion_kwargs)
             except Exception as exc:
                 return LoopResult(
@@ -113,8 +128,26 @@ class AgentLoopController:
                     error_message=str(exc),
                 )
 
-            token_usage = _merge_usage(token_usage, _extract_token_usage(response))
-            tool_calls = _extract_tool_calls(response)
+            message_id = f"assistant:{turn.id}:{budget.used_iterations}"
+            if completion_kwargs.get("stream"):
+                streamed = await self._consume_stream_response(
+                    agent_session=agent_session,
+                    turn=turn,
+                    response=response,
+                    message_id=message_id,
+                    allow_thinking=strategy.allow_thinking,
+                )
+            else:
+                streamed = await self._consume_response(
+                    agent_session=agent_session,
+                    turn=turn,
+                    response=response,
+                    message_id=message_id,
+                    allow_thinking=strategy.allow_thinking,
+                )
+
+            token_usage = _merge_usage(token_usage, streamed.token_usage)
+            tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
             if tool_calls:
                 await self._append_assistant_tool_calls(
                     agent_session=agent_session,
@@ -122,6 +155,7 @@ class AgentLoopController:
                     provider=provider,
                     model=model,
                     tool_calls=tool_calls,
+                    text=streamed.text or None,
                 )
                 waiting = await self._execute_tool_calls(
                     agent_session=agent_session,
@@ -137,7 +171,7 @@ class AgentLoopController:
                     )
                 continue
 
-            final_text = _extract_response_text(response)
+            final_text = streamed.text
             if not final_text:
                 return LoopResult(
                     termination_reason="model_failed",
@@ -153,12 +187,6 @@ class AgentLoopController:
                 role="assistant",
                 parts=[text_part(final_text)],
                 metadata={"provider": provider, "model": model},
-            )
-            await self.ledger.append(
-                session_id=str(agent_session.id),
-                turn_id=str(turn.id),
-                type=AgentEventType.ASSISTANT_TEXT_COMPLETED,
-                payload={"text": final_text},
             )
             return LoopResult(
                 termination_reason="assistant_final",
@@ -214,7 +242,9 @@ class AgentLoopController:
         provider: str,
         model: str,
         request_args: dict[str, Any],
-        supports_tools: bool = True,
+        capabilities: RuntimeCapabilities = RuntimeCapabilities(),
+        strategy: RuntimeStrategy = RuntimeStrategy(),
+        max_tokens: int | None = None,
     ) -> LoopResult:
         action = await self.actions.get(action_id)
         if action is None:
@@ -280,8 +310,10 @@ class AgentLoopController:
             turn_id=str(turn.id),
             provider=provider,
             model=model,
-            supports_tools=supports_tools,
+            capabilities=capabilities,
+            strategy=strategy,
             request_args=request_args,
+            max_tokens=max_tokens,
         )
 
     async def _append_assistant_tool_calls(
@@ -292,12 +324,17 @@ class AgentLoopController:
         provider: str,
         model: str,
         tool_calls: list[dict[str, Any]],
+        text: str | None = None,
     ) -> None:
+        parts: list[dict[str, Any]] = []
+        if text:
+            parts.append(text_part(text))
+        parts.append(tool_calls_part([_provider_tool_call(call) for call in tool_calls]))
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
             role="assistant",
-            parts=[tool_calls_part([_provider_tool_call(call) for call in tool_calls])],
+            parts=parts,
             metadata={"provider": provider, "model": model, "kind": "tool_calls"},
         )
 
@@ -329,6 +366,233 @@ class AgentLoopController:
                 )
             ],
             metadata={"tool_call_id": tool_call_id, "tool": tool_name},
+        )
+
+    async def _consume_stream_response(
+        self,
+        *,
+        agent_session,
+        turn,
+        response: Any,
+        message_id: str,
+        allow_thinking: bool,
+    ) -> StreamCompletionResult:
+        if not hasattr(response, "__aiter__"):
+            return await self._consume_response(
+                agent_session=agent_session,
+                turn=turn,
+                response=response,
+                message_id=message_id,
+                allow_thinking=allow_thinking,
+            )
+
+        text_parts: list[str] = []
+        thinking_parts: list[str] = []
+        text_index = 0
+        thinking_index = 0
+        seen_tool_calls: dict[int, StreamToolCall] = {}
+        usage: dict[str, Any] | None = None
+
+        async for chunk in response:
+            usage = _merge_usage(usage, _extract_token_usage(chunk))
+
+            reasoning_delta = extract_reasoning_delta(chunk)
+            if allow_thinking and reasoning_delta:
+                thinking_parts.append(reasoning_delta)
+                await self.ledger.append(
+                    session_id=str(agent_session.id),
+                    turn_id=str(turn.id),
+                    type=AgentEventType.ASSISTANT_THINKING_DELTA,
+                    payload={
+                        "message_id": message_id,
+                        "delta": reasoning_delta,
+                        "content": "".join(thinking_parts),
+                        "index": thinking_index,
+                    },
+                )
+                thinking_index += 1
+
+            text_delta = extract_text_delta(chunk)
+            if text_delta:
+                text_parts.append(text_delta)
+                await self.ledger.append(
+                    session_id=str(agent_session.id),
+                    turn_id=str(turn.id),
+                    type=AgentEventType.ASSISTANT_TEXT_DELTA,
+                    payload={
+                        "message_id": message_id,
+                        "delta": text_delta,
+                        "content": "".join(text_parts),
+                        "index": text_index,
+                    },
+                )
+                text_index += 1
+
+            for delta in extract_tool_call_deltas(chunk):
+                state = seen_tool_calls.setdefault(
+                    delta.index,
+                    StreamToolCall(
+                        call_id=delta.call_id or f"tool_call_{delta.index + 1}",
+                        name=delta.name or "",
+                        index=delta.index,
+                    ),
+                )
+                started = state.call_id and state.name
+                if delta.call_id:
+                    state.call_id = delta.call_id
+                if delta.name:
+                    state.name = delta.name
+                if not started and state.call_id and state.name:
+                    await self.ledger.append(
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                        type=AgentEventType.ASSISTANT_TOOL_CALL_STARTED,
+                        payload={
+                            "message_id": message_id,
+                            "call_id": state.call_id,
+                            "name": state.name,
+                            "status": "building",
+                            "index": state.index,
+                        },
+                    )
+                if delta.arguments_delta:
+                    state.arguments_text += delta.arguments_delta
+                    await self.ledger.append(
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                        type=AgentEventType.ASSISTANT_TOOL_CALL_DELTA,
+                        payload={
+                            "message_id": message_id,
+                            "call_id": state.call_id,
+                            "name": state.name,
+                            "arguments_delta": delta.arguments_delta,
+                            "arguments": state.arguments(),
+                            "status": "building",
+                            "index": state.index,
+                        },
+                    )
+
+        thinking_text = "".join(thinking_parts).strip()
+        if allow_thinking and thinking_text:
+            await self.ledger.append(
+                session_id=str(agent_session.id),
+                turn_id=str(turn.id),
+                type=AgentEventType.ASSISTANT_THINKING_COMPLETED,
+                payload={
+                    "message_id": message_id,
+                    "content": thinking_text,
+                    "index": max(thinking_index - 1, 0),
+                },
+            )
+
+        tool_calls = [seen_tool_calls[index] for index in sorted(seen_tool_calls)]
+        for tool_call in tool_calls:
+            await self.ledger.append(
+                session_id=str(agent_session.id),
+                turn_id=str(turn.id),
+                type=AgentEventType.ASSISTANT_TOOL_CALL_COMPLETED,
+                payload={
+                    "message_id": message_id,
+                    "call_id": tool_call.call_id,
+                    "name": tool_call.name,
+                    "arguments": tool_call.arguments(),
+                    "status": "completed",
+                    "index": tool_call.index,
+                },
+            )
+
+        final_text = "".join(text_parts).strip()
+        if final_text:
+            await self.ledger.append(
+                session_id=str(agent_session.id),
+                turn_id=str(turn.id),
+                type=AgentEventType.ASSISTANT_TEXT_COMPLETED,
+                payload={
+                    "message_id": message_id,
+                    "text": final_text,
+                    "content": final_text,
+                    "index": max(text_index - 1, 0),
+                },
+            )
+
+        return StreamCompletionResult(
+            text=final_text,
+            thinking=thinking_text,
+            tool_calls=tool_calls,
+            token_usage=usage,
+            streamed=True,
+        )
+
+    async def _consume_response(
+        self,
+        *,
+        agent_session,
+        turn,
+        response: Any,
+        message_id: str,
+        allow_thinking: bool,
+    ) -> StreamCompletionResult:
+        usage = _extract_token_usage(response)
+        thinking_text = extract_response_thinking(response).strip() if allow_thinking else ""
+        if thinking_text:
+            await self.ledger.append(
+                session_id=str(agent_session.id),
+                turn_id=str(turn.id),
+                type=AgentEventType.ASSISTANT_THINKING_COMPLETED,
+                payload={
+                    "message_id": message_id,
+                    "content": thinking_text,
+                    "index": 0,
+                },
+            )
+        tool_calls = [_stream_tool_call_from_payload(item, index) for index, item in enumerate(_extract_tool_calls(response))]
+        for tool_call in tool_calls:
+            await self.ledger.append(
+                session_id=str(agent_session.id),
+                turn_id=str(turn.id),
+                type=AgentEventType.ASSISTANT_TOOL_CALL_STARTED,
+                payload={
+                    "message_id": message_id,
+                    "call_id": tool_call.call_id,
+                    "name": tool_call.name,
+                    "status": "building",
+                    "index": tool_call.index,
+                },
+            )
+            await self.ledger.append(
+                session_id=str(agent_session.id),
+                turn_id=str(turn.id),
+                type=AgentEventType.ASSISTANT_TOOL_CALL_COMPLETED,
+                payload={
+                    "message_id": message_id,
+                    "call_id": tool_call.call_id,
+                    "name": tool_call.name,
+                    "arguments": tool_call.arguments(),
+                    "status": "completed",
+                    "index": tool_call.index,
+                },
+            )
+
+        final_text = _extract_response_text(response)
+        if final_text:
+            await self.ledger.append(
+                session_id=str(agent_session.id),
+                turn_id=str(turn.id),
+                type=AgentEventType.ASSISTANT_TEXT_COMPLETED,
+                payload={
+                    "message_id": message_id,
+                    "text": final_text,
+                    "content": final_text,
+                    "index": 0,
+                },
+            )
+
+        return StreamCompletionResult(
+            text=final_text,
+            thinking=thinking_text,
+            tool_calls=tool_calls,
+            token_usage=usage,
+            streamed=False,
         )
 
     async def complete_turn_from_result(self, *, turn, result: LoopResult):
@@ -385,11 +649,11 @@ class AgentLoopController:
 
 
 def _extract_response_text(response: Any) -> str:
-    choices = getattr(response, "choices", None) or []
+    choices = _value(response, "choices") or []
     if not choices:
         return ""
-    message = getattr(choices[0], "message", None)
-    content = getattr(message, "content", "")
+    message = _value(choices[0], "message")
+    content = _value(message, "content") or ""
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
@@ -403,17 +667,17 @@ def _extract_response_text(response: Any) -> str:
 
 
 def _extract_tool_calls(response: Any) -> list[dict[str, Any]]:
-    choices = getattr(response, "choices", None) or []
+    choices = _value(response, "choices") or []
     if not choices:
         return []
-    message = getattr(choices[0], "message", None)
-    raw_tool_calls = getattr(message, "tool_calls", None) or []
+    message = _value(choices[0], "message")
+    raw_tool_calls = _value(message, "tool_calls") or []
     calls: list[dict[str, Any]] = []
     for raw in raw_tool_calls:
-        function = getattr(raw, "function", None)
-        name = getattr(function, "name", None)
-        arguments = getattr(function, "arguments", None)
-        call_id = getattr(raw, "id", None)
+        function = _value(raw, "function")
+        name = _value(function, "name")
+        arguments = _value(function, "arguments")
+        call_id = _value(raw, "id")
         if isinstance(raw, dict):
             function = raw.get("function") or {}
             name = function.get("name")
@@ -455,8 +719,32 @@ def _provider_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _tool_call_dict(tool_call: StreamToolCall) -> dict[str, Any]:
+    return {
+        "id": tool_call.call_id,
+        "name": tool_call.name,
+        "arguments": tool_call.arguments(),
+    }
+
+
+def _stream_tool_call_from_payload(
+    tool_call: dict[str, Any],
+    index: int,
+) -> StreamToolCall:
+    return StreamToolCall(
+        call_id=str(tool_call.get("id") or f"tool_call_{index + 1}"),
+        name=str(tool_call.get("name") or ""),
+        arguments_text=json.dumps(
+            tool_call.get("arguments") or {},
+            separators=(",", ":"),
+            default=str,
+        ),
+        index=index,
+    )
+
+
 def _extract_token_usage(response: Any) -> dict[str, Any] | None:
-    usage = getattr(response, "usage", None)
+    usage = _value(response, "usage")
     if usage is None:
         return None
     if hasattr(usage, "model_dump"):
@@ -485,3 +773,9 @@ def _merge_usage(
 
 def _max_iterations() -> int:
     return int(getattr(settings, "agent_max_iterations", None) or settings.agent_max_rounds or 6)
+
+
+def _value(source: Any, key: str) -> Any:
+    if isinstance(source, dict):
+        return source.get(key)
+    return getattr(source, key, None)

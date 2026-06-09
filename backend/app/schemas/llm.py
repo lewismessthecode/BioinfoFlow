@@ -138,6 +138,9 @@ class LlmModelProfileCreate(BaseModel):
     fallback_model_ids: list[UUID] | None = None
     reasoning_budget: int | None = None
     max_tokens: int | None = None
+    prefer_streaming: bool = True
+    allow_thinking: bool = True
+    allow_tools: bool = True
     cost_ceiling: str | None = None
     routing_policy: dict | None = None
     permission_overrides: dict | None = None
@@ -153,6 +156,9 @@ class LlmModelProfileUpdate(BaseModel):
     fallback_model_ids: list[UUID] | None = None
     reasoning_budget: int | None = None
     max_tokens: int | None = None
+    prefer_streaming: bool | None = None
+    allow_thinking: bool | None = None
+    allow_tools: bool | None = None
     cost_ceiling: str | None = None
     routing_policy: dict | None = None
     permission_overrides: dict | None = None
@@ -171,6 +177,9 @@ class LlmModelProfileRead(BaseModel):
     fallback_model_ids: list[UUID] | None = None
     reasoning_budget: int | None = None
     max_tokens: int | None = None
+    prefer_streaming: bool
+    allow_thinking: bool
+    allow_tools: bool
     cost_ceiling: str | None = None
     routing_policy: dict | None = None
     permission_overrides: dict | None = None
