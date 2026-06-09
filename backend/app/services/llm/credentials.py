@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
@@ -55,12 +56,8 @@ def mask_secret(secret: str) -> str:
     return f"{secret[:4]}...{secret[-4:]}"
 
 
-def fingerprint_secret(secret: str) -> str:
-    return hashlib.blake2b(
-        secret.encode("utf-8"),
-        key=_fingerprint_key(),
-        digest_size=16,
-    ).hexdigest()
+def generate_credential_fingerprint() -> str:
+    return secrets.token_hex(8)
 
 
 def encrypt_secret(secret: str) -> str:
@@ -92,10 +89,6 @@ def resolve_credential_material(
 
 def _fernet() -> Fernet:
     return Fernet(_credential_key())
-
-
-def _fingerprint_key() -> bytes:
-    return _credential_key()
 
 
 def _credential_key() -> bytes:

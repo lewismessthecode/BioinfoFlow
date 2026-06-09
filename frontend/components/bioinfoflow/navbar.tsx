@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { Command, HelpCircle, LogOut, Menu, Moon, PartyPopper, Sun, User } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
@@ -23,9 +22,8 @@ import { buildAnonymousViewer } from "@/lib/auth-config"
 import { openInNewTab } from "@/lib/window-utils"
 import {
   celebratePreview,
-  isCelebrationsEnabled,
   setCelebrationsEnabled,
-  subscribeToCelebrationsPreference,
+  useCelebrationsEnabledPreference,
 } from "@/lib/celebrations"
 import { Breadcrumbs } from "./breadcrumbs"
 import { ConnectionStatus } from "./connection-status"
@@ -57,13 +55,7 @@ export function Navbar({
   const tAccessibility = useTranslations("accessibility")
   const tCelebrations = useTranslations("celebrations")
   const currentViewer = viewer ?? buildAnonymousViewer()
-  const [celebrationsEnabled, setCelebrationsEnabledState] = useState(() =>
-    isCelebrationsEnabled(),
-  )
-
-  useEffect(() => {
-    return subscribeToCelebrationsPreference(setCelebrationsEnabledState)
-  }, [])
+  const celebrationsEnabled = useCelebrationsEnabledPreference()
 
   const handleSignOut = async () => {
     if (!currentViewer.authEnabled) {

@@ -99,6 +99,20 @@ vi.mock("@/lib/window-utils", () => ({
 vi.mock("@/lib/celebrations", () => ({
   celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
   isCelebrationsEnabled: () => celebrationsEnabledState,
+  useCelebrationsEnabledPreference: () => {
+    const { useSyncExternalStore } = require("react") as typeof import("react")
+    return useSyncExternalStore(
+      (callback) => {
+        const listener = () => callback()
+        celebrationSubscribers.add(listener)
+        return () => {
+          celebrationSubscribers.delete(listener)
+        }
+      },
+      () => celebrationsEnabledState,
+      () => true,
+    )
+  },
   setCelebrationsEnabled: (enabled: boolean) => {
     celebrationsEnabledState = enabled
     setCelebrationsEnabledMock(enabled)

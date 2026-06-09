@@ -38,10 +38,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { authClient } from "@/lib/auth-client"
 import {
   celebratePreview,
-  isCelebrationsEnabled,
-  isReducedMotionPreferred,
   setCelebrationsEnabled as persistCelebrationsEnabled,
-  subscribeToCelebrationsPreference,
+  useCelebrationsEnabledPreference,
+  useReducedMotionPreference,
 } from "@/lib/celebrations"
 import type { AuthMode, TeamRole } from "@/lib/auth-config"
 import { cn } from "@/lib/utils"
@@ -363,40 +362,13 @@ export default function SettingsPageClient({
   const [newPassword, setNewPassword] = useState("")
   const [savingPassword, setSavingPassword] = useState(false)
   const [activeSection, setActiveSection] = useState<SettingsSection>("account")
-  const [celebrationsEnabled, setCelebrationsEnabledState] = useState(() =>
-    isCelebrationsEnabled(),
-  )
-  const [reducedMotion, setReducedMotion] = useState(() =>
-    isReducedMotionPreferred(),
-  )
-
-  useEffect(() => {
-    return subscribeToCelebrationsPreference(setCelebrationsEnabledState)
-  }, [])
+  const celebrationsEnabled = useCelebrationsEnabledPreference()
+  const reducedMotion = useReducedMotionPreference()
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("section")
     if (section === "appearance" || section === "providers" || section === "members") {
       setActiveSection(section)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return
-    }
-
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
-    const updateReducedMotion = () => {
-      setReducedMotion(isReducedMotionPreferred())
-    }
-
-    mediaQuery.addEventListener?.("change", updateReducedMotion)
-    mediaQuery.addListener?.(updateReducedMotion)
-
-    return () => {
-      mediaQuery.removeEventListener?.("change", updateReducedMotion)
-      mediaQuery.removeListener?.(updateReducedMotion)
     }
   }, [])
 

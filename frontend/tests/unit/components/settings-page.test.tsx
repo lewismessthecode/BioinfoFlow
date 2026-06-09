@@ -87,6 +87,21 @@ vi.mock("@/lib/celebrations", () => ({
   celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
   isCelebrationsEnabled: () => celebrationsEnabledState,
   isReducedMotionPreferred: () => false,
+  useCelebrationsEnabledPreference: () => {
+    const { useSyncExternalStore } = require("react") as typeof import("react")
+    return useSyncExternalStore(
+      (callback) => {
+        const listener = () => callback()
+        celebrationSubscribers.add(listener)
+        return () => {
+          celebrationSubscribers.delete(listener)
+        }
+      },
+      () => celebrationsEnabledState,
+      () => true,
+    )
+  },
+  useReducedMotionPreference: () => false,
   setCelebrationsEnabled: (enabled: boolean) => {
     celebrationsEnabledState = enabled
     for (const listener of celebrationSubscribers) {

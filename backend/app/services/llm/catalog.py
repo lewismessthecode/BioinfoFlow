@@ -20,7 +20,7 @@ from app.services.llm.credentials import (
     credential_available,
     credential_configured,
     encrypt_secret,
-    fingerprint_secret,
+    generate_credential_fingerprint,
     mask_secret,
     to_credential_read_dict,
 )
@@ -150,7 +150,7 @@ class LlmCatalogService:
                 "source": source,
                 "env_var_name": None,
                 "encrypted_secret": encrypt_secret(secret),
-                "fingerprint": fingerprint_secret(secret),
+                "fingerprint": generate_credential_fingerprint(),
                 "masked_hint": mask_secret(secret),
                 "updated_by": user_id,
             }
