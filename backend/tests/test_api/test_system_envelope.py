@@ -6,9 +6,9 @@ import pytest
 from sqlalchemy import insert
 
 from app.config import settings
+from app.models.llm import LlmProvider, LlmProviderCredential
 from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
-from app.models.user_settings import UserSettings
 from app.models.workflow import Workflow
 
 
@@ -200,14 +200,29 @@ async def test_readiness_accepts_saved_user_provider_credentials(
     monkeypatch.setattr(settings, "deepseek_api_key", "")
 
     await db_session.execute(
-        insert(UserSettings).values(
+        insert(LlmProvider).values(
             id="00000000-0000-0000-0000-000000000401",
-            user_id="user-with-provider",
-            provider_credentials='{"openai":{"api_key":"sk-user-key"}}',
-            selected_provider="openai",
+            name="User OpenAI",
+            kind="openai",
+            base_url="https://api.openai.com/v1",
+            scope="user",
+            workspace_id="00000000-0000-0000-0000-000000000001",
+            user_id="dev",
+            enabled=True,
+            provider_metadata={"providerTemplate": "openai"},
+        )
+    )
+    await db_session.execute(
+        insert(LlmProviderCredential).values(
+            id="00000000-0000-0000-0000-000000000402",
+            provider_id="00000000-0000-0000-0000-000000000401",
+            source="env",
+            env_var_name="SAVED_TEST_OPENAI_API_KEY",
+            masked_hint="env:SAVED_TEST_OPENAI_API_KEY",
         )
     )
     await db_session.commit()
+    monkeypatch.setenv("SAVED_TEST_OPENAI_API_KEY", "sk-user-key")
 
     resp = await async_client.get("/api/v1/system/readiness")
     assert resp.status_code == 200

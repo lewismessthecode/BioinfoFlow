@@ -2,10 +2,38 @@ from __future__ import annotations
 
 import pytest
 
+from app.models.llm import LlmModel, LlmProvider
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+async def _seed_catalog_model(db_session, *, model_id: str = "kernel-model") -> LlmModel:
+    provider = LlmProvider(
+        name=f"{model_id} provider",
+        kind="openai_compatible",
+        base_url="https://models.internal.example/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    model = LlmModel(
+        provider_id=str(provider.id),
+        model_id=model_id,
+        display_name=model_id,
+        supports_tools=True,
+        supports_streaming=True,
+    )
+    db_session.add(model)
+    await db_session.commit()
+    await db_session.refresh(model)
+    return model
 
 
 @pytest.mark.asyncio
@@ -29,6 +57,7 @@ async def test_agent_core_no_tool_runtime_writes_ordered_events(db_session, monk
 
     monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
 
+    model = await _seed_catalog_model(db_session)
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     project = Project(
         name="Kernel Project",
@@ -65,10 +94,10 @@ async def test_agent_core_no_tool_runtime_writes_ordered_events(db_session, monk
         user_id="dev",
     )
     assert turn.model_profile_snapshot["resolved_model_selection"] == {
-        "provider": "anthropic",
-        "model": "claude-sonnet-4-6",
+        "provider": "openai_compatible",
+        "model": model.model_id,
     }
-    assert turn.model_profile_snapshot["resolved_model_source"] == "deployment_default"
+    assert turn.model_profile_snapshot["resolved_model_source"] == "catalog_default"
     assert [event.seq for event in events] == [1, 2, 3, 4, 5]
     assert [event.type for event in events] == [
         "turn.created",
@@ -86,6 +115,7 @@ async def test_agent_core_no_tool_runtime_persists_visible_failure(db_session, m
 
     monkeypatch.setattr("app.services.agent_core.runtime.acompletion", failing_completion)
 
+    await _seed_catalog_model(db_session, model_id="failing-kernel-model")
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     project = Project(
         name="Kernel Project",

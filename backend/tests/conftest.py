@@ -17,6 +17,7 @@ from app.config import settings
 from app.api.deps import get_db
 from app.database import Base, stamp_database_revision
 from app.main import app as fastapi_app
+from app.services.llm.provider_templates import list_provider_templates
 from app.services.run_dispatch import set_run_dispatcher, set_run_scheduler
 import app.models  # noqa: F401
 
@@ -24,6 +25,23 @@ import app.models  # noqa: F401
 class _NoopDispatcher:
     def dispatch(self, run_id: str, *, priority: str = "normal") -> None:
         del run_id, priority
+
+
+@pytest.fixture(autouse=True)
+def _isolate_llm_provider_env(monkeypatch):
+    """Keep environment LLM provider keys out of tests.
+
+    Bootstrap syncs (and live-discovers) any provider whose env vars are set.
+    A developer machine often exports real keys, which would otherwise create
+    unexpected providers/models and trigger real network calls during tests.
+    """
+    names: set[str] = {"OPENAI_COMPATIBLE_NAME", "OPENAI_COMPATIBLE_PROVIDERS"}
+    for template in list_provider_templates():
+        names.update(template.env_api_key_vars)
+        names.update(template.env_base_url_vars)
+        names.update(template.env_model_vars)
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(scope="session")
