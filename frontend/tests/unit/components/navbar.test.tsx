@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ViewerIdentity } from "@/lib/auth-config"
+import { createCelebrationsPreferenceMock } from "@/tests/support/mock-celebrations-preference"
 
 const {
   pushMock,
@@ -29,8 +30,7 @@ const {
   setCelebrationsEnabledMock: vi.fn(),
 }))
 
-let celebrationsEnabledState = true
-const celebrationSubscribers = new Set<(enabled: boolean) => void>()
+const celebrationsPreference = createCelebrationsPreferenceMock()
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -98,34 +98,15 @@ vi.mock("@/lib/window-utils", () => ({
 
 vi.mock("@/lib/celebrations", () => ({
   celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
-  isCelebrationsEnabled: () => celebrationsEnabledState,
-  useCelebrationsEnabledPreference: () => {
-    const { useSyncExternalStore } = require("react") as typeof import("react")
-    return useSyncExternalStore(
-      (callback) => {
-        const listener = () => callback()
-        celebrationSubscribers.add(listener)
-        return () => {
-          celebrationSubscribers.delete(listener)
-        }
-      },
-      () => celebrationsEnabledState,
-      () => true,
-    )
-  },
+  isCelebrationsEnabled: () => celebrationsPreference.getEnabled(),
+  useCelebrationsEnabledPreference: () =>
+    celebrationsPreference.useCelebrationsEnabledPreference(),
   setCelebrationsEnabled: (enabled: boolean) => {
-    celebrationsEnabledState = enabled
+    celebrationsPreference.setEnabled(enabled)
     setCelebrationsEnabledMock(enabled)
-    for (const listener of celebrationSubscribers) {
-      listener(enabled)
-    }
   },
-  subscribeToCelebrationsPreference: (listener: (enabled: boolean) => void) => {
-    celebrationSubscribers.add(listener)
-    return () => {
-      celebrationSubscribers.delete(listener)
-    }
-  },
+  subscribeToCelebrationsPreference: (listener: (enabled: boolean) => void) =>
+    celebrationsPreference.subscribeToCelebrationsPreference(listener),
 }))
 
 vi.mock("sonner", () => ({
@@ -200,8 +181,7 @@ const AUTH_VIEWER: ViewerIdentity = {
 describe("Navbar", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    celebrationsEnabledState = true
-    celebrationSubscribers.clear()
+    celebrationsPreference.reset()
   })
 
   it("opens the docs link from the help action", async () => {

@@ -186,4 +186,57 @@ describe("agentRuntimeReducer", () => {
     })
     expect(idle.status).toBe("idle")
   })
+
+  it("projects turn lifecycle transitions from streamed runtime events", () => {
+    const queuedState = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "turn.upsert",
+      turn: turn("queued"),
+    })
+
+    const runningState = agentRuntimeReducer(queuedState, {
+      type: "event.append",
+      event: {
+        ...event("event-started", 1),
+        type: "turn.started",
+      },
+    })
+
+    expect(runningState.turns[0]?.status).toBe("running")
+    expect(runningState.status).toBe("running")
+
+    const completedState = agentRuntimeReducer(runningState, {
+      type: "event.append",
+      event: {
+        ...event("event-completed", 2),
+        type: "turn.completed",
+      },
+    })
+
+    expect(completedState.turns[0]?.status).toBe("completed")
+    expect(completedState.status).toBe("idle")
+  })
+
+  it("promotes queued turns to running when assistant output starts streaming", () => {
+    const queuedState = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "turn.upsert",
+      turn: turn("queued"),
+    })
+
+    const streamingState = agentRuntimeReducer(queuedState, {
+      type: "event.append",
+      event: {
+        ...event("event-stream", 1),
+        type: "assistant.text.delta",
+        payload: {
+          message_id: "message-1",
+          delta: "Hello",
+          content: "Hello",
+          index: 0,
+        },
+      },
+    })
+
+    expect(streamingState.turns[0]?.status).toBe("running")
+    expect(streamingState.status).toBe("running")
+  })
 })

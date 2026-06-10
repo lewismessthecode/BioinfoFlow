@@ -70,11 +70,15 @@ export function agentRuntimeReducer(
       }
     }
     case "event.append": {
+      const turns = applyEventToTurns(state.turns, action.event)
       const events = sortEvents(dedupeEvents([...state.events, action.event]))
       return {
         ...state,
+        turns,
         events,
-        timeline: buildAgentRuntimeTimeline(state.turns, events),
+        timeline: buildAgentRuntimeTimeline(turns, events),
+        status: hasRunningTurn(turns) ? "running" : "idle",
+        error: null,
       }
     }
     case "error":
@@ -98,6 +102,97 @@ function dedupeEvents(events: AgentRuntimeEvent[]) {
 
 function sortEvents(events: AgentRuntimeEvent[]) {
   return [...events].sort((a, b) => a.seq - b.seq)
+}
+
+function applyEventToTurns(turns: AgentRuntimeTurn[], event: AgentRuntimeEvent) {
+  const turnId = event.turn_id ?? null
+  if (!turnId) return turns
+
+  const nextStatus = projectTurnStatusFromEvent(event)
+  const shouldPromoteRunning =
+    nextStatus === null && indicatesActiveTurnOutput(event)
+
+  if (!nextStatus && !shouldPromoteRunning) {
+    return turns
+  }
+
+  return turns.map((turn) => {
+    if (turn.id !== turnId) return turn
+
+    const status = nextStatus ?? promoteTurnStatusFromOutput(turn.status)
+    if (status === turn.status && nextStatus !== "failed") {
+      return turn
+    }
+
+    const nextTurn: AgentRuntimeTurn = {
+      ...turn,
+      status,
+      updated_at: event.updated_at || turn.updated_at,
+    }
+
+    if (status === "running" && !turn.started_at) {
+      nextTurn.started_at = event.created_at
+    }
+
+    if (
+      (status === "completed" || status === "failed" || status === "cancelled") &&
+      !turn.completed_at
+    ) {
+      nextTurn.completed_at = event.created_at
+    }
+
+    if (status === "failed") {
+      nextTurn.error_message =
+        typeof event.payload.error_message === "string"
+          ? event.payload.error_message
+          : turn.error_message
+    }
+
+    return nextTurn
+  })
+}
+
+function projectTurnStatusFromEvent(
+  event: AgentRuntimeEvent,
+): AgentRuntimeTurn["status"] | null {
+  switch (event.type) {
+    case "turn.started":
+      return "running"
+    case "turn.completed":
+      return "completed"
+    case "turn.failed":
+      return "failed"
+    case "turn.cancelled":
+    case "turn.interrupted":
+      return "cancelled"
+    case "action.waiting_decision":
+      return "waiting_approval"
+    default:
+      return null
+  }
+}
+
+function indicatesActiveTurnOutput(event: AgentRuntimeEvent) {
+  return (
+    event.type.startsWith("assistant.") ||
+    event.type === "action.requested" ||
+    event.type === "action.started" ||
+    event.type === "action.completed" ||
+    event.type === "action.failed" ||
+    event.type === "action.cancelled" ||
+    event.type === "artifact.created"
+  )
+}
+
+function promoteTurnStatusFromOutput(status: AgentRuntimeTurn["status"]) {
+  if (
+    status === "queued" ||
+    status === "waiting_approval" ||
+    status === "waiting_user"
+  ) {
+    return "running"
+  }
+  return status
 }
 
 function hasRunningTurn(turns: AgentRuntimeTurn[]) {

@@ -3,6 +3,7 @@
 import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed, Wrench } from "lucide-react"
 import { useTranslations } from "next-intl"
 
+import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import type { AgentRuntimeTimelineEntry, AgentRuntimeTurn } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
@@ -59,16 +60,18 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
                   </div>
                 ) : null}
 
-                <p
+                <MarkdownRenderer
                   className={cn(
-                    "whitespace-pre-wrap break-words text-[15px] leading-7 text-foreground",
-                    entry.assistant.status === "failed" && "text-destructive",
+                    "text-[15px] leading-7",
+                    entry.assistant.status === "failed" &&
+                      "[&_a]:text-destructive [&_code]:text-destructive [&_em]:text-destructive [&_h1]:text-destructive [&_h2]:text-destructive [&_h3]:text-destructive [&_h4]:text-destructive [&_li]:text-destructive [&_p]:text-destructive [&_strong]:text-destructive text-destructive",
                   )}
-                >
-                  {entry.assistant.text ||
+                  content={
+                    entry.assistant.text ||
                     entry.assistant.errorMessage ||
-                    t("pendingResponse")}
-                </p>
+                    t("pendingResponse")
+                  }
+                />
               </div>
             </div>
           </article>

@@ -4,6 +4,7 @@ import SettingsPageClient from "@/components/bioinfoflow/settings/settings-page-
 import { apiRequest } from "@/lib/api"
 import { useAppearance } from "@/lib/appearance/use-appearance"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
+import { createCelebrationsPreferenceMock } from "@/tests/support/mock-celebrations-preference"
 
 type ProviderTestResult = {
   success: boolean
@@ -22,8 +23,7 @@ const testProviderMock = vi.fn(
   }),
 )
 const celebratePreviewMock = vi.fn()
-let celebrationsEnabledState = true
-const celebrationSubscribers = new Set<(enabled: boolean) => void>()
+const celebrationsPreference = createCelebrationsPreferenceMock()
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
@@ -85,35 +85,16 @@ vi.mock("@/lib/appearance/use-appearance", () => ({
 
 vi.mock("@/lib/celebrations", () => ({
   celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
-  isCelebrationsEnabled: () => celebrationsEnabledState,
+  isCelebrationsEnabled: () => celebrationsPreference.getEnabled(),
   isReducedMotionPreferred: () => false,
-  useCelebrationsEnabledPreference: () => {
-    const { useSyncExternalStore } = require("react") as typeof import("react")
-    return useSyncExternalStore(
-      (callback) => {
-        const listener = () => callback()
-        celebrationSubscribers.add(listener)
-        return () => {
-          celebrationSubscribers.delete(listener)
-        }
-      },
-      () => celebrationsEnabledState,
-      () => true,
-    )
-  },
+  useCelebrationsEnabledPreference: () =>
+    celebrationsPreference.useCelebrationsEnabledPreference(),
   useReducedMotionPreference: () => false,
   setCelebrationsEnabled: (enabled: boolean) => {
-    celebrationsEnabledState = enabled
-    for (const listener of celebrationSubscribers) {
-      listener(enabled)
-    }
+    celebrationsPreference.setEnabled(enabled)
   },
-  subscribeToCelebrationsPreference: (listener: (enabled: boolean) => void) => {
-    celebrationSubscribers.add(listener)
-    return () => {
-      celebrationSubscribers.delete(listener)
-    }
-  },
+  subscribeToCelebrationsPreference: (listener: (enabled: boolean) => void) =>
+    celebrationsPreference.subscribeToCelebrationsPreference(listener),
 }))
 
 vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
@@ -143,8 +124,7 @@ describe("SettingsPage", () => {
     updateSettingsMock.mockReset()
     testProviderMock.mockClear()
     celebratePreviewMock.mockReset()
-    celebrationsEnabledState = true
-    celebrationSubscribers.clear()
+    celebrationsPreference.reset()
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
       matches: false,
       media: "(prefers-reduced-motion: reduce)",
