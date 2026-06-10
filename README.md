@@ -32,7 +32,7 @@ The bigger ambition: a single, coherent product layer above the compute — so c
 >
 > ```bash
 > git clone https://github.com/your-org/bioinfoflow && cd bioinfoflow
-> cp .env.example .env   # add ANTHROPIC_API_KEY (or another provider) to .env
+> cp .env.example .env   # set owner credentials; provider keys can be added in the UI
 > docker compose up -d --build
 > ```
 >
@@ -84,7 +84,7 @@ The bigger ambition: a single, coherent product layer above the compute — so c
 ### Prerequisites
 
 - Docker Engine or Docker Desktop with Compose
-- One AI provider key (Anthropic, OpenAI, Gemini, DeepSeek, or an OpenAI-compatible provider)
+- One AI provider key for agent use. You can paste it after sign-in under **Settings -> AI Providers**, or bootstrap it in `.env`.
 
 ### Run with Docker
 
@@ -92,15 +92,14 @@ The bigger ambition: a single, coherent product layer above the compute — so c
 cp .env.example .env
 ```
 
-Edit `.env` and set at least:
+Edit `.env` and set at least the owner credentials:
 
 ```env
-ANTHROPIC_API_KEY=...
-# or OPENAI_API_KEY=... / GEMINI_API_KEY=... / DEEPSEEK_API_KEY=...
-
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 ```
+
+After sign-in, open **Settings -> AI Providers** and paste a key for OpenAI, Anthropic, Gemini, Grok, Groq, DeepSeek, OpenRouter, or configure Ollama/vLLM/OpenAI-compatible endpoints. For headless deployments you can still bootstrap providers in `.env`, for example `VLLM_BASE_URL`, `VLLM_API_KEY`, and `VLLM_MODEL`.
 
 Start the stack:
 
@@ -123,7 +122,7 @@ For a faster localhost start without rebuilding images, use the GHCR release ima
 
 ```bash
 cp .env.example .env
-# edit .env: provider key and owner credentials
+# edit .env: owner credentials; provider keys can be added in the UI
 cat >> .env <<'EOF'
 IMAGE_REGISTRY=ghcr.io/lewismessthecode
 IMAGE_TAG=latest

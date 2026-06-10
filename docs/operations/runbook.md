@@ -50,7 +50,7 @@ That keeps the same absolute path visible on the host and inside containers.
 - Docker daemon
 - `NEXTFLOW_BIN` for Nextflow execution
 - `MINIWDL_BIN` for WDL execution
-- one provider credential such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`
+- one provider credential for agent use, configured in **Settings -> AI Providers** or bootstrapped with env vars such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `VLLM_BASE_URL` + `VLLM_MODEL`
 
 ## Scheduler Defaults
 

@@ -34,7 +34,7 @@ API Routers (17) → Services → Repositories → SQLite (aiosqlite)
         └─ Config store (~/.config/bioinfoflow/cli.toml) + HTTP RemoteTransport
 ```
 
-## API Routes (17 routers)
+## API Routes (16 routers)
 | Prefix | Module | Notes |
 | --- | --- | --- |
 | `/projects` | `projects.py` | CRUD + search + storage mode |
@@ -52,8 +52,7 @@ API Routers (17) → Services → Repositories → SQLite (aiosqlite)
 | `/stats` | `stats.py` | Dashboard metrics aggregation |
 | `/system` | `system.py` | Health check + GPU status + metrics |
 | `/terminal` | `terminal.py` | Terminal sessions (create/close + WebSocket I/O) |
-| `/user-settings` | `user_settings.py` | Per-user preferences CRUD |
-| `/providers` | `providers.py` | LLM provider catalog + model listing |
+| `/llm` | `llm.py` | Unified LLM provider templates, setup, credentials, models, profiles |
 
 ## Services (30+ files, grouped)
 **Run pipeline (RunService facade)**

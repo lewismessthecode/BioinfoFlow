@@ -13,7 +13,7 @@ FastAPI /api/v1  ───────────────►  SQLite (aiosq
    │                               │
    ├─ Services (projects, project-workflows, runs, workflows, files,
    │            storage, images, demos, stats, batch, notifications,
-   │            audit, terminal, user-settings, workspaces,
+   │            audit, terminal, llm catalog, workspaces,
    │            dag-parser, trace-parser, validators)
    │
    ├─ RunService facade (delegates to RunSubmissionService,
