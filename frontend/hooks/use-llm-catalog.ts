@@ -6,6 +6,8 @@ import {
   createLlmProvider,
   discoverLlmProviderModels,
   getLlmConfiguration,
+  getLlmProviderTemplates,
+  setupLlmProvider,
   testLlmProvider,
   updateLlmProviderCredential,
   updateLlmProvider,
@@ -18,6 +20,9 @@ import type {
   LlmModel,
   LlmModelProfile,
   LlmProvider,
+  LlmProviderSetupInput,
+  LlmProviderSetupResult,
+  LlmProviderTemplate,
   LlmProviderTestResult,
 } from "@/lib/llm"
 
@@ -26,6 +31,7 @@ export function useLlmCatalog() {
   const [configuredProviders, setConfiguredProviders] = useState<LlmConfiguredProvider[]>([])
   const [models, setModels] = useState<LlmModel[]>([])
   const [profiles, setProfiles] = useState<LlmModelProfile[]>([])
+  const [providerTemplates, setProviderTemplates] = useState<LlmProviderTemplate[]>([])
   const [configuration, setConfiguration] = useState<LlmConfiguration | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isMutating, setIsMutating] = useState(false)
@@ -35,12 +41,16 @@ export function useLlmCatalog() {
     setIsLoading(true)
     setError(null)
     try {
-      const nextConfiguration = await getLlmConfiguration()
+      const [nextConfiguration, nextProviderTemplates] = await Promise.all([
+        getLlmConfiguration(),
+        getLlmProviderTemplates(),
+      ])
       setConfiguration(nextConfiguration)
       setConfiguredProviders(nextConfiguration.providers)
       setProviders(nextConfiguration.providers)
       setModels(nextConfiguration.models)
       setProfiles(nextConfiguration.profiles)
+      setProviderTemplates(nextProviderTemplates)
     } catch (caught) {
       setError(caught instanceof Error ? caught : new Error("Failed to load LLM catalog"))
     } finally {
@@ -62,6 +72,24 @@ export function useLlmCatalog() {
         return provider
       } catch (caught) {
         setError(caught instanceof Error ? caught : new Error("Failed to create LLM provider"))
+        return null
+      } finally {
+        setIsMutating(false)
+      }
+    },
+    [refresh],
+  )
+
+  const setupProvider = useCallback(
+    async (input: LlmProviderSetupInput): Promise<LlmProviderSetupResult | null> => {
+      setIsMutating(true)
+      setError(null)
+      try {
+        const result = await setupLlmProvider(input)
+        await refresh()
+        return result
+      } catch (caught) {
+        setError(caught instanceof Error ? caught : new Error("Failed to set up LLM provider"))
         return null
       } finally {
         setIsMutating(false)
@@ -165,11 +193,13 @@ export function useLlmCatalog() {
     configuredProviders,
     models,
     profiles,
+    providerTemplates,
     configuration,
     isLoading,
     isMutating,
     error,
     refresh,
+    setupProvider,
     createProvider,
     updateProvider,
     setProviderEnabled,

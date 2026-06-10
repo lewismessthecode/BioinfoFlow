@@ -15,22 +15,25 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, string>) => {
     const labels: Record<string, string> = {
       "providerCards.loading": "Loading providers...",
+      "providerCards.summary": `${values?.count ?? 0} configured`,
       "providerCards.save": "Save",
       "providerCards.saving": "Saving...",
       "providerCards.apiKeyPlaceholder": "Paste API key",
       "providerCards.savedKeyPlaceholder": "Key saved. Paste a new key to replace it.",
       "providerCards.endpointPlaceholder": "Endpoint URL",
-      "providerCards.getApiKey": `Get API key${values?.provider ? ` for ${values.provider}` : ""}`,
-      "providerCards.configured": "Configured",
-      "providerCards.notConfigured": "Not configured",
+      "providerCards.getApiKey": "Get key",
       "providerCards.noKeyRequired": "No key required",
+      "providerCards.ready": "Ready",
+      "providerCards.needsSetup": "Setup",
+      "providerCards.fromEnv": "From .env",
+      "providerCards.keySavedShort": "Key saved",
       "providerCards.saved": "Provider saved",
       "providerCards.saveFailed": "Provider could not be saved",
-      "providerCards.refreshModels": "Refresh local models",
+      "providerCards.refreshModels": "Refresh models",
       "providerCards.refreshingModels": "Refreshing...",
       "providerCards.modelsDiscovered": `${values?.count ?? 0} models found`,
-      "providerCards.modelsRefreshed": "Local models refreshed",
-      "providerCards.modelRefreshFailed": "Local models could not be refreshed",
+      "providerCards.modelRefreshFailed": "Models could not be refreshed",
+      "providerCards.modelIdPlaceholder": "Model ID",
     }
     return labels[key] ?? key
   },
@@ -44,6 +47,55 @@ vi.mock("sonner", () => ({
 }))
 
 describe("LlmCatalogPanel", () => {
+  const templates = [
+    providerTemplate("openai", "OpenAI", "openai", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.openai.com/v1"),
+    providerTemplate("anthropic", "Anthropic", "anthropic", "anthropic_models", [
+      field("api_key", "API key", true, true),
+    ]),
+    providerTemplate("gemini", "Gemini", "gemini", "gemini_models", [
+      field("api_key", "API key", true, true),
+    ]),
+    providerTemplate("grok", "Grok", "grok", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.x.ai/v1"),
+    providerTemplate("groq", "Groq", "groq", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.groq.com/openai/v1"),
+    providerTemplate("deepseek", "DeepSeek", "deepseek", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.deepseek.com/v1"),
+    providerTemplate("openrouter", "OpenRouter", "openrouter", "openai_models", [
+      field("api_key", "API key", true, true),
+      field("model_id", "Model ID", false, false),
+    ], "https://openrouter.ai/api/v1", [
+      {
+        id: "openrouter/auto",
+        name: "OpenRouter Auto",
+        supports_tools: true,
+        supports_streaming: true,
+        supports_vision: false,
+        supports_json_schema: true,
+        supports_reasoning: false,
+      },
+    ]),
+    providerTemplate("ollama", "Ollama", "ollama", "ollama_tags", [
+      field("base_url", "Endpoint", false, true, "http://localhost:11434"),
+      field("model_id", "Model ID", false, false),
+    ], "http://localhost:11434"),
+    providerTemplate("vllm", "vLLM", "vllm", "openai_models", [
+      field("base_url", "Endpoint", false, true, "http://localhost:8000/v1"),
+      field("api_key", "API key", true, false),
+      field("model_id", "Model ID", false, false),
+    ], "http://localhost:8000/v1"),
+    providerTemplate("openai-compatible", "OpenAI Compatible", "openai_compatible", "openai_models", [
+      field("base_url", "Endpoint", false, true, "https://api.example.com/v1"),
+      field("api_key", "API key", true, false),
+      field("model_id", "Model ID", false, false),
+    ], "https://api.example.com/v1"),
+  ]
+
   beforeEach(() => {
     useLlmCatalogMock.mockReset()
     toastErrorMock.mockReset()
@@ -52,28 +104,26 @@ describe("LlmCatalogPanel", () => {
 
   it("renders the provider key grid with common hosted and local providers", () => {
     useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
       configuredProviders: [],
+      models: [],
       isLoading: false,
       isMutating: false,
       error: null,
-      createProvider: vi.fn(),
-      updateProvider: vi.fn(),
-      updateCredential: vi.fn(),
       discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
     })
 
     render(<LlmCatalogPanel />)
 
     for (const name of [
       "OpenAI",
-      "Claude",
+      "Anthropic",
       "Gemini",
       "Grok",
       "DeepSeek",
       "OpenRouter",
       "Ollama",
-      "GLM",
-      "Minimax",
       "vLLM",
       "OpenAI Compatible",
     ]) {
@@ -84,19 +134,21 @@ describe("LlmCatalogPanel", () => {
     expect(screen.queryByText("Models")).not.toBeInTheDocument()
   })
 
-  it("keeps stored secrets write-only and updates an existing provider credential", async () => {
-    const updateCredential = vi.fn().mockResolvedValue({
-      configured: true,
-      available: true,
+  it("keeps stored secrets write-only and updates an existing provider through setup", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      provider: { id: "provider-openai" },
+      models: [],
+      discovered: false,
     })
     useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
       configuredProviders: [
         {
           id: "provider-openai",
           name: "OpenAI",
           kind: "openai",
           base_url: null,
-          metadata: { providerSlug: "openai" },
+          metadata: { providerTemplate: "openai" },
           enabled: true,
           credential: {
             source: "stored",
@@ -107,19 +159,18 @@ describe("LlmCatalogPanel", () => {
           },
         },
       ],
+      models: [],
       isLoading: false,
       isMutating: false,
       error: null,
-      createProvider: vi.fn(),
-      updateProvider: vi.fn().mockResolvedValue({ id: "provider-openai" }),
-      updateCredential,
       discoverModels: vi.fn(),
+      setupProvider,
     })
 
     render(<LlmCatalogPanel />)
 
     const card = screen.getByRole("group", { name: "OpenAI" })
-    expect(within(card).getByText("sk-...abcd")).toBeInTheDocument()
+    expect(within(card).getByText("Key saved")).toBeInTheDocument()
     const input = within(card).getByLabelText("OpenAI API key")
     expect(input).toHaveValue("")
 
@@ -127,32 +178,32 @@ describe("LlmCatalogPanel", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
-      expect(updateCredential).toHaveBeenCalledWith("provider-openai", {
-        source: "stored",
-        envVarName: null,
-        secret: "sk-new",
+      expect(setupProvider).toHaveBeenCalledWith({
+        templateId: "openai",
+        providerId: "provider-openai",
+        name: "OpenAI",
+        apiKey: "sk-new",
+        baseUrl: "https://api.openai.com/v1",
+        modelIds: [],
+        discover: true,
+        scope: "user",
+        enabled: true,
       })
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
   })
 
-  it("creates an OpenAI-compatible branded provider and does not show success when credential save fails", async () => {
-    const createProvider = vi.fn().mockResolvedValue({
-      id: "provider-grok",
-      name: "Grok",
-      kind: "openai_compatible",
-      enabled: true,
-    })
-    const updateCredential = vi.fn().mockResolvedValue(null)
+  it("sets up a branded provider and does not show success when setup fails", async () => {
+    const setupProvider = vi.fn().mockResolvedValue(null)
     useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
       configuredProviders: [],
+      models: [],
       isLoading: false,
       isMutating: false,
       error: null,
-      createProvider,
-      updateProvider: vi.fn(),
-      updateCredential,
       discoverModels: vi.fn(),
+      setupProvider,
     })
 
     render(<LlmCatalogPanel />)
@@ -164,46 +215,36 @@ describe("LlmCatalogPanel", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
-      expect(createProvider).toHaveBeenCalledWith({
+      expect(setupProvider).toHaveBeenCalledWith({
+        templateId: "grok",
         name: "Grok",
-        kind: "openai_compatible",
         baseUrl: "https://api.x.ai/v1",
-        apiKeyRef: null,
+        apiKey: "xai-key",
+        modelIds: [],
+        discover: true,
         scope: "user",
         enabled: true,
-        metadata: { providerSlug: "grok", authMode: "stored" },
       })
-    })
-    expect(updateCredential).toHaveBeenCalledWith("provider-grok", {
-      source: "stored",
-      envVarName: null,
-      secret: "xai-key",
     })
     expect(toastErrorMock).toHaveBeenCalledWith("Provider could not be saved")
     expect(toastSuccessMock).not.toHaveBeenCalled()
   })
 
-  it("allows endpoint-only vLLM providers without an API key", async () => {
-    const createProvider = vi.fn().mockResolvedValue({
-      id: "provider-vllm",
-      name: "vLLM",
-      kind: "vllm",
-      enabled: true,
-    })
-    const updateCredential = vi.fn().mockResolvedValue({
-      source: "none",
-      configured: false,
-      available: true,
+  it("sets up endpoint-only vLLM with a manual model id in one save", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      provider: { id: "provider-vllm" },
+      models: [{ id: "model-vllm", model_id: "deepseek_v4" }],
+      discovered: false,
     })
     useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
       configuredProviders: [],
+      models: [],
       isLoading: false,
       isMutating: false,
       error: null,
-      createProvider,
-      updateProvider: vi.fn(),
-      updateCredential,
       discoverModels: vi.fn(),
+      setupProvider,
     })
 
     render(<LlmCatalogPanel />)
@@ -212,44 +253,40 @@ describe("LlmCatalogPanel", () => {
     fireEvent.change(within(card).getByLabelText("vLLM endpoint"), {
       target: { value: "http://localhost:8000/v1" },
     })
+    fireEvent.change(within(card).getByLabelText("vLLM model id"), {
+      target: { value: "deepseek_v4" },
+    })
     fireEvent.click(within(card).getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
-      expect(createProvider).toHaveBeenCalledWith({
+      expect(setupProvider).toHaveBeenCalledWith({
+        templateId: "vllm",
         name: "vLLM",
-        kind: "vllm",
         baseUrl: "http://localhost:8000/v1",
-        apiKeyRef: null,
+        apiKey: "",
+        modelIds: ["deepseek_v4"],
+        discover: true,
         scope: "user",
         enabled: true,
-        metadata: { providerSlug: "vllm", authMode: "none" },
       })
-    })
-    expect(updateCredential).toHaveBeenCalledWith("provider-vllm", {
-      source: "none",
-      envVarName: null,
-      secret: null,
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
   })
 
-  it("lets Ollama refresh local models without exposing advanced catalog editing", async () => {
+  it("lets discoverable providers refresh models through provider setup", async () => {
+    const setupProvider = vi.fn()
     const discoverModels = vi.fn().mockResolvedValue([
-      {
-        id: "model-deepseek",
-        provider_id: "provider-ollama",
-        model_id: "deepseek-r1:latest",
-        display_name: "DeepSeek R1",
-      },
+      { id: "model-deepseek", model_id: "deepseek-r1:latest" },
     ])
     useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
       configuredProviders: [
         {
           id: "provider-ollama",
           name: "Ollama",
           kind: "ollama",
           base_url: "http://localhost:11434",
-          metadata: { providerSlug: "ollama" },
+          metadata: { providerTemplate: "ollama" },
           enabled: true,
           credential: { source: "none", configured: false, available: true },
         },
@@ -265,21 +302,58 @@ describe("LlmCatalogPanel", () => {
       isLoading: false,
       isMutating: false,
       error: null,
-      createProvider: vi.fn(),
-      updateProvider: vi.fn(),
-      updateCredential: vi.fn(),
       discoverModels,
+      setupProvider,
     })
 
     render(<LlmCatalogPanel />)
 
     const card = screen.getByRole("group", { name: "Ollama" })
-    expect(within(card).getByText("deepseek-r1:latest")).toBeInTheDocument()
-    fireEvent.click(within(card).getByRole("button", { name: "Refresh local models" }))
+    expect(card).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Refresh models" }))
 
     await waitFor(() => {
       expect(discoverModels).toHaveBeenCalledWith("provider-ollama")
     })
-    expect(toastSuccessMock).toHaveBeenCalledWith("Local models refreshed")
+    expect(setupProvider).not.toHaveBeenCalled()
+    expect(toastSuccessMock).toHaveBeenCalledWith("1 models found")
   })
 })
+
+function field(
+  name: string,
+  label: string,
+  secret: boolean,
+  required: boolean,
+  defaultValue?: string,
+) {
+  return {
+    name,
+    label,
+    secret,
+    required,
+    placeholder: label,
+    default: defaultValue,
+  }
+}
+
+function providerTemplate(
+  id: string,
+  name: string,
+  kind: string,
+  discovery: string,
+  fields: ReturnType<typeof field>[],
+  defaultBaseUrl?: string,
+  models: Array<Record<string, unknown>> = [],
+) {
+  return {
+    id,
+    name,
+    kind,
+    docs_url: `https://docs.example.com/${id}`,
+    discovery,
+    default_base_url: defaultBaseUrl,
+    fields,
+    models,
+  }
+}

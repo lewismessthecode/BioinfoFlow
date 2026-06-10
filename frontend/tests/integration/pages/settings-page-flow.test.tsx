@@ -71,17 +71,29 @@ vi.mock("next-intl", () => ({
       "account.modes.team": "Team",
       "members.roles.owner": "Owner",
       "providerCards.loading": "Loading providers...",
+      "providerCards.summary": "1 configured",
       "providerCards.save": "Save",
       "providerCards.saving": "Saving...",
       "providerCards.apiKeyPlaceholder": "Paste API key",
       "providerCards.savedKeyPlaceholder": "Key saved. Paste a new key to replace it.",
       "providerCards.endpointPlaceholder": "Endpoint URL",
-      "providerCards.getApiKey": `Get API key${values?.provider ? ` for ${values.provider}` : ""}`,
+      "providerCards.getApiKey": "Get key",
       "providerCards.configured": "Configured",
       "providerCards.notConfigured": "Not configured",
       "providerCards.noKeyRequired": "No key required",
+      "providerCards.ready": "Ready",
+      "providerCards.needsSetup": "Setup",
+      "providerCards.fromEnv": "From .env",
+      "providerCards.keySavedShort": "Key saved",
       "providerCards.saved": "Provider saved",
       "providerCards.saveFailed": "Provider could not be saved",
+      "providerCards.refreshModels": "Refresh models",
+      "providerCards.refreshingModels": "Refreshing...",
+      "providerCards.modelsDiscovered": "1 models found",
+      "providerCards.modelsAvailable": "1 models",
+      "providerCards.modelsRefreshed": "Models refreshed",
+      "providerCards.modelRefreshFailed": "Models could not be refreshed",
+      "providerCards.modelIdPlaceholder": "Model ID",
     }
     if (key === "appearance.activePreset") {
       return `Current preset: ${values?.preset ?? ""}`
@@ -201,7 +213,7 @@ describe("Settings page flow", () => {
                 user_id: null,
                 enabled: true,
                 test_status: { success: true, latency_ms: 42 },
-                metadata: null,
+                metadata: { providerTemplate: "openai" },
                 credential: {
                   provider_id: "llm-provider-1",
                   source: "env",
@@ -262,6 +274,12 @@ describe("Settings page flow", () => {
           meta: undefined,
         }
       }
+      if (path === "/llm/provider-templates") {
+        return {
+          data: providerTemplates(),
+          meta: undefined,
+        }
+      }
       if (path === "/llm/providers/llm-provider-1/test") {
         return {
           data: {
@@ -274,38 +292,38 @@ describe("Settings page flow", () => {
           meta: undefined,
         }
       }
-      if (path === "/llm/providers" && options?.method === "POST") {
-        expect(options.body).toContain('"scope":"user"')
+      if (path === "/llm/provider-setups" && options?.method === "POST") {
+        expect(options.body).toContain('"template_id":"openrouter"')
+        expect(options.body).toContain("sk-openrouter")
         return {
           data: {
-            id: "llm-provider-2",
-            name: "OpenRouter Shared",
-            kind: "openrouter",
-            base_url: "https://openrouter.ai/api/v1",
-            api_key_ref: null,
-            scope: "workspace",
-            workspace_id: "workspace-1",
-            user_id: null,
-            enabled: true,
-            test_status: null,
-            metadata: null,
-            created_at: "2026-06-04T00:00:01Z",
-            updated_at: "2026-06-04T00:00:01Z",
-          },
-          meta: undefined,
-        }
-      }
-      if (path === "/llm/providers/llm-provider-2/credential" && options?.method === "PUT") {
-        return {
-          data: {
-            provider_id: "llm-provider-2",
-            source: "env",
-            configured: true,
-            available: true,
-            env_var_name: "OPENROUTER_API_KEY",
-            fingerprint: null,
-            masked_hint: "env:OPENROUTER_API_KEY",
-            updated_at: "2026-06-04T00:00:01Z",
+            provider: {
+              id: "llm-provider-2",
+              name: "OpenRouter",
+              kind: "openrouter",
+              base_url: "https://openrouter.ai/api/v1",
+              api_key_ref: null,
+              scope: "user",
+              workspace_id: "workspace-1",
+              user_id: "owner-1",
+              enabled: true,
+              test_status: null,
+              metadata: { providerTemplate: "openrouter" },
+              credential: {
+                provider_id: "llm-provider-2",
+                source: "stored",
+                configured: true,
+                available: true,
+                env_var_name: null,
+                fingerprint: "fp_openrouter",
+                masked_hint: "sk-...uter",
+                updated_at: "2026-06-04T00:00:01Z",
+              },
+              created_at: "2026-06-04T00:00:01Z",
+              updated_at: "2026-06-04T00:00:01Z",
+            },
+            models: [],
+            discovered: false,
           },
           meta: undefined,
         }
@@ -366,7 +384,7 @@ describe("Settings page flow", () => {
     await user.click(screen.getByRole("button", { name: "AI Providers" }))
     expect(await screen.findByRole("group", { name: "OpenAI" })).toBeInTheDocument()
     expect(screen.getByRole("group", { name: "OpenRouter" })).toBeInTheDocument()
-    expect(screen.getByText("env:OPENAI_API_KEY")).toBeInTheDocument()
+    expect(screen.getByText("From .env")).toBeInTheDocument()
     expect(screen.queryByText("Agent default")).not.toBeInTheDocument()
 
     const openRouterCard = screen.getByRole("group", { name: "OpenRouter" })
@@ -375,13 +393,9 @@ describe("Settings page flow", () => {
 
     await waitFor(() => {
       expect(apiRequestMock).toHaveBeenCalledWith(
-        "/llm/providers",
-        expect.objectContaining({ method: "POST" }),
-      )
-      expect(apiRequestMock).toHaveBeenCalledWith(
-        "/llm/providers/llm-provider-2/credential",
+        "/llm/provider-setups",
         expect.objectContaining({
-          method: "PUT",
+          method: "POST",
           body: expect.stringContaining("sk-openrouter"),
         }),
       )
@@ -416,3 +430,93 @@ describe("Settings page flow", () => {
     expect(screen.getByText("Dark preset")).toBeInTheDocument()
   })
 })
+
+function providerTemplates() {
+  const field = (
+    name: string,
+    label: string,
+    secret: boolean,
+    required: boolean,
+    defaultValue?: string,
+  ) => ({
+    name,
+    label,
+    secret,
+    required,
+    placeholder: label,
+    default: defaultValue,
+  })
+  return [
+    template("openai", "OpenAI", "openai", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.openai.com/v1"),
+    template("anthropic", "Anthropic", "anthropic", "static", [
+      field("api_key", "API key", true, true),
+    ]),
+    template("gemini", "Gemini", "gemini", "static", [
+      field("api_key", "API key", true, true),
+    ]),
+    template("grok", "Grok", "grok", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.x.ai/v1"),
+    template("groq", "Groq", "groq", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.groq.com/openai/v1"),
+    template("deepseek", "DeepSeek", "deepseek", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.deepseek.com/v1"),
+    template("openrouter", "OpenRouter", "openrouter", "openai_models", [
+      field("api_key", "API key", true, true),
+      field("model_id", "Model ID", false, false),
+    ], "https://openrouter.ai/api/v1", [
+      providerModel("openrouter/auto", "OpenRouter Auto"),
+    ]),
+    template("ollama", "Ollama", "ollama", "ollama_tags", [
+      field("base_url", "Endpoint", false, true, "http://localhost:11434"),
+      field("model_id", "Model ID", false, false),
+    ], "http://localhost:11434"),
+    template("vllm", "vLLM", "vllm", "openai_models", [
+      field("base_url", "Endpoint", false, true, "http://localhost:8000/v1"),
+      field("api_key", "API key", true, false),
+      field("model_id", "Model ID", false, false),
+    ], "http://localhost:8000/v1"),
+    template("openai-compatible", "OpenAI Compatible", "openai_compatible", "openai_models", [
+      field("base_url", "Endpoint", false, true, "https://api.example.com/v1"),
+      field("api_key", "API key", true, false),
+      field("model_id", "Model ID", false, false),
+    ], "https://api.example.com/v1"),
+  ]
+}
+
+function template(
+  id: string,
+  name: string,
+  kind: string,
+  discovery: string,
+  fields: Array<Record<string, unknown>>,
+  defaultBaseUrl?: string,
+  models: Array<Record<string, unknown>> = [],
+) {
+  return {
+    id,
+    name,
+    kind,
+    docs_url: `https://docs.example.com/${id}`,
+    discovery,
+    default_base_url: defaultBaseUrl,
+    fields,
+    models,
+  }
+}
+
+function providerModel(id: string, name: string) {
+  return {
+    id,
+    name,
+    supports_tools: true,
+    supports_streaming: true,
+    supports_vision: false,
+    supports_json_schema: true,
+    supports_reasoning: false,
+  }
+}

@@ -17,11 +17,10 @@ vi.mock("sonner", () => ({
 }))
 
 import { useLlmSettings } from "@/hooks/use-llm-settings"
-import type { UserLlmSettings, ProviderModels } from "@/hooks/use-llm-settings"
+import type { LlmRuntimeSettings, ProviderModels } from "@/hooks/use-llm-settings"
 import { ApiError } from "@/lib/api"
 
-const MOCK_SETTINGS: UserLlmSettings = {
-  provider_credentials: {},
+const MOCK_SETTINGS: LlmRuntimeSettings = {
   selected_provider: "anthropic",
   selected_model: "claude-sonnet-4-20250514",
   configured_providers: ["anthropic"],
@@ -30,6 +29,7 @@ const MOCK_SETTINGS: UserLlmSettings = {
 const MOCK_MODELS: ProviderModels[] = [
   {
     provider: "anthropic",
+    provider_id: "provider-anthropic",
     label: "Anthropic",
     models: [
       {
@@ -61,6 +61,7 @@ const MOCK_CONFIGURATION = {
       id: "provider-anthropic",
       name: "Anthropic",
       kind: "anthropic",
+      enabled: true,
       credential: { configured: true, available: true },
     },
   ],
@@ -251,9 +252,9 @@ describe("useLlmSettings", () => {
     expect(consoleErrorSpy).not.toHaveBeenCalled()
   })
 
-  it("testProvider returns failure result on API error", async () => {
+  it("testProvider uses the catalog provider test endpoint and returns failure result on API error", async () => {
     mockApiRequest.mockImplementation((path: string) => {
-      if (path.startsWith("/user-settings/test/")) {
+      if (path === "/llm/providers/provider-anthropic/test") {
         return Promise.reject(new Error("Connection refused"))
       }
       if (path === "/llm/configuration") {
@@ -270,11 +271,15 @@ describe("useLlmSettings", () => {
 
     let testResult: Awaited<ReturnType<typeof result.current.testProvider>>
     await act(async () => {
-      testResult = await result.current.testProvider("openai")
+      testResult = await result.current.testProvider("anthropic")
     })
 
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "/llm/providers/provider-anthropic/test",
+      { method: "POST" },
+    )
     expect(testResult!).toEqual({
-      provider: "openai",
+      provider: "anthropic",
       success: false,
       error: "Connection test failed",
       model: null,

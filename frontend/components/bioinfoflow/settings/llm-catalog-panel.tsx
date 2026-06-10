@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { CheckCircle2, ExternalLink, KeyRound, Loader2, RefreshCw } from "lucide-react"
+import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
@@ -10,463 +10,273 @@ import { Input } from "@/components/ui/input"
 import { useLlmCatalog } from "@/hooks/use-llm-catalog"
 import type {
   LlmConfiguredProvider,
-  LlmProviderCredentialSource,
-  LlmProviderKind,
+  LlmProviderTemplate,
+  LlmProviderTemplateField,
 } from "@/lib/llm"
 import { cn } from "@/lib/utils"
 
-type ProviderCardSpec = {
-  slug: string
-  name: string
-  kind: LlmProviderKind
-  defaultBaseUrl?: string | null
-  docsUrl: string
-  envVarName?: string
-  noKeyRequired?: boolean
-  keyOptional?: boolean
-  showEndpoint?: boolean
-}
-
-const PROVIDER_CARDS: ProviderCardSpec[] = [
-  {
-    slug: "openai",
-    name: "OpenAI",
-    kind: "openai",
-    docsUrl: "https://platform.openai.com/api-keys",
-    envVarName: "OPENAI_API_KEY",
-  },
-  {
-    slug: "anthropic",
-    name: "Claude",
-    kind: "anthropic",
-    docsUrl: "https://console.anthropic.com/settings/keys",
-    envVarName: "ANTHROPIC_API_KEY",
-  },
-  {
-    slug: "gemini",
-    name: "Gemini",
-    kind: "gemini",
-    docsUrl: "https://aistudio.google.com/apikey",
-    envVarName: "GEMINI_API_KEY",
-  },
-  {
-    slug: "grok",
-    name: "Grok",
-    kind: "openai_compatible",
-    defaultBaseUrl: "https://api.x.ai/v1",
-    docsUrl: "https://console.x.ai/",
-    envVarName: "XAI_API_KEY",
-  },
-  {
-    slug: "deepseek",
-    name: "DeepSeek",
-    kind: "deepseek",
-    docsUrl: "https://platform.deepseek.com/api_keys",
-    envVarName: "DEEPSEEK_API_KEY",
-  },
-  {
-    slug: "openrouter",
-    name: "OpenRouter",
-    kind: "openrouter",
-    docsUrl: "https://openrouter.ai/settings/keys",
-    envVarName: "OPENROUTER_API_KEY",
-  },
-  {
-    slug: "ollama",
-    name: "Ollama",
-    kind: "ollama",
-    defaultBaseUrl: "http://localhost:11434",
-    docsUrl: "https://ollama.com/download",
-    noKeyRequired: true,
-    showEndpoint: true,
-  },
-  {
-    slug: "glm",
-    name: "GLM",
-    kind: "openai_compatible",
-    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    docsUrl: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
-    envVarName: "GLM_API_KEY",
-  },
-  {
-    slug: "minimax",
-    name: "Minimax",
-    kind: "openai_compatible",
-    defaultBaseUrl: "https://api.minimax.chat/v1",
-    docsUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
-    envVarName: "MINIMAX_API_KEY",
-  },
-  {
-    slug: "vllm",
-    name: "vLLM",
-    kind: "vllm",
-    defaultBaseUrl: "http://localhost:8000/v1",
-    docsUrl: "https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html",
-    keyOptional: true,
-    showEndpoint: true,
-  },
-  {
-    slug: "openai-compatible",
-    name: "OpenAI Compatible",
-    kind: "openai_compatible",
-    defaultBaseUrl: "https://api.example.com/v1",
-    docsUrl: "https://platform.openai.com/docs/api-reference",
-    keyOptional: true,
-    showEndpoint: true,
-  },
-]
+type FieldValues = Record<string, Record<string, string>>
 
 export function LlmCatalogPanel() {
   const t = useTranslations("settings")
   const {
+    providerTemplates = [],
     configuredProviders,
-    models = [],
     isLoading,
     isMutating,
-    createProvider,
-    updateProvider,
-    updateCredential,
     discoverModels,
+    setupProvider,
   } = useLlmCatalog()
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
-  const [endpoints, setEndpoints] = useState<Record<string, string>>({})
-  const [savingSlug, setSavingSlug] = useState<string | null>(null)
-  const [refreshingSlug, setRefreshingSlug] = useState<string | null>(null)
+  const [fieldValues, setFieldValues] = useState<FieldValues>({})
+  const [savingTemplateId, setSavingTemplateId] = useState<string | null>(null)
+  const [refreshingModels, setRefreshingModels] = useState(false)
 
-  const providersBySlug = useMemo(() => {
-    const bySlug = new Map<string, LlmConfiguredProvider>()
-    for (const spec of PROVIDER_CARDS) {
-      const provider = configuredProviders.find((item) => providerMatchesSpec(item, spec))
-      if (provider) bySlug.set(spec.slug, provider)
+  const providersByTemplate = useMemo(() => {
+    const byTemplate = new Map<string, LlmConfiguredProvider>()
+    for (const template of providerTemplates) {
+      const provider = configuredProviders.find((item) =>
+        providerMatchesTemplate(item, template),
+      )
+      if (provider) byTemplate.set(template.id, provider)
     }
-    return bySlug
-  }, [configuredProviders])
+    return byTemplate
+  }, [configuredProviders, providerTemplates])
 
   useEffect(() => {
-    setEndpoints((current) => {
-      const next = { ...current }
+    setFieldValues((current) => {
       let changed = false
-      for (const spec of PROVIDER_CARDS) {
-        if (next[spec.slug] !== undefined) continue
-        const provider = providersBySlug.get(spec.slug)
-        next[spec.slug] = provider?.base_url ?? spec.defaultBaseUrl ?? ""
-        changed = true
+      const next: FieldValues = { ...current }
+
+      for (const template of providerTemplates) {
+        const provider = providersByTemplate.get(template.id)
+        const currentValues = next[template.id] ?? {}
+        const templateValues = { ...currentValues }
+
+        for (const field of template.fields) {
+          if (templateValues[field.name] !== undefined) continue
+          templateValues[field.name] = initialFieldValue(template, field, provider)
+          changed = true
+        }
+
+        if (!next[template.id]) {
+          next[template.id] = templateValues
+          changed = true
+        } else if (templateValues !== currentValues) {
+          next[template.id] = templateValues
+        }
       }
+
       return changed ? next : current
     })
-  }, [providersBySlug])
+  }, [providerTemplates, providersByTemplate])
 
-  const saveProvider = async (spec: ProviderCardSpec) => {
-    const secret = (apiKeys[spec.slug] ?? "").trim()
-    const endpoint = (endpoints[spec.slug] ?? spec.defaultBaseUrl ?? "").trim()
-    const existingProvider = providersBySlug.get(spec.slug)
-    if (!existingProvider && !spec.noKeyRequired && !spec.keyOptional && !secret) return
-    if (spec.showEndpoint && !endpoint) return
+  const setFieldValue = (
+    templateId: string,
+    fieldName: string,
+    value: string,
+  ) => {
+    setFieldValues((current) => ({
+      ...current,
+      [templateId]: {
+        ...(current[templateId] ?? {}),
+        [fieldName]: value,
+      },
+    }))
+  }
 
-    setSavingSlug(spec.slug)
+  const buildSetupInput = (
+    template: LlmProviderTemplate,
+    discover: boolean,
+  ) => {
+    const provider = providersByTemplate.get(template.id)
+    const values = fieldValues[template.id] ?? {}
+    return {
+      templateId: template.id,
+      providerId: provider?.id,
+      name: provider?.name || template.name,
+      baseUrl: readBaseUrl(template, provider, values),
+      apiKey: (values.api_key ?? "").trim(),
+      modelIds: cleanModelIds(values.model_id),
+      discover,
+      scope: "user" as const,
+      enabled: true,
+    }
+  }
+
+  const saveProvider = async (template: LlmProviderTemplate) => {
+    setSavingTemplateId(template.id)
     try {
-      const shouldSaveNoAuth =
-        (spec.noKeyRequired || spec.keyOptional) &&
-        !secret &&
-        !existingProvider?.credential?.configured
-      const authMode = secret
-        ? "stored"
-        : shouldSaveNoAuth
-          ? "none"
-          : existingProvider?.metadata?.authMode
-      const metadata = {
-        ...(existingProvider?.metadata ?? {}),
-        providerSlug: spec.slug,
-        ...(authMode ? { authMode } : {}),
-      }
-      const baseUrl = endpoint || spec.defaultBaseUrl || null
-      const provider =
-        existingProvider ??
-        await createProvider({
-          name: spec.name,
-          kind: spec.kind,
-          baseUrl,
-          apiKeyRef: null,
-          scope: "user",
-          enabled: true,
-          metadata,
-        })
-
-      if (!provider) {
+      const result = await setupProvider(buildSetupInput(template, true))
+      if (!result) {
         toast.error(t("providerCards.saveFailed"))
         return
       }
-
-      if (existingProvider) {
-        const updated = await updateProvider(existingProvider.id, {
-          name: existingProvider.name || spec.name,
-          baseUrl,
-          metadata,
-          enabled: true,
-        })
-        if (!updated) {
-          toast.error(t("providerCards.saveFailed"))
-          return
-        }
+      setFieldValue(template.id, "api_key", "")
+      if (result.discovered && result.models.length > 0) {
+        toast.success(
+          t("providerCards.modelsDiscovered", { count: result.models.length }),
+        )
+      } else {
+        toast.success(t("providerCards.saved"))
       }
-
-      if (secret || shouldSaveNoAuth || !existingProvider?.credential?.configured) {
-        const source: LlmProviderCredentialSource =
-          shouldSaveNoAuth ? "none" : "stored"
-        const credential = await updateCredential(provider.id, {
-          source,
-          envVarName: null,
-          secret: source === "stored" ? secret : null,
-        })
-        if (!credential) {
-          toast.error(t("providerCards.saveFailed"))
-          return
-        }
-      }
-
-      setApiKeys((current) => ({ ...current, [spec.slug]: "" }))
-      toast.success(t("providerCards.saved"))
     } finally {
-      setSavingSlug(null)
+      setSavingTemplateId(null)
     }
   }
 
-  const ensureProvider = async (spec: ProviderCardSpec) => {
-    const existingProvider = providersBySlug.get(spec.slug)
-    const endpoint = (endpoints[spec.slug] ?? spec.defaultBaseUrl ?? "").trim()
-    const metadata = {
-      ...(existingProvider?.metadata ?? {}),
-      providerSlug: spec.slug,
-    }
-    const baseUrl = endpoint || spec.defaultBaseUrl || null
+  const refreshModels = async () => {
+    const providersToRefresh = providerTemplates
+      .filter((template) => template.discovery !== "static")
+      .map((template) => ({
+        template,
+        provider: providersByTemplate.get(template.id),
+      }))
+      .filter(
+        (item): item is { template: LlmProviderTemplate; provider: LlmConfiguredProvider } =>
+          providerConfigured(item.template, item.provider),
+      )
 
-    if (existingProvider) {
-      const updated = await updateProvider(existingProvider.id, {
-        name: existingProvider.name || spec.name,
-        baseUrl,
-        metadata,
-        enabled: true,
-      })
-      return updated ?? existingProvider
-    }
+    if (providersToRefresh.length === 0) return
 
-    return createProvider({
-      name: spec.name,
-      kind: spec.kind,
-      baseUrl,
-      apiKeyRef: null,
-      scope: "user",
-      enabled: true,
-      metadata,
-    })
-  }
-
-  const refreshLocalModels = async (spec: ProviderCardSpec) => {
-    if (spec.kind !== "ollama") return
-    const endpoint = (endpoints[spec.slug] ?? spec.defaultBaseUrl ?? "").trim()
-    if (!endpoint) return
-
-    setRefreshingSlug(spec.slug)
+    setRefreshingModels(true)
     try {
-      const existingProvider = providersBySlug.get(spec.slug)
-      const provider = await ensureProvider(spec)
-      if (!provider) {
-        toast.error(t("providerCards.modelRefreshFailed"))
-        return
-      }
-
-      if (!existingProvider) {
-        const credential = await updateCredential(provider.id, {
-          source: "none",
-          envVarName: null,
-          secret: null,
-        })
-        if (!credential) {
-          toast.error(t("providerCards.modelRefreshFailed"))
-          return
+      let refreshed = 0
+      let discovered = 0
+      for (const { provider } of providersToRefresh) {
+        const result = await discoverModels(provider.id)
+        if (result) {
+          refreshed += 1
+          discovered += result.length
         }
       }
-
-      const discovered = await discoverModels(provider.id)
-      if (!discovered) {
+      if (refreshed === 0) {
         toast.error(t("providerCards.modelRefreshFailed"))
-        return
+      } else {
+        toast.success(t("providerCards.modelsDiscovered", { count: discovered }))
       }
-
-      toast.success(t("providerCards.modelsRefreshed"))
     } finally {
-      setRefreshingSlug(null)
+      setRefreshingModels(false)
     }
   }
+
+  const refreshableProviderCount = providerTemplates.filter((template) => {
+    const provider = providersByTemplate.get(template.id)
+    return template.discovery !== "static" && providerConfigured(template, provider)
+  }).length
 
   return (
     <section className="space-y-4">
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          {t("providerCards.loading")}
-        </div>
-      ) : null}
+      <div className="flex min-h-9 items-center justify-between gap-3">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
+            {t("providerCards.loading")}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground">
+            {t("providerCards.summary", {
+              count: configuredProviders.filter(
+                (provider) =>
+                  provider.enabled &&
+                  (provider.credential?.configured || provider.credential?.available),
+              ).length,
+            })}
+          </div>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 gap-2 rounded-md"
+          disabled={refreshableProviderCount === 0 || refreshingModels || isMutating}
+          onClick={() => void refreshModels()}
+        >
+          {refreshingModels ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="size-3.5" />
+          )}
+          {refreshingModels
+            ? t("providerCards.refreshingModels")
+            : t("providerCards.refreshModels")}
+        </Button>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {PROVIDER_CARDS.map((spec) => {
-          const provider = providersBySlug.get(spec.slug)
-          const configured = Boolean(
-            provider?.credential?.configured ||
-              provider?.credential?.available ||
-              ((spec.noKeyRequired || spec.keyOptional) &&
-                provider?.enabled &&
-                provider?.credential?.source === "none"),
-          )
-          const keyValue = apiKeys[spec.slug] ?? ""
-          const endpointValue = endpoints[spec.slug] ?? spec.defaultBaseUrl ?? ""
-          const providerModels = provider
-            ? models.filter((model) => model.provider_id === provider.id)
-            : []
-          const saving = savingSlug === spec.slug || isMutating
-          const refreshing = refreshingSlug === spec.slug
+        {providerTemplates.map((template) => {
+          const provider = providersByTemplate.get(template.id)
+          const values = fieldValues[template.id] ?? {}
+          const configured = providerConfigured(template, provider)
+          const note = credentialNote(t, provider)
+          const saving = savingTemplateId === template.id
           const canSave =
-            !saving &&
-            (!spec.showEndpoint || endpointValue.trim().length > 0) &&
-            (configured ||
-              spec.noKeyRequired ||
-              spec.keyOptional ||
-              keyValue.trim().length > 0)
+            !saving && !isMutating && requiredFieldsReady(template, values, configured)
 
           return (
             <div
-              key={spec.slug}
+              key={template.id}
               role="group"
-              aria-label={spec.name}
-              className="flex min-h-[214px] flex-col rounded-[24px] border border-border/70 bg-card p-4 shadow-sm shadow-foreground/5 transition-colors hover:border-border"
+              aria-label={template.name}
+              className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card p-4 shadow-sm shadow-foreground/5 transition-colors hover:border-border"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h4 className="truncate text-sm font-semibold text-foreground">
-                    {spec.name}
-                  </h4>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {configured
-                      ? t("providerCards.configured")
-                      : spec.noKeyRequired || spec.keyOptional
-                        ? t("providerCards.noKeyRequired")
-                        : t("providerCards.notConfigured")}
-                  </p>
-                </div>
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="truncate text-base font-semibold leading-6 text-foreground">
+                  {template.name}
+                </h4>
                 <span
                   className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-full border",
+                    "inline-flex h-6 shrink-0 items-center rounded-md border px-2 text-xs font-medium",
                     configured
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                       : "border-border bg-muted text-muted-foreground",
                   )}
                 >
-                  {configured ? (
-                    <CheckCircle2 className="size-4" />
-                  ) : (
-                    <KeyRound className="size-4" />
-                  )}
+                  {configured ? <CheckCircle2 className="mr-1 size-3.5" /> : null}
+                  {configured ? t("providerCards.ready") : t("providerCards.needsSetup")}
                 </span>
               </div>
 
-              <div className="mt-4 grid gap-2">
-                {provider?.credential?.masked_hint ||
-                provider?.credential?.fingerprint ? (
-                  <div className="truncate text-xs text-muted-foreground">
-                    {provider.credential.masked_hint ?? provider.credential.fingerprint}
-                  </div>
-                ) : null}
-                {spec.showEndpoint ? (
+              <div className="grid gap-2">
+                {template.fields.map((field) => (
                   <Input
-                    aria-label={`${spec.name} endpoint`}
-                    value={endpointValue}
+                    key={field.name}
+                    aria-label={`${template.name} ${fieldAriaLabel(field)}`}
+                    type={field.secret ? "password" : "text"}
+                    value={values[field.name] ?? ""}
                     onChange={(event) =>
-                      setEndpoints((current) => ({
-                        ...current,
-                        [spec.slug]: event.target.value,
-                      }))
+                      setFieldValue(template.id, field.name, event.target.value)
                     }
-                    placeholder={t("providerCards.endpointPlaceholder")}
-                    className="h-10 rounded-2xl"
+                    placeholder={placeholderForField(t, field, configured)}
+                    className="h-10 rounded-md"
                   />
-                ) : null}
-                {!spec.noKeyRequired ? (
-                  <Input
-                    aria-label={`${spec.name} API key`}
-                    type="password"
-                    value={keyValue}
-                    onChange={(event) =>
-                      setApiKeys((current) => ({
-                        ...current,
-                        [spec.slug]: event.target.value,
-                      }))
-                    }
-                    placeholder={
-                      configured
-                        ? t("providerCards.savedKeyPlaceholder")
-                        : t("providerCards.apiKeyPlaceholder")
-                    }
-                    className="h-10 rounded-2xl"
-                  />
-                ) : null}
-                {spec.kind === "ollama" && providerModels.length > 0 ? (
-                  <div className="rounded-2xl bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
-                    <div className="mb-1 font-medium text-foreground">
-                      {t("providerCards.modelsDiscovered", {
-                        count: providerModels.length,
-                      })}
-                    </div>
-                    <div className="truncate">
-                      {providerModels
-                        .map((model) => model.model_id)
-                        .slice(0, 3)
-                        .join(", ")}
-                    </div>
-                  </div>
-                ) : null}
+                ))}
               </div>
 
-              <div className="mt-auto flex items-center justify-between gap-3 pt-4">
-                <a
-                  href={spec.docsUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <span className="truncate">
-                    {t("providerCards.getApiKey", { provider: spec.name })}
-                  </span>
-                  <ExternalLink className="size-3 shrink-0" />
-                </a>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-9 rounded-full px-4"
-                  disabled={!canSave}
-                  onClick={() => void saveProvider(spec)}
-                >
-                  {saving ? t("providerCards.saving") : t("providerCards.save")}
-                </Button>
+              <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                <span className="truncate text-xs text-muted-foreground">
+                  {note}
+                </span>
+                <div className="flex shrink-0 items-center gap-3">
+                  <a
+                    href={template.docs_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {t("providerCards.getApiKey", { provider: template.name })}
+                    <ExternalLink className="size-3 shrink-0" />
+                  </a>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9 rounded-md px-4"
+                    disabled={!canSave}
+                    onClick={() => void saveProvider(template)}
+                  >
+                    {saving ? t("providerCards.saving") : t("providerCards.save")}
+                  </Button>
+                </div>
               </div>
-              {spec.kind === "ollama" ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2 h-8 justify-center rounded-full text-xs text-muted-foreground hover:text-foreground"
-                  disabled={refreshing || isMutating || !endpointValue.trim()}
-                  onClick={() => void refreshLocalModels(spec)}
-                >
-                  {refreshing ? (
-                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-1.5 size-3.5" />
-                  )}
-                  {refreshing
-                    ? t("providerCards.refreshingModels")
-                    : t("providerCards.refreshModels")}
-                </Button>
-              ) : null}
             </div>
           )
         })}
@@ -475,12 +285,105 @@ export function LlmCatalogPanel() {
   )
 }
 
-function providerMatchesSpec(
+function providerMatchesTemplate(
   provider: LlmConfiguredProvider,
-  spec: ProviderCardSpec,
+  template: LlmProviderTemplate,
 ) {
-  const providerSlug = String(provider.metadata?.providerSlug ?? "")
-  if (providerSlug) return providerSlug === spec.slug
-  if (spec.kind !== "openai_compatible") return provider.kind === spec.kind
-  return provider.kind === spec.kind && provider.name === spec.name
+  const providerTemplate = String(provider.metadata?.providerTemplate ?? "")
+  if (providerTemplate) return providerTemplate === template.id
+  return provider.kind === template.kind
+}
+
+function initialFieldValue(
+  template: LlmProviderTemplate,
+  field: LlmProviderTemplateField,
+  provider?: LlmConfiguredProvider,
+) {
+  if (field.name === "base_url") {
+    return provider?.base_url ?? field.default ?? template.default_base_url ?? ""
+  }
+  return field.default ?? ""
+}
+
+function apiKeyRequired(template: LlmProviderTemplate) {
+  return Boolean(
+    template.fields.find((field) => field.name === "api_key")?.required,
+  )
+}
+
+function providerConfigured(
+  template: LlmProviderTemplate,
+  provider?: LlmConfiguredProvider,
+) {
+  if (!provider?.enabled) return false
+  if (provider.credential?.configured || provider.credential?.available) return true
+  return !apiKeyRequired(template) && provider.credential?.source === "none"
+}
+
+function credentialNote(
+  t: ReturnType<typeof useTranslations>,
+  provider?: LlmConfiguredProvider,
+) {
+  const credential = provider?.credential
+  if (!credential) return ""
+  // Only annotate a card once the credential is actually usable. An env var
+  // that is recorded but empty/unset must not read as "From .env".
+  if (!(credential.configured || credential.available)) return ""
+  if (credential.source === "env") return t("providerCards.fromEnv")
+  if (credential.source === "stored") return t("providerCards.keySavedShort")
+  return credential.masked_hint ?? credential.fingerprint ?? ""
+}
+
+function readBaseUrl(
+  template: LlmProviderTemplate,
+  provider: LlmConfiguredProvider | undefined,
+  values: Record<string, string>,
+) {
+  return (
+    (values.base_url ?? "").trim() ||
+    provider?.base_url ||
+    template.default_base_url ||
+    null
+  )
+}
+
+function requiredFieldsReady(
+  template: LlmProviderTemplate,
+  values: Record<string, string>,
+  configured: boolean,
+) {
+  return template.fields.every((field) => {
+    if (!field.required) return true
+    if (field.name === "api_key" && configured) return true
+    return (values[field.name] ?? field.default ?? "").trim().length > 0
+  })
+}
+
+function cleanModelIds(value: string | undefined) {
+  return (value ?? "")
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function placeholderForField(
+  t: ReturnType<typeof useTranslations>,
+  field: LlmProviderTemplateField,
+  configured: boolean,
+) {
+  if (field.name === "api_key") {
+    return configured
+      ? t("providerCards.savedKeyPlaceholder")
+      : t("providerCards.apiKeyPlaceholder")
+  }
+  if (field.name === "base_url") return t("providerCards.endpointPlaceholder")
+  if (field.name === "model_id") return t("providerCards.modelIdPlaceholder")
+  return field.placeholder
+}
+
+function fieldAriaLabel(field: LlmProviderTemplateField) {
+  if (field.name === "api_key") return "API key"
+  if (field.name === "base_url") return "endpoint"
+  if (field.name === "model_id") return "model id"
+  return field.label
 }
