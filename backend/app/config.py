@@ -82,18 +82,15 @@ class Settings(BaseSettings):
     docker_socket: str = "unix:///var/run/docker.sock"
 
     # Agent / LLM
-    agent_provider: str = "auto"
     agent_sandbox_enabled: bool = False  # Enable OS-level sandboxing for code execution
-    agent_model: str = "claude-sonnet-4-6"  # Global model override
     agent_max_tokens: int = 16384
     agent_observability: bool = True
     agent_log_truncate_chars: int = 1200
     agent_max_rounds: int = 50  # Loop safety limit
     agent_compact_threshold: int = 50000  # Auto-compact token threshold
 
-    # Provider API keys (read by PROVIDER_REGISTRY via env vars)
-    # Keep these for backward compat with existing .env files.
-    # New providers don't need entries here — just set the env var.
+    # Provider API keys used by LLM catalog bootstrap.
+    # UI-configured providers are stored in the LLM catalog and take precedence.
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
@@ -145,13 +142,6 @@ class Settings(BaseSettings):
     # Upload limits (bytes)
     max_upload_size_bytes: int = 100 * 1024 * 1024  # 100 MB for file uploads
     max_image_upload_size_bytes: int = 500 * 1024 * 1024  # 500 MB for container images
-
-    @field_validator("agent_provider", mode="before")
-    @classmethod
-    def normalize_agent_provider(cls, value: Any) -> str:
-        if value is None:
-            return "gemini"
-        return str(value).strip().lower()
 
     @field_validator("auth_mode", mode="before")
     @classmethod

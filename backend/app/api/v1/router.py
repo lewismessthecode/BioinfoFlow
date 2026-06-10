@@ -9,14 +9,12 @@ from app.api.v1.llm import router as llm_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.project_workflows import router as project_workflows_router
 from app.api.v1.projects import router as projects_router
-from app.api.v1.providers import router as providers_router
 from app.api.v1.runs import router as runs_router
 from app.api.v1.scheduler import router as scheduler_router
 from app.api.v1.stats import router as stats_router
 from app.api.v1.storage import router as storage_router
 from app.api.v1.system import router as system_router
 from app.api.v1.terminal import router as terminal_router
-from app.api.v1.user_settings import router as user_settings_router
 from app.api.v1.workflows import router as workflows_router
 
 api_router = APIRouter()
@@ -36,5 +34,3 @@ api_router.include_router(llm_router)
 api_router.include_router(stats_router)
 api_router.include_router(system_router)
 api_router.include_router(terminal_router)
-api_router.include_router(user_settings_router)
-api_router.include_router(providers_router)

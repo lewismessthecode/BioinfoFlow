@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.llm.providers import PROVIDER_REGISTRY
-from app.services.llm.providers import infer_provider_from_model
-
 
 def normalize_model_selection(
     selection: dict[str, Any] | None,
@@ -25,10 +22,8 @@ def normalize_model_selection(
         return None
     if provider == "auto":
         provider = ""
-    if provider and provider not in PROVIDER_REGISTRY:
-        provider = ""
     if not provider:
-        provider = infer_provider_from_model(model)
+        return None
     return {"provider": provider, "model": model}
 
 
@@ -38,18 +33,7 @@ def session_model_selection_from_metadata(
     if not isinstance(metadata, dict):
         return None
 
-    normalized = normalize_model_selection(metadata.get("model_selection"))
-    if normalized:
-        return normalized
-
-    legacy_model = str(metadata.get("selected_model") or "").strip()
-    if not legacy_model:
-        return None
-
-    legacy_provider = str(metadata.get("selected_provider") or "").strip().lower()
-    return normalize_model_selection(
-        {"provider": legacy_provider, "model": legacy_model}
-    )
+    return normalize_model_selection(metadata.get("model_selection"))
 
 
 def session_metadata_with_model_selection(
@@ -60,11 +44,7 @@ def session_metadata_with_model_selection(
     normalized = normalize_model_selection(model_selection)
     if normalized:
         next_metadata["model_selection"] = normalized
-        next_metadata.pop("selected_model", None)
-        next_metadata.pop("selected_provider", None)
         return next_metadata
 
     next_metadata.pop("model_selection", None)
-    next_metadata.pop("selected_model", None)
-    next_metadata.pop("selected_provider", None)
     return next_metadata or None

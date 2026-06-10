@@ -11,11 +11,16 @@ ProviderKind = Literal[
     "openai",
     "anthropic",
     "gemini",
+    "grok",
+    "groq",
     "openrouter",
     "deepseek",
     "ollama",
     "vllm",
     "openai_compatible",
+    "qwen",
+    "kimi",
+    "minimax",
 ]
 ProviderScope = Literal["global", "workspace", "user"]
 CredentialSource = Literal["none", "env", "stored"]
@@ -74,6 +79,56 @@ class LlmProviderRead(BaseModel):
     metadata: dict | None = Field(default=None, validation_alias="provider_metadata")
     created_at: datetime
     updated_at: datetime
+
+
+class LlmProviderTemplateFieldRead(BaseModel):
+    name: str
+    label: str
+    secret: bool
+    required: bool
+    placeholder: str
+    default: str | None = None
+
+
+class LlmProviderTemplateModelRead(BaseModel):
+    id: str
+    name: str
+    context_length: int | None = None
+    max_output_tokens: int | None = None
+    supports_tools: bool
+    supports_streaming: bool
+    supports_vision: bool
+    supports_json_schema: bool
+    supports_reasoning: bool
+
+
+class LlmProviderTemplateRead(BaseModel):
+    id: str
+    name: str
+    kind: ProviderKind
+    docs_url: str
+    discovery: Literal[
+        "static",
+        "openai_models",
+        "ollama_tags",
+        "anthropic_models",
+        "gemini_models",
+    ]
+    default_base_url: str | None = None
+    fields: list[LlmProviderTemplateFieldRead]
+    models: list[LlmProviderTemplateModelRead]
+
+
+class LlmProviderSetupRequest(BaseModel):
+    template_id: str
+    provider_id: UUID | None = None
+    name: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model_ids: list[str] | None = None
+    discover: bool = False
+    scope: ProviderScope = "user"
+    enabled: bool = True
 
 
 class LlmModelCreate(BaseModel):
@@ -217,3 +272,9 @@ class LlmConfigurationRead(BaseModel):
     providers: list[LlmConfiguredProviderRead]
     models: list[LlmModelRead]
     profiles: list[LlmModelProfileRead]
+
+
+class LlmProviderSetupResult(BaseModel):
+    provider: LlmConfiguredProviderRead
+    models: list[LlmModelRead]
+    discovered: bool = False

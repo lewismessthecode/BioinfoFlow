@@ -33,7 +33,6 @@ from app.models.project_workflow_binding import ProjectWorkflowBinding
 from app.models.project_workflow_pin import ProjectWorkflowPin
 from app.models.run import Run, RunStatus
 from app.models.run_config import RunConfigHelper
-from app.models.user_settings import UserSettings
 from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
 from app.models.workspace import Workspace, WorkspaceMembership
 from app.scheduler.models import ScheduledTask, TaskPriority, TaskState
@@ -83,7 +82,6 @@ __all__ = [
     "BatchRun",
     "BatchStatus",
     "NotificationConfig",
-    "UserSettings",
     "Workspace",
     "WorkspaceMembership",
 ]

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -30,14 +29,14 @@ from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_model_selection_from_metadata,
 )
-from app.services.llm.providers import (
-    PROVIDER_REGISTRY,
+from app.services.llm.provider_templates import (
     litellm_model_name,
     normalize_ollama_base_url,
     normalize_openai_compatible_base_url,
 )
 from app.services.llm.credentials import resolve_credential_material
-from app.services.user_settings_service import UserSettingsService
+from app.services.llm.catalog import _provider_requires_credential
+from app.services.llm.credentials import credential_available, credential_configured
 
 _ORIGINAL_ACOMPLETION = acompletion
 
@@ -47,7 +46,6 @@ class AgentCoreRuntime:
         self.turn_repo = AgentTurnRepository(session)
         self.session_repo = AgentSessionRepository(session)
         self.ledger = AgentEventLedger(session)
-        self.user_settings = UserSettingsService(session)
         self.llm_models = LlmModelRepository(session)
         self.llm_profiles = LlmModelProfileRepository(session)
         self.llm_providers = LlmProviderRepository(session)
@@ -245,8 +243,6 @@ class AgentCoreRuntime:
                 "session_profile",
                 normalize_model_selection({"profile_id": session.default_model_profile_id}),
             ),
-            ("user_settings", await self._user_settings_selection(turn.user_id)),
-            ("deployment_default", self._deployment_default_selection()),
         ]
         for source, selection in candidates:
             catalog = await self._catalog_selection(
@@ -263,13 +259,10 @@ class AgentCoreRuntime:
                 and (selection.get("model_id") or selection.get("profile_id"))
             ):
                 return None
-            if selection and selection.get("provider") and selection.get("model"):
-                return {
-                    "provider": selection["provider"],
-                    "model": selection["model"],
-                    "source": source,
-                }
-        return None
+        return await self._catalog_default_selection(
+            workspace_id=str(session.workspace_id),
+            user_id=turn.user_id,
+        )
 
     async def _catalog_selection(
         self,
@@ -312,6 +305,11 @@ class AgentCoreRuntime:
         if provider is None:
             return None
         credential = await self.llm_credentials.get_for_provider(str(provider.id))
+        if not credential_available(
+            credential,
+            credential_required=_provider_requires_credential(provider),
+        ):
+            return None
         material = resolve_credential_material(credential)
         request_args: dict[str, Any] = {}
         if material.api_key:
@@ -342,25 +340,43 @@ class AgentCoreRuntime:
             result["profile_id"] = profile_id
         return result
 
-    async def _user_settings_selection(self, user_id: str) -> dict[str, str] | None:
-        settings_payload = await self.user_settings.get_settings(user_id)
-        if not settings_payload.selected_model:
-            return None
-        return normalize_model_selection(
-            {
-                "provider": settings_payload.selected_provider,
-                "model": settings_payload.selected_model,
-            }
+    async def _catalog_default_selection(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+    ) -> dict[str, Any] | None:
+        providers = await self.llm_providers.list_available(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            enabled_only=True,
         )
-
-    def _deployment_default_selection(self) -> dict[str, str] | None:
-        model = str(settings.agent_model or "").strip()
-        provider = str(settings.agent_provider or "").strip().lower()
-        if not model and provider in PROVIDER_REGISTRY:
-            model = PROVIDER_REGISTRY[provider].default_model
-        if not model:
-            return None
-        return normalize_model_selection({"provider": provider, "model": model})
+        for scope in ("user", "workspace", "global"):
+            for provider in providers:
+                if provider.scope != scope:
+                    continue
+                credential = await self.llm_credentials.get_for_provider(str(provider.id))
+                metadata = provider.provider_metadata or {}
+                if scope == "global" and not (
+                    metadata.get("envManaged") is True
+                    or credential_configured(credential)
+                ):
+                    continue
+                if not credential_available(
+                    credential,
+                    credential_required=_provider_requires_credential(provider),
+                ):
+                    continue
+                models = await self.llm_models.list_for_provider(str(provider.id))
+                if not models:
+                    continue
+                return await self._catalog_selection(
+                    {"model_id": str(models[0].id)},
+                    source="catalog_default",
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                )
+        return None
 
     async def _generate_text(
         self,
@@ -395,41 +411,8 @@ class AgentCoreRuntime:
         provider: str,
         model: str,
     ) -> dict[str, Any]:
-        cfg = PROVIDER_REGISTRY.get(provider)
-        if cfg is None:
-            if provider in {"openai_compatible", "vllm", "ollama"}:
-                return {}
-            raise RuntimeError(f"Unsupported model provider: {provider}")
-
-        credentials = await self.user_settings.get_raw_credentials(user_id, provider)
-        request_args: dict[str, Any] = {}
-
-        api_key = str(credentials.get("api_key") or "").strip()
-        if not api_key:
-            api_key = str(cfg.static_api_key or "").strip()
-        if not api_key and cfg.env_key_var:
-            api_key = str(os.getenv(cfg.env_key_var) or "").strip()
-        if provider == "anthropic" and not api_key:
-            api_key = str(os.getenv("ANTHROPIC_AUTH_TOKEN") or "").strip()
-        if api_key:
-            request_args["api_key"] = api_key
-
-        base_url = str(credentials.get("base_url") or "").strip()
-        if not base_url and cfg.env_base_url_var:
-            base_url = str(os.getenv(cfg.env_base_url_var) or "").strip()
-        if not base_url:
-            base_url = str(cfg.base_url or "").strip()
-        if provider == "ollama" and base_url:
-            base_url = normalize_ollama_base_url(base_url)
-        elif cfg.prefix == "openai/" and base_url:
-            base_url = normalize_openai_compatible_base_url(base_url)
-        if base_url:
-            request_args["api_base"] = base_url
-
-        if provider == "openai" and model.startswith("gpt-5"):
-            request_args["reasoning_effort"] = settings.agent_thinking_effort
-
-        return request_args
+        del user_id, provider, model
+        return {}
 
     async def _build_messages(self, *, session_id: str, turn) -> list[dict[str, str]]:
         messages: list[dict[str, str]] = []

@@ -24,7 +24,11 @@ def credential_configured(credential: LlmProviderCredential | None) -> bool:
     if credential is None:
         return False
     if credential.source == LlmCredentialSource.ENV:
-        return bool(credential.env_var_name)
+        # An env-backed credential is only "configured" when the referenced
+        # variable actually resolves to a value. A recorded variable name with
+        # an empty/unset value is not usable.
+        env_var_name = credential.env_var_name or ""
+        return bool(env_var_name and os.getenv(env_var_name))
     if credential.source == LlmCredentialSource.STORED:
         return bool(credential.encrypted_secret)
     return False

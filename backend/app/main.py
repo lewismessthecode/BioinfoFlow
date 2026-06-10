@@ -24,6 +24,7 @@ from app.services.run_dispatch import (
     set_run_dispatcher,
     set_run_scheduler,
 )
+from app.services.llm.bootstrap import sync_environment_llm_catalog
 from app.startup_logging import log_startup_banner, log_startup_summary
 from app.services.terminal_service import terminal_manager
 from app.utils.exceptions import AppError, http_error_code
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
     async with app.state_db_session() as session:
         workspace_service = WorkspaceService(session)
         await workspace_service.ensure_default_workspace()
+        await sync_environment_llm_catalog(session)
         await session.commit()
     logger.info("startup.workspace.ready")
     scheduler: RunScheduler | None = None

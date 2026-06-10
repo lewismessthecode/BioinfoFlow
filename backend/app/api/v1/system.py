@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import PurePosixPath
 
@@ -10,14 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_admin
 from app.config import settings
+from app.models.llm import LlmProvider, LlmProviderCredential
 from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
-from app.models.user_settings import UserSettings
 from app.models.workflow import Workflow
 from app.services.run_dispatch import get_run_scheduler
 from app.schemas.system import DirectoryEntry, DirectoryListResponse
 from app.services.docker_service import DockerService
 from app.services.gpu_service import get_gpu_service
+from app.services.llm.catalog import _provider_requires_credential
+from app.services.llm.credentials import credential_available
 from app.utils.repo_paths import allowed_local_path_roots, repo_root
 from app.utils.responses import error_response, success_response
 
@@ -171,28 +172,29 @@ def _env_provider_key_configured() -> bool:
             "kimi_api_key",
             "minimax_api_key",
         )
+    ) or bool(os.getenv("VLLM_BASE_URL") or os.getenv("OPENAI_COMPATIBLE_BASE_URL"))
+
+
+async def _catalog_provider_configured(db: AsyncSession) -> bool:
+    result = await db.execute(
+        select(LlmProvider, LlmProviderCredential)
+        .outerjoin(
+            LlmProviderCredential,
+            LlmProviderCredential.provider_id == LlmProvider.id,
+        )
+        .where(LlmProvider.enabled.is_(True))
     )
-
-
-async def _saved_provider_key_configured(db: AsyncSession) -> bool:
-    rows = await db.scalars(select(UserSettings.provider_credentials))
-    for raw_credentials in rows:
-        if not raw_credentials:
-            continue
-        try:
-            credentials = json.loads(raw_credentials)
-        except (TypeError, json.JSONDecodeError):
-            continue
-        if not isinstance(credentials, dict):
-            continue
-        for fields in credentials.values():
-            if isinstance(fields, dict) and str(fields.get("api_key", "")).strip():
-                return True
+    for provider, credential in result.all():
+        if credential_available(
+            credential,
+            credential_required=_provider_requires_credential(provider),
+        ):
+            return True
     return False
 
 
 async def _provider_key_configured(db: AsyncSession) -> bool:
-    return _env_provider_key_configured() or await _saved_provider_key_configured(db)
+    return _env_provider_key_configured() or await _catalog_provider_configured(db)
 
 
 def _check(
