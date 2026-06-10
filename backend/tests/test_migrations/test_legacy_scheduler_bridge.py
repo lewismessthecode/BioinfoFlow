@@ -52,6 +52,176 @@ def test_agent_core_cleanup_revision_drops_legacy_agent_tables():
         assert table_name in content
 
 
+def test_agent_harness_runtime_upgrade_handles_stale_sqlite_batch_tables_and_resequences_events(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "agent-harness-runtime.db"
+    env = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite+aiosqlite:///{db_path}",
+    }
+
+    setup_result = _run(
+        [sys.executable, "-m", "alembic", "upgrade", "0029_drop_legacy_agent_tables"],
+        cwd=BACKEND_DIR,
+        env=env,
+    )
+    assert setup_result.returncode == 0, setup_result.stderr or setup_result.stdout
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("CREATE TABLE _alembic_tmp_agent_sessions (id INTEGER)")
+        conn.execute(
+            """
+            INSERT INTO workspaces (id, name, slug, is_default)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("workspace-1", "Default Workspace", "default-workspace", 1),
+        )
+        conn.execute(
+            """
+            INSERT INTO projects (id, name, user_id, workspace_id, is_default, storage_mode)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("project-1", "Project One", "user-1", "workspace-1", 0, "managed"),
+        )
+        conn.execute(
+            """
+            INSERT INTO agent_sessions (
+                project_id, workspace_id, user_id, title, role_profile,
+                permission_mode, automation_mode, status, metadata, id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "project-1",
+                "workspace-1",
+                "user-1",
+                "Session One",
+                "default",
+                "workspace_write",
+                "manual",
+                "active",
+                "{}",
+                "session-1",
+            ),
+        )
+        conn.executemany(
+            """
+            INSERT INTO agent_turns (
+                session_id, project_id, workspace_id, user_id, input_text,
+                status, id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "session-1",
+                    "project-1",
+                    "workspace-1",
+                    "user-1",
+                    "turn one",
+                    "completed",
+                    "turn-1",
+                    "2026-06-01 00:00:00",
+                    "2026-06-01 00:00:00",
+                ),
+                (
+                    "session-1",
+                    "project-1",
+                    "workspace-1",
+                    "user-1",
+                    "turn two",
+                    "completed",
+                    "turn-2",
+                    "2026-06-01 00:00:00",
+                    "2026-06-01 00:00:00",
+                ),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO agent_events (
+                session_id, turn_id, seq, type, payload, visibility,
+                schema_version, id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "session-1",
+                    "turn-1",
+                    1,
+                    "message",
+                    "{}",
+                    "internal",
+                    1,
+                    "event-1",
+                    "2026-06-01 00:00:02",
+                    "2026-06-01 00:00:02",
+                ),
+                (
+                    "session-1",
+                    "turn-2",
+                    1,
+                    "message",
+                    "{}",
+                    "internal",
+                    1,
+                    "event-2",
+                    "2026-06-01 00:00:01",
+                    "2026-06-01 00:00:01",
+                ),
+                (
+                    "session-1",
+                    "turn-1",
+                    2,
+                    "message",
+                    "{}",
+                    "internal",
+                    1,
+                    "event-3",
+                    "2026-06-01 00:00:03",
+                    "2026-06-01 00:00:03",
+                ),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    upgrade_result = _run(
+        [sys.executable, "-m", "alembic", "upgrade", "0030_agent_harness_runtime"],
+        cwd=BACKEND_DIR,
+        env=env,
+    )
+
+    assert upgrade_result.returncode == 0, upgrade_result.stderr or upgrade_result.stdout
+
+    conn = sqlite3.connect(db_path)
+    try:
+        temp_tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '_alembic_tmp_%'"
+            ).fetchall()
+        }
+        assert "_alembic_tmp_agent_sessions" not in temp_tables
+
+        resequenced = conn.execute(
+            """
+            SELECT id, seq
+            FROM agent_events
+            WHERE session_id = ?
+            ORDER BY created_at, id
+            """,
+            ("session-1",),
+        ).fetchall()
+        assert resequenced == [("event-2", 1), ("event-1", 2), ("event-3", 3)]
+    finally:
+        conn.close()
+
+
 _LEGACY_DB = BACKEND_DIR / "bioinfoflow.db"
 
 
