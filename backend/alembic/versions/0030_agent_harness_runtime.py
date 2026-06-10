@@ -18,6 +18,14 @@ branch_labels = None
 depends_on = None
 
 
+SQLITE_BATCH_TABLES = (
+    "agent_sessions",
+    "agent_turns",
+    "agent_events",
+    "agent_actions",
+)
+
+
 def _timestamps() -> tuple[sa.Column, sa.Column]:
     return (
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -26,6 +34,8 @@ def _timestamps() -> tuple[sa.Column, sa.Column]:
 
 
 def upgrade() -> None:
+    _drop_stale_sqlite_batch_tables()
+
     with op.batch_alter_table("agent_sessions") as batch:
         batch.alter_column("project_id", existing_type=sa.String(length=36), nullable=True)
         batch.add_column(sa.Column("runtime_mode", sa.String(length=40), nullable=False, server_default="api"))
@@ -143,6 +153,15 @@ def _resequence_events() -> None:
     if dialect == "sqlite":
         op.execute(
             """
+            UPDATE agent_events
+            SET seq = seq + (
+              SELECT COALESCE(MAX(seq), 0) + COUNT(*) + 1
+              FROM agent_events
+            )
+            """
+        )
+        op.execute(
+            """
             WITH ordered AS (
               SELECT id, ROW_NUMBER() OVER (
                 PARTITION BY session_id ORDER BY created_at, id
@@ -168,3 +187,12 @@ def _resequence_events() -> None:
         WHERE ordered.id = event.id
         """
     )
+
+
+def _drop_stale_sqlite_batch_tables() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name != "sqlite":
+        return
+
+    for table_name in SQLITE_BATCH_TABLES:
+        op.execute(sa.text(f"DROP TABLE IF EXISTS _alembic_tmp_{table_name}"))
