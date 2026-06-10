@@ -5,6 +5,7 @@ ENTRYPOINT = ROOT / "backend/scripts/docker-entrypoint.sh"
 DOCKERFILE = ROOT / "backend/Dockerfile"
 FRONTEND_DOCKERFILE = ROOT / "frontend/Dockerfile"
 COMPOSE = ROOT / "docker-compose.prod.yml"
+DEV_COMPOSE = ROOT / "docker-compose.yml"
 
 
 def assert_contains(text: str, needle: str) -> None:
@@ -35,6 +36,13 @@ def test_prod_healthcheck_grace_period_is_extended() -> None:
     assert_contains(text, "start_period: 120s")
 
 
+def test_compose_healthchecks_use_lightweight_ping_probe() -> None:
+    for compose in (DEV_COMPOSE, COMPOSE):
+        text = compose.read_text()
+        assert_contains(text, "/api/v1/system/ping")
+        assert_not_contains(text, "/api/v1/system/health")
+
+
 def test_backend_entrypoint_prints_startup_context() -> None:
     text = ENTRYPOINT.read_text()
     assert_contains(text, "Bioinfoflow backend container startup")
@@ -54,6 +62,7 @@ if __name__ == "__main__":
         test_entrypoint_uses_installed_venv_tools,
         test_dockerfile_runs_uvicorn_without_uv_run,
         test_prod_healthcheck_grace_period_is_extended,
+        test_compose_healthchecks_use_lightweight_ping_probe,
         test_backend_entrypoint_prints_startup_context,
         test_frontend_runner_uses_startup_env_wrapper,
     ]
