@@ -31,8 +31,7 @@ from app.services.agent_core.model_selection import (
 )
 from app.services.llm.provider_templates import (
     litellm_model_name,
-    normalize_ollama_base_url,
-    normalize_openai_compatible_base_url,
+    normalize_provider_base_url,
 )
 from app.services.llm.credentials import resolve_credential_material
 from app.services.llm.catalog import _provider_requires_credential
@@ -315,13 +314,12 @@ class AgentCoreRuntime:
         if material.api_key:
             request_args["api_key"] = material.api_key
         if provider.base_url:
-            if provider.kind == "ollama":
-                request_args["api_base"] = normalize_ollama_base_url(provider.base_url)
-            else:
-                request_args["api_base"] = normalize_openai_compatible_base_url(
-                    provider.base_url,
-                    prefer_loopback_ip=provider.kind == "vllm",
-                )
+            # Per-kind normalization keeps native base URLs intact (Anthropic
+            # and Gemini stay at the host root; only OpenAI-compatible providers
+            # get the /v1 suffix), so LiteLLM receives a valid api_base.
+            request_args["api_base"] = normalize_provider_base_url(
+                provider.kind, provider.base_url
+            )
         capabilities = capabilities_from_model(model)
         runtime_strategy = resolve_runtime_strategy(
             capabilities=capabilities,

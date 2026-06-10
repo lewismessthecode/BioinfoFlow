@@ -572,6 +572,84 @@ async def test_agent_core_ollama_catalog_selection_uses_root_api_base(
 
 
 @pytest.mark.asyncio
+async def test_agent_core_anthropic_catalog_selection_preserves_native_api_base(
+    async_client,
+    monkeypatch,
+):
+    completion_kwargs: dict = {}
+
+    async def fake_completion(*args, **kwargs):
+        completion_kwargs.update(kwargs)
+
+        class FakeMessage:
+            content = "Anthropic model reply."
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+
+    project_id = await _create_project(async_client)
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Anthropic",
+            "kind": "anthropic",
+            "base_url": "https://api.anthropic.com",
+            "metadata": {"providerTemplate": "anthropic"},
+        },
+    )
+    assert provider_response.status_code == 201
+    provider = provider_response.json()["data"]
+    credential_response = await async_client.put(
+        f"/api/v1/llm/providers/{provider['id']}/credential",
+        json={"source": "stored", "secret": "sk-ant-test"},
+    )
+    assert credential_response.status_code == 200
+    model_response = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": provider["id"],
+            "model_id": "claude-sonnet-4-6",
+            "display_name": "Claude Sonnet 4.6",
+            "supports_streaming": True,
+        },
+    )
+    assert model_response.status_code == 201
+    model = model_response.json()["data"]
+
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "project_id": project_id,
+            "title": "Anthropic-routed session",
+            "model_selection": {"model_id": model["id"]},
+        },
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+
+    create_turn = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={"input_text": "Use Claude."},
+    )
+    assert create_turn.status_code == 202
+    turn = await _wait_for_turn(async_client, create_turn.json()["data"]["id"])
+
+    assert turn["status"] == "completed"
+    assert completion_kwargs["model"] == "anthropic/claude-sonnet-4-6"
+    # Host root must be preserved — no /v1 suffix appended for Anthropic.
+    assert completion_kwargs["api_base"] == "https://api.anthropic.com"
+    assert completion_kwargs["api_key"] == "sk-ant-test"
+
+
+@pytest.mark.asyncio
 async def test_agent_core_profile_strategy_can_disable_streaming_thinking_and_tools(
     async_client,
     monkeypatch,
