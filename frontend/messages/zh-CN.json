@@ -104,11 +104,10 @@
     "projects": "项目",
     "workspace": "工作区",
     "newProject": "新建项目",
-    "newAnalysis": "新建分析",
     "search": "搜索",
     "openSidebar": "打开侧边栏",
     "closeSidebar": "关闭侧边栏",
-    "newConversation": "新建对话",
+    "newConversation": "新对话",
     "conversationFallback": "对话 {index}",
     "conversations": "对话",
     "noConversations": "暂无对话",
@@ -204,7 +203,7 @@
       "workflows": "工作流"
     },
     "actions": {
-      "newConversation": "新建对话"
+      "newConversation": "新对话"
     },
     "conversationFallback": "对话 {index}",
     "errors": {
@@ -366,7 +365,7 @@
         },
         "provider_key": {
           "label": "AI Provider Key",
-          "action": "添加 Provider Key",
+          "action": "配置服务商",
           "detail": {
             "pass": "至少已有一个 Provider Key 可用。",
             "fail": "首次开始对话或运行前，请先配置任意一个受支持的 Provider Key。"
@@ -1971,36 +1970,6 @@
       "connected": "已连接",
       "notConfigured": "未配置"
     },
-    "llmCatalog": {
-      "title": "平台 LLM 目录",
-      "description": "管理 AgentCore 使用的模型供应商、模型能力和模型配置档。",
-      "addProvider": "新增供应商",
-      "providerName": "供应商名称",
-      "providerKind": "供应商类型",
-      "apiKeyRef": "API Key 引用",
-      "enabled": "已启用",
-      "disabled": "已禁用",
-      "testProvider": "测试供应商",
-      "disableProvider": "禁用供应商",
-      "enableProvider": "启用供应商",
-      "models": "模型",
-      "modelProfiles": "模型配置档",
-      "context": "上下文",
-      "maxOutput": "最大输出",
-      "tools": "工具调用",
-      "streaming": "流式输出",
-      "vision": "视觉",
-      "jsonSchema": "JSON Schema",
-      "reasoning": "推理",
-      "noProviders": "还没有登记平台模型供应商。",
-      "noModels": "还没有登记平台模型。",
-      "noProfiles": "还没有登记模型配置档。",
-      "created": "供应商已新增",
-      "testPassed": "供应商测试通过",
-      "testFailed": "供应商测试失败",
-      "updated": "供应商已更新",
-      "loadFailed": "无法加载平台 LLM 目录。"
-    },
     "setupBanner": {
       "title": "请配置 API 密钥以开始与 AI 助手对话。",
       "action": "配置服务商",
@@ -2012,6 +1981,25 @@
       "noProviders": "无可用模型",
       "configure": "配置服务商",
       "searchModels": "搜索模型..."
+    },
+    "providerCards": {
+      "loading": "正在加载服务商...",
+      "save": "保存",
+      "saving": "保存中...",
+      "apiKeyPlaceholder": "粘贴 API Key",
+      "savedKeyPlaceholder": "密钥已保存。粘贴新密钥可替换。",
+      "endpointPlaceholder": "Endpoint URL",
+      "getApiKey": "获取 {provider} API Key",
+      "configured": "已配置",
+      "notConfigured": "未配置",
+      "noKeyRequired": "无需密钥",
+      "saved": "服务商已保存",
+      "saveFailed": "服务商保存失败",
+      "refreshModels": "刷新本地模型",
+      "refreshingModels": "刷新中...",
+      "modelsDiscovered": "已发现 {count} 个模型",
+      "modelsRefreshed": "本地模型已刷新",
+      "modelRefreshFailed": "本地模型刷新失败"
     },
     "members": {
       "title": "成员",
@@ -2160,25 +2148,48 @@
     "rejectMemory": "拒绝记忆"
   },
   "agentRuntime": {
-    "title": "Agent Harness",
-    "draftSession": "草稿会话",
-    "projectSession": "项目会话",
-    "workspaceSession": "工作区会话",
-    "emptyTitle": "从运行时开始",
-    "emptyDescription": "请求工作流检查、运行诊断、项目设置，或一次受控的平台动作。",
-    "pendingResponse": "正在等待 loop 完成...",
-    "composerPlaceholder": "描述下一次 harness turn...",
-    "toolActivity": "工具活动",
-    "noToolActivity": "还没有工具调用。",
-    "approvals": "审批",
-    "noApprovals": "没有待审批动作。",
+    "welcomeTitle": "今天想让 Bioinfoflow 帮你做什么？",
+    "composerPlaceholder": "给 Bioinfoflow 发送消息...",
+    "attach": "添加附件或上下文",
+    "send": "发送消息",
+    "stop": "停止回复",
+    "pendingResponse": "正在处理...",
+    "thinking": "思考过程",
     "approve": "批准",
     "reject": "拒绝",
-    "artifacts": "产物",
-    "artifact": "产物",
-    "noArtifacts": "还没有产物。",
-    "memory": "记忆",
-    "noMemory": "还没有记忆事件。"
+    "attachMenu": {
+      "attachFiles": "添加文件",
+      "browseProjectFiles": "浏览项目文件",
+      "referenceRun": "引用一次运行",
+      "runPreflight": "运行预检查",
+      "diagnoseRun": "诊断运行",
+      "comingSoon": "即将支持"
+    },
+    "turnStatus": {
+      "queued": "排队中",
+      "running": "处理中",
+      "waiting_user": "等待你回复",
+      "waiting_approval": "需要确认",
+      "completed": "已完成",
+      "failed": "已停止",
+      "cancelled": "已取消"
+    },
+    "sidecar": {
+      "title": "运行",
+      "close": "关闭运行面板",
+      "collapse": "收起运行面板",
+      "expand": "打开运行面板",
+      "files": "文件",
+      "runs": "运行",
+      "tools": "工具",
+      "artifacts": "产物",
+      "active": "进行中",
+      "progress": "进度",
+      "currentThinking": "当前思考",
+      "currentToolCalls": "当前工具调用",
+      "needsDecision": "需要你确认",
+      "noActivity": "还没有活动"
+    }
   },
   "agent": {
     "disclaimer": "Bioinfoflow 智能助手可能犯错，请核实重要结果。",
@@ -2226,7 +2237,7 @@
       "focusInput": "聚焦输入框",
       "stopGeneration": "停止生成",
       "toggleSidebar": "切换侧边栏",
-      "newConversation": "新建对话",
+      "newConversation": "新对话",
       "sendMessage": "发送消息",
       "newLine": "换行",
       "cancelOrClose": "取消编辑 / 关闭弹窗",

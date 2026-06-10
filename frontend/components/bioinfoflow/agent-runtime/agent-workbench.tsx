@@ -2,21 +2,24 @@
 
 import {
   forwardRef,
+  useCallback,
+  useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from "react"
-import { Send, Square, Workflow } from "lucide-react"
+import { PanelRightClose, PanelRightOpen } from "lucide-react"
 import { useTranslations } from "next-intl"
 
-import { ActionApprovalPanel } from "./action-approval-panel"
-import { ArtifactsPanel } from "./artifacts-panel"
-import { MemoryPanel } from "./memory-panel"
-import { ToolActivityPanel } from "./tool-activity-panel"
-import { TranscriptPane } from "./transcript-pane"
-import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
+import { AgentComposer } from "./agent-composer"
+import { AgentTranscript } from "./agent-transcript"
+import {
+  hasPendingRuntimeAction,
+  hasRuntimeActivity,
+  RuntimeSidecar,
+} from "./runtime-sidecar"
 import { Button } from "@/components/ui/button"
+import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import { cn } from "@/lib/utils"
@@ -49,11 +52,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const t = useTranslations("agentRuntime")
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const [input, setInput] = useState("")
+    const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
+    const [sidecarOpen, setSidecarOpen] = useState(false)
+    const [sidecarDismissed, setSidecarDismissed] = useState(false)
+    const workspaceShell = useOptionalWorkspaceShell()
+    const setNavbarActions = workspaceShell?.setNavbarActions
     const { models, selectedModel, isLoading: modelsLoading, setSelectedModel } =
       useLlmSettings()
     const {
       state,
-      session,
       setActiveSessionId,
       send,
       interrupt,
@@ -62,10 +69,18 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       activeSessionId,
       onActiveSessionIdChange,
     })
+
     const disabled = !workspaceEnabled
+    const hasTurns = state.turns.length > 0
+    const hasConversation = hasTurns || hasSubmittedDraft
     const isRunning = state.status === "running"
-    const eventCount = state.events.length
-    const lastSeq = state.events.at(-1)?.seq ?? 0
+    const pendingDecision = hasPendingRuntimeAction(state.events)
+    const hasActivity = hasRuntimeActivity(state.events)
+    const sidecarVisible =
+      sidecarOpen || pendingDecision || (!sidecarDismissed && (isRunning || hasActivity))
+    const sidecarLabel = sidecarVisible
+      ? t("sidecar.collapse")
+      : t("sidecar.expand")
 
     useImperativeHandle(
       ref,
@@ -77,90 +92,134 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         newConversation: () => {
           setActiveSessionId(null)
           setInput("")
+          setHasSubmittedDraft(false)
+          setSidecarOpen(false)
+          setSidecarDismissed(false)
         },
       }),
       [interrupt, setActiveSessionId],
     )
 
-    const runtimeLabel = useMemo(() => {
-      if (!session) return t("draftSession")
-      return session.project_id ? t("projectSession") : t("workspaceSession")
-    }, [session, t])
-
     const submit = () => {
       const text = input.trim()
       if (!text) return
+      setHasSubmittedDraft(true)
       void send(text, { modelSelection: selectedModel })
       setInput("")
     }
 
+    const closeSidecar = useCallback(() => {
+      setSidecarOpen(false)
+      setSidecarDismissed(true)
+    }, [])
+
+    const toggleSidecar = useCallback(() => {
+      if (sidecarVisible) {
+        closeSidecar()
+        return
+      }
+      setSidecarOpen(true)
+      setSidecarDismissed(false)
+    }, [closeSidecar, sidecarVisible])
+
+    useEffect(() => {
+      if (!setNavbarActions) return
+
+      setNavbarActions(
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-full border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+          onClick={toggleSidecar}
+          aria-label={sidecarLabel}
+        >
+          {sidecarVisible ? (
+            <PanelRightClose className="h-4 w-4" />
+          ) : (
+            <PanelRightOpen className="h-4 w-4" />
+          )}
+        </Button>,
+      )
+
+      return () => setNavbarActions(null)
+    }, [setNavbarActions, sidecarLabel, sidecarVisible, toggleSidecar])
+
+    const composer = (
+      <AgentComposer
+        ref={textareaRef}
+        value={input}
+        onChange={setInput}
+        onSubmit={submit}
+        onStop={() => void interrupt()}
+        isRunning={isRunning}
+        disabled={disabled}
+        models={models}
+        selectedModel={selectedModel}
+        modelsLoading={modelsLoading}
+        onSelectModel={(model) => void setSelectedModel(model)}
+      />
+    )
+
     return (
-      <div className={cn("flex h-full min-w-0 bg-background", className)}>
-        <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex min-h-14 items-center justify-between border-b border-border px-4 sm:px-6">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <Workflow className="h-4 w-4 text-primary" />
-                {t("title")}
+      <div className={cn("relative flex h-full min-w-0 flex-1 bg-background", className)}>
+        <main
+          className="relative flex min-w-0 flex-1 flex-col overflow-hidden transition-[padding,width] duration-300 ease-out"
+          data-testid="agent-workbench-main"
+        >
+          {hasConversation ? (
+            <>
+              <AgentTranscript timeline={state.timeline} />
+              <div
+                className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-4 pt-10 sm:px-6"
+                data-testid="agent-composer-shell"
+                data-placement="bottom"
+              >
+                <div className="pointer-events-auto">{composer}</div>
               </div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>{runtimeLabel}</span>
-                <span className="font-mono">events:{eventCount}</span>
-                <span className="font-mono">seq:{lastSeq}</span>
+            </>
+          ) : (
+            <div className="flex min-h-0 flex-1 items-center justify-center px-4">
+              <div className="w-full max-w-3xl -translate-y-10">
+                <h1 className="mb-7 text-center text-2xl font-semibold tracking-normal text-foreground sm:text-3xl">
+                  {t("welcomeTitle")}
+                </h1>
+                <div data-testid="agent-composer-shell" data-placement="center">
+                  {composer}
+                </div>
               </div>
             </div>
-            <ModelSelector
-              models={models}
-              selectedModel={selectedModel}
-              onSelectModel={(model) => void setSelectedModel(model)}
-              disabled={modelsLoading || disabled}
-              allowAuto
-            />
-          </header>
-
-          <TranscriptPane turns={state.turns} />
+          )}
 
           {state.error ? (
-            <div className="mx-4 mb-2 border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive sm:mx-6">
+            <div className="absolute inset-x-4 bottom-24 mx-auto max-w-3xl rounded-2xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive shadow-sm sm:bottom-28">
               {state.error}
             </div>
           ) : null}
-
-          <footer className="border-t border-border p-3 sm:p-4">
-            <div className="mx-auto flex max-w-4xl items-end gap-2 border border-border bg-background p-2 shadow-sm">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                    event.preventDefault()
-                    submit()
-                  }
-                }}
-                placeholder={t("composerPlaceholder")}
-                className="max-h-40 min-h-12 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-6 outline-none placeholder:text-muted-foreground"
-                disabled={disabled}
-              />
-              {isRunning ? (
-                <Button type="button" variant="outline" size="icon" onClick={() => void interrupt()}>
-                  <Square className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button type="button" size="icon" onClick={submit} disabled={disabled || !input.trim()}>
-                  <Send className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </footer>
         </main>
 
-        <aside className="hidden w-[330px] shrink-0 border-l border-border bg-muted/20 lg:block">
-          <ActionApprovalPanel events={state.events} onDecision={decideAction} />
-          <ToolActivityPanel events={state.events} />
-          <ArtifactsPanel events={state.events} />
-          <MemoryPanel events={state.events} />
-        </aside>
+        <div
+          className={cn(
+            "hidden shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-out lg:flex",
+            sidecarVisible
+              ? "w-[404px] translate-x-0 opacity-100"
+              : "w-0 translate-x-4 opacity-0",
+          )}
+          aria-hidden={!sidecarVisible}
+          data-testid="agent-sidecar-column"
+        >
+          <div className="flex h-full w-[404px] shrink-0 items-center py-4 pr-4">
+            {sidecarVisible ? (
+              <RuntimeSidecar
+                events={state.events}
+                timeline={state.timeline}
+                isRunning={isRunning}
+                onClose={closeSidecar}
+                onDecision={decideAction}
+              />
+            ) : null}
+          </div>
+        </div>
       </div>
     )
   },

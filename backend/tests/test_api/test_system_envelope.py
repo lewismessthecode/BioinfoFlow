@@ -96,7 +96,7 @@ async def test_readiness_returns_blocking_checks(async_client, monkeypatch):
     assert body["success"] is True
     data = body["data"]
     assert data["severity"] == "blocked"
-    assert data["next_action"]["href"] == "/settings"
+    assert data["next_action"]["href"] == "/settings?section=providers"
 
     checks = {check["id"]: check for check in data["checks"]}
     assert checks["backend"]["status"] == "pass"

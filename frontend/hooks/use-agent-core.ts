@@ -219,7 +219,6 @@ export function useAgentCore(projectId?: string, options: UseAgentCoreOptions = 
     if (activeSession) return activeSession
     const created = await createAgentSession({
       projectId,
-      title: "New analysis",
       permissionMode: draftPermissionMode,
       automationMode: "assisted",
       defaultModelProfileId: draftModelProfileId ?? undefined,

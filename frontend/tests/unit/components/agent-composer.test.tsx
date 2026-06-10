@@ -1,0 +1,68 @@
+import { fireEvent, render, screen } from "@testing-library/react"
+import { describe, expect, it, vi } from "vitest"
+
+import { AgentComposer } from "@/components/bioinfoflow/agent-runtime/agent-composer"
+
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string) => {
+    const labels: Record<string, string> = {
+      composerPlaceholder: "Message Bioinfoflow...",
+      attach: "Attach or add context",
+      send: "Send message",
+      stop: "Stop response",
+      "attachMenu.attachFiles": "Attach files",
+      "attachMenu.browseProjectFiles": "Browse project files",
+      "attachMenu.referenceRun": "Reference a run",
+      "attachMenu.runPreflight": "Run preflight",
+      "attachMenu.diagnoseRun": "Diagnose run",
+      "attachMenu.comingSoon": "Coming soon",
+      auto: "Auto",
+      configure: "Configure providers",
+      noProviders: "No model available",
+      searchModels: "Search models...",
+    }
+    return labels[key] ?? key
+  },
+}))
+
+vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
+  ProviderIcon: ({ provider }: { provider: string }) => (
+    <span aria-hidden="true" data-provider={provider} />
+  ),
+}))
+
+describe("AgentComposer", () => {
+  it("grows with input until the max height cap", () => {
+    const onChange = vi.fn()
+    render(
+      <AgentComposer
+        value=""
+        onChange={onChange}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    const textarea = screen.getByPlaceholderText("Message Bioinfoflow...")
+    let nextHeight = 132
+    Object.defineProperty(textarea, "scrollHeight", {
+      configurable: true,
+      get: () => nextHeight,
+    })
+
+    fireEvent.change(textarea, { target: { value: "first line\nsecond line" } })
+
+    expect(onChange).toHaveBeenCalledWith("first line\nsecond line")
+    expect(textarea).toHaveStyle({ height: "132px" })
+
+    nextHeight = 420
+    fireEvent.change(textarea, { target: { value: "expanded content" } })
+
+    expect(textarea).toHaveStyle({ height: "160px" })
+    expect(textarea).toHaveStyle({ overflowY: "auto" })
+  })
+})

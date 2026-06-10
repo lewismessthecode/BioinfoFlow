@@ -194,18 +194,18 @@ async def test_test_provider_unknown_returns_error(db_session):
 
 
 @pytest.mark.asyncio
-async def test_test_ollama_provider_uses_real_openai_compatible_probe(
+async def test_test_ollama_provider_uses_native_root_probe(
     db_session, monkeypatch
 ):
     from app.schemas.user_settings import ProviderTestResult, UserSettingsUpdate
 
     calls: list[dict[str, str]] = []
 
-    async def fake_test_openai(self, api_key: str, base_url: str, model: str | None = None):
-        calls.append({"api_key": api_key, "base_url": base_url, "model": model or ""})
-        return ProviderTestResult(provider="openai", success=True, model=model)
+    async def fake_test_ollama(self, base_url: str, model: str | None = None):
+        calls.append({"base_url": base_url, "model": model or ""})
+        return ProviderTestResult(provider="ollama", success=True, model=model)
 
-    monkeypatch.setattr(UserSettingsService, "_test_openai", fake_test_openai)
+    monkeypatch.setattr(UserSettingsService, "_test_ollama", fake_test_ollama)
 
     service = UserSettingsService(db_session)
     user_id = "user-test-ollama"
@@ -230,8 +230,7 @@ async def test_test_ollama_provider_uses_real_openai_compatible_probe(
     assert result.model == "deepseek-r1:latest"
     assert calls == [
         {
-            "api_key": "ollama",
-            "base_url": "http://127.0.0.1:11434/v1",
+            "base_url": "http://127.0.0.1:11434",
             "model": "deepseek-r1:latest",
         }
     ]

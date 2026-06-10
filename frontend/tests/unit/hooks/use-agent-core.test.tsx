@@ -53,7 +53,7 @@ describe("useAgentCore", () => {
             project_id: "project-1",
             workspace_id: "workspace-1",
             user_id: "dev",
-            title: "New analysis",
+            title: "New Conversation",
             role_profile: "bioinformatician",
             permission_mode: "guarded_auto",
             automation_mode: "assisted",
@@ -131,6 +131,10 @@ describe("useAgentCore", () => {
     expect(result.current.turns[0].id).toBe("turn-1")
     expect(result.current.events[0].type).toBe("turn.created")
     expect(apiRequestMock.mock.calls.some(([path]) => path === "/agent/message")).toBe(false)
+    const createSessionCall = apiRequestMock.mock.calls.find(
+      ([path, options]) => path === "/agent/sessions" && options?.method === "POST",
+    )
+    expect(JSON.parse(createSessionCall?.[1]?.body as string)).not.toHaveProperty("title")
   })
 
   it("loads artifacts and memory proposals and dispatches AgentCore decisions", async () => {
@@ -343,7 +347,7 @@ describe("useAgentCore", () => {
         return {
           data: session({
             id: "session-created",
-            title: "New analysis",
+            title: "New Conversation",
             permission_mode: "ask_each_action",
             default_model_profile_id: "profile-1",
           }),
@@ -422,6 +426,7 @@ describe("useAgentCore", () => {
       permission_mode: "ask_each_action",
       default_model_profile_id: "profile-1",
     })
+    expect(JSON.parse(createSessionCall?.[1]?.body as string)).not.toHaveProperty("title")
     expect(onActiveSessionIdChange).toHaveBeenCalledWith("session-created")
   })
 
@@ -489,7 +494,7 @@ describe("useAgentCore", () => {
         return {
           data: session({
             id: "session-created",
-            title: "New analysis",
+            title: "New Conversation",
             metadata: { selected_model: "gpt-5.4" },
           }),
           meta: undefined,
@@ -558,6 +563,7 @@ describe("useAgentCore", () => {
     expect(JSON.parse(createSessionCall?.[1]?.body as string)).toMatchObject({
       model_selection: { provider: "openai", model: "gpt-5.4" },
     })
+    expect(JSON.parse(createSessionCall?.[1]?.body as string)).not.toHaveProperty("title")
     expect(onActiveSessionIdChange).toHaveBeenCalledWith("session-created")
   })
 

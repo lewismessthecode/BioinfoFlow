@@ -11,7 +11,19 @@ import app.services.agent_core.core.loop as loop_module
 from app.config import settings
 from app.models.agent_core import AgentTurnStatus
 from app.repositories.agent_core_repo import AgentSessionRepository, AgentTurnRepository
+from app.repositories.llm_repo import (
+    LlmModelProfileRepository,
+    LlmModelRepository,
+    LlmProviderCredentialRepository,
+    LlmProviderRepository,
+)
 from app.services.agent_core.core import AgentLoopController
+from app.services.agent_core.core.runtime_strategy import (
+    RuntimeCapabilities,
+    RuntimeStrategy,
+    capabilities_from_model,
+    resolve_runtime_strategy,
+)
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.model_selection import (
@@ -21,8 +33,10 @@ from app.services.agent_core.model_selection import (
 from app.services.llm.providers import (
     PROVIDER_REGISTRY,
     litellm_model_name,
+    normalize_ollama_base_url,
     normalize_openai_compatible_base_url,
 )
+from app.services.llm.credentials import resolve_credential_material
 from app.services.user_settings_service import UserSettingsService
 
 _ORIGINAL_ACOMPLETION = acompletion
@@ -34,6 +48,10 @@ class AgentCoreRuntime:
         self.session_repo = AgentSessionRepository(session)
         self.ledger = AgentEventLedger(session)
         self.user_settings = UserSettingsService(session)
+        self.llm_models = LlmModelRepository(session)
+        self.llm_profiles = LlmModelProfileRepository(session)
+        self.llm_providers = LlmProviderRepository(session)
+        self.llm_credentials = LlmProviderCredentialRepository(session)
 
     async def run_no_tool_turn(self, turn_id: str):
         return await self.run_turn(turn_id)
@@ -88,7 +106,13 @@ class AgentCoreRuntime:
             "provider": resolved["provider"],
             "model": resolved["model"],
         }
+        if resolved.get("model_id"):
+            snapshot["resolved_model_id"] = resolved["model_id"]
+        if resolved.get("profile_id"):
+            snapshot["resolved_profile_id"] = resolved["profile_id"]
         snapshot["resolved_model_source"] = resolved["source"]
+        snapshot["resolved_model_capabilities"] = resolved.get("capabilities", {})
+        snapshot["resolved_runtime_strategy"] = resolved.get("runtime_strategy", {})
         turn = await self.turn_repo.update_all(turn, model_profile_snapshot=snapshot)
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -100,29 +124,23 @@ class AgentCoreRuntime:
                 "source": resolved["source"],
             },
         )
-        await self.ledger.append(
-            session_id=str(turn.session_id),
-            turn_id=str(turn.id),
-            type=AgentEventType.ASSISTANT_THINKING_SUMMARY,
-            payload={
-                "summary": (
-                    f"Routing this turn to {resolved['provider']} / {resolved['model']} "
-                    f"from {resolved['source']}."
-                )
-            },
-        )
 
         if acompletion is not _ORIGINAL_ACOMPLETION:
             loop_module.acompletion = acompletion
+        runtime_strategy = _resolved_runtime_strategy(resolved)
         result = await AgentLoopController(self.turn_repo.session).run_turn(
             turn_id=str(turn.id),
             provider=resolved["provider"],
             model=resolved["model"],
-            request_args=await self._provider_request_args(
+            capabilities=_resolved_capabilities(resolved),
+            strategy=runtime_strategy,
+            request_args=resolved.get("request_args")
+            or await self._provider_request_args(
                 user_id=turn.user_id,
                 provider=resolved["provider"],
                 model=resolved["model"],
             ),
+            max_tokens=runtime_strategy.max_tokens,
         )
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
@@ -184,15 +202,20 @@ class AgentCoreRuntime:
             )
         if acompletion is not _ORIGINAL_ACOMPLETION:
             loop_module.acompletion = acompletion
+        runtime_strategy = _resolved_runtime_strategy(resolved)
         result = await AgentLoopController(self.turn_repo.session).resume_turn_from_action(
             action_id=action_id,
             provider=resolved["provider"],
             model=resolved["model"],
-            request_args=await self._provider_request_args(
+            capabilities=_resolved_capabilities(resolved),
+            strategy=runtime_strategy,
+            request_args=resolved.get("request_args")
+            or await self._provider_request_args(
                 user_id=turn.user_id,
                 provider=resolved["provider"],
                 model=resolved["model"],
             ),
+            max_tokens=runtime_strategy.max_tokens,
         )
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
@@ -202,9 +225,15 @@ class AgentCoreRuntime:
             result=result,
         )
 
-    async def _resolve_model_selection(self, *, turn, session) -> dict[str, str] | None:
+    async def _resolve_model_selection(self, *, turn, session) -> dict[str, Any] | None:
         snapshot = turn.model_profile_snapshot or {}
         candidates: list[tuple[str, dict[str, str] | None]] = [
+            (
+                "turn_profile",
+                normalize_model_selection(
+                    {"profile_id": snapshot.get("requested_model_profile_id")}
+                ),
+            ),
             ("turn", normalize_model_selection(snapshot.get("requested_model_selection"))),
             (
                 "session",
@@ -212,17 +241,106 @@ class AgentCoreRuntime:
                     getattr(session, "session_metadata", None)
                 ),
             ),
+            (
+                "session_profile",
+                normalize_model_selection({"profile_id": session.default_model_profile_id}),
+            ),
             ("user_settings", await self._user_settings_selection(turn.user_id)),
             ("deployment_default", self._deployment_default_selection()),
         ]
         for source, selection in candidates:
-            if selection:
+            catalog = await self._catalog_selection(
+                selection,
+                source=source,
+                workspace_id=str(session.workspace_id),
+                user_id=turn.user_id,
+            )
+            if catalog:
+                return catalog
+            if (
+                source in {"turn_profile", "turn", "session_profile", "session"}
+                and selection
+                and (selection.get("model_id") or selection.get("profile_id"))
+            ):
+                return None
+            if selection and selection.get("provider") and selection.get("model"):
                 return {
                     "provider": selection["provider"],
                     "model": selection["model"],
                     "source": source,
                 }
         return None
+
+    async def _catalog_selection(
+        self,
+        selection: dict[str, str] | None,
+        *,
+        source: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> dict[str, Any] | None:
+        if not selection:
+            return None
+        profile_id = selection.get("profile_id")
+        model_id = selection.get("model_id")
+        profile = None
+        if profile_id:
+            profile = await self.llm_profiles.get_visible(
+                profile_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                enabled_only=True,
+            )
+            if profile is None:
+                return None
+            model_id = str(profile.primary_model_id)
+        if not model_id:
+            return None
+        model = await self.llm_models.get_visible(
+            model_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        if model is None:
+            return None
+        provider = await self.llm_providers.get_visible(
+            str(model.provider_id),
+            workspace_id=workspace_id,
+            user_id=user_id,
+            enabled_only=True,
+        )
+        if provider is None:
+            return None
+        credential = await self.llm_credentials.get_for_provider(str(provider.id))
+        material = resolve_credential_material(credential)
+        request_args: dict[str, Any] = {}
+        if material.api_key:
+            request_args["api_key"] = material.api_key
+        if provider.base_url:
+            if provider.kind == "ollama":
+                request_args["api_base"] = normalize_ollama_base_url(provider.base_url)
+            else:
+                request_args["api_base"] = normalize_openai_compatible_base_url(
+                    provider.base_url,
+                    prefer_loopback_ip=provider.kind == "vllm",
+                )
+        capabilities = capabilities_from_model(model)
+        runtime_strategy = resolve_runtime_strategy(
+            capabilities=capabilities,
+            profile=profile if profile_id else None,
+        )
+        result = {
+            "provider": provider.kind,
+            "model": model.model_id,
+            "model_id": str(model.id),
+            "source": source,
+            "capabilities": capabilities.as_dict(),
+            "runtime_strategy": runtime_strategy.as_dict(),
+            "request_args": request_args,
+        }
+        if profile_id:
+            result["profile_id"] = profile_id
+        return result
 
     async def _user_settings_selection(self, user_id: str) -> dict[str, str] | None:
         settings_payload = await self.user_settings.get_settings(user_id)
@@ -279,6 +397,8 @@ class AgentCoreRuntime:
     ) -> dict[str, Any]:
         cfg = PROVIDER_REGISTRY.get(provider)
         if cfg is None:
+            if provider in {"openai_compatible", "vllm", "ollama"}:
+                return {}
             raise RuntimeError(f"Unsupported model provider: {provider}")
 
         credentials = await self.user_settings.get_raw_credentials(user_id, provider)
@@ -299,7 +419,9 @@ class AgentCoreRuntime:
             base_url = str(os.getenv(cfg.env_base_url_var) or "").strip()
         if not base_url:
             base_url = str(cfg.base_url or "").strip()
-        if cfg.prefix == "openai/" and base_url:
+        if provider == "ollama" and base_url:
+            base_url = normalize_ollama_base_url(base_url)
+        elif cfg.prefix == "openai/" and base_url:
             base_url = normalize_openai_compatible_base_url(base_url)
         if base_url:
             request_args["api_base"] = base_url
@@ -388,3 +510,38 @@ class AgentCoreRuntime:
             payload={"error_message": error_message, "error_code": error_code},
         )
         return turn
+
+
+def _resolved_capabilities(resolved: dict[str, Any]) -> RuntimeCapabilities:
+    capabilities = resolved.get("capabilities")
+    if not isinstance(capabilities, dict):
+        return RuntimeCapabilities()
+    return RuntimeCapabilities(
+        supports_streaming=bool(capabilities.get("supports_streaming", True)),
+        supports_reasoning=bool(capabilities.get("supports_reasoning", False)),
+        supports_tools=bool(capabilities.get("supports_tools", True)),
+    )
+
+
+def _resolved_runtime_strategy(resolved: dict[str, Any]) -> RuntimeStrategy:
+    strategy = resolved.get("runtime_strategy")
+    if not isinstance(strategy, dict):
+        return RuntimeStrategy()
+    fallback_model_ids = strategy.get("fallback_model_ids") or []
+    return RuntimeStrategy(
+        use_streaming=bool(strategy.get("use_streaming", True)),
+        allow_thinking=bool(strategy.get("allow_thinking", True)),
+        allow_tools=bool(strategy.get("allow_tools", True)),
+        max_tokens=_coerce_optional_int(strategy.get("max_tokens")),
+        reasoning_budget=_coerce_optional_int(strategy.get("reasoning_budget")),
+        fallback_model_ids=tuple(str(item) for item in fallback_model_ids),
+    )
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

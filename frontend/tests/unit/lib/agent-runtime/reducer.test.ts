@@ -59,6 +59,119 @@ describe("agentRuntimeReducer", () => {
     expect(loaded.events.map((item) => item.seq)).toEqual([1, 3])
   })
 
+  it("builds a structured assistant timeline from streaming events", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: {
+          id: "session-1",
+          workspace_id: "workspace-1",
+          user_id: "dev",
+          role_profile: "bioinformatician",
+          permission_mode: "guarded_auto",
+          automation_mode: "assisted",
+          runtime_mode: "api",
+          status: "active",
+          created_at: "2026-06-08T00:00:00Z",
+          updated_at: "2026-06-08T00:00:00Z",
+        },
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-1", 1),
+            type: "assistant.thinking.delta",
+            payload: {
+              message_id: "message-1",
+              delta: "Inspecting inputs.",
+              content: "Inspecting inputs.",
+              index: 0,
+            },
+          },
+          {
+            ...event("event-2", 2),
+            type: "assistant.thinking.completed",
+            payload: {
+              message_id: "message-1",
+              content: "Inspecting inputs.",
+              index: 0,
+            },
+          },
+          {
+            ...event("event-3", 3),
+            type: "assistant.tool_call.started",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "projects__list",
+              status: "building",
+              index: 0,
+            },
+          },
+          {
+            ...event("event-4", 4),
+            type: "assistant.tool_call.delta",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "projects__list",
+              arguments_delta: '{"limit":1}',
+              arguments: { limit: 1 },
+              status: "building",
+              index: 0,
+            },
+          },
+          {
+            ...event("event-5", 5),
+            type: "assistant.tool_call.completed",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "projects__list",
+              arguments: { limit: 1 },
+              status: "completed",
+              index: 0,
+            },
+          },
+          {
+            ...event("event-6", 6),
+            type: "assistant.text.delta",
+            payload: {
+              message_id: "message-1",
+              delta: "Hello ",
+              content: "Hello ",
+              index: 0,
+            },
+          },
+          {
+            ...event("event-7", 7),
+            type: "assistant.text.completed",
+            payload: {
+              message_id: "message-1",
+              text: "Hello world",
+              content: "Hello world",
+              index: 1,
+            },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline).toHaveLength(1)
+    expect(loaded.timeline[0].assistant.messageId).toBe("message-1")
+    expect(loaded.timeline[0].assistant.text).toBe("Hello world")
+    expect(loaded.timeline[0].assistant.thinking?.content).toBe("Inspecting inputs.")
+    expect(loaded.timeline[0].assistant.thinking?.isComplete).toBe(true)
+    expect(loaded.timeline[0].assistant.toolCalls).toEqual([
+      expect.objectContaining({
+        callId: "call-1",
+        name: "projects__list",
+        status: "completed",
+        index: 0,
+        arguments: { limit: 1 },
+      }),
+    ])
+  })
+
   it("projects running status from queued or running turns", () => {
     const state = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "turn.upsert",
@@ -72,5 +185,58 @@ describe("agentRuntimeReducer", () => {
       turn: turn("completed"),
     })
     expect(idle.status).toBe("idle")
+  })
+
+  it("projects turn lifecycle transitions from streamed runtime events", () => {
+    const queuedState = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "turn.upsert",
+      turn: turn("queued"),
+    })
+
+    const runningState = agentRuntimeReducer(queuedState, {
+      type: "event.append",
+      event: {
+        ...event("event-started", 1),
+        type: "turn.started",
+      },
+    })
+
+    expect(runningState.turns[0]?.status).toBe("running")
+    expect(runningState.status).toBe("running")
+
+    const completedState = agentRuntimeReducer(runningState, {
+      type: "event.append",
+      event: {
+        ...event("event-completed", 2),
+        type: "turn.completed",
+      },
+    })
+
+    expect(completedState.turns[0]?.status).toBe("completed")
+    expect(completedState.status).toBe("idle")
+  })
+
+  it("promotes queued turns to running when assistant output starts streaming", () => {
+    const queuedState = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "turn.upsert",
+      turn: turn("queued"),
+    })
+
+    const streamingState = agentRuntimeReducer(queuedState, {
+      type: "event.append",
+      event: {
+        ...event("event-stream", 1),
+        type: "assistant.text.delta",
+        payload: {
+          message_id: "message-1",
+          delta: "Hello",
+          content: "Hello",
+          index: 0,
+        },
+      },
+    })
+
+    expect(streamingState.turns[0]?.status).toBe("running")
+    expect(streamingState.status).toBe("running")
   })
 })

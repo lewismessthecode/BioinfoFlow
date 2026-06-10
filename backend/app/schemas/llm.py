@@ -12,11 +12,30 @@ ProviderKind = Literal[
     "anthropic",
     "gemini",
     "openrouter",
+    "deepseek",
     "ollama",
     "vllm",
     "openai_compatible",
 ]
 ProviderScope = Literal["global", "workspace", "user"]
+CredentialSource = Literal["none", "env", "stored"]
+
+
+class LlmProviderCredentialUpdate(BaseModel):
+    source: CredentialSource
+    env_var_name: str | None = None
+    secret: str | None = None
+
+
+class LlmProviderCredentialRead(BaseModel):
+    provider_id: UUID
+    source: CredentialSource
+    configured: bool
+    available: bool
+    env_var_name: str | None = None
+    fingerprint: str | None = None
+    masked_hint: str | None = None
+    updated_at: datetime | None = None
 
 
 class LlmProviderCreate(BaseModel):
@@ -119,6 +138,9 @@ class LlmModelProfileCreate(BaseModel):
     fallback_model_ids: list[UUID] | None = None
     reasoning_budget: int | None = None
     max_tokens: int | None = None
+    prefer_streaming: bool = True
+    allow_thinking: bool = True
+    allow_tools: bool = True
     cost_ceiling: str | None = None
     routing_policy: dict | None = None
     permission_overrides: dict | None = None
@@ -134,6 +156,9 @@ class LlmModelProfileUpdate(BaseModel):
     fallback_model_ids: list[UUID] | None = None
     reasoning_budget: int | None = None
     max_tokens: int | None = None
+    prefer_streaming: bool | None = None
+    allow_thinking: bool | None = None
+    allow_tools: bool | None = None
     cost_ceiling: str | None = None
     routing_policy: dict | None = None
     permission_overrides: dict | None = None
@@ -152,6 +177,9 @@ class LlmModelProfileRead(BaseModel):
     fallback_model_ids: list[UUID] | None = None
     reasoning_budget: int | None = None
     max_tokens: int | None = None
+    prefer_streaming: bool
+    allow_thinking: bool
+    allow_tools: bool
     cost_ceiling: str | None = None
     routing_policy: dict | None = None
     permission_overrides: dict | None = None
@@ -170,3 +198,22 @@ class LlmProviderTestResult(BaseModel):
     model: str | None = None
     error: str | None = None
     latency_ms: int | None = None
+
+
+class LlmConfigurationSummary(BaseModel):
+    provider_count: int
+    configured_provider_count: int
+    available_provider_count: int = 0
+    model_count: int
+    profile_count: int
+
+
+class LlmConfiguredProviderRead(LlmProviderRead):
+    credential: LlmProviderCredentialRead
+
+
+class LlmConfigurationRead(BaseModel):
+    summary: LlmConfigurationSummary
+    providers: list[LlmConfiguredProviderRead]
+    models: list[LlmModelRead]
+    profiles: list[LlmModelProfileRead]

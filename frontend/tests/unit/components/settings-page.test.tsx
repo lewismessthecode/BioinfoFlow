@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import SettingsPageClient from "@/components/bioinfoflow/settings/settings-page-client"
 import { apiRequest } from "@/lib/api"
 import { useAppearance } from "@/lib/appearance/use-appearance"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
+import { createCelebrationsPreferenceMock } from "@/tests/support/mock-celebrations-preference"
 
 type ProviderTestResult = {
   success: boolean
@@ -22,8 +23,7 @@ const testProviderMock = vi.fn(
   }),
 )
 const celebratePreviewMock = vi.fn()
-let celebrationsEnabledState = true
-const celebrationSubscribers = new Set<(enabled: boolean) => void>()
+const celebrationsPreference = createCelebrationsPreferenceMock()
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
@@ -58,34 +58,18 @@ vi.mock("next-intl", () => ({
       status: "Status",
       "status.connected": "Connected",
       "status.notConfigured": "Not configured",
-      "llmCatalog.title": "Platform LLM catalog",
-      "llmCatalog.description": "Manage providers, model capabilities, and model profiles used by AgentCore.",
-      "llmCatalog.addProvider": "Add provider",
-      "llmCatalog.providerName": "Provider name",
-      "llmCatalog.providerKind": "Provider kind",
-      "llmCatalog.apiKeyRef": "API key ref",
-      "llmCatalog.enabled": "Enabled",
-      "llmCatalog.disabled": "Disabled",
-      "llmCatalog.testProvider": "Test provider",
-      "llmCatalog.disableProvider": "Disable provider",
-      "llmCatalog.enableProvider": "Enable provider",
-      "llmCatalog.models": "Models",
-      "llmCatalog.modelProfiles": "Model profiles",
-      "llmCatalog.context": "Context",
-      "llmCatalog.maxOutput": "Max output",
-      "llmCatalog.tools": "Tools",
-      "llmCatalog.streaming": "Streaming",
-      "llmCatalog.vision": "Vision",
-      "llmCatalog.jsonSchema": "JSON schema",
-      "llmCatalog.reasoning": "Reasoning",
-      "llmCatalog.noProviders": "No platform providers registered.",
-      "llmCatalog.noModels": "No platform models registered.",
-      "llmCatalog.noProfiles": "No model profiles registered.",
-      "llmCatalog.created": "Provider added",
-      "llmCatalog.testPassed": "Provider test passed",
-      "llmCatalog.testFailed": "Provider test failed",
-      "llmCatalog.updated": "Provider updated",
-      "llmCatalog.loadFailed": "Couldn't load platform LLM catalog.",
+      "providerCards.loading": "Loading providers...",
+      "providerCards.save": "Save",
+      "providerCards.saving": "Saving...",
+      "providerCards.apiKeyPlaceholder": "Paste API key",
+      "providerCards.savedKeyPlaceholder": "Key saved. Paste a new key to replace it.",
+      "providerCards.endpointPlaceholder": "Endpoint URL",
+      "providerCards.getApiKey": "Get API key",
+      "providerCards.configured": "Configured",
+      "providerCards.notConfigured": "Not configured",
+      "providerCards.noKeyRequired": "No key required",
+      "providerCards.saved": "Provider saved",
+      "providerCards.saveFailed": "Provider could not be saved",
     }
     return labels[key] ?? key
   },
@@ -101,20 +85,16 @@ vi.mock("@/lib/appearance/use-appearance", () => ({
 
 vi.mock("@/lib/celebrations", () => ({
   celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
-  isCelebrationsEnabled: () => celebrationsEnabledState,
+  isCelebrationsEnabled: () => celebrationsPreference.getEnabled(),
   isReducedMotionPreferred: () => false,
+  useCelebrationsEnabledPreference: () =>
+    celebrationsPreference.useCelebrationsEnabledPreference(),
+  useReducedMotionPreference: () => false,
   setCelebrationsEnabled: (enabled: boolean) => {
-    celebrationsEnabledState = enabled
-    for (const listener of celebrationSubscribers) {
-      listener(enabled)
-    }
+    celebrationsPreference.setEnabled(enabled)
   },
-  subscribeToCelebrationsPreference: (listener: (enabled: boolean) => void) => {
-    celebrationSubscribers.add(listener)
-    return () => {
-      celebrationSubscribers.delete(listener)
-    }
-  },
+  subscribeToCelebrationsPreference: (listener: (enabled: boolean) => void) =>
+    celebrationsPreference.subscribeToCelebrationsPreference(listener),
 }))
 
 vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
@@ -139,12 +119,12 @@ describe("SettingsPage", () => {
   const useLlmSettingsMock = vi.mocked(useLlmSettings)
 
   beforeEach(() => {
+    window.history.replaceState(null, "", "/settings")
     apiRequestMock.mockReset()
     updateSettingsMock.mockReset()
     testProviderMock.mockClear()
     celebratePreviewMock.mockReset()
-    celebrationsEnabledState = true
-    celebrationSubscribers.clear()
+    celebrationsPreference.reset()
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
       matches: false,
       media: "(prefers-reduced-motion: reduce)",
@@ -194,6 +174,89 @@ describe("SettingsPage", () => {
     })
 
     apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/llm/configuration") {
+        return {
+          data: {
+            summary: {
+              provider_count: 1,
+              configured_provider_count: 1,
+              available_provider_count: 1,
+              model_count: 1,
+              profile_count: 1,
+            },
+            providers: [
+              {
+                id: "llm-provider-1",
+                name: "Local OpenAI Compatible",
+                kind: "openai_compatible",
+                base_url: "http://localhost:11434/v1",
+                api_key_ref: null,
+                scope: "workspace",
+                workspace_id: "workspace-1",
+                user_id: null,
+                enabled: true,
+                test_status: { success: true, latency_ms: 32 },
+                metadata: { providerSlug: "openai-compatible" },
+                credential: {
+                  provider_id: "llm-provider-1",
+                  source: "env",
+                  configured: true,
+                  available: true,
+                  env_var_name: "LOCAL_MODEL_KEY",
+                  fingerprint: null,
+                  masked_hint: "env:LOCAL_MODEL_KEY",
+                  updated_at: "2026-06-04T00:00:00Z",
+                },
+                created_at: "2026-06-04T00:00:00Z",
+                updated_at: "2026-06-04T00:00:00Z",
+              },
+            ],
+            models: [
+              {
+                id: "llm-model-1",
+                provider_id: "llm-provider-1",
+                model_id: "local-bio-coder",
+                display_name: "Local Bio Coder",
+                context_length: 128000,
+                max_output_tokens: 8192,
+                supports_tools: true,
+                supports_streaming: true,
+                supports_vision: false,
+                supports_json_schema: true,
+                supports_reasoning: true,
+                default_temperature: null,
+                default_top_p: null,
+                cost_metadata: null,
+                metadata: null,
+                created_at: "2026-06-04T00:00:00Z",
+                updated_at: "2026-06-04T00:00:00Z",
+              },
+            ],
+            profiles: [
+              {
+                id: "llm-profile-1",
+                name: "Bioinformatics agent default",
+                task_type: "agent_core",
+                primary_model_id: "llm-model-1",
+                fallback_model_ids: [],
+                reasoning_budget: 4096,
+                max_tokens: 8192,
+                cost_ceiling: null,
+                routing_policy: { fallback: "on_error" },
+                permission_overrides: null,
+                scope: "workspace",
+                workspace_id: "workspace-1",
+                user_id: null,
+                enabled: true,
+                metadata: null,
+                created_at: "2026-06-04T00:00:00Z",
+                updated_at: "2026-06-04T00:00:00Z",
+              },
+            ],
+          },
+          meta: undefined,
+        }
+      }
       if (path === "/providers") {
         return {
           data: [
@@ -212,28 +275,6 @@ describe("SettingsPage", () => {
               credential_fields: ["base_url", "model"],
               base_url: "http://localhost:11434",
               default_model: "llama3.3",
-            },
-          ],
-          meta: undefined,
-        }
-      }
-      if (path === "/llm/providers") {
-        return {
-          data: [
-            {
-              id: "llm-provider-1",
-              name: "Local OpenAI Compatible",
-              kind: "openai_compatible",
-              base_url: "http://localhost:11434/v1",
-              api_key_ref: "env:LOCAL_MODEL_KEY",
-              scope: "workspace",
-              workspace_id: "workspace-1",
-              user_id: null,
-              enabled: true,
-              test_status: { success: true, latency_ms: 32 },
-              metadata: null,
-              created_at: "2026-06-04T00:00:00Z",
-              updated_at: "2026-06-04T00:00:00Z",
             },
           ],
           meta: undefined,
@@ -291,35 +332,81 @@ describe("SettingsPage", () => {
           meta: undefined,
         }
       }
-      if (path === "/llm/providers/llm-provider-1/test") {
+      if (path === "/llm/providers/llm-provider-1" && options?.method === "PATCH") {
         return {
           data: {
-            provider_id: "llm-provider-1",
-            success: true,
-            model: "local-bio-coder",
-            error: null,
-            latency_ms: 31,
+            id: "llm-provider-1",
+            name: "Local OpenAI Compatible",
+            kind: "openai_compatible",
+            base_url: "http://localhost:11434/v1",
+            api_key_ref: null,
+            scope: "workspace",
+            workspace_id: "workspace-1",
+            user_id: null,
+            enabled: true,
+            test_status: { success: true, latency_ms: 32 },
+            metadata: { providerSlug: "openai-compatible" },
+            created_at: "2026-06-04T00:00:00Z",
+            updated_at: "2026-06-04T00:00:01Z",
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/llm/providers/llm-provider-2/credential" && options?.method === "PUT") {
+        return {
+          data: {
+            provider_id: "llm-provider-2",
+            source: "stored",
+            configured: true,
+            available: true,
+            env_var_name: null,
+            fingerprint: "fp_openrouter",
+            masked_hint: "sk-...uter",
+            updated_at: "2026-06-04T00:00:01Z",
           },
           meta: undefined,
         }
       }
       if (path === "/llm/providers" && options?.method === "POST") {
+        expect(options.body).toContain('"scope":"user"')
         return {
           data: {
             id: "llm-provider-2",
             name: "OpenRouter Shared",
             kind: "openrouter",
-            base_url: "https://openrouter.ai/api/v1",
+            base_url: null,
             api_key_ref: "env:OPENROUTER_API_KEY",
             scope: "workspace",
             workspace_id: "workspace-1",
             user_id: null,
             enabled: true,
             test_status: null,
-            metadata: null,
+            metadata: { providerSlug: "openrouter" },
             created_at: "2026-06-04T00:00:01Z",
             updated_at: "2026-06-04T00:00:01Z",
           },
+          meta: undefined,
+        }
+      }
+      if (path === "/llm/providers") {
+        return {
+          data: [
+            {
+              id: "llm-provider-1",
+              name: "Local OpenAI Compatible",
+              kind: "openai_compatible",
+              base_url: "http://localhost:11434/v1",
+              api_key_ref: "env:LOCAL_MODEL_KEY",
+              scope: "workspace",
+              workspace_id: "workspace-1",
+              user_id: null,
+              enabled: true,
+              test_status: { success: true, latency_ms: 32 },
+              metadata: null,
+              created_at: "2026-06-04T00:00:00Z",
+              updated_at: "2026-06-04T00:00:00Z",
+            },
+          ],
           meta: undefined,
         }
       }
@@ -327,7 +414,8 @@ describe("SettingsPage", () => {
     })
   })
 
-  it("shows base-url-only providers and supports editing non-key fields", async () => {
+  it("opens the AI providers section from the section search param", async () => {
+    window.history.replaceState(null, "", "/settings?section=providers")
     render(
       <SettingsPageClient
         viewer={{
@@ -341,47 +429,11 @@ describe("SettingsPage", () => {
       />,
     )
 
-    // Navigate to AI Providers section
-    fireEvent.click(screen.getByText("AI Providers"))
-
-    expect(await screen.findByText("OpenAI")).toBeInTheDocument()
-    expect(screen.getByText("Ollama")).toBeInTheDocument()
-
-    const openaiBaseUrl = await screen.findByLabelText("OpenAI Base URL")
-    const ollamaModel = screen.getByLabelText("Ollama Model")
-
-    fireEvent.focus(openaiBaseUrl)
-    fireEvent.change(openaiBaseUrl, {
-      target: { value: "https://proxy.openai.example/v1" },
-    })
-    fireEvent.blur(openaiBaseUrl)
-
-    await waitFor(() => {
-      expect(updateSettingsMock).toHaveBeenCalledWith({
-        provider_credentials: {
-          openai: {
-            base_url: "https://proxy.openai.example/v1",
-          },
-        },
-      })
-    })
-
-    fireEvent.focus(ollamaModel)
-    fireEvent.change(ollamaModel, { target: { value: "mistral" } })
-    fireEvent.blur(ollamaModel)
-
-    await waitFor(() => {
-      expect(updateSettingsMock).toHaveBeenCalledWith({
-        provider_credentials: {
-          ollama: {
-            model: "mistral",
-          },
-        },
-      })
-    })
+    expect(await screen.findByRole("group", { name: "OpenAI Compatible" })).toBeInTheDocument()
+    expect(screen.getByText("env:LOCAL_MODEL_KEY")).toBeInTheDocument()
   })
 
-  it("shows the platform LLM catalog and supports provider test and creation", async () => {
+  it("shows provider cards and creates a write-only provider credential", async () => {
     render(
       <SettingsPageClient
         viewer={{
@@ -395,44 +447,29 @@ describe("SettingsPage", () => {
       />,
     )
 
-    fireEvent.click(screen.getByText("AI Providers"))
+    fireEvent.click(screen.getByRole("button", { name: "AI Providers" }))
 
-    expect(await screen.findByText("Platform LLM catalog")).toBeInTheDocument()
-    expect(screen.getByText("Local OpenAI Compatible")).toBeInTheDocument()
-    expect(screen.getAllByText("Local Bio Coder").length).toBeGreaterThan(0)
-    expect(screen.getByText("Bioinformatics agent default")).toBeInTheDocument()
+    expect(await screen.findByRole("group", { name: "OpenAI" })).toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "OpenRouter" })).toBeInTheDocument()
+    expect(screen.queryByText("Bioinformatics agent default")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Test provider" }))
-    await waitFor(() => {
-      expect(apiRequestMock).toHaveBeenCalledWith(
-        "/llm/providers/llm-provider-1/test",
-        { method: "POST" },
-      )
+    const openRouterCard = screen.getByRole("group", { name: "OpenRouter" })
+    fireEvent.change(within(openRouterCard).getByLabelText("OpenRouter API key"), {
+      target: { value: "sk-openrouter" },
     })
-
-    fireEvent.change(screen.getByLabelText("Provider name"), {
-      target: { value: "OpenRouter Shared" },
-    })
-    fireEvent.change(screen.getByLabelText("Provider kind"), {
-      target: { value: "openrouter" },
-    })
-    fireEvent.change(
-      screen.getByLabelText("Base URL", {
-        selector: "input#llm-provider-base-url",
-      }),
-      {
-        target: { value: "https://openrouter.ai/api/v1" },
-      },
-    )
-    fireEvent.change(screen.getByLabelText("API key ref"), {
-      target: { value: "env:OPENROUTER_API_KEY" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Add provider" }))
+    fireEvent.click(within(openRouterCard).getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
       expect(apiRequestMock).toHaveBeenCalledWith(
         "/llm/providers",
         expect.objectContaining({ method: "POST" }),
+      )
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "/llm/providers/llm-provider-2/credential",
+        expect.objectContaining({
+          method: "PUT",
+          body: expect.stringContaining("sk-openrouter"),
+        }),
       )
     })
   })
@@ -451,7 +488,7 @@ describe("SettingsPage", () => {
       />,
     )
 
-    expect(screen.getByText("Appearance")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Appearance" })).toBeInTheDocument()
   })
 
   it("shows celebration controls in appearance and persists the preference", async () => {
@@ -468,7 +505,7 @@ describe("SettingsPage", () => {
       />,
     )
 
-    fireEvent.click(screen.getByText("Appearance"))
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
 
     expect(screen.getByText("Celebrations")).toBeInTheDocument()
     expect(
@@ -496,7 +533,7 @@ describe("SettingsPage", () => {
       />,
     )
 
-    fireEvent.click(screen.getByText("Appearance"))
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
     fireEvent.click(screen.getByRole("button", { name: "Preview confetti" }))
 
     expect(celebratePreviewMock).toHaveBeenCalledTimes(1)
@@ -517,7 +554,7 @@ describe("SettingsPage", () => {
     )
 
     // Navigate to Members section
-    fireEvent.click(screen.getByText("Members"))
+    fireEvent.click(screen.getByRole("button", { name: "Members" }))
     expect(await screen.findByText("Members Panel")).toBeInTheDocument()
 
     rerender(
@@ -552,8 +589,8 @@ describe("SettingsPage", () => {
     )
 
     // Navigate to AI Providers section
-    fireEvent.click(screen.getByText("AI Providers"))
-    expect(await screen.findByText("OpenAI")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "AI Providers" }))
+    expect(await screen.findByRole("group", { name: "OpenAI" })).toBeInTheDocument()
     // Members nav item should not exist
     expect(screen.queryByText("Members")).not.toBeInTheDocument()
     expect(screen.queryByText("Members Panel")).not.toBeInTheDocument()

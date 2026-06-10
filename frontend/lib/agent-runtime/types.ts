@@ -11,8 +11,10 @@ export type AgentTurnStatus =
   | "cancelled"
 
 export type AgentModelSelection = {
-  provider: string
-  model: string
+  provider?: string | null
+  model?: string | null
+  model_id?: string | null
+  profile_id?: string | null
 }
 
 export type AgentRuntimeSession = {
@@ -75,6 +77,34 @@ export type AgentRuntimeEvent = {
   schema_version: number
   created_at: string
   updated_at: string
+}
+
+type AgentRuntimeThinkingState = {
+  content: string
+  isComplete: boolean
+}
+
+export type AgentRuntimeToolCallState = {
+  callId: string
+  name: string
+  status: string
+  index: number
+  arguments?: Record<string, unknown>
+  argumentsDelta?: string | null
+}
+
+export type AgentRuntimeAssistantState = {
+  messageId: string | null
+  text: string
+  status: "pending" | "streaming" | "completed" | "failed" | "cancelled"
+  errorMessage?: string | null
+  thinking?: AgentRuntimeThinkingState | null
+  toolCalls: AgentRuntimeToolCallState[]
+}
+
+export type AgentRuntimeTimelineEntry = {
+  turn: AgentRuntimeTurn
+  assistant: AgentRuntimeAssistantState
 }
 
 export type AgentRuntimeStatePayload = {

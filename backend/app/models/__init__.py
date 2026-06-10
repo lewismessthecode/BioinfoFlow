@@ -19,9 +19,11 @@ from app.enums import ApprovalStatus
 from app.models.batch import Batch, BatchRun, BatchStatus
 from app.models.image import DockerImage, ImageStatus
 from app.models.llm import (
+    LlmCredentialSource,
     LlmModel,
     LlmModelProfile,
     LlmProvider,
+    LlmProviderCredential,
     LlmProviderKind,
     LlmProviderScope,
 )
@@ -55,6 +57,8 @@ __all__ = [
     "AgentMemory",
     "AgentMemoryStatus",
     "LlmProvider",
+    "LlmProviderCredential",
+    "LlmCredentialSource",
     "LlmProviderKind",
     "LlmProviderScope",
     "LlmModel",

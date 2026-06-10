@@ -79,4 +79,21 @@ describe("useAgentRuntime", () => {
 
     await waitFor(() => expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledTimes(1))
   })
+
+  it("keeps a controlled empty session as a draft conversation", async () => {
+    const onActiveSessionIdChange = vi.fn()
+
+    renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange,
+      }),
+    )
+
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+
+    expect(onActiveSessionIdChange).not.toHaveBeenCalledWith("session-1")
+    expect(mocks.getAgentRuntimeState).not.toHaveBeenCalled()
+    expect(mocks.subscribeAgentRuntimeEvents).not.toHaveBeenCalled()
+  })
 })

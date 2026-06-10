@@ -1,389 +1,486 @@
 "use client"
 
-import { useMemo, useState, type FormEvent, type ReactNode } from "react"
-import {
-  CheckCircle2,
-  Loader2,
-  Plus,
-  RefreshCw,
-  SlidersHorizontal,
-} from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { CheckCircle2, ExternalLink, KeyRound, Loader2, RefreshCw } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { useLlmCatalog } from "@/hooks/use-llm-catalog"
 import type {
-  LlmModel,
-  LlmModelProfile,
-  LlmProvider,
+  LlmConfiguredProvider,
+  LlmProviderCredentialSource,
   LlmProviderKind,
 } from "@/lib/llm"
+import { cn } from "@/lib/utils"
 
-const PROVIDER_KINDS: LlmProviderKind[] = [
-  "openai",
-  "anthropic",
-  "gemini",
-  "openrouter",
-  "ollama",
-  "vllm",
-  "openai_compatible",
+type ProviderCardSpec = {
+  slug: string
+  name: string
+  kind: LlmProviderKind
+  defaultBaseUrl?: string | null
+  docsUrl: string
+  envVarName?: string
+  noKeyRequired?: boolean
+  keyOptional?: boolean
+  showEndpoint?: boolean
+}
+
+const PROVIDER_CARDS: ProviderCardSpec[] = [
+  {
+    slug: "openai",
+    name: "OpenAI",
+    kind: "openai",
+    docsUrl: "https://platform.openai.com/api-keys",
+    envVarName: "OPENAI_API_KEY",
+  },
+  {
+    slug: "anthropic",
+    name: "Claude",
+    kind: "anthropic",
+    docsUrl: "https://console.anthropic.com/settings/keys",
+    envVarName: "ANTHROPIC_API_KEY",
+  },
+  {
+    slug: "gemini",
+    name: "Gemini",
+    kind: "gemini",
+    docsUrl: "https://aistudio.google.com/apikey",
+    envVarName: "GEMINI_API_KEY",
+  },
+  {
+    slug: "grok",
+    name: "Grok",
+    kind: "openai_compatible",
+    defaultBaseUrl: "https://api.x.ai/v1",
+    docsUrl: "https://console.x.ai/",
+    envVarName: "XAI_API_KEY",
+  },
+  {
+    slug: "deepseek",
+    name: "DeepSeek",
+    kind: "deepseek",
+    docsUrl: "https://platform.deepseek.com/api_keys",
+    envVarName: "DEEPSEEK_API_KEY",
+  },
+  {
+    slug: "openrouter",
+    name: "OpenRouter",
+    kind: "openrouter",
+    docsUrl: "https://openrouter.ai/settings/keys",
+    envVarName: "OPENROUTER_API_KEY",
+  },
+  {
+    slug: "ollama",
+    name: "Ollama",
+    kind: "ollama",
+    defaultBaseUrl: "http://localhost:11434",
+    docsUrl: "https://ollama.com/download",
+    noKeyRequired: true,
+    showEndpoint: true,
+  },
+  {
+    slug: "glm",
+    name: "GLM",
+    kind: "openai_compatible",
+    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    docsUrl: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
+    envVarName: "GLM_API_KEY",
+  },
+  {
+    slug: "minimax",
+    name: "Minimax",
+    kind: "openai_compatible",
+    defaultBaseUrl: "https://api.minimax.chat/v1",
+    docsUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
+    envVarName: "MINIMAX_API_KEY",
+  },
+  {
+    slug: "vllm",
+    name: "vLLM",
+    kind: "vllm",
+    defaultBaseUrl: "http://localhost:8000/v1",
+    docsUrl: "https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html",
+    keyOptional: true,
+    showEndpoint: true,
+  },
+  {
+    slug: "openai-compatible",
+    name: "OpenAI Compatible",
+    kind: "openai_compatible",
+    defaultBaseUrl: "https://api.example.com/v1",
+    docsUrl: "https://platform.openai.com/docs/api-reference",
+    keyOptional: true,
+    showEndpoint: true,
+  },
 ]
 
 export function LlmCatalogPanel() {
   const t = useTranslations("settings")
   const {
-    providers,
-    models,
-    profiles,
+    configuredProviders,
+    models = [],
     isLoading,
     isMutating,
-    error,
     createProvider,
-    setProviderEnabled,
-    testProvider,
+    updateProvider,
+    updateCredential,
+    discoverModels,
   } = useLlmCatalog()
-  const [name, setName] = useState("")
-  const [kind, setKind] = useState<LlmProviderKind>("openai_compatible")
-  const [baseUrl, setBaseUrl] = useState("")
-  const [apiKeyRef, setApiKeyRef] = useState("")
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
+  const [endpoints, setEndpoints] = useState<Record<string, string>>({})
+  const [savingSlug, setSavingSlug] = useState<string | null>(null)
+  const [refreshingSlug, setRefreshingSlug] = useState<string | null>(null)
 
-  const modelsById = useMemo(
-    () => new Map(models.map((model) => [model.id, model])),
-    [models],
-  )
-  const providerById = useMemo(
-    () => new Map(providers.map((provider) => [provider.id, provider])),
-    [providers],
-  )
+  const providersBySlug = useMemo(() => {
+    const bySlug = new Map<string, LlmConfiguredProvider>()
+    for (const spec of PROVIDER_CARDS) {
+      const provider = configuredProviders.find((item) => providerMatchesSpec(item, spec))
+      if (provider) bySlug.set(spec.slug, provider)
+    }
+    return bySlug
+  }, [configuredProviders])
 
-  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const provider = await createProvider({
-      name: name.trim(),
-      kind,
-      baseUrl: baseUrl.trim() || null,
-      apiKeyRef: apiKeyRef.trim() || null,
-      scope: "workspace",
-      enabled: true,
+  useEffect(() => {
+    setEndpoints((current) => {
+      const next = { ...current }
+      let changed = false
+      for (const spec of PROVIDER_CARDS) {
+        if (next[spec.slug] !== undefined) continue
+        const provider = providersBySlug.get(spec.slug)
+        next[spec.slug] = provider?.base_url ?? spec.defaultBaseUrl ?? ""
+        changed = true
+      }
+      return changed ? next : current
     })
-    if (!provider) return
-    setName("")
-    setKind("openai_compatible")
-    setBaseUrl("")
-    setApiKeyRef("")
-    toast.success(t("llmCatalog.created"))
+  }, [providersBySlug])
+
+  const saveProvider = async (spec: ProviderCardSpec) => {
+    const secret = (apiKeys[spec.slug] ?? "").trim()
+    const endpoint = (endpoints[spec.slug] ?? spec.defaultBaseUrl ?? "").trim()
+    const existingProvider = providersBySlug.get(spec.slug)
+    if (!existingProvider && !spec.noKeyRequired && !spec.keyOptional && !secret) return
+    if (spec.showEndpoint && !endpoint) return
+
+    setSavingSlug(spec.slug)
+    try {
+      const shouldSaveNoAuth =
+        (spec.noKeyRequired || spec.keyOptional) &&
+        !secret &&
+        !existingProvider?.credential?.configured
+      const authMode = secret
+        ? "stored"
+        : shouldSaveNoAuth
+          ? "none"
+          : existingProvider?.metadata?.authMode
+      const metadata = {
+        ...(existingProvider?.metadata ?? {}),
+        providerSlug: spec.slug,
+        ...(authMode ? { authMode } : {}),
+      }
+      const baseUrl = endpoint || spec.defaultBaseUrl || null
+      const provider =
+        existingProvider ??
+        await createProvider({
+          name: spec.name,
+          kind: spec.kind,
+          baseUrl,
+          apiKeyRef: null,
+          scope: "user",
+          enabled: true,
+          metadata,
+        })
+
+      if (!provider) {
+        toast.error(t("providerCards.saveFailed"))
+        return
+      }
+
+      if (existingProvider) {
+        const updated = await updateProvider(existingProvider.id, {
+          name: existingProvider.name || spec.name,
+          baseUrl,
+          metadata,
+          enabled: true,
+        })
+        if (!updated) {
+          toast.error(t("providerCards.saveFailed"))
+          return
+        }
+      }
+
+      if (secret || shouldSaveNoAuth || !existingProvider?.credential?.configured) {
+        const source: LlmProviderCredentialSource =
+          shouldSaveNoAuth ? "none" : "stored"
+        const credential = await updateCredential(provider.id, {
+          source,
+          envVarName: null,
+          secret: source === "stored" ? secret : null,
+        })
+        if (!credential) {
+          toast.error(t("providerCards.saveFailed"))
+          return
+        }
+      }
+
+      setApiKeys((current) => ({ ...current, [spec.slug]: "" }))
+      toast.success(t("providerCards.saved"))
+    } finally {
+      setSavingSlug(null)
+    }
   }
 
-  const handleTestProvider = async (provider: LlmProvider) => {
-    const result = await testProvider(provider.id)
-    if (!result) return
-    toast[result.success ? "success" : "error"](
-      result.success ? t("llmCatalog.testPassed") : t("llmCatalog.testFailed"),
-    )
+  const ensureProvider = async (spec: ProviderCardSpec) => {
+    const existingProvider = providersBySlug.get(spec.slug)
+    const endpoint = (endpoints[spec.slug] ?? spec.defaultBaseUrl ?? "").trim()
+    const metadata = {
+      ...(existingProvider?.metadata ?? {}),
+      providerSlug: spec.slug,
+    }
+    const baseUrl = endpoint || spec.defaultBaseUrl || null
+
+    if (existingProvider) {
+      const updated = await updateProvider(existingProvider.id, {
+        name: existingProvider.name || spec.name,
+        baseUrl,
+        metadata,
+        enabled: true,
+      })
+      return updated ?? existingProvider
+    }
+
+    return createProvider({
+      name: spec.name,
+      kind: spec.kind,
+      baseUrl,
+      apiKeyRef: null,
+      scope: "user",
+      enabled: true,
+      metadata,
+    })
   }
 
-  const handleToggleProvider = async (provider: LlmProvider) => {
-    const updated = await setProviderEnabled(provider, !provider.enabled)
-    if (updated) toast.success(t("llmCatalog.updated"))
+  const refreshLocalModels = async (spec: ProviderCardSpec) => {
+    if (spec.kind !== "ollama") return
+    const endpoint = (endpoints[spec.slug] ?? spec.defaultBaseUrl ?? "").trim()
+    if (!endpoint) return
+
+    setRefreshingSlug(spec.slug)
+    try {
+      const existingProvider = providersBySlug.get(spec.slug)
+      const provider = await ensureProvider(spec)
+      if (!provider) {
+        toast.error(t("providerCards.modelRefreshFailed"))
+        return
+      }
+
+      if (!existingProvider) {
+        const credential = await updateCredential(provider.id, {
+          source: "none",
+          envVarName: null,
+          secret: null,
+        })
+        if (!credential) {
+          toast.error(t("providerCards.modelRefreshFailed"))
+          return
+        }
+      }
+
+      const discovered = await discoverModels(provider.id)
+      if (!discovered) {
+        toast.error(t("providerCards.modelRefreshFailed"))
+        return
+      }
+
+      toast.success(t("providerCards.modelsRefreshed"))
+    } finally {
+      setRefreshingSlug(null)
+    }
   }
 
   return (
-    <section className="space-y-4 border border-border/60 bg-card p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h4 className="text-sm font-semibold text-foreground">
-            {t("llmCatalog.title")}
-          </h4>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            {t("llmCatalog.description")}
-          </p>
-        </div>
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            {t("loading")}
-          </div>
-        ) : null}
-      </div>
-
-      {error ? (
-        <div className="border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          {t("llmCatalog.loadFailed")}
+    <section className="space-y-4">
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          {t("providerCards.loading")}
         </div>
       ) : null}
 
-      <form
-        className="grid gap-3 border-t border-border/70 pt-4 md:grid-cols-2 xl:grid-cols-5"
-        onSubmit={handleCreate}
-      >
-        <div className="space-y-2 xl:col-span-1">
-          <Label htmlFor="llm-provider-name">{t("llmCatalog.providerName")}</Label>
-          <Input
-            id="llm-provider-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-2 xl:col-span-1">
-          <Label htmlFor="llm-provider-kind">{t("llmCatalog.providerKind")}</Label>
-          <select
-            id="llm-provider-kind"
-            value={kind}
-            onChange={(event) => setKind(event.target.value as LlmProviderKind)}
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            {PROVIDER_KINDS.map((providerKind) => (
-              <option key={providerKind} value={providerKind}>
-                {providerKind}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-2 xl:col-span-1">
-          <Label htmlFor="llm-provider-base-url">{t("baseUrl")}</Label>
-          <Input
-            id="llm-provider-base-url"
-            value={baseUrl}
-            onChange={(event) => setBaseUrl(event.target.value)}
-          />
-        </div>
-        <div className="space-y-2 xl:col-span-1">
-          <Label htmlFor="llm-provider-api-key-ref">{t("llmCatalog.apiKeyRef")}</Label>
-          <Input
-            id="llm-provider-api-key-ref"
-            value={apiKeyRef}
-            onChange={(event) => setApiKeyRef(event.target.value)}
-          />
-        </div>
-        <div className="flex items-end">
-          <Button type="submit" size="sm" disabled={isMutating || !name.trim()}>
-            <Plus className="size-4" />
-            {t("llmCatalog.addProvider")}
-          </Button>
-        </div>
-      </form>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {PROVIDER_CARDS.map((spec) => {
+          const provider = providersBySlug.get(spec.slug)
+          const configured = Boolean(
+            provider?.credential?.configured ||
+              provider?.credential?.available ||
+              ((spec.noKeyRequired || spec.keyOptional) &&
+                provider?.enabled &&
+                provider?.credential?.source === "none"),
+          )
+          const keyValue = apiKeys[spec.slug] ?? ""
+          const endpointValue = endpoints[spec.slug] ?? spec.defaultBaseUrl ?? ""
+          const providerModels = provider
+            ? models.filter((model) => model.provider_id === provider.id)
+            : []
+          const saving = savingSlug === spec.slug || isMutating
+          const refreshing = refreshingSlug === spec.slug
+          const canSave =
+            !saving &&
+            (!spec.showEndpoint || endpointValue.trim().length > 0) &&
+            (configured ||
+              spec.noKeyRequired ||
+              spec.keyOptional ||
+              keyValue.trim().length > 0)
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <ProviderList
-          providers={providers}
-          isMutating={isMutating}
-          onTest={handleTestProvider}
-          onToggle={handleToggleProvider}
-        />
-        <ModelProfileList profiles={profiles} modelsById={modelsById} />
+          return (
+            <div
+              key={spec.slug}
+              role="group"
+              aria-label={spec.name}
+              className="flex min-h-[214px] flex-col rounded-[24px] border border-border/70 bg-card p-4 shadow-sm shadow-foreground/5 transition-colors hover:border-border"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="truncate text-sm font-semibold text-foreground">
+                    {spec.name}
+                  </h4>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {configured
+                      ? t("providerCards.configured")
+                      : spec.noKeyRequired || spec.keyOptional
+                        ? t("providerCards.noKeyRequired")
+                        : t("providerCards.notConfigured")}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-full border",
+                    configured
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                      : "border-border bg-muted text-muted-foreground",
+                  )}
+                >
+                  {configured ? (
+                    <CheckCircle2 className="size-4" />
+                  ) : (
+                    <KeyRound className="size-4" />
+                  )}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-2">
+                {provider?.credential?.masked_hint ||
+                provider?.credential?.fingerprint ? (
+                  <div className="truncate text-xs text-muted-foreground">
+                    {provider.credential.masked_hint ?? provider.credential.fingerprint}
+                  </div>
+                ) : null}
+                {spec.showEndpoint ? (
+                  <Input
+                    aria-label={`${spec.name} endpoint`}
+                    value={endpointValue}
+                    onChange={(event) =>
+                      setEndpoints((current) => ({
+                        ...current,
+                        [spec.slug]: event.target.value,
+                      }))
+                    }
+                    placeholder={t("providerCards.endpointPlaceholder")}
+                    className="h-10 rounded-2xl"
+                  />
+                ) : null}
+                {!spec.noKeyRequired ? (
+                  <Input
+                    aria-label={`${spec.name} API key`}
+                    type="password"
+                    value={keyValue}
+                    onChange={(event) =>
+                      setApiKeys((current) => ({
+                        ...current,
+                        [spec.slug]: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      configured
+                        ? t("providerCards.savedKeyPlaceholder")
+                        : t("providerCards.apiKeyPlaceholder")
+                    }
+                    className="h-10 rounded-2xl"
+                  />
+                ) : null}
+                {spec.kind === "ollama" && providerModels.length > 0 ? (
+                  <div className="rounded-2xl bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+                    <div className="mb-1 font-medium text-foreground">
+                      {t("providerCards.modelsDiscovered", {
+                        count: providerModels.length,
+                      })}
+                    </div>
+                    <div className="truncate">
+                      {providerModels
+                        .map((model) => model.model_id)
+                        .slice(0, 3)
+                        .join(", ")}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-auto flex items-center justify-between gap-3 pt-4">
+                <a
+                  href={spec.docsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <span className="truncate">
+                    {t("providerCards.getApiKey", { provider: spec.name })}
+                  </span>
+                  <ExternalLink className="size-3 shrink-0" />
+                </a>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9 rounded-full px-4"
+                  disabled={!canSave}
+                  onClick={() => void saveProvider(spec)}
+                >
+                  {saving ? t("providerCards.saving") : t("providerCards.save")}
+                </Button>
+              </div>
+              {spec.kind === "ollama" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 h-8 justify-center rounded-full text-xs text-muted-foreground hover:text-foreground"
+                  disabled={refreshing || isMutating || !endpointValue.trim()}
+                  onClick={() => void refreshLocalModels(spec)}
+                >
+                  {refreshing ? (
+                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-1.5 size-3.5" />
+                  )}
+                  {refreshing
+                    ? t("providerCards.refreshingModels")
+                    : t("providerCards.refreshModels")}
+                </Button>
+              ) : null}
+            </div>
+          )
+        })}
       </div>
-
-      <ModelList
-        models={models}
-        providerById={providerById}
-      />
     </section>
   )
 }
 
-function ProviderList({
-  providers,
-  isMutating,
-  onTest,
-  onToggle,
-}: {
-  providers: LlmProvider[]
-  isMutating: boolean
-  onTest: (provider: LlmProvider) => void
-  onToggle: (provider: LlmProvider) => void
-}) {
-  const t = useTranslations("settings")
-  if (providers.length === 0) {
-    return (
-      <div className="border-t border-border/70 pt-3 text-sm text-muted-foreground">
-        {t("llmCatalog.noProviders")}
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-2">
-      {providers.map((provider) => (
-        <div key={provider.id} className="border border-border/70 p-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-medium text-foreground">{provider.name}</p>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {provider.kind}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {provider.enabled ? t("llmCatalog.enabled") : t("llmCatalog.disabled")}
-                </span>
-              </div>
-              <p className="mt-1 truncate text-xs text-muted-foreground">
-                {provider.base_url || provider.api_key_ref || provider.scope}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onTest(provider)}
-                disabled={isMutating}
-              >
-                <RefreshCw className="size-3.5" />
-                {t("llmCatalog.testProvider")}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onToggle(provider)}
-                disabled={isMutating}
-              >
-                {provider.enabled
-                  ? t("llmCatalog.disableProvider")
-                  : t("llmCatalog.enableProvider")}
-              </Button>
-            </div>
-          </div>
-          {provider.test_status ? (
-            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-              <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-              {String(provider.test_status.success ?? "")}
-              {provider.test_status.latency_ms ? (
-                <span>{String(provider.test_status.latency_ms)}ms</span>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ModelList({
-  models,
-  providerById,
-}: {
-  models: LlmModel[]
-  providerById: Map<string, LlmProvider>
-}) {
-  const t = useTranslations("settings")
-  if (models.length === 0) {
-    return (
-      <div className="border-t border-border/70 pt-3 text-sm text-muted-foreground">
-        {t("llmCatalog.noModels")}
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-2 border-t border-border/70 pt-3">
-      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <SlidersHorizontal className="size-3.5" />
-        {t("llmCatalog.models")}
-      </div>
-      <div className="grid gap-2 md:grid-cols-2">
-        {models.map((model) => (
-          <div key={model.id} className="border border-border/70 p-3">
-            <p className="font-medium text-foreground">{model.display_name}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {providerById.get(model.provider_id)?.name ?? model.provider_id} /{" "}
-              {model.model_id}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <Capability enabled={Boolean(model.context_length)}>
-                {t("llmCatalog.context")}: {model.context_length ?? "-"}
-              </Capability>
-              <Capability enabled={Boolean(model.max_output_tokens)}>
-                {t("llmCatalog.maxOutput")}: {model.max_output_tokens ?? "-"}
-              </Capability>
-              <Capability enabled={model.supports_tools}>
-                {t("llmCatalog.tools")}
-              </Capability>
-              <Capability enabled={model.supports_streaming}>
-                {t("llmCatalog.streaming")}
-              </Capability>
-              <Capability enabled={model.supports_vision}>
-                {t("llmCatalog.vision")}
-              </Capability>
-              <Capability enabled={model.supports_json_schema}>
-                {t("llmCatalog.jsonSchema")}
-              </Capability>
-              <Capability enabled={model.supports_reasoning}>
-                {t("llmCatalog.reasoning")}
-              </Capability>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ModelProfileList({
-  profiles,
-  modelsById,
-}: {
-  profiles: LlmModelProfile[]
-  modelsById: Map<string, LlmModel>
-}) {
-  const t = useTranslations("settings")
-  if (profiles.length === 0) {
-    return (
-      <div className="border border-border/70 p-3 text-sm text-muted-foreground">
-        {t("llmCatalog.noProfiles")}
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="text-xs font-medium text-muted-foreground">
-        {t("llmCatalog.modelProfiles")}
-      </div>
-      {profiles.map((profile) => {
-        const model = modelsById.get(profile.primary_model_id)
-        return (
-          <div key={profile.id} className="border border-border/70 p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-medium text-foreground">{profile.name}</p>
-              <span className="font-mono text-xs text-muted-foreground">
-                {profile.task_type}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {model?.display_name ?? profile.primary_model_id}
-            </p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {t("llmCatalog.maxOutput")}: {profile.max_tokens ?? "-"} /{" "}
-              {t("llmCatalog.reasoning")}: {profile.reasoning_budget ?? "-"}
-            </p>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function Capability({
-  enabled,
-  children,
-}: {
-  enabled: boolean
-  children: ReactNode
-}) {
-  return (
-    <span
-      className={
-        enabled
-          ? "border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300"
-          : "border border-border/70 bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground"
-      }
-    >
-      {children}
-    </span>
-  )
+function providerMatchesSpec(
+  provider: LlmConfiguredProvider,
+  spec: ProviderCardSpec,
+) {
+  const providerSlug = String(provider.metadata?.providerSlug ?? "")
+  if (providerSlug) return providerSlug === spec.slug
+  if (spec.kind !== "openai_compatible") return provider.kind === spec.kind
+  return provider.kind === spec.kind && provider.name === spec.name
 }

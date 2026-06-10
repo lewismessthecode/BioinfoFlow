@@ -7,7 +7,7 @@ import type {
   AgentRuntimeTurn,
 } from "./types"
 
-export type CreateAgentRuntimeSessionInput = {
+type CreateAgentRuntimeSessionInput = {
   projectId?: string | null
   title?: string
   permissionMode?: AgentPermissionMode

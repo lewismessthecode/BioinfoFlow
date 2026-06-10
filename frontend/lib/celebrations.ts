@@ -1,5 +1,7 @@
 "use client"
 
+import { useSyncExternalStore } from "react"
+
 export type CelebrationMilestone =
   | "provider-key"
   | "first-project"
@@ -107,12 +109,28 @@ export function subscribeToCelebrationsPreference(
   }
 }
 
+export function useCelebrationsEnabledPreference(): boolean {
+  return useSyncExternalStore(
+    subscribeToCelebrationsStore,
+    isCelebrationsEnabled,
+    () => true,
+  )
+}
+
 export function isReducedMotionPreferred(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return false
   }
 
   return window.matchMedia(REDUCED_MOTION_QUERY).matches
+}
+
+export function useReducedMotionPreference(): boolean {
+  return useSyncExternalStore(
+    subscribeToReducedMotionPreference,
+    isReducedMotionPreferred,
+    () => false,
+  )
 }
 
 export function celebrateOnce(
@@ -287,4 +305,39 @@ function launchCanvasConfetti() {
   }
 
   scheduleFrame(draw)
+}
+
+function subscribeToCelebrationsStore(callback: () => void): () => void {
+  if (typeof window !== "undefined") {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === CELEBRATIONS_ENABLED_KEY) {
+        callback()
+      }
+    }
+    window.addEventListener("storage", handleStorage)
+    const unsubscribe = subscribeToCelebrationsPreference(() => callback())
+    return () => {
+      window.removeEventListener("storage", handleStorage)
+      unsubscribe()
+    }
+  }
+
+  return subscribeToCelebrationsPreference(() => callback())
+}
+
+function subscribeToReducedMotionPreference(callback: () => void): () => void {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return () => {}
+  }
+
+  const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY)
+  const handleChange = () => callback()
+
+  mediaQuery.addEventListener?.("change", handleChange)
+  mediaQuery.addListener?.(handleChange)
+
+  return () => {
+    mediaQuery.removeEventListener?.("change", handleChange)
+    mediaQuery.removeListener?.(handleChange)
+  }
 }

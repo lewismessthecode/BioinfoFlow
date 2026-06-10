@@ -1,7 +1,9 @@
 import { apiRequest } from "@/lib/api"
 import type {
+  LlmConfiguration,
   LlmModel,
-  LlmModelProfile,
+  LlmProviderCredential,
+  LlmProviderCredentialSource,
   LlmProvider,
   LlmProviderKind,
   LlmProviderScope,
@@ -18,10 +20,16 @@ export type CreateLlmProviderInput = {
   metadata?: Record<string, unknown> | null
 }
 
-export type UpdateLlmProviderInput = Partial<CreateLlmProviderInput>
+type UpdateLlmProviderInput = Partial<CreateLlmProviderInput>
 
-export const listLlmProviders = async () => {
-  const response = await apiRequest<LlmProvider[]>("/llm/providers")
+export type UpdateLlmProviderCredentialInput = {
+  source: LlmProviderCredentialSource
+  envVarName?: string | null
+  secret?: string | null
+}
+
+export const getLlmConfiguration = async () => {
+  const response = await apiRequest<LlmConfiguration>("/llm/configuration")
   return response.data
 }
 
@@ -68,14 +76,28 @@ export const testLlmProvider = async (providerId: string) => {
   return response.data
 }
 
-export const listLlmModels = async (providerId?: string) => {
-  const response = await apiRequest<LlmModel[]>("/llm/models", {
-    params: providerId ? { provider_id: providerId } : undefined,
-  })
+export const discoverLlmProviderModels = async (providerId: string) => {
+  const response = await apiRequest<LlmModel[]>(
+    `/llm/providers/${providerId}/discover-models`,
+    { method: "POST" },
+  )
   return response.data
 }
 
-export const listLlmModelProfiles = async () => {
-  const response = await apiRequest<LlmModelProfile[]>("/llm/model-profiles")
+export const updateLlmProviderCredential = async (
+  providerId: string,
+  input: UpdateLlmProviderCredentialInput,
+) => {
+  const response = await apiRequest<LlmProviderCredential>(
+    `/llm/providers/${providerId}/credential`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        source: input.source,
+        env_var_name: input.envVarName || null,
+        secret: input.secret || null,
+      }),
+    },
+  )
   return response.data
 }

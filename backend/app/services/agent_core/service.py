@@ -16,7 +16,10 @@ from app.repositories.agent_core_repo import (
 from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
-from app.services.agent_core.model_selection import session_metadata_with_model_selection
+from app.services.agent_core.model_selection import (
+    normalize_model_selection,
+    session_metadata_with_model_selection,
+)
 from app.services.agent_core.runner import enqueue_turn_resume, enqueue_turn_run
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.context import default_system_prompt_snapshot
@@ -171,6 +174,7 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        normalized_model_selection = normalize_model_selection(model_selection)
         turn = await self.turn_repo.create(
             session_id=str(session.id),
             project_id=str(session.project_id) if session.project_id else None,
@@ -181,7 +185,7 @@ class AgentCoreService:
             status=AgentTurnStatus.QUEUED,
             model_profile_snapshot={
                 "requested_model_profile_id": model_profile_id,
-                "requested_model_selection": model_selection,
+                "requested_model_selection": normalized_model_selection,
                 "metadata": metadata or {},
             },
             budget_snapshot={"max_iterations": 0, "used_iterations": 0},

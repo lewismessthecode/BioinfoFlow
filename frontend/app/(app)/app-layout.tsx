@@ -12,7 +12,10 @@ import { Navbar } from "@/components/bioinfoflow/navbar"
 import { ProjectProvider } from "@/components/bioinfoflow/project-context"
 import { Sidebar } from "@/components/bioinfoflow/sidebar/index"
 import { SidebarDrawer } from "@/components/bioinfoflow/sidebar/sidebar-drawer"
-import { WorkspaceShellProvider } from "@/components/bioinfoflow/workspace-shell-context"
+import {
+  useWorkspaceShell,
+  WorkspaceShellProvider,
+} from "@/components/bioinfoflow/workspace-shell-context"
 import {
   TerminalDockProvider,
   useTerminalDock,
@@ -242,6 +245,7 @@ export default function AppLayout({
                     conversationTitle={activeConversationTitle}
                     viewer={viewer}
                   >
+                    <WorkspaceNavbarActions />
                     {terminalEnabled ? (
                       <TerminalNavbarAction label={tAccessibility("openTerminal")} />
                     ) : null}
@@ -262,6 +266,11 @@ export default function AppLayout({
       </ProjectProvider>
     </RuntimeProvider>
   )
+}
+
+function WorkspaceNavbarActions() {
+  const { navbarActions } = useWorkspaceShell()
+  return navbarActions
 }
 
 function ReadinessCelebrationWatcher() {

@@ -81,6 +81,18 @@ def normalize_openai_compatible_base_url(
     return normalized
 
 
+def normalize_ollama_base_url(base_url: str) -> str:
+    """Normalize an Ollama root endpoint URL for LiteLLM and Ollama APIs."""
+    normalized = (base_url or "").strip().rstrip("/")
+    if not normalized:
+        return normalized
+    normalized = normalized.replace("http://localhost:", "http://127.0.0.1:", 1)
+    normalized = normalized.replace("https://localhost:", "https://127.0.0.1:", 1)
+    if normalized.endswith("/v1"):
+        normalized = normalized[:-3].rstrip("/")
+    return normalized
+
+
 def _model_entries(raw_models: object) -> list[ModelEntry]:
     if not isinstance(raw_models, list):
         return []
@@ -385,8 +397,8 @@ _BASE_PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
     ),
     "ollama": ProviderConfig(
         default_model="llama3.3",
-        prefix="openai/",
-        base_url="http://127.0.0.1:11434/v1",
+        prefix="ollama_chat/",
+        base_url="http://127.0.0.1:11434",
         label="Ollama",
         credential_type="base_url_only",
         env_base_url_var="OLLAMA_BASE_URL",
@@ -395,6 +407,7 @@ _BASE_PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
         test_protocol="ollama",
         models=[
             ModelEntry(id="llama3.3", name="Llama 3.3", context_window=128_000),
+            ModelEntry(id="deepseek-r1:latest", name="DeepSeek R1", context_window=128_000),
             ModelEntry(id="qwen-2.5", name="Qwen 2.5", context_window=128_000),
         ],
     ),

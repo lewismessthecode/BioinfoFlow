@@ -3,6 +3,7 @@ export type LlmProviderKind =
   | "anthropic"
   | "gemini"
   | "openrouter"
+  | "deepseek"
   | "ollama"
   | "vllm"
   | "openai_compatible"
@@ -23,6 +24,23 @@ export type LlmProvider = {
   metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
+}
+
+export type LlmProviderCredentialSource = "none" | "env" | "stored"
+
+export type LlmProviderCredential = {
+  provider_id: string
+  source: LlmProviderCredentialSource
+  configured: boolean
+  available: boolean
+  env_var_name?: string | null
+  fingerprint?: string | null
+  masked_hint?: string | null
+  updated_at?: string | null
+}
+
+export type LlmConfiguredProvider = LlmProvider & {
+  credential: LlmProviderCredential
 }
 
 export type LlmModel = {
@@ -71,4 +89,17 @@ export type LlmProviderTestResult = {
   model?: string | null
   error?: string | null
   latency_ms?: number | null
+}
+
+export type LlmConfiguration = {
+  summary: {
+    provider_count: number
+    configured_provider_count: number
+    available_provider_count: number
+    model_count: number
+    profile_count: number
+  }
+  providers: LlmConfiguredProvider[]
+  models: LlmModel[]
+  profiles: LlmModelProfile[]
 }

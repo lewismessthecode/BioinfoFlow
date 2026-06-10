@@ -40,7 +40,7 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 
 def _dump(model) -> dict:
-    return model.model_dump(mode="json")
+    return model.model_dump(mode="json", exclude_none=True)
 
 
 def _session_read(session) -> AgentSessionRead:
@@ -60,10 +60,16 @@ def _session_read(session) -> AgentSessionRead:
 
 def _turn_read(turn) -> AgentTurnRead:
     snapshot = getattr(turn, "model_profile_snapshot", None) or {}
-    model_selection = normalize_model_selection(
+    model_selection_payload = (
         snapshot.get("resolved_model_selection")
         or snapshot.get("requested_model_selection")
     )
+    if isinstance(model_selection_payload, dict) and snapshot.get("resolved_model_id"):
+        model_selection_payload = {
+            **model_selection_payload,
+            "model_id": snapshot.get("resolved_model_id"),
+        }
+    model_selection = normalize_model_selection(model_selection_payload)
     return AgentTurnRead.model_validate(turn).model_copy(
         update={
             "model_selection": (
@@ -113,7 +119,7 @@ async def create_session(
             else None
         ),
         model_selection=(
-            payload.model_selection.model_dump()
+            payload.model_selection.model_dump(mode="json", exclude_none=True)
             if payload.model_selection
             else None
         ),
@@ -175,7 +181,7 @@ async def update_session(
         session_id=session_id,
         workspace_id=user.workspace_id,
         user_id=user.id,
-        updates=payload.model_dump(exclude_unset=True),
+        updates=payload.model_dump(mode="json", exclude_unset=True),
     )
     return success_response(_dump(_session_read(session)), request=request)
 
@@ -213,7 +219,7 @@ async def create_turn(
         input_parts=payload.input_parts,
         model_profile_id=str(payload.model_profile_id) if payload.model_profile_id else None,
         model_selection=(
-            payload.model_selection.model_dump()
+            payload.model_selection.model_dump(mode="json", exclude_none=True)
             if payload.model_selection
             else None
         ),

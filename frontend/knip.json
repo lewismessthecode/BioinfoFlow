@@ -1,4 +1,8 @@
 {
-  "ignoreDependencies": ["server-only"],
-  "ignore": ["playwright.config.ts", "tests/e2e/**"]
+  "ignore": [
+    "scripts/check-i18n-coverage.mjs",
+    "scripts/ensure-better-sqlite3-node-abi.mjs",
+    "tests/e2e/support/start-backend.mjs"
+  ],
+  "ignoreDependencies": ["server-only"]
 }

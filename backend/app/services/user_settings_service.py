@@ -17,6 +17,7 @@ from app.schemas.user_settings import (
 )
 from app.services.llm.providers import (
     PROVIDER_REGISTRY,
+    normalize_ollama_base_url,
     normalize_openai_compatible_base_url,
 )
 from app.utils.logging import get_logger
@@ -188,11 +189,10 @@ class UserSettingsService:
         try:
             if cfg.test_protocol == "ollama":
                 model = provider_creds.get("model") or cfg.default_model
-                base_url = normalize_openai_compatible_base_url(
+                base_url = normalize_ollama_base_url(
                     provider_creds.get("base_url") or os.getenv(cfg.env_base_url_var) or cfg.base_url,
-                    prefer_loopback_ip=True,
                 )
-                result = await self._test_openai("ollama", base_url, model)
+                result = await self._test_ollama(base_url, model)
                 return ProviderTestResult(
                     provider=provider, success=True,
                     model=result.model or model,
@@ -329,6 +329,32 @@ class UserSettingsService:
             provider="openai",
             success=True,
             model=models.data[0].id if models.data else None,
+        )
+
+    async def _test_ollama(
+        self,
+        base_url: str,
+        model: str | None = None,
+    ) -> ProviderTestResult:
+        import httpx
+
+        normalized_base_url = normalize_ollama_base_url(base_url)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{normalized_base_url}/api/tags")
+            response.raise_for_status()
+            payload = response.json()
+
+        models = payload.get("models") if isinstance(payload, dict) else []
+        model_ids = [
+            str(item.get("name"))
+            for item in models
+            if isinstance(item, dict) and item.get("name")
+        ]
+        selected_model = model if model in model_ids else (model_ids[0] if model_ids else model)
+        return ProviderTestResult(
+            provider="ollama",
+            success=True,
+            model=selected_model,
         )
 
     async def _test_gemini(self, api_key: str) -> ProviderTestResult:

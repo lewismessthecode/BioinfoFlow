@@ -272,7 +272,7 @@ describe("DashboardPage", () => {
             severity: "blocked",
             next_action: {
               kind: "route",
-              href: "/settings",
+              href: "/settings?section=providers",
             },
             checks: [
               {
@@ -284,7 +284,7 @@ describe("DashboardPage", () => {
                 },
                 action: {
                   kind: "route",
-                  href: "/settings",
+                  href: "/settings?section=providers",
                 },
               },
               {
@@ -337,6 +337,6 @@ describe("DashboardPage", () => {
       screen.getAllByRole("link", {
         name: "dashboard.readiness.checks.provider_key.action",
       })[0],
-    ).toHaveAttribute("href", "/settings")
+    ).toHaveAttribute("href", "/settings?section=providers")
   })
 })

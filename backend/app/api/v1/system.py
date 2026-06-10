@@ -344,7 +344,7 @@ async def get_readiness(request: Request, db: AsyncSession = Depends(get_db)):
             "pass" if provider_ready else "fail",
             facts={"configured": provider_ready},
             docs_link="/docs/getting-started/docker",
-            action=_route_action("/settings"),
+            action=_route_action("/settings?section=providers"),
         ),
         _check(
             "docker",

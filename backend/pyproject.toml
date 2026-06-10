@@ -29,6 +29,7 @@ dependencies = [
   "structlog",
   "miniwdl>=1.13.1",
   "httpx",
+  "cryptography>=46",
   "typer>=0.15",
   "rich>=13.0",
   "httpx-sse>=0.4",

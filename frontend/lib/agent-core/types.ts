@@ -20,8 +20,10 @@ export type AgentActionStatus =
 export type AgentActionDecision = "approve" | "reject" | "modify"
 
 export type AgentModelSelection = {
-  provider: string
-  model: string
+  provider?: string | null
+  model?: string | null
+  model_id?: string | null
+  profile_id?: string | null
 }
 
 export type AgentCoreSession = {
