@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from litellm import acompletion
@@ -16,7 +17,9 @@ from app.repositories.agent_core_repo import (
 )
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.budget import IterationBudget
+from app.services.agent_core.core.guardrails import no_progress_detected
 from app.services.agent_core.core.interrupt import is_interrupt_requested
+from app.services.agent_core.core.retry import RetryPolicy, run_with_retry
 from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, RuntimeStrategy
 from app.services.agent_core.core.stream_adapter import (
     StreamCompletionResult,
@@ -83,41 +86,70 @@ class AgentLoopController:
 
         budget = IterationBudget(max_iterations=_max_iterations())
         tools_enabled = capabilities.supports_tools and strategy.allow_tools
+        role = (
+            "worker"
+            if str(getattr(agent_session, "role_profile", "orchestrator")) == "worker"
+            else "orchestrator"
+        )
         visible_tools = (
             self.executor.exposure.exposed_specs(
                 policy=agent_session.toolset_policy,
-                role="orchestrator",
+                role=role,
             )
             if tools_enabled
             else []
         )
         tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
         token_usage: dict[str, Any] | None = None
+        previous_tool_call_signatures: list[str] = []
+        empty_response_retries_remaining = 1
 
         while budget.consume():
             turn = await self.turns.get(turn_id)
-            if turn is None or is_interrupt_requested(turn):
+            if turn is None:
                 return LoopResult(
-                    termination_reason="interrupted",
+                    termination_reason="model_failed",
                     final_text=None,
                     iteration_count=budget.used_iterations,
+                    error_code="turn_not_found",
+                    error_message="Agent turn could not be loaded.",
                 )
+            if turn.status == AgentTurnStatus.CANCELLED or is_interrupt_requested(turn):
+                return LoopResult(
+                    termination_reason=_cancellation_reason(turn),
+                    final_text=None,
+                    iteration_count=budget.used_iterations,
+                    token_usage=token_usage,
+                )
+            turn = await self._renew_turn_lease(turn)
+
+            completion_kwargs = {
+                "model": litellm_model_name(provider, model),
+                "messages": await self.context.provider_messages(
+                    agent_session=agent_session,
+                    turn=turn,
+                ),
+                "max_tokens": max_tokens or settings.agent_max_tokens,
+                **request_args,
+            }
+            if tools_enabled and tool_payload:
+                completion_kwargs["tools"] = tool_payload
+            if capabilities.supports_streaming and strategy.use_streaming:
+                completion_kwargs["stream"] = True
 
             try:
-                completion_kwargs = {
-                    "model": litellm_model_name(provider, model),
-                    "messages": await self.context.provider_messages(
-                        agent_session=agent_session,
-                        turn=turn,
-                    ),
-                    "max_tokens": max_tokens or settings.agent_max_tokens,
-                    **request_args,
-                }
-                if tools_enabled and tool_payload:
-                    completion_kwargs["tools"] = tool_payload
-                if capabilities.supports_streaming and strategy.use_streaming:
-                    completion_kwargs["stream"] = True
-                response = await acompletion(**completion_kwargs)
+                response = await self._call_model_with_retry(
+                    turn=turn,
+                    completion_kwargs=completion_kwargs,
+                    iteration_count=budget.used_iterations,
+                )
+            except asyncio.CancelledError:
+                return LoopResult(
+                    termination_reason=_cancellation_reason(turn),
+                    final_text=None,
+                    iteration_count=budget.used_iterations,
+                    token_usage=token_usage,
+                )
             except Exception as exc:
                 return LoopResult(
                     termination_reason="model_failed",
@@ -125,6 +157,7 @@ class AgentLoopController:
                     iteration_count=budget.used_iterations,
                     error_code="model_request_failed",
                     error_message=str(exc),
+                    token_usage=token_usage,
                 )
 
             message_id = f"assistant:{turn.id}:{budget.used_iterations}"
@@ -148,6 +181,26 @@ class AgentLoopController:
             token_usage = _merge_usage(token_usage, streamed.token_usage)
             tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
             if tool_calls:
+                tool_call_signatures = [_tool_call_signature(tool_call) for tool_call in tool_calls]
+                if no_progress_detected(previous_tool_call_signatures, tool_call_signatures):
+                    await self.ledger.append(
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                        type=AgentEventType.TURN_NO_PROGRESS,
+                        payload={
+                            "tool_calls": tool_call_signatures,
+                            "iteration_count": budget.used_iterations,
+                        },
+                    )
+                    return LoopResult(
+                        termination_reason="no_progress",
+                        final_text=None,
+                        iteration_count=budget.used_iterations,
+                        token_usage=token_usage,
+                        error_code="no_progress_detected",
+                        error_message="Agent repeated the same tool call without making progress.",
+                    )
+                previous_tool_call_signatures = tool_call_signatures
                 await self._append_assistant_tool_calls(
                     agent_session=agent_session,
                     turn=turn,
@@ -156,11 +209,19 @@ class AgentLoopController:
                     tool_calls=tool_calls,
                     text=streamed.text or None,
                 )
-                waiting = await self._execute_tool_calls(
-                    agent_session=agent_session,
-                    turn=turn,
-                    tool_calls=tool_calls,
-                )
+                try:
+                    waiting = await self._execute_tool_calls(
+                        agent_session=agent_session,
+                        turn=turn,
+                        tool_calls=tool_calls,
+                    )
+                except asyncio.CancelledError:
+                    return LoopResult(
+                        termination_reason=_cancellation_reason(turn),
+                        final_text=None,
+                        iteration_count=budget.used_iterations,
+                        token_usage=token_usage,
+                    )
                 if waiting:
                     return LoopResult(
                         termination_reason="waiting_approval",
@@ -170,8 +231,21 @@ class AgentLoopController:
                     )
                 continue
 
+            previous_tool_call_signatures = []
             final_text = streamed.text
             if not final_text:
+                if empty_response_retries_remaining > 0:
+                    empty_response_retries_remaining -= 1
+                    await self.ledger.append(
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                        type=AgentEventType.MODEL_RETRYING,
+                        payload={
+                            "reason": "empty_model_response",
+                            "next_attempt": budget.used_iterations + 1,
+                        },
+                    )
+                    continue
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -206,6 +280,7 @@ class AgentLoopController:
     async def _execute_tool_calls(self, *, agent_session, turn, tool_calls: list[dict]) -> bool:
         waiting = False
         for tool_call in tool_calls:
+            turn = await self._renew_turn_lease(turn)
             tool_name = decode_provider_tool_name(tool_call["name"])
             result = await self.executor.execute(
                 tool_name=tool_name,
@@ -365,6 +440,40 @@ class AgentLoopController:
                 )
             ],
             metadata={"tool_call_id": tool_call_id, "tool": tool_name},
+        )
+
+    async def _call_model_with_retry(
+        self,
+        *,
+        turn,
+        completion_kwargs: dict[str, Any],
+        iteration_count: int,
+    ) -> Any:
+        async def _on_retry(next_attempt: int, exc: Exception, delay_seconds: float) -> None:
+            await self.ledger.append(
+                session_id=str(turn.session_id),
+                turn_id=str(turn.id),
+                type=AgentEventType.MODEL_RETRYING,
+                payload={
+                    "next_attempt": next_attempt,
+                    "delay_seconds": delay_seconds,
+                    "error": str(exc),
+                    "iteration_count": iteration_count,
+                },
+            )
+
+        return await run_with_retry(
+            lambda: acompletion(**completion_kwargs),
+            policy=_retry_policy(),
+            on_retry=_on_retry,
+        )
+
+    async def _renew_turn_lease(self, turn):
+        now = datetime.now(timezone.utc)
+        return await self.turns.update_all(
+            turn,
+            claimed_at=turn.claimed_at or now,
+            lease_until=now + _turn_lease_duration(),
         )
 
     async def _consume_stream_response(
@@ -621,15 +730,31 @@ class AgentLoopController:
         )
 
     async def complete_turn_from_result(self, *, turn, result: LoopResult):
+        current_turn = await self.turns.get(str(turn.id))
+        if current_turn is None:
+            return None
+        if current_turn.status == AgentTurnStatus.CANCELLED and result.termination_reason not in {
+            "cancelled",
+            "interrupted",
+        }:
+            return current_turn
+        turn = current_turn
+
         if result.termination_reason == "assistant_final":
             status = AgentTurnStatus.COMPLETED
             event_type = AgentEventType.TURN_COMPLETED
         elif result.termination_reason == "waiting_approval":
             status = AgentTurnStatus.WAITING_APPROVAL
             event_type = None
+        elif result.termination_reason == "cancelled":
+            status = AgentTurnStatus.CANCELLED
+            event_type = AgentEventType.TURN_CANCELLED
         elif result.termination_reason == "interrupted":
             status = AgentTurnStatus.CANCELLED
             event_type = AgentEventType.TURN_INTERRUPTED
+        elif result.termination_reason == "no_progress":
+            status = AgentTurnStatus.FAILED
+            event_type = AgentEventType.TURN_NO_PROGRESS
         else:
             status = AgentTurnStatus.FAILED
             event_type = AgentEventType.TURN_FAILED
@@ -648,13 +773,16 @@ class AgentLoopController:
             loop_state={"termination_reason": result.termination_reason},
             error_code=result.error_code,
             error_message=result.error_message,
+            claimed_at=None,
+            lease_until=None,
             completed_at=datetime.now(timezone.utc)
-            if status in {AgentTurnStatus.COMPLETED, AgentTurnStatus.FAILED, AgentTurnStatus.CANCELLED}
+            if status
+            in {AgentTurnStatus.COMPLETED, AgentTurnStatus.FAILED, AgentTurnStatus.CANCELLED}
             else None,
         )
         if result.termination_reason == "assistant_final":
             payload = {"final_text": result.final_text}
-        elif result.termination_reason == "interrupted":
+        elif result.termination_reason in {"interrupted", "cancelled", "no_progress"}:
             payload = {"termination_reason": result.termination_reason}
         elif result.error_code or result.error_message:
             payload = {
@@ -794,6 +922,35 @@ def _merge_usage(
         else:
             merged[key] = value
     return merged
+
+
+def _retry_policy() -> RetryPolicy:
+    return RetryPolicy(
+        max_attempts=max(int(settings.agent_retry_max_attempts or 1), 1),
+        base_delay_seconds=max(float(settings.agent_retry_base_delay_seconds or 0.0), 0.0),
+        max_delay_seconds=max(float(settings.agent_retry_max_delay_seconds or 0.0), 0.0),
+    )
+
+
+def _turn_lease_duration():
+    seconds = max(int(getattr(settings, "agent_turn_lease_seconds", 300) or 300), 1)
+    return timedelta(seconds=seconds)
+
+
+def _tool_call_signature(tool_call: dict[str, Any]) -> str:
+    return json.dumps(
+        {
+            "name": tool_call.get("name"),
+            "arguments": tool_call.get("arguments") or {},
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+
+
+def _cancellation_reason(turn) -> str:
+    return "interrupted" if is_interrupt_requested(turn) else "cancelled"
 
 
 def _max_iterations() -> int:

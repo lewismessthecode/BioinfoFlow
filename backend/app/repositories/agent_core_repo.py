@@ -4,6 +4,7 @@ from sqlalchemy import desc, func, select
 
 from app.models.agent_core import (
     AgentAction,
+    AgentActionStatus,
     AgentArtifact,
     AgentEvent,
     AgentMessage,
@@ -11,6 +12,7 @@ from app.models.agent_core import (
     AgentSession,
     AgentSessionStatus,
     AgentTurn,
+    AgentTurnStatus,
 )
 from app.repositories.base import BaseRepository
 from app.schemas.common import Pagination
@@ -51,6 +53,23 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         stmt = (
             select(self.model)
             .where(self.model.session_id == session_id)
+            .order_by(self.model.created_at, self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_recoverable(self) -> list[AgentTurn]:
+        stmt = (
+            select(self.model)
+            .where(
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                )
+            )
             .order_by(self.model.created_at, self.model.id)
         )
         result = await self.session.execute(stmt)
@@ -122,6 +141,24 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             select(self.model)
             .where(self.model.turn_id == turn_id)
             .order_by(self.model.created_at, self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_open_for_turn(self, turn_id: str) -> list[AgentAction]:
+        stmt = (
+            select(self.model)
+            .where(
+                self.model.turn_id == turn_id,
+                self.model.status.in_(
+                    [
+                        AgentActionStatus.WAITING_DECISION,
+                        AgentActionStatus.REQUESTED,
+                        AgentActionStatus.RUNNING,
+                    ]
+                ),
+            )
+            .order_by(desc(self.model.created_at), desc(self.model.id))
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

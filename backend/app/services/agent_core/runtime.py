@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from litellm import acompletion
@@ -17,6 +17,10 @@ from app.repositories.llm_repo import (
     LlmProviderRepository,
 )
 from app.services.agent_core.core import AgentLoopController
+from app.services.agent_core.core.fallback import (
+    build_fallback_model_ids,
+    should_try_fallback,
+)
 from app.services.agent_core.core.runtime_strategy import (
     RuntimeCapabilities,
     RuntimeStrategy,
@@ -29,10 +33,7 @@ from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_model_selection_from_metadata,
 )
-from app.services.llm.provider_templates import (
-    litellm_model_name,
-    normalize_provider_base_url,
-)
+from app.services.llm.provider_templates import normalize_provider_base_url
 from app.services.llm.credentials import resolve_credential_material
 from app.services.llm.catalog import _provider_requires_credential
 from app.services.llm.credentials import credential_available, credential_configured
@@ -76,9 +77,12 @@ class AgentCoreRuntime:
         turn = await self.turn_repo.update_all(
             turn,
             status=AgentTurnStatus.RUNNING,
-            started_at=now,
+            started_at=turn.started_at or now,
+            completed_at=None,
             error_code=None,
             error_message=None,
+            claimed_at=now,
+            lease_until=now + _turn_lease_duration(),
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -98,47 +102,9 @@ class AgentCoreRuntime:
                 error_code="model_selection_missing",
             )
 
-        snapshot = dict(turn.model_profile_snapshot or {})
-        snapshot["resolved_model_selection"] = {
-            "provider": resolved["provider"],
-            "model": resolved["model"],
-        }
-        if resolved.get("model_id"):
-            snapshot["resolved_model_id"] = resolved["model_id"]
-        if resolved.get("profile_id"):
-            snapshot["resolved_profile_id"] = resolved["profile_id"]
-        snapshot["resolved_model_source"] = resolved["source"]
-        snapshot["resolved_model_capabilities"] = resolved.get("capabilities", {})
-        snapshot["resolved_runtime_strategy"] = resolved.get("runtime_strategy", {})
-        turn = await self.turn_repo.update_all(turn, model_profile_snapshot=snapshot)
-        await self.ledger.append(
-            session_id=str(turn.session_id),
-            turn_id=str(turn.id),
-            type=AgentEventType.MODEL_SELECTED,
-            payload={
-                "provider": resolved["provider"],
-                "model": resolved["model"],
-                "source": resolved["source"],
-            },
-        )
-
         if acompletion is not _ORIGINAL_ACOMPLETION:
             loop_module.acompletion = acompletion
-        runtime_strategy = _resolved_runtime_strategy(resolved)
-        result = await AgentLoopController(self.turn_repo.session).run_turn(
-            turn_id=str(turn.id),
-            provider=resolved["provider"],
-            model=resolved["model"],
-            capabilities=_resolved_capabilities(resolved),
-            strategy=runtime_strategy,
-            request_args=resolved.get("request_args")
-            or await self._provider_request_args(
-                user_id=turn.user_id,
-                provider=resolved["provider"],
-                model=resolved["model"],
-            ),
-            max_tokens=runtime_strategy.max_tokens,
-        )
+        result = await self._run_model_attempts(turn=turn, session=session, resolved=resolved)
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
             return None
@@ -179,6 +145,8 @@ class AgentCoreRuntime:
             completed_at=None,
             error_code=None,
             error_message=None,
+            claimed_at=now,
+            lease_until=now + _turn_lease_duration(),
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -199,20 +167,11 @@ class AgentCoreRuntime:
             )
         if acompletion is not _ORIGINAL_ACOMPLETION:
             loop_module.acompletion = acompletion
-        runtime_strategy = _resolved_runtime_strategy(resolved)
-        result = await AgentLoopController(self.turn_repo.session).resume_turn_from_action(
-            action_id=action_id,
-            provider=resolved["provider"],
-            model=resolved["model"],
-            capabilities=_resolved_capabilities(resolved),
-            strategy=runtime_strategy,
-            request_args=resolved.get("request_args")
-            or await self._provider_request_args(
-                user_id=turn.user_id,
-                provider=resolved["provider"],
-                model=resolved["model"],
-            ),
-            max_tokens=runtime_strategy.max_tokens,
+        result = await self._run_model_attempts(
+            turn=turn,
+            session=session,
+            resolved=resolved,
+            resume_action_id=action_id,
         )
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
@@ -376,102 +335,136 @@ class AgentCoreRuntime:
                 )
         return None
 
-    async def _generate_text(
+    async def _run_model_attempts(
         self,
         *,
-        session,
         turn,
-        provider: str,
-        model: str,
-    ) -> tuple[str, dict[str, Any] | None]:
-        request_args = await self._provider_request_args(
-            user_id=turn.user_id,
-            provider=provider,
-            model=model,
-        )
-        response = await acompletion(
-            model=litellm_model_name(provider, model),
-            messages=await self._build_messages(session_id=str(session.id), turn=turn),
-            max_tokens=settings.agent_max_tokens,
-            **request_args,
-        )
-        final_text = self._extract_response_text(response)
-        if not final_text:
-            raise RuntimeError(
-                "The selected model completed without returning visible text."
+        session,
+        resolved: dict[str, Any],
+        resume_action_id: str | None = None,
+    ):
+        controller = AgentLoopController(self.turn_repo.session)
+        attempts = [resolved, *await self._resolve_fallback_candidates(turn=turn, session=session, resolved=resolved)]
+        next_resume_action_id = resume_action_id
+        for attempt_index, candidate in enumerate(attempts):
+            fresh_turn = await self.turn_repo.get(str(turn.id))
+            if fresh_turn is not None:
+                turn = fresh_turn
+            turn = await self._persist_model_resolution(
+                turn,
+                candidate,
+                attempt_index=attempt_index,
             )
-        return final_text, self._extract_token_usage(response)
+            runtime_strategy = _resolved_runtime_strategy(candidate)
+            if attempt_index == 0:
+                await self.ledger.append(
+                    session_id=str(turn.session_id),
+                    turn_id=str(turn.id),
+                    type=AgentEventType.MODEL_SELECTED,
+                    payload={
+                        "provider": candidate["provider"],
+                        "model": candidate["model"],
+                        "source": candidate["source"],
+                    },
+                )
+            else:
+                await self.ledger.append(
+                    session_id=str(turn.session_id),
+                    turn_id=str(turn.id),
+                    type=AgentEventType.MODEL_FALLBACK,
+                    payload={
+                        "attempt_index": attempt_index + 1,
+                        "provider": candidate["provider"],
+                        "model": candidate["model"],
+                        "source": candidate["source"],
+                    },
+                )
 
-    async def _provider_request_args(
+            if next_resume_action_id is not None:
+                result = await controller.resume_turn_from_action(
+                    action_id=next_resume_action_id,
+                    provider=candidate["provider"],
+                    model=candidate["model"],
+                    capabilities=_resolved_capabilities(candidate),
+                    strategy=runtime_strategy,
+                    request_args=candidate["request_args"],
+                    max_tokens=runtime_strategy.max_tokens,
+                )
+                next_resume_action_id = None
+            else:
+                result = await controller.run_turn(
+                    turn_id=str(turn.id),
+                    provider=candidate["provider"],
+                    model=candidate["model"],
+                    capabilities=_resolved_capabilities(candidate),
+                    strategy=runtime_strategy,
+                    request_args=candidate["request_args"],
+                    max_tokens=runtime_strategy.max_tokens,
+                )
+            if not should_try_fallback(result) or attempt_index == len(attempts) - 1:
+                return result
+        raise RuntimeError("Agent runtime exhausted model attempts without returning a result.")
+
+    async def _persist_model_resolution(
         self,
+        turn,
+        resolved: dict[str, Any],
         *,
-        user_id: str,
-        provider: str,
-        model: str,
-    ) -> dict[str, Any]:
-        del user_id, provider, model
-        return {}
-
-    async def _build_messages(self, *, session_id: str, turn) -> list[dict[str, str]]:
-        messages: list[dict[str, str]] = []
-        try:
-            prior_turns = await self.turn_repo.list_for_session(session_id)
-        except Exception:
-            prior_turns = []
-        messages.append(
+        attempt_index: int,
+    ):
+        snapshot = dict(turn.model_profile_snapshot or {})
+        attempts = list(snapshot.get("model_attempts") or [])
+        attempts.append(
             {
-                "role": "system",
-                "content": (
-                    "You are Bioinfoflow AgentCore, a concise bioinformatics assistant. "
-                    "Answer directly, stay accurate, and mention uncertainty plainly."
-                ),
+                "attempt_index": attempt_index,
+                "provider": resolved["provider"],
+                "model": resolved["model"],
+                "source": resolved["source"],
+                "model_id": resolved.get("model_id"),
             }
         )
-        for prior_turn in prior_turns:
-            if str(prior_turn.id) == str(turn.id):
-                continue
-            if prior_turn.input_text:
-                messages.append({"role": "user", "content": prior_turn.input_text})
-            if prior_turn.final_text:
-                messages.append({"role": "assistant", "content": prior_turn.final_text})
-        messages.append({"role": "user", "content": turn.input_text})
-        return messages
-
-    def _extract_response_text(self, response: Any) -> str:
-        choices = getattr(response, "choices", None) or []
-        if not choices:
-            return ""
-        message = getattr(choices[0], "message", None)
-        content = getattr(message, "content", "")
-        if isinstance(content, str):
-            return content.strip()
-        if isinstance(content, list):
-            parts: list[str] = []
-            for item in content:
-                if isinstance(item, dict):
-                    text = item.get("text")
-                    if isinstance(text, str) and text.strip():
-                        parts.append(text.strip())
-                else:
-                    text = getattr(item, "text", None)
-                    if isinstance(text, str) and text.strip():
-                        parts.append(text.strip())
-            return "\n".join(parts).strip()
-        return ""
-
-    def _extract_token_usage(self, response: Any) -> dict[str, Any] | None:
-        usage = getattr(response, "usage", None)
-        if usage is None:
-            return None
-        if hasattr(usage, "model_dump"):
-            return usage.model_dump()
-        if isinstance(usage, dict):
-            return usage
-        return {
-            key: value
-            for key, value in vars(usage).items()
-            if not key.startswith("_")
+        snapshot["model_attempts"] = attempts
+        snapshot["resolved_model_selection"] = {
+            "provider": resolved["provider"],
+            "model": resolved["model"],
         }
+        if resolved.get("model_id"):
+            snapshot["resolved_model_id"] = resolved["model_id"]
+        if resolved.get("profile_id"):
+            snapshot["resolved_profile_id"] = resolved["profile_id"]
+        snapshot["resolved_model_source"] = resolved["source"]
+        snapshot["resolved_model_capabilities"] = resolved.get("capabilities", {})
+        snapshot["resolved_runtime_strategy"] = resolved.get("runtime_strategy", {})
+        return await self.turn_repo.update_all(
+            turn,
+            model_profile_snapshot=snapshot,
+            claimed_at=turn.claimed_at or datetime.now(timezone.utc),
+            lease_until=datetime.now(timezone.utc) + _turn_lease_duration(),
+        )
+
+    async def _resolve_fallback_candidates(
+        self,
+        *,
+        turn,
+        session,
+        resolved: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        runtime_strategy = _resolved_runtime_strategy(resolved)
+        fallback_model_ids = build_fallback_model_ids(
+            runtime_strategy.fallback_model_ids,
+            primary_model_id=resolved.get("model_id"),
+        )
+        candidates: list[dict[str, Any]] = []
+        for model_id in fallback_model_ids:
+            candidate = await self._catalog_selection(
+                {"model_id": model_id},
+                source="fallback_model",
+                workspace_id=str(session.workspace_id),
+                user_id=turn.user_id,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+        return candidates
 
     async def _fail_turn(self, turn, *, error_message: str, error_code: str):
         completed_at = datetime.now(timezone.utc)
@@ -483,6 +476,8 @@ class AgentCoreRuntime:
             termination_reason="model_failed",
             error_code=error_code,
             error_message=error_message,
+            claimed_at=None,
+            lease_until=None,
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -526,3 +521,8 @@ def _coerce_optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _turn_lease_duration() -> timedelta:
+    seconds = max(int(getattr(settings, "agent_turn_lease_seconds", 300) or 300), 1)
+    return timedelta(seconds=seconds)

@@ -1,0 +1,371 @@
+from __future__ import annotations
+
+import sys
+
+import pytest
+
+from app.config import settings
+from app.models.agent_core import AgentActionStatus
+from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
+from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRepository
+from app.services.agent_core import AgentCoreService
+from app.services.agent_core.context import AgentContextAssembler
+from app.workspace import DEFAULT_WORKSPACE_ID
+from app.models.workspace import Workspace
+
+
+async def _workspace(db_session) -> Workspace:
+    workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
+    db_session.add(workspace)
+    await db_session.commit()
+    return workspace
+
+
+async def _seed_catalog_model(
+    db_session,
+    *,
+    model_id: str,
+    provider: LlmProvider | None = None,
+) -> LlmModel:
+    if provider is None:
+        provider = LlmProvider(
+            name=f"{model_id} provider",
+            kind="openai_compatible",
+            base_url="https://models.internal.example/v1",
+            scope="user",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            enabled=True,
+            provider_metadata={"providerTemplate": "openai-compatible"},
+        )
+        db_session.add(provider)
+        await db_session.commit()
+        await db_session.refresh(provider)
+    model = LlmModel(
+        provider_id=str(provider.id),
+        model_id=model_id,
+        display_name=model_id,
+        supports_tools=True,
+        supports_streaming=True,
+    )
+    db_session.add(model)
+    await db_session.commit()
+    await db_session.refresh(model)
+    return model
+
+
+@pytest.mark.asyncio
+async def test_context_replays_committed_transcript_messages(db_session, monkeypatch):
+    async def fake_completion(*args, **kwargs):
+        class FakeMessage:
+            content = "Committed assistant reply."
+            tool_calls = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="replay-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Replay this transcript.",
+    )
+    completed_turn = await service.runtime.run_turn(str(turn.id))
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=completed_turn,
+    )
+
+    assert [message["role"] for message in messages] == ["system", "user", "assistant"]
+    assert messages[1]["content"] == "Replay this transcript."
+    assert messages[2]["content"] == "Committed assistant reply."
+
+
+@pytest.mark.asyncio
+async def test_runtime_retries_transient_model_failure_and_records_event(db_session, monkeypatch):
+    attempts = 0
+
+    async def flaky_completion(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("Provider timed out")
+
+        class FakeMessage:
+            content = "Succeeded after retry."
+            tool_calls = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", flaky_completion)
+    monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="retry-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Retry this request.",
+    )
+    completed_turn = await service.runtime.run_turn(str(turn.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+
+    assert attempts == 2
+    assert completed_turn.status == "completed"
+    assert completed_turn.final_text == "Succeeded after retry."
+    assert any(event.type == "model.retrying" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
+    async def fallback_completion(*args, **kwargs):
+        model_name = str(kwargs["model"])
+        if "primary-model" in model_name:
+            raise RuntimeError("Provider timed out")
+
+        class FakeMessage:
+            content = "Answered from fallback."
+            tool_calls = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fallback_completion)
+    monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
+    await _workspace(db_session)
+    provider = LlmProvider(
+        name="fallback provider",
+        kind="openai_compatible",
+        base_url="https://models.internal.example/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    primary = await _seed_catalog_model(db_session, model_id="primary-model", provider=provider)
+    fallback = await _seed_catalog_model(db_session, model_id="fallback-model", provider=provider)
+    profile = LlmModelProfile(
+        name="Fallback profile",
+        task_type="agent",
+        primary_model_id=str(primary.id),
+        fallback_model_ids=[str(fallback.id)],
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        default_model_profile_id=str(profile.id),
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Use the fallback model if needed.",
+    )
+    completed_turn = await service.runtime.run_turn(str(turn.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+
+    assert completed_turn.status == "completed"
+    assert completed_turn.final_text == "Answered from fallback."
+    assert completed_turn.model_profile_snapshot["resolved_model_id"] == str(fallback.id)
+    assert any(event.type == "model.fallback" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session, monkeypatch):
+    calls = 0
+
+    async def looping_completion(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        class FakeFunction:
+            name = "projects__list"
+            arguments = "{}"
+
+        class FakeToolCall:
+            id = f"tool-call-{calls}"
+            function = FakeFunction()
+
+        message = FakeMessage()
+        message.content = ""
+        message.tool_calls = [FakeToolCall()]
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", looping_completion)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="no-progress-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep calling the same tool.",
+    )
+    failed_turn = await service.runtime.run_turn(str(turn.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+
+    assert calls == 2
+    assert failed_turn.status == "failed"
+    assert failed_turn.termination_reason == "no_progress"
+    assert failed_turn.error_code == "no_progress_detected"
+    assert events[-1].type == "turn.no_progress"
+
+
+@pytest.mark.asyncio
+async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatch):
+    calls = 0
+    resumed: list[tuple[str, str]] = []
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        message = FakeMessage()
+        if calls == 1:
+            class FakeFunction:
+                name = "execution__shell"
+                arguments = (
+                    '{"command":["'
+                    + sys.executable
+                    + '","-c","print(\\"recover\\")"],"cwd":"'
+                    + str(settings.bioinfoflow_home)
+                    + '"}'
+                )
+
+            class FakeToolCall:
+                id = "tool-call-recover"
+                function = FakeFunction()
+
+            message.content = ""
+            message.tool_calls = [FakeToolCall()]
+        else:
+            message.content = "Recovered."
+            message.tool_calls = None
+
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda action_id, turn_id: resumed.append((action_id, turn_id)),
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="recovery-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(session, toolset_policy={"name": "execution"})
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Approve and recover this action.",
+    )
+    waiting_turn = await service.runtime.run_turn(str(turn.id))
+    action = (await AgentActionRepository(db_session).list_for_turn(str(turn.id)))[0]
+
+    assert waiting_turn.status == "waiting_approval"
+    decided = await service.decide_action(
+        action_id=str(action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    assert decided.status == AgentActionStatus.REQUESTED
+
+    resumed.clear()
+    summary = await service.recover_orphaned_turns()
+
+    assert summary["enqueued"] == 1
+    assert resumed == [(str(action.id), str(turn.id))]

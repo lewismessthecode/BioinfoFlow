@@ -337,7 +337,7 @@ async def test_approval_resume_executes_tool_and_continues_turn(db_session, monk
         return response
 
     monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda _action_id: None)
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
@@ -428,7 +428,7 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(db_session
         return response
 
     monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda _action_id: None)
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 

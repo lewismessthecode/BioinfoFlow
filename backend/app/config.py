@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     agent_observability: bool = True
     agent_log_truncate_chars: int = 1200
     agent_max_rounds: int = 50  # Loop safety limit
+    agent_retry_max_attempts: int = 3
+    agent_retry_base_delay_seconds: float = 0.25
+    agent_retry_max_delay_seconds: float = 2.0
+    agent_turn_lease_seconds: int = 300
     agent_compact_threshold: int = 50000  # Auto-compact token threshold
 
     # Provider API keys used by LLM catalog bootstrap.

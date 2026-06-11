@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -135,6 +136,20 @@ class AgentToolExecutor:
         try:
             raw_result = await tool.run(action.normalized_input or action.input, context)
             result, summary = normalize_tool_result(raw_result)
+        except asyncio.CancelledError:
+            action = await self.action_repo.update_all(
+                action,
+                status=AgentActionStatus.CANCELLED,
+                error={"type": "CancelledError", "message": "Tool execution was cancelled."},
+                completed_at=datetime.now(timezone.utc),
+            )
+            await self.ledger.append(
+                session_id=str(action.session_id),
+                turn_id=str(action.turn_id),
+                type=AgentEventType.ACTION_CANCELLED,
+                payload={"action_id": str(action.id), "tool": tool.spec.name},
+            )
+            raise
         except Exception as exc:
             error = {"type": exc.__class__.__name__, "message": str(exc)}
             action = await self.action_repo.update_all(
