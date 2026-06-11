@@ -6,6 +6,7 @@ import sys
 import pytest
 
 from app.config import settings
+from app.models.llm import LlmModel, LlmProvider
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import (
@@ -41,6 +42,33 @@ async def _project(db_session) -> Project:
     await db_session.commit()
     await db_session.refresh(project)
     return project
+
+
+async def _seed_catalog_model(db_session, *, model_id: str = "harness-model") -> LlmModel:
+    provider = LlmProvider(
+        name=f"{model_id} provider",
+        kind="openai_compatible",
+        base_url="https://models.internal.example/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    model = LlmModel(
+        provider_id=str(provider.id),
+        model_id=model_id,
+        display_name=model_id,
+        supports_tools=True,
+        supports_streaming=True,
+    )
+    db_session.add(model)
+    await db_session.commit()
+    await db_session.refresh(model)
+    return model
 
 
 @pytest.mark.asyncio
@@ -83,6 +111,7 @@ async def test_turn_writes_canonical_user_and_assistant_messages(db_session, mon
 
     monkeypatch.setattr("app.services.agent_core.core.loop.acompletion", fake_completion)
     await _workspace(db_session)
+    await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
     session = await service.create_session(
@@ -130,6 +159,7 @@ async def test_event_sequence_is_session_scoped_across_turns(db_session, monkeyp
 
     monkeypatch.setattr("app.services.agent_core.core.loop.acompletion", fake_completion)
     await _workspace(db_session)
+    await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
     session = await service.create_session(
@@ -309,6 +339,7 @@ async def test_approval_resume_executes_tool_and_continues_turn(db_session, monk
     monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda _action_id: None)
     await _workspace(db_session)
+    await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
     session = await service.create_session(
@@ -399,6 +430,7 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(db_session
     monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda _action_id: None)
     await _workspace(db_session)
+    await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
     session = await service.create_session(

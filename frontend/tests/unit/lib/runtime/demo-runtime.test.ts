@@ -16,9 +16,12 @@ import type {
   AgentCoreTurn,
 } from "@/lib/agent-core"
 import type {
+  LlmConfiguration,
   LlmModel,
   LlmModelProfile,
   LlmProvider,
+  LlmProviderSetupResult,
+  LlmProviderTemplate,
   LlmProviderTestResult,
 } from "@/lib/llm"
 
@@ -196,6 +199,12 @@ describe("createDemoRuntime", () => {
     const runtime = createDemoRuntime()
 
     const providersResponse = await runtime.request<LlmProvider[]>("/llm/providers")
+    const configurationResponse = await runtime.request<LlmConfiguration>(
+      "/llm/configuration",
+    )
+    const templatesResponse = await runtime.request<LlmProviderTemplate[]>(
+      "/llm/provider-templates",
+    )
     const modelsResponse = await runtime.request<LlmModel[]>("/llm/models")
     const profilesResponse = await runtime.request<LlmModelProfile[]>(
       "/llm/model-profiles",
@@ -214,11 +223,27 @@ describe("createDemoRuntime", () => {
         scope: "workspace",
       }),
     })
+    const setupResponse = await runtime.request<LlmProviderSetupResult>(
+      "/llm/provider-setups",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          template_id: "vllm",
+          base_url: "http://localhost:8000/v1",
+          model_ids: ["deepseek_v4"],
+          scope: "user",
+        }),
+      },
+    )
 
     expect(providersResponse.data[0]?.name).toBe("Demo OpenAI Compatible")
+    expect(configurationResponse.data.providers[0]?.credential.available).toBe(true)
+    expect(templatesResponse.data.some((template) => template.id === "vllm")).toBe(true)
     expect(modelsResponse.data[0]?.display_name).toBe("Demo Bio Coder")
     expect(profilesResponse.data[0]?.task_type).toBe("agent_core")
     expect(testResponse.data.success).toBe(true)
     expect(createdResponse.data.name).toBe("OpenRouter Shared")
+    expect(setupResponse.data.provider.name).toBe("vLLM")
+    expect(setupResponse.data.models[0]?.model_id).toBe("deepseek_v4")
   })
 })

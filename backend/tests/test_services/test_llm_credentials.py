@@ -24,7 +24,7 @@ def test_local_development_credential_key_lives_under_state_root(tmp_path, monke
     assert not (home / "credentials" / "fernet.key").exists()
 
 
-def test_env_credential_is_configured_but_not_available_until_env_exists(monkeypatch):
+def test_env_credential_is_configured_and_available_only_when_env_exists(monkeypatch):
     credential = LlmProviderCredential(
         provider_id="provider-1",
         source=LlmCredentialSource.ENV,
@@ -37,7 +37,7 @@ def test_env_credential_is_configured_but_not_available_until_env_exists(monkeyp
     assert to_credential_read_dict(provider_id="provider-1", credential=credential) == {
         "provider_id": "provider-1",
         "source": LlmCredentialSource.ENV,
-        "configured": True,
+        "configured": False,
         "available": False,
         "env_var_name": "BIOINFOFLOW_TEST_LLM_KEY",
         "fingerprint": None,
@@ -48,9 +48,9 @@ def test_env_credential_is_configured_but_not_available_until_env_exists(monkeyp
     monkeypatch.setenv("BIOINFOFLOW_TEST_LLM_KEY", "sk-test")
 
     assert credential_available(credential) is True
-    assert to_credential_read_dict(provider_id="provider-1", credential=credential)[
-        "available"
-    ] is True
+    refreshed = to_credential_read_dict(provider_id="provider-1", credential=credential)
+    assert refreshed["configured"] is True
+    assert refreshed["available"] is True
 
 
 def test_none_credential_can_be_available_for_no_auth_providers():

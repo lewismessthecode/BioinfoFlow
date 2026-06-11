@@ -98,6 +98,238 @@ async def _create_profile(
     await db_session.refresh(profile)
     return profile
 
+
+@pytest.mark.asyncio
+async def test_llm_provider_templates_drive_frontend_configuration(async_client):
+    response = await async_client.get("/api/v1/llm/provider-templates")
+
+    assert response.status_code == 200
+    templates = {item["id"]: item for item in response.json()["data"]}
+    assert {
+        "openai",
+        "anthropic",
+        "gemini",
+        "grok",
+        "groq",
+        "deepseek",
+        "openrouter",
+        "ollama",
+        "vllm",
+        "openai-compatible",
+    }.issubset(templates)
+
+    assert templates["openai"]["fields"] == [
+        {
+            "name": "api_key",
+            "label": "API key",
+            "secret": True,
+            "required": True,
+            "placeholder": "Paste API key",
+        }
+    ]
+    vllm_fields = {field["name"]: field for field in templates["vllm"]["fields"]}
+    assert vllm_fields["base_url"]["default"] == "http://localhost:8000/v1"
+    assert vllm_fields["api_key"]["required"] is False
+    assert vllm_fields["model_id"]["required"] is False
+    assert templates["vllm"]["discovery"] == "openai_models"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_setup_creates_vllm_provider_key_and_manual_model(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "vllm",
+            "name": "vLLM DeepSeek V4",
+            "base_url": "http://10.49.35.231:8000/v1",
+            "api_key": "vllm",
+            "model_ids": ["deepseek_v4"],
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"]["name"] == "vLLM DeepSeek V4"
+    assert payload["provider"]["kind"] == "vllm"
+    assert payload["provider"]["credential"]["configured"] is True
+    assert payload["provider"]["credential"]["masked_hint"] == "vl...lm"
+    assert payload["models"][0]["model_id"] == "deepseek_v4"
+
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    assert configuration.status_code == 200
+    configured = configuration.json()["data"]
+    assert any(
+        model["model_id"] == "deepseek_v4"
+        and model["provider_id"] == payload["provider"]["id"]
+        for model in configured["models"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_discovers_models_from_v1_models(
+    async_client,
+    monkeypatch,
+):
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None):
+            assert url == "http://10.49.35.231:8000/v1/models"
+            assert headers == {"Authorization": "Bearer vllm"}
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "deepseek_v4", "object": "model"},
+                        {"id": "bio-coder", "object": "model"},
+                    ]
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+
+    setup = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "vllm",
+            "name": "vLLM DeepSeek V4",
+            "base_url": "http://10.49.35.231:8000/v1",
+            "api_key": "vllm",
+            "scope": "user",
+        },
+    )
+    assert setup.status_code == 200
+    provider = setup.json()["data"]["provider"]
+
+    response = await async_client.post(
+        f"/api/v1/llm/providers/{provider['id']}/discover-models",
+    )
+
+    assert response.status_code == 200
+    model_ids = {model["model_id"] for model in response.json()["data"]}
+    assert model_ids == {"deepseek_v4", "bio-coder"}
+
+
+@pytest.mark.asyncio
+async def test_anthropic_provider_discovers_models_from_v1_models(
+    async_client,
+    monkeypatch,
+):
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None, params=None):
+            assert url == "https://api.anthropic.com/v1/models"
+            assert headers == {
+                "x-api-key": "sk-ant",
+                "anthropic-version": "2023-06-01",
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6"},
+                        {"id": "claude-haiku-4-5", "display_name": "Claude Haiku 4.5"},
+                    ]
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+
+    setup = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={"template_id": "anthropic", "api_key": "sk-ant", "scope": "user"},
+    )
+    assert setup.status_code == 200
+    provider = setup.json()["data"]["provider"]
+
+    response = await async_client.post(
+        f"/api/v1/llm/providers/{provider['id']}/discover-models",
+    )
+
+    assert response.status_code == 200
+    model_ids = {model["model_id"] for model in response.json()["data"]}
+    assert model_ids == {"claude-sonnet-4-6", "claude-haiku-4-5"}
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_discovers_models_and_skips_non_generative(
+    async_client,
+    monkeypatch,
+):
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None, params=None):
+            assert url == "https://generativelanguage.googleapis.com/v1beta/models"
+            assert params == {"key": "gemini-key", "pageSize": 1000}
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {
+                            "name": "models/gemini-3-pro",
+                            "displayName": "Gemini 3 Pro",
+                            "supportedGenerationMethods": ["generateContent"],
+                            "inputTokenLimit": 1000000,
+                            "outputTokenLimit": 65536,
+                        },
+                        {
+                            "name": "models/text-embedding-004",
+                            "supportedGenerationMethods": ["embedContent"],
+                        },
+                    ]
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+
+    setup = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={"template_id": "gemini", "api_key": "gemini-key", "scope": "user"},
+    )
+    assert setup.status_code == 200
+    provider = setup.json()["data"]["provider"]
+
+    response = await async_client.post(
+        f"/api/v1/llm/providers/{provider['id']}/discover-models",
+    )
+
+    assert response.status_code == 200
+    models = response.json()["data"]
+    model_ids = {model["model_id"] for model in models}
+    assert model_ids == {"gemini-3-pro"}
+    gemini_model = next(model for model in models if model["model_id"] == "gemini-3-pro")
+    assert gemini_model["context_length"] == 1000000
+
+
 @pytest.mark.asyncio
 async def test_llm_provider_model_and_profile_contract(async_client):
     create_provider = await async_client.post(
@@ -258,7 +490,7 @@ async def test_llm_provider_credential_accepts_env_reference(async_client, monke
     assert credential == {
         "provider_id": provider["id"],
         "source": "env",
-        "configured": True,
+        "configured": False,
         "available": False,
         "env_var_name": "LOCAL_MODEL_API_KEY",
         "fingerprint": None,

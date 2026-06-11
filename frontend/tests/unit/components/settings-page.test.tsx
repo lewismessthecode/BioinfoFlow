@@ -59,17 +59,29 @@ vi.mock("next-intl", () => ({
       "status.connected": "Connected",
       "status.notConfigured": "Not configured",
       "providerCards.loading": "Loading providers...",
+      "providerCards.summary": "1 configured",
       "providerCards.save": "Save",
       "providerCards.saving": "Saving...",
       "providerCards.apiKeyPlaceholder": "Paste API key",
       "providerCards.savedKeyPlaceholder": "Key saved. Paste a new key to replace it.",
       "providerCards.endpointPlaceholder": "Endpoint URL",
-      "providerCards.getApiKey": "Get API key",
+      "providerCards.getApiKey": "Get key",
       "providerCards.configured": "Configured",
       "providerCards.notConfigured": "Not configured",
       "providerCards.noKeyRequired": "No key required",
+      "providerCards.ready": "Ready",
+      "providerCards.needsSetup": "Setup",
+      "providerCards.fromEnv": "From .env",
+      "providerCards.keySavedShort": "Key saved",
       "providerCards.saved": "Provider saved",
       "providerCards.saveFailed": "Provider could not be saved",
+      "providerCards.refreshModels": "Refresh models",
+      "providerCards.refreshingModels": "Refreshing...",
+      "providerCards.modelsDiscovered": "1 models found",
+      "providerCards.modelsAvailable": "1 models",
+      "providerCards.modelsRefreshed": "Models refreshed",
+      "providerCards.modelRefreshFailed": "Models could not be refreshed",
+      "providerCards.modelIdPlaceholder": "Model ID",
     }
     return labels[key] ?? key
   },
@@ -86,7 +98,6 @@ vi.mock("@/lib/appearance/use-appearance", () => ({
 vi.mock("@/lib/celebrations", () => ({
   celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
   isCelebrationsEnabled: () => celebrationsPreference.getEnabled(),
-  isReducedMotionPreferred: () => false,
   useCelebrationsEnabledPreference: () =>
     celebrationsPreference.useCelebrationsEnabledPreference(),
   useReducedMotionPreference: () => false,
@@ -196,7 +207,7 @@ describe("SettingsPage", () => {
                 user_id: null,
                 enabled: true,
                 test_status: { success: true, latency_ms: 32 },
-                metadata: { providerSlug: "openai-compatible" },
+                metadata: { providerTemplate: "openai-compatible" },
                 credential: {
                   provider_id: "llm-provider-1",
                   source: "env",
@@ -257,26 +268,9 @@ describe("SettingsPage", () => {
           meta: undefined,
         }
       }
-      if (path === "/providers") {
+      if (path === "/llm/provider-templates") {
         return {
-          data: [
-            {
-              id: "openai",
-              label: "OpenAI",
-              credential_type: "api_key_and_base_url",
-              credential_fields: ["api_key", "base_url"],
-              base_url: "https://api.openai.com/v1",
-              default_model: "gpt-5.4",
-            },
-            {
-              id: "ollama",
-              label: "Ollama",
-              credential_type: "base_url_only",
-              credential_fields: ["base_url", "model"],
-              base_url: "http://localhost:11434",
-              default_model: "llama3.3",
-            },
-          ],
+          data: providerTemplates(),
           meta: undefined,
         }
       }
@@ -332,81 +326,39 @@ describe("SettingsPage", () => {
           meta: undefined,
         }
       }
-      if (path === "/llm/providers/llm-provider-1" && options?.method === "PATCH") {
+      if (path === "/llm/provider-setups" && options?.method === "POST") {
+        expect(options.body).toContain('"template_id":"openrouter"')
+        expect(options.body).toContain("sk-openrouter")
         return {
           data: {
-            id: "llm-provider-1",
-            name: "Local OpenAI Compatible",
-            kind: "openai_compatible",
-            base_url: "http://localhost:11434/v1",
-            api_key_ref: null,
-            scope: "workspace",
-            workspace_id: "workspace-1",
-            user_id: null,
-            enabled: true,
-            test_status: { success: true, latency_ms: 32 },
-            metadata: { providerSlug: "openai-compatible" },
-            created_at: "2026-06-04T00:00:00Z",
-            updated_at: "2026-06-04T00:00:01Z",
-          },
-          meta: undefined,
-        }
-      }
-      if (path === "/llm/providers/llm-provider-2/credential" && options?.method === "PUT") {
-        return {
-          data: {
-            provider_id: "llm-provider-2",
-            source: "stored",
-            configured: true,
-            available: true,
-            env_var_name: null,
-            fingerprint: "fp_openrouter",
-            masked_hint: "sk-...uter",
-            updated_at: "2026-06-04T00:00:01Z",
-          },
-          meta: undefined,
-        }
-      }
-      if (path === "/llm/providers" && options?.method === "POST") {
-        expect(options.body).toContain('"scope":"user"')
-        return {
-          data: {
-            id: "llm-provider-2",
-            name: "OpenRouter Shared",
-            kind: "openrouter",
-            base_url: null,
-            api_key_ref: "env:OPENROUTER_API_KEY",
-            scope: "workspace",
-            workspace_id: "workspace-1",
-            user_id: null,
-            enabled: true,
-            test_status: null,
-            metadata: { providerSlug: "openrouter" },
-            created_at: "2026-06-04T00:00:01Z",
-            updated_at: "2026-06-04T00:00:01Z",
-          },
-          meta: undefined,
-        }
-      }
-      if (path === "/llm/providers") {
-        return {
-          data: [
-            {
-              id: "llm-provider-1",
-              name: "Local OpenAI Compatible",
-              kind: "openai_compatible",
-              base_url: "http://localhost:11434/v1",
-              api_key_ref: "env:LOCAL_MODEL_KEY",
-              scope: "workspace",
+            provider: {
+              id: "llm-provider-2",
+              name: "OpenRouter",
+              kind: "openrouter",
+              base_url: "https://openrouter.ai/api/v1",
+              api_key_ref: null,
+              scope: "user",
               workspace_id: "workspace-1",
-              user_id: null,
+              user_id: "owner-1",
               enabled: true,
-              test_status: { success: true, latency_ms: 32 },
-              metadata: null,
-              created_at: "2026-06-04T00:00:00Z",
-              updated_at: "2026-06-04T00:00:00Z",
+              test_status: null,
+              metadata: { providerTemplate: "openrouter" },
+              credential: {
+                provider_id: "llm-provider-2",
+                source: "stored",
+                configured: true,
+                available: true,
+                env_var_name: null,
+                fingerprint: "fp_openrouter",
+                masked_hint: "sk-...uter",
+                updated_at: "2026-06-04T00:00:01Z",
+              },
+              created_at: "2026-06-04T00:00:01Z",
+              updated_at: "2026-06-04T00:00:01Z",
             },
-          ],
+            models: [],
+            discovered: false,
+          },
           meta: undefined,
         }
       }
@@ -430,7 +382,7 @@ describe("SettingsPage", () => {
     )
 
     expect(await screen.findByRole("group", { name: "OpenAI Compatible" })).toBeInTheDocument()
-    expect(screen.getByText("env:LOCAL_MODEL_KEY")).toBeInTheDocument()
+    expect(screen.getByText("From .env")).toBeInTheDocument()
   })
 
   it("shows provider cards and creates a write-only provider credential", async () => {
@@ -459,15 +411,11 @@ describe("SettingsPage", () => {
     })
     fireEvent.click(within(openRouterCard).getByRole("button", { name: "Save" }))
 
-    await waitFor(() => {
-      expect(apiRequestMock).toHaveBeenCalledWith(
-        "/llm/providers",
-        expect.objectContaining({ method: "POST" }),
-      )
-      expect(apiRequestMock).toHaveBeenCalledWith(
-        "/llm/providers/llm-provider-2/credential",
+      await waitFor(() => {
+        expect(apiRequestMock).toHaveBeenCalledWith(
+        "/llm/provider-setups",
         expect.objectContaining({
-          method: "PUT",
+          method: "POST",
           body: expect.stringContaining("sk-openrouter"),
         }),
       )
@@ -596,3 +544,93 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("Members Panel")).not.toBeInTheDocument()
   })
 })
+
+function providerTemplates() {
+  const field = (
+    name: string,
+    label: string,
+    secret: boolean,
+    required: boolean,
+    defaultValue?: string,
+  ) => ({
+    name,
+    label,
+    secret,
+    required,
+    placeholder: label,
+    default: defaultValue,
+  })
+  return [
+    template("openai", "OpenAI", "openai", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.openai.com/v1"),
+    template("anthropic", "Anthropic", "anthropic", "static", [
+      field("api_key", "API key", true, true),
+    ]),
+    template("gemini", "Gemini", "gemini", "static", [
+      field("api_key", "API key", true, true),
+    ]),
+    template("grok", "Grok", "grok", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.x.ai/v1"),
+    template("groq", "Groq", "groq", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.groq.com/openai/v1"),
+    template("deepseek", "DeepSeek", "deepseek", "openai_models", [
+      field("api_key", "API key", true, true),
+    ], "https://api.deepseek.com/v1"),
+    template("openrouter", "OpenRouter", "openrouter", "openai_models", [
+      field("api_key", "API key", true, true),
+      field("model_id", "Model ID", false, false),
+    ], "https://openrouter.ai/api/v1", [
+      providerModel("openrouter/auto", "OpenRouter Auto"),
+    ]),
+    template("ollama", "Ollama", "ollama", "ollama_tags", [
+      field("base_url", "Endpoint", false, true, "http://localhost:11434"),
+      field("model_id", "Model ID", false, false),
+    ], "http://localhost:11434"),
+    template("vllm", "vLLM", "vllm", "openai_models", [
+      field("base_url", "Endpoint", false, true, "http://localhost:8000/v1"),
+      field("api_key", "API key", true, false),
+      field("model_id", "Model ID", false, false),
+    ], "http://localhost:8000/v1"),
+    template("openai-compatible", "OpenAI Compatible", "openai_compatible", "openai_models", [
+      field("base_url", "Endpoint", false, true, "https://api.example.com/v1"),
+      field("api_key", "API key", true, false),
+      field("model_id", "Model ID", false, false),
+    ], "https://api.example.com/v1"),
+  ]
+}
+
+function template(
+  id: string,
+  name: string,
+  kind: string,
+  discovery: string,
+  fields: Array<Record<string, unknown>>,
+  defaultBaseUrl?: string,
+  models: Array<Record<string, unknown>> = [],
+) {
+  return {
+    id,
+    name,
+    kind,
+    docs_url: `https://docs.example.com/${id}`,
+    discovery,
+    default_base_url: defaultBaseUrl,
+    fields,
+    models,
+  }
+}
+
+function providerModel(id: string, name: string) {
+  return {
+    id,
+    name,
+    supports_tools: true,
+    supports_streaming: true,
+    supports_vision: false,
+    supports_json_schema: true,
+    supports_reasoning: false,
+  }
+}

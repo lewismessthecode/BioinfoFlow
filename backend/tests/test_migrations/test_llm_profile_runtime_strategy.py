@@ -79,7 +79,7 @@ def test_runtime_strategy_migration_is_idempotent_for_partially_applied_sqlite_d
     conn = sqlite3.connect(db_path)
     try:
         revision = conn.execute("SELECT version_num FROM alembic_version").fetchone()
-        assert revision == ("0033_llm_profile_runtime_strategy",)
+        assert revision == ("0034_drop_legacy_user_settings",)
 
         columns = {
             row[1] for row in conn.execute("PRAGMA table_info(llm_model_profiles)").fetchall()

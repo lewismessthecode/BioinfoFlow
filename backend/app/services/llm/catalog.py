@@ -22,9 +22,19 @@ from app.services.llm.credentials import (
     encrypt_secret,
     generate_credential_fingerprint,
     mask_secret,
+    resolve_credential_material,
     to_credential_read_dict,
 )
-from app.services.llm.providers import normalize_ollama_base_url
+from app.services.llm.provider_templates import (
+    ModelTemplate,
+    ProviderTemplate,
+    get_provider_template,
+    list_provider_templates,
+    normalize_ollama_base_url,
+    normalize_openai_compatible_base_url,
+    normalize_provider_base_url,
+    provider_template_for_provider,
+)
 from app.utils.authorization import ADMIN_ROLES
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
 
@@ -66,6 +76,97 @@ class LlmCatalogService:
             enabled=data.get("enabled", True),
             provider_metadata=data.get("metadata"),
         )
+
+    def list_provider_templates(self) -> list[ProviderTemplate]:
+        return list_provider_templates()
+
+    async def setup_provider(self, data: dict[str, Any]) -> dict[str, Any]:
+        template_id = str(data.get("template_id") or "").strip()
+        template = get_provider_template(template_id)
+        if template is None:
+            raise ValueError(f"Unknown LLM provider template: {template_id}")
+
+        base_url = data.get("base_url")
+        if base_url:
+            base_url = normalize_provider_base_url(template.kind, str(base_url))
+            _validate_provider_base_url(base_url)
+        elif template.default_base_url:
+            base_url = normalize_provider_base_url(template.kind, template.default_base_url)
+
+        provider = await self._provider_for_setup(template=template, data=data)
+        metadata = {
+            **(provider.provider_metadata if provider is not None else {}),
+            "providerTemplate": template.id,
+        }
+        if provider is None:
+            provider = await self.create_provider(
+                {
+                    **data,
+                    "name": str(data.get("name") or template.name),
+                    "kind": template.kind,
+                    "base_url": base_url,
+                    "api_key_ref": None,
+                    "metadata": metadata,
+                }
+            )
+        else:
+            provider = await self.update_provider(
+                str(provider.id),
+                {
+                    "workspace_id": data["workspace_id"],
+                    "user_id": data["user_id"],
+                    "role": data.get("role"),
+                    "name": str(data.get("name") or provider.name or template.name),
+                    "kind": template.kind,
+                    "base_url": base_url,
+                    "metadata": metadata,
+                    "enabled": data.get("enabled", True),
+                },
+            )
+
+        secret = str(data.get("api_key") or "").strip()
+        existing_credential = await self.credential_repo.get_for_provider(str(provider.id))
+        if secret:
+            provider, credential = await self.upsert_provider_credential(
+                str(provider.id),
+                {"source": LlmCredentialSource.STORED, "secret": secret},
+                workspace_id=data["workspace_id"],
+                user_id=data["user_id"],
+                role=data.get("role"),
+            )
+        elif existing_credential is None and not template.api_key_required:
+            provider, credential = await self.upsert_provider_credential(
+                str(provider.id),
+                {"source": LlmCredentialSource.NONE},
+                workspace_id=data["workspace_id"],
+                user_id=data["user_id"],
+                role=data.get("role"),
+            )
+        else:
+            credential = existing_credential
+
+        models: list[Any] = []
+        for model_id in _clean_model_ids(data.get("model_ids")):
+            models.append(await self._upsert_model_from_template_id(provider, model_id))
+        if not models and template.models:
+            for model_template in template.models:
+                models.append(await self._upsert_model_from_template(provider, model_template))
+        discovered = False
+        if data.get("discover"):
+            models = await self.discover_models(
+                str(provider.id),
+                workspace_id=data["workspace_id"],
+                user_id=data["user_id"],
+                role=data.get("role"),
+            )
+            discovered = True
+
+        return {
+            "provider": provider,
+            "credential": self.credential_read_dict(provider, credential),
+            "models": models,
+            "discovered": discovered,
+        }
 
     async def update_provider(self, provider_id: str, data: dict[str, Any]):
         provider = await self._get_writable_provider(
@@ -286,44 +387,107 @@ class LlmCatalogService:
             user_id=user_id,
             role=role,
         )
-        if provider.kind != "ollama":
-            raise ValueError("Model discovery is currently supported for Ollama only")
-        base_url = normalize_ollama_base_url(
-            provider.base_url or settings.ollama_base_url
-        )
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{base_url}/api/tags")
-            response.raise_for_status()
-        models = []
-        for item in _ollama_models_from_tags(response.json()):
-            existing = await self.model_repo.get_by_provider_model(
-                provider_id=str(provider.id),
-                model_id=item["model_id"],
+        return await self.discover_models_unchecked(provider)
+
+    async def discover_models_unchecked(
+        self, provider: LlmProvider, *, timeout: float = 10.0
+    ):
+        """Discover and upsert models without permission checks.
+
+        Used by the permission-checked ``discover_models`` and by environment
+        bootstrap (best-effort). Performs a live network call per provider
+        discovery mode and falls back to any static template models. ``timeout``
+        bounds each network call so startup bootstrap can fail fast.
+        """
+        template = provider_template_for_provider(provider)
+        discovery = template.discovery if template else "openai_models"
+        if discovery == "ollama_tags":
+            base_url = normalize_ollama_base_url(
+                provider.base_url or settings.ollama_base_url
             )
-            values = {
-                "display_name": item["display_name"],
-                "context_length": item["context_length"],
-                "max_output_tokens": item["max_output_tokens"],
-                "supports_tools": False,
-                "supports_streaming": True,
-                "supports_vision": False,
-                "supports_json_schema": False,
-                "supports_reasoning": item["supports_reasoning"],
-                "model_metadata": item["metadata"],
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(f"{base_url}/api/tags")
+                response.raise_for_status()
+            return [
+                await self._upsert_model_from_discovered(provider, item)
+                for item in _ollama_models_from_tags(response.json())
+            ]
+        if discovery == "anthropic_models":
+            base_url = (
+                provider.base_url
+                or (template.default_base_url if template else None)
+                or "https://api.anthropic.com"
+            ).rstrip("/")
+            material = await self._provider_credential_material(provider)
+            if not material.api_key:
+                raise ValueError("Anthropic API key is required for model discovery")
+            headers = {
+                "x-api-key": material.api_key,
+                "anthropic-version": "2023-06-01",
             }
-            if existing:
-                model = await self.model_repo.update_all(existing, **values)
-            else:
-                model = await self.model_repo.create(
-                    provider_id=str(provider.id),
-                    model_id=item["model_id"],
-                    default_temperature=None,
-                    default_top_p=None,
-                    cost_metadata=None,
-                    **values,
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(
+                    f"{base_url}/v1/models",
+                    headers=headers,
+                    params={"limit": 1000},
                 )
-            models.append(model)
-        return models
+                response.raise_for_status()
+            return [
+                await self._upsert_model_from_discovered(provider, item)
+                for item in _anthropic_models_from_list(response.json())
+            ]
+        if discovery == "gemini_models":
+            base_url = (
+                provider.base_url
+                or (template.default_base_url if template else None)
+                or "https://generativelanguage.googleapis.com"
+            ).rstrip("/")
+            material = await self._provider_credential_material(provider)
+            if not material.api_key:
+                raise ValueError("Gemini API key is required for model discovery")
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(
+                    f"{base_url}/v1beta/models",
+                    params={"key": material.api_key, "pageSize": 1000},
+                )
+                response.raise_for_status()
+            return [
+                await self._upsert_model_from_discovered(provider, item)
+                for item in _gemini_models_from_list(response.json())
+            ]
+        if discovery == "openai_models":
+            discovery_base_url = provider.base_url
+            if not discovery_base_url and template:
+                discovery_base_url = template.default_base_url
+            base_url = normalize_openai_compatible_base_url(
+                discovery_base_url or "",
+                prefer_loopback_ip=provider.kind == "vllm",
+            )
+            if not base_url:
+                raise ValueError("Provider endpoint is required for model discovery")
+            material = await self._provider_credential_material(provider)
+            headers = (
+                {"Authorization": f"Bearer {material.api_key}"}
+                if material.api_key
+                else None
+            )
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(f"{base_url}/models", headers=headers)
+                response.raise_for_status()
+            return [
+                await self._upsert_model_from_discovered(provider, item)
+                for item in _openai_models_from_list(response.json())
+            ]
+        if template and template.models:
+            return [
+                await self._upsert_model_from_template(provider, model)
+                for model in template.models
+            ]
+        return []
+
+    async def _provider_credential_material(self, provider: LlmProvider):
+        credential = await self.credential_repo.get_for_provider(str(provider.id))
+        return resolve_credential_material(credential)
 
     async def create_model(self, data: dict[str, Any]):
         await self._get_writable_provider(
@@ -347,6 +511,116 @@ class LlmCatalogService:
             default_top_p=data.get("default_top_p"),
             cost_metadata=data.get("cost_metadata"),
             model_metadata=data.get("metadata"),
+        )
+
+    async def _provider_for_setup(
+        self,
+        *,
+        template: ProviderTemplate,
+        data: dict[str, Any],
+    ) -> LlmProvider | None:
+        provider_id = str(data.get("provider_id") or "").strip()
+        if provider_id:
+            return await self._get_writable_provider(
+                provider_id,
+                workspace_id=data["workspace_id"],
+                user_id=data["user_id"],
+                role=data.get("role"),
+            )
+
+        target_workspace_id, target_user_id = _tenant_fields_for_scope(
+            scope=data.get("scope", "user"),
+            workspace_id=data["workspace_id"],
+            user_id=data["user_id"],
+            role=data.get("role"),
+        )
+        providers = await self.list_providers(
+            workspace_id=data["workspace_id"],
+            user_id=data["user_id"],
+        )
+        for provider in providers:
+            metadata = provider.provider_metadata or {}
+            if metadata.get("providerTemplate") != template.id:
+                continue
+            if provider.scope != data.get("scope", "user"):
+                continue
+            provider_workspace_id = str(provider.workspace_id) if provider.workspace_id else None
+            if provider_workspace_id != target_workspace_id:
+                continue
+            if provider.user_id != target_user_id:
+                continue
+            if _can_write_scoped_resource(
+                provider,
+                workspace_id=data["workspace_id"],
+                user_id=data["user_id"],
+                role=data.get("role"),
+            ):
+                return provider
+        return None
+
+    async def _upsert_model_from_template_id(self, provider: LlmProvider, model_id: str):
+        return await self._upsert_model_from_discovered(
+            provider,
+            {
+                "model_id": model_id,
+                "display_name": model_id,
+                "context_length": None,
+                "max_output_tokens": None,
+                "supports_tools": True,
+                "supports_streaming": True,
+                "supports_vision": False,
+                "supports_json_schema": True,
+                "supports_reasoning": _model_id_suggests_reasoning(model_id),
+                "metadata": {"source": "manual"},
+            },
+        )
+
+    async def _upsert_model_from_template(
+        self,
+        provider: LlmProvider,
+        model_template: ModelTemplate,
+    ):
+        return await self._upsert_model_from_discovered(
+            provider,
+            {
+                "model_id": model_template.id,
+                "display_name": model_template.name,
+                "context_length": model_template.context_length,
+                "max_output_tokens": model_template.max_output_tokens,
+                "supports_tools": model_template.supports_tools,
+                "supports_streaming": model_template.supports_streaming,
+                "supports_vision": model_template.supports_vision,
+                "supports_json_schema": model_template.supports_json_schema,
+                "supports_reasoning": model_template.supports_reasoning,
+                "metadata": {"source": "provider_template"},
+            },
+        )
+
+    async def _upsert_model_from_discovered(self, provider: LlmProvider, item: dict[str, Any]):
+        existing = await self.model_repo.get_by_provider_model(
+            provider_id=str(provider.id),
+            model_id=item["model_id"],
+        )
+        values = {
+            "display_name": item["display_name"],
+            "context_length": item["context_length"],
+            "max_output_tokens": item["max_output_tokens"],
+            "supports_tools": item.get("supports_tools", True),
+            "supports_streaming": item.get("supports_streaming", True),
+            "supports_vision": item.get("supports_vision", False),
+            "supports_json_schema": item.get("supports_json_schema", True),
+            "supports_reasoning": item["supports_reasoning"],
+            "model_metadata": item["metadata"],
+            "default_temperature": None,
+            "default_top_p": None,
+            "cost_metadata": None,
+        }
+        if existing:
+            return await self.model_repo.update_all(existing, **values)
+        return await self.model_repo.create(
+            provider_id=str(provider.id),
+            model_id=item["model_id"],
+            **values,
         )
 
     async def update_model(self, model_id: str, data: dict[str, Any]):
@@ -517,7 +791,24 @@ def _provider_requires_credential(provider: LlmProvider) -> bool:
     metadata = provider.provider_metadata or {}
     if metadata.get("authMode") == "none":
         return False
+    template = provider_template_for_provider(provider)
+    if template is not None and not template.api_key_required:
+        return False
     return provider.kind != "ollama"
+
+
+def _clean_model_ids(raw_model_ids: Any) -> list[str]:
+    if not isinstance(raw_model_ids, list):
+        return []
+    model_ids: list[str] = []
+    seen: set[str] = set()
+    for item in raw_model_ids:
+        model_id = str(item or "").strip()
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        model_ids.append(model_id)
+    return model_ids
 
 
 def _drop_request_tenant_fields(data: dict[str, Any]) -> None:
@@ -592,6 +883,120 @@ def _display_name_for_ollama_model(model_id: str) -> str:
 def _ollama_model_supports_reasoning(model_id: str) -> bool:
     normalized = model_id.lower()
     return "deepseek-r1" in normalized or "reason" in normalized
+
+
+def _openai_models_from_list(payload: Any) -> list[dict[str, Any]]:
+    raw_models = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(raw_models, list):
+        return []
+    models: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_models:
+        if isinstance(item, str):
+            model_id = item.strip()
+        elif isinstance(item, dict):
+            model_id = str(item.get("id") or "").strip()
+        else:
+            model_id = ""
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        models.append(
+            {
+                "model_id": model_id,
+                "display_name": _display_name_for_openai_model(model_id),
+                "context_length": None,
+                "max_output_tokens": None,
+                "supports_tools": True,
+                "supports_streaming": True,
+                "supports_vision": False,
+                "supports_json_schema": True,
+                "supports_reasoning": _model_id_suggests_reasoning(model_id),
+                "metadata": {"source": "openai_models_discovery"},
+            }
+        )
+    return models
+
+
+def _display_name_for_openai_model(model_id: str) -> str:
+    if "/" in model_id:
+        model_id = model_id.rsplit("/", 1)[-1]
+    return " ".join(part.upper() if part.isdigit() else part.capitalize() for part in model_id.replace("_", "-").split("-"))
+
+
+def _anthropic_models_from_list(payload: Any) -> list[dict[str, Any]]:
+    raw_models = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(raw_models, list):
+        return []
+    models: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_models:
+        if isinstance(item, dict):
+            model_id = str(item.get("id") or "").strip()
+            display_name = str(item.get("display_name") or "").strip()
+        else:
+            model_id = str(item or "").strip()
+            display_name = ""
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        models.append(
+            {
+                "model_id": model_id,
+                "display_name": display_name or _display_name_for_openai_model(model_id),
+                "context_length": None,
+                "max_output_tokens": None,
+                "supports_tools": True,
+                "supports_streaming": True,
+                "supports_vision": True,
+                "supports_json_schema": True,
+                "supports_reasoning": _model_id_suggests_reasoning(model_id),
+                "metadata": {"source": "anthropic_models_discovery"},
+            }
+        )
+    return models
+
+
+def _gemini_models_from_list(payload: Any) -> list[dict[str, Any]]:
+    raw_models = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(raw_models, list):
+        return []
+    models: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_models:
+        if not isinstance(item, dict):
+            continue
+        methods = item.get("supportedGenerationMethods")
+        if isinstance(methods, list) and "generateContent" not in methods:
+            continue
+        name = str(item.get("name") or "").strip()
+        model_id = name.split("/", 1)[-1] if name else ""
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        display_name = str(item.get("displayName") or "").strip()
+        context_length = item.get("inputTokenLimit")
+        max_output = item.get("outputTokenLimit")
+        models.append(
+            {
+                "model_id": model_id,
+                "display_name": display_name or _display_name_for_openai_model(model_id),
+                "context_length": context_length if isinstance(context_length, int) else None,
+                "max_output_tokens": max_output if isinstance(max_output, int) else None,
+                "supports_tools": True,
+                "supports_streaming": True,
+                "supports_vision": True,
+                "supports_json_schema": True,
+                "supports_reasoning": _model_id_suggests_reasoning(model_id),
+                "metadata": {"source": "gemini_models_discovery"},
+            }
+        )
+    return models
+
+
+def _model_id_suggests_reasoning(model_id: str) -> bool:
+    normalized = model_id.lower()
+    return any(token in normalized for token in ("reason", "thinking", "deepseek-r1", "o1", "o3"))
 
 
 def _tenant_fields_for_scope(

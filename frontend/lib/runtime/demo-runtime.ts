@@ -38,30 +38,18 @@ import type {
   AgentSessionStatus,
 } from "@/lib/agent-core"
 import type {
+  LlmConfiguration,
+  LlmConfiguredProvider,
+  LlmProviderCredential,
   LlmModel,
   LlmModelProfile,
   LlmProvider,
   LlmProviderKind,
   LlmProviderScope,
+  LlmProviderSetupResult,
+  LlmProviderTemplate,
   LlmProviderTestResult,
 } from "@/lib/llm"
-
-type DemoUserLlmSettings = {
-  provider_credentials: Record<string, Record<string, string>>
-  selected_provider: string
-  selected_model: string
-  configured_providers: string[]
-}
-
-type DemoProviderModels = {
-  provider: string
-  label: string
-  models: Array<{
-    id: string
-    name: string
-    context_window: number | null
-  }>
-}
 
 type DemoRuntimeState = {
   scenario: DemoScenario
@@ -80,9 +68,8 @@ type DemoRuntimeState = {
   workspaceFiles: Map<string, DemoFileNode[]>
   images: DockerImage[]
   imageStatus: ImageStatusMeta
-  llmSettings: DemoUserLlmSettings
-  providerModels: DemoProviderModels[]
   llmProviders: LlmProvider[]
+  llmProviderCredentials: Record<string, LlmProviderCredential>
   llmModels: LlmModel[]
   llmModelProfiles: LlmModelProfile[]
   runSequence: number
@@ -165,34 +152,6 @@ function createInitialState(): DemoRuntimeState {
     ),
     images: clone(DEMO_RUNTIME_SCENARIO.images),
     imageStatus: clone(DEMO_RUNTIME_SCENARIO.imageStatus),
-    llmSettings: {
-      provider_credentials: {
-        openai: {
-          api_key: "demo-key",
-        },
-      },
-      selected_provider: "openai",
-      selected_model: "gpt-5.4-mini",
-      configured_providers: ["openai"],
-    },
-    providerModels: [
-      {
-        provider: "openai",
-        label: "OpenAI",
-        models: [
-          {
-            id: "gpt-5.4-mini",
-            name: "GPT-5.4 Mini",
-            context_window: 128000,
-          },
-          {
-            id: "gpt-5.4",
-            name: "GPT-5.4",
-            context_window: 256000,
-          },
-        ],
-      },
-    ],
     llmProviders: [
       {
         id: "llm-provider-demo-001",
@@ -205,11 +164,23 @@ function createInitialState(): DemoRuntimeState {
         user_id: null,
         enabled: true,
         test_status: { success: true, latency_ms: 24 },
-        metadata: { demo: true },
+        metadata: { demo: true, providerTemplate: "openai-compatible" },
         created_at: nowStamp(),
         updated_at: nowStamp(),
       },
     ],
+    llmProviderCredentials: {
+      "llm-provider-demo-001": {
+        provider_id: "llm-provider-demo-001",
+        source: "env",
+        configured: true,
+        available: true,
+        env_var_name: "DEMO_MODEL_KEY",
+        fingerprint: null,
+        masked_hint: "env:DEMO_MODEL_KEY",
+        updated_at: nowStamp(),
+      },
+    },
     llmModels: [
       {
         id: "llm-model-demo-001",
@@ -287,6 +258,370 @@ function matchPath(pattern: RegExp, path: string) {
 
 function nowStamp() {
   return new Date().toISOString()
+}
+
+const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
+  providerTemplate("openai", "OpenAI", "openai", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.openai.com/v1", [
+    providerModelTemplate("gpt-5.4-mini", "GPT-5.4 Mini"),
+    providerModelTemplate("gpt-5.4", "GPT-5.4"),
+  ]),
+  providerTemplate("anthropic", "Anthropic", "anthropic", "static", [
+    providerField("api_key", "API key", true, true),
+  ], null, [
+    providerModelTemplate("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+  ]),
+  providerTemplate("gemini", "Gemini", "gemini", "static", [
+    providerField("api_key", "API key", true, true),
+  ]),
+  providerTemplate("grok", "Grok", "grok", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.x.ai/v1"),
+  providerTemplate("groq", "Groq", "groq", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.groq.com/openai/v1"),
+  providerTemplate("deepseek", "DeepSeek", "deepseek", "openai_models", [
+    providerField("api_key", "API key", true, true),
+  ], "https://api.deepseek.com/v1"),
+  providerTemplate("openrouter", "OpenRouter", "openrouter", "openai_models", [
+    providerField("api_key", "API key", true, true),
+    providerField("model_id", "Model ID", false, false),
+  ], "https://openrouter.ai/api/v1", [
+    providerModelTemplate("openrouter/auto", "OpenRouter Auto"),
+  ]),
+  providerTemplate("ollama", "Ollama", "ollama", "ollama_tags", [
+    providerField("base_url", "Endpoint", false, true, "http://localhost:11434"),
+    providerField("model_id", "Model ID", false, false),
+  ], "http://localhost:11434"),
+  providerTemplate("vllm", "vLLM", "vllm", "openai_models", [
+    providerField("base_url", "Endpoint", false, true, "http://localhost:8000/v1"),
+    providerField("api_key", "API key", true, false),
+    providerField("model_id", "Model ID", false, false),
+  ], "http://localhost:8000/v1"),
+  providerTemplate("openai-compatible", "OpenAI Compatible", "openai_compatible", "openai_models", [
+    providerField("base_url", "Endpoint", false, true, "https://api.example.com/v1"),
+    providerField("api_key", "API key", true, false),
+    providerField("model_id", "Model ID", false, false),
+  ], "https://api.example.com/v1"),
+]
+
+function providerTemplate(
+  id: string,
+  name: string,
+  kind: LlmProviderKind,
+  discovery: LlmProviderTemplate["discovery"],
+  fields: LlmProviderTemplate["fields"],
+  defaultBaseUrl: string | null = null,
+  models: LlmProviderTemplate["models"] = [],
+): LlmProviderTemplate {
+  return {
+    id,
+    name,
+    kind,
+    docs_url: `https://docs.example.com/${id}`,
+    discovery,
+    default_base_url: defaultBaseUrl,
+    fields,
+    models,
+  }
+}
+
+function providerField(
+  name: string,
+  label: string,
+  secret: boolean,
+  required: boolean,
+  defaultValue?: string,
+): LlmProviderTemplate["fields"][number] {
+  return {
+    name,
+    label,
+    secret,
+    required,
+    placeholder: label,
+    default: defaultValue,
+  }
+}
+
+function providerModelTemplate(
+  id: string,
+  name: string,
+): LlmProviderTemplate["models"][number] {
+  return {
+    id,
+    name,
+    context_length: 128000,
+    max_output_tokens: 8192,
+    supports_tools: true,
+    supports_streaming: true,
+    supports_vision: false,
+    supports_json_schema: true,
+    supports_reasoning: false,
+  }
+}
+
+function templateApiKeyRequired(template: LlmProviderTemplate) {
+  return Boolean(
+    template.fields.find((field) => field.name === "api_key")?.required,
+  )
+}
+
+function templateForProvider(provider: LlmProvider) {
+  const templateId = String(provider.metadata?.providerTemplate ?? "")
+  return (
+    DEMO_LLM_PROVIDER_TEMPLATES.find((template) => template.id === templateId) ??
+    DEMO_LLM_PROVIDER_TEMPLATES.find((template) => template.kind === provider.kind)
+  )
+}
+
+function credentialForProvider(
+  state: DemoRuntimeState,
+  provider: LlmProvider,
+): LlmProviderCredential {
+  const existing = state.llmProviderCredentials[provider.id]
+  if (existing) return existing
+  const template = templateForProvider(provider)
+  const requiresKey = template ? templateApiKeyRequired(template) : true
+  return {
+    provider_id: provider.id,
+    source: "none",
+    configured: false,
+    available: !requiresKey,
+    env_var_name: null,
+    fingerprint: null,
+    masked_hint: null,
+    updated_at: null,
+  }
+}
+
+function configuredProvider(
+  state: DemoRuntimeState,
+  provider: LlmProvider,
+): LlmConfiguredProvider {
+  return {
+    ...provider,
+    credential: credentialForProvider(state, provider),
+  }
+}
+
+function llmConfiguration(state: DemoRuntimeState): LlmConfiguration {
+  const providers = state.llmProviders.map((provider) =>
+    configuredProvider(state, provider),
+  )
+  return {
+    summary: {
+      provider_count: providers.length,
+      configured_provider_count: providers.filter(
+        (provider) => provider.credential.configured,
+      ).length,
+      available_provider_count: providers.filter(
+        (provider) => provider.credential.available,
+      ).length,
+      model_count: state.llmModels.length,
+      profile_count: state.llmModelProfiles.length,
+    },
+    providers,
+    models: clone(state.llmModels),
+    profiles: clone(state.llmModelProfiles),
+  }
+}
+
+function upsertDemoModel(
+  state: DemoRuntimeState,
+  providerId: string,
+  modelId: string,
+  displayName = modelId,
+): LlmModel {
+  const existing = state.llmModels.find(
+    (model) => model.provider_id === providerId && model.model_id === modelId,
+  )
+  if (existing) {
+    const updated = {
+      ...existing,
+      display_name: displayName,
+      updated_at: nowStamp(),
+    }
+    state.llmModels = state.llmModels.map((model) =>
+      model.id === existing.id ? updated : model,
+    )
+    return updated
+  }
+
+  const model: LlmModel = {
+    id: `llm-model-demo-${String(state.llmModels.length + 1).padStart(3, "0")}`,
+    provider_id: providerId,
+    model_id: modelId,
+    display_name: displayName,
+    context_length: 128000,
+    max_output_tokens: 8192,
+    supports_tools: true,
+    supports_streaming: true,
+    supports_vision: false,
+    supports_json_schema: true,
+    supports_reasoning: /reason|r1|thinking|deepseek/i.test(modelId),
+    default_temperature: null,
+    default_top_p: null,
+    cost_metadata: null,
+    metadata: { demo: true },
+    created_at: nowStamp(),
+    updated_at: nowStamp(),
+  }
+  state.llmModels = [model, ...state.llmModels]
+  return model
+}
+
+function setDemoCredential(
+  state: DemoRuntimeState,
+  providerId: string,
+  apiKey?: string | null,
+  source: LlmProviderCredential["source"] = apiKey ? "stored" : "none",
+) {
+  const secret = apiKey?.trim() ?? ""
+  state.llmProviderCredentials[providerId] = {
+    provider_id: providerId,
+    source,
+    configured: source === "stored" || source === "env",
+    available: source === "none" || Boolean(secret) || source === "env",
+    env_var_name: source === "env" ? "DEMO_MODEL_KEY" : null,
+    fingerprint: source === "stored" ? `fp_${providerId}` : null,
+    masked_hint:
+      source === "stored"
+        ? maskDemoSecret(secret)
+        : source === "env"
+          ? "env:DEMO_MODEL_KEY"
+          : null,
+    updated_at: nowStamp(),
+  }
+}
+
+function maskDemoSecret(secret: string) {
+  if (!secret) return null
+  if (secret.length <= 8) return "sk-..."
+  return `${secret.slice(0, 3)}...${secret.slice(-4)}`
+}
+
+function setupDemoProvider(
+  state: DemoRuntimeState,
+  bodyJson: Record<string, unknown> | null,
+): LlmProviderSetupResult {
+  const templateId = String(bodyJson?.template_id ?? "").trim()
+  const template = DEMO_LLM_PROVIDER_TEMPLATES.find(
+    (candidate) => candidate.id === templateId,
+  )
+  if (!template) {
+    throw new ApiError(`Unknown LLM provider template: ${templateId}`, {
+      status: 400,
+    })
+  }
+
+  const scope =
+    typeof bodyJson?.scope === "string"
+      ? (bodyJson.scope as LlmProviderScope)
+      : "user"
+  const providerId = typeof bodyJson?.provider_id === "string"
+    ? bodyJson.provider_id
+    : null
+  const existing = providerId
+    ? state.llmProviders.find((provider) => provider.id === providerId)
+    : state.llmProviders.find(
+        (provider) =>
+          provider.scope === scope &&
+          provider.metadata?.providerTemplate === template.id,
+      )
+
+  const baseUrl =
+    typeof bodyJson?.base_url === "string" && bodyJson.base_url.trim()
+      ? bodyJson.base_url.trim()
+      : template.default_base_url ?? null
+  const provider: LlmProvider = existing
+    ? {
+        ...existing,
+        name:
+          typeof bodyJson?.name === "string" && bodyJson.name.trim()
+            ? bodyJson.name.trim()
+            : existing.name || template.name,
+        kind: template.kind,
+        base_url: baseUrl,
+        enabled: bodyJson?.enabled !== false,
+        metadata: {
+          ...(existing.metadata ?? {}),
+          providerTemplate: template.id,
+        },
+        updated_at: nowStamp(),
+      }
+    : {
+        id: `llm-provider-demo-${String(state.llmProviderSequence).padStart(3, "0")}`,
+        name:
+          typeof bodyJson?.name === "string" && bodyJson.name.trim()
+            ? bodyJson.name.trim()
+            : template.name,
+        kind: template.kind,
+        base_url: baseUrl,
+        api_key_ref: null,
+        scope,
+        workspace_id: "workspace-demo",
+        user_id: scope === "user" ? "demo-user" : null,
+        enabled: bodyJson?.enabled !== false,
+        test_status: null,
+        metadata: { demo: true, providerTemplate: template.id },
+        created_at: nowStamp(),
+        updated_at: nowStamp(),
+      }
+
+  if (!existing) state.llmProviderSequence += 1
+  state.llmProviders = existing
+    ? state.llmProviders.map((item) => (item.id === provider.id ? provider : item))
+    : [provider, ...state.llmProviders]
+
+  const apiKey =
+    typeof bodyJson?.api_key === "string" ? bodyJson.api_key.trim() : ""
+  if (apiKey) {
+    setDemoCredential(state, provider.id, apiKey, "stored")
+  } else if (!state.llmProviderCredentials[provider.id] && !templateApiKeyRequired(template)) {
+    setDemoCredential(state, provider.id, null, "none")
+  }
+
+  let setupModels = cleanDemoModelIds(bodyJson?.model_ids).map((modelId) =>
+    upsertDemoModel(state, provider.id, modelId),
+  )
+  if (setupModels.length === 0 && template.models.length > 0) {
+    setupModels = template.models.map((model) =>
+      upsertDemoModel(state, provider.id, model.id, model.name),
+    )
+  }
+
+  let discovered = false
+  if (bodyJson?.discover === true) {
+    discovered = true
+    const discoveredModels =
+      template.models.length > 0
+        ? template.models
+        : [providerModelTemplate(discoveryFallbackModelId(template), discoveryFallbackModelId(template))]
+    setupModels = discoveredModels.map((model) =>
+      upsertDemoModel(state, provider.id, model.id, model.name),
+    )
+  }
+
+  return {
+    provider: configuredProvider(state, provider),
+    models: setupModels,
+    discovered,
+  }
+}
+
+function cleanDemoModelIds(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean)
+    : []
+}
+
+function discoveryFallbackModelId(template: LlmProviderTemplate) {
+  if (template.id === "ollama") return "deepseek-r1:latest"
+  if (template.id === "vllm") return "deepseek_v4"
+  return `${template.id}-demo-model`
 }
 
 function listAgentCoreSessions(
@@ -1986,37 +2321,20 @@ function createDemoRuntimeInternal(): AppRuntime {
       }
     }
 
-    if (path === "/user-settings" && method === "GET") {
-      return { data: clone(state.llmSettings) as T }
-    }
-
-    if (path === "/user-settings/models" && method === "GET") {
-      return { data: clone(state.providerModels) as T }
-    }
-
-    if (path === "/user-settings" && method === "PATCH") {
-      state.llmSettings = {
-        ...state.llmSettings,
-        ...(bodyJson ?? {}),
-      }
-      return { data: clone(state.llmSettings) as T }
-    }
-
-    const userSettingsTestMatch = matchPath(/^\/user-settings\/test\/([^/]+)$/, path)
-    if (userSettingsTestMatch && method === "POST") {
-      const [provider] = userSettingsTestMatch
-      return {
-        data: {
-          provider,
-          success: true,
-          error: null,
-          model: state.llmSettings.selected_model,
-        } as T,
-      }
-    }
-
     if (path === "/llm/providers" && method === "GET") {
       return { data: clone(state.llmProviders) as T }
+    }
+
+    if (path === "/llm/configuration" && method === "GET") {
+      return { data: llmConfiguration(state) as T }
+    }
+
+    if (path === "/llm/provider-templates" && method === "GET") {
+      return { data: clone(DEMO_LLM_PROVIDER_TEMPLATES) as T }
+    }
+
+    if (path === "/llm/provider-setups" && method === "POST") {
+      return { data: setupDemoProvider(state, bodyJson) as T }
     }
 
     if (path === "/llm/providers" && method === "POST") {
@@ -2057,6 +2375,46 @@ function createDemoRuntimeInternal(): AppRuntime {
       }
       state.llmProviders = [provider, ...state.llmProviders]
       return { data: clone(provider) as T }
+    }
+
+    const llmProviderCredentialMatch = matchPath(
+      /^\/llm\/providers\/([^/]+)\/credential$/,
+      path,
+    )
+    if (llmProviderCredentialMatch && method === "PUT") {
+      const [providerId] = llmProviderCredentialMatch
+      const existing = state.llmProviders.find((provider) => provider.id === providerId)
+      if (!existing) throw new ApiError("LLM provider not found", { status: 404 })
+      const source =
+        typeof bodyJson?.source === "string"
+          ? (bodyJson.source as LlmProviderCredential["source"])
+          : "none"
+      if (source === "env") {
+        state.llmProviderCredentials[providerId] = {
+          provider_id: providerId,
+          source: "env",
+          configured: true,
+          available: true,
+          env_var_name:
+            typeof bodyJson?.env_var_name === "string"
+              ? bodyJson.env_var_name
+              : "DEMO_MODEL_KEY",
+          fingerprint: null,
+          masked_hint:
+            typeof bodyJson?.env_var_name === "string"
+              ? `env:${bodyJson.env_var_name}`
+              : "env:DEMO_MODEL_KEY",
+          updated_at: nowStamp(),
+        }
+      } else {
+        setDemoCredential(
+          state,
+          providerId,
+          typeof bodyJson?.secret === "string" ? bodyJson.secret : null,
+          source,
+        )
+      }
+      return { data: clone(state.llmProviderCredentials[providerId]) as T }
     }
 
     const llmProviderMatch = matchPath(/^\/llm\/providers\/([^/]+)$/, path)

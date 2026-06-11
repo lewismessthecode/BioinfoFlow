@@ -5,7 +5,7 @@ This page describes the Docker Compose startup path implemented by `docker-compo
 ## Prerequisites
 
 - Docker Engine or Docker Desktop with Compose
-- One AI provider key, such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `DEEPSEEK_API_KEY`
+- One AI provider key for agent use. You can paste it after sign-in under **Settings -> AI Providers**, or bootstrap it in `.env`.
 
 ## First Run
 
@@ -22,11 +22,6 @@ Edit `.env`:
 # If unset, Docker Compose uses this repo's ./data directory.
 # BIOINFOFLOW_HOME=/absolute/path/to/bioinfoflow-data
 
-ANTHROPIC_API_KEY=...
-# OPENAI_API_KEY=...
-# GEMINI_API_KEY=...
-# DEEPSEEK_API_KEY=...
-
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 
@@ -35,6 +30,8 @@ AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 # Set this before running a shared or remote deployment.
 # BETTER_AUTH_SECRET=...
 ```
+
+Provider configuration is UI-first. Hosted providers only need an API key. Ollama, vLLM, OpenRouter, and generic OpenAI-compatible endpoints can also be configured from **Settings -> AI Providers**. For headless bootstrap, set env defaults such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, or `VLLM_BASE_URL` + `VLLM_MODEL`.
 
 Start the stack:
 
@@ -55,7 +52,7 @@ For localhost, you can skip the local image build and pull the latest images fro
 
 ```bash
 cp .env.example .env
-# edit .env: provider key and owner credentials
+# edit .env: owner credentials; provider keys can be added in the UI
 cat >> .env <<'EOF'
 IMAGE_REGISTRY=ghcr.io/lewismessthecode
 IMAGE_TAG=latest

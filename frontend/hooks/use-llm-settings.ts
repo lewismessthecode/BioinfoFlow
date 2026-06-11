@@ -1,8 +1,12 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { toast } from "sonner"
-import { ApiError, apiRequest, getApiErrorMessage } from "@/lib/api"
+import { ApiError, getApiErrorMessage } from "@/lib/api"
+import { getLlmConfiguration, testLlmProvider } from "@/lib/llm"
+import type {
+  LlmConfiguration,
+  LlmConfiguredProvider,
+} from "@/lib/llm"
 
 export type ProviderModelInfo = {
   id: string
@@ -13,12 +17,12 @@ export type ProviderModelInfo = {
 
 export type ProviderModels = {
   provider: string
+  provider_id: string
   label: string
   models: ProviderModelInfo[]
 }
 
-export type UserLlmSettings = {
-  provider_credentials: Record<string, Record<string, string>>
+export type LlmRuntimeSettings = {
   selected_provider: string
   selected_model: string
   configured_providers: string[]
@@ -86,10 +90,14 @@ function selectionInModels(
 }
 
 function resolveSelection(
-  settings: UserLlmSettings | null,
+  settings: LlmRuntimeSettings | null,
   models: ProviderModels[],
 ): ModelSelection | null {
-  if (settings?.selected_provider && settings.selected_provider !== "auto" && settings.selected_model) {
+  if (
+    settings?.selected_provider &&
+    settings.selected_provider !== "auto" &&
+    settings.selected_model
+  ) {
     const matchedProvider = models.find((providerGroup) =>
       providerGroup.models.some((model) => model.id === settings.selected_model),
     )
@@ -108,7 +116,9 @@ function resolveSelection(
       providerGroup.models.some((model) => model.id === settings.selected_model),
     )
     if (matchedProvider) {
-      const matchedModel = matchedProvider.models.find((model) => model.id === settings.selected_model)
+      const matchedModel = matchedProvider.models.find(
+        (model) => model.id === settings.selected_model,
+      )
       return {
         provider: matchedProvider.provider,
         model: settings.selected_model,
@@ -120,60 +130,55 @@ function resolveSelection(
   return selectionInModels(getStoredSelection(), models)
 }
 
+function providerAvailable(provider: LlmConfiguredProvider) {
+  return Boolean(
+    provider.enabled &&
+      (provider.credential?.available ||
+        provider.kind === "ollama" ||
+        provider.credential?.source === "none"),
+  )
+}
+
+function modelsFromConfiguration(data: LlmConfiguration): ProviderModels[] {
+  return data.providers
+    .filter(providerAvailable)
+    .map((provider) => ({
+      provider: provider.kind,
+      provider_id: provider.id,
+      label: provider.name,
+      models: data.models
+        .filter((model) => model.provider_id === provider.id)
+        .map((model) => ({
+          id: model.model_id,
+          name: model.display_name,
+          context_window: model.context_length ?? null,
+          model_id: model.id,
+        })),
+    }))
+    .filter((group) => group.models.length > 0)
+}
+
 export function useLlmSettings() {
-  const [settings, setSettings] = useState<UserLlmSettings | null>(null)
+  const [settings, setSettings] = useState<LlmRuntimeSettings | null>(null)
   const [models, setModels] = useState<ProviderModels[]>([])
+  const [configuredProviders, setConfiguredProviders] = useState<
+    LlmConfiguredProvider[]
+  >([])
   const [isLoading, setIsLoading] = useState(true)
   const [configurationError, setConfigurationError] = useState<string | null>(null)
 
   const fetchSettings = useCallback(async () => {
     try {
       setConfigurationError(null)
-      const { data } = await apiRequest<{
-        providers: Array<{
-          id: string
-          name: string
-          kind: string
-          metadata?: Record<string, unknown> | null
-          credential?: {
-            configured?: boolean
-            available?: boolean
-            source?: string
-          }
-        }>
-        models: Array<{
-          id: string
-          provider_id: string
-          model_id: string
-          display_name: string
-          context_length?: number | null
-        }>
-      }>("/llm/configuration")
-      const isProviderAvailable = (provider: (typeof data.providers)[number]) =>
-        Boolean(
-          provider.credential?.available ||
-            provider.kind === "ollama" ||
-            provider.metadata?.authMode === "none",
-        )
+      const data = await getLlmConfiguration()
+      const nextModels = modelsFromConfiguration(data)
       const configuredProviderKeys = data.providers
-        .filter(isProviderAvailable)
+        .filter(providerAvailable)
         .map((provider) => provider.kind)
-      const nextModels = data.providers
-        .filter(isProviderAvailable)
-        .map((provider) => ({
-          provider: provider.kind,
-          label: provider.name,
-          models: data.models
-            .filter((model) => model.provider_id === provider.id)
-            .map((model) => ({
-              id: model.model_id,
-              name: model.display_name,
-              context_window: model.context_length ?? null,
-              model_id: model.id,
-            })),
-        }))
-        .filter((group) => group.models.length > 0)
+
+      setConfiguredProviders(data.providers)
       setModels(nextModels)
+
       const stored = selectionInModels(getStoredSelection(), nextModels)
       const firstModel = nextModels[0]?.models[0]
       const inferred = stored ?? (
@@ -186,7 +191,6 @@ export function useLlmSettings() {
           : null
       )
       setSettings({
-        provider_credentials: {},
         selected_provider: inferred?.provider ?? "auto",
         selected_model: inferred?.model ?? "",
         configured_providers: Array.from(new Set(configuredProviderKeys)),
@@ -194,6 +198,7 @@ export function useLlmSettings() {
     } catch (error) {
       setSettings(null)
       setModels([])
+      setConfiguredProviders([])
       setConfigurationError(
         isUnauthorizedError(error)
           ? null
@@ -210,41 +215,42 @@ export function useLlmSettings() {
     })()
   }, [fetchSettings])
 
-  const updateSettings = useCallback(
-    async (updates: Partial<UserLlmSettings>) => {
+  const testProvider = useCallback(
+    async (provider: string) => {
+      const target = configuredProviders.find(
+        (item) =>
+          item.id === provider ||
+          item.kind === provider ||
+          item.name.toLowerCase() === provider.toLowerCase(),
+      )
+      if (!target) {
+        return {
+          provider,
+          success: false,
+          error: "Provider is not configured",
+          model: null,
+        } as ProviderTestResult
+      }
+
       try {
-        const { data } = await apiRequest<UserLlmSettings>("/user-settings", {
-          method: "PATCH",
-          body: JSON.stringify(updates),
-        })
-        setSettings(data)
-        await fetchSettings()
-        return data
+        const result = await testLlmProvider(target.id)
+        return {
+          provider,
+          success: result.success,
+          error: result.error ?? null,
+          model: result.model ?? null,
+        } as ProviderTestResult
       } catch (error) {
-        const message = getApiErrorMessage(error, "Failed to update settings")
-        toast.error(message)
-        throw error
+        return {
+          provider,
+          success: false,
+          error: getApiErrorMessage(error, "Connection test failed"),
+          model: null,
+        } as ProviderTestResult
       }
     },
-    [fetchSettings]
+    [configuredProviders],
   )
-
-  const testProvider = useCallback(async (provider: string) => {
-    try {
-      const { data } = await apiRequest<ProviderTestResult>(
-        `/user-settings/test/${provider}`,
-        { method: "POST" }
-      )
-      return data
-    } catch (error) {
-      return {
-        provider,
-        success: false,
-        error: getApiErrorMessage(error, "Connection test failed"),
-        model: null,
-      } as ProviderTestResult
-    }
-  }, [])
 
   const setSelectedModel = useCallback(
     async (selection: ModelSelection | null) => {
@@ -259,7 +265,7 @@ export function useLlmSettings() {
           : current,
       )
     },
-    []
+    [],
   )
 
   const hasConfiguredProvider =
@@ -271,9 +277,11 @@ export function useLlmSettings() {
     persistSelection(selectedModel)
   }, [selectedModel])
 
-  // Flat list of all available models with provider info
-  const allModels = models.flatMap((pm) =>
-    pm.models.map((m) => ({ ...m, provider: pm.provider }))
+  const allModels = models.flatMap((providerModels) =>
+    providerModels.models.map((model) => ({
+      ...model,
+      provider: providerModels.provider,
+    })),
   )
 
   return {
@@ -285,7 +293,6 @@ export function useLlmSettings() {
     configurationUnavailable: configurationError !== null,
     hasConfiguredProvider,
     selectedModel,
-    updateSettings,
     setSelectedModel,
     testProvider,
     refetch: async () => {

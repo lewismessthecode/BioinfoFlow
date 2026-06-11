@@ -7,6 +7,9 @@ import type {
   LlmProvider,
   LlmProviderKind,
   LlmProviderScope,
+  LlmProviderSetupInput,
+  LlmProviderSetupResult,
+  LlmProviderTemplate,
   LlmProviderTestResult,
 } from "@/lib/llm/types"
 
@@ -30,6 +33,34 @@ export type UpdateLlmProviderCredentialInput = {
 
 export const getLlmConfiguration = async () => {
   const response = await apiRequest<LlmConfiguration>("/llm/configuration")
+  return response.data
+}
+
+export const getLlmProviderTemplates = async () => {
+  const response = await apiRequest<LlmProviderTemplate[]>(
+    "/llm/provider-templates",
+  )
+  return response.data
+}
+
+export const setupLlmProvider = async (input: LlmProviderSetupInput) => {
+  const response = await apiRequest<LlmProviderSetupResult>(
+    "/llm/provider-setups",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        template_id: input.templateId,
+        provider_id: input.providerId || null,
+        name: input.name || null,
+        base_url: input.baseUrl || null,
+        api_key: input.apiKey || null,
+        model_ids: input.modelIds ?? [],
+        discover: input.discover ?? false,
+        scope: input.scope ?? "user",
+        enabled: input.enabled ?? true,
+      }),
+    },
+  )
   return response.data
 }
 

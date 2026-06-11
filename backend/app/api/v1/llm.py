@@ -15,10 +15,13 @@ from app.schemas.llm import (
     LlmModelUpdate,
     LlmConfigurationRead,
     LlmConfiguredProviderRead,
+    LlmProviderSetupRequest,
+    LlmProviderSetupResult,
     LlmProviderCredentialRead,
     LlmProviderCredentialUpdate,
     LlmProviderCreate,
     LlmProviderRead,
+    LlmProviderTemplateRead,
     LlmProviderTestResult,
     LlmProviderUpdate,
 )
@@ -63,6 +66,28 @@ async def list_providers(
     )
 
 
+@router.get("/provider-templates")
+@handle_api_errors
+async def list_provider_templates(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    del user
+    service = LlmCatalogService(db)
+    templates = [
+        LlmProviderTemplateRead.model_validate(template.as_dict())
+        for template in service.list_provider_templates()
+    ]
+    return success_response(
+        [
+            template.model_dump(mode="json", exclude_none=True)
+            for template in templates
+        ],
+        request=request,
+    )
+
+
 @router.get("/configuration")
 @handle_api_errors
 async def get_configuration(
@@ -97,6 +122,34 @@ async def get_configuration(
         ],
     )
     return success_response(_dump(payload), request=request)
+
+
+@router.post("/provider-setups")
+@handle_api_errors
+async def setup_provider(
+    payload: LlmProviderSetupRequest,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = LlmCatalogService(db)
+    data = _with_user_context(payload.model_dump(exclude_unset=True), user)
+    setup = await service.setup_provider(data)
+    provider = LlmConfiguredProviderRead.model_validate(
+        {
+            **LlmProviderRead.model_validate(setup["provider"]).model_dump(mode="json"),
+            "credential": setup["credential"],
+        }
+    )
+    result = LlmProviderSetupResult(
+        provider=provider,
+        models=[
+            LlmModelRead.model_validate(model)
+            for model in setup["models"]
+        ],
+        discovered=setup["discovered"],
+    )
+    return success_response(_dump(result), request=request)
 
 
 @router.post("/providers")

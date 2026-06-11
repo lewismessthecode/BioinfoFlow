@@ -2,11 +2,16 @@ export type LlmProviderKind =
   | "openai"
   | "anthropic"
   | "gemini"
+  | "grok"
+  | "groq"
   | "openrouter"
   | "deepseek"
   | "ollama"
   | "vllm"
   | "openai_compatible"
+  | "qwen"
+  | "kimi"
+  | "minimax"
 
 export type LlmProviderScope = "global" | "workspace" | "user"
 
@@ -91,6 +96,45 @@ export type LlmProviderTestResult = {
   latency_ms?: number | null
 }
 
+export type LlmProviderDiscovery =
+  | "static"
+  | "openai_models"
+  | "ollama_tags"
+  | "anthropic_models"
+  | "gemini_models"
+
+export type LlmProviderTemplateField = {
+  name: "api_key" | "base_url" | "model_id" | string
+  label: string
+  secret: boolean
+  required: boolean
+  placeholder: string
+  default?: string | null
+}
+
+export type LlmProviderTemplateModel = {
+  id: string
+  name: string
+  context_length?: number | null
+  max_output_tokens?: number | null
+  supports_tools: boolean
+  supports_streaming: boolean
+  supports_vision: boolean
+  supports_json_schema: boolean
+  supports_reasoning: boolean
+}
+
+export type LlmProviderTemplate = {
+  id: string
+  name: string
+  kind: LlmProviderKind
+  docs_url: string
+  discovery: LlmProviderDiscovery
+  default_base_url?: string | null
+  fields: LlmProviderTemplateField[]
+  models: LlmProviderTemplateModel[]
+}
+
 export type LlmConfiguration = {
   summary: {
     provider_count: number
@@ -102,4 +146,22 @@ export type LlmConfiguration = {
   providers: LlmConfiguredProvider[]
   models: LlmModel[]
   profiles: LlmModelProfile[]
+}
+
+export type LlmProviderSetupInput = {
+  templateId: string
+  providerId?: string | null
+  name?: string | null
+  baseUrl?: string | null
+  apiKey?: string | null
+  modelIds?: string[] | null
+  discover?: boolean
+  scope?: LlmProviderScope
+  enabled?: boolean
+}
+
+export type LlmProviderSetupResult = {
+  provider: LlmConfiguredProvider
+  models: LlmModel[]
+  discovered: boolean
 }

@@ -10,11 +10,16 @@ class LlmProviderKind:
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    GROK = "grok"
+    GROQ = "groq"
     OPENROUTER = "openrouter"
     DEEPSEEK = "deepseek"
     OLLAMA = "ollama"
     VLLM = "vllm"
     OPENAI_COMPATIBLE = "openai_compatible"
+    QWEN = "qwen"
+    KIMI = "kimi"
+    MINIMAX = "minimax"
 
 
 class LlmProviderScope:

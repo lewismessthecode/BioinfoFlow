@@ -36,7 +36,7 @@ from app.services.agent_core.tools.toolsets import (
     provider_tool_specs,
 )
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
-from app.services.llm.providers import litellm_model_name
+from app.services.llm.provider_templates import litellm_model_name
 
 
 class AgentLoopController:

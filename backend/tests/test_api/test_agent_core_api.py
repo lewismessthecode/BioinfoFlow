@@ -6,7 +6,8 @@ import pytest
 
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
-from app.models.llm import LlmModel, LlmProvider
+from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
+from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -155,6 +156,7 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
 
     monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
 
+    model = await _create_llm_model(async_client)
     project_id = await _create_project(async_client)
 
     create_session = await async_client.post(
@@ -164,10 +166,7 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
             "title": "WGS triage",
             "permission_mode": "guarded_auto",
             "automation_mode": "assisted",
-            "model_selection": {
-                "provider": "anthropic",
-                "model": "claude-sonnet-4-6",
-            },
+            "model_selection": {"model_id": model["id"]},
             "metadata": {"batch": "b001"},
         },
     )
@@ -176,15 +175,9 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
     assert session["title"] == "WGS triage"
     assert session["metadata"] == {
         "batch": "b001",
-        "model_selection": {
-            "provider": "anthropic",
-            "model": "claude-sonnet-4-6",
-        },
+        "model_selection": {"model_id": model["id"]},
     }
-    assert session["model_selection"] == {
-        "provider": "anthropic",
-        "model": "claude-sonnet-4-6",
-    }
+    assert session["model_selection"] == {"model_id": model["id"]}
     assert session["permission_mode"] == "guarded_auto"
 
     list_sessions = await async_client.get("/api/v1/agent/sessions")
@@ -206,14 +199,12 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
     turn = await _wait_for_turn(async_client, turn["id"])
     assert turn["status"] == "completed"
     assert turn["final_text"] == "Mocked model reply."
-    assert turn["model_selection"] == {
-        "provider": "anthropic",
-        "model": "claude-sonnet-4-6",
-    }
+    assert turn["model_selection"] == {"model_id": model["id"]}
     assert turn["model_profile_snapshot"]["resolved_model_selection"] == {
-        "provider": "anthropic",
-        "model": "claude-sonnet-4-6",
+        "provider": "openai_compatible",
+        "model": "agent-test-model",
     }
+    assert turn["model_profile_snapshot"]["resolved_model_id"] == model["id"]
     assert turn["model_profile_snapshot"]["resolved_model_source"] == "session"
 
     list_turns = await async_client.get(
@@ -581,6 +572,84 @@ async def test_agent_core_ollama_catalog_selection_uses_root_api_base(
 
 
 @pytest.mark.asyncio
+async def test_agent_core_anthropic_catalog_selection_preserves_native_api_base(
+    async_client,
+    monkeypatch,
+):
+    completion_kwargs: dict = {}
+
+    async def fake_completion(*args, **kwargs):
+        completion_kwargs.update(kwargs)
+
+        class FakeMessage:
+            content = "Anthropic model reply."
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+
+    project_id = await _create_project(async_client)
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Anthropic",
+            "kind": "anthropic",
+            "base_url": "https://api.anthropic.com",
+            "metadata": {"providerTemplate": "anthropic"},
+        },
+    )
+    assert provider_response.status_code == 201
+    provider = provider_response.json()["data"]
+    credential_response = await async_client.put(
+        f"/api/v1/llm/providers/{provider['id']}/credential",
+        json={"source": "stored", "secret": "sk-ant-test"},
+    )
+    assert credential_response.status_code == 200
+    model_response = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": provider["id"],
+            "model_id": "claude-sonnet-4-6",
+            "display_name": "Claude Sonnet 4.6",
+            "supports_streaming": True,
+        },
+    )
+    assert model_response.status_code == 201
+    model = model_response.json()["data"]
+
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "project_id": project_id,
+            "title": "Anthropic-routed session",
+            "model_selection": {"model_id": model["id"]},
+        },
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+
+    create_turn = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={"input_text": "Use Claude."},
+    )
+    assert create_turn.status_code == 202
+    turn = await _wait_for_turn(async_client, create_turn.json()["data"]["id"])
+
+    assert turn["status"] == "completed"
+    assert completion_kwargs["model"] == "anthropic/claude-sonnet-4-6"
+    # Host root must be preserved — no /v1 suffix appended for Anthropic.
+    assert completion_kwargs["api_base"] == "https://api.anthropic.com"
+    assert completion_kwargs["api_key"] == "sk-ant-test"
+
+
+@pytest.mark.asyncio
 async def test_agent_core_profile_strategy_can_disable_streaming_thinking_and_tools(
     async_client,
     monkeypatch,
@@ -717,8 +786,116 @@ async def test_agent_core_tool_capable_catalog_model_receives_tools(
     turn = await _wait_for_turn(async_client, create_turn.json()["data"]["id"])
 
     assert turn["status"] == "completed"
-    assert completion_kwargs["model"] == "agent-test-model"
+    assert completion_kwargs["model"] == "openai/agent-test-model"
     assert completion_kwargs["tools"]
+
+
+@pytest.mark.asyncio
+async def test_agent_core_prefers_user_catalog_model_over_environment_global_default(
+    async_client,
+    db_session,
+    monkeypatch,
+):
+    completion_kwargs: dict = {}
+
+    async def fake_completion(*args, **kwargs):
+        completion_kwargs.update(kwargs)
+
+        class FakeMessage:
+            content = "UI-configured model reply."
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+
+    global_provider = LlmProvider(
+        name="Env vLLM",
+        kind="vllm",
+        base_url="http://env.example.test/v1",
+        scope="global",
+        workspace_id=None,
+        user_id=None,
+        enabled=True,
+        provider_metadata={"envManaged": True, "providerTemplate": "vllm"},
+    )
+    user_provider = LlmProvider(
+        name="UI vLLM",
+        kind="vllm",
+        base_url="http://ui.example.test/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "vllm"},
+    )
+    db_session.add_all([global_provider, user_provider])
+    await db_session.commit()
+    await db_session.refresh(global_provider)
+    await db_session.refresh(user_provider)
+    db_session.add_all(
+        [
+            LlmProviderCredential(
+                provider_id=str(global_provider.id),
+                source="stored",
+                encrypted_secret=encrypt_secret("env-key"),
+                fingerprint=generate_credential_fingerprint(),
+                masked_hint="env-key",
+            ),
+            LlmProviderCredential(
+                provider_id=str(user_provider.id),
+                source="stored",
+                encrypted_secret=encrypt_secret("ui-key"),
+                fingerprint=generate_credential_fingerprint(),
+                masked_hint="ui-key",
+            ),
+            LlmModel(
+                provider_id=str(global_provider.id),
+                model_id="env-model",
+                display_name="Env Model",
+                supports_tools=True,
+                supports_streaming=True,
+            ),
+            LlmModel(
+                provider_id=str(user_provider.id),
+                model_id="ui-model",
+                display_name="UI Model",
+                supports_tools=True,
+                supports_streaming=True,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    project_id = await _create_project(async_client)
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "project_id": project_id,
+            "title": "UI model precedence",
+        },
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+
+    create_turn = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={"input_text": "Use the UI configured model."},
+    )
+    assert create_turn.status_code == 202
+    turn = await _wait_for_turn(async_client, create_turn.json()["data"]["id"])
+
+    assert turn["status"] == "completed"
+    assert completion_kwargs["model"] == "openai/ui-model"
+    assert completion_kwargs["api_base"] == "http://ui.example.test/v1"
+    assert completion_kwargs["api_key"] == "ui-key"
+    assert turn["model_profile_snapshot"]["resolved_model_source"] == "catalog_default"
 
 
 @pytest.mark.asyncio

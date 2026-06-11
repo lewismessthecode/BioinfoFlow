@@ -117,7 +117,7 @@ export function useCelebrationsEnabledPreference(): boolean {
   )
 }
 
-export function isReducedMotionPreferred(): boolean {
+function isReducedMotionPreferred(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return false
   }

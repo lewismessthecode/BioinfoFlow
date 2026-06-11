@@ -328,7 +328,9 @@ describe("RunsPage - run actions", () => {
       projectContext: { activeProjectId: "project-url" },
     })
 
-    expect(await screen.findByTestId("run-inline-detail-loading")).toBeInTheDocument()
+    // The inline detail opens automatically for the first run. Assert the
+    // loaded state directly rather than the transient loading spinner, which
+    // can resolve before the assertion polls on slower CI runners.
     expect(
       await screen.findByTestId("run-inline-detail", {}, { timeout: 3000 }),
     ).toHaveTextContent("detail-run:run-1")
