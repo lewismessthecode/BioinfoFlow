@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import app.database as app_database
 from litellm import acompletion
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +33,7 @@ from app.services.agent_core.core.stream_adapter import (
 from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
 from app.services.agent_core.tools.toolsets import (
@@ -279,9 +281,44 @@ class AgentLoopController:
 
     async def _execute_tool_calls(self, *, agent_session, turn, tool_calls: list[dict]) -> bool:
         waiting = False
-        for tool_call in tool_calls:
+        index = 0
+        while index < len(tool_calls):
             turn = await self._renew_turn_lease(turn)
+            tool_call = tool_calls[index]
             tool_name = decode_provider_tool_name(tool_call["name"])
+            if self._is_concurrent_read_only_tool(tool_name):
+                batch: list[tuple[dict[str, Any], str]] = []
+                while index < len(tool_calls):
+                    candidate = tool_calls[index]
+                    candidate_name = decode_provider_tool_name(candidate["name"])
+                    if not self._is_concurrent_read_only_tool(candidate_name):
+                        break
+                    batch.append((candidate, candidate_name))
+                    index += 1
+                results = await asyncio.gather(
+                    *[
+                        self._execute_tool_call_isolated(
+                            agent_session=agent_session,
+                            turn=turn,
+                            tool_call=item,
+                            tool_name=name,
+                        )
+                        for item, name in batch
+                    ]
+                )
+                for (item, name), result in zip(batch, results, strict=False):
+                    if result.requires_resume:
+                        waiting = True
+                        continue
+                    await self._append_tool_result(
+                        agent_session=agent_session,
+                        turn=turn,
+                        tool_name=name,
+                        tool_call_id=item.get("id"),
+                        result=result,
+                    )
+                continue
+
             result = await self.executor.execute(
                 tool_name=tool_name,
                 input=tool_call["arguments"],
@@ -299,6 +336,7 @@ class AgentLoopController:
             )
             if result.requires_resume:
                 waiting = True
+                index += 1
                 continue
             await self._append_tool_result(
                 agent_session=agent_session,
@@ -307,6 +345,7 @@ class AgentLoopController:
                 tool_call_id=tool_call.get("id"),
                 result=result,
             )
+            index += 1
         return waiting
 
     async def resume_turn_from_action(
@@ -442,6 +481,29 @@ class AgentLoopController:
             metadata={"tool_call_id": tool_call_id, "tool": tool_name},
         )
 
+    async def _execute_tool_call_isolated(self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str):
+        async with app_database.async_session_maker() as session:
+            executor = AgentToolExecutor(session, build_default_tool_registry())
+            return await executor.execute(
+                tool_name=tool_name,
+                input=tool_call["arguments"],
+                context=AgentToolContext(
+                    db=session,
+                    workspace_id=str(turn.workspace_id),
+                    user_id=turn.user_id,
+                    session_id=str(agent_session.id),
+                    turn_id=str(turn.id),
+                ),
+                toolset_policy=agent_session.toolset_policy,
+                permission_mode=agent_session.permission_mode,
+                automation_mode=agent_session.automation_mode,
+                tool_call_id=tool_call.get("id"),
+            )
+
+    def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:
+        spec = self.registry.get(tool_name).spec
+        return spec.risk_level == "read" and not spec.write_scope
+
     async def _call_model_with_retry(
         self,
         *,
@@ -461,6 +523,7 @@ class AgentLoopController:
                     "iteration_count": iteration_count,
                 },
             )
+            agent_metrics.increment("models.retries")
 
         return await run_with_retry(
             lambda: acompletion(**completion_kwargs),
@@ -798,6 +861,8 @@ class AgentLoopController:
                 type=event_type,
                 payload=payload,
             )
+        agent_metrics.increment(f"turns.{result.termination_reason}")
+        agent_metrics.observe("turns.iterations", float(result.iteration_count))
         return updated
 
 

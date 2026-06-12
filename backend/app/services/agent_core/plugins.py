@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ class AgentPluginManifest:
     description: str
     skills: list[str]
     tools: list[str]
+    python_modules: list[str]
     enabled: bool
     path: Path
 
@@ -54,6 +56,18 @@ class AgentPluginRegistry:
         return plugin
 
 
+def register_plugin_tools(registry, *, root: Path | str) -> list[str]:
+    loaded_modules: list[str] = []
+    for plugin in AgentPluginRegistry.from_directory(root).list():
+        for module_name in plugin.python_modules:
+            module = _load_plugin_module(module_name)
+            register = getattr(module, "register_agent_tools", None)
+            if callable(register):
+                register(registry)
+                loaded_modules.append(f"{plugin.id}:{module_name}")
+    return loaded_modules
+
+
 def _parse_plugin_file(path: Path) -> AgentPluginManifest | None:
     raw = json.loads(path.read_text(encoding="utf-8"))
     plugin_id = _as_str(raw.get("id"))
@@ -61,6 +75,10 @@ def _parse_plugin_file(path: Path) -> AgentPluginManifest | None:
     version = _as_str(raw.get("version"))
     if not plugin_id or not name or not version:
         return None
+    python_modules = _as_str_list(raw.get("python_modules"))
+    single_module = _as_str(raw.get("python_module"))
+    if single_module and single_module not in python_modules:
+        python_modules.append(single_module)
     return AgentPluginManifest(
         id=plugin_id,
         name=name,
@@ -68,9 +86,14 @@ def _parse_plugin_file(path: Path) -> AgentPluginManifest | None:
         description=_as_str(raw.get("description")) or "",
         skills=_as_str_list(raw.get("skills")),
         tools=_as_str_list(raw.get("tools")),
+        python_modules=python_modules,
         enabled=bool(raw.get("enabled", True)),
         path=path,
     )
+
+
+def _load_plugin_module(module_name: str):
+    return importlib.import_module(module_name)
 
 
 def _as_str(value: Any) -> str | None:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentMessageRepository
-from app.services.agent_core.transcript.messages import text_part
+from app.services.agent_core.transcript.messages import parts_to_text, text_part
 
 
 class AgentTranscriptStore:
@@ -52,3 +53,64 @@ class AgentTranscriptStore:
 
     async def list_messages(self, session_id: str):
         return await self.messages.list_for_session(session_id)
+
+    async def compact_session(
+        self,
+        *,
+        session_id: str,
+        turn_id: str | None,
+        threshold_chars: int,
+        preserve_recent_messages: int = 12,
+    ) -> dict[str, Any] | None:
+        committed = await self.messages.list_committed_for_session(session_id)
+        if len(committed) <= preserve_recent_messages:
+            return None
+        transcript_chars = sum(self._message_size(message) for message in committed)
+        if transcript_chars <= threshold_chars:
+            return None
+
+        summary_candidates = committed[:-preserve_recent_messages]
+        if not summary_candidates:
+            return None
+        if len(summary_candidates) == 1 and self._is_compaction_summary(summary_candidates[0]):
+            return None
+
+        summary_text = self._build_summary(summary_candidates)
+        summary_message = await self.append_text(
+            session_id=session_id,
+            turn_id=turn_id,
+            role="assistant",
+            text=summary_text,
+            metadata={
+                "kind": "compaction_summary",
+                "supersedes": [str(message.id) for message in summary_candidates],
+            },
+        )
+        await self.messages.mark_superseded([str(message.id) for message in summary_candidates])
+        return {
+            "summary_message_id": str(summary_message.id),
+            "superseded_message_ids": [str(message.id) for message in summary_candidates],
+            "transcript_chars": transcript_chars,
+        }
+
+    def _build_summary(self, messages: list[Any]) -> str:
+        lines = ["Conversation summary for continuity:"]
+        for message in messages:
+            text = parts_to_text(message.content_parts or [])
+            if message.role == "tool":
+                lines.append(f"- tool: {self._truncate_text(text, 240)}")
+            else:
+                lines.append(f"- {message.role}: {self._truncate_text(text, 240)}")
+        return "\n".join(lines)
+
+    def _message_size(self, message: Any) -> int:
+        return len(json.dumps(message.content_parts or [], default=str))
+
+    def _is_compaction_summary(self, message: Any) -> bool:
+        metadata = getattr(message, "message_metadata", None) or {}
+        return metadata.get("kind") == "compaction_summary"
+
+    def _truncate_text(self, text: str, limit: int) -> str:
+        if len(text) <= limit:
+            return text
+        return text[:limit] + "…"

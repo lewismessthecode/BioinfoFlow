@@ -95,6 +95,34 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_committed_for_session(self, session_id: str) -> list[AgentMessage]:
+        stmt = (
+            select(self.model)
+            .where(
+                self.model.session_id == session_id,
+                self.model.status == "committed",
+            )
+            .order_by(self.model.ordering_index, self.model.created_at, self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def mark_superseded(self, message_ids: list[str]) -> None:
+        if not message_ids:
+            return
+        stmt = select(self.model).where(self.model.id.in_(message_ids))
+        result = await self.session.execute(stmt)
+        for message in result.scalars().all():
+            message.status = "superseded"
+        await self.session.commit()
+
+    async def update_message(self, message: AgentMessage, **data: object) -> AgentMessage:
+        for key, value in data.items():
+            setattr(message, key, value)
+        await self.session.commit()
+        await self.session.refresh(message)
+        return message
+
 
 class AgentEventRepository(BaseRepository[AgentEvent]):
     model = AgentEvent

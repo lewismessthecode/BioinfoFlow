@@ -85,7 +85,7 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
     assert session.project_id is None
     assert session.runtime_mode == "api"
-    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v1"
+    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v2"
     assert session.toolset_policy["name"] == "default"
 
 

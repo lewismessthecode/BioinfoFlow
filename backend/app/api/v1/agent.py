@@ -27,6 +27,7 @@ from app.schemas.agent_core import (
     AgentTurnRead,
 )
 from app.services.agent_core import AgentCoreService, AgentMemoryService
+from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_model_selection_from_metadata,
@@ -326,6 +327,11 @@ async def get_session_state(
         },
         request=request,
     )
+
+
+@router.get("/metrics")
+async def get_agent_metrics(request: Request):
+    return success_response(agent_metrics.snapshot(), request=request)
 
 
 @router.get("/toolsets")

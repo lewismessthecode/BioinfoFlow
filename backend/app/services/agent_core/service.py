@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.agent_core import AgentActionStatus, AgentSessionStatus, AgentTurnStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
@@ -79,7 +80,11 @@ class AgentCoreService:
             prompt_snapshot=default_system_prompt_snapshot().as_dict(),
             toolset_policy=DEFAULT_TOOLSET_POLICY,
             context_policy={"memory": "accepted_project_scope", "transcript": "canonical"},
-            compression_state={"enabled": False},
+            compression_state={
+                "enabled": True,
+                "threshold_chars": int(settings.agent_compact_threshold),
+                "preserve_recent_messages": 12,
+            },
             lineage={"parent_session_id": None},
             session_metadata=session_metadata_with_model_selection(
                 metadata, model_selection

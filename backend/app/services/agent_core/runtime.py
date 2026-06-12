@@ -29,6 +29,7 @@ from app.services.agent_core.core.runtime_strategy import (
 )
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_model_selection_from_metadata,
@@ -90,6 +91,7 @@ class AgentCoreRuntime:
             type=AgentEventType.TURN_STARTED,
             payload={},
         )
+        agent_metrics.increment("turns.started")
 
         resolved = await self._resolve_model_selection(turn=turn, session=session)
         if resolved is None:
@@ -379,6 +381,7 @@ class AgentCoreRuntime:
                         "source": candidate["source"],
                     },
                 )
+                agent_metrics.increment("models.fallbacks")
 
             if next_resume_action_id is not None:
                 result = await controller.resume_turn_from_action(
@@ -485,6 +488,7 @@ class AgentCoreRuntime:
             type=AgentEventType.TURN_FAILED,
             payload={"error_message": error_message, "error_code": error_code},
         )
+        agent_metrics.increment("turns.failed")
         return turn
 
 
