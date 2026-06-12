@@ -115,7 +115,7 @@ async def test_shell_tool_blocks_dangerous_commands_even_in_bypass(db_session):
 @pytest.mark.asyncio
 async def test_shell_tool_resumes_after_approval_and_registers_output_artifact(db_session, monkeypatch):
     dispatcher, context, workspace_root = await _shell_context(db_session)
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda _action_id: None)
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
 
     pending = await dispatcher.dispatch(
         tool_name="execution.shell",
@@ -167,7 +167,7 @@ async def test_shell_tool_resumes_after_approval_and_registers_output_artifact(d
 @pytest.mark.asyncio
 async def test_shell_tool_uses_modified_input_when_approval_changes_command(db_session, monkeypatch):
     dispatcher, context, workspace_root = await _shell_context(db_session)
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda _action_id: None)
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
 
     pending = await dispatcher.dispatch(
         tool_name="execution.shell",

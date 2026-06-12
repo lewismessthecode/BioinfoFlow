@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -11,8 +12,12 @@ from app.repositories.agent_core_repo import AgentActionRepository, AgentArtifac
 from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.tools.approval import action_requires_resume
-from app.services.agent_core.tools.middleware import normalize_tool_input
+from app.services.agent_core.tools.middleware import (
+    normalize_tool_input,
+    validate_tool_output,
+)
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.result_budget import normalize_tool_result
 from app.services.agent_core.tools.specs import AgentTool, AgentToolContext
@@ -132,9 +137,48 @@ class AgentToolExecutor:
             type=AgentEventType.ACTION_STARTED,
             payload={"action_id": str(action.id), "tool": tool.spec.name},
         )
+        agent_metrics.increment("tools.started")
         try:
-            raw_result = await tool.run(action.normalized_input or action.input, context)
-            result, summary = normalize_tool_result(raw_result)
+            raw_result = await asyncio.wait_for(
+                tool.run(action.normalized_input or action.input, context),
+                timeout=tool.spec.timeout_seconds,
+            )
+            validated_result = validate_tool_output(raw_result, tool.spec.output_schema)
+            result, summary = normalize_tool_result(validated_result)
+        except asyncio.TimeoutError:
+            error = {
+                "type": "TimeoutError",
+                "message": f"Tool timed out after {tool.spec.timeout_seconds}s",
+            }
+            action = await self.action_repo.update_all(
+                action,
+                status=AgentActionStatus.FAILED,
+                error=error,
+                completed_at=datetime.now(timezone.utc),
+            )
+            await self.ledger.append(
+                session_id=str(action.session_id),
+                turn_id=str(action.turn_id),
+                type=AgentEventType.ACTION_FAILED,
+                payload={"action_id": str(action.id), "error": error},
+            )
+            agent_metrics.increment("tools.failed")
+            return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
+        except asyncio.CancelledError:
+            action = await self.action_repo.update_all(
+                action,
+                status=AgentActionStatus.CANCELLED,
+                error={"type": "CancelledError", "message": "Tool execution was cancelled."},
+                completed_at=datetime.now(timezone.utc),
+            )
+            await self.ledger.append(
+                session_id=str(action.session_id),
+                turn_id=str(action.turn_id),
+                type=AgentEventType.ACTION_CANCELLED,
+                payload={"action_id": str(action.id), "tool": tool.spec.name},
+            )
+            agent_metrics.increment("tools.cancelled")
+            raise
         except Exception as exc:
             error = {"type": exc.__class__.__name__, "message": str(exc)}
             action = await self.action_repo.update_all(
@@ -149,6 +193,7 @@ class AgentToolExecutor:
                 type=AgentEventType.ACTION_FAILED,
                 payload={"action_id": str(action.id), "error": error},
             )
+            agent_metrics.increment("tools.failed")
             return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
 
         artifact_ids = await self._register_artifacts(action=action, tool=tool, result=result)
@@ -165,6 +210,7 @@ class AgentToolExecutor:
             type=AgentEventType.ACTION_COMPLETED,
             payload={"action_id": str(action.id), "result": result, "artifact_ids": artifact_ids},
         )
+        agent_metrics.increment("tools.completed")
         return ToolExecutionResult(
             action_id=str(action.id),
             status=action.status,

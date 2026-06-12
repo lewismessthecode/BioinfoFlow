@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, update
 
 from app.models.agent_core import (
     AgentAction,
+    AgentActionStatus,
     AgentArtifact,
     AgentEvent,
     AgentMessage,
@@ -11,6 +12,7 @@ from app.models.agent_core import (
     AgentSession,
     AgentSessionStatus,
     AgentTurn,
+    AgentTurnStatus,
 )
 from app.repositories.base import BaseRepository
 from app.schemas.common import Pagination
@@ -56,6 +58,23 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_recoverable(self) -> list[AgentTurn]:
+        stmt = (
+            select(self.model)
+            .where(
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                )
+            )
+            .order_by(self.model.created_at, self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
 
 class AgentMessageRepository(BaseRepository[AgentMessage]):
     model = AgentMessage
@@ -75,6 +94,47 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_committed_for_session(self, session_id: str) -> list[AgentMessage]:
+        stmt = (
+            select(self.model)
+            .where(
+                self.model.session_id == session_id,
+                self.model.status == "committed",
+            )
+            .order_by(self.model.ordering_index, self.model.created_at, self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def shift_ordering_indices(self, session_id: str, *, starting_at: int, delta: int = 1) -> None:
+        if delta == 0:
+            return
+        await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.session_id == session_id,
+                self.model.ordering_index >= starting_at,
+            )
+            .values(ordering_index=self.model.ordering_index + delta)
+        )
+        await self.session.commit()
+
+    async def mark_superseded(self, message_ids: list[str]) -> None:
+        if not message_ids:
+            return
+        stmt = select(self.model).where(self.model.id.in_(message_ids))
+        result = await self.session.execute(stmt)
+        for message in result.scalars().all():
+            message.status = "superseded"
+        await self.session.commit()
+
+    async def update_message(self, message: AgentMessage, **data: object) -> AgentMessage:
+        for key, value in data.items():
+            setattr(message, key, value)
+        await self.session.commit()
+        await self.session.refresh(message)
+        return message
 
 
 class AgentEventRepository(BaseRepository[AgentEvent]):
@@ -122,6 +182,24 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             select(self.model)
             .where(self.model.turn_id == turn_id)
             .order_by(self.model.created_at, self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_open_for_turn(self, turn_id: str) -> list[AgentAction]:
+        stmt = (
+            select(self.model)
+            .where(
+                self.model.turn_id == turn_id,
+                self.model.status.in_(
+                    [
+                        AgentActionStatus.WAITING_DECISION,
+                        AgentActionStatus.REQUESTED,
+                        AgentActionStatus.RUNNING,
+                    ]
+                ),
+            )
+            .order_by(desc(self.model.created_at), desc(self.model.id))
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

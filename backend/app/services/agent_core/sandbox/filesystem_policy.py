@@ -18,11 +18,37 @@ class FilesystemPolicy:
         target = Path(cwd or settings.bioinfoflow_home).expanduser().resolve()
         if not target.exists() or not target.is_dir():
             raise PermissionDeniedError(f"Working directory is not available: {target}")
+        self._require_allowed_path(target)
+        return target
+
+    def require_allowed_path(
+        self,
+        path: str | Path,
+        *,
+        must_exist: bool = True,
+        allow_directory: bool = True,
+    ) -> Path:
+        target = Path(path).expanduser().resolve()
+        if must_exist and not target.exists():
+            raise PermissionDeniedError(f"Path is not available: {target}")
+        if target.exists() and not allow_directory and target.is_dir():
+            raise PermissionDeniedError(f"Expected a file path, got directory: {target}")
+        self._require_allowed_path(target)
+        return target
+
+    def require_parent_dir(self, path: str | Path) -> Path:
+        target = Path(path).expanduser().resolve()
+        parent = target.parent
+        if not parent.exists() or not parent.is_dir():
+            raise PermissionDeniedError(f"Parent directory is not available: {parent}")
+        self._require_allowed_path(parent)
+        return target
+
+    def _require_allowed_path(self, target: Path) -> None:
         if not any(_is_relative_to(target, root) for root in self.allowed_roots):
             raise PermissionDeniedError(
-                f"Working directory is outside allowed roots: {target}"
+                f"Path is outside allowed roots: {target}"
             )
-        return target
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:

@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from app.database import get_alembic_head_revision
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -79,7 +81,7 @@ def test_runtime_strategy_migration_is_idempotent_for_partially_applied_sqlite_d
     conn = sqlite3.connect(db_path)
     try:
         revision = conn.execute("SELECT version_num FROM alembic_version").fetchone()
-        assert revision == ("0034_drop_legacy_user_settings",)
+        assert revision == (get_alembic_head_revision(),)
 
         columns = {
             row[1] for row in conn.execute("PRAGMA table_info(llm_model_profiles)").fetchall()
