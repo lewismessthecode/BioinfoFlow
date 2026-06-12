@@ -7,6 +7,8 @@ actionable, and specific to this repo.
 
 - Always run `rtk git branch --show-current` and `rtk git worktree list` before
   editing. This worktree may be detached.
+- In a worktree, treat "repo root" as the current worktree root, not the original
+  checkout.
 - Inspect the relevant code before changing it. Prefer `rtk rg` and
   `rtk rg --files` for search.
 - Preserve user or generated changes. Do not revert unrelated dirty files.
