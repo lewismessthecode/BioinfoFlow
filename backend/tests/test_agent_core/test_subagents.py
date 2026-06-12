@@ -7,6 +7,7 @@ from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.subagents import ReadOnlySubagentRunner
 from app.services.agent_core.tools import build_default_tool_registry
+from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.utils.exceptions import PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -122,3 +123,14 @@ async def test_read_only_subagent_can_run_delegated_child_turn(db_session, monke
     assert result["final_text"] == "Delegated answer from child turn."
     assert result["child_session_id"]
     assert result["child_turn_id"]
+
+    child_session = await service.session_repo.get(result["child_session_id"])
+    assert child_session is not None
+    assert child_session.toolset_policy == {
+        "name": "default",
+        "allowed_tools": ["projects.list", "skills.list"],
+    }
+    assert ToolsetExposure(build_default_tool_registry()).exposed_names(
+        policy=child_session.toolset_policy,
+        role="worker",
+    ) == {"projects.list", "skills.list"}

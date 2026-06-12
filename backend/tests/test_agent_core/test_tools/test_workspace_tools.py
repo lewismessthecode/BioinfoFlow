@@ -167,21 +167,6 @@ async def test_web_tools_fetch_and_search(db_session, monkeypatch):
     dispatcher.executor.registry.register(FetchWebPageTool())
     dispatcher.executor.registry.register(SearchWebTool())
 
-    class FakeResponse:
-        status_code = 200
-        text = "<html><body>Hello <b>world</b></body></html>"
-        url = "https://example.com/page"
-
-    class FakeClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def get(self, url):
-            return FakeResponse()
-
     class FakeDDGS:
         def __enter__(self):
             return self
@@ -192,7 +177,14 @@ async def test_web_tools_fetch_and_search(db_session, monkeypatch):
         def text(self, query, max_results):
             return [{"title": "Result", "href": "https://example.com", "body": query}]
 
-    monkeypatch.setattr("app.services.agent_core.tools.web.resources.httpx.AsyncClient", lambda **_: FakeClient())
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.web.resources._fetch_url",
+        lambda url: {
+            "url": url,
+            "status_code": 200,
+            "text": "<html><body>Hello <b>world</b></body></html>",
+        },
+    )
     monkeypatch.setattr("app.services.agent_core.tools.web.resources.DDGS", FakeDDGS)
 
     fetched = await dispatcher.dispatch(

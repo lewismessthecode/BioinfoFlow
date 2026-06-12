@@ -23,18 +23,19 @@ class AgentContextAssembler:
     async def provider_messages(self, *, agent_session, turn) -> list[dict]:
         await self._compact_if_needed(agent_session=agent_session, turn=turn)
         snapshot = agent_session.prompt_snapshot or default_system_prompt_snapshot().as_dict()
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": str(snapshot.get("content") or "")}
-        ]
+        system_sections = [str(snapshot.get("content") or "")]
         session_context = self._session_context(agent_session)
         if session_context:
-            messages.append({"role": "system", "content": session_context})
+            system_sections.append(session_context)
         memory_context = await self._memory_context(agent_session)
         if memory_context:
-            messages.append({"role": "system", "content": memory_context})
+            system_sections.append(memory_context)
         skills_context = self._skills_context()
         if skills_context:
-            messages.append({"role": "system", "content": skills_context})
+            system_sections.append(skills_context)
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": "\n\n".join(section for section in system_sections if section)}
+        ]
         for message in await self.transcript.list_messages(str(agent_session.id)):
             if message.status != "committed":
                 continue

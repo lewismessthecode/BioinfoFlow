@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, update
 
 from app.models.agent_core import (
     AgentAction,
@@ -106,6 +106,19 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def shift_ordering_indices(self, session_id: str, *, starting_at: int, delta: int = 1) -> None:
+        if delta == 0:
+            return
+        await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.session_id == session_id,
+                self.model.ordering_index >= starting_at,
+            )
+            .values(ordering_index=self.model.ordering_index + delta)
+        )
+        await self.session.commit()
 
     async def mark_superseded(self, message_ids: list[str]) -> None:
         if not message_ids:

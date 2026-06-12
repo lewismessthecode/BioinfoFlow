@@ -7,7 +7,7 @@ from typing import Any
 
 import app.database as app_database
 from litellm import acompletion
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.models.agent_core import AgentActionStatus, AgentTurnStatus
@@ -482,7 +482,13 @@ class AgentLoopController:
         )
 
     async def _execute_tool_call_isolated(self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str):
-        async with app_database.async_session_maker() as session:
+        bind = self.db.bind
+        session_factory = (
+            async_sessionmaker(bind=bind, expire_on_commit=False)
+            if bind is not None
+            else app_database.async_session_maker
+        )
+        async with session_factory() as session:
             executor = AgentToolExecutor(session, build_default_tool_registry())
             return await executor.execute(
                 tool_name=tool_name,

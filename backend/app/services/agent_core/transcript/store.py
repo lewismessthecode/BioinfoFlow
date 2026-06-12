@@ -21,6 +21,7 @@ class AgentTranscriptStore:
         role: str,
         text: str,
         metadata: dict[str, Any] | None = None,
+        ordering_index: int | None = None,
     ):
         return await self.append_parts(
             session_id=session_id,
@@ -28,6 +29,7 @@ class AgentTranscriptStore:
             role=role,
             parts=[text_part(text)],
             metadata=metadata,
+            ordering_index=ordering_index,
         )
 
     async def append_parts(
@@ -39,8 +41,10 @@ class AgentTranscriptStore:
         parts: list[dict[str, Any]],
         metadata: dict[str, Any] | None = None,
         status: str = "committed",
+        ordering_index: int | None = None,
     ):
-        ordering_index = await self.messages.next_ordering_index(session_id)
+        if ordering_index is None:
+            ordering_index = await self.messages.next_ordering_index(session_id)
         return await self.messages.create(
             session_id=session_id,
             turn_id=turn_id,
@@ -75,6 +79,8 @@ class AgentTranscriptStore:
         if len(summary_candidates) == 1 and self._is_compaction_summary(summary_candidates[0]):
             return None
 
+        insert_before = committed[-preserve_recent_messages].ordering_index
+        await self.messages.shift_ordering_indices(session_id, starting_at=insert_before)
         summary_text = self._build_summary(summary_candidates)
         summary_message = await self.append_text(
             session_id=session_id,
@@ -85,6 +91,7 @@ class AgentTranscriptStore:
                 "kind": "compaction_summary",
                 "supersedes": [str(message.id) for message in summary_candidates],
             },
+            ordering_index=insert_before,
         )
         await self.messages.mark_superseded([str(message.id) for message in summary_candidates])
         return {

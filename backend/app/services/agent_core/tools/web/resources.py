@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any
+from urllib import request
 
-import httpx
 from duckduckgo_search import DDGS
 
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
@@ -43,13 +44,12 @@ class FetchWebPageTool:
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         del context
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
-            response = await client.get(str(input["url"]))
+        response = await asyncio.to_thread(_fetch_url, str(input["url"]))
         max_chars = int(input.get("max_chars") or 12000)
-        cleaned = _clean_text(response.text)[:max_chars]
+        cleaned = _clean_text(response["text"])[:max_chars]
         return {
-            "url": str(response.url),
-            "status_code": int(response.status_code),
+            "url": response["url"],
+            "status_code": response["status_code"],
             "content": cleaned,
         }
 
@@ -92,6 +92,18 @@ class SearchWebTool:
                 }
                 for item in results[:max_results]
             ]
+        }
+
+
+def _fetch_url(url: str) -> dict[str, Any]:
+    req = request.Request(url, headers={"User-Agent": "Bioinfoflow-AgentCore/1.0"})
+    with request.urlopen(req, timeout=20.0) as response:
+        body = response.read()
+        charset = response.headers.get_content_charset() or "utf-8"
+        return {
+            "url": str(response.geturl()),
+            "status_code": int(response.getcode() or 200),
+            "text": body.decode(charset, errors="replace"),
         }
 
 

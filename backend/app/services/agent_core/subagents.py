@@ -76,7 +76,7 @@ class ReadOnlySubagentRunner:
                 "parent_session_id": runtime_context["session_id"],
                 "parent_turn_id": runtime_context["turn_id"],
             },
-            toolset_policy={"name": "default"},
+            toolset_policy={"name": "default", "allowed_tools": tool_names},
         )
         child_turn = await service.create_turn_record(
             session_id=str(child_session.id),

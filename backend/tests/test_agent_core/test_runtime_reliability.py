@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 
 import pytest
@@ -10,6 +11,7 @@ from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
 from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
+import app.services.agent_core.runner as runner_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 from app.models.workspace import Workspace
 
@@ -369,3 +371,42 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
 
     assert summary["enqueued"] == 1
     assert resumed == [(str(action.id), str(turn.id))]
+
+
+@pytest.mark.asyncio
+async def test_enqueue_turn_resume_waits_for_running_task_to_finish(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[tuple[str, str]] = []
+
+    async def fake_run_turn_once(turn_id: str):
+        calls.append(("run", turn_id))
+        started.set()
+        await release.wait()
+        return "ran"
+
+    async def fake_resume_turn_once(action_id: str):
+        calls.append(("resume", action_id))
+        return "resumed"
+
+    runner_module._RUNNING_TURNS.clear()
+    runner_module._PENDING_TURN_TASK_FACTORIES.clear()
+    monkeypatch.setattr(runner_module, "run_turn_once", fake_run_turn_once)
+    monkeypatch.setattr(runner_module, "resume_turn_once", fake_resume_turn_once)
+
+    runner_module.enqueue_turn_run("turn-1")
+    await started.wait()
+    runner_module.enqueue_turn_resume("action-1", "turn-1")
+
+    assert calls == [("run", "turn-1")]
+    assert "turn-1" in runner_module._PENDING_TURN_TASK_FACTORIES
+
+    release.set()
+    for _ in range(20):
+        if len(calls) == 2 and "turn-1" not in runner_module._RUNNING_TURNS:
+            break
+        await asyncio.sleep(0)
+
+    assert calls == [("run", "turn-1"), ("resume", "action-1")]
+    assert "turn-1" not in runner_module._RUNNING_TURNS
+    assert "turn-1" not in runner_module._PENDING_TURN_TASK_FACTORIES

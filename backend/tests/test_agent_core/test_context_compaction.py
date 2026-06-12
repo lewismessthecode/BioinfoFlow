@@ -98,6 +98,14 @@ async def test_context_compaction_supersedes_older_messages(db_session):
     statuses = [message.status for message in stored]
 
     assert "superseded" in statuses
+    summary_message = next(
+        message
+        for message in stored
+        if message.role == "assistant"
+        and (message.message_metadata or {}).get("kind") == "compaction_summary"
+    )
+    recent_messages = [message for message in stored if message.status == "committed"]
+    assert summary_message.ordering_index < recent_messages[-1].ordering_index
     assert any(
         message.role == "assistant"
         and (message.message_metadata or {}).get("kind") == "compaction_summary"

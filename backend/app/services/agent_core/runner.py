@@ -11,14 +11,15 @@ from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 _RUNNING_TURNS: dict[str, asyncio.Task] = {}
+_PENDING_TURN_TASK_FACTORIES: dict[str, Callable[[], Awaitable[object]]] = {}
 
 
 def enqueue_turn_run(turn_id: str) -> None:
-    _register_turn_task(turn_id, run_turn_once(turn_id))
+    _register_turn_task(turn_id, lambda: run_turn_once(turn_id))
 
 
 def enqueue_turn_resume(action_id: str, turn_id: str) -> None:
-    _register_turn_task(turn_id, resume_turn_once(action_id))
+    _register_turn_task(turn_id, lambda: resume_turn_once(action_id))
 
 
 def cancel_turn_run(turn_id: str) -> bool:
@@ -44,11 +45,16 @@ async def resume_turn_once(action_id: str):
         return await AgentCoreRuntime(session).resume_turn_after_action(action_id)
 
 
-def _register_turn_task(turn_id: str, coroutine: Awaitable[object]) -> None:
+def _register_turn_task(turn_id: str, task_factory: Callable[[], Awaitable[object]]) -> None:
     existing = _RUNNING_TURNS.get(turn_id)
     if existing is not None and not existing.done():
+        _PENDING_TURN_TASK_FACTORIES[turn_id] = task_factory
         return
-    task = asyncio.create_task(coroutine)
+    _start_turn_task(turn_id, task_factory)
+
+
+def _start_turn_task(turn_id: str, task_factory: Callable[[], Awaitable[object]]) -> None:
+    task = asyncio.create_task(task_factory())
     _RUNNING_TURNS[turn_id] = task
     task.add_done_callback(_build_done_callback(turn_id))
 
@@ -59,6 +65,9 @@ def _build_done_callback(turn_id: str) -> Callable[[asyncio.Task], None]:
         if current is task:
             _RUNNING_TURNS.pop(turn_id, None)
         _log_task_result(task)
+        pending = _PENDING_TURN_TASK_FACTORIES.pop(turn_id, None)
+        if pending is not None:
+            _start_turn_task(turn_id, pending)
 
     return _done
 
