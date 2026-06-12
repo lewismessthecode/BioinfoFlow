@@ -8,8 +8,10 @@ TurnTerminationReason = Literal[
     "assistant_final",
     "waiting_approval",
     "interrupted",
+    "cancelled",
     "budget_exhausted",
     "model_failed",
+    "no_progress",
 ]
 
 

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 
 import pytest
 
-from app.services.agent_core.plugins import AgentPluginRegistry
+from app.services.agent_core.plugins import AgentPluginRegistry, register_plugin_tools
 from app.services.agent_core.skills import AgentSkillRegistry
+from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.skills import ListPluginsTool, ListSkillsTool, LoadSkillTool
 from app.services.agent_core.tools.specs import AgentToolContext
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -80,6 +83,43 @@ def test_agent_plugin_registry_discovers_versioned_plugin_manifests(tmp_path: Pa
     assert plugin.skills == ["variant-qc"]
     assert plugin.tools == ["vcf.filter"]
     assert plugin.enabled is True
+
+
+def test_plugin_registration_loads_python_tool_modules(tmp_path: Path):
+    plugin_dir = tmp_path / "custom-plugin" / ".bioinfoflow-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "custom-tools",
+                "name": "Custom Tools",
+                "version": "1.0.0",
+                "python_modules": ["testsupport.agent_plugin_demo"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    module = types.ModuleType("testsupport.agent_plugin_demo")
+    namespace: dict[str, object] = {}
+    exec(
+        "from app.services.agent_core.tools.specs import AgentToolSpec\n"
+        "class DemoTool:\n"
+        "    spec = AgentToolSpec(name='demo.echo', description='Echo demo', input_schema={'type':'object','properties':{},'additionalProperties':False}, output_schema={'type':'object','properties':{'ok':{'type':'boolean'}},'required':['ok']}, risk_level='read')\n"
+        "    async def run(self, input, context):\n"
+        "        return {'ok': True}\n"
+        "def register_agent_tools(registry):\n"
+        "    registry.register(DemoTool())\n",
+        namespace,
+    )
+    module.__dict__.update(namespace)
+    sys.modules[module.__name__] = module
+
+    registry = AgentToolRegistry()
+    loaded = register_plugin_tools(registry, root=tmp_path)
+
+    assert registry.get("demo.echo").spec.name == "demo.echo"
+    assert loaded == ["custom-tools:testsupport.agent_plugin_demo"]
 
 
 @pytest.mark.asyncio

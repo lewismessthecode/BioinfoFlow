@@ -19,6 +19,7 @@ from app.scheduler.config import SchedulerConfig
 from app.scheduler.monitor import ResourceMonitor
 from app.scheduler.scheduler import RunScheduler
 from app.services.workspace_service import WorkspaceService
+from app.services.agent_core import AgentCoreService
 from app.services.run_dispatch import (
     SchedulerDispatcher,
     set_run_dispatcher,
@@ -89,6 +90,10 @@ async def lifespan(app: FastAPI):
         "startup.run_recovery.complete",
         stale_after_minutes=settings.scheduler_stale_timeout_minutes,
     )
+    async with app.state_db_session() as session:
+        recovered_turns = await AgentCoreService(session).recover_orphaned_turns()
+        await session.commit()
+    logger.info("startup.agent_core_recovery.complete", **recovered_turns)
     await task_runner.start()
     logger.info("startup.task_runner.ready")
     await background_tasks.start()

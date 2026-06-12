@@ -31,28 +31,34 @@ class ToolsetExposure:
         return [self.registry.get(name).spec for name in sorted(names)]
 
     def exposed_names(self, *, policy: dict | None, role: str = "orchestrator") -> set[str]:
-        policy_name = str((policy or DEFAULT_TOOLSET_POLICY).get("name") or "default")
+        policy = policy or DEFAULT_TOOLSET_POLICY
+        policy_name = str(policy.get("name") or "default")
         specs = self.registry.list_specs()
         if role == "worker":
-            return {
+            names = {
                 spec.name
                 for spec in specs
                 if spec.risk_level == "read" and not spec.write_scope
             }
-        if policy_name == "execution":
-            return {spec.name for spec in specs}
-        if policy_name == "bio":
-            return {
+        elif policy_name == "execution":
+            names = {spec.name for spec in specs}
+        elif policy_name == "bio":
+            names = {
                 spec.name
                 for spec in specs
                 if spec.name.startswith(("bio.", "runs.", "workflows.", "images.", "projects."))
                 and spec.risk_level == "read"
             }
-        return {
-            spec.name
-            for spec in specs
-            if spec.risk_level == "read" and not spec.write_scope
-        }
+        else:
+            names = {
+                spec.name
+                for spec in specs
+                if spec.risk_level == "read" and not spec.write_scope
+            }
+        allowed_tools = policy.get("allowed_tools")
+        if isinstance(allowed_tools, list) and allowed_tools:
+            names &= {str(name) for name in allowed_tools}
+        return names
 
     def decide(
         self,

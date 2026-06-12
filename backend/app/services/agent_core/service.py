@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.agent_core import AgentActionStatus, AgentSessionStatus, AgentTurnStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
@@ -20,7 +21,12 @@ from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_metadata_with_model_selection,
 )
-from app.services.agent_core.runner import enqueue_turn_resume, enqueue_turn_run
+from app.services.agent_core.runner import (
+    cancel_turn_run,
+    enqueue_turn_resume,
+    enqueue_turn_run,
+    is_turn_running,
+)
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.context import default_system_prompt_snapshot
 from app.services.agent_core.tools.toolsets import DEFAULT_TOOLSET_POLICY
@@ -74,7 +80,11 @@ class AgentCoreService:
             prompt_snapshot=default_system_prompt_snapshot().as_dict(),
             toolset_policy=DEFAULT_TOOLSET_POLICY,
             context_policy={"memory": "accepted_project_scope", "transcript": "canonical"},
-            compression_state={"enabled": False},
+            compression_state={
+                "enabled": True,
+                "threshold_chars": int(settings.agent_compact_threshold),
+                "preserve_recent_messages": 12,
+            },
             lineage={"parent_session_id": None},
             session_metadata=session_metadata_with_model_selection(
                 metadata, model_selection
@@ -275,16 +285,22 @@ class AgentCoreService:
             user_id=user_id,
         )
         now = datetime.now(timezone.utc)
+        cancelled_in_runner = cancel_turn_run(str(turn.id))
+        await self._cancel_open_actions(str(turn.id), cancelled_at=now)
         updated = await self.turn_repo.update_all(
             turn,
             status=AgentTurnStatus.CANCELLED,
+            termination_reason="cancelled",
             completed_at=now,
+            loop_state={"termination_reason": "cancelled"},
+            claimed_at=None,
+            lease_until=None,
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             type=AgentEventType.TURN_CANCELLED,
-            payload={},
+            payload={"task_cancelled": cancelled_in_runner},
         )
         return updated
 
@@ -301,6 +317,8 @@ class AgentCoreService:
             user_id=user_id,
         )
         now = datetime.now(timezone.utc)
+        cancelled_in_runner = cancel_turn_run(str(turn.id))
+        await self._cancel_open_actions(str(turn.id), cancelled_at=now)
         updated = await self.turn_repo.update_all(
             turn,
             status=AgentTurnStatus.CANCELLED,
@@ -308,12 +326,17 @@ class AgentCoreService:
             termination_reason="interrupted",
             completed_at=now,
             loop_state={"termination_reason": "interrupted"},
+            claimed_at=None,
+            lease_until=None,
         )
         await self.ledger.append(
             session_id=str(updated.session_id),
             turn_id=str(updated.id),
             type=AgentEventType.TURN_INTERRUPTED,
-            payload={"termination_reason": "interrupted"},
+            payload={
+                "termination_reason": "interrupted",
+                "task_cancelled": cancelled_in_runner,
+            },
         )
         return updated
 
@@ -401,7 +424,7 @@ class AgentCoreService:
             payload={"action_id": str(action.id), "decision": decision, "note": note},
         )
         if decision in {"approve", "modify", "reject"} and updated.kind == "tool":
-            enqueue_turn_resume(str(updated.id))
+            enqueue_turn_resume(str(updated.id), str(updated.turn_id))
         return updated
 
     async def resume_action(
@@ -419,8 +442,120 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        enqueue_turn_resume(str(action.id))
+        enqueue_turn_resume(str(action.id), str(action.turn_id))
         return action
+
+    async def recover_orphaned_turns(self) -> dict[str, int]:
+        summary = {"enqueued": 0, "failed": 0, "waiting": 0, "skipped": 0}
+        for turn in await self.turn_repo.list_recoverable():
+            if is_turn_running(str(turn.id)):
+                summary["skipped"] += 1
+                continue
+            outcome = await self._recover_turn(str(turn.id))
+            summary[outcome] = summary.get(outcome, 0) + 1
+        return summary
+
+    async def _recover_turn(self, turn_id: str) -> str:
+        turn = await self.turn_repo.get(turn_id)
+        if turn is None:
+            return "skipped"
+        if turn.status in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            return "skipped"
+
+        open_actions = await self.action_repo.list_open_for_turn(turn_id)
+        latest_action = open_actions[0] if open_actions else None
+        now = datetime.now(timezone.utc)
+
+        if latest_action is not None and latest_action.status == AgentActionStatus.WAITING_DECISION:
+            await self.turn_repo.update_all(
+                turn,
+                status=AgentTurnStatus.WAITING_APPROVAL,
+                claimed_at=None,
+                lease_until=None,
+                completed_at=None,
+                loop_state={"state": "waiting_approval", "recovered": True},
+            )
+            return "waiting"
+
+        if latest_action is not None and latest_action.status == AgentActionStatus.REQUESTED:
+            await self.turn_repo.update_all(
+                turn,
+                status=AgentTurnStatus.RUNNING,
+                completed_at=None,
+                error_code=None,
+                error_message=None,
+                claimed_at=None,
+                lease_until=None,
+                loop_state={"state": "running", "recovered": True, "resume_action_id": str(latest_action.id)},
+            )
+            await self.ledger.append(
+                session_id=str(turn.session_id),
+                turn_id=str(turn.id),
+                type=AgentEventType.TURN_RECOVERY_ENQUEUED,
+                payload={"mode": "resume", "action_id": str(latest_action.id)},
+            )
+            enqueue_turn_resume(str(latest_action.id), str(turn.id))
+            return "enqueued"
+
+        if latest_action is not None and latest_action.status == AgentActionStatus.RUNNING:
+            await self._cancel_open_actions(turn_id, cancelled_at=now)
+            await self.turn_repo.update_all(
+                turn,
+                status=AgentTurnStatus.FAILED,
+                termination_reason="model_failed",
+                error_code="recovery_inflight_action",
+                error_message="Agent process stopped while a tool action was running.",
+                completed_at=now,
+                claimed_at=None,
+                lease_until=None,
+                loop_state={"termination_reason": "model_failed", "recovered": True},
+            )
+            await self.ledger.append(
+                session_id=str(turn.session_id),
+                turn_id=str(turn.id),
+                type=AgentEventType.TURN_RECOVERY_FAILED,
+                payload={"error_code": "recovery_inflight_action"},
+            )
+            return "failed"
+
+        await self.turn_repo.update_all(
+            turn,
+            status=AgentTurnStatus.QUEUED,
+            termination_reason=None,
+            completed_at=None,
+            error_code=None,
+            error_message=None,
+            claimed_at=None,
+            lease_until=None,
+            loop_state={"state": "queued", "recovered": True},
+        )
+        await self.ledger.append(
+            session_id=str(turn.session_id),
+            turn_id=str(turn.id),
+            type=AgentEventType.TURN_RECOVERY_ENQUEUED,
+            payload={"mode": "run"},
+        )
+        enqueue_turn_run(str(turn.id))
+        return "enqueued"
+
+    async def _cancel_open_actions(self, turn_id: str, *, cancelled_at: datetime) -> None:
+        for action in await self.action_repo.list_open_for_turn(turn_id):
+            await self.action_repo.update_all(
+                action,
+                status=AgentActionStatus.CANCELLED,
+                error={"type": "CancelledError", "message": "Action cancelled with its parent turn."},
+                completed_at=cancelled_at,
+            )
+            await self.ledger.append(
+                session_id=str(action.session_id),
+                turn_id=str(action.turn_id),
+                type=AgentEventType.ACTION_CANCELLED,
+                payload={"action_id": str(action.id), "tool": action.name},
+            )
 
     async def list_artifacts_for_session(
         self,
