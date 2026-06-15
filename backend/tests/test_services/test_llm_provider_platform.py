@@ -5,10 +5,51 @@ import pytest
 
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.services.llm.bootstrap import sync_environment_llm_catalog
+from app.services.llm.catalog import _validate_provider_base_url
 
 
 async def _noop_discovery(self, provider):
     return []
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://api.openai.com/v1",
+        "http://localhost:8000/v1",
+        "http://127.0.0.1:8000/v1",
+        "http://[::1]:8000/v1",
+        "http://10.49.35.231:8000/v1",  # private IP
+        "http://192.168.1.20:11434",
+        "http://deepseek-v4:8000/v1",  # Docker service (single-label)
+        "http://vllm.default.svc:8000/v1",  # Kubernetes service
+        "http://host.docker.internal:8000/v1",
+        "http://gateway.local/v1",
+    ],
+)
+def test_validate_provider_base_url_accepts_secure_and_internal_endpoints(base_url):
+    # Should not raise.
+    _validate_provider_base_url(base_url)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://api.openai.com/v1",  # public FQDN over plain HTTP
+        "http://example.com:8000/v1",
+        "ftp://localhost/v1",  # non-HTTP scheme
+        "not-a-url",
+    ],
+)
+def test_validate_provider_base_url_rejects_public_http_and_malformed(base_url):
+    with pytest.raises(ValueError):
+        _validate_provider_base_url(base_url)
+
+
+def test_validate_provider_base_url_allows_empty():
+    # An unset endpoint is valid (provider may use a template default).
+    _validate_provider_base_url(None)
+    _validate_provider_base_url("")
 
 
 @pytest.mark.asyncio
