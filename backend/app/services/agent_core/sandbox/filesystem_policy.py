@@ -67,16 +67,26 @@ class FilesystemPolicy:
     def _lexically_allowed_candidate(self, path: str | Path | None) -> Path:
         if path is None:
             raise PermissionDeniedError("Path is required")
-        candidate = _normalize_path(Path(path).expanduser())
-        if candidate.is_absolute():
-            for root in self.allowed_roots:
-                if _is_relative_to(candidate, root):
-                    return root / candidate.relative_to(root)
-            raise PermissionDeniedError(f"Path is outside allowed roots: {candidate}")
+        raw_path = _path_text(path)
+        if raw_path.startswith("~"):
+            raise PermissionDeniedError(f"Home paths are outside allowed roots: {raw_path}")
 
-        if ".." in candidate.parts:
-            raise PermissionDeniedError(f"Path is outside allowed roots: {candidate}")
-        return self.allowed_roots[0] / candidate
+        normalized = os.path.normpath(raw_path)
+        if os.path.isabs(normalized):
+            for root in self.allowed_roots:
+                root_text = os.fspath(root)
+                try:
+                    if os.path.commonpath([normalized, root_text]) != root_text:
+                        continue
+                except ValueError:
+                    continue
+                relative = os.path.relpath(normalized, root_text)
+                return root if relative == "." else root / relative
+            raise PermissionDeniedError(f"Path is outside allowed roots: {normalized}")
+
+        if os.pardir in normalized.split(os.sep):
+            raise PermissionDeniedError(f"Path is outside allowed roots: {normalized}")
+        return self.allowed_roots[0] if normalized == "." else self.allowed_roots[0] / normalized
 
     def _require_allowed_path(self, target: Path) -> None:
         if not any(_is_relative_to(target, root) for root in self.allowed_roots):
@@ -85,8 +95,11 @@ class FilesystemPolicy:
             )
 
 
-def _normalize_path(path: Path) -> Path:
-    return Path(os.path.normpath(os.fspath(path)))
+def _path_text(path: str | Path) -> str:
+    raw_path = os.fspath(path)
+    if not isinstance(raw_path, str):
+        raise PermissionDeniedError("Path must be text")
+    return raw_path
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
