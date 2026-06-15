@@ -817,6 +817,45 @@ def _drop_request_tenant_fields(data: dict[str, Any]) -> None:
     data.pop("role", None)
 
 
+# Reserved DNS suffixes that never resolve on the public internet (RFC 6762
+# ``.local``, RFC 8375 ``.home.arpa``, common private-network TLDs, and
+# Kubernetes service domains). Plain HTTP to a host under one of these — or to a
+# single-label name like a Docker service (``deepseek-v4``) — cannot reach a
+# public endpoint, so it is exempt from the HTTPS requirement.
+_INTERNAL_HOST_SUFFIXES = (
+    ".local",
+    ".internal",
+    ".intranet",
+    ".lan",
+    ".home",
+    ".home.arpa",
+    ".corp",
+    ".svc",
+)
+
+
+def _is_internal_http_host(host: str) -> bool:
+    """Return True when *host* can only address a non-public endpoint.
+
+    Plain-HTTP provider endpoints are limited to hosts that cannot live on the
+    public internet. This keeps the SSRF surface narrow while still supporting
+    loopback, private networks, and container/cluster service names (a Docker
+    service ``deepseek-v4`` or a Kubernetes ``api.default.svc``).
+    """
+    if not host:
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        normalized = host.rstrip(".").lower()
+        # A single-label name (no dot) cannot be a public FQDN — it only
+        # resolves via local/container DNS. Reserved suffixes are internal too.
+        if "." not in normalized:
+            return True
+        return any(normalized.endswith(suffix) for suffix in _INTERNAL_HOST_SUFFIXES)
+    return ip.is_private or ip.is_loopback or ip.is_link_local
+
+
 def _validate_provider_base_url(base_url: str | None) -> None:
     if not base_url:
         return
@@ -825,16 +864,12 @@ def _validate_provider_base_url(base_url: str | None) -> None:
         raise ValueError("Provider endpoint must be an absolute HTTP(S) URL")
     if parsed.scheme == "https":
         return
-    host = parsed.hostname or ""
-    if host in {"localhost", "127.0.0.1", "::1"}:
+    if _is_internal_http_host(parsed.hostname or ""):
         return
-    try:
-        ip = ipaddress.ip_address(host)
-        if ip.is_private or ip.is_loopback or ip.is_link_local:
-            return
-    except ValueError:
-        pass
-    raise ValueError("Public provider endpoints must use HTTPS")
+    raise ValueError(
+        "Plain HTTP endpoints are only allowed for local or internal hosts; "
+        "use HTTPS for public endpoints"
+    )
 
 
 def _ollama_models_from_tags(payload: Any) -> list[dict[str, Any]]:
