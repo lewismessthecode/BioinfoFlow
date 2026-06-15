@@ -289,6 +289,64 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session,
 
 
 @pytest.mark.asyncio
+async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(db_session, monkeypatch):
+    async def fake_completion(*args, **kwargs):
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        class FakeFunction:
+            name = "bash"
+            arguments = json.dumps({"command": "echo should-not-run"})
+
+        class FakeToolCall:
+            id = "tool-call-unexposed"
+            function = FakeFunction()
+
+        message = FakeMessage()
+        message.content = ""
+        message.tool_calls = [FakeToolCall()]
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="unexposed-tool-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(session, toolset_policy={"name": "plan"})
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Try an unexposed tool.",
+    )
+
+    failed_turn = await service.runtime.run_turn(str(turn.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+
+    assert failed_turn.status == "failed"
+    assert failed_turn.termination_reason == "tool_failed"
+    assert failed_turn.error_code == "tool_not_exposed"
+    assert "not exposed" in (failed_turn.error_message or "")
+    assert events[-1].type == "turn.failed"
+    assert events[-1].payload["error_code"] == "tool_not_exposed"
+
+
+@pytest.mark.asyncio
 async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatch):
     calls = 0
     resumed: list[tuple[str, str]] = []
