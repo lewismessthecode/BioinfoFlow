@@ -29,7 +29,7 @@ from app.services.agent_core.runner import (
 )
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.context import default_system_prompt_snapshot
-from app.services.agent_core.tools.toolsets import DEFAULT_TOOLSET_POLICY
+from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part
 from app.utils.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
 
@@ -78,7 +78,7 @@ class AgentCoreService:
             default_model_profile_id=default_model_profile_id,
             runtime_mode="api",
             prompt_snapshot=default_system_prompt_snapshot().as_dict(),
-            toolset_policy=DEFAULT_TOOLSET_POLICY,
+            toolset_policy=EXECUTION_TOOLSET_POLICY,
             context_policy={"memory": "accepted_project_scope", "transcript": "canonical"},
             compression_state={
                 "enabled": True,

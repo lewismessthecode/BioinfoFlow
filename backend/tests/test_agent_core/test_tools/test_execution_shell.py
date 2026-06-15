@@ -15,7 +15,19 @@ from app.services.agent_core.tools import (
     AgentToolDispatcher,
     build_default_tool_registry,
 )
+from app.services.agent_core.tools.execution import ExecuteShellTool
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+def test_bash_assess_risk_escalates_out_of_root_paths():
+    tool = ExecuteShellTool()
+    # Safe inspection inside the sandbox auto-runs.
+    assert tool.assess_risk({"command": "cat README.md"}) == "act_low"
+    # Reaching an absolute path outside the allowed roots must ask, even though
+    # `cat`/`find` are read-only executables.
+    assert tool.assess_risk({"command": "cat /etc/passwd"}) == "act_high"
+    assert tool.assess_risk({"command": "find / -maxdepth 1"}) == "act_high"
+    assert tool.assess_risk({"command": "cat $HOME/.ssh/id_rsa"}) == "act_high"
 
 
 async def _shell_context(db_session) -> tuple[AgentToolDispatcher, AgentToolContext, Path]:
@@ -59,13 +71,13 @@ async def _shell_context(db_session) -> tuple[AgentToolDispatcher, AgentToolCont
 
 
 @pytest.mark.asyncio
-async def test_shell_tool_waits_for_approval_in_guarded_auto(db_session):
+async def test_bash_tool_waits_for_approval_for_elevated_command(db_session):
     dispatcher, context, workspace_root = await _shell_context(db_session)
 
     result = await dispatcher.dispatch(
-        tool_name="execution.shell",
+        tool_name="bash",
         input={
-            "command": [sys.executable, "-c", "print('should not run')"],
+            "command": f"{sys.executable} -c \"print('should not run')\"",
             "cwd": str(workspace_root),
         },
         context=context,
@@ -78,49 +90,81 @@ async def test_shell_tool_waits_for_approval_in_guarded_auto(db_session):
 
 
 @pytest.mark.asyncio
-async def test_shell_tool_executes_safe_argv_in_bypass_mode(db_session):
+async def test_bash_tool_auto_runs_safe_command_with_pipe_and_glob(db_session):
     dispatcher, context, workspace_root = await _shell_context(db_session)
 
     result = await dispatcher.dispatch(
-        tool_name="execution.shell",
+        tool_name="bash",
         input={
-            "command": [sys.executable, "-c", "print('agent-core-ok')"],
+            "command": "echo agent-core-ok | cat",
             "cwd": str(workspace_root),
         },
         context=context,
-        permission_mode="bypass",
+        permission_mode="guarded_auto",
     )
 
+    # A read-only command auto-runs even under guarded_auto, and the pipe works.
     assert result.status == "completed"
     assert result.result["exit_code"] == 0
     assert result.result["stdout"].strip() == "agent-core-ok"
 
 
 @pytest.mark.asyncio
-async def test_shell_tool_blocks_dangerous_commands_even_in_bypass(db_session):
+async def test_bash_tool_hard_blocks_catastrophic_command_even_in_bypass(db_session):
     dispatcher, context, workspace_root = await _shell_context(db_session)
 
     result = await dispatcher.dispatch(
-        tool_name="execution.shell",
-        input={"command": ["rm", "-rf", "anything"], "cwd": str(workspace_root)},
+        tool_name="bash",
+        input={"command": "rm -rf /", "cwd": str(workspace_root)},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "rejected"
+    assert result.permission_decision["decision"] == "deny"
+    assert result.permission_decision["risk_level"] == "critical"
+    assert result.result is None
+
+
+@pytest.mark.asyncio
+async def test_bash_tool_defaults_cwd_to_repo_root(db_session):
+    dispatcher, context, _workspace_root = await _shell_context(db_session)
+
+    result = await dispatcher.dispatch(
+        tool_name="bash",
+        input={"command": "pwd"},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "completed"
+    assert result.result["cwd"] == str(Path(settings.repo_root).expanduser().resolve())
+
+
+@pytest.mark.asyncio
+async def test_bash_tool_rejects_cwd_outside_allowed_roots(db_session):
+    dispatcher, context, _workspace_root = await _shell_context(db_session)
+
+    result = await dispatcher.dispatch(
+        tool_name="bash",
+        input={"command": "echo hi", "cwd": "/"},
         context=context,
         permission_mode="bypass",
     )
 
     assert result.status == "failed"
     assert result.error["type"] == "PermissionDeniedError"
-    assert "blocked" in result.error["message"]
 
 
 @pytest.mark.asyncio
-async def test_shell_tool_resumes_after_approval_and_registers_output_artifact(db_session, monkeypatch):
+async def test_bash_tool_resumes_after_approval_and_registers_output_artifact(db_session, monkeypatch):
     dispatcher, context, workspace_root = await _shell_context(db_session)
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
 
     pending = await dispatcher.dispatch(
-        tool_name="execution.shell",
+        tool_name="bash",
         input={
-            "command": [sys.executable, "-c", "print('before-approval')"],
+            "command": f"{sys.executable} -c \"print('before-approval')\"",
             "cwd": str(workspace_root),
         },
         context=context,
@@ -148,7 +192,7 @@ async def test_shell_tool_resumes_after_approval_and_registers_output_artifact(d
         user_id="dev",
     )
     assert len(artifacts) == 1
-    assert artifacts[0].type == "log_summary"
+    assert artifacts[0].type == "command"
     assert str(artifacts[0].action_id) == pending.action_id
     assert artifacts[0].payload["stdout"].strip() == "before-approval"
 
@@ -165,14 +209,14 @@ async def test_shell_tool_resumes_after_approval_and_registers_output_artifact(d
 
 
 @pytest.mark.asyncio
-async def test_shell_tool_uses_modified_input_when_approval_changes_command(db_session, monkeypatch):
+async def test_bash_tool_uses_modified_input_when_approval_changes_command(db_session, monkeypatch):
     dispatcher, context, workspace_root = await _shell_context(db_session)
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
 
     pending = await dispatcher.dispatch(
-        tool_name="execution.shell",
+        tool_name="bash",
         input={
-            "command": [sys.executable, "-c", "print('old-command')"],
+            "command": f"{sys.executable} -c \"print('old-command')\"",
             "cwd": str(workspace_root),
         },
         context=context,
@@ -186,7 +230,7 @@ async def test_shell_tool_uses_modified_input_when_approval_changes_command(db_s
         decision="modify",
         note="use safer command",
         modified_input={
-            "command": [sys.executable, "-c", "print('new-command')"],
+            "command": f"{sys.executable} -c \"print('new-command')\"",
             "cwd": str(workspace_root),
         },
     )
@@ -196,4 +240,4 @@ async def test_shell_tool_uses_modified_input_when_approval_changes_command(db_s
     assert resumed.status == "completed"
     assert resumed.result["stdout"].strip() == "new-command"
     action = await AgentActionRepository(db_session).get(pending.action_id)
-    assert action.input["command"][-1] == "print('new-command')"
+    assert "new-command" in action.input["command"]

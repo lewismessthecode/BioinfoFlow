@@ -112,3 +112,18 @@ export type AgentRuntimeStatePayload = {
   turns: AgentRuntimeTurn[]
   events: AgentRuntimeEvent[]
 }
+
+export type AgentRuntimeArtifact = {
+  id: string
+  session_id: string
+  turn_id: string
+  action_id?: string | null
+  type: string
+  title: string
+  summary?: string | null
+  payload?: Record<string, unknown> | null
+  file_path?: string | null
+  resource_ref?: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}

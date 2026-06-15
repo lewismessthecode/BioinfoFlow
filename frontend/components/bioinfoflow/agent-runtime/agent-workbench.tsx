@@ -14,10 +14,10 @@ import { useTranslations } from "next-intl"
 import { AgentComposer } from "./agent-composer"
 import { AgentTranscript } from "./agent-transcript"
 import {
+  ArtifactPanel,
   hasPendingRuntimeAction,
-  hasRuntimeActivity,
-  RuntimeSidecar,
-} from "./runtime-sidecar"
+  pendingDecisionKey,
+} from "./artifact-panel"
 import { Button } from "@/components/ui/button"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
@@ -54,7 +54,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [input, setInput] = useState("")
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
-    const [sidecarDismissed, setSidecarDismissed] = useState(false)
+    // The pending-approval key the user last dismissed. Storing the key (rather
+    // than a boolean) means a *new* approval — which has a different key — is
+    // never suppressed by an earlier dismissal, without needing an effect.
+    const [dismissedPendingKey, setDismissedPendingKey] = useState<string | null>(null)
     const workspaceShell = useOptionalWorkspaceShell()
     const setNavbarActions = workspaceShell?.setNavbarActions
     const { models, selectedModel, isLoading: modelsLoading, setSelectedModel } =
@@ -75,9 +78,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const hasConversation = hasTurns || hasSubmittedDraft
     const isRunning = state.status === "running"
     const pendingDecision = hasPendingRuntimeAction(state.events)
-    const hasActivity = hasRuntimeActivity(state.events)
+    const pendingKey = pendingDecisionKey(state.events)
+    // Auto-open only for a pending approval (genuinely actionable). Streaming
+    // is already visible inline in the transcript, so it no longer forces the
+    // panel open. A dismissal only suppresses the exact approval set it was
+    // made against, so a newly-arrived approval still surfaces.
     const sidecarVisible =
-      sidecarOpen || pendingDecision || (!sidecarDismissed && (isRunning || hasActivity))
+      sidecarOpen || (pendingDecision && pendingKey !== dismissedPendingKey)
     const sidecarLabel = sidecarVisible
       ? t("sidecar.collapse")
       : t("sidecar.expand")
@@ -94,7 +101,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setInput("")
           setHasSubmittedDraft(false)
           setSidecarOpen(false)
-          setSidecarDismissed(false)
+          setDismissedPendingKey(null)
         },
       }),
       [interrupt, setActiveSessionId],
@@ -110,8 +117,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
     const closeSidecar = useCallback(() => {
       setSidecarOpen(false)
-      setSidecarDismissed(true)
-    }, [])
+      setDismissedPendingKey(pendingKey)
+    }, [pendingKey])
 
     const toggleSidecar = useCallback(() => {
       if (sidecarVisible) {
@@ -119,7 +126,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         return
       }
       setSidecarOpen(true)
-      setSidecarDismissed(false)
+      setDismissedPendingKey(null)
     }, [closeSidecar, sidecarVisible])
 
     useEffect(() => {
@@ -210,10 +217,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         >
           <div className="flex h-full w-[404px] shrink-0 items-center py-4 pr-4">
             {sidecarVisible ? (
-              <RuntimeSidecar
+              <ArtifactPanel
+                sessionId={state.session?.id}
                 events={state.events}
-                timeline={state.timeline}
-                isRunning={isRunning}
                 onClose={closeSidecar}
                 onDecision={decideAction}
               />

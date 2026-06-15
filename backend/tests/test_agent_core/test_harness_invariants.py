@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 
 import pytest
@@ -85,8 +86,8 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
     assert session.project_id is None
     assert session.runtime_mode == "api"
-    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v2"
-    assert session.toolset_policy["name"] == "default"
+    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v3"
+    assert session.toolset_policy["name"] == "execution"
 
 
 @pytest.mark.asyncio
@@ -243,8 +244,8 @@ def test_toolset_exposure_does_not_expose_shell_by_default():
         role="orchestrator",
     )
 
-    assert "execution.shell" not in {tool.name for tool in default_tools}
-    assert "execution.shell" in {tool.name for tool in elevated_tools}
+    assert "bash" not in {tool.name for tool in default_tools}
+    assert "bash" in {tool.name for tool in elevated_tools}
 
 
 @pytest.mark.asyncio
@@ -266,7 +267,7 @@ async def test_unexposed_tool_is_denied_before_argument_validation(db_session):
     executor = AgentToolExecutor(db_session, build_default_tool_registry())
     with pytest.raises(PermissionDeniedError, match="not exposed"):
         await executor.execute(
-            tool_name="execution.shell",
+            tool_name="bash",
             input={},
             context=AgentToolContext(
                 db=db_session,
@@ -303,13 +304,12 @@ async def test_approval_resume_executes_tool_and_continues_turn(db_session, monk
         message = FakeMessage()
         if calls == 1:
             class FakeFunction:
-                name = "execution__shell"
-                arguments = (
-                    '{"command":["'
-                    + sys.executable
-                    + '","-c","print(\\\"approved-tool\\\")"],"cwd":"'
-                    + str(settings.bioinfoflow_home)
-                    + '"}'
+                name = "bash"
+                arguments = json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"approved-tool\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
                 )
 
             class FakeToolCall:
@@ -325,7 +325,7 @@ async def test_approval_resume_executes_tool_and_continues_turn(db_session, monk
             )
             tool_result = next(message for message in messages if message["role"] == "tool")
             assert assistant_tool_call["tool_calls"][0]["id"] == "tool-call-1"
-            assert assistant_tool_call["tool_calls"][0]["function"]["name"] == "execution__shell"
+            assert assistant_tool_call["tool_calls"][0]["function"]["name"] == "bash"
             assert tool_result["tool_call_id"] == "tool-call-1"
             message.content = "Final after approved tool."
             message.tool_calls = None
@@ -397,13 +397,12 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(db_session
         message = FakeMessage()
         if calls == 1:
             class FakeFunction:
-                name = "execution__shell"
-                arguments = (
-                    '{"command":["'
-                    + sys.executable
-                    + '","-c","print(\\\"should-not-run\\\")"],"cwd":"'
-                    + str(settings.bioinfoflow_home)
-                    + '"}'
+                name = "bash"
+                arguments = json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"should-not-run\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
                 )
 
             class FakeToolCall:
