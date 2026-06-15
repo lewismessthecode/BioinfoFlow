@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
+from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -788,6 +790,86 @@ async def test_agent_core_tool_capable_catalog_model_receives_tools(
     assert turn["status"] == "completed"
     assert completion_kwargs["model"] == "openai/agent-test-model"
     assert completion_kwargs["tools"]
+
+
+@pytest.mark.asyncio
+async def test_catalog_default_prefers_env_managed_vllm_over_other_env_provider(
+    db_session,
+):
+    # Within one scope the env-managed vLLM endpoint a deployment configures on
+    # purpose must win over an incidentally-available env provider, even when the
+    # other provider is more recently updated (so it sorts first by recency).
+    base = datetime(2026, 6, 15, tzinfo=timezone.utc)
+    vllm_provider = LlmProvider(
+        name="Env vLLM",
+        kind="vllm",
+        base_url="http://vllm.internal.test:8000/v1",
+        scope="global",
+        workspace_id=None,
+        user_id=None,
+        enabled=True,
+        provider_metadata={"envManaged": True, "providerTemplate": "vllm"},
+        updated_at=base,
+    )
+    other_provider = LlmProvider(
+        name="Env OpenRouter",
+        kind="openrouter",
+        base_url="https://openrouter.ai/api/v1",
+        scope="global",
+        workspace_id=None,
+        user_id=None,
+        enabled=True,
+        provider_metadata={"envManaged": True, "providerTemplate": "openrouter"},
+        updated_at=base + timedelta(hours=1),
+    )
+    db_session.add_all([vllm_provider, other_provider])
+    await db_session.commit()
+    await db_session.refresh(vllm_provider)
+    await db_session.refresh(other_provider)
+    db_session.add_all(
+        [
+            LlmProviderCredential(
+                provider_id=str(vllm_provider.id),
+                source="stored",
+                encrypted_secret=encrypt_secret("vllm-key"),
+                fingerprint=generate_credential_fingerprint(),
+                masked_hint="vllm",
+            ),
+            LlmProviderCredential(
+                provider_id=str(other_provider.id),
+                source="stored",
+                encrypted_secret=encrypt_secret("or-key"),
+                fingerprint=generate_credential_fingerprint(),
+                masked_hint="or",
+            ),
+            LlmModel(
+                provider_id=str(vllm_provider.id),
+                model_id="deepseek_v4",
+                display_name="DeepSeek V4",
+                supports_tools=True,
+                supports_streaming=True,
+            ),
+            LlmModel(
+                provider_id=str(other_provider.id),
+                model_id="openrouter/auto",
+                display_name="OpenRouter Auto",
+                supports_tools=True,
+                supports_streaming=True,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    runtime = AgentCoreRuntime(db_session)
+    resolved = await runtime._catalog_default_selection(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert resolved is not None
+    assert resolved["provider"] == "vllm"
+    assert resolved["model"] == "deepseek_v4"
+    assert resolved["source"] == "catalog_default"
 
 
 @pytest.mark.asyncio

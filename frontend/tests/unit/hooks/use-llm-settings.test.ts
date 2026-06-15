@@ -252,6 +252,170 @@ describe("useLlmSettings", () => {
     expect(consoleErrorSpy).not.toHaveBeenCalled()
   })
 
+  it("defaults to an env-managed vLLM over a legacy global Ollama and persists manual changes", async () => {
+    mockApiRequest.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({
+          data: {
+            summary: {
+              provider_count: 2,
+              configured_provider_count: 1,
+              available_provider_count: 2,
+              model_count: 2,
+              profile_count: 0,
+            },
+            providers: [
+              {
+                id: "provider-ollama",
+                name: "Ollama",
+                kind: "ollama",
+                scope: "global",
+                enabled: true,
+                metadata: { builtin: true },
+                credential: {
+                  source: "none",
+                  configured: false,
+                  available: true,
+                },
+              },
+              {
+                id: "provider-vllm",
+                name: "vLLM",
+                kind: "vllm",
+                scope: "global",
+                enabled: true,
+                metadata: { envManaged: true, providerTemplate: "vllm" },
+                credential: {
+                  source: "env",
+                  configured: true,
+                  available: true,
+                  env_var_name: "VLLM_API_KEY",
+                },
+              },
+            ],
+            models: [
+              {
+                id: "model-ollama",
+                provider_id: "provider-ollama",
+                model_id: "llama3.3",
+                display_name: "Llama 3.3",
+                context_length: 128000,
+              },
+              {
+                id: "model-vllm",
+                provider_id: "provider-vllm",
+                model_id: "deepseek_v4",
+                display_name: "DeepSeek V4",
+                context_length: 128000,
+              },
+            ],
+            profiles: [],
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+
+    const { result } = renderHook(() => useLlmSettings())
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    // vLLM ranks ahead of the legacy global Ollama even though Ollama is listed
+    // first in the API response.
+    expect(result.current.models[0]?.provider).toBe("vllm")
+    expect(result.current.selectedModel).toEqual({
+      provider: "vllm",
+      model: "deepseek_v4",
+      model_id: "model-vllm",
+    })
+
+    // A deliberate manual switch to Ollama still persists.
+    await act(async () => {
+      await result.current.setSelectedModel({
+        provider: "ollama",
+        model: "llama3.3",
+        model_id: "model-ollama",
+      })
+    })
+
+    expect(result.current.selectedModel).toEqual({
+      provider: "ollama",
+      model: "llama3.3",
+      model_id: "model-ollama",
+    })
+    expect(localStorage.getItem("bioinfoflow:selected-provider")).toBe("ollama")
+    expect(localStorage.getItem("bioinfoflow:selected-model")).toBe("llama3.3")
+  })
+
+  it("falls back from a stale stored Ollama selection to the available model", async () => {
+    localStorage.setItem("bioinfoflow:selected-provider", "ollama")
+    localStorage.setItem("bioinfoflow:selected-model", "deepseek-r1:latest")
+    localStorage.setItem("bioinfoflow:selected-catalog-model-id", "stale-model-id")
+
+    mockApiRequest.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({
+          data: {
+            summary: {
+              provider_count: 1,
+              configured_provider_count: 1,
+              available_provider_count: 1,
+              model_count: 1,
+              profile_count: 0,
+            },
+            providers: [
+              {
+                id: "provider-vllm",
+                name: "vLLM",
+                kind: "vllm",
+                scope: "global",
+                enabled: true,
+                metadata: { envManaged: true, providerTemplate: "vllm" },
+                credential: {
+                  source: "env",
+                  configured: true,
+                  available: true,
+                  env_var_name: "VLLM_API_KEY",
+                },
+              },
+            ],
+            models: [
+              {
+                id: "model-vllm",
+                provider_id: "provider-vllm",
+                model_id: "deepseek_v4",
+                display_name: "DeepSeek V4",
+                context_length: 128000,
+              },
+            ],
+            profiles: [],
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+
+    const { result } = renderHook(() => useLlmSettings())
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    expect(result.current.selectedModel).toEqual({
+      provider: "vllm",
+      model: "deepseek_v4",
+      model_id: "model-vllm",
+    })
+    // The stale Ollama selection is overwritten with the available model.
+    expect(localStorage.getItem("bioinfoflow:selected-provider")).toBe("vllm")
+    expect(localStorage.getItem("bioinfoflow:selected-model")).toBe("deepseek_v4")
+    expect(localStorage.getItem("bioinfoflow:selected-catalog-model-id")).toBe(
+      "model-vllm",
+    )
+  })
+
   it("testProvider uses the catalog provider test endpoint and returns failure result on API error", async () => {
     mockApiRequest.mockImplementation((path: string) => {
       if (path === "/llm/providers/provider-anthropic/test") {

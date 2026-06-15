@@ -16,7 +16,7 @@ async def test_simple_vllm_environment_profile_bootstraps_catalog(
     db_session,
     monkeypatch,
 ):
-    monkeypatch.setenv("VLLM_BASE_URL", "http://10.49.35.231:8000/v1")
+    monkeypatch.setenv("VLLM_BASE_URL", "http://vllm.internal.test:8000/v1")
     monkeypatch.setenv("VLLM_API_KEY", "vllm")
     monkeypatch.setenv("VLLM_MODEL", "deepseek_v4")
     monkeypatch.delenv("OPENAI_COMPATIBLE_PROVIDERS", raising=False)
@@ -37,7 +37,7 @@ async def test_simple_vllm_environment_profile_bootstraps_catalog(
     assert len(providers) == 1
     provider = providers[0]
     assert provider["name"] == "vLLM"
-    assert provider["base_url"] == "http://10.49.35.231:8000/v1"
+    assert provider["base_url"] == "http://vllm.internal.test:8000/v1"
     assert provider["scope"] == "global"
     assert provider["metadata"]["envManaged"] is True
     assert provider["metadata"]["providerTemplate"] == "vllm"
@@ -99,7 +99,7 @@ async def test_environment_bootstrap_does_not_overwrite_user_configured_provider
 
 @pytest.mark.asyncio
 async def test_environment_bootstrap_runs_live_discovery(db_session, monkeypatch):
-    monkeypatch.setenv("VLLM_BASE_URL", "http://10.49.35.231:8000/v1")
+    monkeypatch.setenv("VLLM_BASE_URL", "http://vllm.internal.test:8000/v1")
     monkeypatch.setenv("VLLM_API_KEY", "vllm")
     monkeypatch.delenv("VLLM_MODEL", raising=False)
 
@@ -132,7 +132,7 @@ async def test_environment_bootstrap_runs_live_discovery(db_session, monkeypatch
 
 @pytest.mark.asyncio
 async def test_environment_bootstrap_swallows_discovery_errors(db_session, monkeypatch):
-    monkeypatch.setenv("VLLM_BASE_URL", "http://10.49.35.231:8000/v1")
+    monkeypatch.setenv("VLLM_BASE_URL", "http://vllm.internal.test:8000/v1")
     monkeypatch.setenv("VLLM_API_KEY", "vllm")
     monkeypatch.setenv("VLLM_MODEL", "deepseek_v4")
 

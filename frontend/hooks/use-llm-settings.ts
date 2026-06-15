@@ -131,17 +131,44 @@ function resolveSelection(
 }
 
 function providerAvailable(provider: LlmConfiguredProvider) {
+  // Rely on the credential semantics the backend already computes. Keyless local
+  // providers (e.g. a hand-configured Ollama) surface as `available` or, when
+  // optional, `source === "none"`; we no longer special-case provider.kind, so a
+  // stale built-in entry can never masquerade as configured.
   return Boolean(
     provider.enabled &&
-      (provider.credential?.available ||
-        provider.kind === "ollama" ||
-        provider.credential?.source === "none"),
+      (provider.credential?.available || provider.credential?.source === "none"),
   )
+}
+
+const SCOPE_ORDER: Record<string, number> = { user: 0, workspace: 1, global: 2 }
+const PREFERRED_ENV_KINDS = new Set(["vllm", "openai_compatible"])
+
+function defaultProviderRank(provider: LlmConfiguredProvider): [number, number] {
+  // Mirror the backend default-selection precedence so the UI's default model
+  // matches what the agent runtime would pick: closest scope first, then an
+  // explicitly env-managed vLLM/OpenAI-compatible endpoint ahead of incidental
+  // providers (such as a previously seeded local default).
+  const scopeRank = SCOPE_ORDER[provider.scope] ?? 3
+  const metadata = (provider.metadata ?? {}) as { envManaged?: unknown }
+  const envManaged = metadata.envManaged === true
+  const kindRank = envManaged && PREFERRED_ENV_KINDS.has(provider.kind) ? 0 : 1
+  return [scopeRank, kindRank]
+}
+
+function compareProvidersForDefault(
+  a: LlmConfiguredProvider,
+  b: LlmConfiguredProvider,
+): number {
+  const [aScope, aKind] = defaultProviderRank(a)
+  const [bScope, bKind] = defaultProviderRank(b)
+  return aScope - bScope || aKind - bKind
 }
 
 function modelsFromConfiguration(data: LlmConfiguration): ProviderModels[] {
   return data.providers
     .filter(providerAvailable)
+    .sort(compareProvidersForDefault)
     .map((provider) => ({
       provider: provider.kind,
       provider_id: provider.id,
