@@ -254,7 +254,11 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    expect(await screen.findByTestId("artifact-panel")).toBeInTheDocument()
+    const panel = await screen.findByTestId("artifact-panel")
+    expect(panel).toBeInTheDocument()
+    expect(panel).toHaveClass("h-full", "w-[420px]", "border-l", "bg-background")
+    expect(panel.className).not.toContain("rounded")
+    expect(panel.className).not.toContain("shadow-2xl")
     expect(screen.getByTestId("agent-sidecar-column")).toBeInTheDocument()
     expect(screen.getByTestId("agent-workbench-main")).toBeInTheDocument()
     expect(screen.getByText("Needs your decision")).toBeInTheDocument()
