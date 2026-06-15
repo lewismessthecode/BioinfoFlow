@@ -466,6 +466,10 @@ async def list_toolsets(request: Request):
                     "name": "execution",
                     "tools": [spec.name for spec in exposure.exposed_specs(policy={"name": "execution"})],
                 },
+                {
+                    "name": "plan",
+                    "tools": [spec.name for spec in exposure.exposed_specs(policy={"name": "plan"})],
+                },
             ]
         },
         request=request,

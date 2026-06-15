@@ -1084,6 +1084,17 @@ async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, mon
 
 
 @pytest.mark.asyncio
+async def test_agent_toolsets_include_plan_mode(async_client):
+    response = await async_client.get("/api/v1/agent/toolsets")
+
+    assert response.status_code == 200
+    toolsets = {item["name"]: item["tools"] for item in response.json()["data"]["toolsets"]}
+    assert "plan" in toolsets
+    assert "exit_plan_mode" in toolsets["plan"]
+    assert "bash" not in toolsets["plan"]
+
+
+@pytest.mark.asyncio
 async def test_legacy_agent_message_endpoint_is_removed(async_client):
     project_id = await _create_project(async_client)
 

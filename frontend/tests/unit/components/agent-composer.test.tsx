@@ -16,6 +16,9 @@ vi.mock("next-intl", () => ({
       "attachMenu.runPreflight": "Run preflight",
       "attachMenu.diagnoseRun": "Diagnose run",
       "attachMenu.comingSoon": "Coming soon",
+      "mode.label": "Agent mode",
+      "mode.act": "Act",
+      "mode.plan": "Plan",
       auto: "Auto",
       configure: "Configure providers",
       noProviders: "No model available",
@@ -64,5 +67,30 @@ describe("AgentComposer", () => {
 
     expect(textarea).toHaveStyle({ height: "160px" })
     expect(textarea).toHaveStyle({ overflowY: "auto" })
+  })
+
+  it("toggles plan and act modes with Shift+Tab", () => {
+    const onModeChange = vi.fn()
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        mode="execution"
+        onModeChange={onModeChange}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    fireEvent.keyDown(screen.getByPlaceholderText("Message Bioinfoflow..."), {
+      key: "Tab",
+      shiftKey: true,
+    })
+
+    expect(onModeChange).toHaveBeenCalledWith("plan")
   })
 })
