@@ -7,6 +7,7 @@ import pytest
 
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
+from app.config import settings
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
@@ -1027,6 +1028,59 @@ async def test_agent_core_rejects_invisible_catalog_model_selection(
     assert completion is False
     assert turn["status"] == "failed"
     assert turn["error_code"] == "model_selection_missing"
+
+
+@pytest.mark.asyncio
+async def test_agent_fs_tree_and_file_are_confined_to_allowed_roots(async_client):
+    tree = await async_client.get("/api/v1/agent/fs/tree")
+    assert tree.status_code == 200
+    entries = tree.json()["data"]["entries"]
+    assert isinstance(entries, list)
+    files = [e for e in entries if e["type"] == "file"]
+    # Fetch one in-root file and confirm its contents come back.
+    if files:
+        target = files[0]["path"]
+        file_resp = await async_client.get(f"/api/v1/agent/fs/file?path={target}")
+        assert file_resp.status_code == 200
+        assert "content" in file_resp.json()["data"]
+
+    # A path outside the allowed roots is rejected, not served.
+    blocked = await async_client.get("/api/v1/agent/fs/tree?path=/etc")
+    assert blocked.status_code == 403
+    blocked_file = await async_client.get("/api/v1/agent/fs/file?path=/etc/passwd")
+    assert blocked_file.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    public_file = repo_root / "notes.txt"
+    public_file.write_text("safe note", encoding="utf-8")
+    secret_file = repo_root / ".env"
+    secret_file.write_text("OPENAI_API_KEY=secret", encoding="utf-8")
+    nested_secret = data_root / "auth" / "better-auth.db"
+    nested_secret.parent.mkdir()
+    nested_secret.write_text("auth db bytes", encoding="utf-8")
+
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
+
+    public_resp = await async_client.get(
+        f"/api/v1/agent/fs/file?path={public_file}"
+    )
+    assert public_resp.status_code == 200
+
+    secret_resp = await async_client.get(
+        f"/api/v1/agent/fs/file?path={secret_file}"
+    )
+    assert secret_resp.status_code == 403
+    data_secret_resp = await async_client.get(
+        f"/api/v1/agent/fs/file?path={nested_secret}"
+    )
+    assert data_secret_resp.status_code == 403
 
 
 @pytest.mark.asyncio

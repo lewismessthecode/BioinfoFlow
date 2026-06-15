@@ -12,6 +12,10 @@ import {
   interruptAgentRuntimeTurn,
   listAgentRuntimeSessions,
   subscribeAgentRuntimeEvents,
+  updateAgentRuntimeSessionMode,
+  type AgentActionDecision,
+  type AgentAnswer,
+  type AgentMode,
   type AgentModelSelection,
   type AgentRuntimeSession,
 } from "@/lib/agent-runtime"
@@ -31,6 +35,9 @@ export function useAgentRuntime(
   const [sessions, setSessions] = useState<AgentRuntimeSession[]>([])
   const [uncontrolledSessionId, setUncontrolledSessionId] = useState<string | null>(null)
   const [state, dispatch] = useReducer(agentRuntimeReducer, initialAgentRuntimeState)
+  // Mode chosen for the *next* session; once a session exists its own toolset
+  // policy is the source of truth (and exit_plan_mode can flip it server-side).
+  const [draftMode, setDraftMode] = useState<AgentMode>("execution")
   const streamCursorRef = useRef(0)
   const activeSessionId = isControlled
     ? options.activeSessionId || null
@@ -126,6 +133,7 @@ export function useAgentRuntime(
       const created = await createAgentRuntimeSession({
         projectId: projectId || null,
         permissionMode: "guarded_auto",
+        mode: draftMode,
         modelSelection,
       })
       setSessions((current) => [created, ...current])
@@ -133,7 +141,7 @@ export function useAgentRuntime(
       dispatch({ type: "session.selected", session: created })
       return created
     },
-    [activeSession, projectId, setActiveSessionId],
+    [activeSession, draftMode, projectId, setActiveSessionId],
   )
 
   const send = useCallback(
@@ -173,9 +181,17 @@ export function useAgentRuntime(
   }, [state.turns])
 
   const decideAction = useCallback(
-    async (actionId: string, decision: "approve" | "reject") => {
+    async (
+      actionId: string,
+      decision: AgentActionDecision,
+      options?: { answer?: AgentAnswer; note?: string },
+    ) => {
       try {
-        await decideAgentRuntimeAction(actionId, decision)
+        await decideAgentRuntimeAction(actionId, {
+          decision,
+          answer: options?.answer,
+          note: options?.note,
+        })
         if (activeSessionId) await refreshState(activeSessionId)
       } catch (error) {
         dispatch({
@@ -188,10 +204,34 @@ export function useAgentRuntime(
     [activeSessionId, refreshState],
   )
 
+  const sessionMode: AgentMode =
+    ((activeSession?.toolset_policy?.name as AgentMode | undefined) ?? draftMode) === "plan"
+      ? "plan"
+      : "execution"
+
+  const setMode = useCallback(
+    async (mode: AgentMode) => {
+      setDraftMode(mode)
+      if (!activeSessionId) return
+      try {
+        await updateAgentRuntimeSessionMode(activeSessionId, mode)
+        await refreshState(activeSessionId)
+      } catch (error) {
+        dispatch({
+          type: "error",
+          message: error instanceof Error ? error.message : "Failed to switch mode",
+        })
+      }
+    },
+    [activeSessionId, refreshState],
+  )
+
   return {
     sessions,
     session: activeSession,
     state,
+    mode: sessionMode,
+    setMode,
     setActiveSessionId,
     refreshSessions,
     refreshState,

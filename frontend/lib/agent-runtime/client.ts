@@ -1,5 +1,10 @@
 import { apiRequest } from "@/lib/api"
 import type {
+  AgentActionDecision,
+  AgentAnswer,
+  AgentFsFile,
+  AgentFsTree,
+  AgentMode,
   AgentModelSelection,
   AgentPermissionMode,
   AgentRuntimeArtifact,
@@ -12,6 +17,7 @@ type CreateAgentRuntimeSessionInput = {
   projectId?: string | null
   title?: string
   permissionMode?: AgentPermissionMode
+  mode?: AgentMode
   modelSelection?: AgentModelSelection | null
 }
 
@@ -32,9 +38,21 @@ export const createAgentRuntimeSession = async (
       title: input.title,
       permission_mode: input.permissionMode,
       automation_mode: "assisted",
+      mode: input.mode,
       model_selection: input.modelSelection,
     }),
   })
+  return response.data
+}
+
+export const updateAgentRuntimeSessionMode = async (
+  sessionId: string,
+  mode: AgentMode,
+) => {
+  const response = await apiRequest<AgentRuntimeSession>(
+    `/agent/sessions/${sessionId}`,
+    { method: "PATCH", body: JSON.stringify({ mode }) },
+  )
   return response.data
 }
 
@@ -66,12 +84,30 @@ export const interruptAgentRuntimeTurn = async (turnId: string) => {
 
 export const decideAgentRuntimeAction = async (
   actionId: string,
-  decision: "approve" | "reject",
+  input: { decision: AgentActionDecision; answer?: AgentAnswer; note?: string },
 ) => {
   await apiRequest(`/agent/actions/${actionId}/decision`, {
     method: "POST",
-    body: JSON.stringify({ decision }),
+    body: JSON.stringify({
+      decision: input.decision,
+      answer: input.answer,
+      note: input.note,
+    }),
   })
+}
+
+export const getAgentFsTree = async (path?: string | null) => {
+  const response = await apiRequest<AgentFsTree>("/agent/fs/tree", {
+    params: path ? { path } : undefined,
+  })
+  return response.data
+}
+
+export const getAgentFsFile = async (path: string) => {
+  const response = await apiRequest<AgentFsFile>("/agent/fs/file", {
+    params: { path },
+  })
+  return response.data
 }
 
 export const getAgentRuntimeState = async (sessionId: string) => {

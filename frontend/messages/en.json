@@ -2204,11 +2204,50 @@
       "types": {
         "file": "File",
         "command": "Command output",
+        "todo_list": "Tasks",
         "run": "Run",
         "workflow": "Workflow",
         "image": "Image",
         "unknown": "Artifact"
       }
+    },
+    "tabs": {
+      "progress": "Progress",
+      "files": "Files",
+      "browser": "Browser"
+    },
+    "progress": {
+      "tasks": "Tasks",
+      "empty": "No tasks yet. The agent's checklist will appear here as it works."
+    },
+    "files": {
+      "title": "Files",
+      "up": "Up",
+      "back": "Back to files",
+      "refresh": "Refresh",
+      "empty": "This folder is empty.",
+      "error": "Could not load files.",
+      "truncated": "File is large and was truncated."
+    },
+    "browser": {
+      "title": "Embedded browser",
+      "urlPlaceholder": "Same-origin URL",
+      "go": "Open URL",
+      "reload": "Reload"
+    },
+    "mode": {
+      "label": "Agent mode",
+      "act": "Act",
+      "plan": "Plan"
+    },
+    "plan": {
+      "reviewTitle": "Review the plan",
+      "approveAndAct": "Approve & act",
+      "keepPlanning": "Keep planning"
+    },
+    "ask": {
+      "title": "The agent needs your input",
+      "submit": "Submit answer"
     }
   },
   "agent": {

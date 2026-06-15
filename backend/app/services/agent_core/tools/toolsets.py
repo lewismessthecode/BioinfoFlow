@@ -12,6 +12,14 @@ DEFAULT_TOOLSET_POLICY = {"name": "default"}
 # The capable, approval-gated policy new sessions start with: every registered
 # tool is exposed, and the permission policy gates each side-effecting action.
 EXECUTION_TOOLSET_POLICY = {"name": "execution"}
+# Read-only planning policy: read/search tools plus the planning helpers
+# (todo_write, ask_user, exit_plan_mode). Writes, shell, and platform mutations
+# are hidden until the user approves exit_plan_mode, which flips the session to
+# the execution policy.
+PLAN_TOOLSET_POLICY = {"name": "plan"}
+
+# Planning helpers exposed on top of the read-only set in plan mode.
+_PLAN_EXTRA_TOOLS = frozenset({"todo_write", "ask_user", "exit_plan_mode"})
 
 
 @dataclass(frozen=True)
@@ -38,14 +46,26 @@ class ToolsetExposure:
         policy = policy or DEFAULT_TOOLSET_POLICY
         policy_name = str(policy.get("name") or "default")
         specs = self.registry.list_specs()
+        read_only = {
+            spec.name
+            for spec in specs
+            if spec.risk_level == "read" and not spec.write_scope
+        }
         if role == "worker":
+            # A worker subagent runs without a user watching, so interaction
+            # tools (ask_user / exit_plan_mode) that would pause for input are
+            # excluded — they could only deadlock the child run.
             names = {
                 spec.name
                 for spec in specs
-                if spec.risk_level == "read" and not spec.write_scope
+                if spec.name in read_only and not spec.interaction
             }
         elif policy_name == "execution":
             names = {spec.name for spec in specs}
+        elif policy_name == "plan":
+            names = set(read_only) | {
+                spec.name for spec in specs if spec.name in _PLAN_EXTRA_TOOLS
+            }
         elif policy_name == "bio":
             names = {
                 spec.name
@@ -54,11 +74,7 @@ class ToolsetExposure:
                 and spec.risk_level == "read"
             }
         else:
-            names = {
-                spec.name
-                for spec in specs
-                if spec.risk_level == "read" and not spec.write_scope
-            }
+            names = set(read_only)
         allowed_tools = policy.get("allowed_tools")
         if isinstance(allowed_tools, list) and allowed_tools:
             names &= {str(name) for name in allowed_tools}

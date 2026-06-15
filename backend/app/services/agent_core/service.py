@@ -59,6 +59,7 @@ class AgentCoreService:
         default_model_profile_id: str | None = None,
         model_selection: dict | None = None,
         metadata: dict | None = None,
+        toolset_policy: dict | None = None,
     ):
         if project_id is not None:
             project = await self.project_repo.get(project_id)
@@ -78,7 +79,7 @@ class AgentCoreService:
             default_model_profile_id=default_model_profile_id,
             runtime_mode="api",
             prompt_snapshot=default_system_prompt_snapshot().as_dict(),
-            toolset_policy=EXECUTION_TOOLSET_POLICY,
+            toolset_policy=toolset_policy or EXECUTION_TOOLSET_POLICY,
             context_policy={"memory": "accepted_project_scope", "transcript": "canonical"},
             compression_state={
                 "enabled": True,
@@ -142,6 +143,8 @@ class AgentCoreService:
         ):
             if key in updates:
                 update_data[key] = updates[key]
+        if "mode" in updates and updates["mode"]:
+            update_data["toolset_policy"] = {"name": updates["mode"]}
         if "metadata" in updates or "model_selection" in updates:
             update_data["session_metadata"] = session_metadata_with_model_selection(
                 session.session_metadata if hasattr(session, "session_metadata") else None,
@@ -382,6 +385,7 @@ class AgentCoreService:
         decision: str,
         note: str | None = None,
         modified_input: dict | None = None,
+        answer: dict | None = None,
     ):
         action = await self.action_repo.get(action_id)
         if action is None:
@@ -399,6 +403,16 @@ class AgentCoreService:
             if modified_input is None:
                 raise BadRequestError("modified_input is required when decision is modify")
             next_input = modified_input
+        elif decision == "answer":
+            # Thread the user's reply back into the tool input under a reserved
+            # key; ask_user echoes it as the tool result on resume.
+            next_input = {**(action.input or {}), "_user_answer": answer or {}}
+
+        # When a plan is approved, flip the session into the execution toolset
+        # *before* enqueueing resume — the resume worker reads the session
+        # toolset fresh, so the model gains write/exec tools on the next round.
+        if decision == "approve" and action.name == "exit_plan_mode":
+            await self._activate_execution_toolset(str(action.session_id))
 
         status = (
             AgentActionStatus.REJECTED
@@ -414,6 +428,7 @@ class AgentCoreService:
                 "decision": decision,
                 "note": note,
                 "modified_input": modified_input,
+                "answer": answer,
             },
             status=status,
         )
@@ -423,9 +438,15 @@ class AgentCoreService:
             type=AgentEventType.ACTION_DECISION_RECORDED,
             payload={"action_id": str(action.id), "decision": decision, "note": note},
         )
-        if decision in {"approve", "modify", "reject"} and updated.kind == "tool":
+        if decision in {"approve", "modify", "reject", "answer"} and updated.kind == "tool":
             enqueue_turn_resume(str(updated.id), str(updated.turn_id))
         return updated
+
+    async def _activate_execution_toolset(self, session_id: str) -> None:
+        session = await self.session_repo.get(session_id)
+        if session is None:
+            return
+        await self.session_repo.update_all(session, toolset_policy=EXECUTION_TOOLSET_POLICY)
 
     async def resume_action(
         self,

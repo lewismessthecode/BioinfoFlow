@@ -40,6 +40,16 @@ def _artifact_descriptor(
     """
     artifact_type = policy.get("type")
 
+    if artifact_type == "todo_list":
+        todos = result.get("todos") if isinstance(result.get("todos"), list) else []
+        completed = sum(1 for todo in todos if isinstance(todo, dict) and todo.get("status") == "completed")
+        return {
+            "type": "todo_list",
+            "title": "Tasks",
+            "summary": f"{completed}/{len(todos)} completed",
+            "payload": {"todos": todos},
+        }
+
     if artifact_type == "file":
         path = action_input.get("path")
         content = action_input.get("content")
@@ -158,6 +168,8 @@ class AgentToolExecutor:
             artifact_policy=tool.spec.artifact_policy,
             tool_call_id=tool_call_id,
             exposure_policy=exposure.policy,
+            force_ask=tool.spec.interaction is not None,
+            interaction=tool.spec.interaction,
         )
         if action_requires_resume(action.status):
             action = await self.action_repo.update_all(action, requires_resume=True)
@@ -194,7 +206,7 @@ class AgentToolExecutor:
             raise ConflictError(f"Agent action cannot be resumed from status: {action.status}")
 
         decision = action.permission_decision or {}
-        if decision.get("decision") not in {"allow", "approve", "modify"}:
+        if decision.get("decision") not in {"allow", "approve", "modify", "answer"}:
             raise PermissionDeniedError("Agent action has not been approved")
         tool = self.registry.get(action.name)
         return await self._run_action(action=action, tool=tool, context=context)

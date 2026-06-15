@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -11,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import app.database as app_database
 from app.api.deps import get_current_user, get_db
 from app.auth.session import AuthUser
+from app.config import settings
+from app.services.agent_core.sandbox import FilesystemPolicy
+from app.utils.exceptions import BadRequestError, PermissionDeniedError
 from app.schemas.agent_core import (
     AgentActionDecisionRequest,
     AgentActionRead,
@@ -125,6 +129,7 @@ async def create_session(
             else None
         ),
         metadata=payload.metadata,
+        toolset_policy={"name": payload.mode},
     )
     return success_response(
         _dump(_session_read(session)),
@@ -334,6 +339,118 @@ async def get_agent_metrics(request: Request):
     return success_response(agent_metrics.snapshot(), request=request)
 
 
+_FS_FILE_MAX_BYTES = 256 * 1024
+_FS_DENIED_NAMES = {
+    ".env",
+    "better-auth.db",
+    "bioinfoflow.db",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "id_rsa",
+}
+_FS_DENIED_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
+
+
+@router.get("/fs/tree")
+async def get_fs_tree(
+    request: Request,
+    path: str | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+):
+    """List the immediate children of a directory inside the allowed roots.
+
+    Read-only and confined by :class:`FilesystemPolicy` to repo_root /
+    bioinfoflow_home. Lazy (one level): the Files tab requests subdirectories on
+    expand rather than streaming the whole tree.
+    """
+    base = FilesystemPolicy().require_allowed_dir(path or str(settings.repo_root))
+    entries = []
+    for child in sorted(base.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+        if child.name.startswith(".git") or _is_sensitive_fs_path(child):
+            continue
+        is_dir = child.is_dir()
+        entries.append(
+            {
+                "name": child.name,
+                "path": str(child),
+                "type": "dir" if is_dir else "file",
+                "size": None if is_dir else _safe_size(child),
+            }
+        )
+    return success_response({"path": str(base), "entries": entries}, request=request)
+
+
+@router.get("/fs/file")
+async def get_fs_file(
+    request: Request,
+    path: str = Query(...),
+    user: AuthUser = Depends(get_current_user),
+):
+    """Return the text contents of a file inside the allowed roots."""
+    target = FilesystemPolicy().require_allowed_path(
+        path, must_exist=True, allow_directory=False
+    )
+    if _is_sensitive_fs_path(target):
+        raise PermissionDeniedError(f"File is not available through agent file browsing: {target}")
+    size = _safe_size(target) or 0
+    raw = target.read_bytes()[:_FS_FILE_MAX_BYTES]
+    truncated = size > _FS_FILE_MAX_BYTES
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise BadRequestError("File is not valid UTF-8 text") from exc
+    return success_response(
+        {
+            "path": str(target),
+            "content": content,
+            "truncated": truncated,
+            "size": size,
+            "language": _language_for(target),
+        },
+        request=request,
+    )
+
+
+def _safe_size(path: Path) -> int | None:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None
+
+
+def _is_sensitive_fs_path(path: Path) -> bool:
+    name = path.name.lower()
+    if name in _FS_DENIED_NAMES:
+        return True
+    if name.startswith(".env."):
+        return True
+    if path.is_file() and path.suffix.lower() in _FS_DENIED_SUFFIXES:
+        return True
+    return False
+
+
+def _language_for(path: Path) -> str | None:
+    return {
+        ".py": "python",
+        ".ts": "typescript",
+        ".tsx": "tsx",
+        ".js": "javascript",
+        ".jsx": "jsx",
+        ".json": "json",
+        ".md": "markdown",
+        ".yml": "yaml",
+        ".yaml": "yaml",
+        ".toml": "toml",
+        ".sh": "bash",
+        ".nf": "groovy",
+        ".wdl": "wdl",
+        ".sql": "sql",
+        ".css": "css",
+        ".html": "html",
+    }.get(path.suffix.lower())
+
+
 @router.get("/toolsets")
 async def list_toolsets(request: Request):
     registry = build_default_tool_registry()
@@ -449,6 +566,7 @@ async def decide_action(
         decision=payload.decision,
         note=payload.note,
         modified_input=payload.modified_input,
+        answer=payload.answer,
     )
     return success_response(_dump(_action_read(action)), request=request)
 
