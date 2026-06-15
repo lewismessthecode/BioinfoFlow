@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
+from app.config import settings
 from app.services.agent_core.permissions.risk import RiskLevel
 from app.services.agent_core.permissions.shell_risk import classify_shell_command
 from app.services.agent_core.sandbox import FilesystemPolicy
@@ -65,14 +67,25 @@ class ExecuteShellTool:
         command = input.get("command")
         if not isinstance(command, str) or not command.strip():
             return None
-        return classify_shell_command(command)
+        level = classify_shell_command(command)
+        # A command the classifier would auto-run, but which reaches an absolute
+        # path outside the allowed roots (e.g. `cat /etc/passwd`, `find /`),
+        # must still ask: the cwd check alone does not constrain path arguments.
+        if level in {"read", "act_low"} and _references_out_of_root_path(command):
+            return "act_high"
+        return level
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         del context
         command = input.get("command")
         if not isinstance(command, str) or not command.strip():
             raise PermissionDeniedError("command must be a non-empty string")
-        cwd = FilesystemPolicy().require_allowed_dir(input.get("cwd"))
+        # Default to the repo root (which the environment prompt advertises as
+        # the working directory) so repo-oriented commands like `git status`
+        # and `rg --files` run against the code tree, not the data home.
+        cwd = FilesystemPolicy().require_allowed_dir(
+            input.get("cwd") or str(settings.repo_root)
+        )
         timeout = int(input.get("timeout_seconds") or 120)
         output_limit = int(input.get("output_limit") or 16000)
 
@@ -98,6 +111,40 @@ class ExecuteShellTool:
             "cwd": str(cwd),
             "command": command,
         }
+
+
+def _references_out_of_root_path(command: str) -> bool:
+    """True if the command names an absolute/home path outside allowed roots.
+
+    Heuristic and conservative: any token that looks like an absolute path
+    (`/…`) or a home path (`~…`) and does not resolve under an allowed root
+    means the command can read or write outside the sandbox, so it should ask
+    for approval rather than auto-run.
+    """
+    roots = FilesystemPolicy().allowed_roots
+    for raw in command.split():
+        token = raw.strip("\"'")
+        # An env-var path (e.g. `$HOME/.ssh`) can't be resolved statically, so
+        # it can't be vouched for as in-root — ask.
+        if token.startswith("$") and "/" in token:
+            return True
+        if not (token.startswith("/") or token.startswith("~")):
+            continue
+        try:
+            candidate = Path(token).expanduser().resolve()
+        except (OSError, RuntimeError, ValueError):
+            return True
+        if not any(_is_relative_to(candidate, root) for root in roots):
+            return True
+    return False
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def _limit(text: str, limit: int) -> str:

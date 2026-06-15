@@ -149,7 +149,9 @@ def _is_catastrophic_rm(text: str) -> bool:
             elif token.startswith("-"):
                 recursive = recursive or "r" in token.lower()
             else:
-                targets.append(token)
+                # Strip shell quotes so `rm -rf "/"` / `rm -rf '$HOME'` still
+                # match the root-target set instead of slipping to destructive.
+                targets.append(token.strip("\"'"))
         if recursive and any(target in _RM_ROOT_TARGETS for target in targets):
             return True
     return False

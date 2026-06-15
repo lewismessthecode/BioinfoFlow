@@ -15,7 +15,19 @@ from app.services.agent_core.tools import (
     AgentToolDispatcher,
     build_default_tool_registry,
 )
+from app.services.agent_core.tools.execution import ExecuteShellTool
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+def test_bash_assess_risk_escalates_out_of_root_paths():
+    tool = ExecuteShellTool()
+    # Safe inspection inside the sandbox auto-runs.
+    assert tool.assess_risk({"command": "cat README.md"}) == "act_low"
+    # Reaching an absolute path outside the allowed roots must ask, even though
+    # `cat`/`find` are read-only executables.
+    assert tool.assess_risk({"command": "cat /etc/passwd"}) == "act_high"
+    assert tool.assess_risk({"command": "find / -maxdepth 1"}) == "act_high"
+    assert tool.assess_risk({"command": "cat $HOME/.ssh/id_rsa"}) == "act_high"
 
 
 async def _shell_context(db_session) -> tuple[AgentToolDispatcher, AgentToolContext, Path]:
@@ -112,6 +124,21 @@ async def test_bash_tool_hard_blocks_catastrophic_command_even_in_bypass(db_sess
     assert result.permission_decision["decision"] == "deny"
     assert result.permission_decision["risk_level"] == "critical"
     assert result.result is None
+
+
+@pytest.mark.asyncio
+async def test_bash_tool_defaults_cwd_to_repo_root(db_session):
+    dispatcher, context, _workspace_root = await _shell_context(db_session)
+
+    result = await dispatcher.dispatch(
+        tool_name="bash",
+        input={"command": "pwd"},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "completed"
+    assert result.result["cwd"] == str(Path(settings.repo_root).expanduser().resolve())
 
 
 @pytest.mark.asyncio
