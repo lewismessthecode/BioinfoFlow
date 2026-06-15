@@ -10,6 +10,7 @@ from app.config import settings
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.utils.exceptions import BadRequestError
+from app.utils.exceptions import PermissionDeniedError
 
 _MAX_RESULTS_CAP = 500
 _SCAN_FILE_CAP = 5000
@@ -64,6 +65,10 @@ class GrepTool:
             raise BadRequestError("pattern must be a non-empty string")
         base = FilesystemPolicy().require_allowed_dir(input.get("path") or str(settings.repo_root))
         glob = input.get("glob")
+        if glob is not None:
+            if not isinstance(glob, str) or not glob:
+                raise BadRequestError("glob must be a non-empty string")
+            _require_relative_glob_pattern(glob)
         case_insensitive = bool(input.get("case_insensitive", False))
         max_results = int(input.get("max_results") or 100)
         max_results = min(max_results, _MAX_RESULTS_CAP)
@@ -114,19 +119,28 @@ class GrepTool:
             raise BadRequestError(f"invalid regex: {exc}") from exc
         matches: list[dict[str, Any]] = []
         scanned = 0
+        policy = FilesystemPolicy()
         for file_path in sorted(base.rglob(glob or "*")):
             if scanned >= _SCAN_FILE_CAP or len(matches) > max_results:
                 break
-            if not file_path.is_file():
+            try:
+                target = policy.require_allowed_path(
+                    file_path,
+                    must_exist=True,
+                    allow_directory=False,
+                )
+            except PermissionDeniedError:
+                continue
+            if not target.is_file():
                 continue
             scanned += 1
             try:
-                with file_path.open("r", encoding="utf-8", errors="strict") as handle:
+                with target.open("r", encoding="utf-8", errors="strict") as handle:
                     for line_number, line in enumerate(handle, start=1):
                         if regex.search(line):
                             matches.append(
                                 {
-                                    "path": str(file_path),
+                                    "path": str(target),
                                     "line_number": line_number,
                                     "line": line.rstrip("\n")[:500],
                                 }
@@ -146,3 +160,9 @@ def _parse_rg_line(raw: str) -> dict[str, Any] | None:
     if not line_number.isdigit():
         return None
     return {"path": path, "line_number": int(line_number), "line": line[:500]}
+
+
+def _require_relative_glob_pattern(pattern: str) -> None:
+    path = Path(pattern)
+    if path.is_absolute() or ".." in path.parts:
+        raise BadRequestError("glob must be relative to the search path")

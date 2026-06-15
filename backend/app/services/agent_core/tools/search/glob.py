@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from app.config import settings
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.utils.exceptions import BadRequestError
+from app.utils.exceptions import PermissionDeniedError
 
 _MAX_RESULTS_CAP = 1000
 
@@ -54,15 +56,19 @@ class GlobTool:
         pattern = input.get("pattern")
         if not isinstance(pattern, str) or not pattern:
             raise BadRequestError("pattern must be a non-empty string")
-        if pattern.startswith("/"):
-            raise BadRequestError("pattern must be relative to the search path")
-        base = FilesystemPolicy().require_allowed_dir(input.get("path") or str(settings.repo_root))
+        _require_relative_glob_pattern(pattern)
+        policy = FilesystemPolicy()
+        base = policy.require_allowed_dir(input.get("path") or str(settings.repo_root))
         max_results = min(int(input.get("max_results") or 200), _MAX_RESULTS_CAP)
 
         paths: list[str] = []
         for candidate in sorted(base.glob(pattern)):
-            if candidate.is_file():
-                paths.append(str(candidate))
+            try:
+                path = policy.require_allowed_path(candidate, must_exist=True, allow_directory=False)
+            except PermissionDeniedError:
+                continue
+            if path.is_file():
+                paths.append(str(path))
             if len(paths) > max_results:
                 break
         truncated = len(paths) > max_results
@@ -71,3 +77,9 @@ class GlobTool:
             "count": min(len(paths), max_results),
             "truncated": truncated,
         }
+
+
+def _require_relative_glob_pattern(pattern: str) -> None:
+    path = Path(pattern)
+    if path.is_absolute() or ".." in path.parts:
+        raise BadRequestError("pattern must be relative to the search path")

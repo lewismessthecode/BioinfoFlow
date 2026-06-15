@@ -9,6 +9,8 @@ from app.services.agent_core.sandbox.process_sandbox import (
     SandboxRunner,
     SandboxUnavailableError,
 )
+from app.services.agent_core.sandbox import FilesystemPolicy
+from app.utils.exceptions import PermissionDeniedError
 
 
 class _FakeAdapter:
@@ -114,6 +116,51 @@ def test_bubblewrap_argv_confines_to_roots_and_disables_network(tmp_path):
         if token == "--bind"
     ]
     assert (str(write_root), str(write_root)) in bind_pairs
+
+
+def test_filesystem_policy_allows_absolute_path_inside_allowed_root(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    target = root / "sample.txt"
+    target.write_text("ok", encoding="utf-8")
+
+    assert FilesystemPolicy(allowed_roots=[root]).require_allowed_path(target) == target.resolve()
+
+
+def test_filesystem_policy_rejects_absolute_path_outside_allowed_root(tmp_path):
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    target = outside / "secret.txt"
+    target.write_text("secret", encoding="utf-8")
+
+    with pytest.raises(PermissionDeniedError):
+        FilesystemPolicy(allowed_roots=[root]).require_allowed_path(target)
+
+
+def test_filesystem_policy_rejects_symlink_escape(tmp_path):
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    target = outside / "secret.txt"
+    target.write_text("secret", encoding="utf-8")
+    link = root / "link.txt"
+    link.symlink_to(target)
+
+    with pytest.raises(PermissionDeniedError):
+        FilesystemPolicy(allowed_roots=[root]).require_allowed_path(link)
+
+
+def test_filesystem_policy_resolves_relative_paths_from_allowed_root(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    target = root / "sample.txt"
+    target.write_text("ok", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert FilesystemPolicy(allowed_roots=[root]).require_allowed_path("sample.txt") == target.resolve()
 
 
 def _spec(*, command: str, cwd: Path, read_roots, write_roots):

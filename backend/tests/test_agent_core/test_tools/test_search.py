@@ -7,6 +7,7 @@ import pytest
 from app.config import settings
 from app.services.agent_core.tools.search import GlobTool, GrepTool
 from app.services.agent_core.tools.specs import AgentToolContext
+from app.utils.exceptions import BadRequestError
 from app.utils.exceptions import PermissionDeniedError
 
 
@@ -45,6 +46,17 @@ async def test_grep_rejects_path_outside_allowed_roots():
 
 
 @pytest.mark.asyncio
+async def test_grep_rejects_parent_traversal_glob(search_dir, monkeypatch):
+    monkeypatch.setattr("app.services.agent_core.tools.search.grep.shutil.which", lambda _name: None)
+
+    with pytest.raises(BadRequestError):
+        await GrepTool().run(
+            {"pattern": "marker", "path": str(search_dir), "glob": "../*"},
+            _context(),
+        )
+
+
+@pytest.mark.asyncio
 async def test_glob_lists_files_within_allowed_root(search_dir):
     result = await GlobTool().run(
         {"pattern": "*.txt", "path": str(search_dir)}, _context()
@@ -58,3 +70,9 @@ async def test_glob_lists_files_within_allowed_root(search_dir):
 async def test_glob_rejects_absolute_pattern(search_dir):
     with pytest.raises(Exception):
         await GlobTool().run({"pattern": "/etc/*", "path": str(search_dir)}, _context())
+
+
+@pytest.mark.asyncio
+async def test_glob_rejects_parent_traversal_pattern(search_dir):
+    with pytest.raises(BadRequestError):
+        await GlobTool().run({"pattern": "../*", "path": str(search_dir)}, _context())
