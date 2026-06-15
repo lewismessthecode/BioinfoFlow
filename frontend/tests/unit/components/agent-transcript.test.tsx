@@ -146,4 +146,76 @@ describe("AgentTranscript", () => {
     expect(rows[0]).not.toHaveAttribute("open")
     expect(screen.queryByText(/workflow\.wdl/)).not.toBeInTheDocument()
   })
+
+  it("keeps streamed assistant text visible after later tool calls", () => {
+    render(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            turn: {
+              ...baseTimelineEntry.turn,
+              status: "running",
+            },
+            assistant: {
+              ...baseTimelineEntry.assistant,
+              status: "streaming",
+              text: "I am checking the workflow registry before reading files.",
+              toolCalls: [
+                {
+                  callId: "call-1",
+                  name: "glob",
+                  status: "completed",
+                  index: 0,
+                  arguments: { pattern: "**/*.wdl" },
+                  argumentsDelta: null,
+                },
+              ],
+            },
+          },
+        ]}
+      />,
+    )
+
+    expect(
+      screen.getByText("I am checking the workflow registry before reading files."),
+    ).toBeInTheDocument()
+    expect(screen.getByText("glob")).toBeInTheDocument()
+    expect(screen.queryByText("Working on it...")).not.toBeInTheDocument()
+  })
+
+  it("keeps thinking content expanded when tool calls arrive later", () => {
+    render(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            assistant: {
+              ...baseTimelineEntry.assistant,
+              thinking: {
+                content: "I need to inspect the workflow files before answering.",
+                isComplete: true,
+              },
+              toolCalls: [
+                {
+                  callId: "call-1",
+                  name: "glob",
+                  status: "completed",
+                  index: 0,
+                  arguments: { pattern: "**/*.wdl" },
+                  argumentsDelta: null,
+                },
+              ],
+            },
+          },
+        ]}
+      />,
+    )
+
+    const thinkingPanel = screen.getByText("Thinking").closest("details")
+    expect(thinkingPanel).toHaveAttribute("open")
+    expect(
+      screen.getByText("I need to inspect the workflow files before answering."),
+    ).toBeVisible()
+  })
 })

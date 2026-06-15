@@ -31,14 +31,17 @@ export function buildAgentRuntimeTimeline(
     switch (event.type) {
       case "assistant.text.delta": {
         entry.assistant.messageId = stringOrNull(event.payload.message_id)
-        entry.assistant.text = stringFromPayload(event.payload.content, entry.assistant.text)
+        entry.assistant.text = stringFromPayload(
+          firstStringPayload(event.payload, ["content", "text", "delta", "text_delta"]),
+          entry.assistant.text,
+        )
         entry.assistant.status = "streaming"
         break
       }
       case "assistant.text.completed": {
         entry.assistant.messageId = stringOrNull(event.payload.message_id)
         entry.assistant.text = stringFromPayload(
-          event.payload.content ?? event.payload.text,
+          firstStringPayload(event.payload, ["content", "text", "delta", "text_delta"]),
           entry.assistant.text,
         )
         entry.assistant.status = "completed"
@@ -47,15 +50,22 @@ export function buildAgentRuntimeTimeline(
       case "assistant.thinking.delta": {
         entry.assistant.messageId = stringOrNull(event.payload.message_id)
         entry.assistant.thinking = {
-          content: stringFromPayload(event.payload.content, entry.assistant.thinking?.content ?? ""),
+          content: stringFromPayload(
+            firstStringPayload(event.payload, ["content", "text", "delta", "text_delta"]),
+            entry.assistant.thinking?.content ?? "",
+          ),
           isComplete: false,
         }
         break
       }
+      case "assistant.thinking.summary":
       case "assistant.thinking.completed": {
         entry.assistant.messageId = stringOrNull(event.payload.message_id)
         entry.assistant.thinking = {
-          content: stringFromPayload(event.payload.content, entry.assistant.thinking?.content ?? ""),
+          content: stringFromPayload(
+            firstStringPayload(event.payload, ["content", "text", "delta", "text_delta"]),
+            entry.assistant.thinking?.content ?? "",
+          ),
           isComplete: true,
         }
         break
@@ -129,6 +139,14 @@ function upsertToolCall(toolCalls: AgentRuntimeToolCallState[], event: AgentRunt
 
 function stringFromPayload(value: unknown, fallback: string) {
   return typeof value === "string" ? value : fallback
+}
+
+function firstStringPayload(payload: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === "string") return value
+  }
+  return null
 }
 
 function stringOrNull(value: unknown) {

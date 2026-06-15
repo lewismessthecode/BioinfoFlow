@@ -33,7 +33,10 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
                 </div>
 
                 {entry.assistant.thinking?.content ? (
-                  <details className="mb-3 rounded-2xl border border-border/70 bg-muted/30 px-3 py-2">
+                  <details
+                    className="group mb-3 rounded-2xl border border-border/70 bg-muted/30 px-3 py-2"
+                    open
+                  >
                     <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground">
                       <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
                       <span>{t("thinking")}</span>
