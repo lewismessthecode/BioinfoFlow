@@ -172,6 +172,54 @@ describe("agentRuntimeReducer", () => {
     ])
   })
 
+  it("preserves persisted thinking summaries after later tool calls", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: {
+          id: "session-1",
+          workspace_id: "workspace-1",
+          user_id: "dev",
+          role_profile: "bioinformatician",
+          permission_mode: "guarded_auto",
+          automation_mode: "assisted",
+          runtime_mode: "api",
+          status: "active",
+          created_at: "2026-06-08T00:00:00Z",
+          updated_at: "2026-06-08T00:00:00Z",
+        },
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-thinking", 1),
+            type: "assistant.thinking.summary",
+            payload: {
+              message_id: "message-1",
+              content: "I need to inspect the workflow files before answering.",
+            },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "glob",
+              arguments: { pattern: "**/*.wdl" },
+              status: "completed",
+              index: 0,
+            },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.thinking?.content).toBe(
+      "I need to inspect the workflow files before answering.",
+    )
+    expect(loaded.timeline[0].assistant.toolCalls).toHaveLength(1)
+  })
+
   it("projects running status from queued or running turns", () => {
     const state = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "turn.upsert",

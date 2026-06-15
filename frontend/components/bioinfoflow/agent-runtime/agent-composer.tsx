@@ -138,6 +138,11 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return
+            if (event.key === "Tab" && event.shiftKey && onModeChange) {
+              event.preventDefault()
+              onModeChange(mode === "plan" ? "execution" : "plan")
+              return
+            }
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault()
               onSubmit()

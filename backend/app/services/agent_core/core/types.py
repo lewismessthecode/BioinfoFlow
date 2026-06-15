@@ -11,6 +11,7 @@ TurnTerminationReason = Literal[
     "cancelled",
     "budget_exhausted",
     "model_failed",
+    "tool_failed",
     "no_progress",
 ]
 

@@ -8,6 +8,7 @@ import pytest
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
+from app.path_layout import project_home
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
@@ -1052,6 +1053,23 @@ async def test_agent_fs_tree_and_file_are_confined_to_allowed_roots(async_client
 
 
 @pytest.mark.asyncio
+async def test_agent_fs_tree_defaults_to_project_home(async_client):
+    project_id = await _create_project(async_client)
+    project_root = project_home(project_id)
+    marker = project_root / "project-note.txt"
+    marker.write_text("project scoped", encoding="utf-8")
+
+    response = await async_client.get(
+        f"/api/v1/agent/fs/tree?project_id={project_id}"
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["path"] == str(project_root)
+    assert "project-note.txt" in {entry["name"] for entry in data["entries"]}
+
+
+@pytest.mark.asyncio
 async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     data_root = tmp_path / "data"
@@ -1081,6 +1099,17 @@ async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, mon
         f"/api/v1/agent/fs/file?path={nested_secret}"
     )
     assert data_secret_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_toolsets_include_plan_mode(async_client):
+    response = await async_client.get("/api/v1/agent/toolsets")
+
+    assert response.status_code == 200
+    toolsets = {item["name"]: item["tools"] for item in response.json()["data"]["toolsets"]}
+    assert "plan" in toolsets
+    assert "exit_plan_mode" in toolsets["plan"]
+    assert "bash" not in toolsets["plan"]
 
 
 @pytest.mark.asyncio

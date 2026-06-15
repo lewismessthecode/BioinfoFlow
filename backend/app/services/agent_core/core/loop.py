@@ -42,6 +42,7 @@ from app.services.agent_core.tools.toolsets import (
 )
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
 from app.services.llm.provider_templates import litellm_model_name
+from app.utils.exceptions import PermissionDeniedError
 
 
 class AgentLoopController:
@@ -224,6 +225,15 @@ class AgentLoopController:
                         final_text=None,
                         iteration_count=budget.used_iterations,
                         token_usage=token_usage,
+                    )
+                except PermissionDeniedError as exc:
+                    return LoopResult(
+                        termination_reason="tool_failed",
+                        final_text=None,
+                        iteration_count=budget.used_iterations,
+                        token_usage=token_usage,
+                        error_code=_tool_permission_error_code(exc),
+                        error_message=str(exc),
                     )
                 if waiting:
                     return LoopResult(
@@ -1023,6 +1033,12 @@ def _tool_call_signature(tool_call: dict[str, Any]) -> str:
 
 def _cancellation_reason(turn) -> str:
     return "interrupted" if is_interrupt_requested(turn) else "cancelled"
+
+
+def _tool_permission_error_code(exc: PermissionDeniedError) -> str:
+    if "not exposed" in str(exc):
+        return "tool_not_exposed"
+    return "tool_permission_denied"
 
 
 def _max_iterations() -> int:

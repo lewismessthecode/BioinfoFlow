@@ -13,7 +13,11 @@ import {
 } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
-export function FilesTab() {
+type FilesTabProps = {
+  projectId?: string | null
+}
+
+export function FilesTab({ projectId }: FilesTabProps) {
   const t = useTranslations("agentRuntime")
   const [dir, setDir] = useState<string | null>(null)
   const [entries, setEntries] = useState<AgentFsEntry[]>([])
@@ -21,20 +25,23 @@ export function FilesTab() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadDir = useCallback(async (path: string | null) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const tree = await getAgentFsTree(path)
-      setDir(tree.path)
-      setEntries(tree.entries)
-      setFile(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("files.error"))
-    } finally {
-      setLoading(false)
-    }
-  }, [t])
+  const loadDir = useCallback(
+    async (path: string | null) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const tree = await getAgentFsTree(path, projectId)
+        setDir(tree.path)
+        setEntries(tree.entries)
+        setFile(null)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t("files.error"))
+      } finally {
+        setLoading(false)
+      }
+    },
+    [projectId, t],
+  )
 
   useEffect(() => {
     void loadDir(null)

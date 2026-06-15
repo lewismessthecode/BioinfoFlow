@@ -1,10 +1,15 @@
 "use client"
 
-import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed, Wrench } from "lucide-react"
+import { useState } from "react"
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Wrench } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
-import type { AgentRuntimeTimelineEntry, AgentRuntimeTurn } from "@/lib/agent-runtime"
+import type {
+  AgentRuntimeTimelineEntry,
+  AgentRuntimeToolCallState,
+  AgentRuntimeTurn,
+} from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
 export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEntry[] }) {
@@ -28,7 +33,10 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
                 </div>
 
                 {entry.assistant.thinking?.content ? (
-                  <details className="mb-3 rounded-2xl border border-border/70 bg-muted/30 px-3 py-2">
+                  <details
+                    className="group mb-3 rounded-2xl border border-border/70 bg-muted/30 px-3 py-2"
+                    open
+                  >
                     <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground">
                       <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
                       <span>{t("thinking")}</span>
@@ -40,22 +48,16 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
                 ) : null}
 
                 {entry.assistant.toolCalls.length > 0 ? (
-                  <div className="mb-3 grid gap-2">
+                  <div className="mb-3 overflow-hidden rounded-lg border border-border/60 bg-muted/20">
+                    <div className="flex items-center gap-2 border-b border-border/50 px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
+                      <Wrench className="h-3.5 w-3.5" />
+                      <span>{t("toolCalls")}</span>
+                    </div>
                     {entry.assistant.toolCalls.map((toolCall) => (
-                      <div
+                      <ToolCallRow
                         key={toolCall.callId}
-                        className="rounded-2xl border border-border/70 bg-card px-3 py-3"
-                      >
-                        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                          <Wrench className="h-4 w-4 text-muted-foreground" />
-                          <span>{toolCall.name}</span>
-                        </div>
-                        {toolCall.arguments ? (
-                          <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words rounded-xl bg-muted/50 px-3 py-2 text-xs leading-5 text-muted-foreground">
-                            {JSON.stringify(toolCall.arguments, null, 2)}
-                          </pre>
-                        ) : null}
-                      </div>
+                        toolCall={toolCall}
+                      />
                     ))}
                   </div>
                 ) : null}
@@ -77,6 +79,44 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
           </article>
         ))}
       </div>
+    </div>
+  )
+}
+
+function ToolCallRow({ toolCall }: { toolCall: AgentRuntimeToolCallState }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasArguments = Boolean(toolCall.arguments)
+
+  return (
+    <div
+      className="border-b border-border/40 last:border-b-0"
+      data-testid="agent-tool-call-row"
+    >
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-muted/40"
+        onClick={() => hasArguments && setExpanded((current) => !current)}
+        aria-expanded={expanded}
+      >
+        {hasArguments ? (
+          expanded ? (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          )
+        ) : (
+          <span className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <span className="min-w-0 flex-1 truncate font-mono">{toolCall.name}</span>
+        <span className="shrink-0 rounded-sm bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          {toolCall.status}
+        </span>
+      </button>
+      {expanded && toolCall.arguments ? (
+        <pre className="max-h-56 overflow-auto border-t border-border/40 bg-background/70 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          {JSON.stringify(toolCall.arguments, null, 2)}
+        </pre>
+      ) : null}
     </div>
   )
 }
