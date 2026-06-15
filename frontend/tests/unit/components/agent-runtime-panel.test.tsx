@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
+import { resolveSameOriginBrowserUrl } from "@/components/bioinfoflow/agent-runtime/browser-tab"
 import { PendingDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-decision-cards"
 import { ProgressTab } from "@/components/bioinfoflow/agent-runtime/progress-tab"
 import type { AgentRuntimeArtifact, AgentRuntimeEvent } from "@/lib/agent-runtime"
@@ -62,6 +63,29 @@ describe("ProgressTab", () => {
     expect(screen.getByText("Read the code")).toBeInTheDocument()
     // in_progress uses activeForm
     expect(screen.getByText("Editing")).toBeInTheDocument()
+  })
+})
+
+describe("resolveSameOriginBrowserUrl", () => {
+  it("rejects lookalike cross-origin iframe URLs", () => {
+    expect(
+      resolveSameOriginBrowserUrl(
+        "https://bioinfoflow.example.evil.test/app",
+        "https://bioinfoflow.example",
+      ),
+    ).toBe("https://bioinfoflow.example/")
+  })
+
+  it("normalizes same-origin absolute and relative URLs", () => {
+    expect(
+      resolveSameOriginBrowserUrl(
+        "https://bioinfoflow.example/agent?tab=browser#panel",
+        "https://bioinfoflow.example",
+      ),
+    ).toBe("https://bioinfoflow.example/agent?tab=browser#panel")
+    expect(resolveSameOriginBrowserUrl("/runs", "https://bioinfoflow.example")).toBe(
+      "https://bioinfoflow.example/runs",
+    )
   })
 })
 

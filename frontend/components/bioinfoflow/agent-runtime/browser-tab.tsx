@@ -10,24 +10,49 @@ function currentOrigin() {
   return typeof window === "undefined" ? "" : window.location.origin
 }
 
+export function resolveSameOriginBrowserUrl(rawUrl: string, origin: string) {
+  if (!origin) return ""
+  let base: URL
+  try {
+    base = new URL(origin)
+  } catch {
+    return ""
+  }
+  if (base.protocol !== "http:" && base.protocol !== "https:") {
+    return ""
+  }
+  try {
+    const parsed = new URL(rawUrl.trim() || base.href, base)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return base.href
+    }
+    if (parsed.origin !== base.origin) {
+      return base.href
+    }
+    return parsed.href
+  } catch {
+    return base.href
+  }
+}
+
 export function BrowserTab() {
   const t = useTranslations("agentRuntime")
   const [origin] = useState(currentOrigin)
-  const [input, setInput] = useState(currentOrigin)
-  const [src, setSrc] = useState(currentOrigin)
+  const [input, setInput] = useState(() =>
+    resolveSameOriginBrowserUrl(currentOrigin(), currentOrigin()),
+  )
+  const [src, setSrc] = useState(() =>
+    resolveSameOriginBrowserUrl(currentOrigin(), currentOrigin()),
+  )
   const [reloadKey, setReloadKey] = useState(0)
 
   const go = () => {
-    const next = input.trim()
+    const next = resolveSameOriginBrowserUrl(input, origin)
     if (!next) return
     // Same-origin only: embedding a cross-origin app is blocked by
     // X-Frame-Options, so we constrain the iframe to this deployment's origin.
-    if (origin && !next.startsWith(origin)) {
-      setSrc(origin)
-      setInput(origin)
-      return
-    }
     setSrc(next)
+    setInput(next)
   }
 
   return (
