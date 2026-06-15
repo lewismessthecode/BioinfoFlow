@@ -7,7 +7,11 @@ from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.specs import AgentToolSpec
 
 
+# The read-only fallback policy, used when a caller passes no policy at all.
 DEFAULT_TOOLSET_POLICY = {"name": "default"}
+# The capable, approval-gated policy new sessions start with: every registered
+# tool is exposed, and the permission policy gates each side-effecting action.
+EXECUTION_TOOLSET_POLICY = {"name": "execution"}
 
 
 @dataclass(frozen=True)

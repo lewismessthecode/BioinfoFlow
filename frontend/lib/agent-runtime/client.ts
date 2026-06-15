@@ -2,6 +2,7 @@ import { apiRequest } from "@/lib/api"
 import type {
   AgentModelSelection,
   AgentPermissionMode,
+  AgentRuntimeArtifact,
   AgentRuntimeSession,
   AgentRuntimeStatePayload,
   AgentRuntimeTurn,
@@ -76,6 +77,13 @@ export const decideAgentRuntimeAction = async (
 export const getAgentRuntimeState = async (sessionId: string) => {
   const response = await apiRequest<AgentRuntimeStatePayload>(
     `/agent/sessions/${sessionId}/state`,
+  )
+  return response.data
+}
+
+export const listAgentRuntimeSessionArtifacts = async (sessionId: string) => {
+  const response = await apiRequest<AgentRuntimeArtifact[]>(
+    `/agent/sessions/${sessionId}/artifacts`,
   )
   return response.data
 }

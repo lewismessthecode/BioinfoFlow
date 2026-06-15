@@ -2192,6 +2192,23 @@
       "currentToolCalls": "当前工具调用",
       "needsDecision": "需要你确认",
       "noActivity": "还没有活动"
+    },
+    "artifacts": {
+      "title": "产物",
+      "back": "返回产物列表",
+      "empty": "暂无产物。文件、命令输出和平台记录会显示在这里。",
+      "copy": "复制",
+      "copied": "已复制",
+      "download": "下载",
+      "exitCode": "退出码",
+      "types": {
+        "file": "文件",
+        "command": "命令输出",
+        "run": "运行",
+        "workflow": "工作流",
+        "image": "镜像",
+        "unknown": "产物"
+      }
     }
   },
   "agent": {

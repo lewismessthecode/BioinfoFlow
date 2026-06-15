@@ -130,6 +130,7 @@ class AgentLoopController:
                 "messages": await self.context.provider_messages(
                     agent_session=agent_session,
                     turn=turn,
+                    exposed_tools=visible_tools,
                 ),
                 "max_tokens": max_tokens or settings.agent_max_tokens,
                 **request_args,

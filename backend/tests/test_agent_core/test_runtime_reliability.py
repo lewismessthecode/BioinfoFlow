@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 
 import pytest
@@ -308,13 +309,12 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
         message = FakeMessage()
         if calls == 1:
             class FakeFunction:
-                name = "execution__shell"
-                arguments = (
-                    '{"command":["'
-                    + sys.executable
-                    + '","-c","print(\\"recover\\")"],"cwd":"'
-                    + str(settings.bioinfoflow_home)
-                    + '"}'
+                name = "bash"
+                arguments = json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"recover\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
                 )
 
             class FakeToolCall:

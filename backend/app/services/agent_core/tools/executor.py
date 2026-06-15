@@ -25,6 +25,86 @@ from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.utils.exceptions import ConflictError, PermissionDeniedError
 
 
+def _artifact_descriptor(
+    *,
+    policy: dict[str, Any],
+    tool_name: str,
+    result: dict[str, Any],
+    action_input: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Build a typed artifact descriptor from a tool result.
+
+    The artifact ``type`` drives the frontend renderer (file diff, command
+    terminal, run/workflow/image card, …), so each side-effecting tool tags its
+    ``artifact_policy`` with a ``type`` and we shape a payload the panel can use.
+    """
+    artifact_type = policy.get("type")
+
+    if artifact_type == "file":
+        path = action_input.get("path")
+        content = action_input.get("content")
+        if content is None:
+            content = action_input.get("new_text")
+        bytes_written = result.get("bytes_written")
+        replacements = result.get("replacements")
+        if bytes_written is not None:
+            summary = f"Wrote {bytes_written} bytes"
+        elif replacements is not None:
+            summary = f"Replaced {replacements} occurrence(s)"
+        else:
+            summary = "File updated"
+        return {
+            "type": "file",
+            "title": str(path or "file"),
+            "summary": summary,
+            "payload": {"path": path, "content": content, **result},
+        }
+
+    if artifact_type in {"workflow", "run", "image"}:
+        inner = result.get(artifact_type) if isinstance(result.get(artifact_type), dict) else result
+        title = (
+            inner.get("name")
+            or inner.get("full_name")
+            or inner.get("run_id")
+            or inner.get("id")
+            or f"{tool_name} {artifact_type}"
+        )
+        return {
+            "type": artifact_type,
+            "title": str(title),
+            "summary": f"{artifact_type.capitalize()} from {tool_name}.",
+            "payload": result,
+        }
+
+    # Command / log output (bash and other stdout-producing tools).
+    if (artifact_type == "command" or policy.get("stdout") or policy.get("stderr")) and any(
+        key in result for key in ("stdout", "stderr", "exit_code")
+    ):
+        return {
+            "type": "command",
+            "title": str(result.get("command") or f"{tool_name} output"),
+            "summary": f"exit code {result.get('exit_code', '?')}",
+            "payload": result,
+        }
+    return None
+
+
+def _resolve_requested_risk(tool: AgentTool, normalized_input: dict[str, Any]):
+    """Let a tool dynamically raise its requested risk from its input.
+
+    Most tools declare a static ``risk_level``. The ``bash`` tool overrides
+    ``assess_risk`` to classify the actual command string, so a destructive
+    command escalates to ask/deny while a safe one auto-runs. The static spec
+    level is the floor when no dynamic assessment applies.
+    """
+    assess = getattr(tool, "assess_risk", None)
+    if assess is not None:
+        dynamic = assess(normalized_input or {})
+        if dynamic is not None:
+            return dynamic
+    return tool.spec.risk_level
+
+
 @dataclass(frozen=True)
 class ToolExecutionResult:
     action_id: str
@@ -61,6 +141,7 @@ class AgentToolExecutor:
         if not exposure.allowed:
             raise PermissionDeniedError("; ".join(exposure.reasons))
         normalized_input = normalize_tool_input(input, tool.spec.input_schema)
+        requested_risk = _resolve_requested_risk(tool, normalized_input)
 
         action = await self.action_service.request_action(
             turn_id=context.turn_id,
@@ -68,7 +149,7 @@ class AgentToolExecutor:
             name=tool.spec.name,
             input=input,
             normalized_input=normalized_input,
-            requested_risk=tool.spec.risk_level,
+            requested_risk=requested_risk,
             permission_mode=permission_mode,
             automation_mode=automation_mode,
             read_scope=tool.spec.read_scope,
@@ -220,18 +301,22 @@ class AgentToolExecutor:
 
     async def _register_artifacts(self, *, action, tool: AgentTool, result: dict[str, Any]) -> list[str]:
         policy = action.artifact_policy or tool.spec.artifact_policy or {}
-        if not (policy.get("stdout") or policy.get("stderr")):
-            return []
-        if not any(key in result for key in ("stdout", "stderr", "exit_code")):
+        descriptor = _artifact_descriptor(
+            policy=policy,
+            tool_name=tool.spec.name,
+            result=result,
+            action_input=action.normalized_input or action.input or {},
+        )
+        if descriptor is None:
             return []
         artifact = await self.artifact_repo.create(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
             action_id=str(action.id),
-            type="log_summary",
-            title=f"{tool.spec.name} output",
-            summary="Tool output captured.",
-            payload=result,
+            type=descriptor["type"],
+            title=descriptor["title"],
+            summary=descriptor["summary"],
+            payload=descriptor["payload"],
         )
         await self.ledger.append(
             session_id=str(action.session_id),

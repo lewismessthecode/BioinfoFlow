@@ -2192,6 +2192,23 @@
       "currentToolCalls": "Current tool calls",
       "needsDecision": "Needs your decision",
       "noActivity": "No activity yet"
+    },
+    "artifacts": {
+      "title": "Artifacts",
+      "back": "Back to artifacts",
+      "empty": "No artifacts yet. Files, command output, and platform records will appear here.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "download": "Download",
+      "exitCode": "Exit code",
+      "types": {
+        "file": "File",
+        "command": "Command output",
+        "run": "Run",
+        "workflow": "Workflow",
+        "image": "Image",
+        "unknown": "Artifact"
+      }
     }
   },
   "agent": {

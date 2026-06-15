@@ -110,13 +110,13 @@ const baseTurn: AgentRuntimeTurn = {
   updated_at: "2026-06-09T00:00:00Z",
 }
 
-const actionEvent: AgentRuntimeEvent = {
+const waitingDecisionEvent: AgentRuntimeEvent = {
   id: "event-1",
   session_id: "session-1",
   turn_id: "turn-1",
   seq: 1,
-  type: "action.running",
-  payload: { name: "inspect_workspace" },
+  type: "action.waiting_decision",
+  payload: { action_id: "action-1", name: "files__write" },
   visibility: "user",
   schema_version: 1,
   created_at: "2026-06-09T00:00:00Z",
@@ -174,7 +174,7 @@ describe("AgentWorkbench", () => {
     )
     expect(screen.queryByText("Agent Harness")).not.toBeInTheDocument()
     expect(screen.queryByText("Start from the runtime")).not.toBeInTheDocument()
-    expect(screen.queryByTestId("runtime-sidecar")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
   })
 
   it("registers the runtime sidecar toggle with the navbar action group", () => {
@@ -245,23 +245,41 @@ describe("AgentWorkbench", () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it("opens the run sidecar while the agent is running", async () => {
+  it("opens the artifact panel when an action needs a decision", async () => {
     setupRuntime({
-      turns: [{ ...baseTurn, status: "running", final_text: null }],
-      events: [actionEvent],
+      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
+      events: [waitingDecisionEvent],
       status: "running",
     })
 
     render(<AgentWorkbench />)
 
-    expect(await screen.findByTestId("runtime-sidecar")).toBeInTheDocument()
+    expect(await screen.findByTestId("artifact-panel")).toBeInTheDocument()
     expect(screen.getByTestId("agent-sidecar-column")).toBeInTheDocument()
     expect(screen.getByTestId("agent-workbench-main")).toBeInTheDocument()
-    expect(screen.getByText("Run")).toBeInTheDocument()
-    expect(screen.getByText("Current tool calls")).toBeInTheDocument()
+    expect(screen.getByText("Needs your decision")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument()
   })
 
-  it("renders thinking and tool-call activity in the transcript and sidecar", async () => {
+  it("does not auto-open the panel merely because the agent is streaming", () => {
+    setupRuntime({
+      turns: [{ ...baseTurn, status: "running", final_text: null }],
+      events: [
+        {
+          ...waitingDecisionEvent,
+          type: "assistant.text.delta",
+          payload: { content: "thinking" },
+        },
+      ],
+      status: "running",
+    })
+
+    render(<AgentWorkbench />)
+
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+  })
+
+  it("renders thinking and tool-call activity in the transcript", async () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "running", final_text: null }],
       events: [
@@ -326,37 +344,71 @@ describe("AgentWorkbench", () => {
     expect(await screen.findByText("Thinking")).toBeInTheDocument()
     expect(screen.getByText("Project scan complete.")).toBeInTheDocument()
     expect(screen.getAllByText("projects__list").length).toBeGreaterThan(0)
-    expect(screen.getByText("Current thinking")).toBeInTheDocument()
-    expect(screen.getByText("Current tool calls")).toBeInTheDocument()
   })
 
-  it("keeps normal activity dismissed after the user closes the sidecar", async () => {
+  it("keeps the panel closed after the user dismisses a pending decision", async () => {
     const { rerender } = render(<AgentWorkbench />)
 
     setupRuntime({
-      turns: [{ ...baseTurn, status: "running", final_text: null }],
-      events: [actionEvent],
+      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
+      events: [waitingDecisionEvent],
       status: "running",
     })
     rerender(<AgentWorkbench />)
 
-    expect(await screen.findByTestId("runtime-sidecar")).toBeInTheDocument()
+    expect(await screen.findByTestId("artifact-panel")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Close run panel" }))
 
     await waitFor(() => {
-      expect(screen.queryByTestId("runtime-sidecar")).not.toBeInTheDocument()
+      expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
     })
 
     setupRuntime({
       turns: [{ ...baseTurn, status: "completed", final_text: "Done." }],
       events: [
-        actionEvent,
-        { ...actionEvent, id: "event-2", seq: 2, type: "action.completed" },
+        waitingDecisionEvent,
+        { ...waitingDecisionEvent, id: "event-2", seq: 2, type: "action.decision_recorded" },
       ],
       status: "idle",
     })
     rerender(<AgentWorkbench />)
 
-    expect(screen.queryByTestId("runtime-sidecar")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+  })
+
+  it("re-opens the panel when a new approval arrives after a dismissal", async () => {
+    const { rerender } = render(<AgentWorkbench />)
+
+    setupRuntime({
+      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
+      events: [waitingDecisionEvent],
+      status: "running",
+    })
+    rerender(<AgentWorkbench />)
+
+    expect(await screen.findByTestId("artifact-panel")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Close run panel" }))
+    await waitFor(() => {
+      expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    })
+
+    // A different action now needs a decision — the panel must surface again.
+    setupRuntime({
+      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
+      events: [
+        waitingDecisionEvent,
+        { ...waitingDecisionEvent, id: "event-2", seq: 2, type: "action.decision_recorded" },
+        {
+          ...waitingDecisionEvent,
+          id: "event-3",
+          seq: 3,
+          payload: { action_id: "action-2", name: "bash" },
+        },
+      ],
+      status: "running",
+    })
+    rerender(<AgentWorkbench />)
+
+    expect(await screen.findByTestId("artifact-panel")).toBeInTheDocument()
   })
 })

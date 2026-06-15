@@ -9,55 +9,6 @@ from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.utils.exceptions import BadRequestError
 
 
-class ListFilesTool:
-    spec = AgentToolSpec(
-        name="files.list",
-        description="List files and directories within an allowed workspace path.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "recursive": {"type": "boolean"},
-                "include_hidden": {"type": "boolean"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 500},
-            },
-            "additionalProperties": False,
-        },
-        output_schema={
-            "type": "object",
-            "properties": {"entries": {"type": "array"}, "root": {"type": "string"}},
-            "required": ["entries", "root"],
-        },
-        risk_level="read",
-        read_scope=["workspace"],
-        audit="List files inside the allowed workspace.",
-    )
-
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
-        del context
-        root = _resolve_path(input.get("path"), must_exist=True, allow_directory=True)
-        if not root.is_dir():
-            raise BadRequestError(f"path must be a directory: {root}")
-        include_hidden = bool(input.get("include_hidden", False))
-        limit = int(input.get("limit") or 200)
-        recursive = bool(input.get("recursive", False))
-        iterator = root.rglob("*") if recursive else root.iterdir()
-        entries: list[dict[str, Any]] = []
-        for entry in iterator:
-            if not include_hidden and entry.name.startswith("."):
-                continue
-            entries.append(
-                {
-                    "path": str(entry),
-                    "name": entry.name,
-                    "type": "directory" if entry.is_dir() else "file",
-                }
-            )
-            if len(entries) >= limit:
-                break
-        return {"root": str(root), "entries": entries}
-
-
 class ReadFileTool:
     spec = AgentToolSpec(
         name="files.read",
@@ -119,11 +70,12 @@ class WriteFileTool:
             "properties": {"path": {"type": "string"}, "bytes_written": {"type": "integer"}},
             "required": ["path", "bytes_written"],
         },
-        risk_level="act_low",
+        risk_level="act_high",
         read_scope=["workspace"],
         write_scope=["workspace"],
         audit="Write a text file inside the allowed workspace.",
         rollback_hint="Restore the previous file contents from version control or overwrite the file again.",
+        artifact_policy={"type": "file"},
     )
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
@@ -154,11 +106,12 @@ class EditFileTool:
             "properties": {"path": {"type": "string"}, "replacements": {"type": "integer"}},
             "required": ["path", "replacements"],
         },
-        risk_level="act_low",
+        risk_level="act_high",
         read_scope=["workspace"],
         write_scope=["workspace"],
         audit="Edit a text file inside the allowed workspace.",
         rollback_hint="Restore the previous file contents from version control or reverse the replacement.",
+        artifact_policy={"type": "file"},
     )
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
