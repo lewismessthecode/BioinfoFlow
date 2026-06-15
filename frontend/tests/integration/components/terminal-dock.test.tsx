@@ -226,11 +226,18 @@ describe("TerminalDock", () => {
         <TerminalDock />
       </TerminalDockProvider>
     )
+    document.documentElement.style.setProperty("--terminal-background", "#32302f")
+    document.documentElement.style.setProperty("--terminal-foreground", "#ebdbb2")
+    document.documentElement.style.setProperty("--terminal-cursor", "#ebdbb2")
+    document.documentElement.style.setProperty(
+      "--terminal-selection",
+      "rgba(250, 189, 47, 0.35)"
+    )
 
     await waitFor(() => {
       expect(terminal.options.theme).toMatchObject({
-        background: "#f6f7fb",
-        foreground: "#1e293b",
+        background: "#32302f",
+        foreground: "#ebdbb2",
       })
     })
 

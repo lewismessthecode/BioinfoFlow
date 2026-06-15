@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { Eraser, RotateCcw, TerminalSquare, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
@@ -86,10 +86,7 @@ export function TerminalDock() {
   const shouldConnect =
     enabled && Boolean(projectId) && (isOpen || pendingCommand !== null)
 
-  const terminalTheme = useMemo(
-    () => readTerminalTheme(resolvedMode, activePreset),
-    [activePreset, resolvedMode]
-  )
+  const terminalTheme = readTerminalTheme(resolvedMode, activePreset)
   const terminalThemeRef = useRef(terminalTheme)
 
   const handleMessage = useCallback((message: TerminalServerMessage) => {
@@ -146,13 +143,20 @@ export function TerminalDock() {
     })
   }, [isOpen, resize])
 
-  useEffect(() => {
-    terminalThemeRef.current = terminalTheme
+  const syncTerminalTheme = useCallback(() => {
+    const nextTheme = readTerminalTheme(resolvedMode, activePreset)
+    terminalThemeRef.current = nextTheme
     if (terminalRef.current) {
-      terminalRef.current.options.theme = terminalTheme
+      terminalRef.current.options.theme = nextTheme
       scheduleFit()
     }
-  }, [scheduleFit, terminalTheme])
+  }, [activePreset, resolvedMode, scheduleFit])
+
+  useEffect(() => {
+    syncTerminalTheme()
+    const timer = window.setTimeout(syncTerminalTheme, 0)
+    return () => window.clearTimeout(timer)
+  }, [syncTerminalTheme])
 
   useEffect(() => {
     if (!isOpen || !terminalViewportRef.current) return
