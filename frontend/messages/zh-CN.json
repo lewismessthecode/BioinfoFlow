@@ -2204,11 +2204,50 @@
       "types": {
         "file": "文件",
         "command": "命令输出",
+        "todo_list": "任务",
         "run": "运行",
         "workflow": "工作流",
         "image": "镜像",
         "unknown": "产物"
       }
+    },
+    "tabs": {
+      "progress": "进度",
+      "files": "打开文件",
+      "browser": "浏览器"
+    },
+    "progress": {
+      "tasks": "任务",
+      "empty": "暂无任务。智能助手的任务清单会在执行时显示在这里。"
+    },
+    "files": {
+      "title": "文件",
+      "up": "上一级",
+      "back": "返回文件列表",
+      "refresh": "刷新",
+      "empty": "此文件夹为空。",
+      "error": "无法加载文件。",
+      "truncated": "文件较大，已被截断。"
+    },
+    "browser": {
+      "title": "内嵌浏览器",
+      "urlPlaceholder": "同源地址",
+      "go": "打开地址",
+      "reload": "重新加载"
+    },
+    "mode": {
+      "label": "智能助手模式",
+      "act": "执行",
+      "plan": "规划"
+    },
+    "plan": {
+      "reviewTitle": "审阅计划",
+      "approveAndAct": "批准并执行",
+      "keepPlanning": "继续规划"
+    },
+    "ask": {
+      "title": "智能助手需要你的输入",
+      "submit": "提交回答"
     }
   },
   "agent": {

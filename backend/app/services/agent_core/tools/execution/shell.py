@@ -7,7 +7,7 @@ from typing import Any
 from app.config import settings
 from app.services.agent_core.permissions.risk import RiskLevel
 from app.services.agent_core.permissions.shell_risk import classify_shell_command
-from app.services.agent_core.sandbox import FilesystemPolicy
+from app.services.agent_core.sandbox import FilesystemPolicy, SandboxRunner
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.utils.exceptions import PermissionDeniedError
 
@@ -39,6 +39,7 @@ class ExecuteShellTool:
                 "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
                 "output_limit": {"type": "integer", "minimum": 100, "maximum": 50000},
                 "description": {"type": "string"},
+                "dangerously_disable_sandbox": {"type": "boolean"},
             },
             "required": ["command"],
             "additionalProperties": False,
@@ -89,10 +90,22 @@ class ExecuteShellTool:
         timeout = int(input.get("timeout_seconds") or 120)
         output_limit = int(input.get("output_limit") or 16000)
 
+        # The OS sandbox — not the risk classifier — is the real boundary. When
+        # enabled it confines the process to the repo and data home; reads of
+        # /etc, the wider FS, or the docker socket are blocked at the syscall
+        # layer rather than merely flagged for approval.
+        bioinfoflow_home = Path(settings.bioinfoflow_home).expanduser().resolve()
+        repo_root = Path(settings.repo_root).expanduser().resolve()
+        sandbox = SandboxRunner.from_settings().build(
+            command=command,
+            cwd=cwd,
+            read_roots=[repo_root, bioinfoflow_home],
+            write_roots=[cwd, bioinfoflow_home],
+            disable_requested=bool(input.get("dangerously_disable_sandbox", False)),
+        )
+
         process = await asyncio.create_subprocess_exec(
-            "bash",
-            "-lc",
-            command,
+            *sandbox.argv,
             cwd=str(cwd),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

@@ -21,6 +21,12 @@ class AgentToolSpec:
     rollback_hint: str | None = None
     timeout_seconds: int = 30
     artifact_policy: dict[str, Any] | None = None
+    # Orthogonal pause signal: when set, the tool always pauses for the user
+    # regardless of permission_mode (even ``bypass``). Values: ``"user_input"``
+    # (ask_user clarification) and ``"plan_approval"`` (exit_plan_mode). This is
+    # distinct from risk-gated approvals, which are driven by the permission
+    # policy.
+    interaction: str | None = None
 
 
 @dataclass(frozen=True)

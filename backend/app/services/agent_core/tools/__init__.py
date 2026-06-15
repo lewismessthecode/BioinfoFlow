@@ -8,7 +8,10 @@ from app.services.agent_core.tools.files import (
     ReadFileTool,
     WriteFileTool,
 )
+from app.services.agent_core.tools.interaction import AskUserTool, ExitPlanModeTool
 from app.services.agent_core.tools.memory import ListMemoriesTool, ProposeMemoryTool
+from app.services.agent_core.tools.search import GlobTool, GrepTool
+from app.services.agent_core.tools.tasks import TodoWriteTool
 from app.services.agent_core.tools.platform import (
     BuildImageTool,
     CancelRunTool,
@@ -29,7 +32,7 @@ from app.services.agent_core.tools.skills import (
     LoadSkillTool,
 )
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
-from app.services.agent_core.tools.subagents import SubagentAnalyzeTool
+from app.services.agent_core.tools.subagents import SubagentAnalyzeTool, TaskTool
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.services.agent_core.tools.web import FetchWebPageTool, SearchWebTool
 
@@ -49,11 +52,18 @@ def build_default_tool_registry() -> AgentToolRegistry:
     registry.register(WriteFileTool())
     registry.register(EditFileTool())
     registry.register(ExecuteShellTool())
+    registry.register(GrepTool())
+    registry.register(GlobTool())
     registry.register(ListMemoriesTool())
     registry.register(ProposeMemoryTool())
     registry.register(ListSkillsTool())
     registry.register(LoadSkillTool())
     registry.register(ListPluginsTool())
+
+    # ── interaction + task-management tools ────────────────────────────────
+    registry.register(TodoWriteTool())
+    registry.register(AskUserTool())
+    registry.register(ExitPlanModeTool())
 
     # ── platform tools (read + side-effecting "tentacles") ─────────────────
     registry.register(ListProjectsTool())
@@ -72,6 +82,7 @@ def build_default_tool_registry() -> AgentToolRegistry:
     registry.register(SearchWebTool())
     registry.register(FetchWebPageTool())
     registry.register(SubagentAnalyzeTool())
+    registry.register(TaskTool())
 
     register_plugin_tools(registry, root=state_root() / "agent_core" / "plugins")
     return registry

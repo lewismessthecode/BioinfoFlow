@@ -112,6 +112,11 @@ class AgentContextAssembler:
         lines.append(f"- Runtime mode: {getattr(agent_session, 'runtime_mode', 'api')}")
         lines.append(f"- Role profile: {getattr(agent_session, 'role_profile', 'bioinformatician')}")
         lines.append(f"- Toolset policy: {toolset}")
+        if toolset == "plan":
+            lines.append(
+                "- PLAN MODE: read and search tools only. Investigate, then call "
+                "exit_plan_mode with a concrete plan to request approval to act."
+            )
 
         inventory = await self._platform_inventory(agent_session)
         if inventory:

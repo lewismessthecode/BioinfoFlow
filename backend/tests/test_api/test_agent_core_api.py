@@ -1030,6 +1030,27 @@ async def test_agent_core_rejects_invisible_catalog_model_selection(
 
 
 @pytest.mark.asyncio
+async def test_agent_fs_tree_and_file_are_confined_to_allowed_roots(async_client):
+    tree = await async_client.get("/api/v1/agent/fs/tree")
+    assert tree.status_code == 200
+    entries = tree.json()["data"]["entries"]
+    assert isinstance(entries, list)
+    files = [e for e in entries if e["type"] == "file"]
+    # Fetch one in-root file and confirm its contents come back.
+    if files:
+        target = files[0]["path"]
+        file_resp = await async_client.get(f"/api/v1/agent/fs/file?path={target}")
+        assert file_resp.status_code == 200
+        assert "content" in file_resp.json()["data"]
+
+    # A path outside the allowed roots is rejected, not served.
+    blocked = await async_client.get("/api/v1/agent/fs/tree?path=/etc")
+    assert blocked.status_code == 403
+    blocked_file = await async_client.get("/api/v1/agent/fs/file?path=/etc/passwd")
+    assert blocked_file.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_legacy_agent_message_endpoint_is_removed(async_client):
     project_id = await _create_project(async_client)
 

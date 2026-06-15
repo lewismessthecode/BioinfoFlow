@@ -12,12 +12,9 @@ import { PanelRightClose, PanelRightOpen } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { AgentComposer } from "./agent-composer"
+import { AgentTabbedPanel } from "./agent-tabbed-panel"
 import { AgentTranscript } from "./agent-transcript"
-import {
-  ArtifactPanel,
-  hasPendingRuntimeAction,
-  pendingDecisionKey,
-} from "./artifact-panel"
+import { hasPendingRuntimeAction, pendingDecisionKey } from "./pending-actions"
 import { Button } from "@/components/ui/button"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
@@ -64,6 +61,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       useLlmSettings()
     const {
       state,
+      mode,
+      setMode,
       setActiveSessionId,
       send,
       interrupt,
@@ -72,6 +71,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       activeSessionId,
       onActiveSessionIdChange,
     })
+    const agentMode = mode ?? "execution"
 
     const disabled = !workspaceEnabled
     const hasTurns = state.turns.length > 0
@@ -161,6 +161,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onStop={() => void interrupt()}
         isRunning={isRunning}
         disabled={disabled}
+        mode={agentMode}
+        onModeChange={(next) => void setMode?.(next)}
         models={models}
         selectedModel={selectedModel}
         modelsLoading={modelsLoading}
@@ -217,7 +219,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         >
           <div className="flex h-full w-[404px] shrink-0 items-center py-4 pr-4">
             {sidecarVisible ? (
-              <ArtifactPanel
+              <AgentTabbedPanel
                 sessionId={state.session?.id}
                 events={state.events}
                 onClose={closeSidecar}

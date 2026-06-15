@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 PermissionMode = Literal["ask_each_action", "guarded_auto", "bypass"]
 AutomationMode = Literal["advise_only", "assisted", "autonomous"]
+AgentMode = Literal["plan", "execution"]
 SessionStatus = Literal["active", "archived", "deleted"]
 TurnStatus = Literal[
     "queued",
@@ -41,7 +42,7 @@ ActionStatus = Literal[
     "rejected",
 ]
 RiskLevel = Literal["read", "act_low", "act_high", "destructive", "external", "critical"]
-ActionDecision = Literal["approve", "reject", "modify"]
+ActionDecision = Literal["approve", "reject", "modify", "answer"]
 MemoryStatus = Literal["proposed", "accepted", "rejected", "disabled"]
 
 
@@ -58,6 +59,7 @@ class AgentSessionCreate(BaseModel):
     role_profile: str = "bioinformatician"
     permission_mode: PermissionMode = "guarded_auto"
     automation_mode: AutomationMode = "assisted"
+    mode: AgentMode = "execution"
     default_model_profile_id: UUID | None = None
     model_selection: AgentModelSelection | None = None
     metadata: dict | None = None
@@ -68,6 +70,7 @@ class AgentSessionUpdate(BaseModel):
     role_profile: str | None = None
     permission_mode: PermissionMode | None = None
     automation_mode: AutomationMode | None = None
+    mode: AgentMode | None = None
     default_model_profile_id: UUID | None = None
     model_selection: AgentModelSelection | None = None
     status: SessionStatus | None = None
@@ -190,6 +193,9 @@ class AgentActionDecisionRequest(BaseModel):
     decision: ActionDecision
     note: str | None = None
     modified_input: dict | None = None
+    # Carries the user's response for ``ask_user`` (decision == "answer"): a
+    # mapping of question header → selected option label(s).
+    answer: dict | None = None
 
 
 class AgentArtifactRead(BaseModel):

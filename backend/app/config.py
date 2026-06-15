@@ -83,6 +83,13 @@ class Settings(BaseSettings):
 
     # Agent / LLM
     agent_sandbox_enabled: bool = False  # Enable OS-level sandboxing for code execution
+    # When sandboxing is enabled but no OS sandbox binary is available, refuse to
+    # run unconfined (fail closed) rather than silently dropping the boundary.
+    agent_sandbox_fail_closed: bool = True
+    # Allow the sandboxed process to reach the network. Off by default.
+    agent_sandbox_allow_network: bool = False
+    # Permit a bash call to opt out of the sandbox via dangerously_disable_sandbox.
+    agent_sandbox_allow_unsandboxed: bool = False
     agent_max_tokens: int = 16384
     agent_observability: bool = True
     agent_log_truncate_chars: int = 1200

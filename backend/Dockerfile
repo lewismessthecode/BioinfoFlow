@@ -19,6 +19,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
     fi && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
+      bubblewrap \
       curl \
       default-jre-headless \
       git \

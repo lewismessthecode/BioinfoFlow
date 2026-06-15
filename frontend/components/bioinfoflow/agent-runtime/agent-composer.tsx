@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { ModelSelection, ProviderModels } from "@/hooks/use-llm-settings"
+import type { AgentMode } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
 type AgentComposerProps = {
@@ -32,6 +33,8 @@ type AgentComposerProps = {
   onStop: () => void
   isRunning: boolean
   disabled?: boolean
+  mode?: AgentMode
+  onModeChange?: (mode: AgentMode) => void
   models: ProviderModels[]
   selectedModel: ModelSelection | null
   modelsLoading?: boolean
@@ -56,6 +59,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       onStop,
       isRunning,
       disabled = false,
+      mode = "execution",
+      onModeChange,
       models,
       selectedModel,
       modelsLoading = false,
@@ -144,6 +149,31 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           disabled={disabled}
           style={{ overflowY: "hidden" }}
         />
+        {onModeChange ? (
+          <div
+            className="hidden shrink-0 items-center rounded-full border border-border/70 bg-card p-0.5 sm:flex"
+            role="group"
+            aria-label={t("mode.label")}
+          >
+            {(["execution", "plan"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                disabled={disabled}
+                aria-pressed={mode === value}
+                onClick={() => onModeChange(value)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                  mode === value
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t(value === "plan" ? "mode.plan" : "mode.act")}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="hidden shrink-0 sm:block">
           <ModelSelector
             models={models}

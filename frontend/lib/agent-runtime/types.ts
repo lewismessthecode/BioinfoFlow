@@ -1,5 +1,7 @@
 export type AgentPermissionMode = "ask_each_action" | "guarded_auto" | "bypass"
 export type AgentAutomationMode = "advise_only" | "assisted" | "autonomous"
+export type AgentMode = "plan" | "execution"
+export type AgentActionDecision = "approve" | "reject" | "answer"
 export type AgentSessionStatus = "active" | "archived" | "deleted"
 export type AgentTurnStatus =
   | "queued"
@@ -126,4 +128,63 @@ export type AgentRuntimeArtifact = {
   resource_ref?: Record<string, unknown> | null
   created_at: string
   updated_at: string
+}
+
+export type AgentTodoStatus = "pending" | "in_progress" | "completed"
+
+export type AgentTodoItem = {
+  content: string
+  status: AgentTodoStatus
+  activeForm?: string
+}
+
+export type AgentAskUserOption = {
+  label: string
+  description?: string
+}
+
+export type AgentAskUserQuestion = {
+  question: string
+  header: string
+  multiSelect?: boolean
+  options: AgentAskUserOption[]
+}
+
+// Shape of the enriched `action.waiting_decision` event payload (see the
+// backend AgentActionService): enough for the UI to render the approval /
+// question / plan card without a second fetch.
+export type AgentWaitingDecision = {
+  actionId: string
+  name?: string
+  kind?: string
+  riskLevel?: string
+  toolCallId?: string | null
+  inputPreview?: string | null
+  interaction?:
+    | { kind: "user_input"; questions: AgentAskUserQuestion[] }
+    | { kind: "plan_approval"; plan: string }
+    | null
+}
+
+// User's reply to ask_user, keyed by question header → selected label(s).
+export type AgentAnswer = Record<string, string | string[]>
+
+export type AgentFsEntry = {
+  name: string
+  path: string
+  type: "file" | "dir"
+  size?: number | null
+}
+
+export type AgentFsTree = {
+  path: string
+  entries: AgentFsEntry[]
+}
+
+export type AgentFsFile = {
+  path: string
+  content: string
+  truncated: boolean
+  size: number
+  language?: string | null
 }
