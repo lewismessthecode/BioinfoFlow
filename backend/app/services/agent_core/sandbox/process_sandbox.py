@@ -29,19 +29,18 @@ class SandboxUnavailableError(RuntimeError):
 
 
 # Read-only system directories every confined command needs to run a shell.
-_LINUX_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt")
+# Do not bind /etc wholesale: the sandbox boundary should block commands such
+# as `cat /etc/passwd` rather than relying on the permission classifier.
+_LINUX_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/opt")
 _MACOS_READ_ROOTS = (
     "/usr",
     "/bin",
     "/sbin",
     "/System",
     "/Library",
-    "/etc",
-    "/private/etc",
     "/private/var/db",
     "/dev",
     "/opt",
-    "/var",
 )
 _MACOS_WRITE_ROOTS = ("/dev/null", "/dev/dtracehelper", "/private/tmp", "/private/var/folders")
 

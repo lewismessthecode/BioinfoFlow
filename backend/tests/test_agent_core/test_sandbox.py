@@ -98,6 +98,12 @@ def test_bubblewrap_argv_confines_to_roots_and_disables_network(tmp_path):
     # read root bound read-only, write root bound read-write
     assert "--ro-bind" in spec_argv
     assert spec_argv[-3:] == ["bash", "-lc", "cat /etc/passwd"]
+    ro_bind_pairs = [
+        (spec_argv[i + 1], spec_argv[i + 2])
+        for i, token in enumerate(spec_argv)
+        if token == "--ro-bind"
+    ]
+    assert ("/etc", "/etc") not in ro_bind_pairs
     # chdir targets the working directory
     chdir_index = spec_argv.index("--chdir")
     assert spec_argv[chdir_index + 1] == str(write_root)

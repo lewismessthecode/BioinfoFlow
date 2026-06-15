@@ -14,7 +14,7 @@ from app.api.deps import get_current_user, get_db
 from app.auth.session import AuthUser
 from app.config import settings
 from app.services.agent_core.sandbox import FilesystemPolicy
-from app.utils.exceptions import BadRequestError
+from app.utils.exceptions import BadRequestError, PermissionDeniedError
 from app.schemas.agent_core import (
     AgentActionDecisionRequest,
     AgentActionRead,
@@ -340,6 +340,16 @@ async def get_agent_metrics(request: Request):
 
 
 _FS_FILE_MAX_BYTES = 256 * 1024
+_FS_DENIED_NAMES = {
+    ".env",
+    "better-auth.db",
+    "bioinfoflow.db",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "id_rsa",
+}
+_FS_DENIED_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
 
 
 @router.get("/fs/tree")
@@ -357,7 +367,7 @@ async def get_fs_tree(
     base = FilesystemPolicy().require_allowed_dir(path or str(settings.repo_root))
     entries = []
     for child in sorted(base.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
-        if child.name.startswith(".git"):
+        if child.name.startswith(".git") or _is_sensitive_fs_path(child):
             continue
         is_dir = child.is_dir()
         entries.append(
@@ -381,6 +391,8 @@ async def get_fs_file(
     target = FilesystemPolicy().require_allowed_path(
         path, must_exist=True, allow_directory=False
     )
+    if _is_sensitive_fs_path(target):
+        raise PermissionDeniedError(f"File is not available through agent file browsing: {target}")
     size = _safe_size(target) or 0
     raw = target.read_bytes()[:_FS_FILE_MAX_BYTES]
     truncated = size > _FS_FILE_MAX_BYTES
@@ -405,6 +417,17 @@ def _safe_size(path: Path) -> int | None:
         return path.stat().st_size
     except OSError:
         return None
+
+
+def _is_sensitive_fs_path(path: Path) -> bool:
+    name = path.name.lower()
+    if name in _FS_DENIED_NAMES:
+        return True
+    if name.startswith(".env."):
+        return True
+    if path.is_file() and path.suffix.lower() in _FS_DENIED_SUFFIXES:
+        return True
+    return False
 
 
 def _language_for(path: Path) -> str | None:
