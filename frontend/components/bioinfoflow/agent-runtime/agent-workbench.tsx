@@ -220,6 +220,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           <div className="flex h-full w-[404px] shrink-0 items-center py-4 pr-4">
             {sidecarVisible ? (
               <AgentTabbedPanel
+                projectId={projectId}
                 sessionId={state.session?.id}
                 events={state.events}
                 onClose={closeSidecar}

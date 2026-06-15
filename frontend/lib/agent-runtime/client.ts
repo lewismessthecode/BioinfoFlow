@@ -96,9 +96,15 @@ export const decideAgentRuntimeAction = async (
   })
 }
 
-export const getAgentFsTree = async (path?: string | null) => {
+export const getAgentFsTree = async (
+  path?: string | null,
+  projectId?: string | null,
+) => {
   const response = await apiRequest<AgentFsTree>("/agent/fs/tree", {
-    params: path ? { path } : undefined,
+    params: {
+      ...(path ? { path } : {}),
+      ...(!path && projectId ? { project_id: projectId } : {}),
+    },
   })
   return response.data
 }

@@ -13,8 +13,9 @@ import app.database as app_database
 from app.api.deps import get_current_user, get_db
 from app.auth.session import AuthUser
 from app.config import settings
+from app.path_layout import project_home
 from app.services.agent_core.sandbox import FilesystemPolicy
-from app.utils.exceptions import BadRequestError, PermissionDeniedError
+from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.schemas.agent_core import (
     AgentActionDecisionRequest,
     AgentActionRead,
@@ -38,6 +39,7 @@ from app.services.agent_core.model_selection import (
 )
 from app.services.agent_core.tools import build_default_tool_registry
 from app.services.agent_core.tools.toolsets import ToolsetExposure
+from app.services.project_service import ProjectService
 from app.utils.responses import success_response
 
 
@@ -356,7 +358,9 @@ _FS_DENIED_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
 async def get_fs_tree(
     request: Request,
     path: str | None = Query(default=None),
+    project_id: str | None = Query(default=None),
     user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """List the immediate children of a directory inside the allowed roots.
 
@@ -364,7 +368,19 @@ async def get_fs_tree(
     bioinfoflow_home. Lazy (one level): the Files tab requests subdirectories on
     expand rather than streaming the whole tree.
     """
-    base = FilesystemPolicy().require_allowed_dir(path or str(settings.repo_root))
+    policy = FilesystemPolicy()
+    if path:
+        base = policy.require_allowed_dir(path)
+    elif project_id:
+        project = await ProjectService(db).get_project(
+            project_id,
+            workspace_id=user.workspace_id,
+        )
+        if not project:
+            raise NotFoundError("Project not found")
+        base = policy.require_allowed_dir(str(project_home(project)))
+    else:
+        base = policy.require_allowed_dir(str(settings.repo_root))
     entries = []
     for child in sorted(base.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
         if child.name.startswith(".git") or _is_sensitive_fs_path(child):

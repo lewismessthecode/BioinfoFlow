@@ -20,6 +20,7 @@ import type { AgentDecisionHandler } from "./types"
 type AgentTabKey = "progress" | "files" | "browser"
 
 type AgentTabbedPanelProps = {
+  projectId?: string | null
   sessionId?: string | null
   events: AgentRuntimeEvent[]
   onClose: () => void
@@ -34,6 +35,7 @@ const TABS: Array<{ key: AgentTabKey; labelKey: string; Icon: typeof ListChecks 
 ]
 
 export function AgentTabbedPanel({
+  projectId,
   sessionId,
   events,
   onClose,
@@ -116,7 +118,7 @@ export function AgentTabbedPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {activeTab === "progress" ? <ProgressTab artifacts={visibleArtifacts} /> : null}
-        {activeTab === "files" ? <FilesTab /> : null}
+        {activeTab === "files" ? <FilesTab projectId={projectId} /> : null}
         {activeTab === "browser" ? <BrowserTab /> : null}
       </div>
     </aside>
