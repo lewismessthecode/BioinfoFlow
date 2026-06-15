@@ -311,9 +311,11 @@ class AgentCoreRuntime:
             enabled_only=True,
         )
         for scope in ("user", "workspace", "global"):
-            for provider in providers:
-                if provider.scope != scope:
-                    continue
+            scoped = sorted(
+                (provider for provider in providers if provider.scope == scope),
+                key=_default_provider_rank,
+            )
+            for provider in scoped:
                 credential = await self.llm_credentials.get_for_provider(str(provider.id))
                 metadata = provider.provider_metadata or {}
                 if scope == "global" and not (
@@ -490,6 +492,24 @@ class AgentCoreRuntime:
         )
         agent_metrics.increment("turns.failed")
         return turn
+
+
+_DEFAULT_PREFERRED_ENV_KINDS = {"vllm", "openai_compatible"}
+
+
+def _default_provider_rank(provider) -> int:
+    """Rank providers for default selection within a single scope.
+
+    An explicitly env-managed OpenAI-compatible endpoint (vLLM or the generic
+    openai_compatible template) is what a server deployment configures on
+    purpose, so it must win over incidentally-available providers. Stable sort
+    keeps the repository's recency ordering within each rank.
+    """
+    metadata = provider.provider_metadata or {}
+    env_managed = metadata.get("envManaged") is True
+    if env_managed and provider.kind in _DEFAULT_PREFERRED_ENV_KINDS:
+        return 0
+    return 1
 
 
 def _resolved_capabilities(resolved: dict[str, Any]) -> RuntimeCapabilities:
