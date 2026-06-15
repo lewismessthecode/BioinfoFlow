@@ -2158,6 +2158,7 @@
     "stop": "Stop response",
     "pendingResponse": "Working on it...",
     "thinking": "Thinking",
+    "toolCalls": "Tool calls",
     "approve": "Approve",
     "reject": "Reject",
     "attachMenu": {

@@ -2158,6 +2158,7 @@
     "stop": "停止回复",
     "pendingResponse": "正在处理...",
     "thinking": "思考过程",
+    "toolCalls": "工具调用",
     "approve": "批准",
     "reject": "拒绝",
     "attachMenu": {

@@ -9,6 +9,7 @@ vi.mock("next-intl", () => ({
     const labels: Record<string, string> = {
       pendingResponse: "Working on it...",
       thinking: "Thinking",
+      toolCalls: "Tool calls",
       "turnStatus.queued": "Queued",
       "turnStatus.running": "Working",
       "turnStatus.waiting_user": "Waiting for you",
@@ -103,5 +104,46 @@ describe("AgentTranscript", () => {
 
     expect(screen.getByText("Working")).toBeInTheDocument()
     expect(screen.queryByText("Queued")).not.toBeInTheDocument()
+  })
+
+  it("renders tool calls as collapsed compact rows by default", () => {
+    render(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            assistant: {
+              ...baseTimelineEntry.assistant,
+              toolCalls: [
+                {
+                  callId: "call-1",
+                  name: "glob",
+                  status: "completed",
+                  index: 0,
+                  arguments: { pattern: "**/*.wdl" },
+                  argumentsDelta: null,
+                },
+                {
+                  callId: "call-2",
+                  name: "files__read",
+                  status: "completed",
+                  index: 1,
+                  arguments: { path: "/app/workflow.wdl" },
+                  argumentsDelta: null,
+                },
+              ],
+            },
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText("Tool calls")).toBeInTheDocument()
+    expect(screen.getByText("glob")).toBeInTheDocument()
+    expect(screen.getByText("files__read")).toBeInTheDocument()
+    const rows = screen.getAllByTestId("agent-tool-call-row")
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).not.toHaveAttribute("open")
+    expect(screen.queryByText(/workflow\.wdl/)).not.toBeInTheDocument()
   })
 })
