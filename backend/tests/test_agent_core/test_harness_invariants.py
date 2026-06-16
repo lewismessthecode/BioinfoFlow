@@ -91,6 +91,57 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
 
 @pytest.mark.asyncio
+async def test_first_turn_generates_session_title(db_session):
+    await _workspace(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Summarize this very long workflow request with many details",
+    )
+
+    updated = await service.require_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert updated.title == "Summarize this very long"
+
+
+@pytest.mark.asyncio
+async def test_first_turn_does_not_overwrite_existing_session_title(db_session):
+    await _workspace(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        title="Manual title",
+    )
+    await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Generate a different title",
+    )
+
+    updated = await service.require_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert updated.title == "Manual title"
+
+
+@pytest.mark.asyncio
 async def test_turn_writes_canonical_user_and_assistant_messages(db_session, monkeypatch):
     async def fake_completion(*args, **kwargs):
         class FakeUsage:

@@ -22,6 +22,7 @@ import {
   type AgentRuntimeInputPart,
   type AgentRuntimeSession,
 } from "@/lib/agent-runtime"
+import { emitAgentSessionUpdated } from "@/lib/agent-core/session-storage"
 import { getCurrentRuntime } from "@/lib/runtime"
 
 type UseAgentRuntimeOptions = {
@@ -72,7 +73,7 @@ export function useAgentRuntime(
     dispatch({ type: "loading" })
     try {
       const nextSessions = await listAgentRuntimeSessions(projectId)
-      setSessions(nextSessions)
+      setSessions((current) => mergeFetchedSessions(current, nextSessions))
       if (isControlledDraft) {
         dispatch({ type: "session.selected", session: null })
         return
@@ -101,7 +102,10 @@ export function useAgentRuntime(
   const refreshState = useCallback(async (sessionId: string) => {
     dispatch({ type: "loading" })
     try {
-      dispatch({ type: "state.loaded", payload: await getAgentRuntimeState(sessionId) })
+      const payload = await getAgentRuntimeState(sessionId)
+      setSessions((current) => mergeSessionList(current, payload.session))
+      emitRuntimeSessionUpdated(payload.session)
+      dispatch({ type: "state.loaded", payload })
     } catch (error) {
       dispatch({
         type: "error",
@@ -281,6 +285,39 @@ export function useAgentRuntime(
     interrupt,
     decideAction,
   }
+}
+
+function mergeSessionList(
+  sessions: AgentRuntimeSession[],
+  session: AgentRuntimeSession,
+) {
+  const exists = sessions.some((item) => item.id === session.id)
+  if (!exists) return [session, ...sessions]
+  return sessions.map((item) => (item.id === session.id ? session : item))
+}
+
+function mergeFetchedSessions(
+  current: AgentRuntimeSession[],
+  fetched: AgentRuntimeSession[],
+) {
+  const currentById = new Map(current.map((session) => [session.id, session]))
+  return fetched.map((session) => {
+    const existing = currentById.get(session.id)
+    if (!existing) return session
+    if (!session.title && existing.title) return { ...session, title: existing.title }
+    return session
+  })
+}
+
+function emitRuntimeSessionUpdated(session: AgentRuntimeSession) {
+  if (!session.project_id) return
+  emitAgentSessionUpdated({
+    id: session.id,
+    project_id: session.project_id,
+    title: session.title,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
+  })
 }
 
 function readDraftPermissionMode(): AgentPermissionMode {

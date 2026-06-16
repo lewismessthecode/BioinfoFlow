@@ -188,6 +188,11 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        if not session.title and not await self.turn_repo.list_for_session(str(session.id)):
+            session = await self.session_repo.update_all(
+                session,
+                title=_generated_session_title(input_text),
+            )
         normalized_model_selection = normalize_model_selection(model_selection)
         turn = await self.turn_repo.create(
             session_id=str(session.id),
@@ -623,6 +628,23 @@ class AgentCoreService:
             user_id=user_id,
         )
         return artifact
+
+
+def _generated_session_title(input_text: str) -> str:
+    compact = " ".join(input_text.strip().split())
+    if not compact:
+        return "New conversation"
+    compact = compact.strip("'\"`*_#> ")
+    if len(compact) <= 30:
+        return compact
+    candidate = compact[:30].rstrip(" ,.;:，。；：")
+    if " " in candidate:
+        boundary = candidate.rfind(" ")
+        if boundary >= 12:
+            candidate = candidate[:boundary]
+    if not candidate:
+        return compact[:30]
+    return candidate
 
 
 _FILE_REF_MAX_BYTES = 64 * 1024

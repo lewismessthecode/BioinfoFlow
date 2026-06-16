@@ -148,6 +148,25 @@ describe("useAgentRuntime", () => {
     )
   })
 
+  it("merges refreshed session titles into the session list", async () => {
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: { ...session, title: "RNA-seq QC Plan" },
+      turns: [],
+      events: [],
+    })
+
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => {
+      expect(result.current.sessions[0]?.title).toBe("RNA-seq QC Plan")
+    })
+  })
+
   it("patches permission mode for existing sessions", async () => {
     const updated = { ...session, permission_mode: "bypass" as const }
     mocks.updateAgentRuntimeSessionPermissionMode.mockResolvedValue(updated)

@@ -13,6 +13,11 @@ class _FakeFilesystemPolicy:
         return target
 
 
+def test_generated_session_title_preserves_prompt_language():
+    assert service_module._generated_session_title("新建一个 WGS 流程，包含质控和比对") == "新建一个 WGS 流程，包含质控和比对"
+    assert service_module._generated_session_title("Summarize this very long workflow request with many details") == "Summarize this very long"
+
+
 def test_file_ref_input_parts_expand_into_bounded_transcript_text(tmp_path, monkeypatch):
     workflow = tmp_path / "workflow.wdl"
     workflow.write_text("version 1.0\nworkflow demo {}", encoding="utf-8")
