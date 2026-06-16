@@ -2,7 +2,11 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentTranscript } from "@/components/bioinfoflow/agent-runtime/agent-transcript"
-import type { AgentRuntimeArtifact, AgentRuntimeTimelineEntry } from "@/lib/agent-runtime"
+import type {
+  AgentRuntimeArtifact,
+  AgentRuntimeEvent,
+  AgentRuntimeTimelineEntry,
+} from "@/lib/agent-runtime"
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
@@ -10,6 +14,10 @@ vi.mock("next-intl", () => ({
       pendingResponse: "Working on it...",
       thinking: "Thinking",
       toolCalls: "Tool calls",
+      approve: "Approve",
+      reject: "Reject",
+      "sidecar.needsDecision": "Needs your decision",
+      "approval.state.approved": "Approved, resuming",
       "progress.tasks": "Tasks",
       "plan.reviewTitle": "Review the plan",
       "plan.status.pending": "Pending",
@@ -93,6 +101,24 @@ const todoArtifact: AgentRuntimeArtifact = {
   resource_ref: null,
   created_at: "2026-06-10T00:00:03Z",
   updated_at: "2026-06-10T00:00:03Z",
+}
+
+const approvalEvent: AgentRuntimeEvent = {
+  id: "event-approval",
+  session_id: "session-1",
+  turn_id: "turn-1",
+  seq: 1,
+  type: "action.waiting_decision",
+  payload: {
+    action_id: "action-1",
+    name: "bash",
+    risk_level: "act_high",
+    input_preview: "rm build/",
+  },
+  visibility: "user",
+  schema_version: 1,
+  created_at: "2026-06-10T00:00:04Z",
+  updated_at: "2026-06-10T00:00:04Z",
 }
 
 describe("AgentTranscript", () => {
@@ -223,6 +249,23 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("Tasks")).toBeInTheDocument()
     expect(screen.getByText("Read the code")).toBeInTheDocument()
     expect(screen.getByText("Editing")).toBeInTheDocument()
+  })
+
+  it("renders inline approval cards with decision buttons", () => {
+    const onDecision = vi.fn()
+    render(
+      <AgentTranscript
+        timeline={[baseTimelineEntry]}
+        events={[approvalEvent]}
+        onDecision={onDecision}
+      />,
+    )
+
+    expect(screen.getByTestId("inline-approval-card")).toBeInTheDocument()
+    expect(screen.getByText("Needs your decision")).toBeInTheDocument()
+    expect(screen.getByText("rm build/")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    expect(onDecision).toHaveBeenCalledWith("action-1", "approve")
   })
 
   it("keeps streamed assistant text visible after later tool calls", () => {

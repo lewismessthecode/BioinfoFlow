@@ -15,7 +15,7 @@ import { useTranslations } from "next-intl"
 import { AgentComposer } from "./agent-composer"
 import { AgentTabbedPanel } from "./agent-tabbed-panel"
 import { AgentTranscript } from "./agent-transcript"
-import { hasPendingRuntimeAction, pendingDecisionKey } from "./pending-actions"
+import { ComposerApprovalPopover } from "./composer-approval-popover"
 import { Button } from "@/components/ui/button"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
@@ -60,10 +60,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       sessionId: string
       artifacts: AgentRuntimeArtifact[]
     } | null>(null)
-    // The pending-approval key the user last dismissed. Storing the key (rather
-    // than a boolean) means a *new* approval — which has a different key — is
-    // never suppressed by an earlier dismissal, without needing an effect.
-    const [dismissedPendingKey, setDismissedPendingKey] = useState<string | null>(null)
     const workspaceShell = useOptionalWorkspaceShell()
     const setNavbarActions = workspaceShell?.setNavbarActions
     const { models, selectedModel, isLoading: modelsLoading, setSelectedModel } =
@@ -86,8 +82,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const hasTurns = state.turns.length > 0
     const hasConversation = hasTurns || hasSubmittedDraft
     const isRunning = state.status === "running"
-    const pendingDecision = hasPendingRuntimeAction(state.events)
-    const pendingKey = pendingDecisionKey(state.events)
     const artifactEventCount = useMemo(
       () => state.events.filter((event) => event.type === "artifact.created").length,
       [state.events],
@@ -96,12 +90,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       artifactState && artifactState.sessionId === state.session?.id
         ? artifactState.artifacts
         : []
-    // Auto-open only for a pending approval (genuinely actionable). Streaming
-    // is already visible inline in the transcript, so it no longer forces the
-    // panel open. A dismissal only suppresses the exact approval set it was
-    // made against, so a newly-arrived approval still surfaces.
-    const sidecarVisible =
-      sidecarOpen || (pendingDecision && pendingKey !== dismissedPendingKey)
+    // The side panel is now secondary detail. Approvals surface inline and above
+    // the composer, so pending decisions no longer force the drawer open.
+    const sidecarVisible = sidecarOpen
     const sidecarLabel = sidecarVisible
       ? t("sidecar.collapse")
       : t("sidecar.expand")
@@ -118,7 +109,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setInput("")
           setHasSubmittedDraft(false)
           setSidecarOpen(false)
-          setDismissedPendingKey(null)
         },
       }),
       [interrupt, setActiveSessionId],
@@ -150,8 +140,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
     const closeSidecar = useCallback(() => {
       setSidecarOpen(false)
-      setDismissedPendingKey(pendingKey)
-    }, [pendingKey])
+    }, [])
 
     const toggleSidecar = useCallback(() => {
       if (sidecarVisible) {
@@ -159,7 +148,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         return
       }
       setSidecarOpen(true)
-      setDismissedPendingKey(null)
     }, [closeSidecar, sidecarVisible])
 
     useEffect(() => {
@@ -211,13 +199,21 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         >
           {hasConversation ? (
             <>
-              <AgentTranscript timeline={state.timeline} artifacts={transcriptArtifacts} />
+              <AgentTranscript
+                timeline={state.timeline}
+                artifacts={transcriptArtifacts}
+                events={state.events}
+                onDecision={decideAction}
+              />
               <div
                 className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-4 pt-10 sm:px-6"
                 data-testid="agent-composer-shell"
                 data-placement="bottom"
               >
-                <div className="pointer-events-auto">{composer}</div>
+                <div className="pointer-events-auto">
+                  <ComposerApprovalPopover events={state.events} onDecision={decideAction} />
+                  {composer}
+                </div>
               </div>
             </>
           ) : (

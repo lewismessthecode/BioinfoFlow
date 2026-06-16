@@ -7,22 +7,34 @@ import { useTranslations } from "next-intl"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import type {
   AgentRuntimeArtifact,
+  AgentRuntimeEvent,
   AgentRuntimeTimelineEntry,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 import { ActivityGroup } from "./activity-group"
+import { InlineApprovalCard } from "./inline-approval-card"
 import { InlinePlanCard } from "./inline-plan-card"
 import { InlineTodoCard } from "./inline-todo-card"
+import { getActionDecisionCardsByTurn } from "./pending-actions"
+import type { AgentDecisionHandler } from "./types"
 
 export function AgentTranscript({
   timeline,
   artifacts = [],
+  events = [],
+  onDecision,
 }: {
   timeline: AgentRuntimeTimelineEntry[]
   artifacts?: AgentRuntimeArtifact[]
+  events?: AgentRuntimeEvent[]
+  onDecision?: AgentDecisionHandler
 }) {
   const t = useTranslations("agentRuntime")
   const todoArtifactByTurn = useMemo(() => latestTodoArtifactByTurn(artifacts), [artifacts])
+  const decisionCardsByTurn = useMemo(
+    () => getActionDecisionCardsByTurn(events),
+    [events],
+  )
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-36 pt-8 sm:px-6">
@@ -58,6 +70,14 @@ export function AgentTranscript({
 
                 {entry.inlinePlans.map((plan) => (
                   <InlinePlanCard key={plan.actionId} plan={plan} />
+                ))}
+
+                {(decisionCardsByTurn.get(entry.turn.id) ?? []).map((decision) => (
+                  <InlineApprovalCard
+                    key={decision.actionId}
+                    decision={decision}
+                    onDecision={onDecision}
+                  />
                 ))}
 
                 {entry.activityGroups.length > 0 ? (

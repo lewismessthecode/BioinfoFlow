@@ -2198,6 +2198,13 @@
     },
     "approve": "Approve",
     "reject": "Reject",
+    "approval": {
+      "state": {
+        "approved": "Approved, resuming",
+        "answered": "Answer submitted, resuming",
+        "rejected": "Rejected"
+      }
+    },
     "attachMenu": {
       "attachFiles": "Attach files",
       "browseProjectFiles": "Browse project files",

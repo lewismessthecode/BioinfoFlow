@@ -2198,6 +2198,13 @@
     },
     "approve": "批准",
     "reject": "拒绝",
+    "approval": {
+      "state": {
+        "approved": "已批准，继续执行",
+        "answered": "已提交回答，继续执行",
+        "rejected": "已拒绝"
+      }
+    },
     "attachMenu": {
       "attachFiles": "添加文件",
       "browseProjectFiles": "浏览项目文件",
