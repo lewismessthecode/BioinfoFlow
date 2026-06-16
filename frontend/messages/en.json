@@ -2201,7 +2201,7 @@
     "approve": "Approve",
     "reject": "Reject",
     "approval": {
-      "jumpToDecision": "Jump to decision",
+      "jumpToDecision": "Needs confirmation · Jump",
       "state": {
         "approved": "Approved, resuming",
         "answered": "Answer submitted, resuming",
@@ -2270,6 +2270,11 @@
     "progress": {
       "tasks": "Tasks",
       "empty": "No tasks yet. The agent's checklist will appear here as it works."
+    },
+    "todoDock": {
+      "collapse": "Collapse task dock",
+      "expand": "Expand task dock",
+      "summary": "{count, plural, one {# task left} other {# tasks left}}"
     },
     "files": {
       "title": "Files",

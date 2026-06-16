@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Box,
-  Check,
   ChevronLeft,
   Copy,
   Download,
@@ -23,6 +22,7 @@ import {
   type AgentRuntimeEvent,
 } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
+import { getPendingActions } from "./pending-actions"
 
 type ArtifactPanelProps = {
   sessionId?: string | null
@@ -36,11 +36,10 @@ export function ArtifactPanel({
   sessionId,
   events,
   onClose,
-  onDecision,
   className,
 }: ArtifactPanelProps) {
   const t = useTranslations("agentRuntime")
-  const pendingActions = usePendingActions(events)
+  const pendingActions = useMemo(() => getPendingActions(events), [events])
   const [artifacts, setArtifacts] = useState<AgentRuntimeArtifact[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -112,43 +111,8 @@ export function ArtifactPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {pendingActions.length > 0 ? (
-          <div className="mb-4 grid gap-3">
-            {pendingActions.map((event) => {
-              const actionId = String(event.payload.action_id || "")
-              return (
-                <div
-                  key={event.id}
-                  className="rounded-[18px] border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm"
-                >
-                  <div className="mb-2 font-medium text-amber-900 dark:text-amber-200">
-                    {t("sidecar.needsDecision")}
-                  </div>
-                  <div className="mb-3 truncate font-mono text-xs text-amber-800/75 dark:text-amber-100/75">
-                    {actionId}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8 rounded-full"
-                      onClick={() => onDecision(actionId, "approve")}
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                      {t("approve")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 rounded-full bg-card"
-                      onClick={() => onDecision(actionId, "reject")}
-                    >
-                      {t("reject")}
-                    </Button>
-                  </div>
-                </div>
-              )
-            })}
+          <div className="mb-4 rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200">
+            {t("approval.jumpToDecision")}
           </div>
         ) : null}
 
@@ -385,39 +349,4 @@ function artifactTypeLabel(
   if (known.includes(type)) return t(`artifacts.types.${type}`)
   if (type === "log_summary") return t("artifacts.types.command")
   return t("artifacts.types.unknown")
-}
-
-export function hasPendingRuntimeAction(events: AgentRuntimeEvent[]) {
-  return getPendingActions(events).length > 0
-}
-
-// Stable key of the currently-pending action ids. Changes whenever a new
-// approval arrives, so the workbench can re-surface the panel even after the
-// user dismissed a previous decision.
-export function pendingDecisionKey(events: AgentRuntimeEvent[]) {
-  return getPendingActions(events)
-    .map((event) => String(event.payload.action_id || ""))
-    .join(",")
-}
-
-function usePendingActions(events: AgentRuntimeEvent[]) {
-  return useMemo(() => getPendingActions(events), [events])
-}
-
-function getPendingActions(events: AgentRuntimeEvent[]) {
-  const completed = new Set(
-    events
-      .filter((event) =>
-        ["action.completed", "action.failed", "action.decision_recorded"].includes(
-          event.type,
-        ),
-      )
-      .map((event) => String(event.payload.action_id || "")),
-  )
-  return events
-    .filter((event) => event.type === "action.waiting_decision")
-    .filter((event) => {
-      const actionId = String(event.payload.action_id || "")
-      return actionId && !completed.has(actionId)
-    })
 }

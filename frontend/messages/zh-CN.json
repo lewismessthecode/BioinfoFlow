@@ -2201,7 +2201,7 @@
     "approve": "批准",
     "reject": "拒绝",
     "approval": {
-      "jumpToDecision": "跳到确认项",
+      "jumpToDecision": "需要确认 · 跳转",
       "state": {
         "approved": "已批准，继续执行",
         "answered": "已提交回答，继续执行",
@@ -2270,6 +2270,11 @@
     "progress": {
       "tasks": "任务",
       "empty": "暂无任务。智能助手的任务清单会在执行时显示在这里。"
+    },
+    "todoDock": {
+      "collapse": "收起任务面板",
+      "expand": "展开任务面板",
+      "summary": "剩余 {count} 项任务"
     },
     "files": {
       "title": "文件",

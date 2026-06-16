@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils"
 import { ArtifactPreviewDrawer } from "./artifact-preview-drawer"
 import { BrowserTab } from "./browser-tab"
+import { getPendingActions } from "./pending-actions"
 import type { AgentDecisionHandler } from "./types"
 import { WorkspaceExplorerPanel } from "./workspace-explorer-panel"
 
@@ -67,6 +68,7 @@ export function AgentSideDrawer({
   }, [sessionId, artifactEventCount])
 
   const visibleArtifacts = sessionId ? artifacts : []
+  const pendingDecisionCount = useMemo(() => getPendingActions(events).length, [events])
 
   return (
     <aside
@@ -107,6 +109,14 @@ export function AgentSideDrawer({
           <X className="h-4 w-4" />
         </Button>
       </div>
+
+      {pendingDecisionCount > 0 ? (
+        <div className="border-b border-border/60 px-3 py-2" data-testid="sidecar-decision-indicator">
+          <div className="rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200">
+            {t("approval.jumpToDecision")}
+          </div>
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {activeTab === "preview" ? <ArtifactPreviewDrawer artifacts={visibleArtifacts} /> : null}

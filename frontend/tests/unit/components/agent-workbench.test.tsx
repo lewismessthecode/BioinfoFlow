@@ -31,7 +31,7 @@ vi.mock("next-intl", () => ({
       approve: "Approve",
       reject: "Reject",
       "approval.state.approved": "Approved, resuming",
-      "approval.jumpToDecision": "Jump to decision",
+      "approval.jumpToDecision": "Needs confirmation · Jump",
       "turnStatus.running": "Working",
       "turnStatus.completed": "Done",
       "sidecar.title": "Run",
@@ -294,7 +294,7 @@ describe("AgentWorkbench", () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it("renders the only approval controls inline and a jump prompt above the composer", () => {
+  it("renders a compact composer jump prompt and inline approval controls", () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
       events: [waitingDecisionEvent],
@@ -305,13 +305,13 @@ describe("AgentWorkbench", () => {
 
     expect(screen.getByTestId("composer-approval-popover")).toBeInTheDocument()
     expect(screen.getByTestId("composer-decision-jump")).toBeInTheDocument()
+    expect(screen.getByText("Needs confirmation · Jump")).toBeInTheDocument()
     expect(screen.getByTestId("inline-approval-card")).toBeInTheDocument()
     expect(screen.queryByTestId("pending-decisions")).not.toBeInTheDocument()
     expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
-    expect(screen.getAllByText("Needs your decision").length).toBeGreaterThan(0)
-    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument()
-    expect(screen.getByText("Jump to decision")).toBeInTheDocument()
+    expect(screen.getByText("Needs your decision")).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1)
+    expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(1)
   })
 
   it("does not auto-open the panel merely because the agent is streaming", () => {
@@ -399,7 +399,7 @@ describe("AgentWorkbench", () => {
     expect(screen.getByText("Read project structure")).toBeInTheDocument()
   })
 
-  it("keeps an approved approval visible until resume progress arrives", () => {
+  it("keeps an approved approval visible in the transcript until resume progress arrives", () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "running", final_text: null }],
       events: [
@@ -417,7 +417,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    expect(screen.getByTestId("composer-approval-popover")).toBeInTheDocument()
+    expect(screen.queryByTestId("composer-approval-popover")).not.toBeInTheDocument()
     expect(screen.getAllByText("Approved, resuming").length).toBeGreaterThan(0)
     expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
   })

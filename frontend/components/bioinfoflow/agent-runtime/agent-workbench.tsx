@@ -14,14 +14,17 @@ import { useTranslations } from "next-intl"
 
 import { AgentComposer } from "./agent-composer"
 import { AgentTabbedPanel } from "./agent-tabbed-panel"
+import { AgentTodoDock } from "./agent-todo-dock"
 import { AgentTranscript } from "./agent-transcript"
 import { ComposerApprovalPopover } from "./composer-approval-popover"
+import { todosFromArtifact } from "./artifact-viewers"
 import { Button } from "@/components/ui/button"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import {
   buildAgentRuntimeTimeline,
+  deriveTodoDisplayItems,
   listAgentRuntimeSessionArtifacts,
   type AgentRuntimeArtifact,
   type AgentRuntimeFileRefPart,
@@ -110,10 +113,28 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       () => state.events.filter((event) => event.type === "artifact.created").length,
       [state.events],
     )
-    const transcriptArtifacts =
-      artifactState && artifactState.sessionId === state.session?.id
-        ? artifactState.artifacts
-        : []
+    const transcriptArtifacts = useMemo(
+      () =>
+        artifactState && artifactState.sessionId === state.session?.id
+          ? artifactState.artifacts
+          : [],
+      [artifactState, state.session?.id],
+    )
+    const latestTodoArtifact = useMemo(() => {
+      return [...transcriptArtifacts]
+        .filter((artifact) => artifact.type === "todo_list")
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0]
+    }, [transcriptArtifacts])
+    const todoTurn = latestTodoArtifact
+      ? state.timeline.find((entry) => entry.turn.id === latestTodoArtifact.turn_id)?.turn ?? null
+      : null
+    const todoDisplayItems = useMemo(
+      () =>
+        latestTodoArtifact
+          ? deriveTodoDisplayItems(todosFromArtifact(latestTodoArtifact), todoTurn)
+          : [],
+      [latestTodoArtifact, todoTurn],
+    )
     // The side panel is now secondary detail. Approvals surface inline and above
     // the composer, so pending decisions no longer force the drawer open.
     const sidecarVisible = sidecarOpen
@@ -261,6 +282,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         >
           {hasConversation ? (
             <>
+              <AgentTodoDock items={todoDisplayItems} />
               <AgentTranscript
                 timeline={transcriptTimeline}
                 artifacts={transcriptArtifacts}
