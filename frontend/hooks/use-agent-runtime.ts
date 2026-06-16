@@ -116,7 +116,10 @@ export function useAgentRuntime(
 
   useEffect(() => {
     if (!activeSessionId) return
-    void refreshState(activeSessionId)
+    const timer = window.setTimeout(() => {
+      void refreshState(activeSessionId)
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [activeSessionId, refreshState])
 
   useEffect(() => {
