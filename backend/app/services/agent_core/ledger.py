@@ -6,9 +6,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentEventRepository
+from app.services.agent_core.observability import agent_event_log_fields
+from app.utils.logging import get_logger
 
 
 _session_seq_locks: dict[str, asyncio.Lock] = {}
+logger = get_logger(__name__)
 
 
 class AgentEventLedger:
@@ -30,7 +33,7 @@ class AgentEventLedger:
             async with lock:
                 seq = await self.event_repo.next_seq(session_id)
                 try:
-                    return await self.event_repo.create(
+                    event = await self.event_repo.create(
                         session_id=session_id,
                         turn_id=turn_id,
                         seq=seq,
@@ -39,6 +42,17 @@ class AgentEventLedger:
                         visibility=visibility,
                         schema_version=schema_version,
                     )
+                    logger.info(
+                        "agent_core.event.appended",
+                        **agent_event_log_fields(
+                            session_id=session_id,
+                            turn_id=turn_id,
+                            seq=seq,
+                            event_type=type,
+                            payload=payload,
+                        ),
+                    )
+                    return event
                 except IntegrityError:
                     await self.event_repo.session.rollback()
                     if attempt == 2:

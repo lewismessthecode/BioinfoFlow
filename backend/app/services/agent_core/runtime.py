@@ -34,12 +34,15 @@ from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_model_selection_from_metadata,
 )
+from app.services.agent_core.observability import truncate_log_value
 from app.services.llm.provider_templates import normalize_provider_base_url
 from app.services.llm.credentials import resolve_credential_material
 from app.services.llm.catalog import _provider_requires_credential
 from app.services.llm.credentials import credential_available, credential_configured
+from app.utils.logging import get_logger
 
 _ORIGINAL_ACOMPLETION = acompletion
+logger = get_logger(__name__)
 
 
 class AgentCoreRuntime:
@@ -90,6 +93,12 @@ class AgentCoreRuntime:
             turn_id=str(turn.id),
             type=AgentEventType.TURN_STARTED,
             payload={},
+        )
+        logger.info(
+            "agent_core.turn.started",
+            session_id=str(turn.session_id),
+            turn_id=str(turn.id),
+            status=turn.status,
         )
         agent_metrics.increment("turns.started")
 
@@ -155,6 +164,13 @@ class AgentCoreRuntime:
             turn_id=str(turn.id),
             type=AgentEventType.TURN_STARTED,
             payload={"resume_action_id": action_id},
+        )
+        logger.info(
+            "agent_core.turn.started",
+            session_id=str(turn.session_id),
+            turn_id=str(turn.id),
+            status=turn.status,
+            resume_action_id=action_id,
         )
 
         resolved = await self._resolve_model_selection(turn=turn, session=session)
@@ -489,6 +505,14 @@ class AgentCoreRuntime:
             turn_id=str(turn.id),
             type=AgentEventType.TURN_FAILED,
             payload={"error_message": error_message, "error_code": error_code},
+        )
+        logger.info(
+            "agent_core.turn.failed",
+            session_id=str(turn.session_id),
+            turn_id=str(turn.id),
+            status=turn.status,
+            error_code=error_code,
+            error_message=truncate_log_value(error_message),
         )
         agent_metrics.increment("turns.failed")
         return turn

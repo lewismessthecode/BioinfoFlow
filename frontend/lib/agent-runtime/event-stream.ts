@@ -31,6 +31,8 @@ export function subscribeAgentRuntimeEvents(options: {
     source.onerror = (event) => {
       options.onError?.(event)
       if (disposed || reconnectTimer) return
+      source?.close()
+      source = null
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null
         backoff = Math.min(backoff * 2, MAX_BACKOFF)

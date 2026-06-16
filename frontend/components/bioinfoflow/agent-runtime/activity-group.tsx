@@ -10,7 +10,14 @@ import { ToolActivityRow } from "./tool-activity-row"
 
 export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
   const t = useTranslations("agentRuntime")
-  const [expanded, setExpanded] = useState(false)
+  const expansionKey = `${group.id}:${group.status}`
+  const defaultExpanded = group.status !== "completed"
+  const [expansion, setExpansion] = useState({
+    key: expansionKey,
+    expanded: defaultExpanded,
+  })
+  const expanded =
+    expansion.key === expansionKey ? expansion.expanded : defaultExpanded
 
   return (
     <div
@@ -20,7 +27,12 @@ export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
       <button
         type="button"
         className="flex w-full items-center gap-2 text-left text-xs"
-        onClick={() => setExpanded((current) => !current)}
+        onClick={() =>
+          setExpansion({
+            key: expansionKey,
+            expanded: !expanded,
+          })
+        }
         aria-expanded={expanded}
       >
         {expanded ? (

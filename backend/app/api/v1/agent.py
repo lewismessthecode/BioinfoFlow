@@ -33,6 +33,7 @@ from app.schemas.agent_core import (
 )
 from app.services.agent_core import AgentCoreService, AgentMemoryService
 from app.services.agent_core.metrics import agent_metrics
+from app.utils.logging import get_logger
 from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_model_selection_from_metadata,
@@ -44,6 +45,7 @@ from app.utils.responses import success_response
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+logger = get_logger(__name__)
 
 
 def _dump(model) -> dict:
@@ -552,9 +554,32 @@ async def stream_session_events(
                 yield f"id: {payload['id']}\n"
                 yield f"event: {payload['type']}\n"
                 yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+                logger.info(
+                    "agent_core.stream.event",
+                    session_id=session_id,
+                    turn_id=payload.get("turn_id"),
+                    seq=int(payload["seq"]),
+                    event_type=payload["type"],
+                    follow=follow,
+                )
+            if events:
+                logger.info(
+                    "agent_core.stream.batch",
+                    session_id=session_id,
+                    event_count=len(events),
+                    first_seq=int(events[0].seq),
+                    last_seq=int(events[-1].seq),
+                    follow=follow,
+                )
             if not ready_sent:
                 yield "event: ready\n"
                 yield 'data: {"status":"streaming"}\n\n'
+                logger.info(
+                    "agent_core.stream.ready",
+                    session_id=session_id,
+                    after_seq=after_seq,
+                    follow=follow,
+                )
                 ready_sent = True
                 if not follow:
                     break

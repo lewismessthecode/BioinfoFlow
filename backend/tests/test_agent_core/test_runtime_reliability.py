@@ -394,7 +394,9 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
     monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr(
         "app.services.agent_core.service.enqueue_turn_resume",
-        lambda action_id, turn_id: resumed.append((action_id, turn_id)),
+        lambda action_id, turn_id, _session_id=None: resumed.append(
+            (action_id, turn_id)
+        ),
     )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="recovery-model")
@@ -468,3 +470,33 @@ async def test_enqueue_turn_resume_waits_for_running_task_to_finish(monkeypatch)
     assert calls == [("run", "turn-1"), ("resume", "action-1")]
     assert "turn-1" not in runner_module._RUNNING_TURNS
     assert "turn-1" not in runner_module._PENDING_TURN_TASK_FACTORIES
+
+
+@pytest.mark.asyncio
+async def test_runner_failure_log_uses_safe_metadata(monkeypatch):
+    records: list[tuple[str, str, dict]] = []
+
+    class SpyLogger:
+        def error(self, event: str, **fields):
+            records.append(("error", event, fields))
+
+        def info(self, event: str, **fields):
+            records.append(("info", event, fields))
+
+    monkeypatch.setattr(runner_module, "logger", SpyLogger())
+    task = asyncio.get_running_loop().create_future()
+    task.set_exception(RuntimeError("secret prompt and provider payload"))
+
+    runner_module._log_task_result("turn-1", "session-1", task)
+
+    assert records == [
+        (
+            "error",
+            "agent_core.runner.failed",
+            {
+                "session_id": "session-1",
+                "turn_id": "turn-1",
+                "exception_type": "RuntimeError",
+            },
+        )
+    ]

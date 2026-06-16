@@ -30,6 +30,12 @@ type UseAgentRuntimeOptions = {
   onActiveSessionIdChange?: (sessionId: string) => void
 }
 
+type AgentRuntimeStreamStatus = "idle" | "connecting" | "connected" | "reconnecting"
+type AgentRuntimeStreamSignal = {
+  sessionId: string
+  status: Exclude<AgentRuntimeStreamStatus, "idle" | "connecting">
+}
+
 const DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode"
 const DEFAULT_PERMISSION_MODE: AgentPermissionMode = "guarded_auto"
 
@@ -42,6 +48,9 @@ export function useAgentRuntime(
   const [sessions, setSessions] = useState<AgentRuntimeSession[]>([])
   const [uncontrolledSessionId, setUncontrolledSessionId] = useState<string | null>(null)
   const [state, dispatch] = useReducer(agentRuntimeReducer, initialAgentRuntimeState)
+  const [streamSignal, setStreamSignal] = useState<AgentRuntimeStreamSignal | null>(
+    null,
+  )
   // Mode chosen for the *next* session; once a session exists its own toolset
   // policy is the source of truth (and exit_plan_mode can flip it server-side).
   const [draftMode, setDraftMode] = useState<AgentMode>("execution")
@@ -52,7 +61,15 @@ export function useAgentRuntime(
   const activeSessionId = isControlled
     ? options.activeSessionId || null
     : uncontrolledSessionId
+  const isLiveRuntime = getCurrentRuntime().mode === "live"
+  const streamStatus: AgentRuntimeStreamStatus =
+    activeSessionId && isLiveRuntime
+      ? streamSignal?.sessionId === activeSessionId
+        ? streamSignal.status
+        : "connecting"
+      : "idle"
   const activeSessionIdRef = useRef<string | null>(activeSessionId)
+  const lastSessionResetRef = useRef<string | null>(null)
   const isControlledDraft = isControlled && options.activeSessionId === ""
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? state.session,
@@ -98,6 +115,23 @@ export function useAgentRuntime(
   }, [activeSessionId])
 
   useEffect(() => {
+    if (!activeSessionId) {
+      lastSessionResetRef.current = null
+      return
+    }
+    if (state.session?.id === activeSessionId) {
+      lastSessionResetRef.current = activeSessionId
+      return
+    }
+    if (lastSessionResetRef.current === activeSessionId) return
+    lastSessionResetRef.current = activeSessionId
+    dispatch({
+      type: "session.loading",
+      session: sessions.find((session) => session.id === activeSessionId) ?? null,
+    })
+  }, [activeSessionId, sessions, state.session?.id])
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshSessions()
     }, 0)
@@ -138,16 +172,24 @@ export function useAgentRuntime(
 
   useEffect(() => {
     if (!activeSessionId) return
-    if (getCurrentRuntime().mode !== "live") return
+    if (!isLiveRuntime) return
     return subscribeAgentRuntimeEvents({
       sessionId: activeSessionId,
       afterSeq: streamCursorRef.current,
+      onReady: () => {
+        setStreamSignal({ sessionId: activeSessionId, status: "connected" })
+        void refreshState(activeSessionId)
+      },
+      onError: () => {
+        setStreamSignal({ sessionId: activeSessionId, status: "reconnecting" })
+      },
       onEvent: (event) => {
+        setStreamSignal({ sessionId: activeSessionId, status: "connected" })
         streamCursorRef.current = Math.max(streamCursorRef.current, event.seq)
         dispatch({ type: "event.append", event })
       },
     })
-  }, [activeSessionId])
+  }, [activeSessionId, isLiveRuntime, refreshState])
 
   const ensureSession = useCallback(
     async (modelSelection?: AgentModelSelection | null) => {
@@ -284,6 +326,7 @@ export function useAgentRuntime(
     sessions,
     session: activeSession,
     state,
+    streamStatus,
     mode: sessionMode,
     setMode,
     permissionMode,

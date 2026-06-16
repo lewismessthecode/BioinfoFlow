@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import app.api.v1.agent as agent_api_module
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
@@ -141,6 +142,14 @@ async def _create_scoped_llm_model(
 
 @pytest.mark.asyncio
 async def test_agent_core_session_turn_event_and_artifact_contract(async_client, monkeypatch):
+    stream_log_records: list[tuple[str, dict]] = []
+
+    class SpyLogger:
+        def info(self, event: str, **fields):
+            stream_log_records.append((event, fields))
+
+    monkeypatch.setattr(agent_api_module, "logger", SpyLogger())
+
     async def fake_completion(*args, **kwargs):
         class FakeUsage:
             def model_dump(self):
@@ -239,6 +248,19 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
                 break
     assert "event: turn.created" in stream_lines
     assert "event: ready" in stream_lines
+    delivered_logs = [
+        fields
+        for event_name, fields in stream_log_records
+        if event_name == "agent_core.stream.event"
+    ]
+    assert {
+        "session_id": session["id"],
+        "turn_id": turn["id"],
+        "seq": 1,
+        "event_type": "turn.created",
+        "follow": False,
+    } in delivered_logs
+    assert all("payload" not in fields for fields in delivered_logs)
 
     artifacts = await async_client.get(
         f"/api/v1/agent/sessions/{session['id']}/artifacts"

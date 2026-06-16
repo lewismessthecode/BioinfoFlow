@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentTranscript } from "@/components/bioinfoflow/agent-runtime/agent-transcript"
@@ -24,8 +24,10 @@ vi.mock("next-intl", () => ({
       "plan.reviewTitle": "Review the plan",
       "plan.status.pending": "Pending",
       "activity.groups.read": "Read project structure",
+      "activity.groups.run": "Submit run",
       "activity.groups.verify": "Verify results",
       "activity.summary.read": "Read 2 sources",
+      "activity.summary.run": "Submitted 1 run",
       "activity.summary.verify": "Verified 1 check",
       "activity.status.failed": "Failed",
       "activity.details.input": "Input",
@@ -41,6 +43,7 @@ vi.mock("next-intl", () => ({
       "turnStatus.completed": "Done",
       "turnStatus.failed": "Failed",
       "turnStatus.cancelled": "Cancelled",
+      scrollToBottom: "Jump to latest",
     }
     return labels[key] ?? key
   },
@@ -147,6 +150,99 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("nextflow log")).toBeInTheDocument()
   })
 
+  it("keeps the transcript pinned to the bottom when new content streams in", () => {
+    const { rerender } = render(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            assistant: {
+              ...baseTimelineEntry.assistant,
+              text: "First chunk",
+            },
+          },
+        ]}
+      />,
+    )
+    const scroller = screen.getByTestId("agent-transcript-scroll")
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 260 },
+      scrollTop: { configurable: true, writable: true, value: 60 },
+    })
+
+    act(() => {
+      fireEvent.scroll(scroller)
+    })
+
+    Object.defineProperty(scroller, "scrollHeight", {
+      configurable: true,
+      value: 420,
+    })
+
+    rerender(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            assistant: {
+              ...baseTimelineEntry.assistant,
+              text: "First chunk\n\nSecond chunk",
+            },
+          },
+        ]}
+      />,
+    )
+
+    expect(scroller.scrollTop).toBe(220)
+  })
+
+  it("pauses bottom following after the user scrolls up and resumes from the control", () => {
+    const { rerender } = render(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            assistant: {
+              ...baseTimelineEntry.assistant,
+              text: "First chunk",
+            },
+          },
+        ]}
+      />,
+    )
+    const scroller = screen.getByTestId("agent-transcript-scroll")
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 420 },
+      scrollTop: { configurable: true, writable: true, value: 40 },
+    })
+
+    act(() => {
+      fireEvent.scroll(scroller)
+    })
+
+    rerender(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            assistant: {
+              ...baseTimelineEntry.assistant,
+              text: "First chunk\n\nSecond chunk",
+            },
+          },
+        ]}
+      />,
+    )
+
+    expect(scroller.scrollTop).toBe(40)
+
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }))
+
+    expect(scroller.scrollTop).toBe(220)
+  })
+
   it("shows the projected running status instead of queued once output is streaming", () => {
     render(
       <AgentTranscript
@@ -219,6 +315,77 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("files__read")).toBeInTheDocument()
     expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
     expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
+  })
+
+  it("expands failed tool activity groups by default", () => {
+    render(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            activityGroups: [
+              {
+                id: "run-0",
+                kind: "run",
+                status: "failed",
+                activities: [
+                  {
+                    id: "action-1",
+                    callId: "call-1",
+                    actionId: "action-1",
+                    name: "runs__submit",
+                    status: "failed",
+                    errorMessage: "Image quay.io/example/missing:tag was not found",
+                    relatedFiles: [],
+                  },
+                ],
+              },
+            ],
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText("Submit run")).toBeInTheDocument()
+    expect(
+      screen.getByText("Image quay.io/example/missing:tag was not found"),
+    ).toBeInTheDocument()
+  })
+
+  it("lets users collapse failed tool activity groups after they open by default", () => {
+    render(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            activityGroups: [
+              {
+                id: "run-0",
+                kind: "run",
+                status: "failed",
+                activities: [
+                  {
+                    id: "action-1",
+                    callId: "call-1",
+                    actionId: "action-1",
+                    name: "runs__submit",
+                    status: "failed",
+                    errorMessage: "Image quay.io/example/missing:tag was not found",
+                    relatedFiles: [],
+                  },
+                ],
+              },
+            ],
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Submit run/ }))
+
+    expect(
+      screen.queryByText("Image quay.io/example/missing:tag was not found"),
+    ).not.toBeInTheDocument()
   })
 
   it("renders exit_plan_mode plans as inline conversation cards", () => {

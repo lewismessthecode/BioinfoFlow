@@ -2157,6 +2157,7 @@
     "send": "Send message",
     "stop": "Stop response",
     "pendingResponse": "Working on it...",
+    "scrollToBottom": "Jump to latest",
     "thinking": "Thinking",
     "toolCalls": "Tool calls",
     "activity": {

@@ -21,10 +21,12 @@ import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-sh
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import {
+  buildAgentRuntimeTimeline,
   listAgentRuntimeSessionArtifacts,
   type AgentRuntimeArtifact,
   type AgentRuntimeFileRefPart,
   type AgentRuntimeInputPart,
+  type AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
@@ -58,6 +60,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [input, setInput] = useState("")
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
+    const [optimisticTurn, setOptimisticTurn] = useState<AgentRuntimeTurn | null>(null)
     const [sidecarOpen, setSidecarOpen] = useState(false)
     const [artifactState, setArtifactState] = useState<{
       sessionId: string
@@ -84,8 +87,24 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const agentMode = mode ?? "execution"
 
     const disabled = !workspaceEnabled
-    const hasTurns = state.turns.length > 0
-    const hasConversation = hasTurns || hasSubmittedDraft
+    const visibleOptimisticTurn =
+      optimisticTurn &&
+      !state.turns.some((turn) => turn.input_text === optimisticTurn.input_text)
+        ? optimisticTurn
+        : null
+    const transcriptTimeline = useMemo(
+      () =>
+        visibleOptimisticTurn
+          ? buildAgentRuntimeTimeline(
+              [...state.turns, visibleOptimisticTurn],
+              state.events,
+            )
+          : state.timeline,
+      [state.events, state.timeline, state.turns, visibleOptimisticTurn],
+    )
+    const hasTurns = state.turns.length > 0 || Boolean(visibleOptimisticTurn)
+    const hasSelectedSession = Boolean(activeSessionId || state.session?.id)
+    const hasConversation = hasTurns || hasSubmittedDraft || hasSelectedSession
     const isRunning = state.status === "running"
     const artifactEventCount = useMemo(
       () => state.events.filter((event) => event.type === "artifact.created").length,
@@ -114,6 +133,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setInput("")
           setContextAttachments([])
           setHasSubmittedDraft(false)
+          setOptimisticTurn(null)
           setSidecarOpen(false)
         },
       }),
@@ -158,7 +178,18 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         { type: "text", text },
         ...contextAttachments,
       ]
-      void send(text, { modelSelection: selectedModel, inputParts })
+      const nextOptimisticTurn = createOptimisticTurn({
+        text,
+        inputParts,
+        sessionId: activeSessionId || state.session?.id || "pending-session",
+        projectId,
+      })
+      setOptimisticTurn(nextOptimisticTurn)
+      void send(text, { modelSelection: selectedModel, inputParts }).then(() => {
+        setOptimisticTurn((current) =>
+          current?.id === nextOptimisticTurn.id ? null : current,
+        )
+      })
       setInput("")
       setContextAttachments([])
     }
@@ -231,7 +262,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           {hasConversation ? (
             <>
               <AgentTranscript
-                timeline={state.timeline}
+                timeline={transcriptTimeline}
                 artifacts={transcriptArtifacts}
                 events={state.events}
                 onDecision={decideAction}
@@ -294,3 +325,42 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     )
   },
 )
+
+function createOptimisticTurn({
+  text,
+  inputParts,
+  sessionId,
+  projectId,
+}: {
+  text: string
+  inputParts: AgentRuntimeInputPart[]
+  sessionId: string
+  projectId?: string | null
+}): AgentRuntimeTurn {
+  const now = new Date().toISOString()
+  return {
+    id: `optimistic-${now}`,
+    session_id: sessionId,
+    project_id: projectId ?? null,
+    workspace_id: "pending",
+    user_id: "pending",
+    input_text: text,
+    input_parts: inputParts,
+    status: "queued",
+    model_selection: null,
+    model_profile_snapshot: null,
+    final_text: null,
+    token_usage: null,
+    termination_reason: null,
+    loop_state: { state: "queued", optimistic: true },
+    iteration_count: 0,
+    budget_snapshot: null,
+    interrupt_requested_at: null,
+    error_code: null,
+    error_message: null,
+    created_at: now,
+    updated_at: now,
+    started_at: null,
+    completed_at: null,
+  }
+}
