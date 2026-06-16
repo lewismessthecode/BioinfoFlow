@@ -2257,6 +2257,7 @@
       }
     },
     "tabs": {
+      "preview": "预览",
       "progress": "进度",
       "files": "打开文件",
       "browser": "浏览器"

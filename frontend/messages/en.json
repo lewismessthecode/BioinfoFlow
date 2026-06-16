@@ -2257,6 +2257,7 @@
       }
     },
     "tabs": {
+      "preview": "Preview",
       "progress": "Progress",
       "files": "Files",
       "browser": "Browser"
