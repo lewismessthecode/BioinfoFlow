@@ -36,6 +36,7 @@ const CELEBRATIONS_ENABLED_KEY = "bioinfoflow:celebrations:enabled"
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)"
 const COLORS = ["#15b8a6", "#f4b740", "#ec5b56", "#5c8df6", "#f7f3e8"]
 const celebrationPreferenceSubscribers = new Set<(enabled: boolean) => void>()
+let activeConfettiCanvas: HTMLCanvasElement | null = null
 
 export function readinessMilestonesFromSummary(
   summary?: ReadinessSummary | null,
@@ -140,10 +141,6 @@ export function celebrateOnce(
     return false
   }
 
-  if (!isCelebrationsEnabled()) {
-    return false
-  }
-
   const key = `${STORAGE_PREFIX}${milestone}`
   if (window.localStorage.getItem(key) === "1") {
     return false
@@ -151,7 +148,7 @@ export function celebrateOnce(
 
   window.localStorage.setItem(key, "1")
 
-  if (isReducedMotionPreferred()) {
+  if (!isCelebrationsEnabled() || isReducedMotionPreferred()) {
     return true
   }
 
@@ -207,7 +204,12 @@ export function buildStageConfettiEmitters(
 }
 
 function launchCanvasConfetti() {
+  if (activeConfettiCanvas?.isConnected) {
+    return
+  }
+
   const canvas = document.createElement("canvas")
+  activeConfettiCanvas = canvas
   canvas.setAttribute("aria-hidden", "true")
   canvas.style.position = "fixed"
   canvas.style.inset = "0"
@@ -220,6 +222,9 @@ function launchCanvasConfetti() {
   const context = canvas.getContext("2d")
   if (!context) {
     canvas.remove()
+    if (activeConfettiCanvas === canvas) {
+      activeConfettiCanvas = null
+    }
     return
   }
 
@@ -302,6 +307,9 @@ function launchCanvasConfetti() {
     }
 
     canvas.remove()
+    if (activeConfettiCanvas === canvas) {
+      activeConfettiCanvas = null
+    }
   }
 
   scheduleFrame(draw)

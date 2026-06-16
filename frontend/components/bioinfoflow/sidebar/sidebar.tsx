@@ -94,8 +94,8 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
     >
       {/* Header: Logo + Toggle */}
       <div className={cn(
-        "flex shrink-0 items-center",
-        collapsed ? "h-[58px] justify-center px-2 pt-2" : "h-[60px] justify-between px-5"
+        "flex h-11 shrink-0 items-center",
+        collapsed ? "justify-center px-2" : "justify-between px-4"
       )}>
         {collapsed ? (
           <Tooltip>
@@ -104,7 +104,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
                 variant="ghost"
                 size="icon"
                 onClick={() => onCollapsedChange?.(false)}
-                className="group relative h-9 w-9 rounded-full text-sidebar-foreground/86 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:bg-sidebar-accent"
+                className="group relative h-8 w-8 rounded-lg text-sidebar-foreground/86 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:bg-sidebar-accent"
                 aria-label={tSidebar("openSidebar")}
               >
                 <Logo
@@ -121,7 +121,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
             <Link
               href="/agent"
               aria-label="Bioinfoflow"
-              className="flex min-w-0 items-center gap-3 overflow-hidden rounded-2xl"
+              className="flex min-w-0 items-center gap-3 overflow-hidden rounded-lg"
             >
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sidebar-foreground transition-colors duration-200 hover:bg-sidebar-accent/75">
                 <Logo size={21} className="text-sidebar-foreground" />
@@ -134,7 +134,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
               variant="ghost"
               size="icon"
               onClick={() => onCollapsedChange?.(true)}
-              className="h-[34px] w-[34px] rounded-full text-sidebar-foreground/72 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground shrink-0"
+              className="h-8 w-8 rounded-lg text-sidebar-foreground/72 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground shrink-0"
               aria-label={tSidebar("closeSidebar")}
             >
               <PanelLeftClose className="h-4 w-4" />
