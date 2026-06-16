@@ -13,7 +13,6 @@ import {
 import { cn } from "@/lib/utils"
 import { ArtifactPreviewDrawer } from "./artifact-preview-drawer"
 import { BrowserTab } from "./browser-tab"
-import { PendingDecisionCards } from "./pending-decision-cards"
 import type { AgentDecisionHandler } from "./types"
 import { WorkspaceExplorerPanel } from "./workspace-explorer-panel"
 
@@ -40,7 +39,6 @@ export function AgentSideDrawer({
   sessionId,
   events,
   onClose,
-  onDecision,
   onAddContext,
   className,
 }: AgentSideDrawerProps) {
@@ -108,10 +106,6 @@ export function AgentSideDrawer({
         >
           <X className="h-4 w-4" />
         </Button>
-      </div>
-
-      <div className="border-b border-border/60 px-3 py-2 empty:hidden">
-        <PendingDecisionCards events={events} onDecision={onDecision} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">

@@ -31,6 +31,7 @@ vi.mock("next-intl", () => ({
       approve: "Approve",
       reject: "Reject",
       "approval.state.approved": "Approved, resuming",
+      "approval.jumpToDecision": "Jump to decision",
       "turnStatus.running": "Working",
       "turnStatus.completed": "Done",
       "sidecar.title": "Run",
@@ -293,7 +294,7 @@ describe("AgentWorkbench", () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it("renders approvals above the composer and inline without opening the panel", () => {
+  it("renders the only approval controls inline and a jump prompt above the composer", () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
       events: [waitingDecisionEvent],
@@ -303,10 +304,14 @@ describe("AgentWorkbench", () => {
     render(<AgentWorkbench />)
 
     expect(screen.getByTestId("composer-approval-popover")).toBeInTheDocument()
+    expect(screen.getByTestId("composer-decision-jump")).toBeInTheDocument()
     expect(screen.getByTestId("inline-approval-card")).toBeInTheDocument()
+    expect(screen.queryByTestId("pending-decisions")).not.toBeInTheDocument()
     expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
     expect(screen.getAllByText("Needs your decision").length).toBeGreaterThan(0)
-    expect(screen.getAllByRole("button", { name: "Approve" }).length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument()
+    expect(screen.getByText("Jump to decision")).toBeInTheDocument()
   })
 
   it("does not auto-open the panel merely because the agent is streaming", () => {
@@ -443,6 +448,6 @@ describe("AgentWorkbench", () => {
     render(<AgentWorkbench />)
 
     expect(screen.queryByTestId("composer-approval-popover")).not.toBeInTheDocument()
-    expect(screen.queryByText("Approved, resuming")).not.toBeInTheDocument()
+    expect(screen.getByText("Approved, resuming")).toBeInTheDocument()
   })
 })

@@ -208,6 +208,7 @@ function AskUserCard({
                   <button
                     key={option.label}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => toggle(question, option.label)}
                     className={cn(
                       "flex flex-col items-start rounded-xl border px-2.5 py-1.5 text-left transition-colors",

@@ -2201,10 +2201,13 @@
     "approve": "Approve",
     "reject": "Reject",
     "approval": {
+      "jumpToDecision": "Jump to decision",
       "state": {
         "approved": "Approved, resuming",
         "answered": "Answer submitted, resuming",
-        "rejected": "Rejected"
+        "rejected": "Rejected",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
       }
     },
     "attachMenu": {

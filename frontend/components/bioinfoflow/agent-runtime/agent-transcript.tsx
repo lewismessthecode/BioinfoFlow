@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -10,21 +10,17 @@ import type {
   AgentRuntimeArtifact,
   AgentRuntimeEvent,
   AgentRuntimeTimelineEntry,
+  AgentRuntimeTranscriptSegment,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 import { ActivityGroup } from "./activity-group"
 import { InlineApprovalCard } from "./inline-approval-card"
-import { InlinePlanCard } from "./inline-plan-card"
-import { InlineTodoCard } from "./inline-todo-card"
-import { getActionDecisionCardsByTurn } from "./pending-actions"
 import type { AgentDecisionHandler } from "./types"
 
 const BOTTOM_FOLLOW_THRESHOLD = 80
 
 export function AgentTranscript({
   timeline,
-  artifacts = [],
-  events = [],
   onDecision,
 }: {
   timeline: AgentRuntimeTimelineEntry[]
@@ -33,11 +29,6 @@ export function AgentTranscript({
   onDecision?: AgentDecisionHandler
 }) {
   const t = useTranslations("agentRuntime")
-  const todoArtifactByTurn = useMemo(() => latestTodoArtifactByTurn(artifacts), [artifacts])
-  const decisionCardsByTurn = useMemo(
-    () => getActionDecisionCardsByTurn(events),
-    [events],
-  )
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [isFollowingBottom, setIsFollowingBottom] = useState(true)
@@ -59,7 +50,7 @@ export function AgentTranscript({
 
   useEffect(() => {
     if (isFollowingBottom) scrollToBottom()
-  }, [artifacts, events, isFollowingBottom, scrollToBottom, timeline])
+  }, [isFollowingBottom, scrollToBottom, timeline])
 
   return (
     <div
@@ -83,54 +74,15 @@ export function AgentTranscript({
                   <span>{turnStatusLabel(t, entry.turn.status)}</span>
                 </div>
 
-                {entry.assistant.thinking?.content ? (
-                  <details
-                    className="group mb-3 rounded-2xl border border-border/70 bg-muted/30 px-3 py-2"
-                    open
-                  >
-                    <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground">
-                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
-                      <span>{t("thinking")}</span>
-                    </summary>
-                    <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
-                      {entry.assistant.thinking.content}
-                    </p>
-                  </details>
-                ) : null}
-
-                {entry.inlinePlans.map((plan) => (
-                  <InlinePlanCard key={plan.actionId} plan={plan} />
-                ))}
-
-                {(decisionCardsByTurn.get(entry.turn.id) ?? []).map((decision) => (
-                  <InlineApprovalCard
-                    key={decision.actionId}
-                    decision={decision}
-                    onDecision={onDecision}
-                  />
-                ))}
-
-                {entry.activityGroups.length > 0 ? (
-                  <div className="mb-3 grid gap-2">
-                    {entry.activityGroups.map((group) => (
-                      <ActivityGroup key={group.id} group={group} />
+                {entry.segments.length ? (
+                  <div className="grid gap-3">
+                    {entry.segments.map((segment) => (
+                      <TranscriptSegment
+                        key={segment.id}
+                        segment={segment}
+                        onDecision={onDecision}
+                      />
                     ))}
-                  </div>
-                ) : null}
-
-                {todoArtifactByTurn.get(entry.turn.id) ? (
-                  <InlineTodoCard artifact={todoArtifactByTurn.get(entry.turn.id)!} />
-                ) : null}
-
-                {entry.assistant.text ? (
-                  <MarkdownRenderer
-                    className="text-[15px] leading-7"
-                    content={entry.assistant.text}
-                  />
-                ) : entry.assistant.errorMessage ? (
-                  <div className="flex items-start gap-2 rounded-2xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm leading-6 text-destructive">
-                    <AlertTriangle className="mt-1 h-4 w-4 shrink-0" />
-                    <span className="break-words">{entry.assistant.errorMessage}</span>
                   </div>
                 ) : (
                   <MarkdownRenderer
@@ -160,16 +112,52 @@ export function AgentTranscript({
   )
 }
 
-function latestTodoArtifactByTurn(artifacts: AgentRuntimeArtifact[]) {
-  const byTurn = new Map<string, AgentRuntimeArtifact>()
-  for (const artifact of artifacts) {
-    if (artifact.type !== "todo_list") continue
-    const current = byTurn.get(artifact.turn_id)
-    if (!current || current.created_at < artifact.created_at) {
-      byTurn.set(artifact.turn_id, artifact)
-    }
+function TranscriptSegment({
+  segment,
+  onDecision,
+}: {
+  segment: AgentRuntimeTranscriptSegment
+  onDecision?: AgentDecisionHandler
+}) {
+  const t = useTranslations("agentRuntime")
+
+  switch (segment.kind) {
+    case "assistant_text":
+      return (
+        <MarkdownRenderer
+          className="text-[15px] leading-7"
+          content={segment.textBlock.text}
+        />
+      )
+    case "assistant_thinking":
+      return (
+        <details
+          className="group rounded-2xl border border-border/50 bg-muted/20 px-3 py-2"
+          open
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground">
+            <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            <span>{t("thinking")}</span>
+          </summary>
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
+            {segment.thinkingBlock.content}
+          </p>
+        </details>
+      )
+    case "activity_group":
+      return <ActivityGroup group={segment.activityGroup} />
+    case "decision":
+      return <InlineApprovalCard decision={segment.decision} onDecision={onDecision} />
+    case "turn_error":
+      return (
+        <div className="flex items-start gap-2 rounded-2xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm leading-6 text-destructive">
+          <AlertTriangle className="mt-1 h-4 w-4 shrink-0" />
+          <span className="break-words">
+            {segment.message || t(`turnStatus.${segment.status as AgentRuntimeTurn["status"]}`)}
+          </span>
+        </div>
+      )
   }
-  return byTurn
 }
 
 function turnStatusLabel(

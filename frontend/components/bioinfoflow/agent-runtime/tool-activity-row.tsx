@@ -19,7 +19,7 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
 
   return (
     <div
-      className="rounded-xl border border-border/40 bg-background/60 px-3 py-2 text-xs"
+      className="grid gap-2 border-l border-border/60 pl-3 text-xs"
       data-testid="agent-tool-activity-row"
     >
       <div className="flex items-center gap-2 text-muted-foreground">
@@ -28,20 +28,27 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
           {activity.name}
         </span>
         {activity.status !== "completed" ? (
-          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wide">
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide",
+              activity.status === "failed" || activity.status === "cancelled" || activity.status === "rejected"
+                ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                : "bg-muted text-muted-foreground",
+            )}
+          >
             {t(`activity.status.${activity.status}`)}
           </span>
         ) : null}
       </div>
 
       {activity.summary || activity.inputPreview ? (
-        <p className="mt-1 truncate text-muted-foreground">
+        <p className="truncate text-muted-foreground">
           {activity.summary || activity.inputPreview}
         </p>
       ) : null}
 
       {hasDetails ? (
-        <div className="mt-2 grid gap-2 border-t border-border/40 pt-2 text-muted-foreground">
+        <div className="grid gap-2 text-muted-foreground">
           {activity.inputPreview ? <Detail label={t("activity.details.input")} value={activity.inputPreview} /> : null}
           {activity.arguments ? (
             <Detail

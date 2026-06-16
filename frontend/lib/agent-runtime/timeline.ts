@@ -1,140 +1,95 @@
-import { buildAgentRuntimeActivityGroups } from "./activity-groups"
 import { buildAgentRuntimeToolActivities } from "./tool-activity"
+import { buildTurnSegments } from "./segments"
 import type {
+  AgentRuntimeDecisionSegment,
   AgentRuntimeEvent,
+  AgentRuntimeInlinePlanStatus,
+  AgentRuntimeTextBlock,
   AgentRuntimeTimelineEntry,
   AgentRuntimeToolCallState,
+  AgentRuntimeTranscriptSegment,
   AgentRuntimeTurn,
 } from "./types"
-
-type TimelineBuildState = {
-  entry: AgentRuntimeTimelineEntry
-  textFromEvents: boolean
-  thinkingFromEvents: boolean
-}
 
 export function buildAgentRuntimeTimeline(
   turns: AgentRuntimeTurn[],
   events: AgentRuntimeEvent[],
 ): AgentRuntimeTimelineEntry[] {
-  const states = turns.map<TimelineBuildState>((turn) => ({
-    entry: {
+  const sortedEvents = [...events].sort(
+    (a, b) =>
+      a.seq - b.seq ||
+      a.created_at.localeCompare(b.created_at) ||
+      a.id.localeCompare(b.id),
+  )
+
+  return turns.map((turn) => {
+    const turnEvents = sortedEvents.filter((event) => event.turn_id === turn.id)
+    const segments = buildTurnSegments(turn, turnEvents)
+    const textBlocks = textBlocksFromSegments(segments)
+    const thinkingBlocks = thinkingBlocksFromSegments(segments)
+    const activities = buildAgentRuntimeToolActivities(turnEvents)
+    const activityGroups = segments
+      .filter((segment) => segment.kind === "activity_group")
+      .map((segment) => segment.activityGroup)
+    const inlinePlans = segments
+      .filter((segment): segment is AgentRuntimeDecisionSegment => segment.kind === "decision")
+      .filter((segment) => segment.decision.interaction?.kind === "plan_approval")
+      .map((segment) => ({
+        actionId: segment.decision.actionId,
+        plan:
+          segment.decision.interaction?.kind === "plan_approval"
+            ? segment.decision.interaction.plan
+            : "",
+        status: inlinePlanStatus(segment.decision.state),
+      }))
+
+    return {
       turn,
       assistant: {
-        messageId: null,
-        text: turn.final_text ?? "",
-        status: initialAssistantStatus(turn),
-        errorMessage: turn.error_message ?? null,
-        thinking: null,
-        toolCalls: [],
+        messageId: latestMessageId(turnEvents),
+        text: textBlocks.map((block) => block.text).join("\n\n"),
+        textBlocks,
+        status: assistantStatus(turn, textBlocks),
+        errorMessage: latestErrorMessage(turn, turnEvents),
+        thinking: thinkingBlocks.length
+          ? {
+              content: thinkingBlocks.map((block) => block.content).join("\n\n"),
+              isComplete: thinkingBlocks.every((block) => block.isComplete),
+            }
+          : null,
+        thinkingBlocks,
+        toolCalls: buildToolCalls(turnEvents),
       },
-      activities: [],
-      activityGroups: [],
-      inlinePlans: [],
-    },
-    textFromEvents: false,
-    thinkingFromEvents: false,
-  }))
-  const byTurnId = new Map(states.map((state) => [state.entry.turn.id, state]))
+      activities,
+      activityGroups,
+      inlinePlans,
+      segments,
+    } satisfies AgentRuntimeTimelineEntry
+  })
+}
 
-  for (const event of events) {
-    const turnId = event.turn_id ?? null
-    if (!turnId) continue
-    const state = byTurnId.get(turnId)
-    if (!state) continue
-    const { entry } = state
+function textBlocksFromSegments(segments: AgentRuntimeTranscriptSegment[]) {
+  return segments
+    .filter((segment) => segment.kind === "assistant_text")
+    .map((segment) => segment.textBlock)
+}
 
-    switch (event.type) {
-      case "assistant.text.delta": {
-        updateMessageId(entry, event)
-        const base = state.textFromEvents ? entry.assistant.text : ""
-        const nextText = streamingTextFromPayload(event.payload, base)
-        if (nextText !== null) {
-          entry.assistant.text = nextText
-          state.textFromEvents = true
-        }
-        entry.assistant.status = "streaming"
-        break
-      }
-      case "assistant.text.completed": {
-        updateMessageId(entry, event)
-        const base = state.textFromEvents ? entry.assistant.text : ""
-        const nextText = completedTextFromPayload(event.payload, base)
-        if (nextText !== null) {
-          entry.assistant.text = nextText
-          state.textFromEvents = true
-        }
-        entry.assistant.status = "completed"
-        break
-      }
-      case "assistant.thinking.delta": {
-        updateMessageId(entry, event)
-        const base = state.thinkingFromEvents ? entry.assistant.thinking?.content ?? "" : ""
-        const nextThinking = streamingTextFromPayload(event.payload, base)
-        if (nextThinking !== null) {
-          entry.assistant.thinking = {
-            content: nextThinking,
-            isComplete: false,
-          }
-          state.thinkingFromEvents = true
-        }
-        break
-      }
-      case "assistant.thinking.summary":
-      case "assistant.thinking.completed": {
-        updateMessageId(entry, event)
-        const base = state.thinkingFromEvents ? entry.assistant.thinking?.content ?? "" : ""
-        const nextThinking = completedTextFromPayload(event.payload, base)
-        entry.assistant.thinking = {
-          content: nextThinking ?? entry.assistant.thinking?.content ?? "",
-          isComplete: true,
-        }
-        if (nextThinking !== null) state.thinkingFromEvents = true
-        break
-      }
-      case "assistant.tool_call.started":
-      case "assistant.tool_call.delta":
-      case "assistant.tool_call.completed": {
-        updateMessageId(entry, event)
-        upsertToolCall(entry.assistant.toolCalls, event)
-        break
-      }
-      case "action.waiting_decision": {
-        upsertInlinePlan(entry, event)
-        break
-      }
-      case "action.decision_recorded": {
-        updateInlinePlanStatus(entry, event)
-        break
-      }
-      case "turn.failed": {
-        if (entry.assistant.status !== "completed") {
-          entry.assistant.status = "failed"
-        }
-        entry.assistant.errorMessage = stringOrNull(event.payload.error_message)
-        break
-      }
-      case "turn.cancelled":
-      case "turn.interrupted": {
-        entry.assistant.status = "cancelled"
-        break
-      }
-      case "turn.completed": {
-        if (entry.assistant.status !== "failed") {
-          entry.assistant.status = "completed"
-        }
-        break
-      }
-    }
-  }
+function thinkingBlocksFromSegments(segments: AgentRuntimeTranscriptSegment[]) {
+  return segments
+    .filter((segment) => segment.kind === "assistant_thinking")
+    .map((segment) => segment.thinkingBlock)
+}
 
-  for (const state of states) {
-    const turnEvents = events.filter((event) => event.turn_id === state.entry.turn.id)
-    state.entry.activities = buildAgentRuntimeToolActivities(turnEvents)
-    state.entry.activityGroups = buildAgentRuntimeActivityGroups(state.entry.activities)
-  }
-
-  return states.map((state) => state.entry)
+function assistantStatus(
+  turn: AgentRuntimeTurn,
+  textBlocks: AgentRuntimeTextBlock[],
+): AgentRuntimeTimelineEntry["assistant"]["status"] {
+  if (turn.status === "failed") return "failed"
+  if (turn.status === "cancelled") return "cancelled"
+  if (turn.status === "completed") return "completed"
+  if (textBlocks.some((block) => block.status === "streaming")) return "streaming"
+  if (textBlocks.some((block) => block.status === "completed")) return "completed"
+  return initialAssistantStatus(turn)
 }
 
 function initialAssistantStatus(
@@ -153,6 +108,21 @@ function initialAssistantStatus(
     case "waiting_user":
       return "pending"
   }
+}
+
+function buildToolCalls(events: AgentRuntimeEvent[]) {
+  const toolCalls: AgentRuntimeToolCallState[] = []
+  for (const event of events) {
+    if (
+      event.type !== "assistant.tool_call.started" &&
+      event.type !== "assistant.tool_call.delta" &&
+      event.type !== "assistant.tool_call.completed"
+    ) {
+      continue
+    }
+    upsertToolCall(toolCalls, event)
+  }
+  return toolCalls
 }
 
 function upsertToolCall(toolCalls: AgentRuntimeToolCallState[], event: AgentRuntimeEvent) {
@@ -175,66 +145,40 @@ function upsertToolCall(toolCalls: AgentRuntimeToolCallState[], event: AgentRunt
   Object.assign(existing, next)
 }
 
-function updateMessageId(entry: AgentRuntimeTimelineEntry, event: AgentRuntimeEvent) {
-  entry.assistant.messageId = stringOrNull(event.payload.message_id) ?? entry.assistant.messageId
-}
-
-function upsertInlinePlan(entry: AgentRuntimeTimelineEntry, event: AgentRuntimeEvent) {
-  const interaction = recordValue(event.payload.interaction)
-  if (interaction?.kind !== "plan_approval") return
-  const actionId = stringOrNull(event.payload.action_id)
-  if (!actionId) return
-  const existing = entry.inlinePlans.find((plan) => plan.actionId === actionId)
-  const nextPlan = stringOrNull(interaction.plan) ?? ""
-  if (existing) {
-    existing.plan = nextPlan
-    existing.status = "pending"
-    return
+function latestMessageId(events: AgentRuntimeEvent[]) {
+  let messageId: string | null = null
+  for (const event of events) {
+    messageId = stringOrNull(event.payload.message_id) ?? messageId
   }
-  entry.inlinePlans.push({ actionId, plan: nextPlan, status: "pending" })
+  return messageId
 }
 
-function updateInlinePlanStatus(entry: AgentRuntimeTimelineEntry, event: AgentRuntimeEvent) {
-  const actionId = stringOrNull(event.payload.action_id)
-  if (!actionId) return
-  const plan = entry.inlinePlans.find((item) => item.actionId === actionId)
-  if (!plan) return
-  const decision = stringOrNull(event.payload.decision)
-  plan.status = decision === "reject" ? "rejected" : decision === "answer" ? "answered" : "approved"
-}
-
-function streamingTextFromPayload(payload: Record<string, unknown>, current: string) {
-  const cumulative = firstStringPayload(payload, ["content", "text"])
-  if (cumulative !== null) return cumulative
-  const delta = firstStringPayload(payload, ["delta", "text_delta"])
-  if (delta !== null) return `${current}${delta}`
-  return null
-}
-
-function completedTextFromPayload(payload: Record<string, unknown>, current: string) {
-  const finalText = firstStringPayload(payload, ["content", "text"])
-  if (finalText !== null) return finalText
-  const delta = firstStringPayload(payload, ["delta", "text_delta"])
-  if (delta !== null) return `${current}${delta}`
-  return null
-}
-
-function firstStringPayload(payload: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = payload[key]
-    if (typeof value === "string") return value
+function latestErrorMessage(turn: AgentRuntimeTurn, events: AgentRuntimeEvent[]) {
+  let errorMessage = turn.error_message ?? null
+  for (const event of events) {
+    if (event.type !== "turn.failed") continue
+    errorMessage = stringOrNull(event.payload.error_message) ?? errorMessage
   }
-  return null
+  return errorMessage
+}
+
+function inlinePlanStatus(state: AgentRuntimeDecisionSegment["decision"]["state"]): AgentRuntimeInlinePlanStatus {
+  switch (state) {
+    case "approved":
+      return "approved"
+    case "answered":
+      return "answered"
+    case "rejected":
+    case "failed":
+    case "cancelled":
+      return "rejected"
+    case "pending":
+      return "pending"
+  }
 }
 
 function stringOrNull(value: unknown) {
   return typeof value === "string" ? value : null
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
