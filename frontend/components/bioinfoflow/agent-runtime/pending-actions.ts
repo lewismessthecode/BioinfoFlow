@@ -1,18 +1,22 @@
 import type {
+  AgentActionDecision,
   AgentAskUserQuestion,
   AgentRuntimeEvent,
   AgentWaitingDecision,
 } from "@/lib/agent-runtime"
 
-// Waiting-decision events whose action has not yet been completed, failed, or
-// decided. Latest-first so the most recent prompt renders on top.
+// Waiting-decision events whose action has not yet been completed, failed,
+// cancelled, or decided. Latest-first so the most recent prompt renders on top.
 export function getPendingActions(events: AgentRuntimeEvent[]) {
   const resolved = new Set(
     events
       .filter((event) =>
-        ["action.completed", "action.failed", "action.decision_recorded"].includes(
-          event.type,
-        ),
+        [
+          "action.completed",
+          "action.failed",
+          "action.cancelled",
+          "action.decision_recorded",
+        ].includes(event.type),
       )
       .map((event) => String(event.payload.action_id || "")),
   )
@@ -35,6 +39,57 @@ export function pendingDecisionKey(events: AgentRuntimeEvent[]) {
   return getPendingActions(events)
     .map((event) => String(event.payload.action_id || ""))
     .join(",")
+}
+
+export type AgentDecisionCardState = "pending" | "approved" | "rejected" | "answered"
+
+export type AgentDecisionCard = AgentWaitingDecision & {
+  state: AgentDecisionCardState
+}
+
+export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
+  const decisions = new Map<string, AgentRuntimeEvent>()
+  const resolvedWithoutDecision = new Set<string>()
+  for (const event of events) {
+    const actionId = String(event.payload.action_id || "")
+    if (!actionId) continue
+    if (event.type === "action.decision_recorded") {
+      decisions.set(actionId, event)
+      continue
+    }
+    if (["action.completed", "action.failed", "action.cancelled"].includes(event.type)) {
+      resolvedWithoutDecision.add(actionId)
+    }
+  }
+
+  return events
+    .filter((event) => event.type === "action.waiting_decision")
+    .map((event): AgentDecisionCard | null => {
+      const decision = parseWaitingDecision(event)
+      if (!decision.actionId) return null
+      if (resolvedWithoutDecision.has(decision.actionId)) return null
+      const decisionEvent = decisions.get(decision.actionId)
+      if (!decisionEvent) return { ...decision, state: "pending" }
+      if (hasProgressAfterDecision(events, event, decisionEvent)) return null
+      return { ...decision, state: decisionState(decisionEvent) }
+    })
+    .filter((card): card is AgentDecisionCard => Boolean(card))
+    .reverse()
+}
+
+export function getActionDecisionCardsByTurn(events: AgentRuntimeEvent[]) {
+  const byTurn = new Map<string, AgentDecisionCard[]>()
+  for (const card of getActionDecisionCards(events)) {
+    const event = events.find(
+      (item) =>
+        item.type === "action.waiting_decision" &&
+        String(item.payload.action_id || "") === card.actionId,
+    )
+    const turnId = event?.turn_id ?? null
+    if (!turnId) continue
+    byTurn.set(turnId, [...(byTurn.get(turnId) ?? []), card])
+  }
+  return byTurn
 }
 
 export function parseWaitingDecision(event: AgentRuntimeEvent): AgentWaitingDecision {
@@ -64,4 +119,35 @@ export function parseWaitingDecision(event: AgentRuntimeEvent): AgentWaitingDeci
       typeof payload.input_preview === "string" ? payload.input_preview : null,
     interaction,
   }
+}
+
+function hasProgressAfterDecision(
+  events: AgentRuntimeEvent[],
+  waitingEvent: AgentRuntimeEvent,
+  decisionEvent: AgentRuntimeEvent,
+) {
+  return events.some((event) => {
+    if (event.seq <= decisionEvent.seq) return false
+    if (event.turn_id !== waitingEvent.turn_id) return false
+    if (event.type.startsWith("assistant.")) return true
+    return [
+      "action.requested",
+      "action.started",
+      "action.completed",
+      "action.failed",
+      "action.cancelled",
+      "turn.completed",
+      "turn.failed",
+      "turn.no_progress",
+      "turn.recovery.enqueued",
+      "turn.recovery.failed",
+    ].includes(event.type)
+  })
+}
+
+function decisionState(event: AgentRuntimeEvent): AgentDecisionCardState {
+  const decision = String(event.payload.decision || "") as AgentActionDecision
+  if (decision === "reject") return "rejected"
+  if (decision === "answer") return "answered"
+  return "approved"
 }

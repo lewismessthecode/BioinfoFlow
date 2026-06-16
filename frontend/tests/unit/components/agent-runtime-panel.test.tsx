@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
+import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
+import { ArtifactPreviewDrawer } from "@/components/bioinfoflow/agent-runtime/artifact-preview-drawer"
 import { resolveSameOriginBrowserUrl } from "@/components/bioinfoflow/agent-runtime/browser-tab"
 import { PendingDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-decision-cards"
 import { ProgressTab } from "@/components/bioinfoflow/agent-runtime/progress-tab"
@@ -63,6 +65,39 @@ describe("ProgressTab", () => {
     expect(screen.getByText("Read the code")).toBeInTheDocument()
     // in_progress uses activeForm
     expect(screen.getByText("Editing")).toBeInTheDocument()
+  })
+})
+
+describe("ArtifactPreviewDrawer", () => {
+  it("filters command artifacts out of the preview list", () => {
+    render(
+      <ArtifactPreviewDrawer
+        artifacts={[
+          artifact({ id: "command-1", type: "command", title: "ls output" }),
+          artifact({ id: "file-1", type: "file", title: "report.md", payload: { content: "QC passed" } }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByText("report.md")).toBeInTheDocument()
+    expect(screen.queryByText("ls output")).not.toBeInTheDocument()
+  })
+})
+
+describe("AgentSideDrawer", () => {
+  it("uses an icon switcher without a heavy run title", () => {
+    render(
+      <AgentSideDrawer
+        events={[]}
+        onClose={vi.fn()}
+        onDecision={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText("sidecar.title")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "tabs.preview" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "tabs.files" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "tabs.browser" })).toBeInTheDocument()
   })
 })
 

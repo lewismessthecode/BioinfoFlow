@@ -1,19 +1,40 @@
 "use client"
 
-import { useState } from "react"
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Wrench } from "lucide-react"
+import { useMemo } from "react"
+import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import type {
+  AgentRuntimeArtifact,
+  AgentRuntimeEvent,
   AgentRuntimeTimelineEntry,
-  AgentRuntimeToolCallState,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
-import { cn } from "@/lib/utils"
+import { ActivityGroup } from "./activity-group"
+import { InlineApprovalCard } from "./inline-approval-card"
+import { InlinePlanCard } from "./inline-plan-card"
+import { InlineTodoCard } from "./inline-todo-card"
+import { getActionDecisionCardsByTurn } from "./pending-actions"
+import type { AgentDecisionHandler } from "./types"
 
-export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEntry[] }) {
+export function AgentTranscript({
+  timeline,
+  artifacts = [],
+  events = [],
+  onDecision,
+}: {
+  timeline: AgentRuntimeTimelineEntry[]
+  artifacts?: AgentRuntimeArtifact[]
+  events?: AgentRuntimeEvent[]
+  onDecision?: AgentDecisionHandler
+}) {
   const t = useTranslations("agentRuntime")
+  const todoArtifactByTurn = useMemo(() => latestTodoArtifactByTurn(artifacts), [artifacts])
+  const decisionCardsByTurn = useMemo(
+    () => getActionDecisionCardsByTurn(events),
+    [events],
+  )
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-36 pt-8 sm:px-6">
@@ -47,33 +68,46 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
                   </details>
                 ) : null}
 
-                {entry.assistant.toolCalls.length > 0 ? (
-                  <div className="mb-3 overflow-hidden rounded-lg border border-border/60 bg-muted/20">
-                    <div className="flex items-center gap-2 border-b border-border/50 px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
-                      <Wrench className="h-3.5 w-3.5" />
-                      <span>{t("toolCalls")}</span>
-                    </div>
-                    {entry.assistant.toolCalls.map((toolCall) => (
-                      <ToolCallRow
-                        key={toolCall.callId}
-                        toolCall={toolCall}
-                      />
+                {entry.inlinePlans.map((plan) => (
+                  <InlinePlanCard key={plan.actionId} plan={plan} />
+                ))}
+
+                {(decisionCardsByTurn.get(entry.turn.id) ?? []).map((decision) => (
+                  <InlineApprovalCard
+                    key={decision.actionId}
+                    decision={decision}
+                    onDecision={onDecision}
+                  />
+                ))}
+
+                {entry.activityGroups.length > 0 ? (
+                  <div className="mb-3 grid gap-2">
+                    {entry.activityGroups.map((group) => (
+                      <ActivityGroup key={group.id} group={group} />
                     ))}
                   </div>
                 ) : null}
 
-                <MarkdownRenderer
-                  className={cn(
-                    "text-[15px] leading-7",
-                    entry.assistant.status === "failed" &&
-                      "[&_a]:text-destructive [&_code]:text-destructive [&_em]:text-destructive [&_h1]:text-destructive [&_h2]:text-destructive [&_h3]:text-destructive [&_h4]:text-destructive [&_li]:text-destructive [&_p]:text-destructive [&_strong]:text-destructive text-destructive",
-                  )}
-                  content={
-                    entry.assistant.text ||
-                    entry.assistant.errorMessage ||
-                    t("pendingResponse")
-                  }
-                />
+                {todoArtifactByTurn.get(entry.turn.id) ? (
+                  <InlineTodoCard artifact={todoArtifactByTurn.get(entry.turn.id)!} />
+                ) : null}
+
+                {entry.assistant.text ? (
+                  <MarkdownRenderer
+                    className="text-[15px] leading-7"
+                    content={entry.assistant.text}
+                  />
+                ) : entry.assistant.errorMessage ? (
+                  <div className="flex items-start gap-2 rounded-2xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm leading-6 text-destructive">
+                    <AlertTriangle className="mt-1 h-4 w-4 shrink-0" />
+                    <span className="break-words">{entry.assistant.errorMessage}</span>
+                  </div>
+                ) : (
+                  <MarkdownRenderer
+                    className="text-[15px] leading-7"
+                    content={t("pendingResponse")}
+                  />
+                )}
               </div>
             </div>
           </article>
@@ -83,42 +117,16 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
   )
 }
 
-function ToolCallRow({ toolCall }: { toolCall: AgentRuntimeToolCallState }) {
-  const [expanded, setExpanded] = useState(false)
-  const hasArguments = Boolean(toolCall.arguments)
-
-  return (
-    <div
-      className="border-b border-border/40 last:border-b-0"
-      data-testid="agent-tool-call-row"
-    >
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-muted/40"
-        onClick={() => hasArguments && setExpanded((current) => !current)}
-        aria-expanded={expanded}
-      >
-        {hasArguments ? (
-          expanded ? (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          )
-        ) : (
-          <span className="h-3.5 w-3.5 shrink-0" />
-        )}
-        <span className="min-w-0 flex-1 truncate font-mono">{toolCall.name}</span>
-        <span className="shrink-0 rounded-sm bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-          {toolCall.status}
-        </span>
-      </button>
-      {expanded && toolCall.arguments ? (
-        <pre className="max-h-56 overflow-auto border-t border-border/40 bg-background/70 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          {JSON.stringify(toolCall.arguments, null, 2)}
-        </pre>
-      ) : null}
-    </div>
-  )
+function latestTodoArtifactByTurn(artifacts: AgentRuntimeArtifact[]) {
+  const byTurn = new Map<string, AgentRuntimeArtifact>()
+  for (const artifact of artifacts) {
+    if (artifact.type !== "todo_list") continue
+    const current = byTurn.get(artifact.turn_id)
+    if (!current || current.created_at < artifact.created_at) {
+      byTurn.set(artifact.turn_id, artifact)
+    }
+  }
+  return byTurn
 }
 
 function turnStatusLabel(
