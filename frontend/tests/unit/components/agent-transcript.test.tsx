@@ -18,6 +18,8 @@ vi.mock("next-intl", () => ({
       reject: "Reject",
       "sidecar.needsDecision": "Needs your decision",
       "approval.state.approved": "Approved, resuming",
+      "ask.title": "The agent needs your input",
+      "ask.submit": "Submit answer",
       "progress.tasks": "Tasks",
       "plan.reviewTitle": "Review the plan",
       "plan.status.pending": "Pending",
@@ -266,6 +268,67 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("rm build/")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Approve" }))
     expect(onDecision).toHaveBeenCalledWith("action-1", "approve")
+  })
+
+  it("does not render cancelled waiting decisions as pending approvals", () => {
+    render(
+      <AgentTranscript
+        timeline={[baseTimelineEntry]}
+        events={[
+          approvalEvent,
+          {
+            ...approvalEvent,
+            id: "event-cancelled",
+            seq: 2,
+            type: "action.cancelled",
+            payload: { action_id: "action-1" },
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.queryByTestId("inline-approval-card")).not.toBeInTheDocument()
+  })
+
+  it("renders inline ask-user decisions with answer submission", () => {
+    const onDecision = vi.fn()
+    render(
+      <AgentTranscript
+        timeline={[baseTimelineEntry]}
+        events={[
+          {
+            ...approvalEvent,
+            payload: {
+              action_id: "action-ask",
+              name: "ask_user",
+              interaction: {
+                kind: "user_input",
+                questions: [
+                  {
+                    header: "Genome",
+                    question: "Which reference genome?",
+                    multiSelect: false,
+                    options: [
+                      { label: "hg38", description: "Human GRCh38" },
+                      { label: "mm10", description: "Mouse mm10" },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ]}
+        onDecision={onDecision}
+      />,
+    )
+
+    expect(screen.getByTestId("inline-ask-user-card")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /hg38/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Submit answer" }))
+
+    expect(onDecision).toHaveBeenCalledWith("action-ask", "answer", {
+      answer: { Genome: "hg38" },
+    })
   })
 
   it("keeps streamed assistant text visible after later tool calls", () => {

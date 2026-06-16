@@ -150,7 +150,11 @@ describe("useAgentRuntime", () => {
 
   it("merges refreshed session titles into the session list", async () => {
     mocks.getAgentRuntimeState.mockResolvedValue({
-      session: { ...session, title: "RNA-seq QC Plan" },
+      session: {
+        ...session,
+        title: "RNA-seq QC Plan",
+        updated_at: "2026-06-08T00:00:02Z",
+      },
       turns: [],
       events: [],
     })
@@ -162,9 +166,53 @@ describe("useAgentRuntime", () => {
       }),
     )
 
-    await waitFor(() => {
-      expect(result.current.sessions[0]?.title).toBe("RNA-seq QC Plan")
+    await act(async () => {
+      await result.current.refreshState("session-1")
     })
+
+    expect(result.current.sessions[0]?.title).toBe("RNA-seq QC Plan")
+  })
+
+  it("treats refreshed session lists as authoritative when a title is cleared", async () => {
+    mocks.listAgentRuntimeSessions.mockResolvedValue([{ ...session, title: "Old title" }])
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.sessions[0]?.title).toBe("Old title"))
+
+    mocks.listAgentRuntimeSessions.mockResolvedValue([
+      { ...session, title: null, updated_at: "2026-06-08T00:00:03Z" },
+    ])
+    await act(async () => {
+      await result.current.refreshSessions()
+    })
+
+    expect(result.current.sessions[0]?.title).toBeNull()
+  })
+
+  it("ignores stale state refreshes for inactive sessions", async () => {
+    const session2: AgentRuntimeSession = { ...session, id: "session-2" }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: session2, turns: [], events: [] })
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-2",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.state.session?.id).toBe("session-2"))
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session, turns: [], events: [] })
+    await act(async () => {
+      await result.current.refreshState("session-1")
+    })
+
+    expect(result.current.state.session?.id).toBe("session-2")
   })
 
   it("patches permission mode for existing sessions", async () => {

@@ -2185,7 +2185,8 @@
         "running": "Running",
         "completed": "Completed",
         "failed": "Failed",
-        "cancelled": "Cancelled"
+        "cancelled": "Cancelled",
+        "rejected": "Rejected"
       },
       "details": {
         "input": "Input",

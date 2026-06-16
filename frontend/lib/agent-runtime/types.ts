@@ -126,6 +126,7 @@ export type AgentRuntimeToolActivityStatus =
   | "completed"
   | "failed"
   | "cancelled"
+  | "rejected"
 
 export type AgentRuntimeToolActivity = {
   id: string

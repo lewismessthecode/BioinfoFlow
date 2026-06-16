@@ -710,6 +710,7 @@ function updateAgentCoreSession(
   updates: {
     title?: string | null
     status?: AgentSessionStatus | null
+    permissionMode?: AgentPermissionMode | null
     metadata?: Record<string, unknown> | null
   },
 ) {
@@ -722,6 +723,7 @@ function updateAgentCoreSession(
         ? updates.title.trim() || existing.title
         : existing.title,
     status: updates.status ?? existing.status,
+    permission_mode: updates.permissionMode ?? existing.permission_mode,
     metadata:
       updates.metadata === undefined ? existing.metadata : updates.metadata,
     updated_at: nowStamp(),
@@ -2043,6 +2045,10 @@ function createDemoRuntimeInternal(): AppRuntime {
         status:
           typeof bodyJson?.status === "string"
             ? (bodyJson.status as AgentSessionStatus)
+            : undefined,
+        permissionMode:
+          typeof bodyJson?.permission_mode === "string"
+            ? (bodyJson.permission_mode as AgentPermissionMode)
             : undefined,
         metadata:
           bodyJson && Object.hasOwn(bodyJson, "metadata")

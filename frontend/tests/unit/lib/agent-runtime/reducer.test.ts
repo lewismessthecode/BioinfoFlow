@@ -201,6 +201,43 @@ describe("agentRuntimeReducer", () => {
     ])
   })
 
+  it("projects rejected action decisions as rejected activity", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("waiting_approval")],
+        events: [
+          {
+            ...event("event-waiting", 1),
+            type: "action.waiting_decision",
+            payload: {
+              action_id: "action-1",
+              name: "bash",
+              input_preview: "rm build/",
+            },
+          },
+          {
+            ...event("event-rejected", 2),
+            type: "action.decision_recorded",
+            payload: {
+              action_id: "action-1",
+              name: "bash",
+              decision: "reject",
+            },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].activityGroups[0]).toEqual(
+      expect.objectContaining({
+        status: "rejected",
+        activities: [expect.objectContaining({ status: "rejected" })],
+      }),
+    )
+  })
+
   it("preserves persisted thinking summaries after later tool calls", () => {
     const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",

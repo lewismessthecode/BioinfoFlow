@@ -52,6 +52,7 @@ export function useAgentRuntime(
   const activeSessionId = isControlled
     ? options.activeSessionId || null
     : uncontrolledSessionId
+  const activeSessionIdRef = useRef<string | null>(activeSessionId)
   const isControlledDraft = isControlled && options.activeSessionId === ""
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? state.session,
@@ -93,6 +94,10 @@ export function useAgentRuntime(
   }, [activeSessionId, isControlledDraft, projectId, setActiveSessionId])
 
   useEffect(() => {
+    activeSessionIdRef.current = activeSessionId
+  }, [activeSessionId])
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshSessions()
     }, 0)
@@ -103,6 +108,7 @@ export function useAgentRuntime(
     dispatch({ type: "loading" })
     try {
       const payload = await getAgentRuntimeState(sessionId)
+      if (activeSessionIdRef.current && activeSessionIdRef.current !== sessionId) return
       setSessions((current) => mergeSessionList(current, payload.session))
       emitRuntimeSessionUpdated(payload.session)
       dispatch({ type: "state.loaded", payload })
@@ -153,6 +159,7 @@ export function useAgentRuntime(
         modelSelection,
       })
       setSessions((current) => [created, ...current])
+      activeSessionIdRef.current = created.id
       setActiveSessionId(created.id)
       dispatch({ type: "session.selected", session: created })
       return created
@@ -307,7 +314,9 @@ function mergeFetchedSessions(
   return fetched.map((session) => {
     const existing = currentById.get(session.id)
     if (!existing) return session
-    if (!session.title && existing.title) return { ...session, title: existing.title }
+    if (!session.title && existing.title && timestamp(existing.updated_at) > timestamp(session.updated_at)) {
+      return { ...session, title: existing.title }
+    }
     return session
   })
 }
@@ -336,4 +345,10 @@ function writeDraftPermissionMode(mode: AgentPermissionMode) {
 
 function isPermissionMode(value: unknown): value is AgentPermissionMode {
   return value === "ask_each_action" || value === "guarded_auto" || value === "bypass"
+}
+
+function timestamp(value?: string | null) {
+  if (!value) return 0
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? 0 : parsed
 }

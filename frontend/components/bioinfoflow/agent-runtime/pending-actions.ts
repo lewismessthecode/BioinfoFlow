@@ -5,15 +5,18 @@ import type {
   AgentWaitingDecision,
 } from "@/lib/agent-runtime"
 
-// Waiting-decision events whose action has not yet been completed, failed, or
-// decided. Latest-first so the most recent prompt renders on top.
+// Waiting-decision events whose action has not yet been completed, failed,
+// cancelled, or decided. Latest-first so the most recent prompt renders on top.
 export function getPendingActions(events: AgentRuntimeEvent[]) {
   const resolved = new Set(
     events
       .filter((event) =>
-        ["action.completed", "action.failed", "action.decision_recorded"].includes(
-          event.type,
-        ),
+        [
+          "action.completed",
+          "action.failed",
+          "action.cancelled",
+          "action.decision_recorded",
+        ].includes(event.type),
       )
       .map((event) => String(event.payload.action_id || "")),
   )
@@ -46,10 +49,17 @@ export type AgentDecisionCard = AgentWaitingDecision & {
 
 export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
   const decisions = new Map<string, AgentRuntimeEvent>()
+  const resolvedWithoutDecision = new Set<string>()
   for (const event of events) {
-    if (event.type !== "action.decision_recorded") continue
     const actionId = String(event.payload.action_id || "")
-    if (actionId) decisions.set(actionId, event)
+    if (!actionId) continue
+    if (event.type === "action.decision_recorded") {
+      decisions.set(actionId, event)
+      continue
+    }
+    if (["action.completed", "action.failed", "action.cancelled"].includes(event.type)) {
+      resolvedWithoutDecision.add(actionId)
+    }
   }
 
   return events
@@ -57,6 +67,7 @@ export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
     .map((event): AgentDecisionCard | null => {
       const decision = parseWaitingDecision(event)
       if (!decision.actionId) return null
+      if (resolvedWithoutDecision.has(decision.actionId)) return null
       const decisionEvent = decisions.get(decision.actionId)
       if (!decisionEvent) return { ...decision, state: "pending" }
       if (hasProgressAfterDecision(events, event, decisionEvent)) return null

@@ -162,8 +162,9 @@ function actionStatus(event: AgentRuntimeEvent): AgentRuntimeToolActivityStatus 
     case "action.started":
       return "running"
     case "action.completed":
-    case "action.decision_recorded":
       return "completed"
+    case "action.decision_recorded":
+      return stringValue(event.payload.decision) === "reject" ? "rejected" : "completed"
     case "action.failed":
       return "failed"
     case "action.cancelled":

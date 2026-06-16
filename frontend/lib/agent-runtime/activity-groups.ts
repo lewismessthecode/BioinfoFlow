@@ -46,6 +46,7 @@ export function classifyActivity(
 function aggregateStatus(activities: AgentRuntimeToolActivity[]): AgentRuntimeToolActivityStatus {
   if (activities.some((activity) => activity.status === "failed")) return "failed"
   if (activities.some((activity) => activity.status === "cancelled")) return "cancelled"
+  if (activities.some((activity) => activity.status === "rejected")) return "rejected"
   if (activities.some((activity) => activity.status === "waiting")) return "waiting"
   if (activities.some((activity) => activity.status === "running")) return "running"
   if (activities.some((activity) => activity.status === "requested")) return "requested"

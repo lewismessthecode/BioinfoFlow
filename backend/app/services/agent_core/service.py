@@ -188,6 +188,10 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        transcript_parts = _transcript_parts_for_turn(
+            input_text=input_text,
+            input_parts=input_parts,
+        )
         if not session.title and not await self.turn_repo.list_for_session(str(session.id)):
             session = await self.session_repo.update_all(
                 session,
@@ -214,7 +218,7 @@ class AgentCoreService:
             session_id=str(session.id),
             turn_id=str(turn.id),
             role="user",
-            parts=_transcript_parts_for_turn(input_text=input_text, input_parts=input_parts),
+            parts=transcript_parts,
             metadata={"turn_id": str(turn.id)},
         )
         await self.ledger.append(
@@ -665,12 +669,18 @@ def _transcript_parts_for_turn(*, input_text: str, input_parts: list[dict] | Non
         return [text_part(input_text)]
 
     parts: list[dict] = []
+    has_text_part = False
     for part in input_parts:
         if part.get("type") == "text" and isinstance(part.get("text"), str):
-            parts.append(text_part(part["text"]))
+            text = part["text"]
+            if text.strip():
+                has_text_part = True
+                parts.append(text_part(text))
             continue
         if part.get("kind") == "file_ref" or part.get("type") == "file_ref":
             parts.append(text_part(_file_ref_text(part)))
+    if not has_text_part and input_text.strip():
+        parts.insert(0, text_part(input_text))
     return parts or [text_part(input_text)]
 
 
@@ -689,8 +699,10 @@ def _file_ref_text(part: dict) -> str:
         return f"Attached file reference: {label}\nPath: {target}\nContent: not included."
 
     size = target.stat().st_size
-    raw = target.read_bytes()[:_FILE_REF_MAX_BYTES]
-    truncated = size > _FILE_REF_MAX_BYTES
+    with target.open("rb") as file:
+        raw = file.read(_FILE_REF_MAX_BYTES + 1)
+    truncated = size > _FILE_REF_MAX_BYTES or len(raw) > _FILE_REF_MAX_BYTES
+    raw = raw[:_FILE_REF_MAX_BYTES]
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError as exc:

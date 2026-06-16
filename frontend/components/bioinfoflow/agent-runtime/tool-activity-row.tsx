@@ -88,7 +88,7 @@ function Detail({ label, value, pre = false }: { label: string; value: string; p
 }
 
 function ActivityStatusIcon({ status }: { status: AgentRuntimeToolActivity["status"] }) {
-  if (status === "failed" || status === "cancelled") {
+  if (status === "failed" || status === "cancelled" || status === "rejected") {
     return <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
   }
   if (status === "completed") {
