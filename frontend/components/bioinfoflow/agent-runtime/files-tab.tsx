@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { ChevronLeft, RefreshCw } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { RefreshCw } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -20,120 +20,176 @@ type FilesTabProps = {
   onAddContext?: (path: string) => void
 }
 
+const ROOT_LOADING_KEY = "__root__"
+
 export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   const t = useTranslations("agentRuntime")
-  const [dir, setDir] = useState<string | null>(null)
-  const [entries, setEntries] = useState<AgentFsEntry[]>([])
-  const [file, setFile] = useState<AgentFsFile | null>(null)
+  const [rootPath, setRootPath] = useState<string | null>(null)
+  const [rootEntries, setRootEntries] = useState<AgentFsEntry[]>([])
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
+  const [childrenByPath, setChildrenByPath] = useState<Record<string, AgentFsEntry[]>>({})
+  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(() => new Set())
+  const [errorByPath, setErrorByPath] = useState<Record<string, string>>({})
+  const [selectedFile, setSelectedFile] = useState<AgentFsFile | null>(null)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [filter, setFilter] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  const loadDir = useCallback(
-    async (path: string | null) => {
-      setLoading(true)
-      setError(null)
+  const loadRoot = useCallback(async () => {
+    setLoading(ROOT_LOADING_KEY, true)
+    setErrorByPath((current) => omitKey(current, ROOT_LOADING_KEY))
+    try {
+      const tree = await getAgentFsTree(null, projectId)
+      setRootPath(tree.path)
+      setRootEntries(tree.entries)
+    } catch (err) {
+      setErrorByPath((current) => ({
+        ...current,
+        [ROOT_LOADING_KEY]: err instanceof Error ? err.message : "Could not load files.",
+      }))
+    } finally {
+      setLoading(ROOT_LOADING_KEY, false)
+    }
+  }, [projectId])
+
+  const loadChildren = useCallback(
+    async (path: string) => {
+      setLoading(path, true)
+      setErrorByPath((current) => omitKey(current, path))
       try {
         const tree = await getAgentFsTree(path, projectId)
-        setDir(tree.path)
-        setEntries(tree.entries)
-        setFile(null)
+        setChildrenByPath((current) => ({ ...current, [path]: tree.entries }))
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not load files.")
+        setErrorByPath((current) => ({
+          ...current,
+          [path]: err instanceof Error ? err.message : "Could not load files.",
+        }))
       } finally {
-        setLoading(false)
+        setLoading(path, false)
       }
     },
     [projectId],
   )
 
   useEffect(() => {
-    void loadDir(null)
-  }, [loadDir])
+    void loadRoot()
+  }, [loadRoot])
 
-  const openFile = useCallback(
-    async (path: string) => {
-      setLoading(true)
-      setError(null)
-      try {
-        setFile(await getAgentFsFile(path))
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not load files.")
-      } finally {
-        setLoading(false)
-      }
-    },
-    [],
-  )
+  const refresh = useCallback(async () => {
+    await loadRoot()
+    await Promise.all([...expandedPaths].map((path) => loadChildren(path)))
+  }, [expandedPaths, loadChildren, loadRoot])
 
-  const openEntry = useCallback(
+  const toggleDirectory = useCallback(
     (entry: AgentFsEntry) => {
-      if (entry.type === "dir") {
-        void loadDir(entry.path)
-        return
+      setExpandedPaths((current) => {
+        const next = new Set(current)
+        if (next.has(entry.path)) {
+          next.delete(entry.path)
+          return next
+        }
+        next.add(entry.path)
+        return next
+      })
+      if (!childrenByPath[entry.path]) {
+        void loadChildren(entry.path)
       }
-      void openFile(entry.path)
     },
-    [loadDir, openFile],
+    [childrenByPath, loadChildren],
   )
+
+  const openFile = useCallback(async (entry: AgentFsEntry) => {
+    setSelectedPath(entry.path)
+    setLoading(entry.path, true)
+    setErrorByPath((current) => omitKey(current, entry.path))
+    try {
+      setSelectedFile(await getAgentFsFile(entry.path))
+    } catch (err) {
+      setErrorByPath((current) => ({
+        ...current,
+        [entry.path]: err instanceof Error ? err.message : "Could not load files.",
+      }))
+    } finally {
+      setLoading(entry.path, false)
+    }
+  }, [])
 
   const copyPath = useCallback((path: string) => {
     void navigator.clipboard?.writeText(path)
   }, [])
 
-  const parentDir = dir ? dir.split("/").slice(0, -1).join("/") : null
-
-  if (file) {
-    return (
-      <AgentFilePreview
-        file={file}
-        onBack={() => setFile(null)}
-        onAddToContext={(path) => onAddContext?.(path)}
-        onCopyPath={copyPath}
-      />
-    )
-  }
+  const rootError = errorByPath[ROOT_LOADING_KEY] ?? null
+  const rootLoading = loadingPaths.has(ROOT_LOADING_KEY)
+  const loadedNodeCount = useMemo(
+    () => rootEntries.length + Object.values(childrenByPath).reduce((sum, entries) => sum + entries.length, 0),
+    [childrenByPath, rootEntries],
+  )
 
   return (
-    <div className="grid gap-2" data-testid="files-tab">
+    <div className="grid gap-3" data-testid="files-tab">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5">
-          {parentDir ? (
-            <button
-              type="button"
-              className="flex items-center gap-1 text-sm font-medium text-foreground"
-              onClick={() => void loadDir(parentDir)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              {t("files.up")}
-            </button>
-          ) : (
-            <span className="text-sm font-medium text-foreground">{t("files.title")}</span>
-          )}
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">{t("files.title")}</div>
+          {rootPath ? (
+            <div className="truncate font-mono text-[11px] text-muted-foreground">
+              {rootPath}
+            </div>
+          ) : null}
         </div>
         <Button
           type="button"
           variant="ghost"
           size="icon"
           className="h-7 w-7 rounded-full text-muted-foreground"
-          onClick={() => void loadDir(dir)}
+          onClick={() => void refresh()}
           aria-label={t("files.refresh")}
         >
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          <RefreshCw className={cn("h-3.5 w-3.5", rootLoading && "animate-spin")} />
         </Button>
       </div>
-      {dir ? (
-        <div className="truncate font-mono text-[11px] text-muted-foreground">{dir}</div>
-      ) : null}
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      {rootError ? <p className="text-sm text-destructive">{rootError}</p> : null}
       <AgentWorkspaceTree
-        entries={entries}
+        entries={rootEntries}
         filter={filter}
         onFilterChange={setFilter}
-        onOpenEntry={openEntry}
+        expandedPaths={expandedPaths}
+        childrenByPath={childrenByPath}
+        loadingPaths={loadingPaths}
+        errorByPath={errorByPath}
+        selectedPath={selectedPath}
+        loadedNodeCount={loadedNodeCount}
+        onToggleDirectory={toggleDirectory}
+        onOpenFile={openFile}
         onAddFile={(path) => onAddContext?.(path)}
         onCopyPath={copyPath}
       />
+
+      {selectedFile ? (
+        <AgentFilePreview
+          file={selectedFile}
+          onBack={() => {
+            setSelectedFile(null)
+            setSelectedPath(null)
+          }}
+          onAddToContext={(path) => onAddContext?.(path)}
+          onCopyPath={copyPath}
+        />
+      ) : null}
     </div>
   )
+
+  function setLoading(path: string, loading: boolean) {
+    setLoadingPaths((current) => {
+      const next = new Set(current)
+      if (loading) next.add(path)
+      else next.delete(path)
+      return next
+    })
+  }
+}
+
+function omitKey<T>(record: Record<string, T>, key: string) {
+  return Object.fromEntries(
+    Object.entries(record).filter(([entryKey]) => entryKey !== key),
+  ) as Record<string, T>
 }
