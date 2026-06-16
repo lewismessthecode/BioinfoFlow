@@ -1,4 +1,3 @@
-import { buildAgentRuntimeToolActivities } from "./tool-activity"
 import { buildTurnSegments } from "./segments"
 import type {
   AgentRuntimeDecisionSegment,
@@ -27,10 +26,10 @@ export function buildAgentRuntimeTimeline(
     const segments = buildTurnSegments(turn, turnEvents)
     const textBlocks = textBlocksFromSegments(segments)
     const thinkingBlocks = thinkingBlocksFromSegments(segments)
-    const activities = buildAgentRuntimeToolActivities(turnEvents)
     const activityGroups = segments
       .filter((segment) => segment.kind === "activity_group")
       .map((segment) => segment.activityGroup)
+    const activities = activityGroups.flatMap((group) => group.activities)
     const inlinePlans = segments
       .filter((segment): segment is AgentRuntimeDecisionSegment => segment.kind === "decision")
       .filter((segment) => segment.decision.interaction?.kind === "plan_approval")
@@ -165,6 +164,7 @@ function latestErrorMessage(turn: AgentRuntimeTurn, events: AgentRuntimeEvent[])
 function inlinePlanStatus(state: AgentRuntimeDecisionSegment["decision"]["state"]): AgentRuntimeInlinePlanStatus {
   switch (state) {
     case "approved":
+    case "completed":
       return "approved"
     case "answered":
       return "answered"

@@ -9,7 +9,7 @@ export function classifyActivity(
   const text = `${activity.name} ${activity.inputPreview ?? ""} ${JSON.stringify(activity.arguments ?? {})}`.toLowerCase()
   const name = activity.name.toLowerCase()
 
-  if (/\b(workflows?__|workflows?\.)/.test(name) || /\bregister\b/.test(text)) return "register"
+  if (/\bregister\b/.test(text) || /\b(workflows?__|workflows?\.)/.test(name)) return "register"
   if (/\b(runs?__submit|runs?\.submit|submit run|nextflow run|miniwdl run)\b/.test(text)) return "run"
   if (/\b(test|pytest|vitest|lint|ruff|doctor|verify|validate|check)\b/.test(text)) return "verify"
   if (/\b(write|edit|patch|create|mkdir|touch|rm|delete|move|rename|files__write|files__edit)\b/.test(text)) return "write"

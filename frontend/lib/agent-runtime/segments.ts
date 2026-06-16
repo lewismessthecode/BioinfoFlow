@@ -199,13 +199,18 @@ function buildThinkingBlocks(
       continue
     }
     const messageId = stringValue(event.payload.message_id)
-    if (messageId) {
+    const sourceId = stringValue(event.payload.source_id)
+    if (messageId || sourceId) {
       syntheticKey = null
     } else if (!previousWasThinking || !syntheticKey) {
-      syntheticKey = `thinking:${event.seq}:${event.id}`
+      syntheticKey = `synthetic:${event.seq}:${event.id}`
     }
     previousWasThinking = true
-    const key = messageId ? `message:${messageId}` : syntheticKey!
+    const key = messageId
+      ? `message:${messageId}`
+      : sourceId
+        ? `source:${sourceId}`
+        : syntheticKey!
     const existing = byKey.get(key)
     const block = existing ?? {
       id: `thinking:${turn.id}:${key}`,
@@ -283,10 +288,8 @@ function buildDecisionSegments(
     }
 
     if (event.type === "action.completed") {
+      if (existing.state === "pending") existing.state = "completed"
       existing.seqEnd = Math.max(existing.seqEnd, event.seq)
-      if (existing.state === "pending") {
-        byActionId.delete(actionId)
-      }
     }
   }
 

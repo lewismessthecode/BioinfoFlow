@@ -210,6 +210,7 @@ export type AgentRuntimeDecisionState =
   | "approved"
   | "rejected"
   | "answered"
+  | "completed"
   | "failed"
   | "cancelled"
 

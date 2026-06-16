@@ -286,6 +286,66 @@ describe("agentRuntimeReducer", () => {
     expect(loaded.timeline[0].assistant.toolCalls).toHaveLength(1)
   })
 
+  it("accumulates unkeyed thinking stream events into one block", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-thinking-1", 1),
+            type: "assistant.thinking.delta",
+            payload: { text_delta: "Inspect" },
+          },
+          {
+            ...event("event-thinking-2", 2),
+            type: "assistant.thinking.delta",
+            payload: { text_delta: " files" },
+          },
+          {
+            ...event("event-thinking-3", 3),
+            type: "assistant.thinking.completed",
+            payload: { content: "Inspect files" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.thinkingBlocks).toEqual([
+      expect.objectContaining({ content: "Inspect files", isComplete: true }),
+    ])
+  })
+
+  it("marks decisions completed when an action completes without a recorded decision", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("waiting_approval")],
+        events: [
+          {
+            ...event("event-waiting", 1),
+            type: "action.waiting_decision",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+          {
+            ...event("event-completed", 2),
+            type: "action.completed",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].segments).toContainEqual(
+      expect.objectContaining({
+        kind: "decision",
+        decision: expect.objectContaining({ state: "completed" }),
+      }),
+    )
+  })
+
   it("projects running status from queued or running turns", () => {
     const state = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "turn.upsert",
@@ -638,7 +698,17 @@ describe("agentRuntimeReducer", () => {
       },
     })
 
-    expect(loaded.timeline[0].segments.some((segment) => segment.kind === "decision")).toBe(false)
+    expect(loaded.timeline[0].segments).toContainEqual(
+      expect.objectContaining({
+        kind: "decision",
+        decision: expect.objectContaining({ state: "completed" }),
+      }),
+    )
+    expect(
+      loaded.timeline[0].segments.some(
+        (segment) => segment.kind === "decision" && segment.status === "pending",
+      ),
+    ).toBe(false)
   })
 
   it("accumulates thinking deltas without message ids", () => {
