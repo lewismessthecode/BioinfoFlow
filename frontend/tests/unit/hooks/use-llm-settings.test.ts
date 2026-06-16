@@ -31,6 +31,7 @@ const MOCK_MODELS: ProviderModels[] = [
     provider: "anthropic",
     provider_id: "provider-anthropic",
     label: "Anthropic",
+    base_url: null,
     models: [
       {
         id: "claude-sonnet-4-20250514",

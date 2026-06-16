@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { FilesTab } from "@/components/bioinfoflow/agent-runtime/files-tab"
@@ -13,6 +13,7 @@ vi.mock("next-intl", () => ({
       "files.error": "Could not load files",
       "files.up": "Up",
       "files.back": "Back",
+      "files.selectPreview": "Select a file to preview",
       "files.truncated": "File truncated",
       "files.search": "Search loaded files",
       "files.loadedOnly": `${values?.count ?? 0} loaded items`,
@@ -111,12 +112,35 @@ describe("FilesTab", () => {
     expect(await screen.findByTestId("agent-file-preview")).toBeInTheDocument()
     expect(screen.getByText("nextflow content")).toBeInTheDocument()
     expect(screen.getByTestId("agent-workspace-tree")).toBeInTheDocument()
+    expect(screen.getByTestId("files-tab-split")).toBeInTheDocument()
+    expect(screen.getByTestId("file-preview-pane")).toContainElement(
+      screen.getByTestId("agent-file-preview"),
+    )
+    expect(screen.getByTestId("file-tree-pane")).toContainElement(
+      screen.getByTestId("agent-workspace-tree"),
+    )
+    expect(screen.getByTestId("file-tree-pane").className).toContain("overflow-x-hidden")
     expect(screen.getByText("src")).toBeInTheDocument()
     expect(screen.getByText("main.nf")).toBeInTheDocument()
 
-    const addButtons = screen.getAllByRole("button", { name: "Add to context" })
+    const addButtons = within(screen.getByTestId("file-preview-pane")).getAllByRole("button", {
+      name: "Add to context",
+    })
     fireEvent.click(addButtons.at(-1)!)
     expect(onAddContext).toHaveBeenCalledWith(scriptPath)
+  })
+
+  it("keeps an empty preview pane beside the file tree before a file is selected", async () => {
+    render(<FilesTab projectId="project-1" />)
+
+    expect(await screen.findByText("workflow.wdl")).toBeInTheDocument()
+    expect(screen.getByTestId("files-tab-split")).toBeInTheDocument()
+    expect(screen.getByTestId("file-preview-pane")).toHaveTextContent(
+      "Select a file to preview",
+    )
+    expect(screen.getByTestId("file-tree-pane")).toContainElement(
+      screen.getByTestId("agent-workspace-tree"),
+    )
   })
 
   it("filters only loaded nodes and reveals collapsed matching descendants", async () => {

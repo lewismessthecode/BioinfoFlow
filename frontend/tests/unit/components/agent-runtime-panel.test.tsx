@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
@@ -92,6 +92,42 @@ describe("ArtifactPreviewDrawer", () => {
 })
 
 describe("AgentSideDrawer", () => {
+  it("keeps environment information out of the right drawer", () => {
+    render(
+      <AgentSideDrawer
+        projectId="project-1"
+        sessionId={null}
+        events={[
+          {
+            id: "event-change",
+            session_id: "session-1",
+            turn_id: "turn-1",
+            seq: 1,
+            type: "action.completed",
+            payload: {
+              action_id: "a1",
+              name: "files__write",
+              result: {
+                path: "/workspace/project-1/workflow.nf",
+                additions: 12,
+                deletions: 3,
+              },
+            },
+            visibility: "user",
+            schema_version: 1,
+            created_at: "2026-06-09T00:00:00Z",
+            updated_at: "2026-06-09T00:00:00Z",
+          },
+        ]}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const drawer = screen.getByTestId("artifact-panel")
+    expect(within(drawer).queryByTestId("agent-environment-card")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "tabs.environment" })).not.toBeInTheDocument()
+  })
+
   it("renders pending decision jump as an interactive button", () => {
     const target = document.createElement("div")
     target.id = "agent-decision-a1"

@@ -1,6 +1,6 @@
 import * as React from "react"
-import { fireEvent, screen, waitFor } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { fireEvent, screen, waitFor, within } from "@testing-library/react"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import AppLayout from "@/app/(app)/app-layout"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
@@ -10,6 +10,8 @@ import { renderAppPage } from "@/tests/app-test-utils"
 const pathnameState = {
   value: "/agent",
 }
+
+let workspaceNavbarActions: React.ReactNode = null
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathnameState.value,
@@ -52,7 +54,7 @@ vi.mock("@/components/bioinfoflow/sidebar/index", () => ({
 
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
   WorkspaceShellProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useWorkspaceShell: () => ({ navbarActions: null }),
+  useWorkspaceShell: () => ({ navbarActions: workspaceNavbarActions }),
 }))
 
 vi.mock("@/components/bioinfoflow/sidebar/sidebar-drawer", () => ({
@@ -97,6 +99,10 @@ function ProjectSeeder({ projectId }: { projectId: string }) {
 }
 
 describe("AppLayout terminal integration", () => {
+  beforeEach(() => {
+    workspaceNavbarActions = null
+  })
+
   it("shows the terminal toggle on terminal-enabled routes when a project is active", async () => {
     pathnameState.value = "/agent"
 
@@ -128,6 +134,31 @@ describe("AppLayout terminal integration", () => {
     await waitFor(() => {
       expect(screen.getByTestId("terminal-dock")).toHaveTextContent("open")
     })
+  })
+
+  it("keeps the right-side panel toggle as the far-right navbar action", async () => {
+    pathnameState.value = "/agent"
+    workspaceNavbarActions = (
+      <button type="button" aria-label="Open run panel">
+        drawer
+      </button>
+    )
+
+    renderAppPage(
+      <AppLayout>
+        <ProjectSeeder projectId="project-1" />
+      </AppLayout>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "accessibility.openTerminal" })).toBeInTheDocument()
+    })
+
+    const buttons = within(screen.getByTestId("navbar-actions")).getAllByRole("button")
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      "accessibility.openTerminal",
+      "Open run panel",
+    ])
   })
 
   it("does not mount the command palette until the shortcut is used", async () => {

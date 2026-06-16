@@ -2071,6 +2071,7 @@
   },
   "terminal": {
     "title": "Terminal",
+    "newTerminal": "New terminal",
     "startingSession": "Starting terminal...",
     "connectionStates": {
       "idle": "Idle",
@@ -2263,10 +2264,27 @@
       }
     },
     "tabs": {
+      "environment": "Environment",
       "preview": "Preview",
       "progress": "Progress",
       "files": "Files",
       "browser": "Browser"
+    },
+    "environment": {
+      "title": "Environment",
+      "open": "Open environment",
+      "close": "Close environment",
+      "changes": "Changes",
+      "filesChanged": "{count, plural, one {# file changed} other {# files changed}}",
+      "worktree": "Worktree",
+      "session": "Session",
+      "pendingSession": "Session pending",
+      "model": "Model",
+      "progress": "Progress",
+      "progressCount": "{completed}/{total} complete",
+      "activity": "Subagents and tools",
+      "sources": "Sources",
+      "none": "None"
     },
     "progress": {
       "tasks": "Tasks",
@@ -2285,6 +2303,7 @@
       "empty": "This folder is empty.",
       "error": "Could not load files.",
       "search": "Search loaded files",
+      "selectPreview": "Select a file to preview",
       "loadedOnly": "Searching {count, plural, one {# loaded item} other {# loaded items}}",
       "loading": "Loading...",
       "addToContext": "Add to context",

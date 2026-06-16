@@ -169,12 +169,12 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   )
 
   return (
-    <div className="grid gap-3" data-testid="files-tab">
-      <div className="flex items-center justify-between gap-2">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3" data-testid="files-tab">
+      <div className="flex shrink-0 items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="text-sm font-medium text-foreground">{t("files.title")}</div>
           {rootPath ? (
-            <div className="truncate font-mono text-[11px] text-muted-foreground">
+            <div className="truncate font-mono text-[11px] text-muted-foreground" title={rootPath}>
               {rootPath}
             </div>
           ) : null}
@@ -192,33 +192,53 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
       </div>
 
       {rootError ? <p className="text-sm text-destructive">{rootError}</p> : null}
-      <AgentWorkspaceTree
-        entries={rootEntries}
-        filter={filter}
-        onFilterChange={setFilter}
-        expandedPaths={expandedPaths}
-        childrenByPath={childrenByPath}
-        loadingPaths={loadingPaths}
-        errorByPath={errorByPath}
-        selectedPath={selectedPath}
-        loadedNodeCount={loadedNodeCount}
-        onToggleDirectory={toggleDirectory}
-        onOpenFile={openFile}
-        onAddFile={(path) => onAddContext?.(path)}
-        onCopyPath={copyPath}
-      />
-
-      {selectedFile ? (
-        <AgentFilePreview
-          file={selectedFile}
-          onBack={() => {
-            setSelectedFile(null)
-            setSelectedPath(null)
-          }}
-          onAddToContext={(path) => onAddContext?.(path)}
-          onCopyPath={copyPath}
-        />
-      ) : null}
+      <div
+        className="grid min-h-0 min-w-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+        data-testid="files-tab-split"
+      >
+        <section
+          className="min-h-[240px] min-w-0 overflow-hidden rounded-xl border border-border/65 bg-card/50 lg:min-h-0"
+          data-testid="file-preview-pane"
+        >
+          {selectedFile ? (
+            <AgentFilePreview
+              file={selectedFile}
+              className="h-full"
+              onBack={() => {
+                setSelectedFile(null)
+                setSelectedPath(null)
+              }}
+              onAddToContext={(path) => onAddContext?.(path)}
+              onCopyPath={copyPath}
+            />
+          ) : (
+            <div className="flex h-full min-h-[240px] items-center justify-center p-4 text-center text-sm text-muted-foreground">
+              {t("files.selectPreview")}
+            </div>
+          )}
+        </section>
+        <section
+          className="min-h-[260px] min-w-0 overflow-x-hidden rounded-xl border border-border/65 bg-background p-2 lg:min-h-0"
+          data-testid="file-tree-pane"
+        >
+          <AgentWorkspaceTree
+            entries={rootEntries}
+            className="h-full"
+            filter={filter}
+            onFilterChange={setFilter}
+            expandedPaths={expandedPaths}
+            childrenByPath={childrenByPath}
+            loadingPaths={loadingPaths}
+            errorByPath={errorByPath}
+            selectedPath={selectedPath}
+            loadedNodeCount={loadedNodeCount}
+            onToggleDirectory={toggleDirectory}
+            onOpenFile={openFile}
+            onAddFile={(path) => onAddContext?.(path)}
+            onCopyPath={copyPath}
+          />
+        </section>
+      </div>
     </div>
   )
 

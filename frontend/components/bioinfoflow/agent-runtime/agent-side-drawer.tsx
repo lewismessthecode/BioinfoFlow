@@ -83,6 +83,7 @@ export function AgentSideDrawer({
     <aside
       className={cn(
         "pointer-events-auto hidden h-full w-[420px] overflow-hidden border-l border-border/70 bg-background lg:flex lg:flex-col",
+        "lg:w-[clamp(560px,50vw,900px)]",
         className,
       )}
       data-testid="artifact-panel"
@@ -131,7 +132,12 @@ export function AgentSideDrawer({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div
+        className={cn(
+          "min-h-0 flex-1",
+          activeTab === "files" ? "overflow-hidden p-3" : "overflow-y-auto p-3",
+        )}
+      >
         {activeTab === "preview" ? <ArtifactPreviewDrawer artifacts={visibleArtifacts} /> : null}
         {activeTab === "files" ? (
           <WorkspaceExplorerPanel projectId={projectId} onAddContext={onAddContext} />

@@ -27,15 +27,28 @@ vi.mock("next/link", () => ({
 }))
 
 vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
-  ProviderIcon: ({ provider }: { provider: string }) => (
-    <span aria-hidden="true" data-provider={provider} />
+  ProviderIcon: ({
+    provider,
+    baseUrl,
+  }: {
+    provider: string
+    baseUrl?: string | null
+  }) => (
+    <span
+      aria-hidden="true"
+      data-base-url={baseUrl ?? ""}
+      data-provider={provider}
+      data-testid="provider-icon"
+    />
   ),
 }))
 
 const models: ProviderModels[] = [
   {
     provider: "openai",
+    provider_id: "provider-openai",
     label: "OpenAI",
+    base_url: "https://api.openai.com/v1",
     models: [
       {
         id: "gpt-4o-mini",
@@ -59,6 +72,10 @@ describe("ModelSelector", () => {
     expect(screen.getByRole("combobox", { name: "GPT-4o mini" })).toHaveAttribute(
       "aria-label",
       "GPT-4o mini",
+    )
+    expect(screen.getByTestId("provider-icon")).toHaveAttribute(
+      "data-base-url",
+      "https://api.openai.com/v1",
     )
   })
 

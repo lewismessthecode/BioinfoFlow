@@ -28,12 +28,21 @@ import {
   Qwen,
   XAI,
 } from "@lobehub/icons"
+import { Server } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  resolveProviderIconKey,
+  type ProviderIconIdentity,
+} from "./provider-icon-resolver"
 
 // ── Types ──────────────────────────────────────────────────────────
 
 interface ProviderIconProps {
   provider: string
+  providerLabel?: string | null
+  baseUrl?: string | null
+  modelId?: string | null
+  modelName?: string | null
   className?: string
   size?: number
 }
@@ -50,6 +59,7 @@ interface IconEntry {
 
 const PROVIDER_ICON_MAP: Record<string, IconEntry> = {
   anthropic:   { Color: Claude.Color, Mono: Claude },
+  custom:      { Mono: Server },
   openai:      { Mono: OpenAI },
   gemini:      { Color: Gemini.Color, Mono: Gemini },
   ollama:      { Mono: Ollama },
@@ -65,10 +75,21 @@ const PROVIDER_ICON_MAP: Record<string, IconEntry> = {
 
 export function ProviderIcon({
   provider,
+  providerLabel,
+  baseUrl,
+  modelId,
+  modelName,
   className,
   size = 14,
 }: ProviderIconProps) {
-  const entry = PROVIDER_ICON_MAP[provider]
+  const key = resolveProviderIconKey({
+    provider,
+    providerLabel,
+    baseUrl,
+    modelId,
+    modelName,
+  } satisfies ProviderIconIdentity)
+  const entry = PROVIDER_ICON_MAP[key]
 
   if (!entry) {
     return (

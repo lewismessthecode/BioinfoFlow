@@ -9,10 +9,11 @@ import {
   useRef,
   useState,
 } from "react"
-import { PanelRightClose, PanelRightOpen } from "lucide-react"
+import { PanelRightClose, PanelRightOpen, SlidersHorizontal } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { AgentComposer } from "./agent-composer"
+import { AgentEnvironmentCard } from "./agent-environment-card"
 import { AgentTabbedPanel } from "./agent-tabbed-panel"
 import { AgentTodoDock } from "./agent-todo-dock"
 import { AgentTranscript } from "./agent-transcript"
@@ -64,6 +65,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [optimisticTurn, setOptimisticTurn] = useState<AgentRuntimeTurn | null>(null)
+    const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
     const [artifactState, setArtifactState] = useState<{
       sessionId: string
@@ -143,6 +145,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const sidecarLabel = sidecarVisible
       ? t("sidecar.collapse")
       : t("sidecar.expand")
+    const environmentLabel = environmentOpen
+      ? t("environment.close")
+      : t("environment.open")
 
     useImperativeHandle(
       ref,
@@ -157,6 +162,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setContextAttachments([])
           setHasSubmittedDraft(false)
           setOptimisticTurn(null)
+          setEnvironmentOpen(false)
           setSidecarOpen(false)
         },
       }),
@@ -226,31 +232,63 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         closeSidecar()
         return
       }
+      setEnvironmentOpen(false)
       setSidecarOpen(true)
     }, [closeSidecar, sidecarVisible])
+
+    const toggleEnvironment = useCallback(() => {
+      setEnvironmentOpen((current) => {
+        const next = !current
+        if (next) setSidecarOpen(false)
+        return next
+      })
+    }, [])
 
     useEffect(() => {
       if (!setNavbarActions) return
 
       setNavbarActions(
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
-          onClick={toggleSidecar}
-          aria-label={sidecarLabel}
-        >
-          {sidecarVisible ? (
-            <PanelRightClose className="h-4 w-4" />
-          ) : (
-            <PanelRightOpen className="h-4 w-4" />
-          )}
-        </Button>,
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground",
+              environmentOpen && "bg-accent text-foreground",
+            )}
+            onClick={toggleEnvironment}
+            aria-label={environmentLabel}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+            onClick={toggleSidecar}
+            aria-label={sidecarLabel}
+          >
+            {sidecarVisible ? (
+              <PanelRightClose className="h-4 w-4" />
+            ) : (
+              <PanelRightOpen className="h-4 w-4" />
+            )}
+          </Button>
+        </>,
       )
 
       return () => setNavbarActions(null)
-    }, [setNavbarActions, sidecarLabel, sidecarVisible, toggleSidecar])
+    }, [
+      environmentLabel,
+      environmentOpen,
+      setNavbarActions,
+      sidecarLabel,
+      sidecarVisible,
+      toggleEnvironment,
+      toggleSidecar,
+    ])
 
     const composer = (
       <AgentComposer
@@ -318,26 +356,40 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               {state.error}
             </div>
           ) : null}
+
+          {environmentOpen && !sidecarVisible ? (
+            <div
+              className="pointer-events-auto absolute right-3 top-3 z-20 w-[min(440px,calc(100%-1.5rem))] sm:right-5 sm:top-5"
+              data-testid="agent-environment-floating-panel"
+            >
+              <AgentEnvironmentCard
+                projectId={projectId}
+                session={state.session}
+                events={state.events}
+                artifacts={transcriptArtifacts}
+              />
+            </div>
+          ) : null}
         </main>
 
         <div
           className={cn(
             "hidden shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-out lg:flex",
             sidecarVisible
-              ? "w-[420px] translate-x-0 opacity-100"
+              ? "w-[clamp(560px,50vw,900px)] translate-x-0 opacity-100"
               : "w-0 translate-x-4 opacity-0",
           )}
           aria-hidden={!sidecarVisible}
           data-testid="agent-sidecar-column"
         >
-          <div className="flex h-full w-[420px] shrink-0 items-stretch">
+          <div className="flex h-full w-[clamp(560px,50vw,900px)] shrink-0 items-stretch">
             {sidecarVisible ? (
-              <AgentTabbedPanel
-                projectId={projectId}
-                sessionId={state.session?.id}
-                events={state.events}
-                onClose={closeSidecar}
-                onAddContext={addContextAttachment}
+                <AgentTabbedPanel
+                  projectId={projectId}
+                  sessionId={state.session?.id}
+                  events={state.events}
+                  onClose={closeSidecar}
+                  onAddContext={addContextAttachment}
               />
             ) : null}
           </div>

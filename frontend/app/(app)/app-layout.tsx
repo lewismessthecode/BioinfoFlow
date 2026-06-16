@@ -245,10 +245,10 @@ export default function AppLayout({
                     conversationTitle={activeConversationTitle}
                     viewer={viewer}
                   >
-                    <WorkspaceNavbarActions />
                     {terminalEnabled ? (
                       <TerminalNavbarAction label={tAccessibility("openTerminal")} />
                     ) : null}
+                    <WorkspaceNavbarActions />
                   </Navbar>
                   <main id="main-content" className="min-h-0 flex-1 overflow-hidden" role="main">
                     {children}
