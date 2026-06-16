@@ -5,7 +5,9 @@ from typing import Any
 
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
+from app.services.authorization_service import AuthorizationService
 from app.services.image_service import ImageService
+from app.utils.exceptions import NotFoundError
 
 
 def _image_summary(image) -> dict[str, Any]:
@@ -16,6 +18,10 @@ def _image_summary(image) -> dict[str, Any]:
         "full_name": image.full_name,
         "registry": image.registry,
         "status": _value(image.status),
+        "size_bytes": getattr(image, "size_bytes", None),
+        "entrypoint": getattr(image, "entrypoint", None),
+        "env": getattr(image, "env", None),
+        "labels": getattr(image, "labels", None),
     }
 
 
@@ -74,6 +80,33 @@ class ListImagesTool:
             "total_count": pagination.total_count or 0,
             "status": status,
         }
+
+
+class GetImageTool:
+    spec = AgentToolSpec(
+        name="images.get",
+        description="Read Docker image asset details by id.",
+        input_schema={
+            "type": "object",
+            "properties": {"image_id": {"type": "string"}},
+            "required": ["image_id"],
+            "additionalProperties": False,
+        },
+        output_schema={
+            "type": "object",
+            "properties": {"image": {"type": "object"}},
+            "required": ["image"],
+        },
+        risk_level="read",
+        read_scope=["images"],
+        audit="Read Docker image asset.",
+    )
+
+    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        image = await ImageService(context.db).get_image(str(input["image_id"]))
+        if image is None:
+            raise NotFoundError("Image not found")
+        return {"image": _image_summary(image)}
 
 
 class PullImageTool:
@@ -177,6 +210,7 @@ class BuildImageTool:
             "stdout": _limit(stdout.decode("utf-8", errors="replace")),
             "stderr": _limit(stderr.decode("utf-8", errors="replace")),
         }
+        built = None
         if exit_code == 0:
             # Force a catalog sync so the freshly built image is registered.
             service = ImageService(context.db)
@@ -184,9 +218,51 @@ class BuildImageTool:
                 status="local", force_sync=True
             )
             built = next((image for image in images if image.full_name == tag), None)
-            if built is not None:
-                result["image"] = _image_summary(built)
+        if built is not None:
+            result["image"] = _image_summary(built)
         return result
+
+
+class DeleteImageTool:
+    spec = AgentToolSpec(
+        name="images.delete",
+        description="Delete a Docker image asset and remove the image from Docker when possible.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "image_id": {"type": "string"},
+                "force": {"type": "boolean"},
+            },
+            "required": ["image_id"],
+            "additionalProperties": False,
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "image_id": {"type": "string"},
+                "deleted": {"type": "boolean"},
+            },
+            "required": ["image_id", "deleted"],
+        },
+        risk_level="destructive",
+        read_scope=["images"],
+        write_scope=["images"],
+        audit="Delete Docker image asset.",
+        rollback_hint="Pull or build the image again if it is needed.",
+    )
+
+    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        image_id = str(input["image_id"])
+        service = ImageService(context.db)
+        image = await service.get_image(image_id)
+        if image is None:
+            raise NotFoundError("Image not found")
+        await AuthorizationService(context.db).require_destructive_business_access(
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
+        deleted = await service.delete_image(image, force=bool(input.get("force", False)))
+        return {"image_id": image_id, "deleted": bool(deleted)}
 
 
 def _limit(text: str, limit: int = 16000) -> str:

@@ -13,17 +13,42 @@ from app.services.agent_core.tools.memory import ListMemoriesTool, ProposeMemory
 from app.services.agent_core.tools.search import GlobTool, GrepTool
 from app.services.agent_core.tools.tasks import TodoWriteTool
 from app.services.agent_core.tools.platform import (
+    BindProjectWorkflowTool,
     BuildImageTool,
     CancelRunTool,
+    CleanupRunTool,
+    CreateProjectTool,
     CreateWorkflowTool,
+    DeleteImageTool,
+    DeleteProjectTool,
+    DeleteRunTool,
+    DeleteWorkflowTool,
+    GetImageTool,
+    GetProjectTool,
     GetRunLogsTool,
+    GetRunTool,
+    GetWorkflowTool,
     ListImagesTool,
+    ListProjectWorkflowsTool,
     ListProjectsTool,
     ListRunsTool,
     ListWorkflowsTool,
+    PinProjectWorkflowTool,
     PullImageTool,
     RetryRunTool,
+    ResumeRunTool,
+    RunAuditTool,
+    RunDagTool,
+    RunOutputsTool,
+    SchedulerResourcesTool,
+    SchedulerStatusTool,
     SubmitRunTool,
+    UnbindProjectWorkflowTool,
+    UpdateProjectTool,
+    UpdateWorkflowTool,
+    WorkflowDagTool,
+    WorkflowFormSpecTool,
+    WorkflowSourceTool,
 )
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.skills import (
@@ -67,16 +92,41 @@ def build_default_tool_registry() -> AgentToolRegistry:
 
     # ── platform tools (read + side-effecting "tentacles") ─────────────────
     registry.register(ListProjectsTool())
+    registry.register(GetProjectTool())
+    registry.register(CreateProjectTool())
+    registry.register(UpdateProjectTool())
+    registry.register(DeleteProjectTool())
+    registry.register(ListProjectWorkflowsTool())
+    registry.register(BindProjectWorkflowTool())
+    registry.register(UnbindProjectWorkflowTool())
+    registry.register(PinProjectWorkflowTool())
     registry.register(ListWorkflowsTool())
+    registry.register(GetWorkflowTool())
     registry.register(CreateWorkflowTool())
+    registry.register(UpdateWorkflowTool())
+    registry.register(DeleteWorkflowTool())
+    registry.register(WorkflowFormSpecTool())
+    registry.register(WorkflowDagTool())
+    registry.register(WorkflowSourceTool())
     registry.register(ListImagesTool())
+    registry.register(GetImageTool())
     registry.register(PullImageTool())
     registry.register(BuildImageTool())
+    registry.register(DeleteImageTool())
     registry.register(ListRunsTool())
+    registry.register(GetRunTool())
     registry.register(GetRunLogsTool())
     registry.register(SubmitRunTool())
     registry.register(CancelRunTool())
     registry.register(RetryRunTool())
+    registry.register(ResumeRunTool())
+    registry.register(CleanupRunTool())
+    registry.register(DeleteRunTool())
+    registry.register(RunOutputsTool())
+    registry.register(RunDagTool())
+    registry.register(RunAuditTool())
+    registry.register(SchedulerStatusTool())
+    registry.register(SchedulerResourcesTool())
 
     # ── web + delegation tools ─────────────────────────────────────────────
     registry.register(SearchWebTool())

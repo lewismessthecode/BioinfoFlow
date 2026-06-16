@@ -162,3 +162,346 @@ async def test_runs_submit_wraps_compiler_and_emits_run_artifact(db_session, mon
         user_id="dev",
     )
     assert [artifact.type for artifact in artifacts] == ["run"]
+
+
+@pytest.mark.asyncio
+async def test_platform_mutation_tools_wrap_services(db_session, monkeypatch):
+    dispatcher, context = await _context(db_session)
+    project_id = str(uuid4())
+    workflow_id = str(uuid4())
+    image_id = str(uuid4())
+
+    async def fake_create_project(self, data, *, user_id):
+        return SimpleNamespace(
+            id=project_id,
+            name=data["name"],
+            description=data.get("description"),
+            storage_mode="managed",
+            project_root="/tmp/project",
+            is_default=False,
+        )
+
+    async def fake_update_project(self, project, data):
+        return SimpleNamespace(
+            id=project_id,
+            name=data["name"],
+            description=data.get("description"),
+            storage_mode="managed",
+            project_root="/tmp/project",
+            is_default=False,
+        )
+
+    async def fake_get_project(self, project_id_arg, *, workspace_id=None):
+        return SimpleNamespace(
+            id=project_id_arg,
+            name="old",
+            description=None,
+            storage_mode="managed",
+            project_root="/tmp/project",
+            is_default=False,
+        )
+
+    async def fake_delete_project(self, project):
+        return None
+
+    async def fake_get_workflow(self, workflow_id_arg):
+        return SimpleNamespace(
+            id=workflow_id_arg,
+            name="wf",
+            description="workflow",
+            source="local",
+            engine="wdl",
+            version="1.0",
+            source_ref="local",
+            entrypoint_relpath="main.wdl",
+            schema_json={},
+            form_spec={},
+        )
+
+    async def fake_update_workflow(self, workflow, payload):
+        workflow.description = payload["description"]
+        return workflow
+
+    async def fake_delete_workflow(self, workflow):
+        return None
+
+    async def fake_get_image(self, image_id_arg):
+        return SimpleNamespace(
+            id=image_id_arg,
+            name="fastqc",
+            tag="latest",
+            full_name="fastqc:latest",
+            registry="docker.io",
+            status="local",
+            size_bytes=1,
+            entrypoint=[],
+            env={},
+            labels={},
+        )
+
+    async def fake_delete_image(self, image, *, force=False):
+        return True
+
+    async def fake_run_mutation(self, run_id, **kwargs):
+        return SimpleNamespace(
+            id=uuid4(),
+            run_id=f"{run_id}-new",
+            project_id=project_id,
+            workflow_id=workflow_id,
+            status="queued",
+            samples_count=0,
+            tasks_total=0,
+            tasks_completed=0,
+            current_task=None,
+            error_message=None,
+            started_at=None,
+            completed_at=None,
+        )
+
+    async def fake_cleanup(self, run_id, **kwargs):
+        return {"run_id": run_id, "removed": True}
+
+    async def fake_delete_run(self, run_id, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ProjectService.create_project",
+        fake_create_project,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ProjectService.get_project",
+        fake_get_project,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ProjectService.update_project",
+        fake_update_project,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ProjectService.delete_project",
+        fake_delete_project,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.get_workflow",
+        fake_get_workflow,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.update_workflow",
+        fake_update_workflow,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.delete_workflow",
+        fake_delete_workflow,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.images.ImageService.get_image",
+        fake_get_image,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.images.ImageService.delete_image",
+        fake_delete_image,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.runs.RunService.resume_run",
+        fake_run_mutation,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.runs.RunService.cleanup_run",
+        fake_cleanup,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.runs.RunService.delete_run",
+        fake_delete_run,
+    )
+
+    created_project = await dispatcher.dispatch(
+        tool_name="projects.create",
+        input={"name": "new", "description": "project"},
+        context=context,
+        permission_mode="bypass",
+    )
+    updated_project = await dispatcher.dispatch(
+        tool_name="projects.update",
+        input={"project_id": project_id, "name": "renamed"},
+        context=context,
+        permission_mode="bypass",
+    )
+    deleted_project = await dispatcher.dispatch(
+        tool_name="projects.delete",
+        input={"project_id": project_id},
+        context=context,
+        permission_mode="bypass",
+    )
+    updated_workflow = await dispatcher.dispatch(
+        tool_name="workflows.update",
+        input={"workflow_id": workflow_id, "description": "renamed-wf"},
+        context=context,
+        permission_mode="bypass",
+    )
+    deleted_workflow = await dispatcher.dispatch(
+        tool_name="workflows.delete",
+        input={"workflow_id": workflow_id},
+        context=context,
+        permission_mode="bypass",
+    )
+    deleted_image = await dispatcher.dispatch(
+        tool_name="images.delete",
+        input={"image_id": image_id},
+        context=context,
+        permission_mode="bypass",
+    )
+    resumed = await dispatcher.dispatch(
+        tool_name="runs.resume",
+        input={"run_id": "run-old"},
+        context=context,
+        permission_mode="bypass",
+    )
+    cleanup = await dispatcher.dispatch(
+        tool_name="runs.cleanup",
+        input={"run_id": "run-old"},
+        context=context,
+        permission_mode="bypass",
+    )
+    deleted_run = await dispatcher.dispatch(
+        tool_name="runs.delete",
+        input={"run_id": "run-old"},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert created_project.result["project"]["name"] == "new"
+    assert updated_project.result["project"]["name"] == "renamed"
+    assert deleted_project.result == {"project_id": project_id, "deleted": True}
+    assert updated_workflow.result["workflow"]["description"] == "renamed-wf"
+    assert deleted_workflow.result == {"workflow_id": workflow_id, "deleted": True}
+    assert deleted_image.result == {"image_id": image_id, "deleted": True}
+    assert resumed.result["run"]["run_id"] == "run-old-new"
+    assert cleanup.result == {"cleanup": {"run_id": "run-old", "removed": True}}
+    assert deleted_run.result == {"run_id": "run-old", "deleted": True}
+
+
+@pytest.mark.asyncio
+async def test_update_tools_reject_fields_outside_public_mutation_schemas(db_session, monkeypatch):
+    dispatcher, context = await _context(db_session)
+    project_id = str(uuid4())
+    workflow_id = str(uuid4())
+    project_update_called = False
+    workflow_update_called = False
+
+    async def fake_get_project(self, project_id_arg, *, workspace_id=None):
+        return SimpleNamespace(
+            id=project_id_arg,
+            name="project",
+            description=None,
+            storage_mode="managed",
+            project_root="/tmp/project",
+            is_default=False,
+        )
+
+    async def fake_update_project(self, project, data):
+        nonlocal project_update_called
+        project_update_called = True
+        return project
+
+    async def fake_get_workflow(self, workflow_id_arg):
+        return SimpleNamespace(
+            id=workflow_id_arg,
+            name="wf",
+            description="workflow",
+            source="local",
+            engine="wdl",
+            version="1.0",
+            source_ref="local",
+            entrypoint_relpath="main.wdl",
+            schema_json={},
+            form_spec={},
+        )
+
+    async def fake_update_workflow(self, workflow, payload):
+        nonlocal workflow_update_called
+        workflow_update_called = True
+        return workflow
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ProjectService.get_project",
+        fake_get_project,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ProjectService.update_project",
+        fake_update_project,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.get_workflow",
+        fake_get_workflow,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.update_workflow",
+        fake_update_workflow,
+    )
+
+    project_result = await dispatcher.dispatch(
+        tool_name="projects.update",
+        input={"project_id": project_id, "storage_mode": "external"},
+        context=context,
+        permission_mode="bypass",
+    )
+    workflow_result = await dispatcher.dispatch(
+        tool_name="workflows.update",
+        input={
+            "workflow_id": workflow_id,
+            "name": "renamed",
+            "form_spec": {"fields": []},
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert project_result.status == "failed"
+    assert project_result.error["type"] == "BadRequestError"
+    assert "unknown tool arguments: storage_mode" in project_result.error["message"]
+    assert project_update_called is False
+    assert workflow_result.status == "failed"
+    assert workflow_result.error["type"] == "BadRequestError"
+    assert "unknown tool arguments: name, form_spec" in workflow_result.error["message"]
+    assert workflow_update_called is False
+
+
+@pytest.mark.asyncio
+async def test_projects_delete_rejects_default_project(db_session, monkeypatch):
+    dispatcher, context = await _context(db_session)
+    project_id = str(uuid4())
+    delete_called = False
+
+    async def fake_get_project(self, project_id_arg, *, workspace_id=None):
+        return SimpleNamespace(
+            id=project_id_arg,
+            name="Recent",
+            description=None,
+            storage_mode="managed",
+            project_root="/tmp/project",
+            is_default=True,
+        )
+
+    async def fake_delete_project(self, project):
+        nonlocal delete_called
+        delete_called = True
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ProjectService.get_project",
+        fake_get_project,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ProjectService.delete_project",
+        fake_delete_project,
+    )
+
+    result = await dispatcher.dispatch(
+        tool_name="projects.delete",
+        input={"project_id": project_id},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert result.error["message"] == "Cannot delete the default project"
+    assert delete_called is False

@@ -1,31 +1,87 @@
 from app.services.agent_core.tools.platform.images import (
     BuildImageTool,
+    DeleteImageTool,
+    GetImageTool,
     ListImagesTool,
     PullImageTool,
 )
-from app.services.agent_core.tools.platform.projects import ListProjectsTool
+from app.services.agent_core.tools.platform.project_workflows import (
+    BindProjectWorkflowTool,
+    ListProjectWorkflowsTool,
+    PinProjectWorkflowTool,
+    UnbindProjectWorkflowTool,
+)
+from app.services.agent_core.tools.platform.projects import (
+    CreateProjectTool,
+    DeleteProjectTool,
+    GetProjectTool,
+    ListProjectsTool,
+    UpdateProjectTool,
+)
 from app.services.agent_core.tools.platform.runs import (
     CancelRunTool,
+    CleanupRunTool,
+    DeleteRunTool,
     GetRunLogsTool,
+    GetRunTool,
     ListRunsTool,
     RetryRunTool,
+    ResumeRunTool,
+    RunAuditTool,
+    RunDagTool,
+    RunOutputsTool,
     SubmitRunTool,
+)
+from app.services.agent_core.tools.platform.scheduler import (
+    SchedulerResourcesTool,
+    SchedulerStatusTool,
 )
 from app.services.agent_core.tools.platform.workflows import (
     CreateWorkflowTool,
+    DeleteWorkflowTool,
+    GetWorkflowTool,
     ListWorkflowsTool,
+    UpdateWorkflowTool,
+    WorkflowDagTool,
+    WorkflowFormSpecTool,
+    WorkflowSourceTool,
 )
 
 __all__ = [
+    "BindProjectWorkflowTool",
     "BuildImageTool",
     "CancelRunTool",
+    "CleanupRunTool",
+    "CreateProjectTool",
     "CreateWorkflowTool",
+    "DeleteImageTool",
+    "DeleteProjectTool",
+    "DeleteRunTool",
+    "DeleteWorkflowTool",
+    "GetImageTool",
+    "GetProjectTool",
     "GetRunLogsTool",
+    "GetRunTool",
+    "GetWorkflowTool",
     "ListImagesTool",
+    "ListProjectWorkflowsTool",
     "ListProjectsTool",
     "ListRunsTool",
     "ListWorkflowsTool",
+    "PinProjectWorkflowTool",
     "PullImageTool",
     "RetryRunTool",
+    "ResumeRunTool",
+    "RunAuditTool",
+    "RunDagTool",
+    "RunOutputsTool",
+    "SchedulerResourcesTool",
+    "SchedulerStatusTool",
     "SubmitRunTool",
+    "UnbindProjectWorkflowTool",
+    "UpdateProjectTool",
+    "UpdateWorkflowTool",
+    "WorkflowDagTool",
+    "WorkflowFormSpecTool",
+    "WorkflowSourceTool",
 ]

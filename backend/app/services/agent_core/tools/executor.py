@@ -22,7 +22,7 @@ from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.result_budget import normalize_tool_result
 from app.services.agent_core.tools.specs import AgentTool, AgentToolContext
 from app.services.agent_core.tools.toolsets import ToolsetExposure
-from app.utils.exceptions import ConflictError, PermissionDeniedError
+from app.utils.exceptions import BadRequestError, ConflictError, PermissionDeniedError
 
 
 def _artifact_descriptor(
@@ -150,7 +150,18 @@ class AgentToolExecutor:
         exposure = self.exposure.decide(tool_name=tool_name, policy=toolset_policy)
         if not exposure.allowed:
             raise PermissionDeniedError("; ".join(exposure.reasons))
-        normalized_input = normalize_tool_input(input, tool.spec.input_schema)
+        try:
+            normalized_input = normalize_tool_input(input, tool.spec.input_schema)
+        except BadRequestError as exc:
+            return await self._record_validation_failure(
+                tool=tool,
+                input=input,
+                context=context,
+                exposure_policy=exposure.policy,
+                automation_mode=automation_mode,
+                tool_call_id=tool_call_id,
+                exc=exc,
+            )
         requested_risk = _resolve_requested_risk(tool, normalized_input)
 
         action = await self.action_service.request_action(
@@ -188,6 +199,52 @@ class AgentToolExecutor:
             )
 
         return await self._run_action(action=action, tool=tool, context=context)
+
+    async def _record_validation_failure(
+        self,
+        *,
+        tool: AgentTool,
+        input: Any,
+        context: AgentToolContext,
+        exposure_policy: dict | None,
+        automation_mode: str,
+        tool_call_id: str | None,
+        exc: BadRequestError,
+    ) -> ToolExecutionResult:
+        action_input = input if isinstance(input, dict) else {"_raw_input": input}
+        error = {"type": exc.__class__.__name__, "message": str(exc)}
+        action = await self.action_service.request_action(
+            turn_id=context.turn_id,
+            kind="tool",
+            name=tool.spec.name,
+            input=action_input,
+            normalized_input=None,
+            requested_risk=tool.spec.risk_level,
+            permission_mode="bypass",
+            automation_mode=automation_mode,
+            read_scope=tool.spec.read_scope,
+            write_scope=tool.spec.write_scope,
+            rollback_hint=tool.spec.rollback_hint,
+            artifact_policy=tool.spec.artifact_policy,
+            tool_call_id=tool_call_id,
+            exposure_policy=exposure_policy,
+            force_ask=False,
+            interaction=None,
+        )
+        action = await self.action_repo.update_all(
+            action,
+            status=AgentActionStatus.FAILED,
+            error=error,
+            completed_at=datetime.now(timezone.utc),
+        )
+        await self.ledger.append(
+            session_id=str(action.session_id),
+            turn_id=str(action.turn_id),
+            type=AgentEventType.ACTION_FAILED,
+            payload={"action_id": str(action.id), "error": error},
+        )
+        agent_metrics.increment("tools.failed")
+        return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
 
     async def resume_action(
         self,
