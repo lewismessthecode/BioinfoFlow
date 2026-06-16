@@ -41,18 +41,23 @@ export function agentRuntimeReducer(
   switch (action.type) {
     case "loading":
       return { ...state, status: "loading", error: null }
-    case "state.loaded":
+    case "state.loaded": {
+      const sameSession = state.session?.id === action.payload.session.id
+      const turns = mergeTurns(sameSession ? state.turns : [], action.payload.turns)
+      const events = sortEvents(
+        dedupeEvents([...(sameSession ? state.events : []), ...action.payload.events]),
+      )
       return {
-        session: action.payload.session,
-        turns: action.payload.turns,
-        events: sortEvents(dedupeEvents(action.payload.events)),
-        timeline: buildAgentRuntimeTimeline(
-          action.payload.turns,
-          sortEvents(dedupeEvents(action.payload.events)),
-        ),
-        status: hasRunningTurn(action.payload.turns) ? "running" : "idle",
+        session: sameSession
+          ? fresherSession(state.session, action.payload.session)
+          : action.payload.session,
+        turns,
+        events,
+        timeline: buildAgentRuntimeTimeline(turns, events),
+        status: hasRunningTurn(turns) ? "running" : "idle",
         error: null,
       }
+    }
     case "session.selected":
       return {
         ...initialAgentRuntimeState,
@@ -70,8 +75,8 @@ export function agentRuntimeReducer(
       }
     }
     case "event.append": {
-      const turns = applyEventToTurns(state.turns, action.event)
       const events = sortEvents(dedupeEvents([...state.events, action.event]))
+      const turns = applyEventToTurns(state.turns, action.event)
       return {
         ...state,
         turns,
@@ -90,8 +95,52 @@ export function agentRuntimeReducer(
 
 function upsertTurn(turns: AgentRuntimeTurn[], turn: AgentRuntimeTurn) {
   const exists = turns.some((item) => item.id === turn.id)
-  if (!exists) return [...turns, turn]
-  return turns.map((item) => (item.id === turn.id ? turn : item))
+  if (!exists) return sortTurns([...turns, turn])
+  return sortTurns(
+    turns.map((item) => (item.id === turn.id ? fresherTurn(item, turn) : item)),
+  )
+}
+
+function mergeTurns(existing: AgentRuntimeTurn[], incoming: AgentRuntimeTurn[]) {
+  const byId = new Map<string, AgentRuntimeTurn>()
+  for (const turn of existing) byId.set(turn.id, turn)
+  for (const turn of incoming) {
+    const previous = byId.get(turn.id)
+    byId.set(turn.id, previous ? fresherTurn(previous, turn) : turn)
+  }
+  return sortTurns([...byId.values()])
+}
+
+function fresherTurn(existing: AgentRuntimeTurn, incoming: AgentRuntimeTurn) {
+  const existingTime = timestamp(existing.updated_at)
+  const incomingTime = timestamp(incoming.updated_at)
+  if (incomingTime > existingTime) return incoming
+  if (incomingTime < existingTime) return existing
+  if (isTerminalTurn(incoming.status) && !isTerminalTurn(existing.status)) return incoming
+  if (isTerminalTurn(existing.status) && !isTerminalTurn(incoming.status)) return existing
+  return incoming
+}
+
+function fresherSession(
+  existing: AgentRuntimeSession | null,
+  incoming: AgentRuntimeSession,
+) {
+  if (!existing || existing.id !== incoming.id) return incoming
+  return timestamp(incoming.updated_at) >= timestamp(existing.updated_at) ? incoming : existing
+}
+
+function isTerminalTurn(status: AgentRuntimeTurn["status"]) {
+  return status === "completed" || status === "failed" || status === "cancelled"
+}
+
+function timestamp(value?: string | null) {
+  if (!value) return 0
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function sortTurns(turns: AgentRuntimeTurn[]) {
+  return [...turns].sort((a, b) => timestamp(a.created_at) - timestamp(b.created_at))
 }
 
 function dedupeEvents(events: AgentRuntimeEvent[]) {
@@ -180,7 +229,13 @@ function indicatesActiveTurnOutput(event: AgentRuntimeEvent) {
     event.type === "action.completed" ||
     event.type === "action.failed" ||
     event.type === "action.cancelled" ||
-    event.type === "artifact.created"
+    event.type === "action.decision_recorded" ||
+    event.type === "artifact.created" ||
+    event.type === "model.retrying" ||
+    event.type === "model.fallback" ||
+    event.type === "turn.no_progress" ||
+    event.type === "turn.recovery.enqueued" ||
+    event.type === "turn.recovery.failed"
   )
 }
 

@@ -187,6 +187,28 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   }, [defaultProject, projectConversations, fetchConversationsForProject])
 
   useEffect(() => {
+    const onAgentRoute = pathname === "/agent" || pathname.startsWith("/agent/")
+    if (!onAgentRoute) return
+    if (!defaultProject) return
+    if (projects.some((project) => !project.is_default)) return
+    if (selectedProjectId || conversationProjectId) return
+    const timer = window.setTimeout(() => {
+      setConversationProjectId(defaultProject.id)
+      setActiveConversationId("")
+      clearStoredAgentSessionId(defaultProject.id)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [
+    conversationProjectId,
+    defaultProject,
+    pathname,
+    projects,
+    selectedProjectId,
+    setActiveConversationId,
+    setConversationProjectId,
+  ])
+
+  useEffect(() => {
     const project = projects.find((p) => p.id === selectedProjectId)
     setActiveProjectName(project?.name || "")
   }, [selectedProjectId, projects, setActiveProjectName])

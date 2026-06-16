@@ -42,6 +42,20 @@ export type AgentRuntimeSession = {
   updated_at: string
 }
 
+export type AgentRuntimeFileRefPart = {
+  kind: "file_ref"
+  path: string
+  label?: string
+  includeContent?: boolean
+}
+
+export type AgentRuntimeTextInputPart = {
+  type: "text"
+  text: string
+}
+
+export type AgentRuntimeInputPart = AgentRuntimeTextInputPart | AgentRuntimeFileRefPart
+
 export type AgentRuntimeTurn = {
   id: string
   session_id: string
@@ -49,7 +63,7 @@ export type AgentRuntimeTurn = {
   workspace_id: string
   user_id: string
   input_text: string
-  input_parts?: Array<Record<string, unknown>> | null
+  input_parts?: AgentRuntimeInputPart[] | null
   status: AgentTurnStatus
   model_selection?: AgentModelSelection | null
   model_profile_snapshot?: Record<string, unknown> | null
@@ -104,9 +118,64 @@ export type AgentRuntimeAssistantState = {
   toolCalls: AgentRuntimeToolCallState[]
 }
 
+export type AgentRuntimeToolActivityStatus =
+  | "building"
+  | "requested"
+  | "waiting"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "rejected"
+
+export type AgentRuntimeToolActivity = {
+  id: string
+  callId: string | null
+  actionId: string | null
+  name: string
+  status: AgentRuntimeToolActivityStatus
+  arguments?: Record<string, unknown> | null
+  inputPreview?: string | null
+  outputPreview?: string | null
+  exitCode?: number | null
+  durationMs?: number | null
+  errorMessage?: string | null
+  relatedFiles: string[]
+  summary?: string | null
+  artifactId?: string | null
+  artifactType?: string | null
+}
+
+export type AgentRuntimeActivityGroupKind =
+  | "workspace"
+  | "read"
+  | "write"
+  | "register"
+  | "run"
+  | "verify"
+  | "other"
+
+export type AgentRuntimeActivityGroup = {
+  id: string
+  kind: AgentRuntimeActivityGroupKind
+  status: AgentRuntimeToolActivityStatus
+  activities: AgentRuntimeToolActivity[]
+}
+
+export type AgentRuntimeInlinePlanStatus = "pending" | "approved" | "rejected" | "answered"
+
+export type AgentRuntimeInlinePlan = {
+  actionId: string
+  plan: string
+  status: AgentRuntimeInlinePlanStatus
+}
+
 export type AgentRuntimeTimelineEntry = {
   turn: AgentRuntimeTurn
   assistant: AgentRuntimeAssistantState
+  activities: AgentRuntimeToolActivity[]
+  activityGroups: AgentRuntimeActivityGroup[]
+  inlinePlans: AgentRuntimeInlinePlan[]
 }
 
 export type AgentRuntimeStatePayload = {

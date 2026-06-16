@@ -97,6 +97,28 @@ describe("createDemoRuntime", () => {
     unsubscribe()
   })
 
+  it("updates AgentCore session permission mode", async () => {
+    const runtime = createDemoRuntime()
+    const created = await runtime.request<AgentCoreSession>("/agent/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: "project-demo",
+        permission_mode: "guarded_auto",
+        automation_mode: "assisted",
+      }),
+    })
+
+    const updated = await runtime.request<AgentCoreSession>(
+      `/agent/sessions/${created.data.id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ permission_mode: "bypass" }),
+      },
+    )
+
+    expect(updated.data.permission_mode).toBe("bypass")
+  })
+
   it("creates an AgentCore turn and exposes the event ledger", async () => {
     const runtime = createDemoRuntime()
 

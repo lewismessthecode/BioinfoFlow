@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -14,11 +15,17 @@ import { useTranslations } from "next-intl"
 import { AgentComposer } from "./agent-composer"
 import { AgentTabbedPanel } from "./agent-tabbed-panel"
 import { AgentTranscript } from "./agent-transcript"
-import { hasPendingRuntimeAction, pendingDecisionKey } from "./pending-actions"
+import { ComposerApprovalPopover } from "./composer-approval-popover"
 import { Button } from "@/components/ui/button"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
+import {
+  listAgentRuntimeSessionArtifacts,
+  type AgentRuntimeArtifact,
+  type AgentRuntimeFileRefPart,
+  type AgentRuntimeInputPart,
+} from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
 export type AgentWorkbenchHandle = {
@@ -49,12 +56,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const t = useTranslations("agentRuntime")
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const [input, setInput] = useState("")
+    const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
-    // The pending-approval key the user last dismissed. Storing the key (rather
-    // than a boolean) means a *new* approval — which has a different key — is
-    // never suppressed by an earlier dismissal, without needing an effect.
-    const [dismissedPendingKey, setDismissedPendingKey] = useState<string | null>(null)
+    const [artifactState, setArtifactState] = useState<{
+      sessionId: string
+      artifacts: AgentRuntimeArtifact[]
+    } | null>(null)
     const workspaceShell = useOptionalWorkspaceShell()
     const setNavbarActions = workspaceShell?.setNavbarActions
     const { models, selectedModel, isLoading: modelsLoading, setSelectedModel } =
@@ -63,6 +71,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       state,
       mode,
       setMode,
+      permissionMode,
+      setPermissionMode,
       setActiveSessionId,
       send,
       interrupt,
@@ -77,14 +87,17 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const hasTurns = state.turns.length > 0
     const hasConversation = hasTurns || hasSubmittedDraft
     const isRunning = state.status === "running"
-    const pendingDecision = hasPendingRuntimeAction(state.events)
-    const pendingKey = pendingDecisionKey(state.events)
-    // Auto-open only for a pending approval (genuinely actionable). Streaming
-    // is already visible inline in the transcript, so it no longer forces the
-    // panel open. A dismissal only suppresses the exact approval set it was
-    // made against, so a newly-arrived approval still surfaces.
-    const sidecarVisible =
-      sidecarOpen || (pendingDecision && pendingKey !== dismissedPendingKey)
+    const artifactEventCount = useMemo(
+      () => state.events.filter((event) => event.type === "artifact.created").length,
+      [state.events],
+    )
+    const transcriptArtifacts =
+      artifactState && artifactState.sessionId === state.session?.id
+        ? artifactState.artifacts
+        : []
+    // The side panel is now secondary detail. Approvals surface inline and above
+    // the composer, so pending decisions no longer force the drawer open.
+    const sidecarVisible = sidecarOpen
     const sidecarLabel = sidecarVisible
       ? t("sidecar.collapse")
       : t("sidecar.expand")
@@ -99,26 +112,60 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         newConversation: () => {
           setActiveSessionId(null)
           setInput("")
+          setContextAttachments([])
           setHasSubmittedDraft(false)
           setSidecarOpen(false)
-          setDismissedPendingKey(null)
         },
       }),
       [interrupt, setActiveSessionId],
     )
 
+    useEffect(() => {
+      const sessionId = state.session?.id
+      if (!sessionId) return
+      let cancelled = false
+      void listAgentRuntimeSessionArtifacts(sessionId)
+        .then((next) => {
+          if (!cancelled) setArtifactState({ sessionId, artifacts: next })
+        })
+        .catch(() => {
+          if (!cancelled) setArtifactState({ sessionId, artifacts: [] })
+        })
+      return () => {
+        cancelled = true
+      }
+    }, [state.session?.id, artifactEventCount])
+
+    const addContextAttachment = useCallback((path: string) => {
+      const label = path.split("/").pop() || path
+      setContextAttachments((current) => {
+        if (current.some((attachment) => attachment.path === path)) return current
+        return [...current, { kind: "file_ref", path, label, includeContent: true }]
+      })
+    }, [])
+
+    const removeContextAttachment = useCallback((path: string) => {
+      setContextAttachments((current) =>
+        current.filter((attachment) => attachment.path !== path),
+      )
+    }, [])
+
     const submit = () => {
       const text = input.trim()
       if (!text) return
       setHasSubmittedDraft(true)
-      void send(text, { modelSelection: selectedModel })
+      const inputParts: AgentRuntimeInputPart[] = [
+        { type: "text", text },
+        ...contextAttachments,
+      ]
+      void send(text, { modelSelection: selectedModel, inputParts })
       setInput("")
+      setContextAttachments([])
     }
 
     const closeSidecar = useCallback(() => {
       setSidecarOpen(false)
-      setDismissedPendingKey(pendingKey)
-    }, [pendingKey])
+    }, [])
 
     const toggleSidecar = useCallback(() => {
       if (sidecarVisible) {
@@ -126,7 +173,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         return
       }
       setSidecarOpen(true)
-      setDismissedPendingKey(null)
     }, [closeSidecar, sidecarVisible])
 
     useEffect(() => {
@@ -162,11 +208,17 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         isRunning={isRunning}
         disabled={disabled}
         mode={agentMode}
-        onModeChange={(next) => void setMode?.(next)}
+        onModeChange={setMode ? (next) => void setMode(next) : undefined}
+        permissionMode={permissionMode}
+        onPermissionModeChange={
+          setPermissionMode ? (next) => void setPermissionMode(next) : undefined
+        }
         models={models}
         selectedModel={selectedModel}
         modelsLoading={modelsLoading}
         onSelectModel={(model) => void setSelectedModel(model)}
+        contextAttachments={contextAttachments}
+        onRemoveContextAttachment={removeContextAttachment}
       />
     )
 
@@ -178,13 +230,21 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         >
           {hasConversation ? (
             <>
-              <AgentTranscript timeline={state.timeline} />
+              <AgentTranscript
+                timeline={state.timeline}
+                artifacts={transcriptArtifacts}
+                events={state.events}
+                onDecision={decideAction}
+              />
               <div
                 className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-4 pt-10 sm:px-6"
                 data-testid="agent-composer-shell"
                 data-placement="bottom"
               >
-                <div className="pointer-events-auto">{composer}</div>
+                <div className="pointer-events-auto">
+                  <ComposerApprovalPopover events={state.events} onDecision={decideAction} />
+                  {composer}
+                </div>
               </div>
             </>
           ) : (
@@ -225,6 +285,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 events={state.events}
                 onClose={closeSidecar}
                 onDecision={decideAction}
+                onAddContext={addContextAttachment}
               />
             ) : null}
           </div>

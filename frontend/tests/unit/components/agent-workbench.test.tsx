@@ -1,5 +1,5 @@
 import type * as React from "react"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentWorkbench } from "@/components/bioinfoflow/agent-runtime/agent-workbench"
@@ -26,8 +26,11 @@ vi.mock("next-intl", () => ({
       showThinking: "Show thinking",
       hideThinking: "Hide thinking",
       toolCalls: "Tool calls",
+      "activity.groups.read": "Read project structure",
+      "activity.summary.read": "Read 1 source",
       approve: "Approve",
       reject: "Reject",
+      "approval.state.approved": "Approved, resuming",
       "turnStatus.running": "Working",
       "turnStatus.completed": "Done",
       "sidecar.title": "Run",
@@ -245,7 +248,7 @@ describe("AgentWorkbench", () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it("opens the artifact panel when an action needs a decision", async () => {
+  it("renders approvals above the composer and inline without opening the panel", () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
       events: [waitingDecisionEvent],
@@ -254,15 +257,11 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    const panel = await screen.findByTestId("artifact-panel")
-    expect(panel).toBeInTheDocument()
-    expect(panel).toHaveClass("h-full", "w-[420px]", "border-l", "bg-background")
-    expect(panel.className).not.toContain("rounded")
-    expect(panel.className).not.toContain("shadow-2xl")
-    expect(screen.getByTestId("agent-sidecar-column")).toBeInTheDocument()
-    expect(screen.getByTestId("agent-workbench-main")).toBeInTheDocument()
-    expect(screen.getByText("Needs your decision")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument()
+    expect(screen.getByTestId("composer-approval-popover")).toBeInTheDocument()
+    expect(screen.getByTestId("inline-approval-card")).toBeInTheDocument()
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    expect(screen.getAllByText("Needs your decision").length).toBeGreaterThan(0)
+    expect(screen.getAllByRole("button", { name: "Approve" }).length).toBeGreaterThan(0)
   })
 
   it("does not auto-open the panel merely because the agent is streaming", () => {
@@ -347,72 +346,58 @@ describe("AgentWorkbench", () => {
 
     expect(await screen.findByText("Thinking")).toBeInTheDocument()
     expect(screen.getByText("Project scan complete.")).toBeInTheDocument()
-    expect(screen.getAllByText("projects__list").length).toBeGreaterThan(0)
+    expect(screen.getByText("Read project structure")).toBeInTheDocument()
   })
 
-  it("keeps the panel closed after the user dismisses a pending decision", async () => {
-    const { rerender } = render(<AgentWorkbench />)
-
+  it("keeps an approved approval visible until resume progress arrives", () => {
     setupRuntime({
-      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
-      events: [waitingDecisionEvent],
-      status: "running",
-    })
-    rerender(<AgentWorkbench />)
-
-    expect(await screen.findByTestId("artifact-panel")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Close run panel" }))
-
-    await waitFor(() => {
-      expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
-    })
-
-    setupRuntime({
-      turns: [{ ...baseTurn, status: "completed", final_text: "Done." }],
+      turns: [{ ...baseTurn, status: "running", final_text: null }],
       events: [
         waitingDecisionEvent,
-        { ...waitingDecisionEvent, id: "event-2", seq: 2, type: "action.decision_recorded" },
-      ],
-      status: "idle",
-    })
-    rerender(<AgentWorkbench />)
-
-    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
-  })
-
-  it("re-opens the panel when a new approval arrives after a dismissal", async () => {
-    const { rerender } = render(<AgentWorkbench />)
-
-    setupRuntime({
-      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
-      events: [waitingDecisionEvent],
-      status: "running",
-    })
-    rerender(<AgentWorkbench />)
-
-    expect(await screen.findByTestId("artifact-panel")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Close run panel" }))
-    await waitFor(() => {
-      expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
-    })
-
-    // A different action now needs a decision — the panel must surface again.
-    setupRuntime({
-      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
-      events: [
-        waitingDecisionEvent,
-        { ...waitingDecisionEvent, id: "event-2", seq: 2, type: "action.decision_recorded" },
         {
           ...waitingDecisionEvent,
-          id: "event-3",
-          seq: 3,
-          payload: { action_id: "action-2", name: "bash" },
+          id: "event-2",
+          seq: 2,
+          type: "action.decision_recorded",
+          payload: { action_id: "action-1", decision: "approve" },
         },
       ],
       status: "running",
     })
-    rerender(<AgentWorkbench />)
 
-    expect(await screen.findByTestId("artifact-panel")).toBeInTheDocument()
+    render(<AgentWorkbench />)
+
+    expect(screen.getByTestId("composer-approval-popover")).toBeInTheDocument()
+    expect(screen.getAllByText("Approved, resuming").length).toBeGreaterThan(0)
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+  })
+
+  it("clears the approved approval once resume progress arrives", () => {
+    setupRuntime({
+      turns: [{ ...baseTurn, status: "running", final_text: null }],
+      events: [
+        waitingDecisionEvent,
+        {
+          ...waitingDecisionEvent,
+          id: "event-2",
+          seq: 2,
+          type: "action.decision_recorded",
+          payload: { action_id: "action-1", decision: "approve" },
+        },
+        {
+          ...waitingDecisionEvent,
+          id: "event-3",
+          seq: 3,
+          type: "assistant.text.delta",
+          payload: { content: "Resumed." },
+        },
+      ],
+      status: "running",
+    })
+
+    render(<AgentWorkbench />)
+
+    expect(screen.queryByTestId("composer-approval-popover")).not.toBeInTheDocument()
+    expect(screen.queryByText("Approved, resuming")).not.toBeInTheDocument()
   })
 })

@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl"
 import type { AgentTodoItem } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
-export function TodoChecklist({ todos }: { todos: AgentTodoItem[] }) {
+export function TodoChecklist({ todos, compact = false }: { todos: AgentTodoItem[]; compact?: boolean }) {
   const t = useTranslations("agentRuntime")
   if (!todos.length) {
     return <p className="text-sm text-muted-foreground">{t("progress.empty")}</p>
@@ -17,10 +17,12 @@ export function TodoChecklist({ todos }: { todos: AgentTodoItem[] }) {
         <li
           key={`${index}-${todo.content}`}
           className={cn(
-            "flex items-start gap-2.5 rounded-xl border px-3 py-2 text-sm",
-            todo.status === "in_progress"
-              ? "border-primary/40 bg-primary/5"
-              : "border-border/60 bg-card",
+            "flex items-start gap-2.5 rounded-xl text-sm",
+            compact ? "px-1 py-1" : "border px-3 py-2",
+            !compact &&
+              (todo.status === "in_progress"
+                ? "border-primary/40 bg-primary/5"
+                : "border-border/60 bg-card"),
           )}
         >
           <TodoStatusIcon status={todo.status} />

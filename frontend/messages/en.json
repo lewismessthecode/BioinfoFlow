@@ -2159,8 +2159,53 @@
     "pendingResponse": "Working on it...",
     "thinking": "Thinking",
     "toolCalls": "Tool calls",
+    "activity": {
+      "groups": {
+        "workspace": "Prepare workspace",
+        "read": "Read project structure",
+        "write": "Create or edit files",
+        "register": "Register workflow",
+        "run": "Submit run",
+        "verify": "Verify results",
+        "other": "Use tools"
+      },
+      "summary": {
+        "workspace": "Prepared {count, plural, one {# item} other {# items}}",
+        "read": "Read {count, plural, one {# source} other {# sources}}",
+        "write": "Edited {count, plural, one {# file} other {# files}}",
+        "register": "Registered {count, plural, one {# workflow} other {# workflows}}",
+        "run": "Submitted {count, plural, one {# run} other {# runs}}",
+        "verify": "Verified {count, plural, one {# check} other {# checks}}",
+        "other": "Ran {count, plural, one {# tool} other {# tools}}"
+      },
+      "status": {
+        "building": "Building",
+        "requested": "Requested",
+        "waiting": "Waiting",
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "rejected": "Rejected"
+      },
+      "details": {
+        "input": "Input",
+        "arguments": "Arguments",
+        "output": "Output",
+        "exitCode": "Exit code",
+        "error": "Error",
+        "files": "Files"
+      }
+    },
     "approve": "Approve",
     "reject": "Reject",
+    "approval": {
+      "state": {
+        "approved": "Approved, resuming",
+        "answered": "Answer submitted, resuming",
+        "rejected": "Rejected"
+      }
+    },
     "attachMenu": {
       "attachFiles": "Attach files",
       "browseProjectFiles": "Browse project files",
@@ -2213,6 +2258,7 @@
       }
     },
     "tabs": {
+      "preview": "Preview",
       "progress": "Progress",
       "files": "Files",
       "browser": "Browser"
@@ -2228,6 +2274,10 @@
       "refresh": "Refresh",
       "empty": "This folder is empty.",
       "error": "Could not load files.",
+      "search": "Search files",
+      "addToContext": "Add to context",
+      "copyPath": "Copy path",
+      "removeAttachment": "Remove {label}",
       "truncated": "File is large and was truncated."
     },
     "browser": {
@@ -2241,10 +2291,33 @@
       "act": "Act",
       "plan": "Plan"
     },
+    "permission": {
+      "label": "Permission mode",
+      "options": {
+        "ask_each_action": {
+          "label": "Request approval",
+          "description": "Ask before side-effecting actions."
+        },
+        "guarded_auto": {
+          "label": "Approve for me",
+          "description": "Run low-risk actions automatically and ask for higher risk."
+        },
+        "bypass": {
+          "label": "Full access",
+          "description": "Run non-critical actions automatically while backend safety still blocks critical operations."
+        }
+      }
+    },
     "plan": {
       "reviewTitle": "Review the plan",
       "approveAndAct": "Approve & act",
-      "keepPlanning": "Keep planning"
+      "keepPlanning": "Keep planning",
+      "status": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Needs changes",
+        "answered": "Answered"
+      }
     },
     "ask": {
       "title": "The agent needs your input",

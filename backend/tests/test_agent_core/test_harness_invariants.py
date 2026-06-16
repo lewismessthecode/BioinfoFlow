@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,7 @@ from app.repositories.agent_core_repo import (
     AgentMessageRepository,
 )
 from app.services.agent_core import AgentCoreService
+from app.services.agent_core import service as service_module
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor
@@ -43,6 +45,16 @@ async def _project(db_session) -> Project:
     await db_session.commit()
     await db_session.refresh(project)
     return project
+
+
+class _FakeFilesystemPolicy:
+    def require_allowed_path(self, path, *, must_exist=True, allow_directory=False):
+        target = Path(path)
+        if must_exist:
+            assert target.exists()
+        if not allow_directory:
+            assert target.is_file()
+        return target
 
 
 async def _seed_catalog_model(db_session, *, model_id: str = "harness-model") -> LlmModel:
@@ -88,6 +100,111 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
     assert session.runtime_mode == "api"
     assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v4"
     assert session.toolset_policy["name"] == "execution"
+
+
+@pytest.mark.asyncio
+async def test_first_turn_generates_session_title(db_session):
+    await _workspace(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Summarize this very long workflow request with many details",
+    )
+
+    updated = await service.require_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert updated.title == "Summarize this very long"
+
+
+@pytest.mark.asyncio
+async def test_first_turn_does_not_overwrite_existing_session_title(db_session):
+    await _workspace(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        title="Manual title",
+    )
+    await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Generate a different title",
+    )
+
+    updated = await service.require_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    assert updated.title == "Manual title"
+
+
+@pytest.mark.asyncio
+async def test_invalid_file_ref_does_not_commit_queued_turn(db_session, tmp_path, monkeypatch):
+    await _workspace(db_session)
+    secret = tmp_path / ".env"
+    secret.write_text("TOKEN=secret", encoding="utf-8")
+    monkeypatch.setattr(service_module, "FilesystemPolicy", lambda: _FakeFilesystemPolicy())
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    with pytest.raises(PermissionDeniedError):
+        await service.create_turn_record(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Use this file.",
+            input_parts=[{"kind": "file_ref", "path": str(secret), "label": ".env"}],
+        )
+
+    assert await service.turn_repo.list_for_session(str(session.id)) == []
+
+
+@pytest.mark.asyncio
+async def test_file_ref_without_text_part_keeps_user_prompt(db_session, tmp_path, monkeypatch):
+    await _workspace(db_session)
+    workflow = tmp_path / "workflow.wdl"
+    workflow.write_text("version 1.0\nworkflow demo {}", encoding="utf-8")
+    monkeypatch.setattr(service_module, "FilesystemPolicy", lambda: _FakeFilesystemPolicy())
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Summarize this workflow.",
+        input_parts=[{"kind": "file_ref", "path": str(workflow), "label": "workflow.wdl"}],
+    )
+
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    assert str(messages[0].turn_id) == str(turn.id)
+    text = "\n".join(part["text"] for part in messages[0].content_parts)
+    assert "Summarize this workflow." in text
+    assert "workflow demo" in text
 
 
 @pytest.mark.asyncio
