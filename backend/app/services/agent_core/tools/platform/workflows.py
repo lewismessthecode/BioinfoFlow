@@ -3,12 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 from app.schemas.form_spec import to_read_projection
+from app.services.agent_core.tools.result_budget import DEFAULT_TOOL_RESULT_LIMIT
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.authorization_service import AuthorizationService
 from app.services.workflow_form_spec import effective_workflow_form_spec
 from app.services.workflow_service import WorkflowService
 from app.utils.dag_builder import build_dag_from_schema
 from app.utils.exceptions import BadRequestError, NotFoundError
+
+_WORKFLOW_SOURCE_DEFAULT_LINES = 400
+_WORKFLOW_SOURCE_MAX_LINES = 2000
+_WORKFLOW_SOURCE_CONTENT_LIMIT = DEFAULT_TOOL_RESULT_LIMIT
 
 
 def workflow_payload(workflow) -> dict[str, Any]:
@@ -285,7 +290,15 @@ class WorkflowSourceTool:
         description="Read source code for a local workflow registration.",
         input_schema={
             "type": "object",
-            "properties": {"workflow_id": {"type": "string"}},
+            "properties": {
+                "workflow_id": {"type": "string"},
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": _WORKFLOW_SOURCE_MAX_LINES,
+                },
+            },
             "required": ["workflow_id"],
             "additionalProperties": False,
         },
@@ -309,10 +322,20 @@ class WorkflowSourceTool:
         source_path = service.resolve_source_path(workflow)
         if not source_path.exists():
             raise NotFoundError("Workflow source file not found")
+        content = source_path.read_text(encoding="utf-8")
+        lines = content.splitlines()
+        offset = int(input.get("offset") or 0)
+        limit = int(input.get("limit") or _WORKFLOW_SOURCE_DEFAULT_LINES)
+        selected = "\n".join(lines[offset : offset + limit])
+        capped_content = _truncate_source_content(selected)
         return {
             "source": {
                 "path": str(source_path),
-                "content": source_path.read_text(encoding="utf-8"),
+                "content": capped_content,
+                "line_count": len(lines),
+                "offset": offset,
+                "limit": limit,
+                "truncated": capped_content != selected or offset + limit < len(lines),
             }
         }
 
@@ -326,3 +349,9 @@ async def _require_workflow_mutation_access(context: AgentToolContext) -> None:
         workspace_id=context.workspace_id,
         user_id=context.user_id,
     )
+
+
+def _truncate_source_content(content: str) -> str:
+    if len(content) <= _WORKFLOW_SOURCE_CONTENT_LIMIT:
+        return content
+    return content[:_WORKFLOW_SOURCE_CONTENT_LIMIT] + "\n[truncated]"

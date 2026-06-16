@@ -223,7 +223,7 @@ async def test_workflow_read_tools_return_form_spec_dag_and_source(db_session, m
 
     def fake_resolve_source_path(self, workflow):
         source = tmp_path / "main.nf"
-        source.write_text("workflow { }\n", encoding="utf-8")
+        source.write_text("workflow { }\nprocess x { }\n", encoding="utf-8")
         return source
 
     monkeypatch.setattr(
@@ -249,14 +249,45 @@ async def test_workflow_read_tools_return_form_spec_dag_and_source(db_session, m
     )
     source = await dispatcher.dispatch(
         tool_name="workflows.source",
-        input={"workflow_id": workflow_id},
+        input={"workflow_id": workflow_id, "limit": 1},
         context=context,
     )
 
     assert get_result.result["workflow"]["id"] == workflow_id
     assert form_spec.result["form_spec"]["fields"] == []
     assert dag.result["dag"] == {"nodes": [], "edges": []}
-    assert source.result["source"]["content"] == "workflow { }\n"
+    assert source.result["source"]["content"] == "workflow { }"
+    assert source.result["source"]["line_count"] == 2
+    assert source.result["source"]["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_workflow_source_caps_nested_content(db_session, monkeypatch, tmp_path):
+    dispatcher, context, resources = await _tool_context(db_session)
+
+    def fake_resolve_source_path(self, workflow):
+        source = tmp_path / "main.nf"
+        source.write_text("abcdef", encoding="utf-8")
+        return source
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.resolve_source_path",
+        fake_resolve_source_path,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows._WORKFLOW_SOURCE_CONTENT_LIMIT",
+        5,
+    )
+
+    result = await dispatcher.dispatch(
+        tool_name="workflows.source",
+        input={"workflow_id": str(resources["workflow"].id)},
+        context=context,
+    )
+
+    assert result.status == "completed"
+    assert result.result["source"]["content"] == "abcde\n[truncated]"
+    assert result.result["source"]["truncated"] is True
 
 
 @pytest.mark.asyncio
