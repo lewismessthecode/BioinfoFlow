@@ -2071,6 +2071,7 @@
   },
   "terminal": {
     "title": "终端",
+    "newTerminal": "新建终端",
     "startingSession": "正在启动终端...",
     "connectionStates": {
       "idle": "空闲",
@@ -2263,10 +2264,27 @@
       }
     },
     "tabs": {
+      "environment": "环境",
       "preview": "预览",
       "progress": "进度",
       "files": "打开文件",
       "browser": "浏览器"
+    },
+    "environment": {
+      "title": "环境信息",
+      "open": "打开环境信息",
+      "close": "关闭环境信息",
+      "changes": "变更",
+      "filesChanged": "已变更 {count} 个文件",
+      "worktree": "工作树",
+      "session": "会话",
+      "pendingSession": "会话待创建",
+      "model": "模型",
+      "progress": "进度",
+      "progressCount": "已完成 {completed}/{total}",
+      "activity": "子智能体与工具",
+      "sources": "来源",
+      "none": "无"
     },
     "progress": {
       "tasks": "任务",
@@ -2285,6 +2303,7 @@
       "empty": "此文件夹为空。",
       "error": "无法加载文件。",
       "search": "搜索已加载文件",
+      "selectPreview": "选择文件进行预览",
       "loadedOnly": "正在搜索 {count} 个已加载项目",
       "loading": "加载中...",
       "addToContext": "添加到上下文",

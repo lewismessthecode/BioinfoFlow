@@ -47,7 +47,14 @@ export function ModelSelector({
 
   // Find the display name for the current selection
   const currentModel = models
-    .flatMap((pm) => pm.models.map((m) => ({ ...m, provider: pm.provider })))
+    .flatMap((pm) =>
+        pm.models.map((m) => ({
+          ...m,
+          provider: pm.provider,
+          label: pm.label,
+          baseUrl: pm.base_url,
+        })),
+    )
     .find(
       (m) =>
         m.id === selectedModel?.model &&
@@ -89,7 +96,14 @@ export function ModelSelector({
           data-variant={variant}
         >
           {currentModel && (
-            <ProviderIcon provider={currentModel.provider} size={13} />
+            <ProviderIcon
+              provider={currentModel.provider}
+              providerLabel={currentModel.label}
+              baseUrl={currentModel.baseUrl}
+              modelId={currentModel.id}
+              modelName={currentModel.name}
+              size={13}
+            />
           )}
           <span className="hidden truncate sm:inline">{displayLabel}</span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
@@ -148,7 +162,14 @@ export function ModelSelector({
                       className="flex items-center justify-between px-3 py-2"
                     >
                       <div className="flex items-center gap-2.5">
-                        <ProviderIcon provider={providerGroup.provider} size={14} />
+                        <ProviderIcon
+                          provider={providerGroup.provider}
+                          providerLabel={providerGroup.label}
+                          baseUrl={providerGroup.base_url}
+                          modelId={model.id}
+                          modelName={model.name}
+                          size={14}
+                        />
                         <span className="text-sm">{model.name}</span>
                       </div>
                       {selectedModel?.provider === providerGroup.provider &&

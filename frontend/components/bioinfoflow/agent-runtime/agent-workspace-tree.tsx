@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 
 export function AgentWorkspaceTree({
   entries,
+  className,
   filter,
   onFilterChange,
   expandedPaths,
@@ -22,6 +23,7 @@ export function AgentWorkspaceTree({
   onCopyPath,
 }: {
   entries: AgentFsEntry[]
+  className?: string
   filter: string
   onFilterChange: (value: string) => void
   expandedPaths: Set<string>
@@ -40,19 +42,23 @@ export function AgentWorkspaceTree({
   const visibleEntries = filterEntries(entries, normalized, childrenByPath)
 
   return (
-    <div className="grid gap-2" data-testid="agent-workspace-tree">
+    <div
+      className={cn("flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden", className)}
+      data-testid="agent-workspace-tree"
+    >
       <input
         value={filter}
         onChange={(event) => onFilterChange(event.target.value)}
         placeholder={t("files.search")}
-        className="h-9 rounded-full border border-border/70 bg-background px-3 text-sm outline-none placeholder:text-muted-foreground"
+        className="h-9 shrink-0 rounded-full border border-border/70 bg-background px-3 text-sm outline-none placeholder:text-muted-foreground"
       />
       {normalized ? (
-        <div className="text-[11px] text-muted-foreground">
+        <div className="shrink-0 text-[11px] text-muted-foreground">
           {t("files.loadedOnly", { count: loadedNodeCount })}
         </div>
       ) : null}
-      <div className="grid gap-0.5">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+        <div className="grid min-w-0 gap-0.5">
         <TreeRows
           entries={visibleEntries}
           depth={0}
@@ -70,6 +76,7 @@ export function AgentWorkspaceTree({
         {!visibleEntries.length ? (
           <p className="text-sm text-muted-foreground">{t("files.empty")}</p>
         ) : null}
+        </div>
       </div>
     </div>
   )
@@ -116,10 +123,10 @@ function TreeRows({
     const isSelected = selectedPath === entry.path
 
     return (
-      <div key={entry.path} className="grid gap-0.5">
+      <div key={entry.path} className="grid min-w-0 gap-0.5">
         <div
           className={cn(
-            "group flex items-center gap-1 rounded-lg py-1.5 pr-2 text-sm transition-colors hover:bg-muted/50",
+            "group flex min-w-0 items-center gap-1 rounded-lg py-1.5 pr-2 text-sm transition-colors hover:bg-muted/50",
             isSelected && "bg-muted text-foreground",
           )}
           style={{ paddingLeft: `${depth * 14 + 8}px` }}
@@ -127,8 +134,9 @@ function TreeRows({
           <button
             type="button"
             onClick={() => entry.type === "dir" ? onToggleDirectory(entry) : onOpenFile(entry)}
-            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-left"
             aria-label={entry.name}
+            title={entry.path}
           >
             {entry.type === "dir" ? (
               <>

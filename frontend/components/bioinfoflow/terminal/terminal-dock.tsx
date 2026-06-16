@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
-import { Eraser, RotateCcw, TerminalSquare, X } from "lucide-react"
+import { Eraser, Plus, RotateCcw, TerminalSquare, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
@@ -287,9 +287,12 @@ export function TerminalDock() {
     : (CONNECTION_LABELS[connectionState] ?? connectionState)
 
   const header = (
-    <div className="flex items-end justify-between gap-2 border-b border-border/60 bg-muted/30 dark:bg-muted/15 px-2 pt-2">
+    <div className="flex items-end justify-between gap-2 border-b border-border/60 bg-background px-2 pt-2">
       <div className="flex min-w-0 flex-1 items-end">
-        <div className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-t-md border border-border/60 border-b-transparent bg-background px-3 py-1.5 -mb-px">
+        <div
+          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-t-md border border-border/60 border-b-transparent bg-background px-3 py-1.5 -mb-px"
+          title={sessionMeta}
+        >
           <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="shrink-0 text-xs font-medium text-foreground">{tTerminal("title")}</span>
           <span
@@ -299,12 +302,6 @@ export function TerminalDock() {
             )}
             aria-label={connectionLabel || "Connected"}
           />
-          <span
-            className="min-w-0 max-w-[280px] truncate text-[11px] text-muted-foreground"
-            title={sessionMeta}
-          >
-            {sessionMeta}
-          </span>
           {connectionLabel ? (
             <span
               className={cn(
@@ -316,6 +313,19 @@ export function TerminalDock() {
             </span>
           ) : null}
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="mb-1.5 ml-1 h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          onClick={() => {
+            outputBufferRef.current = []
+            terminalRef.current?.clear()
+            reconnect()
+          }}
+          aria-label={tTerminal("newTerminal")}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
       </div>
       <div className="flex items-center gap-0.5 pb-1.5">
         <Button
@@ -350,7 +360,7 @@ export function TerminalDock() {
   )
 
   const body = (
-    <div className="flex min-h-0 flex-1 flex-col bg-background">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
       {error ? (
         <div className="border-b border-destructive/15 bg-destructive/4 px-4 py-2 text-xs text-destructive">
           {error}
@@ -358,13 +368,13 @@ export function TerminalDock() {
       ) : null}
       <div
         ref={terminalBodyRef}
-        className="min-h-0 flex-1 bg-background"
+        className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
         onClick={() => terminalRef.current?.focus()}
       >
         <div
           ref={terminalViewportRef}
           data-testid="terminal-dock-viewport"
-          className="terminal-dock-scroll h-full min-h-0 w-full bg-background"
+          className="terminal-dock-scroll h-full min-h-0 w-full overflow-hidden bg-background"
         />
       </div>
     </div>

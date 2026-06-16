@@ -19,6 +19,7 @@ export type ProviderModels = {
   provider: string
   provider_id: string
   label: string
+  base_url?: string | null
   models: ProviderModelInfo[]
 }
 
@@ -173,6 +174,7 @@ function modelsFromConfiguration(data: LlmConfiguration): ProviderModels[] {
       provider: provider.kind,
       provider_id: provider.id,
       label: provider.name,
+      base_url: provider.base_url ?? null,
       models: data.models
         .filter((model) => model.provider_id === provider.id)
         .map((model) => ({

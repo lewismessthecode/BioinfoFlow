@@ -270,7 +270,9 @@ describe("TerminalDock", () => {
 
     expect(await screen.findByText("title")).toBeInTheDocument()
     expect(screen.getByLabelText(/connected/i)).toBeInTheDocument()
-    expect(screen.getByText("sh • /workspace/project-1")).toBeInTheDocument()
+    expect(screen.queryByText("sh • /workspace/project-1")).not.toBeInTheDocument()
+    expect(screen.getByTitle("sh • /workspace/project-1")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "newTerminal" })).toBeInTheDocument()
     expect(screen.queryByText("startingSession")).not.toBeInTheDocument()
   })
 

@@ -1,5 +1,5 @@
 import type * as React from "react"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentWorkbench } from "@/components/bioinfoflow/agent-runtime/agent-workbench"
@@ -51,6 +51,19 @@ vi.mock("next-intl", () => ({
       "sidecar.currentToolCalls": "Current tool calls",
       "sidecar.needsDecision": "Needs your decision",
       "sidecar.noActivity": "No activity yet",
+      "environment.open": "Open environment",
+      "environment.close": "Close environment",
+      "environment.title": "Environment",
+      "environment.changes": "Changes",
+      "environment.filesChanged": "1 file changed",
+      "environment.worktree": "Worktree",
+      "environment.session": "Session",
+      "environment.pendingSession": "Session pending",
+      "environment.model": "Model",
+      "environment.progress": "Progress",
+      "environment.activity": "Subagents and tools",
+      "environment.sources": "Sources",
+      "environment.none": "None",
       "attachMenu.attachFiles": "Attach files",
       "attachMenu.browseProjectFiles": "Browse project files",
       "attachMenu.referenceRun": "Reference a run",
@@ -230,6 +243,61 @@ describe("AgentWorkbench", () => {
     expect(lastCall?.[0]).toBeTruthy()
     expect(
       screen.queryByRole("button", { name: "Open run panel" }),
+    ).not.toBeInTheDocument()
+  })
+
+  it("opens environment information as a floating workbench panel", async () => {
+    setupRuntime({
+      session: baseSession,
+      events: [
+        {
+          ...waitingDecisionEvent,
+          id: "event-change",
+          type: "action.completed",
+          payload: {
+            action_id: "a1",
+            name: "files__write",
+            result: {
+              path: "/workspace/project-1/workflow.nf",
+              additions: 12,
+              deletions: 3,
+            },
+          },
+        },
+      ],
+    })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open environment" }))
+
+    const floatingPanel = await screen.findByTestId("agent-environment-floating-panel")
+    expect(floatingPanel).toContainElement(screen.getByTestId("agent-environment-card"))
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    expect(screen.getByText("Environment")).toBeInTheDocument()
+    expect(screen.getByText("+12")).toBeInTheDocument()
+    expect(screen.getByText("-3")).toBeInTheDocument()
+  })
+
+  it("closes the floating environment panel when the right drawer opens", async () => {
+    setupRuntime({ session: baseSession })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open environment" }))
+    expect(await screen.findByTestId("agent-environment-floating-panel")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open run panel" }))
+
+    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
+    })
+    expect(screen.queryByTestId("agent-environment-floating-panel")).not.toBeInTheDocument()
+    expect(
+      within(screen.getByTestId("artifact-panel")).queryByTestId("agent-environment-card"),
     ).not.toBeInTheDocument()
   })
 
