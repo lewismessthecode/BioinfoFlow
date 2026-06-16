@@ -285,7 +285,7 @@ function TerminalNavbarAction({ label }: { label: string }) {
     <Button
       variant="ghost"
       size="icon"
-      className="h-9 w-9 rounded-xl border border-transparent text-foreground/82 transition-colors hover:border-border/70 hover:bg-accent hover:text-foreground"
+      className="h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
       onClick={toggleTerminal}
       aria-label={label}
     >

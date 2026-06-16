@@ -183,7 +183,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           type="button"
           variant="ghost"
           size="icon"
-          className="h-8 w-8 rounded-full border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+          className="h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
           onClick={toggleSidecar}
           aria-label={sidecarLabel}
         >

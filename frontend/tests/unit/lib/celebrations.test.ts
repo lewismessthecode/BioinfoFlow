@@ -101,23 +101,24 @@ describe("celebrations", () => {
     expect(listener).toHaveBeenCalledTimes(1)
   })
 
-  it("does not animate one-time milestones when celebrations are disabled", () => {
+  it("records one-time milestones without animating when celebrations are disabled", () => {
     const appendSpy = vi.spyOn(document.body, "appendChild")
 
     setCelebrationsEnabled(false)
     celebrateOnce("provider-api-key-saved")
 
     expect(appendSpy).not.toHaveBeenCalled()
-    expect(window.localStorage.getItem("bioinfoflow:celebrated:provider-api-key-saved")).toBeNull()
+    expect(window.localStorage.getItem("bioinfoflow:celebrated:provider-api-key-saved")).toBe("1")
   })
 
-  it("allows preview confetti to run repeatedly without writing milestone keys", () => {
+  it("reuses a single confetti canvas for repeated preview triggers", () => {
     const appendSpy = vi.spyOn(document.body, "appendChild")
 
     celebratePreview()
     celebratePreview()
 
-    expect(appendSpy).toHaveBeenCalledTimes(2)
+    expect(appendSpy).toHaveBeenCalledTimes(1)
+    expect(document.body.querySelectorAll("canvas[aria-hidden='true']")).toHaveLength(1)
     expect(window.localStorage.getItem("bioinfoflow:celebrated:preview")).toBeNull()
   })
 

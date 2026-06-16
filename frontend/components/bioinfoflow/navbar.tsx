@@ -1,25 +1,19 @@
 "use client"
 
-import { Command, HelpCircle, LogOut, Menu, Moon, PartyPopper, Sun, User } from "lucide-react"
+import { Menu, Moon, PartyPopper, Sun } from "lucide-react"
 import { useTranslations } from "next-intl"
-import { useRouter } from "next/navigation"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { getNextAppearanceMode, useAppearance } from "@/lib/appearance/use-appearance"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { LanguageSwitcher } from "@/components/language-switcher"
-import { authClient } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
-import { buildAnonymousViewer } from "@/lib/auth-config"
-import { openInNewTab } from "@/lib/window-utils"
 import {
   celebratePreview,
   setCelebrationsEnabled,
@@ -47,50 +41,14 @@ export function Navbar({
   projectName,
   conversationTitle,
   connectionState,
-  viewer,
 }: NavbarProps) {
-  const router = useRouter()
   const { mode, resolvedMode, setMode } = useAppearance()
-  const tUserMenu = useTranslations("userMenu")
   const tAccessibility = useTranslations("accessibility")
   const tCelebrations = useTranslations("celebrations")
-  const currentViewer = viewer ?? buildAnonymousViewer()
   const celebrationsEnabled = useCelebrationsEnabledPreference()
 
-  const handleSignOut = async () => {
-    if (!currentViewer.authEnabled) {
-      router.push("/agent")
-      return
-    }
-
-    toast.info(tUserMenu("toasts.signingOut"))
-
-    try {
-      await authClient.signOut({
-        fetchOptions: {
-          onSuccess: () => {
-            toast.success(tUserMenu("toasts.loggedOut"))
-            router.replace("/auth")
-            router.refresh()
-          },
-        },
-      })
-    } catch {
-      toast.error(tUserMenu("toasts.logoutFailed"))
-    }
-  }
-
-  const handleHelp = () => {
-    toast.info(tUserMenu("toasts.openingDocs"))
-    openInNewTab("https://docs.bioinfoflow.io")
-  }
-
-  const handleKeyboardShortcuts = () => {
-    toast.info(tUserMenu("toasts.keyboardShortcutsHint"))
-  }
-
   const actionButtonClassName =
-    "h-8 w-8 rounded-full border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+    "h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
 
   return (
     <header className="shrink-0 border-b border-border/45 bg-background/88 backdrop-blur-xl supports-[backdrop-filter]:bg-background/78">
@@ -117,8 +75,7 @@ export function Navbar({
       <div className="flex-1" />
 
       {/* Right Actions */}
-      <div className="flex items-center gap-1.5">
-        {children}
+      <div className="flex items-center gap-1.5" data-testid="navbar-action-row">
         <LanguageSwitcher />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -174,43 +131,7 @@ export function Navbar({
           <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
           <span className="sr-only">{tAccessibility("toggleTheme")}</span>
         </Button>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className={actionButtonClassName}>
-              <User className="h-4 w-4" />
-              <span className="sr-only">{tAccessibility("openMenu")}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col gap-1">
-                <p className="text-sm font-medium">{currentViewer.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {tUserMenu(`roles.${currentViewer.role}`)}
-                </p>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleKeyboardShortcuts}>
-              <Command className="mr-2 h-4 w-4" />
-              {tUserMenu("keyboardShortcuts")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleHelp}>
-              <HelpCircle className="mr-2 h-4 w-4" />
-              {tUserMenu("helpDocs")}
-            </DropdownMenuItem>
-            {currentViewer.authEnabled ? (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => void handleSignOut()}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  {tUserMenu("signOut")}
-                </DropdownMenuItem>
-              </>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {children}
       </div>
       </div>
     </header>

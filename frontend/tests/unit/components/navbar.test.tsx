@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import userEvent from "@testing-library/user-event"
 import type { ViewerIdentity } from "@/lib/auth-config"
 import { createCelebrationsPreferenceMock } from "@/tests/support/mock-celebrations-preference"
 
@@ -9,11 +9,6 @@ const {
   replaceMock,
   refreshMock,
   setModeMock,
-  signOutMock,
-  openInNewTabMock,
-  toastInfoMock,
-  toastSuccessMock,
-  toastErrorMock,
   celebratePreviewMock,
   setCelebrationsEnabledMock,
 } = vi.hoisted(() => ({
@@ -21,11 +16,6 @@ const {
   replaceMock: vi.fn(),
   refreshMock: vi.fn(),
   setModeMock: vi.fn(),
-  signOutMock: vi.fn(),
-  openInNewTabMock: vi.fn(),
-  toastInfoMock: vi.fn(),
-  toastSuccessMock: vi.fn(),
-  toastErrorMock: vi.fn(),
   celebratePreviewMock: vi.fn(),
   setCelebrationsEnabledMock: vi.fn(),
 }))
@@ -86,16 +76,6 @@ vi.mock("next-intl", () => ({
   },
 }))
 
-vi.mock("@/lib/auth-client", () => ({
-  authClient: {
-    signOut: (...args: unknown[]) => signOutMock(...args),
-  },
-}))
-
-vi.mock("@/lib/window-utils", () => ({
-  openInNewTab: (...args: unknown[]) => openInNewTabMock(...args),
-}))
-
 vi.mock("@/lib/celebrations", () => ({
   celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
   isCelebrationsEnabled: () => celebrationsPreference.getEnabled(),
@@ -107,14 +87,6 @@ vi.mock("@/lib/celebrations", () => ({
   },
   subscribeToCelebrationsPreference: (listener: (enabled: boolean) => void) =>
     celebrationsPreference.subscribeToCelebrationsPreference(listener),
-}))
-
-vi.mock("sonner", () => ({
-  toast: {
-    info: (...args: unknown[]) => toastInfoMock(...args),
-    success: (...args: unknown[]) => toastSuccessMock(...args),
-    error: (...args: unknown[]) => toastErrorMock(...args),
-  },
 }))
 
 vi.mock("@/components/bioinfoflow/breadcrumbs", () => ({
@@ -184,16 +156,6 @@ describe("Navbar", () => {
     celebrationsPreference.reset()
   })
 
-  it("opens the docs link from the help action", async () => {
-    const user = userEvent.setup()
-    render(<Navbar viewer={AUTH_VIEWER} />)
-
-    await user.click(screen.getByRole("button", { name: "Help Docs" }))
-
-    expect(toastInfoMock).toHaveBeenCalledWith("Opening docs")
-    expect(openInNewTabMock).toHaveBeenCalledWith("https://docs.bioinfoflow.io")
-  })
-
   it("toggles the theme from light to dark", async () => {
     const user = userEvent.setup()
     render(<Navbar viewer={AUTH_VIEWER} />)
@@ -201,21 +163,6 @@ describe("Navbar", () => {
     await user.click(screen.getByRole("button", { name: "Toggle theme" }))
 
     expect(setModeMock).toHaveBeenCalledWith("dark")
-  })
-
-  it("signs out authenticated viewers and redirects to /auth on success", async () => {
-    const user = userEvent.setup()
-    signOutMock.mockImplementation(async (options?: { fetchOptions?: { onSuccess?: () => void } }) => {
-      options?.fetchOptions?.onSuccess?.()
-    })
-    render(<Navbar viewer={AUTH_VIEWER} />)
-
-    await user.click(screen.getByRole("button", { name: "Sign Out" }))
-
-    expect(signOutMock).toHaveBeenCalled()
-    expect(toastSuccessMock).toHaveBeenCalledWith("Logged out")
-    expect(replaceMock).toHaveBeenCalledWith("/auth")
-    expect(refreshMock).toHaveBeenCalled()
   })
 
   it("calls the sidebar toggle when the hamburger button is shown", async () => {
@@ -226,6 +173,26 @@ describe("Navbar", () => {
     await user.click(screen.getByRole("button", { name: "Open sidebar" }))
 
     expect(onSidebarToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps injected workspace actions at the far right of the top action row", () => {
+    render(
+      <Navbar viewer={AUTH_VIEWER}>
+        <button type="button">Open run panel</button>
+      </Navbar>,
+    )
+
+    const actionRow = screen.getByTestId("navbar-action-row")
+    const buttons = Array.from(actionRow.querySelectorAll("button"))
+
+    expect(buttons.at(-1)).toHaveTextContent("Open run panel")
+  })
+
+  it("removes the redundant top-right user menu trigger", () => {
+    render(<Navbar viewer={AUTH_VIEWER} />)
+
+    expect(screen.queryByRole("button", { name: "Open menu" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Sign Out" })).not.toBeInTheDocument()
   })
 
   it("toggles celebrations from the top-right control and updates the trigger state", async () => {
