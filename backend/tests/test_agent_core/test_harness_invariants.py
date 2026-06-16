@@ -18,6 +18,10 @@ from app.repositories.agent_core_repo import (
 )
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core import service as service_module
+from app.services.agent_core.context.system_prompt import (
+    default_system_prompt_snapshot,
+    resolve_system_prompt_prefix,
+)
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor
@@ -98,8 +102,27 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
     assert session.project_id is None
     assert session.runtime_mode == "api"
-    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v4"
+    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v5"
     assert session.toolset_policy["name"] == "execution"
+
+
+def test_v5_system_prompt_teaches_platform_tool_operating_loop():
+    snapshot = default_system_prompt_snapshot()
+
+    assert snapshot.id == "bioinfoflow-agent-v5"
+    assert "Prefer Bioinfoflow platform tools over shell" in snapshot.content
+    assert "Before submitting a run" in snapshot.content
+    assert "After submitting a run" in snapshot.content
+    assert "Copy IDs, paths, image names, and workflow field keys exactly" in snapshot.content
+    assert "Every tool input must be a JSON object" in snapshot.content
+
+
+def test_old_prompt_snapshot_resolves_to_live_v5_prompt():
+    resolved = resolve_system_prompt_prefix(
+        {"id": "bioinfoflow-agent-v4", "content": "old prompt"}
+    )
+
+    assert resolved == default_system_prompt_snapshot().content
 
 
 @pytest.mark.asyncio
@@ -363,6 +386,131 @@ def test_toolset_exposure_does_not_expose_shell_by_default():
 
     assert "bash" not in {tool.name for tool in default_tools}
     assert "bash" in {tool.name for tool in elevated_tools}
+
+
+def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated():
+    registry = build_default_tool_registry()
+    exposure = ToolsetExposure(registry)
+
+    plan_tools = exposure.exposed_names(policy={"name": "plan"})
+    default_tools = exposure.exposed_names(policy={"name": "default"})
+    execution_tools = exposure.exposed_names(policy={"name": "execution"})
+
+    read_tools = {
+        "projects.list",
+        "projects.get",
+        "projects.workflows.list",
+        "workflows.list",
+        "workflows.get",
+        "workflows.form_spec",
+        "workflows.dag",
+        "workflows.source",
+        "images.list",
+        "images.get",
+        "runs.list",
+        "runs.get",
+        "runs.logs",
+        "runs.outputs",
+        "runs.dag",
+        "runs.audit",
+        "scheduler.status",
+        "scheduler.resources",
+    }
+    mutating_tools = {
+        "projects.create",
+        "projects.update",
+        "projects.delete",
+        "projects.workflows.bind",
+        "projects.workflows.unbind",
+        "projects.workflows.pin",
+        "workflows.create",
+        "workflows.update",
+        "workflows.delete",
+        "images.pull",
+        "images.build",
+        "images.delete",
+        "runs.submit",
+        "runs.cancel",
+        "runs.retry",
+        "runs.resume",
+        "runs.cleanup",
+        "runs.delete",
+    }
+
+    assert read_tools <= plan_tools
+    assert read_tools <= default_tools
+    assert read_tools <= execution_tools
+    assert mutating_tools.isdisjoint(plan_tools)
+    assert mutating_tools.isdisjoint(default_tools)
+    assert mutating_tools <= execution_tools
+
+
+@pytest.mark.asyncio
+async def test_worker_tool_call_is_rechecked_against_worker_exposure(
+    db_session, monkeypatch
+):
+    async def fake_completion(*args, **kwargs):
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeFunction:
+            name = "ask_user"
+            arguments = json.dumps(
+                {
+                    "questions": [
+                        {
+                            "question": "Should the worker pause?",
+                            "header": "Pause",
+                            "options": [
+                                {"label": "Yes", "description": "Pause."},
+                                {"label": "No", "description": "Continue."},
+                            ],
+                        }
+                    ]
+                }
+            )
+
+        class FakeToolCall:
+            id = "worker-ask-user"
+            function = FakeFunction()
+
+        class FakeMessage:
+            content = ""
+            tool_calls = [FakeToolCall()]
+
+        choice = FakeChoice()
+        choice.message = FakeMessage()
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr("app.services.agent_core.core.loop.acompletion", fake_completion)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role_profile="worker",
+        toolset_policy={"name": "execution"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Worker should not ask user.",
+    )
+
+    completed_turn = await service.runtime.run_turn(str(turn.id))
+
+    assert completed_turn.termination_reason == "tool_failed"
+    assert completed_turn.error_code == "tool_not_exposed"
+    assert await AgentActionRepository(db_session).list_for_turn(str(turn.id)) == []
 
 
 @pytest.mark.asyncio

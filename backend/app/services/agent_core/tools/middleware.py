@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.utils.exceptions import BadRequestError
@@ -31,10 +32,12 @@ def normalize_tool_input(input: dict[str, Any], schema: dict[str, Any]) -> dict[
         if unknown:
             raise BadRequestError(f"unknown tool arguments: {', '.join(unknown)}")
 
+    normalized = dict(input)
     for key, value in input.items():
         if key in properties:
-            _validate_schema(value, properties[key], path=key)
-    return dict(input)
+            normalized[key] = _coerce_schema_value(value, properties[key])
+            _validate_schema(normalized[key], properties[key], path=key)
+    return normalized
 
 
 def validate_tool_output(output: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
@@ -52,6 +55,17 @@ def _validate_schema(value: Any, schema: dict[str, Any], *, path: str) -> None:
             raise BadRequestError(f"{path} must be {expected_type}")
     if isinstance(value, bool) and schema.get("type") in {"integer", "number"}:
         raise BadRequestError(f"{path} must be {schema.get('type')}")
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and enum_values and value not in enum_values:
+        allowed = ", ".join(str(item) for item in enum_values)
+        raise BadRequestError(f"{path} must be one of: {allowed}")
+    if isinstance(value, str):
+        min_length = schema.get("minLength")
+        max_length = schema.get("maxLength")
+        if min_length is not None and len(value) < int(min_length):
+            raise BadRequestError(f"{path} must have length >= {min_length}")
+        if max_length is not None and len(value) > int(max_length):
+            raise BadRequestError(f"{path} must have length <= {max_length}")
     if isinstance(value, int):
         minimum = schema.get("minimum")
         maximum = schema.get("maximum")
@@ -75,6 +89,45 @@ def _validate_schema(value: Any, schema: dict[str, Any], *, path: str) -> None:
                 _validate_schema(item, properties[key], path=f"{path}.{key}")
         return
     if isinstance(value, list):
+        min_items = schema.get("minItems")
+        max_items = schema.get("maxItems")
+        if min_items is not None and len(value) < int(min_items):
+            raise BadRequestError(f"{path} must have at least {min_items} item")
+        if max_items is not None and len(value) > int(max_items):
+            raise BadRequestError(f"{path} must have at most {max_items} items")
         item_schema = schema.get("items") or {}
         for index, item in enumerate(value):
             _validate_schema(item, item_schema, path=f"{path}[{index}]")
+
+
+def _coerce_schema_value(value: Any, schema: dict[str, Any]) -> Any:
+    expected_type = str(schema.get("type") or "")
+    if expected_type == "integer" and isinstance(value, str):
+        stripped = value.strip()
+        if stripped and stripped.lstrip("-").isdigit():
+            return int(stripped)
+    if expected_type == "number" and isinstance(value, str):
+        stripped = value.strip()
+        try:
+            return float(stripped)
+        except ValueError:
+            return value
+    if expected_type == "boolean" and isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+    if expected_type in {"object", "array"} and isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return value
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return value
+        if expected_type == "object" and isinstance(parsed, dict):
+            return parsed
+        if expected_type == "array" and isinstance(parsed, list):
+            return parsed
+    return value

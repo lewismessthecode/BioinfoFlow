@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from app.config import settings
 from app.models.image import DockerImage, ImageStatus
 from app.models.project import Project
 from app.models.run import Run, RunStatus
@@ -83,7 +86,7 @@ async def _tool_context(db_session) -> tuple[AgentToolDispatcher, AgentToolConte
     return (
         AgentToolDispatcher(db_session, build_default_tool_registry()),
         context,
-        {"project": project, "workflow": workflow, "run": run, "core": core},
+        {"project": project, "workflow": workflow, "image": image, "run": run, "core": core},
     )
 
 
@@ -103,7 +106,192 @@ async def test_workflows_list_tool_uses_workflow_service(db_session):
 
 
 @pytest.mark.asyncio
-async def test_images_list_tool_uses_image_service_without_forcing_docker_sync(db_session):
+async def test_projects_get_tool_returns_platform_project_projection(db_session):
+    dispatcher, context, resources = await _tool_context(db_session)
+
+    result = await dispatcher.dispatch(
+        tool_name="projects.get",
+        input={"project_id": str(resources["project"].id)},
+        context=context,
+    )
+
+    assert result.status == "completed"
+    assert result.result["project"]["id"] == str(resources["project"].id)
+    assert result.result["project"]["name"] == "Resource Project"
+
+
+@pytest.mark.asyncio
+async def test_project_workflow_tools_wrap_binding_service(db_session):
+    dispatcher, context, resources = await _tool_context(db_session)
+
+    bind = await dispatcher.dispatch(
+        tool_name="projects.workflows.bind",
+        input={
+            "project_id": str(resources["project"].id),
+            "workflow_id": str(resources["workflow"].id),
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+    listed = await dispatcher.dispatch(
+        tool_name="projects.workflows.list",
+        input={"project_id": str(resources["project"].id)},
+        context=context,
+    )
+    pinned = await dispatcher.dispatch(
+        tool_name="projects.workflows.pin",
+        input={
+            "project_id": str(resources["project"].id),
+            "workflow_id": str(resources["workflow"].id),
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+    unbind = await dispatcher.dispatch(
+        tool_name="projects.workflows.unbind",
+        input={
+            "project_id": str(resources["project"].id),
+            "workflow_id": str(resources["workflow"].id),
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert bind.status == "completed"
+    assert listed.result["groups"][0]["pinned_workflow"]["id"] == str(resources["workflow"].id)
+    assert pinned.result == {
+        "project_id": str(resources["project"].id),
+        "pinned_workflow_id": str(resources["workflow"].id),
+    }
+    assert unbind.result == {
+        "project_id": str(resources["project"].id),
+        "workflow_id": str(resources["workflow"].id),
+        "unbound": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_project_workflow_tools_reject_foreign_workspace_project(db_session):
+    dispatcher, context, resources = await _tool_context(db_session)
+    foreign_workspace = Workspace(id="foreign-workspace", name="Foreign", slug="foreign")
+    foreign_project = Project(
+        name="Foreign Project",
+        description="Not in agent workspace",
+        user_id="other-user",
+        created_by_user_id="other-user",
+        workspace_id="foreign-workspace",
+    )
+    db_session.add_all([foreign_workspace, foreign_project])
+    await db_session.commit()
+    await db_session.refresh(foreign_project)
+
+    foreign_project_id = str(foreign_project.id)
+    workflow_id = str(resources["workflow"].id)
+    list_result = await dispatcher.dispatch(
+        tool_name="projects.workflows.list",
+        input={"project_id": foreign_project_id},
+        context=context,
+    )
+    unbind_result = await dispatcher.dispatch(
+        tool_name="projects.workflows.unbind",
+        input={"project_id": foreign_project_id, "workflow_id": workflow_id},
+        context=context,
+        permission_mode="bypass",
+    )
+    bind_result = await dispatcher.dispatch(
+        tool_name="projects.workflows.bind",
+        input={"project_id": foreign_project_id, "workflow_id": workflow_id},
+        context=context,
+        permission_mode="bypass",
+    )
+    pin_result = await dispatcher.dispatch(
+        tool_name="projects.workflows.pin",
+        input={"project_id": foreign_project_id, "workflow_id": workflow_id},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    for result in (list_result, bind_result, pin_result, unbind_result):
+        assert result.status == "failed"
+        assert result.error["type"] == "NotFoundError"
+        assert result.error["message"] == "Project not found"
+
+
+@pytest.mark.asyncio
+async def test_workflow_read_tools_return_form_spec_dag_and_source(db_session, monkeypatch, tmp_path):
+    dispatcher, context, resources = await _tool_context(db_session)
+
+    def fake_resolve_source_path(self, workflow):
+        source = tmp_path / "main.nf"
+        source.write_text("workflow { }\nprocess x { }\n", encoding="utf-8")
+        return source
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.resolve_source_path",
+        fake_resolve_source_path,
+    )
+
+    workflow_id = str(resources["workflow"].id)
+    get_result = await dispatcher.dispatch(
+        tool_name="workflows.get",
+        input={"workflow_id": workflow_id},
+        context=context,
+    )
+    form_spec = await dispatcher.dispatch(
+        tool_name="workflows.form_spec",
+        input={"workflow_id": workflow_id},
+        context=context,
+    )
+    dag = await dispatcher.dispatch(
+        tool_name="workflows.dag",
+        input={"workflow_id": workflow_id},
+        context=context,
+    )
+    source = await dispatcher.dispatch(
+        tool_name="workflows.source",
+        input={"workflow_id": workflow_id, "limit": 1},
+        context=context,
+    )
+
+    assert get_result.result["workflow"]["id"] == workflow_id
+    assert form_spec.result["form_spec"]["fields"] == []
+    assert dag.result["dag"] == {"nodes": [], "edges": []}
+    assert source.result["source"]["content"] == "workflow { }"
+    assert source.result["source"]["line_count"] == 2
+    assert source.result["source"]["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_workflow_source_caps_nested_content(db_session, monkeypatch, tmp_path):
+    dispatcher, context, resources = await _tool_context(db_session)
+
+    def fake_resolve_source_path(self, workflow):
+        source = tmp_path / "main.nf"
+        source.write_text("abcdef", encoding="utf-8")
+        return source
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.resolve_source_path",
+        fake_resolve_source_path,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows._WORKFLOW_SOURCE_CONTENT_LIMIT",
+        5,
+    )
+
+    result = await dispatcher.dispatch(
+        tool_name="workflows.source",
+        input={"workflow_id": str(resources["workflow"].id)},
+        context=context,
+    )
+
+    assert result.status == "completed"
+    assert result.result["source"]["content"] == "abcde\n[truncated]"
+    assert result.result["source"]["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_images_list_tool_reads_catalog_without_forcing_docker_sync(db_session):
     dispatcher, context, _resources = await _tool_context(db_session)
 
     result = await dispatcher.dispatch(
@@ -114,7 +302,98 @@ async def test_images_list_tool_uses_image_service_without_forcing_docker_sync(d
 
     assert result.status == "completed"
     assert result.result["images"][0]["full_name"] == "biocontainers/fastqc:latest"
-    assert result.result["status"]["docker"] == "available"
+    assert result.result["status"]["docker"] == "not_synced"
+
+
+@pytest.mark.asyncio
+async def test_images_list_tool_is_read_only_even_for_local_filter(
+    db_session, monkeypatch
+):
+    dispatcher, context, _resources = await _tool_context(db_session)
+
+    async def fail_sync(self, *, force=False):
+        raise AssertionError("images.list must not sync Docker state")
+
+    monkeypatch.setattr(
+        "app.services.image_service.ImageService._sync_local_images",
+        fail_sync,
+    )
+
+    result = await dispatcher.dispatch(
+        tool_name="images.list",
+        input={"status": "local"},
+        context=context,
+    )
+
+    assert result.status == "completed"
+    assert result.result["status"]["docker"] == "not_synced"
+
+
+@pytest.mark.asyncio
+async def test_images_build_rejects_context_outside_current_project(
+    db_session,
+):
+    dispatcher, context, resources = await _tool_context(db_session)
+    outside_context = Path(settings.bioinfoflow_home) / "outside-build-context"
+    outside_context.mkdir()
+    (outside_context / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+
+    result = await dispatcher.dispatch(
+        tool_name="images.build",
+        input={
+            "project_id": str(resources["project"].id),
+            "tag": "unsafe-build:latest",
+            "context_path": str(outside_context),
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert "Build context must be inside the project root" in result.error["message"]
+
+
+@pytest.mark.asyncio
+async def test_images_build_rejects_dockerfile_outside_build_context_project(
+    db_session, tmp_path
+):
+    dispatcher, context, resources = await _tool_context(db_session)
+    project_root = settings.projects_root / str(resources["project"].id)
+    build_context = project_root / "build-context"
+    build_context.mkdir(parents=True)
+    outside_dockerfile = tmp_path / "Dockerfile"
+    outside_dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+
+    result = await dispatcher.dispatch(
+        tool_name="images.build",
+        input={
+            "project_id": str(resources["project"].id),
+            "tag": "unsafe-dockerfile:latest",
+            "context_path": str(build_context),
+            "dockerfile": str(outside_dockerfile),
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert "Dockerfile must be inside the project root" in result.error["message"]
+
+
+@pytest.mark.asyncio
+async def test_images_get_tool_returns_platform_image_projection(db_session):
+    dispatcher, context, resources = await _tool_context(db_session)
+
+    result = await dispatcher.dispatch(
+        tool_name="images.get",
+        input={"image_id": str(resources["image"].id)},
+        context=context,
+    )
+
+    assert result.status == "completed"
+    assert result.result["image"]["full_name"] == "biocontainers/fastqc:latest"
 
 
 @pytest.mark.asyncio
@@ -130,6 +409,96 @@ async def test_runs_list_tool_uses_run_service(db_session):
     assert result.status == "completed"
     assert result.result["runs"][0]["run_id"] == "run-resource-1"
     assert result.result["runs"][0]["tasks_completed"] == 4
+
+
+@pytest.mark.asyncio
+async def test_run_evidence_tools_wrap_run_service(db_session, monkeypatch):
+    dispatcher, context, resources = await _tool_context(db_session)
+
+    async def fake_outputs(self, run_id, **kwargs):
+        assert run_id == "run-resource-1"
+        return {"files": [{"path": "results/out.txt", "size_bytes": 12}]}
+
+    async def fake_dag(self, run_id, **kwargs):
+        assert run_id == "run-resource-1"
+        return {"nodes": [{"id": "align"}], "edges": []}
+
+    async def fake_audit(self, run_id, **kwargs):
+        assert run_id == "run-resource-1"
+        return [{"event": "created"}]
+
+    monkeypatch.setattr("app.services.agent_core.tools.platform.runs.RunService.list_outputs", fake_outputs)
+    monkeypatch.setattr("app.services.agent_core.tools.platform.runs.RunService.get_dag", fake_dag)
+    monkeypatch.setattr("app.services.agent_core.tools.platform.runs.RunService.get_run_audit", fake_audit)
+
+    get_result = await dispatcher.dispatch(
+        tool_name="runs.get",
+        input={"run_id": "run-resource-1"},
+        context=context,
+    )
+    outputs = await dispatcher.dispatch(
+        tool_name="runs.outputs",
+        input={"run_id": "run-resource-1"},
+        context=context,
+    )
+    dag = await dispatcher.dispatch(
+        tool_name="runs.dag",
+        input={"run_id": "run-resource-1"},
+        context=context,
+    )
+    audit = await dispatcher.dispatch(
+        tool_name="runs.audit",
+        input={"run_id": "run-resource-1"},
+        context=context,
+    )
+
+    assert get_result.result["run"]["run_id"] == "run-resource-1"
+    assert outputs.result["outputs"]["files"][0]["path"] == "results/out.txt"
+    assert dag.result["dag"]["nodes"][0]["id"] == "align"
+    assert audit.result["audit"] == [{"event": "created"}]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_tools_return_status_and_resources(db_session, monkeypatch):
+    dispatcher, context, _resources = await _tool_context(db_session)
+
+    class FakeSnapshot:
+        sampled_at = None
+        cpu_count = 16
+        cpu_available = 8
+        memory_total_gb = 64.0
+        memory_available_gb = 32.0
+        disk_total_gb = 1000.0
+        disk_available_gb = 750.0
+        gpu_count = 1
+        gpu_memory_gb = 24.0
+
+    class FakeScheduler:
+        async def get_status(self):
+            return {"workers": 2, "queue_depth": 3, "active_runs": []}
+
+        def get_resource_snapshot(self):
+            return FakeSnapshot()
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.scheduler.get_run_scheduler",
+        lambda: FakeScheduler(),
+    )
+
+    status = await dispatcher.dispatch(
+        tool_name="scheduler.status",
+        input={},
+        context=context,
+    )
+    resources = await dispatcher.dispatch(
+        tool_name="scheduler.resources",
+        input={},
+        context=context,
+    )
+
+    assert status.result["status"]["scheduler_available"] is True
+    assert status.result["status"]["queue_depth"] == 3
+    assert resources.result["resources"]["cpu"]["available"] == 8
 
 
 @pytest.mark.asyncio

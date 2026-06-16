@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
+from app.path_layout import project_home
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
+from app.services.authorization_service import AuthorizationService
 from app.services.image_service import ImageService
+from app.services.project_service import ProjectService
+from app.utils.exceptions import NotFoundError, PermissionDeniedError
 
 
 def _image_summary(image) -> dict[str, Any]:
@@ -16,20 +21,23 @@ def _image_summary(image) -> dict[str, Any]:
         "full_name": image.full_name,
         "registry": image.registry,
         "status": _value(image.status),
+        "size_bytes": getattr(image, "size_bytes", None),
+        "entrypoint": getattr(image, "entrypoint", None),
+        "env": getattr(image, "env", None),
+        "labels": getattr(image, "labels", None),
     }
 
 
 class ListImagesTool:
     spec = AgentToolSpec(
         name="images.list",
-        description="List registered Docker image assets.",
+        description="List registered Docker image assets from the platform catalog without syncing Docker state.",
         input_schema={
             "type": "object",
             "properties": {
                 "search": {"type": "string"},
                 "status": {"type": "string"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-                "force_sync": {"type": "boolean"},
             },
             "additionalProperties": False,
         },
@@ -49,11 +57,10 @@ class ListImagesTool:
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         service = ImageService(context.db)
-        images, pagination, status = await service.list_images(
+        images, pagination, status = await service.list_catalog_images(
             limit=int(input.get("limit") or 20),
             search=input.get("search"),
-            status=input.get("status") or "remote",
-            force_sync=bool(input.get("force_sync", False)),
+            status=input.get("status"),
         )
         return {
             "images": [
@@ -74,6 +81,33 @@ class ListImagesTool:
             "total_count": pagination.total_count or 0,
             "status": status,
         }
+
+
+class GetImageTool:
+    spec = AgentToolSpec(
+        name="images.get",
+        description="Read Docker image asset details by id.",
+        input_schema={
+            "type": "object",
+            "properties": {"image_id": {"type": "string"}},
+            "required": ["image_id"],
+            "additionalProperties": False,
+        },
+        output_schema={
+            "type": "object",
+            "properties": {"image": {"type": "object"}},
+            "required": ["image"],
+        },
+        risk_level="read",
+        read_scope=["images"],
+        audit="Read Docker image asset.",
+    )
+
+    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        image = await ImageService(context.db).get_image(str(input["image_id"]))
+        if image is None:
+            raise NotFoundError("Image not found")
+        return {"image": _image_summary(image)}
 
 
 class PullImageTool:
@@ -129,10 +163,11 @@ class BuildImageTool:
             "type": "object",
             "properties": {
                 "tag": {"type": "string"},
+                "project_id": {"type": "string"},
                 "context_path": {"type": "string"},
                 "dockerfile": {"type": "string"},
             },
-            "required": ["tag", "context_path"],
+            "required": ["tag", "project_id", "context_path"],
             "additionalProperties": False,
         },
         output_schema={
@@ -157,10 +192,30 @@ class BuildImageTool:
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         tag = str(input["tag"])
+        project = await ProjectService(context.db).get_project(
+            str(input["project_id"]),
+            workspace_id=context.workspace_id,
+        )
+        if project is None:
+            raise NotFoundError("Project not found")
+        project_root = project_home(project)
         context_dir = FilesystemPolicy().require_allowed_dir(input["context_path"])
+        _require_path_under_root(
+            context_dir,
+            project_root,
+            message="Build context must be inside the project root",
+        )
         argv = ["docker", "build", "-t", tag]
         if input.get("dockerfile"):
-            argv += ["-f", str(input["dockerfile"])]
+            dockerfile = _resolve_dockerfile(context_dir, input["dockerfile"])
+            _require_path_under_root(
+                dockerfile,
+                project_root,
+                message="Dockerfile must be inside the project root",
+            )
+            if not dockerfile.exists() or not dockerfile.is_file():
+                raise NotFoundError("Dockerfile not found")
+            argv += ["-f", str(dockerfile)]
         argv.append(str(context_dir))
 
         process = await asyncio.create_subprocess_exec(
@@ -177,6 +232,7 @@ class BuildImageTool:
             "stdout": _limit(stdout.decode("utf-8", errors="replace")),
             "stderr": _limit(stderr.decode("utf-8", errors="replace")),
         }
+        built = None
         if exit_code == 0:
             # Force a catalog sync so the freshly built image is registered.
             service = ImageService(context.db)
@@ -184,9 +240,51 @@ class BuildImageTool:
                 status="local", force_sync=True
             )
             built = next((image for image in images if image.full_name == tag), None)
-            if built is not None:
-                result["image"] = _image_summary(built)
+        if built is not None:
+            result["image"] = _image_summary(built)
         return result
+
+
+class DeleteImageTool:
+    spec = AgentToolSpec(
+        name="images.delete",
+        description="Delete a Docker image asset and remove the image from Docker when possible.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "image_id": {"type": "string"},
+                "force": {"type": "boolean"},
+            },
+            "required": ["image_id"],
+            "additionalProperties": False,
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "image_id": {"type": "string"},
+                "deleted": {"type": "boolean"},
+            },
+            "required": ["image_id", "deleted"],
+        },
+        risk_level="destructive",
+        read_scope=["images"],
+        write_scope=["images"],
+        audit="Delete Docker image asset.",
+        rollback_hint="Pull or build the image again if it is needed.",
+    )
+
+    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        image_id = str(input["image_id"])
+        service = ImageService(context.db)
+        image = await service.get_image(image_id)
+        if image is None:
+            raise NotFoundError("Image not found")
+        await AuthorizationService(context.db).require_destructive_business_access(
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
+        deleted = await service.delete_image(image, force=bool(input.get("force", False)))
+        return {"image_id": image_id, "deleted": bool(deleted)}
 
 
 def _limit(text: str, limit: int = 16000) -> str:
@@ -197,3 +295,17 @@ def _limit(text: str, limit: int = 16000) -> str:
 
 def _value(value) -> str:
     return value.value if hasattr(value, "value") else str(value)
+
+
+def _resolve_dockerfile(context_dir: Path, dockerfile: object) -> Path:
+    candidate = Path(str(dockerfile)).expanduser()
+    if not candidate.is_absolute():
+        candidate = context_dir / candidate
+    return candidate.resolve()
+
+
+def _require_path_under_root(path: Path, root: Path, *, message: str) -> None:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise PermissionDeniedError(message) from exc
