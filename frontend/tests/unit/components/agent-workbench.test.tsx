@@ -1,10 +1,12 @@
 import type * as React from "react"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentWorkbench } from "@/components/bioinfoflow/agent-runtime/agent-workbench"
 import type {
+  AgentRuntimeArtifact,
   AgentRuntimeEvent,
+  AgentRuntimeSession,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 import { buildAgentRuntimeTimeline } from "@/lib/agent-runtime"
@@ -12,6 +14,7 @@ import { buildAgentRuntimeTimeline } from "@/lib/agent-runtime"
 const useAgentRuntimeMock = vi.fn()
 const useLlmSettingsMock = vi.fn()
 const setNavbarActionsMock = vi.fn()
+const apiRequestMock = vi.fn()
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
@@ -31,6 +34,7 @@ vi.mock("next-intl", () => ({
       approve: "Approve",
       reject: "Reject",
       "approval.state.approved": "Approved, resuming",
+      "approval.jumpToDecision": "Needs confirmation · Jump",
       "turnStatus.running": "Working",
       "turnStatus.completed": "Done",
       "sidecar.title": "Run",
@@ -74,6 +78,10 @@ vi.mock("next/link", () => ({
   ),
 }))
 
+vi.mock("@/lib/api", () => ({
+  apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+}))
+
 vi.mock("@/hooks/use-agent-runtime", () => ({
   useAgentRuntime: (...args: unknown[]) => useAgentRuntimeMock(...args),
 }))
@@ -94,6 +102,19 @@ vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
   ),
 }))
 
+const baseSession: AgentRuntimeSession = {
+  id: "session-1",
+  workspace_id: "workspace-1",
+  user_id: "user-1",
+  role_profile: "bioinformatician",
+  permission_mode: "guarded_auto",
+  automation_mode: "assisted",
+  runtime_mode: "api",
+  status: "active",
+  created_at: "2026-06-09T00:00:00Z",
+  updated_at: "2026-06-09T00:00:00Z",
+}
+
 const baseTurn: AgentRuntimeTurn = {
   id: "turn-1",
   session_id: "session-1",
@@ -113,6 +134,23 @@ const baseTurn: AgentRuntimeTurn = {
   updated_at: "2026-06-09T00:00:00Z",
 }
 
+const priorTodoArtifact: AgentRuntimeArtifact = {
+  id: "artifact-todo-1",
+  session_id: "session-1",
+  turn_id: "turn-1",
+  action_id: "action-todo-1",
+  type: "todo_list",
+  title: "Tasks",
+  summary: null,
+  payload: {
+    todos: [{ content: "Old task", status: "in_progress", activeForm: "Working old task" }],
+  },
+  file_path: null,
+  resource_ref: null,
+  created_at: "2026-06-09T00:00:03Z",
+  updated_at: "2026-06-09T00:00:03Z",
+}
+
 const waitingDecisionEvent: AgentRuntimeEvent = {
   id: "event-1",
   session_id: "session-1",
@@ -127,17 +165,19 @@ const waitingDecisionEvent: AgentRuntimeEvent = {
 }
 
 function setupRuntime({
+  session = null,
   turns = [],
   events = [],
   status = "idle",
 }: {
+  session?: AgentRuntimeSession | null
   turns?: AgentRuntimeTurn[]
   events?: AgentRuntimeEvent[]
   status?: "idle" | "loading" | "running" | "error"
 } = {}) {
   useAgentRuntimeMock.mockReturnValue({
     state: {
-      session: null,
+      session,
       turns,
       events,
       timeline: buildAgentRuntimeTimeline(turns, events),
@@ -156,6 +196,8 @@ describe("AgentWorkbench", () => {
     useAgentRuntimeMock.mockReset()
     useLlmSettingsMock.mockReset()
     setNavbarActionsMock.mockReset()
+    apiRequestMock.mockReset()
+    apiRequestMock.mockResolvedValue({ data: [] })
     useLlmSettingsMock.mockReturnValue({
       models: [],
       selectedModel: null,
@@ -293,7 +335,7 @@ describe("AgentWorkbench", () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it("renders approvals above the composer and inline without opening the panel", () => {
+  it("renders a compact composer jump prompt and inline approval controls", () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
       events: [waitingDecisionEvent],
@@ -303,10 +345,14 @@ describe("AgentWorkbench", () => {
     render(<AgentWorkbench />)
 
     expect(screen.getByTestId("composer-approval-popover")).toBeInTheDocument()
+    expect(screen.getByTestId("composer-decision-jump")).toBeInTheDocument()
+    expect(screen.getByText("Needs confirmation · Jump")).toBeInTheDocument()
     expect(screen.getByTestId("inline-approval-card")).toBeInTheDocument()
+    expect(screen.queryByTestId("pending-decisions")).not.toBeInTheDocument()
     expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
-    expect(screen.getAllByText("Needs your decision").length).toBeGreaterThan(0)
-    expect(screen.getAllByRole("button", { name: "Approve" }).length).toBeGreaterThan(0)
+    expect(screen.getByText("Needs your decision")).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1)
+    expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(1)
   })
 
   it("does not auto-open the panel merely because the agent is streaming", () => {
@@ -394,7 +440,7 @@ describe("AgentWorkbench", () => {
     expect(screen.getByText("Read project structure")).toBeInTheDocument()
   })
 
-  it("keeps an approved approval visible until resume progress arrives", () => {
+  it("keeps an approved approval visible in the transcript until resume progress arrives", () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "running", final_text: null }],
       events: [
@@ -412,7 +458,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    expect(screen.getByTestId("composer-approval-popover")).toBeInTheDocument()
+    expect(screen.queryByTestId("composer-approval-popover")).not.toBeInTheDocument()
     expect(screen.getAllByText("Approved, resuming").length).toBeGreaterThan(0)
     expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
   })
@@ -443,6 +489,32 @@ describe("AgentWorkbench", () => {
     render(<AgentWorkbench />)
 
     expect(screen.queryByTestId("composer-approval-popover")).not.toBeInTheDocument()
-    expect(screen.queryByText("Approved, resuming")).not.toBeInTheDocument()
+    expect(screen.getByText("Approved, resuming")).toBeInTheDocument()
+  })
+
+  it("does not dock an older turn todo over a newer turn", async () => {
+    apiRequestMock.mockResolvedValue({ data: [priorTodoArtifact] })
+    setupRuntime({
+      session: baseSession,
+      turns: [
+        baseTurn,
+        {
+          ...baseTurn,
+          id: "turn-2",
+          input_text: "Now inspect the report.",
+          final_text: "The report is ready.",
+          created_at: "2026-06-09T00:01:00Z",
+          updated_at: "2026-06-09T00:01:00Z",
+        },
+      ],
+    })
+
+    render(<AgentWorkbench />)
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
+    })
+    expect(screen.queryByTestId("agent-todo-dock")).not.toBeInTheDocument()
+    expect(screen.queryByText("Working old task")).not.toBeInTheDocument()
   })
 })

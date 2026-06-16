@@ -2201,10 +2201,14 @@
     "approve": "Approve",
     "reject": "Reject",
     "approval": {
+      "jumpToDecision": "Needs confirmation · Jump",
       "state": {
         "approved": "Approved, resuming",
         "answered": "Answer submitted, resuming",
-        "rejected": "Rejected"
+        "completed": "Completed",
+        "rejected": "Rejected",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
       }
     },
     "attachMenu": {
@@ -2268,6 +2272,11 @@
       "tasks": "Tasks",
       "empty": "No tasks yet. The agent's checklist will appear here as it works."
     },
+    "todoDock": {
+      "collapse": "Collapse task dock",
+      "expand": "Expand task dock",
+      "summary": "{count, plural, one {# task left} other {# tasks left}}"
+    },
     "files": {
       "title": "Files",
       "up": "Up",
@@ -2275,7 +2284,9 @@
       "refresh": "Refresh",
       "empty": "This folder is empty.",
       "error": "Could not load files.",
-      "search": "Search files",
+      "search": "Search loaded files",
+      "loadedOnly": "Searching {count, plural, one {# loaded item} other {# loaded items}}",
+      "loading": "Loading...",
       "addToContext": "Add to context",
       "copyPath": "Copy path",
       "removeAttachment": "Remove {label}",

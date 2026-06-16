@@ -2201,10 +2201,14 @@
     "approve": "批准",
     "reject": "拒绝",
     "approval": {
+      "jumpToDecision": "需要确认 · 跳转",
       "state": {
         "approved": "已批准，继续执行",
         "answered": "已提交回答，继续执行",
-        "rejected": "已拒绝"
+        "completed": "已完成",
+        "rejected": "已拒绝",
+        "failed": "失败",
+        "cancelled": "已取消"
       }
     },
     "attachMenu": {
@@ -2268,6 +2272,11 @@
       "tasks": "任务",
       "empty": "暂无任务。智能助手的任务清单会在执行时显示在这里。"
     },
+    "todoDock": {
+      "collapse": "收起任务面板",
+      "expand": "展开任务面板",
+      "summary": "剩余 {count} 项任务"
+    },
     "files": {
       "title": "文件",
       "up": "上一级",
@@ -2275,7 +2284,9 @@
       "refresh": "刷新",
       "empty": "此文件夹为空。",
       "error": "无法加载文件。",
-      "search": "搜索文件",
+      "search": "搜索已加载文件",
+      "loadedOnly": "正在搜索 {count} 个已加载项目",
+      "loading": "加载中...",
       "addToContext": "添加到上下文",
       "copyPath": "复制路径",
       "removeAttachment": "移除 {label}",

@@ -27,10 +27,7 @@ export function ProgressTab({ artifacts }: { artifacts: AgentRuntimeArtifact[] }
   const otherArtifacts = useMemo(
     () =>
       artifacts.filter(
-        (artifact) =>
-          artifact.id !== latestTodoArtifact?.id &&
-          artifact.type !== "command" &&
-          artifact.type !== "log_summary",
+        (artifact) => artifact.id !== latestTodoArtifact?.id,
       ),
     [artifacts, latestTodoArtifact],
   )

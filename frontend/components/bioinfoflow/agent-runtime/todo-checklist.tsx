@@ -1,55 +1,81 @@
 "use client"
 
-import { Check, Circle, Loader2 } from "lucide-react"
+import { AlertTriangle, Check, Circle, CircleSlash2, Loader2 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
-import type { AgentTodoItem } from "@/lib/agent-runtime"
+import type { AgentTodoDisplayItem, AgentTodoDisplayStatus, AgentTodoItem } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
-export function TodoChecklist({ todos, compact = false }: { todos: AgentTodoItem[]; compact?: boolean }) {
+type TodoChecklistItem = AgentTodoItem | AgentTodoDisplayItem
+
+export function TodoChecklist({ todos, compact = false }: { todos: TodoChecklistItem[]; compact?: boolean }) {
   const t = useTranslations("agentRuntime")
   if (!todos.length) {
     return <p className="text-sm text-muted-foreground">{t("progress.empty")}</p>
   }
   return (
     <ul className="grid gap-1.5" data-testid="todo-checklist">
-      {todos.map((todo, index) => (
-        <li
-          key={`${index}-${todo.content}`}
-          className={cn(
-            "flex items-start gap-2.5 rounded-xl text-sm",
-            compact ? "px-1 py-1" : "border px-3 py-2",
-            !compact &&
-              (todo.status === "in_progress"
-                ? "border-primary/40 bg-primary/5"
-                : "border-border/60 bg-card"),
-          )}
-        >
-          <TodoStatusIcon status={todo.status} />
-          <span
+      {todos.map((todo, index) => {
+        const displayStatus = todoDisplayStatus(todo)
+        return (
+          <li
+            key={`${index}-${todo.content}`}
             className={cn(
-              "min-w-0 flex-1 break-words",
-              todo.status === "completed" && "text-muted-foreground line-through",
-              todo.status === "in_progress" && "font-medium text-foreground",
+              "flex items-start gap-2.5 rounded-xl text-sm",
+              compact ? "px-1 py-1" : "border px-3 py-2",
+              !compact && statusFrame(displayStatus),
             )}
           >
-            {todo.status === "in_progress" && todo.activeForm
-              ? todo.activeForm
-              : todo.content}
-          </span>
-        </li>
-      ))}
+            <TodoStatusIcon status={displayStatus} />
+            <span
+              className={cn(
+                "min-w-0 flex-1 break-words",
+                displayStatus === "completed" && "text-muted-foreground line-through",
+                displayStatus === "in_progress" && "font-medium text-foreground",
+                ["failed", "cancelled", "stopped"].includes(displayStatus) &&
+                  "text-muted-foreground",
+              )}
+            >
+              {displayStatus === "in_progress" && todo.activeForm
+                ? todo.activeForm
+                : todo.content}
+              {"errorMessage" in todo && todo.errorMessage ? (
+                <span className="mt-0.5 block text-xs text-destructive">
+                  {todo.errorMessage}
+                </span>
+              ) : null}
+            </span>
+          </li>
+        )
+      })}
     </ul>
   )
 }
 
-function TodoStatusIcon({ status }: { status: AgentTodoItem["status"] }) {
+function statusFrame(status: AgentTodoDisplayStatus) {
+  if (status === "in_progress") return "border-primary/40 bg-primary/5"
+  if (status === "failed") return "border-destructive/30 bg-destructive/5"
+  if (status === "cancelled" || status === "stopped") return "border-amber-500/30 bg-amber-500/5"
+  return "border-border/60 bg-card"
+}
+
+function todoDisplayStatus(todo: TodoChecklistItem): AgentTodoDisplayStatus {
+  return "displayStatus" in todo ? todo.displayStatus : todo.status
+}
+
+function TodoStatusIcon({ status }: { status: AgentTodoDisplayStatus }) {
   const className = "mt-0.5 h-4 w-4 shrink-0"
   if (status === "completed") {
     return <Check className={cn(className, "text-emerald-500")} />
   }
   if (status === "in_progress") {
-    return <Loader2 className={cn(className, "animate-spin text-primary")} />
+    return <Loader2 className={cn(className, "animate-spin text-primary")} data-testid="todo-spinner" />
+  }
+  if (status === "failed") {
+    return <AlertTriangle className={cn(className, "text-destructive")} />
+  }
+  if (status === "cancelled" || status === "stopped") {
+    return <CircleSlash2 className={cn(className, "text-amber-600")} />
   }
   return <Circle className={cn(className, "text-muted-foreground/50")} />
 }

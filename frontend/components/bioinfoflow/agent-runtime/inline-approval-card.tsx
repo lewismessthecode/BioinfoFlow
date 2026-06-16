@@ -1,20 +1,19 @@
 "use client"
 
 import { useState } from "react"
-import { Check, CheckCircle2, XCircle } from "lucide-react"
+import { AlertTriangle, Check, CheckCircle2, XCircle } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
-import type { AgentAnswer, AgentAskUserQuestion } from "@/lib/agent-runtime"
+import type { AgentAnswer, AgentAskUserQuestion, AgentRuntimeDecisionView } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
-import type { AgentDecisionCard } from "./pending-actions"
 import type { AgentDecisionHandler } from "./types"
 
 export function InlineApprovalCard({
   decision,
   onDecision,
 }: {
-  decision: AgentDecisionCard
+  decision: AgentRuntimeDecisionView
   onDecision?: AgentDecisionHandler
 }) {
   const t = useTranslations("agentRuntime")
@@ -30,15 +29,22 @@ export function InlineApprovalCard({
     )
   }
 
+  const isPlanApproval = decision.interaction?.kind === "plan_approval"
+
   return (
     <div
+      id={decision.scrollTargetId}
       className="mb-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm"
-      data-testid="inline-approval-card"
+      data-testid={isPlanApproval ? "inline-plan-card" : "inline-approval-card"}
     >
       <div className="mb-2 flex items-center gap-2 font-medium text-amber-900 dark:text-amber-200">
         {isPending ? <Check className="h-4 w-4" /> : <DecisionStateIcon state={decision.state} />}
         <span className="min-w-0 flex-1">
-          {isPending ? t("sidecar.needsDecision") : t(`approval.state.${decision.state}`)}
+          {isPending
+            ? isPlanApproval
+              ? t("plan.reviewTitle")
+              : t("sidecar.needsDecision")
+            : t(`approval.state.${decision.state}`)}
         </span>
         {decision.riskLevel ? (
           <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] uppercase tracking-wide">
@@ -49,7 +55,11 @@ export function InlineApprovalCard({
 
       <div className="grid gap-1.5 text-xs text-amber-900/80 dark:text-amber-100/80">
         <div className="font-mono">{decision.name ?? decision.actionId}</div>
-        {decision.inputPreview ? (
+        {isPlanApproval ? (
+          <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-background/60 p-2 font-mono">
+            {decision.interaction?.kind === "plan_approval" ? decision.interaction.plan : ""}
+          </pre>
+        ) : decision.inputPreview ? (
           <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-background/60 p-2 font-mono">
             {decision.inputPreview}
           </pre>
@@ -65,7 +75,7 @@ export function InlineApprovalCard({
             onClick={() => onDecision(decision.actionId, "approve")}
           >
             <Check className="h-3.5 w-3.5" />
-            {t("approve")}
+            {isPlanApproval ? t("plan.approveAndAct") : t("approve")}
           </Button>
           <Button
             type="button"
@@ -74,7 +84,7 @@ export function InlineApprovalCard({
             className="h-8 rounded-full bg-card"
             onClick={() => onDecision(decision.actionId, "reject")}
           >
-            {t("reject")}
+            {isPlanApproval ? t("plan.keepPlanning") : t("reject")}
           </Button>
         </div>
       ) : null}
@@ -122,6 +132,7 @@ function InlineAskUserCard({
 
   return (
     <div
+      id={`agent-decision-${actionId}`}
       className="mb-3 rounded-2xl border border-sky-500/30 bg-sky-500/10 px-3 py-3 text-sm"
       data-testid="inline-ask-user-card"
     >
@@ -139,6 +150,7 @@ function InlineAskUserCard({
                   <button
                     key={option.label}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => toggle(question, option.label)}
                     className={cn(
                       "flex flex-col items-start rounded-xl border px-2.5 py-1.5 text-left transition-colors",
@@ -173,7 +185,10 @@ function InlineAskUserCard({
   )
 }
 
-function DecisionStateIcon({ state }: { state: AgentDecisionCard["state"] }) {
+function DecisionStateIcon({ state }: { state: AgentRuntimeDecisionView["state"] }) {
   if (state === "rejected") return <XCircle className="h-4 w-4" />
+  if (state === "failed" || state === "cancelled") {
+    return <AlertTriangle className="h-4 w-4" />
+  }
   return <CheckCircle2 className="h-4 w-4" />
 }

@@ -95,7 +95,36 @@ export type AgentRuntimeEvent = {
   updated_at: string
 }
 
+export type AgentRuntimeTextBlockStatus =
+  | "streaming"
+  | "completed"
+  | "failed"
+  | "cancelled"
+
+export type AgentRuntimeTextBlockSource = "snapshot" | "events" | "snapshot+events"
+
+export type AgentRuntimeTextBlock = {
+  id: string
+  turnId: string
+  messageId: string | null
+  seqStart: number
+  seqEnd: number
+  text: string
+  status: AgentRuntimeTextBlockStatus
+  source: AgentRuntimeTextBlockSource
+}
+
 type AgentRuntimeThinkingState = {
+  content: string
+  isComplete: boolean
+}
+
+export type AgentRuntimeThinkingBlock = {
+  id: string
+  turnId: string
+  messageId: string | null
+  seqStart: number
+  seqEnd: number
   content: string
   isComplete: boolean
 }
@@ -112,9 +141,11 @@ export type AgentRuntimeToolCallState = {
 export type AgentRuntimeAssistantState = {
   messageId: string | null
   text: string
+  textBlocks: AgentRuntimeTextBlock[]
   status: "pending" | "streaming" | "completed" | "failed" | "cancelled"
   errorMessage?: string | null
   thinking?: AgentRuntimeThinkingState | null
+  thinkingBlocks: AgentRuntimeThinkingBlock[]
   toolCalls: AgentRuntimeToolCallState[]
 }
 
@@ -144,6 +175,8 @@ export type AgentRuntimeToolActivity = {
   summary?: string | null
   artifactId?: string | null
   artifactType?: string | null
+  seqStart: number
+  seqEnd: number
 }
 
 export type AgentRuntimeActivityGroupKind =
@@ -160,6 +193,8 @@ export type AgentRuntimeActivityGroup = {
   kind: AgentRuntimeActivityGroupKind
   status: AgentRuntimeToolActivityStatus
   activities: AgentRuntimeToolActivity[]
+  seqStart: number
+  seqEnd: number
 }
 
 export type AgentRuntimeInlinePlanStatus = "pending" | "approved" | "rejected" | "answered"
@@ -170,12 +205,70 @@ export type AgentRuntimeInlinePlan = {
   status: AgentRuntimeInlinePlanStatus
 }
 
+export type AgentRuntimeDecisionState =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "answered"
+  | "completed"
+  | "failed"
+  | "cancelled"
+
+export type AgentRuntimeDecisionView = AgentWaitingDecision & {
+  state: AgentRuntimeDecisionState
+  turnId: string
+  seqStart: number
+  seqEnd: number
+  scrollTargetId: string
+}
+
+type AgentRuntimeSegmentBase = {
+  id: string
+  turnId: string
+  seqStart: number
+  seqEnd: number
+  status: string
+}
+
+export type AgentRuntimeAssistantTextSegment = AgentRuntimeSegmentBase & {
+  kind: "assistant_text"
+  textBlock: AgentRuntimeTextBlock
+}
+
+export type AgentRuntimeAssistantThinkingSegment = AgentRuntimeSegmentBase & {
+  kind: "assistant_thinking"
+  thinkingBlock: AgentRuntimeThinkingBlock
+}
+
+export type AgentRuntimeActivityGroupSegment = AgentRuntimeSegmentBase & {
+  kind: "activity_group"
+  activityGroup: AgentRuntimeActivityGroup
+}
+
+export type AgentRuntimeDecisionSegment = AgentRuntimeSegmentBase & {
+  kind: "decision"
+  decision: AgentRuntimeDecisionView
+}
+
+export type AgentRuntimeTurnErrorSegment = AgentRuntimeSegmentBase & {
+  kind: "turn_error"
+  message: string | null
+}
+
+export type AgentRuntimeTranscriptSegment =
+  | AgentRuntimeAssistantTextSegment
+  | AgentRuntimeAssistantThinkingSegment
+  | AgentRuntimeActivityGroupSegment
+  | AgentRuntimeDecisionSegment
+  | AgentRuntimeTurnErrorSegment
+
 export type AgentRuntimeTimelineEntry = {
   turn: AgentRuntimeTurn
   assistant: AgentRuntimeAssistantState
   activities: AgentRuntimeToolActivity[]
   activityGroups: AgentRuntimeActivityGroup[]
   inlinePlans: AgentRuntimeInlinePlan[]
+  segments: AgentRuntimeTranscriptSegment[]
 }
 
 export type AgentRuntimeStatePayload = {
@@ -201,10 +294,24 @@ export type AgentRuntimeArtifact = {
 
 export type AgentTodoStatus = "pending" | "in_progress" | "completed"
 
+export type AgentTodoDisplayStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "stopped"
+  | "failed"
+  | "cancelled"
+
 export type AgentTodoItem = {
   content: string
   status: AgentTodoStatus
   activeForm?: string
+}
+
+export type AgentTodoDisplayItem = AgentTodoItem & {
+  displayStatus: AgentTodoDisplayStatus
+  terminalReason?: string | null
+  errorMessage?: string | null
 }
 
 export type AgentAskUserOption = {
@@ -219,9 +326,6 @@ export type AgentAskUserQuestion = {
   options: AgentAskUserOption[]
 }
 
-// Shape of the enriched `action.waiting_decision` event payload (see the
-// backend AgentActionService): enough for the UI to render the approval /
-// question / plan card without a second fetch.
 export type AgentWaitingDecision = {
   actionId: string
   name?: string
@@ -235,7 +339,6 @@ export type AgentWaitingDecision = {
     | null
 }
 
-// User's reply to ask_user, keyed by question header → selected label(s).
 export type AgentAnswer = Record<string, string | string[]>
 
 export type AgentFsEntry = {

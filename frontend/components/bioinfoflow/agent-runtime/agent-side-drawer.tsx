@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 import {
+  decisionScrollTargetId,
   listAgentRuntimeSessionArtifacts,
   type AgentRuntimeArtifact,
   type AgentRuntimeEvent,
@@ -13,8 +14,7 @@ import {
 import { cn } from "@/lib/utils"
 import { ArtifactPreviewDrawer } from "./artifact-preview-drawer"
 import { BrowserTab } from "./browser-tab"
-import { PendingDecisionCards } from "./pending-decision-cards"
-import type { AgentDecisionHandler } from "./types"
+import { getPendingActions } from "./pending-actions"
 import { WorkspaceExplorerPanel } from "./workspace-explorer-panel"
 
 type AgentSideDrawerTab = "preview" | "files" | "browser"
@@ -24,7 +24,6 @@ type AgentSideDrawerProps = {
   sessionId?: string | null
   events: AgentRuntimeEvent[]
   onClose: () => void
-  onDecision: AgentDecisionHandler
   onAddContext?: (path: string) => void
   className?: string
 }
@@ -40,7 +39,6 @@ export function AgentSideDrawer({
   sessionId,
   events,
   onClose,
-  onDecision,
   onAddContext,
   className,
 }: AgentSideDrawerProps) {
@@ -69,6 +67,17 @@ export function AgentSideDrawer({
   }, [sessionId, artifactEventCount])
 
   const visibleArtifacts = sessionId ? artifacts : []
+  const pendingDecision = useMemo(() => getPendingActions(events)[0] ?? null, [events])
+  const pendingDecisionActionId = pendingDecision
+    ? String(pendingDecision.payload.action_id || "")
+    : null
+  const jumpToPendingDecision = () => {
+    if (!pendingDecisionActionId) return
+    document.getElementById(decisionScrollTargetId(pendingDecisionActionId))?.scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    })
+  }
 
   return (
     <aside
@@ -110,9 +119,17 @@ export function AgentSideDrawer({
         </Button>
       </div>
 
-      <div className="border-b border-border/60 px-3 py-2 empty:hidden">
-        <PendingDecisionCards events={events} onDecision={onDecision} />
-      </div>
+      {pendingDecisionActionId ? (
+        <div className="border-b border-border/60 px-3 py-2" data-testid="sidecar-decision-indicator">
+          <button
+            type="button"
+            className="w-full rounded-full bg-amber-500/10 px-3 py-1.5 text-left text-xs font-medium text-amber-800 hover:bg-amber-500/15 dark:text-amber-200"
+            onClick={jumpToPendingDecision}
+          >
+            {t("approval.jumpToDecision")}
+          </button>
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {activeTab === "preview" ? <ArtifactPreviewDrawer artifacts={visibleArtifacts} /> : null}

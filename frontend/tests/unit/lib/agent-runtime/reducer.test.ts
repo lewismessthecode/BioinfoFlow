@@ -286,6 +286,130 @@ describe("agentRuntimeReducer", () => {
     expect(loaded.timeline[0].assistant.toolCalls).toHaveLength(1)
   })
 
+  it("accumulates unkeyed thinking stream events into one block", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-thinking-1", 1),
+            type: "assistant.thinking.delta",
+            payload: { text_delta: "Inspect" },
+          },
+          {
+            ...event("event-thinking-2", 2),
+            type: "assistant.thinking.delta",
+            payload: { text_delta: " files" },
+          },
+          {
+            ...event("event-thinking-3", 3),
+            type: "assistant.thinking.completed",
+            payload: { content: "Inspect files" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.thinkingBlocks).toEqual([
+      expect.objectContaining({ content: "Inspect files", isComplete: true }),
+    ])
+  })
+
+  it("marks decisions completed when an action completes without a recorded decision", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("waiting_approval")],
+        events: [
+          {
+            ...event("event-waiting", 1),
+            type: "action.waiting_decision",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+          {
+            ...event("event-completed", 2),
+            type: "action.completed",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].segments).toContainEqual(
+      expect.objectContaining({
+        kind: "decision",
+        decision: expect.objectContaining({ state: "completed" }),
+      }),
+    )
+  })
+
+  it("marks approved decisions completed when the action completes", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("waiting_approval")],
+        events: [
+          {
+            ...event("event-waiting", 1),
+            type: "action.waiting_decision",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+          {
+            ...event("event-approved", 2),
+            type: "action.decision_recorded",
+            payload: { action_id: "action-1", decision: "approve" },
+          },
+          {
+            ...event("event-completed", 3),
+            type: "action.completed",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].segments).toContainEqual(
+      expect.objectContaining({
+        kind: "decision",
+        decision: expect.objectContaining({ state: "completed" }),
+      }),
+    )
+  })
+
+  it("resolves decisions from action events without a matching turn id", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("waiting_approval")],
+        events: [
+          {
+            ...event("event-waiting", 1),
+            type: "action.waiting_decision",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+          {
+            ...event("event-completed", 2),
+            turn_id: null,
+            type: "action.completed",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].segments).toContainEqual(
+      expect.objectContaining({
+        kind: "decision",
+        decision: expect.objectContaining({ state: "completed" }),
+      }),
+    )
+  })
+
   it("projects running status from queued or running turns", () => {
     const state = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "turn.upsert",
@@ -504,5 +628,309 @@ describe("agentRuntimeReducer", () => {
     })
 
     expect(approved.timeline[0].inlinePlans[0]?.status).toBe("approved")
+  })
+
+  it("keeps loaded final text when replaying delta-only text events", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("running"), final_text: "Persisted answer." }],
+        events: [
+          {
+            ...event("event-delta", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: " More text." },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Persisted answer.",
+      " More text.",
+    ])
+    expect(loaded.timeline[0].assistant.text).toContain("Persisted answer.")
+  })
+
+  it("keeps separate message text blocks around tool calls", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-0", content: "First text." },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: {
+              message_id: "message-0",
+              call_id: "call-1",
+              name: "glob",
+              status: "completed",
+              arguments: { pattern: "**/*.wdl" },
+              index: 0,
+            },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-1", content: "Second text." },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "First text.",
+      "Second text.",
+    ])
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+    ])
+  })
+
+  it("keeps text blocks with the same message id ordered around tool calls", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-1", content: "Before tool." },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "glob",
+              status: "completed",
+              arguments: { pattern: "**/*.wdl" },
+              index: 0,
+            },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-1", content: "After tool." },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Before tool.",
+      "After tool.",
+    ])
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+    ])
+  })
+
+  it("does not leave completed decisions pending without a decision event", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("completed")],
+        events: [
+          {
+            ...event("event-waiting", 1),
+            type: "action.waiting_decision",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+          {
+            ...event("event-completed", 2),
+            type: "action.completed",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].segments).toContainEqual(
+      expect.objectContaining({
+        kind: "decision",
+        decision: expect.objectContaining({ state: "completed" }),
+      }),
+    )
+    expect(
+      loaded.timeline[0].segments.some(
+        (segment) => segment.kind === "decision" && segment.status === "pending",
+      ),
+    ).toBe(false)
+  })
+
+  it("accumulates thinking deltas without message ids", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-thinking-1", 1),
+            type: "assistant.thinking.delta",
+            payload: { text_delta: "Inspect" },
+          },
+          {
+            ...event("event-thinking-2", 2),
+            type: "assistant.thinking.delta",
+            payload: { text_delta: " files" },
+          },
+          {
+            ...event("event-thinking-3", 3),
+            type: "assistant.thinking.completed",
+            payload: {},
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.thinking).toEqual({
+      content: "Inspect files",
+      isComplete: true,
+    })
+    expect(loaded.timeline[0].assistant.thinkingBlocks).toHaveLength(1)
+  })
+
+  it("reports completed assistant status for completed turns with only delta text", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("completed")],
+        events: [
+          {
+            ...event("event-text", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "Done" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.status).toBe("completed")
+  })
+
+  it("completed text only replaces partial text for the same message id", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "Draft" },
+          },
+          {
+            ...event("event-2", 2),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-2", delta: "Other" },
+          },
+          {
+            ...event("event-3", 3),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-1", content: "Final" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Final",
+      "Other",
+    ])
+  })
+
+  it("preserves text tool text tool text ordering in segments", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-1", content: "One" },
+          },
+          {
+            ...event("event-tool-1", 2),
+            type: "assistant.tool_call.completed",
+            payload: { call_id: "call-1", name: "glob", status: "completed", index: 0 },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-2", content: "Two" },
+          },
+          {
+            ...event("event-tool-2", 4),
+            type: "assistant.tool_call.completed",
+            payload: { call_id: "call-2", name: "pytest", status: "completed", index: 1 },
+          },
+          {
+            ...event("event-text-3", 5),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-3", content: "Three" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+    ])
+  })
+
+  it("shows failed turn errors as terminal segments alongside text", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("failed"), error_message: "tool failed" }],
+        events: [
+          {
+            ...event("event-text", 1),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-1", content: "I found an issue." },
+          },
+          {
+            ...event("event-failed", 2),
+            type: "turn.failed",
+            payload: { error_message: "tool failed" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "turn_error",
+    ])
+    expect(loaded.timeline[0].segments[1]).toEqual(
+      expect.objectContaining({ kind: "turn_error", message: "tool failed" }),
+    )
   })
 })

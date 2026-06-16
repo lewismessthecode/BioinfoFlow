@@ -17,7 +17,7 @@ export function buildAgentRuntimeToolActivities(
       if (!callId) continue
       const key = keyByCallId.get(callId) ?? `call:${callId}`
       keyByCallId.set(callId, key)
-      const activity = ensureActivity(activities, key, {
+      const activity = ensureActivity(activities, key, event, {
         id: key,
         callId,
         actionId: null,
@@ -25,6 +25,8 @@ export function buildAgentRuntimeToolActivities(
         status: toolCallStatus(event),
         arguments: recordValue(event.payload.arguments),
         relatedFiles: [],
+        seqStart: event.seq,
+        seqEnd: event.seq,
       })
       activity.callId = callId
       activity.name = stringValue(event.payload.name) || activity.name
@@ -54,7 +56,7 @@ export function buildAgentRuntimeToolActivities(
 
       const result = recordValue(event.payload.result)
       const error = recordValue(event.payload.error)
-      const activity = ensureActivity(activities, key, {
+      const activity = ensureActivity(activities, key, event, {
         id: key,
         callId: toolCallId,
         actionId,
@@ -66,6 +68,8 @@ export function buildAgentRuntimeToolActivities(
         durationMs: numberValue(event.payload.duration_ms),
         errorMessage: errorMessage(error) ?? stringValue(event.payload.error_message),
         relatedFiles: [],
+        seqStart: event.seq,
+        seqEnd: event.seq,
       })
       activity.actionId = actionId
       activity.callId = toolCallId || activity.callId
@@ -90,13 +94,15 @@ export function buildAgentRuntimeToolActivities(
       const actionId = stringValue(event.payload.action_id)
       const key = actionId ? keyByActionId.get(actionId) ?? `action:${actionId}` : `artifact:${artifactId || event.id}`
       if (actionId) keyByActionId.set(actionId, key)
-      const activity = ensureActivity(activities, key, {
+      const activity = ensureActivity(activities, key, event, {
         id: key,
         callId: null,
         actionId,
         name: stringValue(event.payload.title) || stringValue(event.payload.type) || "artifact",
         status: "completed",
         relatedFiles: [],
+        seqStart: event.seq,
+        seqEnd: event.seq,
       })
       activity.actionId = actionId || activity.actionId
       activity.artifactId = artifactId ?? activity.artifactId
@@ -109,16 +115,23 @@ export function buildAgentRuntimeToolActivities(
     }
   }
 
-  return [...activities.values()].filter((activity) => activity.name.trim())
+  return [...activities.values()]
+    .filter((activity) => activity.name.trim())
+    .sort((a, b) => a.seqStart - b.seqStart || a.seqEnd - b.seqEnd || a.id.localeCompare(b.id))
 }
 
 function ensureActivity(
   activities: Map<string, AgentRuntimeToolActivity>,
   key: string,
+  event: AgentRuntimeEvent,
   initial: AgentRuntimeToolActivity,
 ) {
   const existing = activities.get(key)
-  if (existing) return existing
+  if (existing) {
+    existing.seqStart = Math.min(existing.seqStart, event.seq)
+    existing.seqEnd = Math.max(existing.seqEnd, event.seq)
+    return existing
+  }
   activities.set(key, initial)
   return initial
 }
@@ -130,7 +143,7 @@ function mergeActivities(
 ) {
   const from = activities.get(fromKey)
   if (!from) return
-  const to = ensureActivity(activities, toKey, { ...from, id: toKey })
+  const to = activities.get(toKey) ?? { ...from, id: toKey }
   to.callId = to.callId ?? from.callId
   to.actionId = to.actionId ?? from.actionId
   to.name = to.name === "action" || to.name === "tool" ? from.name : to.name
@@ -144,6 +157,9 @@ function mergeActivities(
   to.artifactId = to.artifactId ?? from.artifactId
   to.artifactType = to.artifactType ?? from.artifactType
   to.relatedFiles = uniqueStrings([...to.relatedFiles, ...from.relatedFiles])
+  to.seqStart = Math.min(to.seqStart, from.seqStart)
+  to.seqEnd = Math.max(to.seqEnd, from.seqEnd)
+  activities.set(toKey, to)
   activities.delete(fromKey)
 }
 
