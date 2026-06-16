@@ -26,8 +26,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { ModelSelection, ProviderModels } from "@/hooks/use-llm-settings"
-import type { AgentMode, AgentPermissionMode } from "@/lib/agent-runtime"
+import type {
+  AgentMode,
+  AgentPermissionMode,
+  AgentRuntimeFileRefPart,
+} from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
+import { ContextAttachments } from "./context-attachments"
 
 type AgentComposerProps = {
   value: string
@@ -44,6 +49,8 @@ type AgentComposerProps = {
   selectedModel: ModelSelection | null
   modelsLoading?: boolean
   onSelectModel: (selection: ModelSelection | null) => void
+  contextAttachments?: AgentRuntimeFileRefPart[]
+  onRemoveContextAttachment?: (path: string) => void
   className?: string
 }
 
@@ -81,6 +88,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       selectedModel,
       modelsLoading = false,
       onSelectModel,
+      contextAttachments = [],
+      onRemoveContextAttachment,
       className,
     },
     ref,
@@ -147,6 +156,10 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        <ContextAttachments
+          attachments={contextAttachments}
+          onRemove={onRemoveContextAttachment ?? (() => {})}
+        />
         <textarea
           ref={textareaRef}
           value={value}

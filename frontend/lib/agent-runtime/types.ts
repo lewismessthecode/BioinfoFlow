@@ -42,6 +42,20 @@ export type AgentRuntimeSession = {
   updated_at: string
 }
 
+export type AgentRuntimeFileRefPart = {
+  kind: "file_ref"
+  path: string
+  label?: string
+  includeContent?: boolean
+}
+
+export type AgentRuntimeTextInputPart = {
+  type: "text"
+  text: string
+}
+
+export type AgentRuntimeInputPart = AgentRuntimeTextInputPart | AgentRuntimeFileRefPart
+
 export type AgentRuntimeTurn = {
   id: string
   session_id: string
@@ -49,7 +63,7 @@ export type AgentRuntimeTurn = {
   workspace_id: string
   user_id: string
   input_text: string
-  input_parts?: Array<Record<string, unknown>> | null
+  input_parts?: AgentRuntimeInputPart[] | null
   status: AgentTurnStatus
   model_selection?: AgentModelSelection | null
   model_profile_snapshot?: Record<string, unknown> | null

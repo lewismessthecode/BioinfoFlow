@@ -19,6 +19,7 @@ import {
   type AgentMode,
   type AgentModelSelection,
   type AgentPermissionMode,
+  type AgentRuntimeInputPart,
   type AgentRuntimeSession,
 } from "@/lib/agent-runtime"
 import { getCurrentRuntime } from "@/lib/runtime"
@@ -153,7 +154,13 @@ export function useAgentRuntime(
   )
 
   const send = useCallback(
-    async (inputText: string, options?: { modelSelection?: AgentModelSelection | null }) => {
+    async (
+      inputText: string,
+      options?: {
+        modelSelection?: AgentModelSelection | null
+        inputParts?: AgentRuntimeInputPart[] | null
+      },
+    ) => {
       const text = inputText.trim()
       if (!text) return null
       dispatch({ type: "loading" })
@@ -162,6 +169,7 @@ export function useAgentRuntime(
         const turn = await createAgentRuntimeTurn({
           sessionId: session.id,
           inputText: text,
+          inputParts: options?.inputParts,
           modelSelection: options?.modelSelection,
         })
         dispatch({ type: "turn.upsert", turn })

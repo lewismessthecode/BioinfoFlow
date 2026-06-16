@@ -23,6 +23,8 @@ import { useLlmSettings } from "@/hooks/use-llm-settings"
 import {
   listAgentRuntimeSessionArtifacts,
   type AgentRuntimeArtifact,
+  type AgentRuntimeFileRefPart,
+  type AgentRuntimeInputPart,
 } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
@@ -54,6 +56,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const t = useTranslations("agentRuntime")
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const [input, setInput] = useState("")
+    const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
     const [artifactState, setArtifactState] = useState<{
@@ -109,6 +112,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         newConversation: () => {
           setActiveSessionId(null)
           setInput("")
+          setContextAttachments([])
           setHasSubmittedDraft(false)
           setSidecarOpen(false)
         },
@@ -132,12 +136,31 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       }
     }, [state.session?.id, artifactEventCount])
 
+    const addContextAttachment = useCallback((path: string) => {
+      const label = path.split("/").pop() || path
+      setContextAttachments((current) => {
+        if (current.some((attachment) => attachment.path === path)) return current
+        return [...current, { kind: "file_ref", path, label, includeContent: true }]
+      })
+    }, [])
+
+    const removeContextAttachment = useCallback((path: string) => {
+      setContextAttachments((current) =>
+        current.filter((attachment) => attachment.path !== path),
+      )
+    }, [])
+
     const submit = () => {
       const text = input.trim()
       if (!text) return
       setHasSubmittedDraft(true)
-      void send(text, { modelSelection: selectedModel })
+      const inputParts: AgentRuntimeInputPart[] = [
+        { type: "text", text },
+        ...contextAttachments,
+      ]
+      void send(text, { modelSelection: selectedModel, inputParts })
       setInput("")
+      setContextAttachments([])
     }
 
     const closeSidecar = useCallback(() => {
@@ -194,6 +217,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         selectedModel={selectedModel}
         modelsLoading={modelsLoading}
         onSelectModel={(model) => void setSelectedModel(model)}
+        contextAttachments={contextAttachments}
+        onRemoveContextAttachment={removeContextAttachment}
       />
     )
 
@@ -260,6 +285,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 events={state.events}
                 onClose={closeSidecar}
                 onDecision={decideAction}
+                onAddContext={addContextAttachment}
               />
             ) : null}
           </div>

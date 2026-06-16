@@ -8,6 +8,7 @@ import type {
   AgentModelSelection,
   AgentPermissionMode,
   AgentRuntimeArtifact,
+  AgentRuntimeInputPart,
   AgentRuntimeSession,
   AgentRuntimeStatePayload,
   AgentRuntimeTurn,
@@ -70,6 +71,7 @@ export const updateAgentRuntimeSessionPermissionMode = async (
 export const createAgentRuntimeTurn = async (input: {
   sessionId: string
   inputText: string
+  inputParts?: AgentRuntimeInputPart[] | null
   modelSelection?: AgentModelSelection | null
 }) => {
   const response = await apiRequest<AgentRuntimeTurn>(
@@ -78,6 +80,7 @@ export const createAgentRuntimeTurn = async (input: {
       method: "POST",
       body: JSON.stringify({
         input_text: input.inputText,
+        input_parts: input.inputParts,
         model_selection: input.modelSelection,
       }),
     },

@@ -29,6 +29,7 @@ from app.services.agent_core.runner import (
 )
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.context import default_system_prompt_snapshot
+from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part
 from app.utils.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
@@ -208,7 +209,7 @@ class AgentCoreService:
             session_id=str(session.id),
             turn_id=str(turn.id),
             role="user",
-            parts=input_parts or [text_part(input_text)],
+            parts=_transcript_parts_for_turn(input_text=input_text, input_parts=input_parts),
             metadata={"turn_id": str(turn.id)},
         )
         await self.ledger.append(
@@ -622,3 +623,65 @@ class AgentCoreService:
             user_id=user_id,
         )
         return artifact
+
+
+_FILE_REF_MAX_BYTES = 64 * 1024
+_DENIED_CONTEXT_NAMES = {
+    ".env",
+    "better-auth.db",
+    "bioinfoflow.db",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "id_rsa",
+}
+_DENIED_CONTEXT_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
+
+
+def _transcript_parts_for_turn(*, input_text: str, input_parts: list[dict] | None) -> list[dict]:
+    if not input_parts:
+        return [text_part(input_text)]
+
+    parts: list[dict] = []
+    for part in input_parts:
+        if part.get("type") == "text" and isinstance(part.get("text"), str):
+            parts.append(text_part(part["text"]))
+            continue
+        if part.get("kind") == "file_ref" or part.get("type") == "file_ref":
+            parts.append(text_part(_file_ref_text(part)))
+    return parts or [text_part(input_text)]
+
+
+def _file_ref_text(part: dict) -> str:
+    path = part.get("path")
+    if not isinstance(path, str) or not path.strip():
+        raise BadRequestError("file_ref input part requires a path")
+    target = FilesystemPolicy().require_allowed_path(
+        path, must_exist=True, allow_directory=False
+    )
+    if _is_sensitive_context_path(target):
+        raise PermissionDeniedError(f"File cannot be attached to agent context: {target}")
+
+    label = str(part.get("label") or target.name)
+    if part.get("includeContent") is False:
+        return f"Attached file reference: {label}\nPath: {target}\nContent: not included."
+
+    size = target.stat().st_size
+    raw = target.read_bytes()[:_FILE_REF_MAX_BYTES]
+    truncated = size > _FILE_REF_MAX_BYTES
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise BadRequestError("Attached file is not valid UTF-8 text") from exc
+
+    suffix = "\n[File truncated]" if truncated else ""
+    return f"Attached file: {label}\nPath: {target}\n\n{content}{suffix}"
+
+
+def _is_sensitive_context_path(path) -> bool:
+    name = path.name.lower()
+    if name in _DENIED_CONTEXT_NAMES:
+        return True
+    if name.startswith(".env."):
+        return True
+    return path.is_file() and path.suffix.lower() in _DENIED_CONTEXT_SUFFIXES

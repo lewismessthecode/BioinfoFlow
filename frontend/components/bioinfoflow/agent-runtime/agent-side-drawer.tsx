@@ -25,6 +25,7 @@ type AgentSideDrawerProps = {
   events: AgentRuntimeEvent[]
   onClose: () => void
   onDecision: AgentDecisionHandler
+  onAddContext?: (path: string) => void
   className?: string
 }
 
@@ -40,6 +41,7 @@ export function AgentSideDrawer({
   events,
   onClose,
   onDecision,
+  onAddContext,
   className,
 }: AgentSideDrawerProps) {
   const t = useTranslations("agentRuntime")
@@ -114,7 +116,9 @@ export function AgentSideDrawer({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {activeTab === "preview" ? <ArtifactPreviewDrawer artifacts={visibleArtifacts} /> : null}
-        {activeTab === "files" ? <WorkspaceExplorerPanel projectId={projectId} /> : null}
+        {activeTab === "files" ? (
+          <WorkspaceExplorerPanel projectId={projectId} onAddContext={onAddContext} />
+        ) : null}
         {activeTab === "browser" ? <BrowserTab /> : null}
       </div>
     </aside>

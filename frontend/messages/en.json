@@ -2273,6 +2273,10 @@
       "refresh": "Refresh",
       "empty": "This folder is empty.",
       "error": "Could not load files.",
+      "search": "Search files",
+      "addToContext": "Add to context",
+      "copyPath": "Copy path",
+      "removeAttachment": "Remove {label}",
       "truncated": "File is large and was truncated."
     },
     "browser": {

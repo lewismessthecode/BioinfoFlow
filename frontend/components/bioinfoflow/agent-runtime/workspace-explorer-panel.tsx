@@ -2,6 +2,12 @@
 
 import { FilesTab } from "./files-tab"
 
-export function WorkspaceExplorerPanel({ projectId }: { projectId?: string | null }) {
-  return <FilesTab projectId={projectId} />
+export function WorkspaceExplorerPanel({
+  projectId,
+  onAddContext,
+}: {
+  projectId?: string | null
+  onAddContext?: (path: string) => void
+}) {
+  return <FilesTab projectId={projectId} onAddContext={onAddContext} />
 }

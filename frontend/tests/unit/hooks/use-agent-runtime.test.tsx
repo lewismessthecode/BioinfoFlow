@@ -127,11 +127,24 @@ describe("useAgentRuntime", () => {
     )
 
     await act(async () => {
-      await result.current.send("hello")
+      await result.current.send("hello", {
+        inputParts: [
+          { type: "text", text: "hello" },
+          { kind: "file_ref", path: "/workspace/workflow.wdl", label: "workflow.wdl" },
+        ],
+      })
     })
 
     expect(mocks.createAgentRuntimeSession).toHaveBeenCalledWith(
       expect.objectContaining({ permissionMode: "bypass" }),
+    )
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputParts: [
+          { type: "text", text: "hello" },
+          { kind: "file_ref", path: "/workspace/workflow.wdl", label: "workflow.wdl" },
+        ],
+      }),
     )
   })
 

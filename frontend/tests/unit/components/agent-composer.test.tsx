@@ -26,6 +26,7 @@ vi.mock("next-intl", () => ({
       "permission.options.guarded_auto.description": "Run low-risk actions automatically.",
       "permission.options.bypass.label": "Full access",
       "permission.options.bypass.description": "Run non-critical actions automatically.",
+      "files.removeAttachment": "Remove workflow.wdl",
       auto: "Auto",
       configure: "Configure providers",
       noProviders: "No model available",
@@ -99,6 +100,31 @@ describe("AgentComposer", () => {
     })
 
     expect(onModeChange).toHaveBeenCalledWith("plan")
+  })
+
+  it("renders context attachment chips", () => {
+    const onRemoveContextAttachment = vi.fn()
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        contextAttachments={[
+          { kind: "file_ref", path: "/workspace/workflow.wdl", label: "workflow.wdl" },
+        ]}
+        onRemoveContextAttachment={onRemoveContextAttachment}
+      />,
+    )
+
+    expect(screen.getByTestId("context-attachments")).toBeInTheDocument()
+    expect(screen.getByText("workflow.wdl")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Remove workflow.wdl" }))
+    expect(onRemoveContextAttachment).toHaveBeenCalledWith("/workspace/workflow.wdl")
   })
 
   it("changes permission mode from the composer dropdown", async () => {
