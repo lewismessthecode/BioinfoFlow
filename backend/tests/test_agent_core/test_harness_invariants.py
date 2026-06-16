@@ -397,14 +397,19 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
     execution_tools = exposure.exposed_names(policy={"name": "execution"})
 
     read_tools = {
+        "projects.list",
         "projects.get",
         "projects.workflows.list",
+        "workflows.list",
         "workflows.get",
         "workflows.form_spec",
         "workflows.dag",
         "workflows.source",
+        "images.list",
         "images.get",
+        "runs.list",
         "runs.get",
+        "runs.logs",
         "runs.outputs",
         "runs.dag",
         "runs.audit",
@@ -418,9 +423,15 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
         "projects.workflows.bind",
         "projects.workflows.unbind",
         "projects.workflows.pin",
+        "workflows.create",
         "workflows.update",
         "workflows.delete",
+        "images.pull",
+        "images.build",
         "images.delete",
+        "runs.submit",
+        "runs.cancel",
+        "runs.retry",
         "runs.resume",
         "runs.cleanup",
         "runs.delete",
@@ -432,6 +443,74 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
     assert mutating_tools.isdisjoint(plan_tools)
     assert mutating_tools.isdisjoint(default_tools)
     assert mutating_tools <= execution_tools
+
+
+@pytest.mark.asyncio
+async def test_worker_tool_call_is_rechecked_against_worker_exposure(
+    db_session, monkeypatch
+):
+    async def fake_completion(*args, **kwargs):
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeFunction:
+            name = "ask_user"
+            arguments = json.dumps(
+                {
+                    "questions": [
+                        {
+                            "question": "Should the worker pause?",
+                            "header": "Pause",
+                            "options": [
+                                {"label": "Yes", "description": "Pause."},
+                                {"label": "No", "description": "Continue."},
+                            ],
+                        }
+                    ]
+                }
+            )
+
+        class FakeToolCall:
+            id = "worker-ask-user"
+            function = FakeFunction()
+
+        class FakeMessage:
+            content = ""
+            tool_calls = [FakeToolCall()]
+
+        choice = FakeChoice()
+        choice.message = FakeMessage()
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr("app.services.agent_core.core.loop.acompletion", fake_completion)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        role_profile="worker",
+        toolset_policy={"name": "execution"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Worker should not ask user.",
+    )
+
+    completed_turn = await service.runtime.run_turn(str(turn.id))
+
+    assert completed_turn.termination_reason == "tool_failed"
+    assert completed_turn.error_code == "tool_not_exposed"
+    assert await AgentActionRepository(db_session).list_for_turn(str(turn.id)) == []
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ from typing import Any
 
 from app.schemas.form_spec import to_read_projection
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
+from app.services.authorization_service import AuthorizationService
 from app.services.workflow_form_spec import effective_workflow_form_spec
 from app.services.workflow_service import WorkflowService
 from app.utils.dag_builder import build_dag_from_schema
@@ -134,6 +135,7 @@ class CreateWorkflowTool:
     )
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        await _require_workflow_mutation_access(context)
         service = WorkflowService(context.db)
         payload = {key: value for key, value in input.items() if value is not None}
         workflow = await service.create_workflow(payload)
@@ -169,6 +171,7 @@ class UpdateWorkflowTool:
     )
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        await _require_workflow_mutation_access(context)
         service = WorkflowService(context.db)
         workflow = await service.get_workflow(str(input["workflow_id"]))
         if workflow is None:
@@ -208,6 +211,7 @@ class DeleteWorkflowTool:
     )
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        await _require_workflow_mutation_access(context)
         workflow_id = str(input["workflow_id"])
         service = WorkflowService(context.db)
         workflow = await service.get_workflow(workflow_id)
@@ -315,3 +319,10 @@ class WorkflowSourceTool:
 
 def _value(value) -> str:
     return value.value if hasattr(value, "value") else str(value)
+
+
+async def _require_workflow_mutation_access(context: AgentToolContext) -> None:
+    await AuthorizationService(context.db).require_destructive_business_access(
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+    )

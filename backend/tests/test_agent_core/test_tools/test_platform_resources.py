@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from app.config import settings
 from app.models.image import DockerImage, ImageStatus
 from app.models.project import Project
 from app.models.run import Run, RunStatus
@@ -257,7 +260,7 @@ async def test_workflow_read_tools_return_form_spec_dag_and_source(db_session, m
 
 
 @pytest.mark.asyncio
-async def test_images_list_tool_uses_image_service_without_forcing_docker_sync(db_session):
+async def test_images_list_tool_reads_catalog_without_forcing_docker_sync(db_session):
     dispatcher, context, _resources = await _tool_context(db_session)
 
     result = await dispatcher.dispatch(
@@ -268,7 +271,84 @@ async def test_images_list_tool_uses_image_service_without_forcing_docker_sync(d
 
     assert result.status == "completed"
     assert result.result["images"][0]["full_name"] == "biocontainers/fastqc:latest"
-    assert result.result["status"]["docker"] == "available"
+    assert result.result["status"]["docker"] == "not_synced"
+
+
+@pytest.mark.asyncio
+async def test_images_list_tool_is_read_only_even_for_local_filter(
+    db_session, monkeypatch
+):
+    dispatcher, context, _resources = await _tool_context(db_session)
+
+    async def fail_sync(self, *, force=False):
+        raise AssertionError("images.list must not sync Docker state")
+
+    monkeypatch.setattr(
+        "app.services.image_service.ImageService._sync_local_images",
+        fail_sync,
+    )
+
+    result = await dispatcher.dispatch(
+        tool_name="images.list",
+        input={"status": "local"},
+        context=context,
+    )
+
+    assert result.status == "completed"
+    assert result.result["status"]["docker"] == "not_synced"
+
+
+@pytest.mark.asyncio
+async def test_images_build_rejects_context_outside_current_project(
+    db_session,
+):
+    dispatcher, context, resources = await _tool_context(db_session)
+    outside_context = Path(settings.bioinfoflow_home) / "outside-build-context"
+    outside_context.mkdir()
+    (outside_context / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+
+    result = await dispatcher.dispatch(
+        tool_name="images.build",
+        input={
+            "project_id": str(resources["project"].id),
+            "tag": "unsafe-build:latest",
+            "context_path": str(outside_context),
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert "Build context must be inside the project root" in result.error["message"]
+
+
+@pytest.mark.asyncio
+async def test_images_build_rejects_dockerfile_outside_build_context_project(
+    db_session, tmp_path
+):
+    dispatcher, context, resources = await _tool_context(db_session)
+    project_root = settings.projects_root / str(resources["project"].id)
+    build_context = project_root / "build-context"
+    build_context.mkdir(parents=True)
+    outside_dockerfile = tmp_path / "Dockerfile"
+    outside_dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+
+    result = await dispatcher.dispatch(
+        tool_name="images.build",
+        input={
+            "project_id": str(resources["project"].id),
+            "tag": "unsafe-dockerfile:latest",
+            "context_path": str(build_context),
+            "dockerfile": str(outside_dockerfile),
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert "Dockerfile must be inside the project root" in result.error["message"]
 
 
 @pytest.mark.asyncio

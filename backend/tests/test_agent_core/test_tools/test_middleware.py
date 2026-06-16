@@ -79,6 +79,28 @@ def test_normalize_tool_input_enforces_enum_and_min_length():
         )
 
 
+def test_normalize_tool_input_enforces_array_size():
+    with pytest.raises(BadRequestError, match="questions must have at least 1 item"):
+        normalize_tool_input(
+            {"questions": []},
+            {
+                "type": "object",
+                "properties": {"questions": {"type": "array", "minItems": 1}},
+                "additionalProperties": False,
+            },
+        )
+
+    with pytest.raises(BadRequestError, match="questions must have at most 3 items"):
+        normalize_tool_input(
+            {"questions": [{}, {}, {}, {}]},
+            {
+                "type": "object",
+                "properties": {"questions": {"type": "array", "maxItems": 3}},
+                "additionalProperties": False,
+            },
+        )
+
+
 @pytest.mark.asyncio
 async def test_tool_argument_validation_failure_is_recorded_as_failed_action(db_session):
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")

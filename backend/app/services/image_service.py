@@ -74,6 +74,30 @@ class ImageService:
             },
         )
 
+    async def list_catalog_images(
+        self,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+        search: str | None = None,
+        status: str | None = None,
+    ):
+        images, pagination = await self.repo.list(
+            limit=limit,
+            cursor=cursor,
+            search=search,
+            status=status,
+        )
+        return (
+            images,
+            pagination,
+            {
+                "docker": "not_synced",
+                "images_stale": False,
+                "last_synced_at": self.__class__._last_sync_at,
+            },
+        )
+
     async def get_image(self, image_id: str):
         return await self.repo.get(image_id)
 

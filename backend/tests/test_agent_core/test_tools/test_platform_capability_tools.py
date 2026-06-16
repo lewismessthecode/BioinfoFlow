@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.config import settings
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
@@ -463,6 +464,81 @@ async def test_update_tools_reject_fields_outside_public_mutation_schemas(db_ses
     assert workflow_result.error["type"] == "BadRequestError"
     assert "unknown tool arguments: name, form_spec" in workflow_result.error["message"]
     assert workflow_update_called is False
+
+
+@pytest.mark.asyncio
+async def test_workflow_mutation_tools_require_admin_in_team_mode(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    dispatcher, context = await _context(db_session)
+    workflow_id = str(uuid4())
+    calls = {"create": 0, "update": 0, "delete": 0}
+
+    async def fake_create_workflow(self, payload):
+        calls["create"] += 1
+        return None
+
+    async def fake_get_workflow(self, workflow_id_arg):
+        return SimpleNamespace(
+            id=workflow_id_arg,
+            name="wf",
+            description="workflow",
+            source="local",
+            engine="wdl",
+            version="1.0",
+            source_ref="local",
+            entrypoint_relpath="main.wdl",
+            schema_json={},
+            form_spec={},
+        )
+
+    async def fake_update_workflow(self, workflow, payload):
+        calls["update"] += 1
+        return workflow
+
+    async def fake_delete_workflow(self, workflow):
+        calls["delete"] += 1
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.create_workflow",
+        fake_create_workflow,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.get_workflow",
+        fake_get_workflow,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.update_workflow",
+        fake_update_workflow,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.workflows.WorkflowService.delete_workflow",
+        fake_delete_workflow,
+    )
+
+    created = await dispatcher.dispatch(
+        tool_name="workflows.create",
+        input={"source": "local", "content": "version 1.0\nworkflow hello {}", "file_name": "hello.wdl"},
+        context=context,
+        permission_mode="bypass",
+    )
+    updated = await dispatcher.dispatch(
+        tool_name="workflows.update",
+        input={"workflow_id": workflow_id, "description": "changed"},
+        context=context,
+        permission_mode="bypass",
+    )
+    deleted = await dispatcher.dispatch(
+        tool_name="workflows.delete",
+        input={"workflow_id": workflow_id},
+        context=context,
+        permission_mode="bypass",
+    )
+
+    for result in (created, updated, deleted):
+        assert result.status == "failed"
+        assert result.error["type"] == "PermissionDeniedError"
+    assert calls == {"create": 0, "update": 0, "delete": 0}
 
 
 @pytest.mark.asyncio

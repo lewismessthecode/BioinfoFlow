@@ -349,6 +349,7 @@ class AgentLoopController:
                 permission_mode=agent_session.permission_mode,
                 automation_mode=agent_session.automation_mode,
                 tool_call_id=tool_call.get("id"),
+                role=_tool_role(agent_session),
             )
             if result.requires_resume:
                 waiting = True
@@ -520,6 +521,7 @@ class AgentLoopController:
                 permission_mode=agent_session.permission_mode,
                 automation_mode=agent_session.automation_mode,
                 tool_call_id=tool_call.get("id"),
+                role=_tool_role(agent_session),
             )
 
     def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:
@@ -1049,6 +1051,14 @@ def _tool_call_signature(tool_call: dict[str, Any]) -> str:
 
 def _cancellation_reason(turn) -> str:
     return "interrupted" if is_interrupt_requested(turn) else "cancelled"
+
+
+def _tool_role(agent_session) -> str:
+    return (
+        "worker"
+        if str(getattr(agent_session, "role_profile", "orchestrator")) == "worker"
+        else "orchestrator"
+    )
 
 
 def _tool_permission_error_code(exc: PermissionDeniedError) -> str:

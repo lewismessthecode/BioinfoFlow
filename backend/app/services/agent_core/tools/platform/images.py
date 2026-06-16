@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
+from app.path_layout import project_home
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.authorization_service import AuthorizationService
 from app.services.image_service import ImageService
-from app.utils.exceptions import NotFoundError
+from app.services.project_service import ProjectService
+from app.utils.exceptions import NotFoundError, PermissionDeniedError
 
 
 def _image_summary(image) -> dict[str, Any]:
@@ -28,14 +31,13 @@ def _image_summary(image) -> dict[str, Any]:
 class ListImagesTool:
     spec = AgentToolSpec(
         name="images.list",
-        description="List registered Docker image assets.",
+        description="List registered Docker image assets from the platform catalog without syncing Docker state.",
         input_schema={
             "type": "object",
             "properties": {
                 "search": {"type": "string"},
                 "status": {"type": "string"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-                "force_sync": {"type": "boolean"},
             },
             "additionalProperties": False,
         },
@@ -55,11 +57,10 @@ class ListImagesTool:
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         service = ImageService(context.db)
-        images, pagination, status = await service.list_images(
+        images, pagination, status = await service.list_catalog_images(
             limit=int(input.get("limit") or 20),
             search=input.get("search"),
-            status=input.get("status") or "remote",
-            force_sync=bool(input.get("force_sync", False)),
+            status=input.get("status"),
         )
         return {
             "images": [
@@ -162,10 +163,11 @@ class BuildImageTool:
             "type": "object",
             "properties": {
                 "tag": {"type": "string"},
+                "project_id": {"type": "string"},
                 "context_path": {"type": "string"},
                 "dockerfile": {"type": "string"},
             },
-            "required": ["tag", "context_path"],
+            "required": ["tag", "project_id", "context_path"],
             "additionalProperties": False,
         },
         output_schema={
@@ -190,10 +192,30 @@ class BuildImageTool:
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         tag = str(input["tag"])
+        project = await ProjectService(context.db).get_project(
+            str(input["project_id"]),
+            workspace_id=context.workspace_id,
+        )
+        if project is None:
+            raise NotFoundError("Project not found")
+        project_root = project_home(project)
         context_dir = FilesystemPolicy().require_allowed_dir(input["context_path"])
+        _require_path_under_root(
+            context_dir,
+            project_root,
+            message="Build context must be inside the project root",
+        )
         argv = ["docker", "build", "-t", tag]
         if input.get("dockerfile"):
-            argv += ["-f", str(input["dockerfile"])]
+            dockerfile = _resolve_dockerfile(context_dir, input["dockerfile"])
+            _require_path_under_root(
+                dockerfile,
+                project_root,
+                message="Dockerfile must be inside the project root",
+            )
+            if not dockerfile.exists() or not dockerfile.is_file():
+                raise NotFoundError("Dockerfile not found")
+            argv += ["-f", str(dockerfile)]
         argv.append(str(context_dir))
 
         process = await asyncio.create_subprocess_exec(
@@ -273,3 +295,17 @@ def _limit(text: str, limit: int = 16000) -> str:
 
 def _value(value) -> str:
     return value.value if hasattr(value, "value") else str(value)
+
+
+def _resolve_dockerfile(context_dir: Path, dockerfile: object) -> Path:
+    candidate = Path(str(dockerfile)).expanduser()
+    if not candidate.is_absolute():
+        candidate = context_dir / candidate
+    return candidate.resolve()
+
+
+def _require_path_under_root(path: Path, root: Path, *, message: str) -> None:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise PermissionDeniedError(message) from exc

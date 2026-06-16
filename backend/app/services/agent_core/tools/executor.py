@@ -70,7 +70,7 @@ def _artifact_descriptor(
             "payload": {"path": path, "content": content, **result},
         }
 
-    if artifact_type in {"workflow", "run", "image"}:
+    if artifact_type in {"project", "workflow", "run", "image"}:
         inner = result.get(artifact_type) if isinstance(result.get(artifact_type), dict) else result
         title = (
             inner.get("name")
@@ -145,9 +145,14 @@ class AgentToolExecutor:
         permission_mode: str = "guarded_auto",
         automation_mode: str = "assisted",
         tool_call_id: str | None = None,
+        role: str = "orchestrator",
     ) -> ToolExecutionResult:
         tool = self.registry.get(tool_name)
-        exposure = self.exposure.decide(tool_name=tool_name, policy=toolset_policy)
+        exposure = self.exposure.decide(
+            tool_name=tool_name,
+            policy=toolset_policy,
+            role=role,
+        )
         if not exposure.allowed:
             raise PermissionDeniedError("; ".join(exposure.reasons))
         try:

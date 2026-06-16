@@ -89,6 +89,12 @@ def _validate_schema(value: Any, schema: dict[str, Any], *, path: str) -> None:
                 _validate_schema(item, properties[key], path=f"{path}.{key}")
         return
     if isinstance(value, list):
+        min_items = schema.get("minItems")
+        max_items = schema.get("maxItems")
+        if min_items is not None and len(value) < int(min_items):
+            raise BadRequestError(f"{path} must have at least {min_items} item")
+        if max_items is not None and len(value) > int(max_items):
+            raise BadRequestError(f"{path} must have at most {max_items} items")
         item_schema = schema.get("items") or {}
         for index, item in enumerate(value):
             _validate_schema(item, item_schema, path=f"{path}[{index}]")
