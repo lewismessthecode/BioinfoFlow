@@ -1,15 +1,14 @@
 "use client"
 
-import { useState } from "react"
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Wrench } from "lucide-react"
+import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import type {
   AgentRuntimeTimelineEntry,
-  AgentRuntimeToolCallState,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
+import { ActivityGroup } from "./activity-group"
 
 export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEntry[] }) {
   const t = useTranslations("agentRuntime")
@@ -46,17 +45,10 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
                   </details>
                 ) : null}
 
-                {entry.assistant.toolCalls.length > 0 ? (
-                  <div className="mb-3 overflow-hidden rounded-lg border border-border/60 bg-muted/20">
-                    <div className="flex items-center gap-2 border-b border-border/50 px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
-                      <Wrench className="h-3.5 w-3.5" />
-                      <span>{t("toolCalls")}</span>
-                    </div>
-                    {entry.assistant.toolCalls.map((toolCall) => (
-                      <ToolCallRow
-                        key={toolCall.callId}
-                        toolCall={toolCall}
-                      />
+                {entry.activityGroups.length > 0 ? (
+                  <div className="mb-3 grid gap-2">
+                    {entry.activityGroups.map((group) => (
+                      <ActivityGroup key={group.id} group={group} />
                     ))}
                   </div>
                 ) : null}
@@ -82,44 +74,6 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
           </article>
         ))}
       </div>
-    </div>
-  )
-}
-
-function ToolCallRow({ toolCall }: { toolCall: AgentRuntimeToolCallState }) {
-  const [expanded, setExpanded] = useState(false)
-  const hasArguments = Boolean(toolCall.arguments)
-
-  return (
-    <div
-      className="border-b border-border/40 last:border-b-0"
-      data-testid="agent-tool-call-row"
-    >
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-muted/40"
-        onClick={() => hasArguments && setExpanded((current) => !current)}
-        aria-expanded={expanded}
-      >
-        {hasArguments ? (
-          expanded ? (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          )
-        ) : (
-          <span className="h-3.5 w-3.5 shrink-0" />
-        )}
-        <span className="min-w-0 flex-1 truncate font-mono">{toolCall.name}</span>
-        <span className="shrink-0 rounded-sm bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-          {toolCall.status}
-        </span>
-      </button>
-      {expanded && toolCall.arguments ? (
-        <pre className="max-h-56 overflow-auto border-t border-border/40 bg-background/70 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          {JSON.stringify(toolCall.arguments, null, 2)}
-        </pre>
-      ) : null}
     </div>
   )
 }

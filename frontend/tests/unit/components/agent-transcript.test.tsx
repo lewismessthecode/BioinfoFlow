@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentTranscript } from "@/components/bioinfoflow/agent-runtime/agent-transcript"
@@ -10,6 +10,17 @@ vi.mock("next-intl", () => ({
       pendingResponse: "Working on it...",
       thinking: "Thinking",
       toolCalls: "Tool calls",
+      "activity.groups.read": "Read project structure",
+      "activity.groups.verify": "Verify results",
+      "activity.summary.read": "Read 2 sources",
+      "activity.summary.verify": "Verified 1 check",
+      "activity.status.failed": "Failed",
+      "activity.details.input": "Input",
+      "activity.details.arguments": "Arguments",
+      "activity.details.output": "Output",
+      "activity.details.exitCode": "Exit code",
+      "activity.details.error": "Error",
+      "activity.details.files": "Files",
       "turnStatus.queued": "Queued",
       "turnStatus.running": "Working",
       "turnStatus.waiting_user": "Waiting for you",
@@ -56,6 +67,8 @@ const baseTimelineEntry: AgentRuntimeTimelineEntry = {
     thinking: null,
     toolCalls: [],
   },
+  activities: [],
+  activityGroups: [],
 }
 
 describe("AgentTranscript", () => {
@@ -106,45 +119,54 @@ describe("AgentTranscript", () => {
     expect(screen.queryByText("Queued")).not.toBeInTheDocument()
   })
 
-  it("renders tool calls as collapsed compact rows by default", () => {
+  it("renders tool activity as collapsed narrative groups by default", () => {
     render(
       <AgentTranscript
         timeline={[
           {
             ...baseTimelineEntry,
-            assistant: {
-              ...baseTimelineEntry.assistant,
-              toolCalls: [
-                {
-                  callId: "call-1",
-                  name: "glob",
-                  status: "completed",
-                  index: 0,
-                  arguments: { pattern: "**/*.wdl" },
-                  argumentsDelta: null,
-                },
-                {
-                  callId: "call-2",
-                  name: "files__read",
-                  status: "completed",
-                  index: 1,
-                  arguments: { path: "/app/workflow.wdl" },
-                  argumentsDelta: null,
-                },
-              ],
-            },
+            activityGroups: [
+              {
+                id: "read-0",
+                kind: "read",
+                status: "completed",
+                activities: [
+                  {
+                    id: "call-1",
+                    callId: "call-1",
+                    actionId: null,
+                    name: "glob",
+                    status: "completed",
+                    arguments: { pattern: "**/*.wdl" },
+                    relatedFiles: [],
+                  },
+                  {
+                    id: "call-2",
+                    callId: "call-2",
+                    actionId: null,
+                    name: "files__read",
+                    status: "completed",
+                    arguments: { path: "/app/workflow.wdl" },
+                    relatedFiles: ["/app/workflow.wdl"],
+                  },
+                ],
+              },
+            ],
           },
         ]}
       />,
     )
 
-    expect(screen.getByText("Tool calls")).toBeInTheDocument()
+    expect(screen.getByText("Read project structure")).toBeInTheDocument()
+    expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
+    expect(screen.queryByText("glob")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Read project structure/ }))
+
     expect(screen.getByText("glob")).toBeInTheDocument()
     expect(screen.getByText("files__read")).toBeInTheDocument()
-    const rows = screen.getAllByTestId("agent-tool-call-row")
-    expect(rows).toHaveLength(2)
-    expect(rows[0]).not.toHaveAttribute("open")
-    expect(screen.queryByText(/workflow\.wdl/)).not.toBeInTheDocument()
+    expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
+    expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
   })
 
   it("keeps streamed assistant text visible after later tool calls", () => {
@@ -161,17 +183,25 @@ describe("AgentTranscript", () => {
               ...baseTimelineEntry.assistant,
               status: "streaming",
               text: "I am checking the workflow registry before reading files.",
-              toolCalls: [
-                {
-                  callId: "call-1",
-                  name: "glob",
-                  status: "completed",
-                  index: 0,
-                  arguments: { pattern: "**/*.wdl" },
-                  argumentsDelta: null,
-                },
-              ],
             },
+            activityGroups: [
+              {
+                id: "read-0",
+                kind: "read",
+                status: "completed",
+                activities: [
+                  {
+                    id: "call-1",
+                    callId: "call-1",
+                    actionId: null,
+                    name: "glob",
+                    status: "completed",
+                    arguments: { pattern: "**/*.wdl" },
+                    relatedFiles: [],
+                  },
+                ],
+              },
+            ],
           },
         ]}
       />,
@@ -180,7 +210,8 @@ describe("AgentTranscript", () => {
     expect(
       screen.getByText("I am checking the workflow registry before reading files."),
     ).toBeInTheDocument()
-    expect(screen.getByText("glob")).toBeInTheDocument()
+    expect(screen.getByText("Read project structure")).toBeInTheDocument()
+    expect(screen.queryByText("glob")).not.toBeInTheDocument()
     expect(screen.queryByText("Working on it...")).not.toBeInTheDocument()
   })
 

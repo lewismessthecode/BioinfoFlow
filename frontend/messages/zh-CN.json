@@ -2159,6 +2159,43 @@
     "pendingResponse": "正在处理...",
     "thinking": "思考过程",
     "toolCalls": "工具调用",
+    "activity": {
+      "groups": {
+        "workspace": "准备工作区",
+        "read": "读取项目结构",
+        "write": "创建或编辑文件",
+        "register": "注册 workflow",
+        "run": "提交运行",
+        "verify": "验证结果",
+        "other": "使用工具"
+      },
+      "summary": {
+        "workspace": "准备了 {count} 项",
+        "read": "读取了 {count} 项",
+        "write": "编辑了 {count} 个文件",
+        "register": "注册了 {count} 个 workflow",
+        "run": "提交了 {count} 次运行",
+        "verify": "验证了 {count} 项检查",
+        "other": "运行了 {count} 个工具"
+      },
+      "status": {
+        "building": "构建中",
+        "requested": "已请求",
+        "waiting": "等待中",
+        "running": "运行中",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消"
+      },
+      "details": {
+        "input": "输入",
+        "arguments": "参数",
+        "output": "输出",
+        "exitCode": "退出码",
+        "error": "错误",
+        "files": "文件"
+      }
+    },
     "approve": "批准",
     "reject": "拒绝",
     "attachMenu": {

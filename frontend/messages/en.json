@@ -2159,6 +2159,43 @@
     "pendingResponse": "Working on it...",
     "thinking": "Thinking",
     "toolCalls": "Tool calls",
+    "activity": {
+      "groups": {
+        "workspace": "Prepare workspace",
+        "read": "Read project structure",
+        "write": "Create or edit files",
+        "register": "Register workflow",
+        "run": "Submit run",
+        "verify": "Verify results",
+        "other": "Use tools"
+      },
+      "summary": {
+        "workspace": "Prepared {count, plural, one {# item} other {# items}}",
+        "read": "Read {count, plural, one {# source} other {# sources}}",
+        "write": "Edited {count, plural, one {# file} other {# files}}",
+        "register": "Registered {count, plural, one {# workflow} other {# workflows}}",
+        "run": "Submitted {count, plural, one {# run} other {# runs}}",
+        "verify": "Verified {count, plural, one {# check} other {# checks}}",
+        "other": "Ran {count, plural, one {# tool} other {# tools}}"
+      },
+      "status": {
+        "building": "Building",
+        "requested": "Requested",
+        "waiting": "Waiting",
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "details": {
+        "input": "Input",
+        "arguments": "Arguments",
+        "output": "Output",
+        "exitCode": "Exit code",
+        "error": "Error",
+        "files": "Files"
+      }
+    },
     "approve": "Approve",
     "reject": "Reject",
     "attachMenu": {

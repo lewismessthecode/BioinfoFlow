@@ -187,6 +187,18 @@ describe("agentRuntimeReducer", () => {
         arguments: { limit: 1 },
       }),
     ])
+    expect(loaded.timeline[0].activityGroups).toEqual([
+      expect.objectContaining({
+        kind: "read",
+        activities: [
+          expect.objectContaining({
+            callId: "call-1",
+            name: "projects__list",
+            status: "completed",
+          }),
+        ],
+      }),
+    ])
   })
 
   it("preserves persisted thinking summaries after later tool calls", () => {

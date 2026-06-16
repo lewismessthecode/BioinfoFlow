@@ -104,9 +104,54 @@ export type AgentRuntimeAssistantState = {
   toolCalls: AgentRuntimeToolCallState[]
 }
 
+export type AgentRuntimeToolActivityStatus =
+  | "building"
+  | "requested"
+  | "waiting"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+
+export type AgentRuntimeToolActivity = {
+  id: string
+  callId: string | null
+  actionId: string | null
+  name: string
+  status: AgentRuntimeToolActivityStatus
+  arguments?: Record<string, unknown> | null
+  inputPreview?: string | null
+  outputPreview?: string | null
+  exitCode?: number | null
+  durationMs?: number | null
+  errorMessage?: string | null
+  relatedFiles: string[]
+  summary?: string | null
+  artifactId?: string | null
+  artifactType?: string | null
+}
+
+export type AgentRuntimeActivityGroupKind =
+  | "workspace"
+  | "read"
+  | "write"
+  | "register"
+  | "run"
+  | "verify"
+  | "other"
+
+export type AgentRuntimeActivityGroup = {
+  id: string
+  kind: AgentRuntimeActivityGroupKind
+  status: AgentRuntimeToolActivityStatus
+  activities: AgentRuntimeToolActivity[]
+}
+
 export type AgentRuntimeTimelineEntry = {
   turn: AgentRuntimeTurn
   assistant: AgentRuntimeAssistantState
+  activities: AgentRuntimeToolActivity[]
+  activityGroups: AgentRuntimeActivityGroup[]
 }
 
 export type AgentRuntimeStatePayload = {

@@ -1,3 +1,5 @@
+import { buildAgentRuntimeActivityGroups } from "./activity-groups"
+import { buildAgentRuntimeToolActivities } from "./tool-activity"
 import type {
   AgentRuntimeEvent,
   AgentRuntimeTimelineEntry,
@@ -26,6 +28,8 @@ export function buildAgentRuntimeTimeline(
         thinking: null,
         toolCalls: [],
       },
+      activities: [],
+      activityGroups: [],
     },
     textFromEvents: false,
     thinkingFromEvents: false,
@@ -113,6 +117,12 @@ export function buildAgentRuntimeTimeline(
         break
       }
     }
+  }
+
+  for (const state of states) {
+    const turnEvents = events.filter((event) => event.turn_id === state.entry.turn.id)
+    state.entry.activities = buildAgentRuntimeToolActivities(turnEvents)
+    state.entry.activityGroups = buildAgentRuntimeActivityGroups(state.entry.activities)
   }
 
   return states.map((state) => state.entry)
