@@ -218,4 +218,31 @@ describe("AgentTranscript", () => {
       screen.getByText("I need to inspect the workflow files before answering."),
     ).toBeVisible()
   })
+
+  it("does not color normal assistant follow-up text as destructive after a failed tool", () => {
+    render(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            turn: {
+              ...baseTimelineEntry.turn,
+              status: "failed",
+              error_message: "files__read failed",
+            },
+            assistant: {
+              ...baseTimelineEntry.assistant,
+              status: "failed",
+              text: "Now let me try another way.",
+              errorMessage: "files__read failed",
+            },
+          },
+        ]}
+      />,
+    )
+
+    const followUp = screen.getByText("Now let me try another way.")
+    expect(followUp.closest(".text-destructive")).toBeNull()
+    expect(screen.queryByText("files__read failed")).not.toBeInTheDocument()
+  })
 })

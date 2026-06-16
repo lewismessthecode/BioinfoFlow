@@ -10,7 +10,6 @@ import type {
   AgentRuntimeToolCallState,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
-import { cn } from "@/lib/utils"
 
 export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEntry[] }) {
   const t = useTranslations("agentRuntime")
@@ -62,18 +61,22 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
                   </div>
                 ) : null}
 
-                <MarkdownRenderer
-                  className={cn(
-                    "text-[15px] leading-7",
-                    entry.assistant.status === "failed" &&
-                      "[&_a]:text-destructive [&_code]:text-destructive [&_em]:text-destructive [&_h1]:text-destructive [&_h2]:text-destructive [&_h3]:text-destructive [&_h4]:text-destructive [&_li]:text-destructive [&_p]:text-destructive [&_strong]:text-destructive text-destructive",
-                  )}
-                  content={
-                    entry.assistant.text ||
-                    entry.assistant.errorMessage ||
-                    t("pendingResponse")
-                  }
-                />
+                {entry.assistant.text ? (
+                  <MarkdownRenderer
+                    className="text-[15px] leading-7"
+                    content={entry.assistant.text}
+                  />
+                ) : entry.assistant.errorMessage ? (
+                  <div className="flex items-start gap-2 rounded-2xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm leading-6 text-destructive">
+                    <AlertTriangle className="mt-1 h-4 w-4 shrink-0" />
+                    <span className="break-words">{entry.assistant.errorMessage}</span>
+                  </div>
+                ) : (
+                  <MarkdownRenderer
+                    className="text-[15px] leading-7"
+                    content={t("pendingResponse")}
+                  />
+                )}
               </div>
             </div>
           </article>

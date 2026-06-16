@@ -4,6 +4,7 @@ import {
   agentRuntimeReducer,
   initialAgentRuntimeState,
   type AgentRuntimeEvent,
+  type AgentRuntimeSession,
   type AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 
@@ -20,7 +21,10 @@ const event = (id: string, seq: number): AgentRuntimeEvent => ({
   updated_at: "2026-06-08T00:00:00Z",
 })
 
-const turn = (status: AgentRuntimeTurn["status"]): AgentRuntimeTurn => ({
+const turn = (
+  status: AgentRuntimeTurn["status"],
+  updatedAt = "2026-06-08T00:00:00Z",
+): AgentRuntimeTurn => ({
   id: "turn-1",
   session_id: "session-1",
   project_id: null,
@@ -31,7 +35,20 @@ const turn = (status: AgentRuntimeTurn["status"]): AgentRuntimeTurn => ({
   status,
   iteration_count: 0,
   created_at: "2026-06-08T00:00:00Z",
-  updated_at: "2026-06-08T00:00:00Z",
+  updated_at: updatedAt,
+})
+
+const session = (updatedAt = "2026-06-08T00:00:00Z"): AgentRuntimeSession => ({
+  id: "session-1",
+  workspace_id: "workspace-1",
+  user_id: "dev",
+  role_profile: "bioinformatician",
+  permission_mode: "guarded_auto",
+  automation_mode: "assisted",
+  runtime_mode: "api",
+  status: "active",
+  created_at: "2026-06-08T00:00:00Z",
+  updated_at: updatedAt,
 })
 
 describe("agentRuntimeReducer", () => {
@@ -286,5 +303,114 @@ describe("agentRuntimeReducer", () => {
 
     expect(streamingState.turns[0]?.status).toBe("running")
     expect(streamingState.status).toBe("running")
+  })
+
+  it("appends delta-only assistant text chunks", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "Hello" },
+          },
+          {
+            ...event("event-2", 2),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", text_delta: " world" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.text).toBe("Hello world")
+  })
+
+  it("replaces text when streaming events carry cumulative content", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("completed"), final_text: "stale final text" }],
+        events: [
+          {
+            ...event("event-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", content: "Hello" },
+          },
+          {
+            ...event("event-2", 2),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", content: "Hello world" },
+          },
+          {
+            ...event("event-3", 3),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-1", text: "Hello world!" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.text).toBe("Hello world!")
+  })
+
+  it("keeps newer streamed events when a stale state snapshot loads", () => {
+    const running = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session("2026-06-08T00:00:01Z"),
+        turns: [turn("running", "2026-06-08T00:00:01Z")],
+        events: [
+          {
+            ...event("event-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "newer streamed text" },
+            updated_at: "2026-06-08T00:00:01Z",
+          },
+        ],
+      },
+    })
+
+    const merged = agentRuntimeReducer(running, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("queued")],
+        events: [],
+      },
+    })
+
+    expect(merged.events.map((item) => item.id)).toEqual(["event-1"])
+    expect(merged.turns[0]?.status).toBe("running")
+    expect(merged.timeline[0].assistant.text).toBe("newer streamed text")
+  })
+
+  it("keeps approval resume events from leaving turns stuck waiting", () => {
+    const waiting = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "turn.upsert",
+      turn: turn("queued"),
+    })
+
+    const awaitingApproval = agentRuntimeReducer(waiting, {
+      type: "event.append",
+      event: {
+        ...event("event-approval", 1),
+        type: "action.waiting_decision",
+      },
+    })
+    expect(awaitingApproval.turns[0]?.status).toBe("waiting_approval")
+
+    const resuming = agentRuntimeReducer(awaitingApproval, {
+      type: "event.append",
+      event: {
+        ...event("event-approved", 2),
+        type: "action.decision_recorded",
+      },
+    })
+    expect(resuming.turns[0]?.status).toBe("running")
   })
 })
