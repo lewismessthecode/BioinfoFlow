@@ -13,10 +13,12 @@ import {
   listAgentRuntimeSessions,
   subscribeAgentRuntimeEvents,
   updateAgentRuntimeSessionMode,
+  updateAgentRuntimeSessionPermissionMode,
   type AgentActionDecision,
   type AgentAnswer,
   type AgentMode,
   type AgentModelSelection,
+  type AgentPermissionMode,
   type AgentRuntimeSession,
 } from "@/lib/agent-runtime"
 import { getCurrentRuntime } from "@/lib/runtime"
@@ -25,6 +27,9 @@ type UseAgentRuntimeOptions = {
   activeSessionId?: string | null
   onActiveSessionIdChange?: (sessionId: string) => void
 }
+
+const DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode"
+const DEFAULT_PERMISSION_MODE: AgentPermissionMode = "guarded_auto"
 
 export function useAgentRuntime(
   projectId?: string | null,
@@ -38,6 +43,9 @@ export function useAgentRuntime(
   // Mode chosen for the *next* session; once a session exists its own toolset
   // policy is the source of truth (and exit_plan_mode can flip it server-side).
   const [draftMode, setDraftMode] = useState<AgentMode>("execution")
+  const [draftPermissionMode, setDraftPermissionModeState] = useState<AgentPermissionMode>(
+    readDraftPermissionMode,
+  )
   const streamCursorRef = useRef(0)
   const activeSessionId = isControlled
     ? options.activeSessionId || null
@@ -132,7 +140,7 @@ export function useAgentRuntime(
       if (activeSession) return activeSession
       const created = await createAgentRuntimeSession({
         projectId: projectId || null,
-        permissionMode: "guarded_auto",
+        permissionMode: draftPermissionMode,
         mode: draftMode,
         modelSelection,
       })
@@ -141,7 +149,7 @@ export function useAgentRuntime(
       dispatch({ type: "session.selected", session: created })
       return created
     },
-    [activeSession, draftMode, projectId, setActiveSessionId],
+    [activeSession, draftMode, draftPermissionMode, projectId, setActiveSessionId],
   )
 
   const send = useCallback(
@@ -208,6 +216,8 @@ export function useAgentRuntime(
     ((activeSession?.toolset_policy?.name as AgentMode | undefined) ?? draftMode) === "plan"
       ? "plan"
       : "execution"
+  const permissionMode: AgentPermissionMode =
+    activeSession?.permission_mode ?? draftPermissionMode
 
   const setMode = useCallback(
     async (mode: AgentMode) => {
@@ -226,12 +236,36 @@ export function useAgentRuntime(
     [activeSessionId, refreshState],
   )
 
+  const setPermissionMode = useCallback(
+    async (mode: AgentPermissionMode) => {
+      setDraftPermissionModeState(mode)
+      writeDraftPermissionMode(mode)
+      if (!activeSessionId) return
+      try {
+        const updated = await updateAgentRuntimeSessionPermissionMode(activeSessionId, mode)
+        setSessions((current) =>
+          current.map((session) => (session.id === updated.id ? updated : session)),
+        )
+        await refreshState(activeSessionId)
+      } catch (error) {
+        dispatch({
+          type: "error",
+          message:
+            error instanceof Error ? error.message : "Failed to switch permission mode",
+        })
+      }
+    },
+    [activeSessionId, refreshState],
+  )
+
   return {
     sessions,
     session: activeSession,
     state,
     mode: sessionMode,
     setMode,
+    permissionMode,
+    setPermissionMode,
     setActiveSessionId,
     refreshSessions,
     refreshState,
@@ -239,4 +273,19 @@ export function useAgentRuntime(
     interrupt,
     decideAction,
   }
+}
+
+function readDraftPermissionMode(): AgentPermissionMode {
+  if (typeof window === "undefined") return DEFAULT_PERMISSION_MODE
+  const stored = window.localStorage.getItem(DRAFT_PERMISSION_MODE_STORAGE_KEY)
+  return isPermissionMode(stored) ? stored : DEFAULT_PERMISSION_MODE
+}
+
+function writeDraftPermissionMode(mode: AgentPermissionMode) {
+  if (typeof window === "undefined") return
+  window.localStorage.setItem(DRAFT_PERMISSION_MODE_STORAGE_KEY, mode)
+}
+
+function isPermissionMode(value: unknown): value is AgentPermissionMode {
+  return value === "ask_each_action" || value === "guarded_auto" || value === "bypass"
 }

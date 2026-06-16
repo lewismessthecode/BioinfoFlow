@@ -68,6 +68,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       state,
       mode,
       setMode,
+      permissionMode,
+      setPermissionMode,
       setActiveSessionId,
       send,
       interrupt,
@@ -183,7 +185,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         isRunning={isRunning}
         disabled={disabled}
         mode={agentMode}
-        onModeChange={(next) => void setMode?.(next)}
+        onModeChange={setMode ? (next) => void setMode(next) : undefined}
+        permissionMode={permissionMode}
+        onPermissionModeChange={
+          setPermissionMode ? (next) => void setPermissionMode(next) : undefined
+        }
         models={models}
         selectedModel={selectedModel}
         modelsLoading={modelsLoading}

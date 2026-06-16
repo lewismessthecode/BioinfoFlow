@@ -5,9 +5,12 @@ import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import type { AgentRuntimeEvent, AgentRuntimeSession } from "@/lib/agent-runtime"
 
 const mocks = vi.hoisted(() => ({
+  createAgentRuntimeSession: vi.fn(),
+  createAgentRuntimeTurn: vi.fn(),
   subscribeAgentRuntimeEvents: vi.fn(),
   getAgentRuntimeState: vi.fn(),
   listAgentRuntimeSessions: vi.fn(),
+  updateAgentRuntimeSessionPermissionMode: vi.fn(),
 }))
 
 vi.mock("@/lib/runtime", () => ({
@@ -18,13 +21,14 @@ vi.mock("@/lib/agent-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/agent-runtime")>()
   return {
     ...actual,
-    createAgentRuntimeSession: vi.fn(),
-    createAgentRuntimeTurn: vi.fn(),
+    createAgentRuntimeSession: mocks.createAgentRuntimeSession,
+    createAgentRuntimeTurn: mocks.createAgentRuntimeTurn,
     decideAgentRuntimeAction: vi.fn(),
     getAgentRuntimeState: mocks.getAgentRuntimeState,
     interruptAgentRuntimeTurn: vi.fn(),
     listAgentRuntimeSessions: mocks.listAgentRuntimeSessions,
     subscribeAgentRuntimeEvents: mocks.subscribeAgentRuntimeEvents,
+    updateAgentRuntimeSessionPermissionMode: mocks.updateAgentRuntimeSessionPermissionMode,
   }
 })
 
@@ -57,9 +61,24 @@ const event: AgentRuntimeEvent = {
 describe("useAgentRuntime", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     mocks.listAgentRuntimeSessions.mockResolvedValue([session])
     mocks.getAgentRuntimeState.mockResolvedValue({ session, turns: [], events: [] })
     mocks.subscribeAgentRuntimeEvents.mockReturnValue(vi.fn())
+    mocks.createAgentRuntimeSession.mockResolvedValue(session)
+    mocks.createAgentRuntimeTurn.mockResolvedValue({
+      id: "turn-1",
+      session_id: "session-1",
+      project_id: null,
+      workspace_id: "workspace-1",
+      user_id: "dev",
+      input_text: "hello",
+      status: "queued",
+      iteration_count: 0,
+      created_at: "2026-06-08T00:00:00Z",
+      updated_at: "2026-06-08T00:00:00Z",
+    })
+    mocks.updateAgentRuntimeSessionPermissionMode.mockResolvedValue(session)
   })
 
   it("does not recreate the SSE subscription for each received event", async () => {
@@ -95,5 +114,48 @@ describe("useAgentRuntime", () => {
     expect(onActiveSessionIdChange).not.toHaveBeenCalledWith("session-1")
     expect(mocks.getAgentRuntimeState).not.toHaveBeenCalled()
     expect(mocks.subscribeAgentRuntimeEvents).not.toHaveBeenCalled()
+  })
+
+  it("uses the stored draft permission mode when creating a session", async () => {
+    window.localStorage.setItem("bioinfoflow.agentRuntime.permissionMode", "bypass")
+    const onActiveSessionIdChange = vi.fn()
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange,
+      }),
+    )
+
+    await act(async () => {
+      await result.current.send("hello")
+    })
+
+    expect(mocks.createAgentRuntimeSession).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionMode: "bypass" }),
+    )
+  })
+
+  it("patches permission mode for existing sessions", async () => {
+    const updated = { ...session, permission_mode: "bypass" as const }
+    mocks.updateAgentRuntimeSessionPermissionMode.mockResolvedValue(updated)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    await act(async () => {
+      await result.current.setPermissionMode("bypass")
+    })
+
+    expect(mocks.updateAgentRuntimeSessionPermissionMode).toHaveBeenCalledWith(
+      "session-1",
+      "bypass",
+    )
+    expect(window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode")).toBe(
+      "bypass",
+    )
   })
 })

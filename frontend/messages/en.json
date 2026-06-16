@@ -2285,6 +2285,23 @@
       "act": "Act",
       "plan": "Plan"
     },
+    "permission": {
+      "label": "Permission mode",
+      "options": {
+        "ask_each_action": {
+          "label": "Request approval",
+          "description": "Ask before side-effecting actions."
+        },
+        "guarded_auto": {
+          "label": "Approve for me",
+          "description": "Run low-risk actions automatically and ask for higher risk."
+        },
+        "bypass": {
+          "label": "Full access",
+          "description": "Run non-critical actions automatically while backend safety still blocks critical operations."
+        }
+      }
+    },
     "plan": {
       "reviewTitle": "Review the plan",
       "approveAndAct": "Approve & act",

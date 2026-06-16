@@ -2285,6 +2285,23 @@
       "act": "执行",
       "plan": "规划"
     },
+    "permission": {
+      "label": "权限模式",
+      "options": {
+        "ask_each_action": {
+          "label": "请求批准",
+          "description": "执行有副作用的操作前先询问。"
+        },
+        "guarded_auto": {
+          "label": "替我审批",
+          "description": "自动执行低风险操作，高风险操作再询问。"
+        },
+        "bypass": {
+          "label": "完全访问权限",
+          "description": "自动执行非关键操作，后端安全策略仍会阻止关键操作。"
+        }
+      }
+    },
     "plan": {
       "reviewTitle": "审阅计划",
       "approveAndAct": "批准并执行",
