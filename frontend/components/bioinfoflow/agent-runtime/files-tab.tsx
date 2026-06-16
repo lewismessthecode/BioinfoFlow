@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { RefreshCw } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -33,46 +33,72 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   const [selectedFile, setSelectedFile] = useState<AgentFsFile | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [filter, setFilter] = useState("")
+  const fileRequestId = useRef(0)
+  const treeRequestId = useRef(0)
+
+  const resetTree = useCallback(() => {
+    fileRequestId.current += 1
+    treeRequestId.current += 1
+    setRootPath(null)
+    setRootEntries([])
+    setExpandedPaths(new Set())
+    setChildrenByPath({})
+    setLoadingPaths(new Set())
+    setErrorByPath({})
+    setSelectedFile(null)
+    setSelectedPath(null)
+  }, [])
 
   const loadRoot = useCallback(async () => {
+    const requestId = treeRequestId.current
     setLoading(ROOT_LOADING_KEY, true)
     setErrorByPath((current) => omitKey(current, ROOT_LOADING_KEY))
     try {
       const tree = await getAgentFsTree(null, projectId)
-      setRootPath(tree.path)
-      setRootEntries(tree.entries)
+      if (treeRequestId.current === requestId) {
+        setRootPath(tree.path)
+        setRootEntries(tree.entries)
+      }
     } catch (err) {
-      setErrorByPath((current) => ({
-        ...current,
-        [ROOT_LOADING_KEY]: err instanceof Error ? err.message : "Could not load files.",
-      }))
+      if (treeRequestId.current === requestId) {
+        setErrorByPath((current) => ({
+          ...current,
+          [ROOT_LOADING_KEY]: err instanceof Error ? err.message : "Could not load files.",
+        }))
+      }
     } finally {
-      setLoading(ROOT_LOADING_KEY, false)
+      if (treeRequestId.current === requestId) setLoading(ROOT_LOADING_KEY, false)
     }
   }, [projectId])
 
   const loadChildren = useCallback(
     async (path: string) => {
+      const requestId = treeRequestId.current
       setLoading(path, true)
       setErrorByPath((current) => omitKey(current, path))
       try {
         const tree = await getAgentFsTree(path, projectId)
-        setChildrenByPath((current) => ({ ...current, [path]: tree.entries }))
+        if (treeRequestId.current === requestId) {
+          setChildrenByPath((current) => ({ ...current, [path]: tree.entries }))
+        }
       } catch (err) {
-        setErrorByPath((current) => ({
-          ...current,
-          [path]: err instanceof Error ? err.message : "Could not load files.",
-        }))
+        if (treeRequestId.current === requestId) {
+          setErrorByPath((current) => ({
+            ...current,
+            [path]: err instanceof Error ? err.message : "Could not load files.",
+          }))
+        }
       } finally {
-        setLoading(path, false)
+        if (treeRequestId.current === requestId) setLoading(path, false)
       }
     },
     [projectId],
   )
 
   useEffect(() => {
+    resetTree()
     void loadRoot()
-  }, [loadRoot])
+  }, [loadRoot, resetTree])
 
   const refresh = useCallback(async () => {
     await loadRoot()
@@ -81,6 +107,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
 
   const toggleDirectory = useCallback(
     (entry: AgentFsEntry) => {
+      const isExpanded = expandedPaths.has(entry.path)
       setExpandedPaths((current) => {
         const next = new Set(current)
         if (next.has(entry.path)) {
@@ -90,24 +117,30 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
         next.add(entry.path)
         return next
       })
-      if (!childrenByPath[entry.path]) {
+      if (!isExpanded && !childrenByPath[entry.path] && !loadingPaths.has(entry.path)) {
         void loadChildren(entry.path)
       }
     },
-    [childrenByPath, loadChildren],
+    [childrenByPath, expandedPaths, loadingPaths, loadChildren],
   )
 
   const openFile = useCallback(async (entry: AgentFsEntry) => {
+    const requestId = fileRequestId.current + 1
+    fileRequestId.current = requestId
     setSelectedPath(entry.path)
+    setSelectedFile(null)
     setLoading(entry.path, true)
     setErrorByPath((current) => omitKey(current, entry.path))
     try {
-      setSelectedFile(await getAgentFsFile(entry.path))
+      const file = await getAgentFsFile(entry.path)
+      if (fileRequestId.current === requestId) setSelectedFile(file)
     } catch (err) {
-      setErrorByPath((current) => ({
-        ...current,
-        [entry.path]: err instanceof Error ? err.message : "Could not load files.",
-      }))
+      if (fileRequestId.current === requestId) {
+        setErrorByPath((current) => ({
+          ...current,
+          [entry.path]: err instanceof Error ? err.message : "Could not load files.",
+        }))
+      }
     } finally {
       setLoading(entry.path, false)
     }

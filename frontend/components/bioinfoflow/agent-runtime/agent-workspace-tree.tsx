@@ -108,6 +108,9 @@ function TreeRows({
     const expanded = expandedPaths.has(entry.path)
     const children = childrenByPath[entry.path] ?? []
     const visibleChildren = filterEntries(children, normalizedFilter, childrenByPath)
+    const revealChildren = entry.type === "dir" && (
+      expanded || Boolean(normalizedFilter && visibleChildren.length)
+    )
     const loading = loadingPaths.has(entry.path)
     const error = errorByPath[entry.path] ?? null
     const isSelected = selectedPath === entry.path
@@ -169,7 +172,7 @@ function TreeRows({
             {error}
           </p>
         ) : null}
-        {entry.type === "dir" && expanded ? (
+        {revealChildren ? (
           loading && !children.length ? (
             <div
               className="flex items-center gap-2 py-1.5 text-xs text-muted-foreground"
