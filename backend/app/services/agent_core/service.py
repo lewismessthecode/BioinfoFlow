@@ -251,7 +251,7 @@ class AgentCoreService:
             model_selection=model_selection,
             metadata=metadata,
         )
-        enqueue_turn_run(str(turn.id))
+        enqueue_turn_run(str(turn.id), str(turn.session_id))
         return turn
 
     async def list_turns(
@@ -449,7 +449,9 @@ class AgentCoreService:
             payload={"action_id": str(action.id), "decision": decision, "note": note},
         )
         if decision in {"approve", "modify", "reject", "answer"} and updated.kind == "tool":
-            enqueue_turn_resume(str(updated.id), str(updated.turn_id))
+            enqueue_turn_resume(
+                str(updated.id), str(updated.turn_id), str(updated.session_id)
+            )
         return updated
 
     async def _activate_execution_toolset(self, session_id: str) -> None:
@@ -468,12 +470,12 @@ class AgentCoreService:
         action = await self.action_repo.get(action_id)
         if action is None:
             raise NotFoundError(f"Agent action not found: {action_id}")
-        await self.require_turn(
+        turn = await self.require_turn(
             turn_id=str(action.turn_id),
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        enqueue_turn_resume(str(action.id), str(action.turn_id))
+        enqueue_turn_resume(str(action.id), str(action.turn_id), str(turn.session_id))
         return action
 
     async def recover_orphaned_turns(self) -> dict[str, int]:
@@ -529,7 +531,9 @@ class AgentCoreService:
                 type=AgentEventType.TURN_RECOVERY_ENQUEUED,
                 payload={"mode": "resume", "action_id": str(latest_action.id)},
             )
-            enqueue_turn_resume(str(latest_action.id), str(turn.id))
+            enqueue_turn_resume(
+                str(latest_action.id), str(turn.id), str(turn.session_id)
+            )
             return "enqueued"
 
         if latest_action is not None and latest_action.status == AgentActionStatus.RUNNING:
@@ -570,7 +574,7 @@ class AgentCoreService:
             type=AgentEventType.TURN_RECOVERY_ENQUEUED,
             payload={"mode": "run"},
         )
-        enqueue_turn_run(str(turn.id))
+        enqueue_turn_run(str(turn.id), str(turn.session_id))
         return "enqueued"
 
     async def _cancel_open_actions(self, turn_id: str, *, cancelled_at: datetime) -> None:

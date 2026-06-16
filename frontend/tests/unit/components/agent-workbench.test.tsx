@@ -204,6 +204,51 @@ describe("AgentWorkbench", () => {
     )
   })
 
+  it("keeps an active loading session in the conversation layout", () => {
+    setupRuntime({ turns: [], status: "loading" })
+
+    render(<AgentWorkbench activeSessionId="session-1" />)
+
+    expect(
+      screen.queryByText("What should Bioinfoflow help you do today?"),
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId("agent-composer-shell")).toHaveAttribute(
+      "data-placement",
+      "bottom",
+    )
+  })
+
+  it("shows an optimistic pending response immediately after submitting the centered composer", () => {
+    const send = vi.fn(() => new Promise(() => {}))
+    useAgentRuntimeMock.mockReturnValue({
+      state: {
+        session: null,
+        turns: [],
+        events: [],
+        timeline: [],
+        status: "loading",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Plan RNA-seq QC" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(screen.getByTestId("agent-composer-shell")).toHaveAttribute(
+      "data-placement",
+      "bottom",
+    )
+    expect(screen.getByText("Plan RNA-seq QC")).toBeInTheDocument()
+    expect(screen.getByText("Working on it...")).toBeInTheDocument()
+  })
+
   it("opens a placeholder attachment menu without sending a message", async () => {
     const send = vi.fn()
     useAgentRuntimeMock.mockReturnValue({

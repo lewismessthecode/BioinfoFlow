@@ -2,7 +2,11 @@ import { act, renderHook, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
-import type { AgentRuntimeEvent, AgentRuntimeSession } from "@/lib/agent-runtime"
+import type {
+  AgentRuntimeEvent,
+  AgentRuntimeSession,
+  AgentRuntimeTurn,
+} from "@/lib/agent-runtime"
 
 const mocks = vi.hoisted(() => ({
   createAgentRuntimeSession: vi.fn(),
@@ -58,6 +62,19 @@ const event: AgentRuntimeEvent = {
   updated_at: "2026-06-08T00:00:00Z",
 }
 
+const turn: AgentRuntimeTurn = {
+  id: "turn-1",
+  session_id: "session-1",
+  project_id: null,
+  workspace_id: "workspace-1",
+  user_id: "dev",
+  input_text: "hello",
+  status: "completed",
+  iteration_count: 1,
+  created_at: "2026-06-08T00:00:00Z",
+  updated_at: "2026-06-08T00:00:00Z",
+}
+
 describe("useAgentRuntime", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -97,6 +114,30 @@ describe("useAgentRuntime", () => {
     })
 
     await waitFor(() => expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledTimes(1))
+  })
+
+  it("exposes stream status and refreshes state when the stream is ready", async () => {
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledTimes(1))
+    const stateCallsBeforeReady = mocks.getAgentRuntimeState.mock.calls.length
+    const subscription = mocks.subscribeAgentRuntimeEvents.mock.calls[0][0]
+
+    expect(result.current.streamStatus).toBe("connecting")
+
+    await act(async () => {
+      subscription.onReady?.()
+    })
+
+    expect(result.current.streamStatus).toBe("connected")
+    expect(mocks.getAgentRuntimeState.mock.calls.length).toBeGreaterThan(
+      stateCallsBeforeReady,
+    )
   })
 
   it("keeps a controlled empty session as a draft conversation", async () => {
@@ -213,6 +254,37 @@ describe("useAgentRuntime", () => {
     })
 
     expect(result.current.state.session?.id).toBe("session-2")
+  })
+
+  it("clears the previous session state immediately when the active session changes", async () => {
+    const session2: AgentRuntimeSession = { ...session, id: "session-2" }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session,
+      turns: [turn],
+      events: [],
+    })
+
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+
+    await waitFor(() => expect(result.current.state.turns).toHaveLength(1))
+
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: session2,
+      turns: [],
+      events: [],
+    })
+    rerender({ activeSessionId: "session-2" })
+
+    expect(result.current.state.turns).toEqual([])
+    expect(result.current.state.status).toBe("loading")
   })
 
   it("patches permission mode for existing sessions", async () => {

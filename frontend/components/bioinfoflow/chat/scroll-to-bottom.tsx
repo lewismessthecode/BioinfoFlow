@@ -7,9 +7,14 @@ import { Button } from "@/components/ui/button"
 interface ScrollToBottomProps {
   visible: boolean
   onClick: () => void
+  ariaLabel?: string
 }
 
-export function ScrollToBottom({ visible, onClick }: ScrollToBottomProps) {
+export function ScrollToBottom({
+  visible,
+  onClick,
+  ariaLabel = "Scroll to bottom",
+}: ScrollToBottomProps) {
   const prefersReducedMotion = useReducedMotion()
 
   return (
@@ -27,7 +32,7 @@ export function ScrollToBottom({ visible, onClick }: ScrollToBottomProps) {
             size="icon"
             className="h-9 w-9 rounded-full shadow-md bg-background/95 backdrop-blur-sm border-border/60 hover:bg-accent/50 relative"
             onClick={onClick}
-            aria-label="Scroll to bottom"
+            aria-label={ariaLabel}
           >
             <ArrowDown className="h-4 w-4" />
           </Button>

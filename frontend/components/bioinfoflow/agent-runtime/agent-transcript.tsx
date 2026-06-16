@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed } from "lucide-react"
 import { useTranslations } from "next-intl"
 
+import { ScrollToBottom } from "@/components/bioinfoflow/chat/scroll-to-bottom"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import type {
   AgentRuntimeArtifact,
@@ -17,6 +18,8 @@ import { InlinePlanCard } from "./inline-plan-card"
 import { InlineTodoCard } from "./inline-todo-card"
 import { getActionDecisionCardsByTurn } from "./pending-actions"
 import type { AgentDecisionHandler } from "./types"
+
+const BOTTOM_FOLLOW_THRESHOLD = 80
 
 export function AgentTranscript({
   timeline,
@@ -35,9 +38,36 @@ export function AgentTranscript({
     () => getActionDecisionCardsByTurn(events),
     [events],
   )
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const [isFollowingBottom, setIsFollowingBottom] = useState(true)
+
+  const scrollToBottom = useCallback(() => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    scroller.scrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+  }, [])
+
+  const updateBottomState = useCallback(() => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    const distanceFromBottom =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+    const atBottom = distanceFromBottom <= BOTTOM_FOLLOW_THRESHOLD
+    setIsFollowingBottom(atBottom)
+  }, [])
+
+  useEffect(() => {
+    if (isFollowingBottom) scrollToBottom()
+  }, [artifacts, events, isFollowingBottom, scrollToBottom, timeline])
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-36 pt-8 sm:px-6">
+    <div
+      ref={scrollRef}
+      className="min-h-0 flex-1 overflow-y-auto px-4 pb-36 pt-8 sm:px-6"
+      data-testid="agent-transcript-scroll"
+      onScroll={updateBottomState}
+    >
       <div className="mx-auto grid w-full max-w-3xl gap-8">
         {timeline.map((entry) => (
           <article key={entry.turn.id} className="grid gap-4">
@@ -112,6 +142,19 @@ export function AgentTranscript({
             </div>
           </article>
         ))}
+        <div ref={bottomRef} aria-hidden="true" />
+      </div>
+      <div className="pointer-events-none sticky bottom-5 z-10">
+        <div className="pointer-events-auto">
+          <ScrollToBottom
+            visible={!isFollowingBottom}
+            ariaLabel={t("scrollToBottom")}
+            onClick={() => {
+              setIsFollowingBottom(true)
+              scrollToBottom()
+            }}
+          />
+        </div>
       </div>
     </div>
   )

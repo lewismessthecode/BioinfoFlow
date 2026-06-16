@@ -2157,6 +2157,7 @@
     "send": "发送消息",
     "stop": "停止回复",
     "pendingResponse": "正在处理...",
+    "scrollToBottom": "回到最新内容",
     "thinking": "思考过程",
     "toolCalls": "工具调用",
     "activity": {

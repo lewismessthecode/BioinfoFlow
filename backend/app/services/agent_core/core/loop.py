@@ -34,6 +34,7 @@ from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
+from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
 from app.services.agent_core.tools.toolsets import (
@@ -43,6 +44,10 @@ from app.services.agent_core.tools.toolsets import (
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
 from app.services.llm.provider_templates import litellm_model_name
 from app.utils.exceptions import PermissionDeniedError
+from app.utils.logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class AgentLoopController:
@@ -878,6 +883,17 @@ class AgentLoopController:
                 type=event_type,
                 payload=payload,
             )
+        log_fields = {
+            "session_id": str(updated.session_id),
+            "turn_id": str(updated.id),
+            "status": updated.status,
+            "termination_reason": result.termination_reason,
+            "iteration_count": result.iteration_count,
+            "error_code": result.error_code,
+        }
+        if result.error_message:
+            log_fields["error_message"] = truncate_log_value(result.error_message)
+        logger.info("agent_core.turn.finished", **log_fields)
         agent_metrics.increment(f"turns.{result.termination_reason}")
         agent_metrics.observe("turns.iterations", float(result.iteration_count))
         return updated

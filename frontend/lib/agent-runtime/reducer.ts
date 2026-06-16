@@ -19,6 +19,7 @@ export type AgentRuntimeViewState = {
 export type AgentRuntimeAction =
   | { type: "loading" }
   | { type: "state.loaded"; payload: AgentRuntimeStatePayload }
+  | { type: "session.loading"; session: AgentRuntimeSession | null }
   | { type: "session.selected"; session: AgentRuntimeSession | null }
   | { type: "turn.upsert"; turn: AgentRuntimeTurn }
   | { type: "event.append"; event: AgentRuntimeEvent }
@@ -58,6 +59,12 @@ export function agentRuntimeReducer(
         error: null,
       }
     }
+    case "session.loading":
+      return {
+        ...initialAgentRuntimeState,
+        session: action.session,
+        status: "loading",
+      }
     case "session.selected":
       return {
         ...initialAgentRuntimeState,
