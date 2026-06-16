@@ -32,18 +32,7 @@ export function getPendingActions(events: AgentRuntimeEvent[]) {
     })
 }
 
-export function hasPendingRuntimeAction(events: AgentRuntimeEvent[]) {
-  return getPendingActions(events).length > 0
-}
-
-export function pendingDecisionKey(events: AgentRuntimeEvent[]) {
-  return getPendingActions(events)
-    .map((event) => String(event.payload.action_id || ""))
-    .join(",")
-}
-
-export type AgentDecisionCardState = AgentRuntimeDecisionState
-export type AgentDecisionCard = AgentRuntimeDecisionView
+type AgentDecisionCard = AgentRuntimeDecisionView
 
 export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
   const decisions = new Map<string, AgentRuntimeEvent>()
@@ -79,15 +68,6 @@ export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
     })
     .filter((card): card is AgentDecisionCard => Boolean(card))
     .reverse()
-}
-
-export function getActionDecisionCardsByTurn(events: AgentRuntimeEvent[]) {
-  const byTurn = new Map<string, AgentDecisionCard[]>()
-  for (const card of getActionDecisionCards(events)) {
-    if (!card.turnId) continue
-    byTurn.set(card.turnId, [...(byTurn.get(card.turnId) ?? []), card])
-  }
-  return byTurn
 }
 
 export function parseWaitingDecision(event: AgentRuntimeEvent): AgentWaitingDecision {

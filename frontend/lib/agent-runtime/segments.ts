@@ -58,20 +58,6 @@ export function buildTurnSegments(
   )
 }
 
-export function buildTurnTextBlocks(
-  turn: AgentRuntimeTurn,
-  events: AgentRuntimeEvent[],
-) {
-  return buildTextBlocks(turn, sortEvents(events))
-}
-
-export function buildTurnThinkingBlocks(
-  turn: AgentRuntimeTurn,
-  events: AgentRuntimeEvent[],
-) {
-  return buildThinkingBlocks(turn, sortEvents(events))
-}
-
 function buildTextBlocks(
   turn: AgentRuntimeTurn,
   events: AgentRuntimeEvent[],
