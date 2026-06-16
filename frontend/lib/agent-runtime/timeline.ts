@@ -23,7 +23,7 @@ export function buildAgentRuntimeTimeline(
 
   return turns.map((turn) => {
     const turnEvents = sortedEvents.filter((event) => event.turn_id === turn.id)
-    const segments = buildTurnSegments(turn, turnEvents)
+    const segments = buildTurnSegments(turn, turnEvents, sortedEvents)
     const textBlocks = textBlocksFromSegments(segments)
     const thinkingBlocks = thinkingBlocksFromSegments(segments)
     const activityGroups = segments

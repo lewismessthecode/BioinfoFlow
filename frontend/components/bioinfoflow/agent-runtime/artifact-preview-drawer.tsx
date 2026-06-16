@@ -65,5 +65,5 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
 }
 
 function isPreviewArtifact(artifact: AgentRuntimeArtifact) {
-  return artifact.type !== "command" && artifact.type !== "log_summary" && artifact.type !== "todo_list"
+  return artifact.type !== "todo_list"
 }

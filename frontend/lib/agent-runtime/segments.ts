@@ -20,15 +20,22 @@ import type {
 export function buildTurnSegments(
   turn: AgentRuntimeTurn,
   events: AgentRuntimeEvent[],
+  decisionResolverEvents: AgentRuntimeEvent[] = events,
 ): AgentRuntimeTranscriptSegment[] {
   const sortedEvents = sortEvents(events)
+  const sortedDecisionResolverEvents =
+    decisionResolverEvents === events ? sortedEvents : sortEvents(decisionResolverEvents)
   const textBlocks = buildTextBlocks(turn, sortedEvents)
   const thinkingBlocks = buildThinkingBlocks(turn, sortedEvents)
   const activities = buildAgentRuntimeToolActivities(sortedEvents)
   const activitySegments = activities.map((activity, index) =>
     activityGroupSegment(turn.id, activity, index),
   )
-  const decisionSegments = buildDecisionSegments(turn.id, sortedEvents)
+  const decisionSegments = buildDecisionSegments(
+    turn.id,
+    sortedEvents,
+    sortedDecisionResolverEvents,
+  )
   const errorSegment = buildTurnErrorSegment(turn, sortedEvents)
 
   return mergeAdjacentActivitySegments(
@@ -245,29 +252,31 @@ function buildThinkingBlocks(
 function buildDecisionSegments(
   turnId: string,
   events: AgentRuntimeEvent[],
+  resolverEvents: AgentRuntimeEvent[],
 ): AgentRuntimeTranscriptSegment[] {
   const byActionId = new Map<string, AgentRuntimeDecisionView>()
 
   for (const event of events) {
+    if (event.type !== "action.waiting_decision") continue
     const actionId = stringValue(event.payload.action_id)
     if (!actionId) continue
+    const decision = parseWaitingDecision(event)
+    if (!decision.actionId) continue
+    byActionId.set(actionId, {
+      ...decision,
+      state: "pending",
+      turnId,
+      seqStart: event.seq,
+      seqEnd: event.seq,
+      scrollTargetId: decisionScrollTargetId(actionId),
+    })
+  }
 
-    if (event.type === "action.waiting_decision") {
-      const decision = parseWaitingDecision(event)
-      if (!decision.actionId) continue
-      byActionId.set(actionId, {
-        ...decision,
-        state: "pending",
-        turnId,
-        seqStart: event.seq,
-        seqEnd: event.seq,
-        scrollTargetId: decisionScrollTargetId(actionId),
-      })
-      continue
-    }
-
+  for (const event of resolverEvents) {
+    const actionId = stringValue(event.payload.action_id)
+    if (!actionId) continue
     const existing = byActionId.get(actionId)
-    if (!existing) continue
+    if (!existing || event.seq < existing.seqStart) continue
 
     if (event.type === "action.decision_recorded") {
       existing.state = decisionState(event)
@@ -288,7 +297,9 @@ function buildDecisionSegments(
     }
 
     if (event.type === "action.completed") {
-      if (existing.state === "pending") existing.state = "completed"
+      if (existing.state !== "rejected" && existing.state !== "failed" && existing.state !== "cancelled") {
+        existing.state = "completed"
+      }
       existing.seqEnd = Math.max(existing.seqEnd, event.seq)
     }
   }

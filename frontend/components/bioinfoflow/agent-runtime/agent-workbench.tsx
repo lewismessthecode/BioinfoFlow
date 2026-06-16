@@ -120,11 +120,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           : [],
       [artifactState, state.session?.id],
     )
+    const latestTurnId = state.timeline.at(-1)?.turn.id ?? null
     const latestTodoArtifact = useMemo(() => {
+      if (!latestTurnId) return undefined
       return [...transcriptArtifacts]
-        .filter((artifact) => artifact.type === "todo_list")
+        .filter((artifact) => artifact.type === "todo_list" && artifact.turn_id === latestTurnId)
         .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0]
-    }, [transcriptArtifacts])
+    }, [latestTurnId, transcriptArtifacts])
     const todoTurn = latestTodoArtifact
       ? state.timeline.find((entry) => entry.turn.id === latestTodoArtifact.turn_id)?.turn ?? null
       : null
@@ -285,8 +287,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               <AgentTodoDock items={todoDisplayItems} />
               <AgentTranscript
                 timeline={transcriptTimeline}
-                artifacts={transcriptArtifacts}
-                events={state.events}
                 onDecision={decideAction}
               />
               <div
@@ -295,7 +295,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 data-placement="bottom"
               >
                 <div className="pointer-events-auto">
-                  <ComposerApprovalPopover events={state.events} onDecision={decideAction} />
+                  <ComposerApprovalPopover events={state.events} />
                   {composer}
                 </div>
               </div>
@@ -337,7 +337,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 sessionId={state.session?.id}
                 events={state.events}
                 onClose={closeSidecar}
-                onDecision={decideAction}
                 onAddContext={addContextAttachment}
               />
             ) : null}

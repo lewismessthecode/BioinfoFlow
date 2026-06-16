@@ -6,13 +6,11 @@ import { useTranslations } from "next-intl"
 
 import type { AgentRuntimeEvent } from "@/lib/agent-runtime"
 import { getActionDecisionCards } from "./pending-actions"
-import type { AgentDecisionHandler } from "./types"
 
 export function ComposerApprovalPopover({
   events,
 }: {
   events: AgentRuntimeEvent[]
-  onDecision: AgentDecisionHandler
 }) {
   const t = useTranslations("agentRuntime")
   const cards = useMemo(() => getActionDecisionCards(events), [events])

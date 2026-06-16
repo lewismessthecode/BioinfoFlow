@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from "vitest"
 import { AgentTranscript } from "@/components/bioinfoflow/agent-runtime/agent-transcript"
 import { buildAgentRuntimeTimeline } from "@/lib/agent-runtime"
 import type {
-  AgentRuntimeArtifact,
   AgentRuntimeEvent,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
@@ -85,26 +84,6 @@ const baseTurn: AgentRuntimeTurn = {
   completed_at: "2026-06-10T00:00:02Z",
 }
 
-const todoArtifact: AgentRuntimeArtifact = {
-  id: "artifact-todo",
-  session_id: "session-1",
-  turn_id: "turn-1",
-  action_id: "action-todo",
-  type: "todo_list",
-  title: "Tasks",
-  summary: null,
-  payload: {
-    todos: [
-      { content: "Read the code", status: "completed" },
-      { content: "Make the change", status: "in_progress", activeForm: "Editing" },
-    ],
-  },
-  file_path: null,
-  resource_ref: null,
-  created_at: "2026-06-10T00:00:03Z",
-  updated_at: "2026-06-10T00:00:03Z",
-}
-
 function event(
   id: string,
   seq: number,
@@ -128,19 +107,15 @@ function event(
 function renderTranscript({
   turn = baseTurn,
   events = [],
-  artifacts = [],
   onDecision,
 }: {
   turn?: AgentRuntimeTurn
   events?: AgentRuntimeEvent[]
-  artifacts?: AgentRuntimeArtifact[]
   onDecision?: Parameters<typeof AgentTranscript>[0]["onDecision"]
 } = {}) {
   return render(
     <AgentTranscript
       timeline={buildAgentRuntimeTimeline([turn], events)}
-      artifacts={artifacts}
-      events={events}
       onDecision={onDecision}
     />,
   )
@@ -314,8 +289,8 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("Inspect files", { exact: false })).toBeInTheDocument()
   })
 
-  it("does not render todo_list artifacts inside the transcript stream", () => {
-    renderTranscript({ artifacts: [todoArtifact] })
+  it("does not render todo artifacts inside the transcript stream", () => {
+    renderTranscript()
 
     expect(screen.queryByTestId("inline-todo-card")).not.toBeInTheDocument()
     expect(screen.queryByText("Editing")).not.toBeInTheDocument()

@@ -206,6 +206,92 @@ describe("FilesTab", () => {
     expect(screen.getByText("/data/projects/project-2")).toBeInTheDocument()
   })
 
+  it("ignores older same-project tree responses after a newer refresh", async () => {
+    const firstRoot = deferred<AgentFsTree>()
+    const refreshedRoot = deferred<AgentFsTree>()
+    vi.mocked(getAgentFsTree).mockImplementation((path) => {
+      if (path === null) {
+        const rootRequestCount = vi
+          .mocked(getAgentFsTree)
+          .mock.calls.filter(([requestedPath]) => requestedPath === null).length
+        return rootRequestCount === 1 ? firstRoot.promise : refreshedRoot.promise
+      }
+      return Promise.resolve({ path: String(path ?? ""), entries: [] })
+    })
+    render(<FilesTab projectId="project-1" />)
+
+    await waitFor(() => {
+      expect(getAgentFsTree).toHaveBeenCalledWith(null, "project-1")
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
+
+    await act(async () => {
+      refreshedRoot.resolve({
+        path: rootPath,
+        entries: [{ name: "fresh.wdl", path: `${rootPath}/fresh.wdl`, type: "file" }],
+      })
+    })
+    expect(await screen.findByText("fresh.wdl")).toBeInTheDocument()
+
+    await act(async () => {
+      firstRoot.resolve({
+        path: rootPath,
+        entries: [{ name: "stale.wdl", path: `${rootPath}/stale.wdl`, type: "file" }],
+      })
+    })
+    expect(screen.queryByText("stale.wdl")).not.toBeInTheDocument()
+  })
+
+  it("refreshes cached children even when their directory is collapsed", async () => {
+    let childEntries = [{ name: "main.nf", path: scriptPath, type: "file" as const }]
+    vi.mocked(getAgentFsTree).mockImplementation(async (path) => {
+      if (path === srcPath) return { path: srcPath, entries: childEntries }
+      return {
+        path: rootPath,
+        entries: [{ name: "src", path: srcPath, type: "dir" }],
+      }
+    })
+    render(<FilesTab projectId="project-1" />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "src" }))
+    expect(await screen.findByText("main.nf")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "src" }))
+    expect(screen.queryByText("main.nf")).not.toBeInTheDocument()
+
+    childEntries = [{ name: "updated.nf", path: `${srcPath}/updated.nf`, type: "file" }]
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    await waitFor(() => {
+      expect(
+        vi.mocked(getAgentFsTree).mock.calls.filter(([path]) => path === srcPath),
+      ).toHaveLength(2)
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "src" }))
+    expect(await screen.findByText("updated.nf")).toBeInTheDocument()
+    expect(screen.queryByText("main.nf")).not.toBeInTheDocument()
+  })
+
+  it("refreshes the selected file preview", async () => {
+    let workflowContent = "workflow content"
+    vi.mocked(getAgentFsFile).mockImplementation(async (path) => ({
+      path,
+      content: workflowContent,
+      truncated: false,
+      size: workflowContent.length,
+      language: "wdl",
+    }))
+    render(<FilesTab projectId="project-1" />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "workflow.wdl" }))
+    expect(await screen.findByText("workflow content")).toBeInTheDocument()
+
+    workflowContent = "updated workflow content"
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
+
+    expect(await screen.findByText("updated workflow content")).toBeInTheDocument()
+    expect(screen.queryByText("workflow content")).not.toBeInTheDocument()
+  })
+
   it("ignores stale file preview responses", async () => {
     const mainRequest = deferred<AgentFsFile>()
     const workflowRequest = deferred<AgentFsFile>()

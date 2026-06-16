@@ -69,18 +69,25 @@ describe("ProgressTab", () => {
 })
 
 describe("ArtifactPreviewDrawer", () => {
-  it("filters command artifacts out of the preview list", () => {
+  it("opens command artifacts with full output", () => {
     render(
       <ArtifactPreviewDrawer
         artifacts={[
-          artifact({ id: "command-1", type: "command", title: "ls output" }),
+          artifact({
+            id: "command-1",
+            type: "command",
+            title: "ls output",
+            payload: { command: "ls", stdout: "report.md", stderr: "" },
+          }),
           artifact({ id: "file-1", type: "file", title: "report.md", payload: { content: "QC passed" } }),
         ]}
       />,
     )
 
+    fireEvent.click(screen.getByRole("button", { name: /ls output/ }))
+
+    expect(screen.getByText("$ ls")).toBeInTheDocument()
     expect(screen.getByText("report.md")).toBeInTheDocument()
-    expect(screen.queryByText("ls output")).not.toBeInTheDocument()
   })
 })
 
@@ -95,7 +102,6 @@ describe("AgentSideDrawer", () => {
       <AgentSideDrawer
         events={[waitingEvent({ action_id: "a1", name: "bash" })]}
         onClose={vi.fn()}
-        onDecision={vi.fn()}
       />,
     )
 

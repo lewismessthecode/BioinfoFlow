@@ -346,6 +346,70 @@ describe("agentRuntimeReducer", () => {
     )
   })
 
+  it("marks approved decisions completed when the action completes", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("waiting_approval")],
+        events: [
+          {
+            ...event("event-waiting", 1),
+            type: "action.waiting_decision",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+          {
+            ...event("event-approved", 2),
+            type: "action.decision_recorded",
+            payload: { action_id: "action-1", decision: "approve" },
+          },
+          {
+            ...event("event-completed", 3),
+            type: "action.completed",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].segments).toContainEqual(
+      expect.objectContaining({
+        kind: "decision",
+        decision: expect.objectContaining({ state: "completed" }),
+      }),
+    )
+  })
+
+  it("resolves decisions from action events without a matching turn id", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("waiting_approval")],
+        events: [
+          {
+            ...event("event-waiting", 1),
+            type: "action.waiting_decision",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+          {
+            ...event("event-completed", 2),
+            turn_id: null,
+            type: "action.completed",
+            payload: { action_id: "action-1", name: "bash" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].segments).toContainEqual(
+      expect.objectContaining({
+        kind: "decision",
+        decision: expect.objectContaining({ state: "completed" }),
+      }),
+    )
+  })
+
   it("projects running status from queued or running turns", () => {
     const state = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "turn.upsert",

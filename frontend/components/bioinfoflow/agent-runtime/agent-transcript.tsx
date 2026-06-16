@@ -7,8 +7,6 @@ import { useTranslations } from "next-intl"
 import { ScrollToBottom } from "@/components/bioinfoflow/chat/scroll-to-bottom"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import type {
-  AgentRuntimeArtifact,
-  AgentRuntimeEvent,
   AgentRuntimeTimelineEntry,
   AgentRuntimeTranscriptSegment,
   AgentRuntimeTurn,
@@ -24,8 +22,6 @@ export function AgentTranscript({
   onDecision,
 }: {
   timeline: AgentRuntimeTimelineEntry[]
-  artifacts?: AgentRuntimeArtifact[]
-  events?: AgentRuntimeEvent[]
   onDecision?: AgentDecisionHandler
 }) {
   const t = useTranslations("agentRuntime")

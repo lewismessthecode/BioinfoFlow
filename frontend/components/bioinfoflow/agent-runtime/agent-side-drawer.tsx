@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils"
 import { ArtifactPreviewDrawer } from "./artifact-preview-drawer"
 import { BrowserTab } from "./browser-tab"
 import { getPendingActions } from "./pending-actions"
-import type { AgentDecisionHandler } from "./types"
 import { WorkspaceExplorerPanel } from "./workspace-explorer-panel"
 
 type AgentSideDrawerTab = "preview" | "files" | "browser"
@@ -25,7 +24,6 @@ type AgentSideDrawerProps = {
   sessionId?: string | null
   events: AgentRuntimeEvent[]
   onClose: () => void
-  onDecision: AgentDecisionHandler
   onAddContext?: (path: string) => void
   className?: string
 }
