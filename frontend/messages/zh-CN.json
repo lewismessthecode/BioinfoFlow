@@ -2205,6 +2205,7 @@
       "state": {
         "approved": "已批准，继续执行",
         "answered": "已提交回答，继续执行",
+        "completed": "已完成",
         "rejected": "已拒绝",
         "failed": "失败",
         "cancelled": "已取消"

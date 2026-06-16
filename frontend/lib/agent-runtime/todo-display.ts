@@ -22,21 +22,20 @@ function displayStatusForTodo(
   turn?: AgentRuntimeTurn | null,
 ): AgentTodoDisplayStatus {
   if (todo.status === "completed") return "completed"
-  if (todo.status === "pending") return "pending"
-  if (!turn) return "in_progress"
+  if (!turn) return todo.status
 
   switch (turn.status) {
-    case "queued":
-    case "running":
-    case "waiting_user":
-    case "waiting_approval":
-      return "in_progress"
     case "failed":
       return "failed"
     case "cancelled":
       return "cancelled"
     case "completed":
       return "stopped"
+    case "queued":
+    case "running":
+    case "waiting_user":
+    case "waiting_approval":
+      return todo.status
   }
 }
 

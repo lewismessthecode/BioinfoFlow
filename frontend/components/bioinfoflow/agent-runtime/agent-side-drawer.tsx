@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 import {
+  decisionScrollTargetId,
   listAgentRuntimeSessionArtifacts,
   type AgentRuntimeArtifact,
   type AgentRuntimeEvent,
@@ -68,7 +69,17 @@ export function AgentSideDrawer({
   }, [sessionId, artifactEventCount])
 
   const visibleArtifacts = sessionId ? artifacts : []
-  const pendingDecisionCount = useMemo(() => getPendingActions(events).length, [events])
+  const pendingDecision = useMemo(() => getPendingActions(events)[0] ?? null, [events])
+  const pendingDecisionActionId = pendingDecision
+    ? String(pendingDecision.payload.action_id || "")
+    : null
+  const jumpToPendingDecision = () => {
+    if (!pendingDecisionActionId) return
+    document.getElementById(decisionScrollTargetId(pendingDecisionActionId))?.scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    })
+  }
 
   return (
     <aside
@@ -110,11 +121,15 @@ export function AgentSideDrawer({
         </Button>
       </div>
 
-      {pendingDecisionCount > 0 ? (
+      {pendingDecisionActionId ? (
         <div className="border-b border-border/60 px-3 py-2" data-testid="sidecar-decision-indicator">
-          <div className="rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200">
+          <button
+            type="button"
+            className="w-full rounded-full bg-amber-500/10 px-3 py-1.5 text-left text-xs font-medium text-amber-800 hover:bg-amber-500/15 dark:text-amber-200"
+            onClick={jumpToPendingDecision}
+          >
             {t("approval.jumpToDecision")}
-          </div>
+          </button>
         </div>
       ) : null}
 

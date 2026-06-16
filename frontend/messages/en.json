@@ -2205,6 +2205,7 @@
       "state": {
         "approved": "Approved, resuming",
         "answered": "Answer submitted, resuming",
+        "completed": "Completed",
         "rejected": "Rejected",
         "failed": "Failed",
         "cancelled": "Cancelled"

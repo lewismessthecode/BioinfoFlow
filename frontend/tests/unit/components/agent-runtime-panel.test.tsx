@@ -85,19 +85,26 @@ describe("ArtifactPreviewDrawer", () => {
 })
 
 describe("AgentSideDrawer", () => {
-  it("uses an icon switcher without a heavy run title", () => {
+  it("renders pending decision jump as an interactive button", () => {
+    const target = document.createElement("div")
+    target.id = "agent-decision-a1"
+    target.scrollIntoView = vi.fn()
+    document.body.appendChild(target)
+
     render(
       <AgentSideDrawer
-        events={[]}
+        events={[waitingEvent({ action_id: "a1", name: "bash" })]}
         onClose={vi.fn()}
         onDecision={vi.fn()}
       />,
     )
 
-    expect(screen.queryByText("sidecar.title")).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "tabs.preview" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "tabs.files" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "tabs.browser" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "approval.jumpToDecision" }))
+    expect(target.scrollIntoView).toHaveBeenCalledWith({
+      block: "center",
+      behavior: "smooth",
+    })
+    target.remove()
   })
 })
 
