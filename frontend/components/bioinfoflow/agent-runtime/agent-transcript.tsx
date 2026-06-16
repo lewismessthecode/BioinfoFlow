@@ -1,17 +1,28 @@
 "use client"
 
+import { useMemo } from "react"
 import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import type {
+  AgentRuntimeArtifact,
   AgentRuntimeTimelineEntry,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 import { ActivityGroup } from "./activity-group"
+import { InlinePlanCard } from "./inline-plan-card"
+import { InlineTodoCard } from "./inline-todo-card"
 
-export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEntry[] }) {
+export function AgentTranscript({
+  timeline,
+  artifacts = [],
+}: {
+  timeline: AgentRuntimeTimelineEntry[]
+  artifacts?: AgentRuntimeArtifact[]
+}) {
   const t = useTranslations("agentRuntime")
+  const todoArtifactByTurn = useMemo(() => latestTodoArtifactByTurn(artifacts), [artifacts])
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-36 pt-8 sm:px-6">
@@ -45,12 +56,20 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
                   </details>
                 ) : null}
 
+                {entry.inlinePlans.map((plan) => (
+                  <InlinePlanCard key={plan.actionId} plan={plan} />
+                ))}
+
                 {entry.activityGroups.length > 0 ? (
                   <div className="mb-3 grid gap-2">
                     {entry.activityGroups.map((group) => (
                       <ActivityGroup key={group.id} group={group} />
                     ))}
                   </div>
+                ) : null}
+
+                {todoArtifactByTurn.get(entry.turn.id) ? (
+                  <InlineTodoCard artifact={todoArtifactByTurn.get(entry.turn.id)!} />
                 ) : null}
 
                 {entry.assistant.text ? (
@@ -76,6 +95,18 @@ export function AgentTranscript({ timeline }: { timeline: AgentRuntimeTimelineEn
       </div>
     </div>
   )
+}
+
+function latestTodoArtifactByTurn(artifacts: AgentRuntimeArtifact[]) {
+  const byTurn = new Map<string, AgentRuntimeArtifact>()
+  for (const artifact of artifacts) {
+    if (artifact.type !== "todo_list") continue
+    const current = byTurn.get(artifact.turn_id)
+    if (!current || current.created_at < artifact.created_at) {
+      byTurn.set(artifact.turn_id, artifact)
+    }
+  }
+  return byTurn
 }
 
 function turnStatusLabel(

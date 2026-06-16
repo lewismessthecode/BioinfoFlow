@@ -2281,7 +2281,13 @@
     "plan": {
       "reviewTitle": "Review the plan",
       "approveAndAct": "Approve & act",
-      "keepPlanning": "Keep planning"
+      "keepPlanning": "Keep planning",
+      "status": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Needs changes",
+        "answered": "Answered"
+      }
     },
     "ask": {
       "title": "The agent needs your input",

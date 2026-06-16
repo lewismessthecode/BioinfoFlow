@@ -26,6 +26,8 @@ vi.mock("next-intl", () => ({
       showThinking: "Show thinking",
       hideThinking: "Hide thinking",
       toolCalls: "Tool calls",
+      "activity.groups.read": "Read project structure",
+      "activity.summary.read": "Read 1 source",
       approve: "Approve",
       reject: "Reject",
       "turnStatus.running": "Working",
@@ -347,7 +349,7 @@ describe("AgentWorkbench", () => {
 
     expect(await screen.findByText("Thinking")).toBeInTheDocument()
     expect(screen.getByText("Project scan complete.")).toBeInTheDocument()
-    expect(screen.getAllByText("projects__list").length).toBeGreaterThan(0)
+    expect(screen.getByText("Read project structure")).toBeInTheDocument()
   })
 
   it("keeps the panel closed after the user dismisses a pending decision", async () => {

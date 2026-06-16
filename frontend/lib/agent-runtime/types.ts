@@ -147,11 +147,20 @@ export type AgentRuntimeActivityGroup = {
   activities: AgentRuntimeToolActivity[]
 }
 
+export type AgentRuntimeInlinePlanStatus = "pending" | "approved" | "rejected" | "answered"
+
+export type AgentRuntimeInlinePlan = {
+  actionId: string
+  plan: string
+  status: AgentRuntimeInlinePlanStatus
+}
+
 export type AgentRuntimeTimelineEntry = {
   turn: AgentRuntimeTurn
   assistant: AgentRuntimeAssistantState
   activities: AgentRuntimeToolActivity[]
   activityGroups: AgentRuntimeActivityGroup[]
+  inlinePlans: AgentRuntimeInlinePlan[]
 }
 
 export type AgentRuntimeStatePayload = {

@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -19,6 +20,10 @@ import { Button } from "@/components/ui/button"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
+import {
+  listAgentRuntimeSessionArtifacts,
+  type AgentRuntimeArtifact,
+} from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 
 export type AgentWorkbenchHandle = {
@@ -51,6 +56,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [input, setInput] = useState("")
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
+    const [artifactState, setArtifactState] = useState<{
+      sessionId: string
+      artifacts: AgentRuntimeArtifact[]
+    } | null>(null)
     // The pending-approval key the user last dismissed. Storing the key (rather
     // than a boolean) means a *new* approval — which has a different key — is
     // never suppressed by an earlier dismissal, without needing an effect.
@@ -79,6 +88,14 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const isRunning = state.status === "running"
     const pendingDecision = hasPendingRuntimeAction(state.events)
     const pendingKey = pendingDecisionKey(state.events)
+    const artifactEventCount = useMemo(
+      () => state.events.filter((event) => event.type === "artifact.created").length,
+      [state.events],
+    )
+    const transcriptArtifacts =
+      artifactState && artifactState.sessionId === state.session?.id
+        ? artifactState.artifacts
+        : []
     // Auto-open only for a pending approval (genuinely actionable). Streaming
     // is already visible inline in the transcript, so it no longer forces the
     // panel open. A dismissal only suppresses the exact approval set it was
@@ -106,6 +123,22 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       }),
       [interrupt, setActiveSessionId],
     )
+
+    useEffect(() => {
+      const sessionId = state.session?.id
+      if (!sessionId) return
+      let cancelled = false
+      void listAgentRuntimeSessionArtifacts(sessionId)
+        .then((next) => {
+          if (!cancelled) setArtifactState({ sessionId, artifacts: next })
+        })
+        .catch(() => {
+          if (!cancelled) setArtifactState({ sessionId, artifacts: [] })
+        })
+      return () => {
+        cancelled = true
+      }
+    }, [state.session?.id, artifactEventCount])
 
     const submit = () => {
       const text = input.trim()
@@ -178,7 +211,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         >
           {hasConversation ? (
             <>
-              <AgentTranscript timeline={state.timeline} />
+              <AgentTranscript timeline={state.timeline} artifacts={transcriptArtifacts} />
               <div
                 className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-4 pt-10 sm:px-6"
                 data-testid="agent-composer-shell"

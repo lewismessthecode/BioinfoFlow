@@ -2281,7 +2281,13 @@
     "plan": {
       "reviewTitle": "审阅计划",
       "approveAndAct": "批准并执行",
-      "keepPlanning": "继续规划"
+      "keepPlanning": "继续规划",
+      "status": {
+        "pending": "待确认",
+        "approved": "已批准",
+        "rejected": "需修改",
+        "answered": "已回复"
+      }
     },
     "ask": {
       "title": "智能助手需要你的输入",

@@ -425,4 +425,47 @@ describe("agentRuntimeReducer", () => {
     })
     expect(resuming.turns[0]?.status).toBe("running")
   })
+
+  it("projects plan approval events into inline plan cards", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("waiting_approval")],
+        events: [
+          {
+            ...event("event-plan", 1),
+            type: "action.waiting_decision",
+            payload: {
+              action_id: "action-plan",
+              name: "exit_plan_mode",
+              interaction: {
+                kind: "plan_approval",
+                plan: "1. Inspect files\n2. Apply changes",
+              },
+            },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].inlinePlans).toEqual([
+      {
+        actionId: "action-plan",
+        plan: "1. Inspect files\n2. Apply changes",
+        status: "pending",
+      },
+    ])
+
+    const approved = agentRuntimeReducer(loaded, {
+      type: "event.append",
+      event: {
+        ...event("event-approved", 2),
+        type: "action.decision_recorded",
+        payload: { action_id: "action-plan", decision: "approve" },
+      },
+    })
+
+    expect(approved.timeline[0].inlinePlans[0]?.status).toBe("approved")
+  })
 })

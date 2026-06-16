@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentTranscript } from "@/components/bioinfoflow/agent-runtime/agent-transcript"
-import type { AgentRuntimeTimelineEntry } from "@/lib/agent-runtime"
+import type { AgentRuntimeArtifact, AgentRuntimeTimelineEntry } from "@/lib/agent-runtime"
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
@@ -10,6 +10,9 @@ vi.mock("next-intl", () => ({
       pendingResponse: "Working on it...",
       thinking: "Thinking",
       toolCalls: "Tool calls",
+      "progress.tasks": "Tasks",
+      "plan.reviewTitle": "Review the plan",
+      "plan.status.pending": "Pending",
       "activity.groups.read": "Read project structure",
       "activity.groups.verify": "Verify results",
       "activity.summary.read": "Read 2 sources",
@@ -69,6 +72,27 @@ const baseTimelineEntry: AgentRuntimeTimelineEntry = {
   },
   activities: [],
   activityGroups: [],
+  inlinePlans: [],
+}
+
+const todoArtifact: AgentRuntimeArtifact = {
+  id: "artifact-todo",
+  session_id: "session-1",
+  turn_id: "turn-1",
+  action_id: "action-todo",
+  type: "todo_list",
+  title: "Tasks",
+  summary: null,
+  payload: {
+    todos: [
+      { content: "Read the code", status: "completed" },
+      { content: "Make the change", status: "in_progress", activeForm: "Editing" },
+    ],
+  },
+  file_path: null,
+  resource_ref: null,
+  created_at: "2026-06-10T00:00:03Z",
+  updated_at: "2026-06-10T00:00:03Z",
 }
 
 describe("AgentTranscript", () => {
@@ -167,6 +191,38 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("files__read")).toBeInTheDocument()
     expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
     expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
+  })
+
+  it("renders exit_plan_mode plans as inline conversation cards", () => {
+    render(
+      <AgentTranscript
+        timeline={[
+          {
+            ...baseTimelineEntry,
+            inlinePlans: [
+              {
+                actionId: "action-plan",
+                plan: "1. Inspect files\n2. Apply the fix",
+                status: "pending",
+              },
+            ],
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByTestId("inline-plan-card")).toBeInTheDocument()
+    expect(screen.getByText("Review the plan")).toBeInTheDocument()
+    expect(screen.getByText("Inspect files", { exact: false })).toBeInTheDocument()
+  })
+
+  it("renders todo_list artifacts as inline progress cards", () => {
+    render(<AgentTranscript timeline={[baseTimelineEntry]} artifacts={[todoArtifact]} />)
+
+    expect(screen.getByTestId("inline-todo-card")).toBeInTheDocument()
+    expect(screen.getByText("Tasks")).toBeInTheDocument()
+    expect(screen.getByText("Read the code")).toBeInTheDocument()
+    expect(screen.getByText("Editing")).toBeInTheDocument()
   })
 
   it("keeps streamed assistant text visible after later tool calls", () => {

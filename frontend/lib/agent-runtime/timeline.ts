@@ -30,6 +30,7 @@ export function buildAgentRuntimeTimeline(
       },
       activities: [],
       activityGroups: [],
+      inlinePlans: [],
     },
     textFromEvents: false,
     thinkingFromEvents: false,
@@ -96,6 +97,14 @@ export function buildAgentRuntimeTimeline(
       case "assistant.tool_call.completed": {
         updateMessageId(entry, event)
         upsertToolCall(entry.assistant.toolCalls, event)
+        break
+      }
+      case "action.waiting_decision": {
+        upsertInlinePlan(entry, event)
+        break
+      }
+      case "action.decision_recorded": {
+        updateInlinePlanStatus(entry, event)
         break
       }
       case "turn.failed": {
@@ -170,6 +179,30 @@ function updateMessageId(entry: AgentRuntimeTimelineEntry, event: AgentRuntimeEv
   entry.assistant.messageId = stringOrNull(event.payload.message_id) ?? entry.assistant.messageId
 }
 
+function upsertInlinePlan(entry: AgentRuntimeTimelineEntry, event: AgentRuntimeEvent) {
+  const interaction = recordValue(event.payload.interaction)
+  if (interaction?.kind !== "plan_approval") return
+  const actionId = stringOrNull(event.payload.action_id)
+  if (!actionId) return
+  const existing = entry.inlinePlans.find((plan) => plan.actionId === actionId)
+  const nextPlan = stringOrNull(interaction.plan) ?? ""
+  if (existing) {
+    existing.plan = nextPlan
+    existing.status = "pending"
+    return
+  }
+  entry.inlinePlans.push({ actionId, plan: nextPlan, status: "pending" })
+}
+
+function updateInlinePlanStatus(entry: AgentRuntimeTimelineEntry, event: AgentRuntimeEvent) {
+  const actionId = stringOrNull(event.payload.action_id)
+  if (!actionId) return
+  const plan = entry.inlinePlans.find((item) => item.actionId === actionId)
+  if (!plan) return
+  const decision = stringOrNull(event.payload.decision)
+  plan.status = decision === "reject" ? "rejected" : decision === "answer" ? "answered" : "approved"
+}
+
 function streamingTextFromPayload(payload: Record<string, unknown>, current: string) {
   const cumulative = firstStringPayload(payload, ["content", "text"])
   if (cumulative !== null) return cumulative
@@ -196,6 +229,12 @@ function firstStringPayload(payload: Record<string, unknown>, keys: string[]) {
 
 function stringOrNull(value: unknown) {
   return typeof value === "string" ? value : null
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
