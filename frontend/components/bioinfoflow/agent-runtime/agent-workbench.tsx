@@ -377,13 +377,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           className={cn(
             "hidden shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-out lg:flex",
             sidecarVisible
-              ? "w-[clamp(560px,50vw,900px)] translate-x-0 opacity-100"
+              ? "w-[clamp(380px,45vw,760px)] translate-x-0 opacity-100"
               : "w-0 translate-x-4 opacity-0",
           )}
           aria-hidden={!sidecarVisible}
           data-testid="agent-sidecar-column"
         >
-          <div className="flex h-full w-[clamp(560px,50vw,900px)] shrink-0 items-stretch">
+          <div className="flex h-full w-[clamp(380px,45vw,760px)] shrink-0 items-stretch">
             {sidecarVisible ? (
                 <AgentTabbedPanel
                   projectId={projectId}
