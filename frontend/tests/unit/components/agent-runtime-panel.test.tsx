@@ -69,7 +69,7 @@ describe("ProgressTab", () => {
 })
 
 describe("ArtifactPreviewDrawer", () => {
-  it("opens command artifacts with full output", () => {
+  it("shows user-facing artifacts and hides routine command output", () => {
     render(
       <ArtifactPreviewDrawer
         artifacts={[
@@ -79,15 +79,29 @@ describe("ArtifactPreviewDrawer", () => {
             title: "ls output",
             payload: { command: "ls", stdout: "report.md", stderr: "" },
           }),
+          artifact({
+            id: "log-1",
+            type: "log_summary",
+            title: "shell log",
+            payload: { command: "sleep 1", stdout: "waited" },
+          }),
+          artifact({ id: "todo-1", type: "todo_list", title: "Tasks" }),
           artifact({ id: "file-1", type: "file", title: "report.md", payload: { content: "QC passed" } }),
+          artifact({ id: "workflow-1", type: "workflow", title: "rnaseq_quant" }),
+          artifact({ id: "run-1", type: "run", title: "run_123" }),
         ]}
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: /ls output/ }))
+    expect(screen.queryByRole("button", { name: /ls output/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /shell log/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Tasks/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /report\.md/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /rnaseq_quant/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /run_123/ })).toBeInTheDocument()
 
-    expect(screen.getByText("$ ls")).toBeInTheDocument()
-    expect(screen.getByText("report.md")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /report\.md/ }))
+    expect(screen.getByText("QC passed")).toBeInTheDocument()
   })
 })
 

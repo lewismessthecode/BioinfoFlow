@@ -2250,7 +2250,7 @@
     "artifacts": {
       "title": "产物",
       "back": "返回产物列表",
-      "empty": "暂无产物。文件、命令输出和平台记录会显示在这里。",
+      "empty": "暂无产物。文件、工作流记录、报告和运行输出会显示在这里。",
       "copy": "复制",
       "copied": "已复制",
       "download": "下载",
@@ -2260,7 +2260,9 @@
         "command": "命令输出",
         "todo_list": "任务",
         "run": "运行",
+        "run_ref": "运行",
         "workflow": "工作流",
+        "project": "项目",
         "image": "镜像",
         "unknown": "产物"
       }

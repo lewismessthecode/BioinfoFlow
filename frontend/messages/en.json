@@ -2250,7 +2250,7 @@
     "artifacts": {
       "title": "Artifacts",
       "back": "Back to artifacts",
-      "empty": "No artifacts yet. Files, command output, and platform records will appear here.",
+      "empty": "No artifacts yet. Files, workflow records, reports, and run outputs will appear here.",
       "copy": "Copy",
       "copied": "Copied",
       "download": "Download",
@@ -2260,7 +2260,9 @@
         "command": "Command output",
         "todo_list": "Tasks",
         "run": "Run",
+        "run_ref": "Run",
         "workflow": "Workflow",
+        "project": "Project",
         "image": "Image",
         "unknown": "Artifact"
       }

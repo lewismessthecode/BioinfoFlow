@@ -64,6 +64,10 @@ export function ProjectList({
     projectId: string
   } | null>(null)
   const [dropTargetProjectId, setDropTargetProjectId] = useState<string | null>(null)
+  const showRecentSection =
+    Boolean(defaultProjectId) &&
+    (inboxConversations.length > 0 ||
+      (draggingConversation !== null && draggingConversation.projectId !== defaultProjectId))
 
   const handleConversationDragStart = (conversation: AgentCoreSession, projectId: string) => {
     setDraggingConversation({ id: conversation.id, projectId })
@@ -137,7 +141,7 @@ export function ProjectList({
 
   return (
     <div className="space-y-2">
-      {defaultProjectId ? (
+      {showRecentSection && defaultProjectId ? (
         <div
           data-testid="sidebar-recent-section"
           className={cn(
@@ -158,30 +162,24 @@ export function ProjectList({
             {tSidebar("recent")}
           </div>
           <div className="space-y-0.5">
-            {inboxConversations.length === 0 ? (
-              <div className="px-2.5 py-1 text-xs text-muted-foreground">
-                {tSidebar("noConversations")}
-              </div>
-            ) : (
-              inboxConversations.map((conversation, index) => (
-                <ConversationItem
-                  key={conversation.id}
-                  conversation={conversation}
-                  projectId={defaultProjectId}
-                  index={index}
-                  isActive={activeConversationId === conversation.id}
-                  isDragging={draggingConversation?.id === conversation.id}
-                  onDragStart={handleConversationDragStart}
-                  onDragEnd={handleConversationDragEnd}
-                  onSelect={onSelectConversation}
-                  onRename={onRenameConversation}
-                  onDelete={onDeleteConversation}
-                  canDelete={canDeleteWorkspaceResources}
-                  tSidebar={tSidebar}
-                  tCommon={tCommon}
-                />
-              ))
-            )}
+            {inboxConversations.map((conversation, index) => (
+              <ConversationItem
+                key={conversation.id}
+                conversation={conversation}
+                projectId={defaultProjectId}
+                index={index}
+                isActive={activeConversationId === conversation.id}
+                isDragging={draggingConversation?.id === conversation.id}
+                onDragStart={handleConversationDragStart}
+                onDragEnd={handleConversationDragEnd}
+                onSelect={onSelectConversation}
+                onRename={onRenameConversation}
+                onDelete={onDeleteConversation}
+                canDelete={canDeleteWorkspaceResources}
+                tSidebar={tSidebar}
+                tCommon={tCommon}
+              />
+            ))}
           </div>
         </div>
       ) : null}

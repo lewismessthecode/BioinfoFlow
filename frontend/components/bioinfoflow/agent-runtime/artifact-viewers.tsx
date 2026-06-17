@@ -191,6 +191,7 @@ export function ArtifactIcon({ type }: { type: string }) {
     case "todo_list":
       return <ListChecks className={className} />
     case "run":
+    case "run_ref":
       return <Play className={className} />
     case "workflow":
       return <Workflow className={className} />
@@ -205,7 +206,7 @@ export function artifactTypeLabel(
   t: ReturnType<typeof useTranslations>,
   type: string,
 ): string {
-  const known = ["file", "command", "run", "workflow", "image"]
+  const known = ["file", "command", "run", "run_ref", "workflow", "image", "project"]
   if (known.includes(type)) return t(`artifacts.types.${type}`)
   if (type === "log_summary") return t("artifacts.types.command")
   if (type === "todo_list") return t("artifacts.types.todo_list")

@@ -65,5 +65,9 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
 }
 
 function isPreviewArtifact(artifact: AgentRuntimeArtifact) {
-  return artifact.type !== "todo_list"
+  if (["todo_list", "command", "log_summary"].includes(artifact.type)) return false
+  if (["file", "run", "workflow", "image", "project", "run_ref"].includes(artifact.type)) {
+    return true
+  }
+  return Boolean(artifact.file_path || artifact.resource_ref)
 }

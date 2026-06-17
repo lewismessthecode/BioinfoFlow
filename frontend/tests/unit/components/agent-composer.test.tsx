@@ -149,4 +149,29 @@ describe("AgentComposer", () => {
 
     expect(onPermissionModeChange).toHaveBeenCalledWith("bypass")
   })
+
+  it("keeps composer controls responsive when the permission label is long", () => {
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        permissionMode="bypass"
+        onPermissionModeChange={vi.fn()}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    const composer = screen.getByTestId("agent-composer")
+    const controls = composer.querySelector(".flex-wrap")
+    const permissionButton = screen.getByRole("button", { name: "Permission mode" })
+
+    expect(controls).toBeInTheDocument()
+    expect(permissionButton).toHaveClass("max-w-[9.5rem]")
+    expect(permissionButton.querySelector("span")).toHaveClass("truncate")
+  })
 })
