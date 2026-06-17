@@ -38,6 +38,7 @@ export type AgentCoreSession = {
   default_model_profile_id?: string | null
   model_selection?: AgentModelSelection | null
   status: AgentSessionStatus
+  lineage?: Record<string, unknown> | null
   metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string

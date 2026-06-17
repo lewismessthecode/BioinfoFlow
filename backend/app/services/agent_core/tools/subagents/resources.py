@@ -80,10 +80,10 @@ class SubagentAnalyzeTool:
                 "parent_turn_id": context.turn_id,
                 "subagent_task": task,
             },
+            lineage={"parent_session_id": context.session_id, "parent_turn_id": context.turn_id},
         )
         child_session = await service.session_repo.update_all(
             child_session,
-            lineage={"parent_session_id": context.session_id, "parent_turn_id": context.turn_id},
             toolset_policy={
                 "name": "default",
                 "allowed_tools": input.get("allowed_tools") or [],

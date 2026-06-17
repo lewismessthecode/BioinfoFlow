@@ -653,6 +653,183 @@ describe("agentRuntimeReducer", () => {
     expect(loaded.timeline[0].assistant.text).toContain("Persisted answer.")
   })
 
+  it("does not duplicate completed final text covered by replayed delta text", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("completed"), final_text: "Before tool.\n\nAfter tool." }],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "Before tool." },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "glob",
+              status: "completed",
+              arguments: { pattern: "**/*.wdl" },
+              index: 0,
+            },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "After tool." },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Before tool.",
+      "After tool.",
+    ])
+    expect(loaded.timeline[0].assistant.text).toBe("Before tool.\n\nAfter tool.")
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+    ])
+  })
+
+  it("uses terminal final text when replayed deltas are already covered by the snapshot", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("completed"), final_text: "Persisted answer. More text." }],
+        events: [
+          {
+            ...event("event-delta", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "More text." },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Persisted answer. More text.",
+    ])
+  })
+
+  it("preserves replay text order when terminal final text adds a tail", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("completed"), final_text: "Before tool.\n\nAfter tool.\n\nFinal note." }],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "Before tool." },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "glob",
+              status: "completed",
+              arguments: { pattern: "**/*.wdl" },
+              index: 0,
+            },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "After tool." },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Before tool.",
+      "After tool.",
+      "Final note.",
+    ])
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+      "assistant_text",
+    ])
+  })
+
+  it("dedupes replayed events by session sequence when event ids differ", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-1", content: "Rendered once." },
+          },
+        ],
+      },
+    })
+
+    const replayed = agentRuntimeReducer(loaded, {
+      type: "event.append",
+      event: {
+        ...event("event-text-1-replayed", 1),
+        type: "assistant.text.completed",
+        payload: { message_id: "message-1", content: "Rendered once." },
+      },
+    })
+
+    expect(replayed.events).toHaveLength(1)
+    expect(replayed.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Rendered once.",
+    ])
+  })
+
+  it("does not duplicate failed turn replay text", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [
+          {
+            ...turn("failed"),
+            final_text: "Partial answer before failure.",
+            error_message: "Tool failed",
+          },
+        ],
+        events: [
+          {
+            ...event("event-delta", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "Partial answer before failure." },
+          },
+          {
+            ...event("event-failed", 2),
+            type: "turn.failed",
+            payload: { error_message: "Tool failed" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Partial answer before failure.",
+    ])
+    expect(loaded.timeline[0].assistant.status).toBe("failed")
+    expect(loaded.timeline[0].assistant.errorMessage).toBe("Tool failed")
+  })
+
   it("keeps separate message text blocks around tool calls", () => {
     const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",
@@ -734,6 +911,54 @@ describe("agentRuntimeReducer", () => {
       "Before tool.",
       "After tool.",
     ])
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+    ])
+  })
+
+  it("does not duplicate cumulative completed text after a tool-interleaved stream", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "Before tool." },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "glob",
+              status: "completed",
+              arguments: { pattern: "**/*.wdl" },
+              index: 0,
+            },
+          },
+          {
+            ...event("event-text-completed", 3),
+            type: "assistant.text.completed",
+            payload: {
+              message_id: "message-1",
+              content: "Before tool.\n\nAfter tool.",
+            },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Before tool.",
+      "After tool.",
+    ])
+    expect(loaded.timeline[0].assistant.text).toBe("Before tool.\n\nAfter tool.")
     expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
       "assistant_text",
       "activity_group",

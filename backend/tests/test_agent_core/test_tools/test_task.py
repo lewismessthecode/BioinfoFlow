@@ -84,4 +84,9 @@ async def test_task_tool_runs_read_only_worker_subrun(db_session, monkeypatch):
     assert result["child_session_id"] and result["child_turn_id"]
 
     child_session = await core.session_repo.get(result["child_session_id"])
+    assert child_session is not None
     assert child_session.role_profile == "worker"
+    assert child_session.lineage == {
+        "parent_session_id": str(parent_session.id),
+        "parent_turn_id": str(parent_turn.id),
+    }

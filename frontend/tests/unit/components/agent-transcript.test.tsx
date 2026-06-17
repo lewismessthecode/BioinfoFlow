@@ -39,6 +39,8 @@ vi.mock("next-intl", () => ({
       "activity.status.cancelled": "Cancelled",
       "activity.status.rejected": "Rejected",
       "activity.status.waiting": "Waiting",
+      "activity.details.show": "Show details",
+      "activity.details.hide": "Hide details",
       "activity.details.input": "Input",
       "activity.details.arguments": "Arguments",
       "activity.details.output": "Output",
@@ -242,6 +244,15 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("glob")).toBeInTheDocument()
     expect(screen.getByText("files__read")).toBeInTheDocument()
     expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
+    expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
+
+    const detailsButton = screen.getAllByRole("button", { name: /Show details/ })[1]
+    expect(detailsButton).toHaveAttribute("aria-expanded", "false")
+
+    fireEvent.click(detailsButton)
+
+    expect(detailsButton).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByText("Arguments")).toBeInTheDocument()
     expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
   })
 
@@ -263,6 +274,12 @@ describe("AgentTranscript", () => {
     ).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /Submit run/ }))
+
+    expect(
+      screen.queryByText("Image quay.io/example/missing:tag was not found"),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
 
     expect(
       screen.getByText("Image quay.io/example/missing:tag was not found"),
@@ -369,6 +386,53 @@ describe("AgentTranscript", () => {
     })
   })
 
+  it("keeps activity details collapsed until the user expands them", () => {
+    renderTranscript({
+      events: [
+        event("event-tool", 1, "assistant.tool_call.completed", {
+          message_id: "message-1",
+          call_id: "call-1",
+          name: "glob",
+          status: "completed",
+          arguments: { pattern: "**/*.wdl" },
+          index: 0,
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Read project structure")).toBeInTheDocument()
+    expect(screen.queryByTestId("agent-tool-activity-row")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Read project structure/ }))
+
+    expect(screen.getByTestId("agent-tool-activity-row")).toBeInTheDocument()
+    expect(screen.getByText("glob")).toBeInTheDocument()
+    expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+
+    expect(screen.getByText("Arguments")).toBeInTheDocument()
+  })
+
+  it("keeps wide transcript content inside the transcript scroller", () => {
+    const longPath = `/workspace/${"very-long-directory-name-".repeat(12)}result.json`
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: `Here is the path: ${longPath}\n\n\`\`\`json\n{\"path\":\"${longPath}\"}\n\`\`\``,
+        }),
+      ],
+    })
+
+    expect(screen.getByTestId("agent-transcript-scroll")).toHaveClass("overflow-x-hidden")
+    expect(screen.getByText(`Here is the path: ${longPath}`)).toHaveClass("break-words")
+    const code = screen.getByText((content, element) =>
+      element?.tagName.toLowerCase() === "code" && content.includes(longPath),
+    )
+    expect(code.closest("pre")).toHaveClass("overflow-x-auto")
+  })
+
   it("keeps text, tool calls, and later text in segment order", () => {
     renderTranscript({
       turn: { ...baseTurn, status: "running", final_text: null },
@@ -398,6 +462,39 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("Read project structure")).toBeInTheDocument()
     expect(screen.getByText("The workflow file is present.")).toBeInTheDocument()
     expect(screen.queryByText("Working on it...")).not.toBeInTheDocument()
+  })
+
+  it("renders completed replay text only once when final text matches streamed text", () => {
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        status: "completed",
+        final_text: "I am checking the workflow registry before reading files.\n\nThe workflow file is present.",
+      },
+      events: [
+        event("event-text-1", 1, "assistant.text.delta", {
+          message_id: "message-1",
+          delta: "I am checking the workflow registry before reading files.",
+        }),
+        event("event-tool", 2, "assistant.tool_call.completed", {
+          message_id: "message-1",
+          call_id: "call-1",
+          name: "glob",
+          status: "completed",
+          arguments: { pattern: "**/*.wdl" },
+          index: 0,
+        }),
+        event("event-text-2", 3, "assistant.text.delta", {
+          message_id: "message-1",
+          delta: "The workflow file is present.",
+        }),
+      ],
+    })
+
+    expect(
+      screen.getAllByText("I am checking the workflow registry before reading files."),
+    ).toHaveLength(1)
+    expect(screen.getAllByText("The workflow file is present.")).toHaveLength(1)
   })
 
   it("keeps thinking content expanded when tool calls arrive later", () => {

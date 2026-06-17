@@ -14,7 +14,12 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
     () => artifacts.filter(isPreviewArtifact),
     [artifacts],
   )
-  const selected = previewArtifacts.find((artifact) => artifact.id === selectedId) ?? null
+  const toolLogArtifacts = useMemo(
+    () => artifacts.filter(isToolLogArtifact),
+    [artifacts],
+  )
+  const selected =
+    [...previewArtifacts, ...toolLogArtifacts].find((artifact) => artifact.id === selectedId) ?? null
 
   if (selected) {
     return (
@@ -32,7 +37,7 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
     )
   }
 
-  if (!previewArtifacts.length) {
+  if (!previewArtifacts.length && !toolLogArtifacts.length) {
     return (
       <p className="text-sm text-muted-foreground" data-testid="artifact-preview-drawer">
         {t("artifacts.empty")}
@@ -55,15 +60,58 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
               {artifact.title}
             </div>
             <div className="truncate text-xs text-muted-foreground">
-              {artifact.summary || artifactTypeLabel(t, artifact.type)}
+              {artifact.summary || artifact.file_path || artifactTypeLabel(t, artifact.type)}
             </div>
           </div>
         </button>
       ))}
+      {toolLogArtifacts.length ? (
+        <details className="rounded-2xl border border-border/60 bg-muted/15">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">
+            {t("artifacts.toolLogs", { count: toolLogArtifacts.length })}
+          </summary>
+          <div className="grid gap-1.5 border-t border-border/50 p-2">
+            {toolLogArtifacts.map((artifact) => (
+              <button
+                key={artifact.id}
+                type="button"
+                onClick={() => setSelectedId(artifact.id)}
+                className="flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+              >
+                <ArtifactIcon type={artifact.type} />
+                <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
+                <span className="shrink-0">{artifact.summary || artifactTypeLabel(t, artifact.type)}</span>
+              </button>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   )
 }
 
+const HIDDEN_ARTIFACT_TYPES = new Set(["todo_list"])
+const TOOL_LOG_ARTIFACT_TYPES = new Set(["command", "log_summary"])
+const PREVIEW_ARTIFACT_TYPES = new Set([
+  "file",
+  "html",
+  "image",
+  "pdf",
+  "project",
+  "report",
+  "run",
+  "sheet",
+  "spreadsheet",
+  "workflow",
+  "workflow_bundle",
+])
+
 function isPreviewArtifact(artifact: AgentRuntimeArtifact) {
-  return artifact.type !== "todo_list"
+  if (HIDDEN_ARTIFACT_TYPES.has(artifact.type) || isToolLogArtifact(artifact)) return false
+  if (artifact.file_path || artifact.resource_ref) return true
+  return PREVIEW_ARTIFACT_TYPES.has(artifact.type)
+}
+
+function isToolLogArtifact(artifact: AgentRuntimeArtifact) {
+  return TOOL_LOG_ARTIFACT_TYPES.has(artifact.type)
 }

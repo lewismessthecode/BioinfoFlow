@@ -60,6 +60,7 @@ class AgentCoreService:
         default_model_profile_id: str | None = None,
         model_selection: dict | None = None,
         metadata: dict | None = None,
+        lineage: dict | None = None,
         toolset_policy: dict | None = None,
     ):
         if project_id is not None:
@@ -87,7 +88,7 @@ class AgentCoreService:
                 "threshold_chars": int(settings.agent_compact_threshold),
                 "preserve_recent_messages": 12,
             },
-            lineage={"parent_session_id": None},
+            lineage=lineage if lineage is not None else {"parent_session_id": None},
             session_metadata=session_metadata_with_model_selection(
                 metadata, model_selection
             ),
@@ -99,11 +100,15 @@ class AgentCoreService:
         workspace_id: str,
         user_id: str,
         project_id: str | None = None,
+        parent_session_id: str | None = None,
+        include_children: bool = False,
     ):
         return await self.session_repo.list_for_user(
             workspace_id=workspace_id,
             user_id=user_id,
             project_id=project_id,
+            parent_session_id=parent_session_id,
+            include_children=include_children,
         )
 
     async def require_session(

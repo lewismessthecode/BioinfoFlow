@@ -142,11 +142,14 @@ async def _create_scoped_llm_model(
 
 @pytest.mark.asyncio
 async def test_agent_core_session_turn_event_and_artifact_contract(async_client, monkeypatch):
-    stream_log_records: list[tuple[str, dict]] = []
+    stream_log_records: list[tuple[str, str, dict]] = []
 
     class SpyLogger:
         def info(self, event: str, **fields):
-            stream_log_records.append((event, fields))
+            stream_log_records.append(("info", event, fields))
+
+        def debug(self, event: str, **fields):
+            stream_log_records.append(("debug", event, fields))
 
     monkeypatch.setattr(agent_api_module, "logger", SpyLogger())
 
@@ -248,11 +251,19 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
                 break
     assert "event: turn.created" in stream_lines
     assert "event: ready" in stream_lines
+    info_log_names = [
+        event_name
+        for level, event_name, _fields in stream_log_records
+        if level == "info"
+    ]
     delivered_logs = [
         fields
-        for event_name, fields in stream_log_records
-        if event_name == "agent_core.stream.event"
+        for level, event_name, fields in stream_log_records
+        if level == "debug" and event_name == "agent_core.stream.event"
     ]
+    assert "agent_core.stream.event" not in info_log_names
+    assert "agent_core.stream.batch" in info_log_names
+    assert "agent_core.stream.ready" in info_log_names
     assert {
         "session_id": session["id"],
         "turn_id": turn["id"],

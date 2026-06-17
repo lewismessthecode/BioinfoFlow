@@ -82,14 +82,15 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     setLoadingProjects((prev) => new Set(prev).add(projectId))
     try {
       const data = await listAgentSessions(projectId)
-      const sorted = sortAgentSessions(data)
+      const visibleConversations = data.filter(isSidebarConversation)
+      const sorted = sortAgentSessions(visibleConversations)
       setProjectConversations((prev) => new Map(prev).set(projectId, sorted))
 
       if (projectId === selectedProjectId || projectId === conversationProjectId) {
         const storedId = getStoredAgentSessionId(projectId)
         const preferredId = activeConversationId || storedId
         if (preferredId) {
-          const match = data.find((item) => item.id === preferredId)
+          const match = visibleConversations.find((item) => item.id === preferredId)
           if (match) {
             setActiveConversationId(match.id)
             if (match.id !== storedId) {
@@ -231,6 +232,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
 
   useEffect(() => {
     return listenForAgentSessionUpdates((conversation) => {
+      if (!isSidebarConversation(conversation)) return
       setProjectConversations((prev) => {
         const existing = prev.get(conversation.project_id)
         if (!existing) return prev
@@ -475,4 +477,14 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     handleDeleteConversation,
     handleMoveConversation,
   }
+}
+
+function isSidebarConversation(conversation: AgentCoreSession) {
+  const lineageParentId = conversation.lineage?.parent_session_id
+  const metadataParentId = conversation.metadata?.parent_session_id
+  return (
+    conversation.role_profile !== "worker" &&
+    !(typeof lineageParentId === "string" && lineageParentId) &&
+    !(typeof metadataParentId === "string" && metadataParentId)
+  )
 }

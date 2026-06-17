@@ -87,8 +87,15 @@ function buildTextBlocks(
 
     const messageId = stringValue(event.payload.message_id)
     let key: string
+    let precedingMessageText = ""
     if (messageId) {
       const shouldStartNewBlock = interruptedMessages.has(messageId)
+      if (shouldStartNewBlock) {
+        precedingMessageText = blocks
+          .filter((block) => block.messageId === messageId)
+          .map((block) => block.text)
+          .join("\n\n")
+      }
       key = shouldStartNewBlock
         ? `message:${messageId}:seq:${event.seq}:${event.id}`
         : activeKeyByMessage.get(messageId) ?? `message:${messageId}`
@@ -117,7 +124,9 @@ function buildTextBlocks(
     const cumulative = firstStringPayload(event.payload, ["content", "text"])
     const delta = firstStringPayload(event.payload, ["delta", "text_delta"])
     if (cumulative !== null) {
-      block.text = cumulative
+      block.text = precedingMessageText
+        ? cumulativeTailText(cumulative, precedingMessageText) ?? cumulative
+        : cumulative
       block.sawCumulative = true
     } else if (delta !== null) {
       block.text = `${block.text}${delta}`
@@ -140,13 +149,29 @@ function buildTextBlocks(
   }
 
   const hasAuthoritativeEventText = visibleBlocks.some((block) => block.sawCumulative)
-  const duplicatesSnapshot = visibleBlocks.some(
-    (block) => block.text.trim() === snapshotText.trim(),
-  )
-  if (!hasAuthoritativeEventText && !duplicatesSnapshot) {
-    return finalizeTextBlocks(turn, [snapshotTextBlock(turn, events, snapshotText), ...visibleBlocks])
+  const eventText = visibleBlocks.map((block) => block.text).join("\n\n")
+  const snapshotMatchesEvents = normalizeText(snapshotText) === normalizeText(eventText)
+  const snapshotTailText = terminalSnapshotTailText(turn, snapshotText, eventText)
+  const snapshotCoversEvents =
+    isTerminalTurn(turn) &&
+    visibleBlocks.every((block) => normalizeText(snapshotText).includes(normalizeText(block.text)))
+
+  if (snapshotMatchesEvents) {
+    return finalizeTextBlocks(turn, visibleBlocks)
   }
-  return finalizeTextBlocks(turn, visibleBlocks)
+  if (snapshotTailText !== null) {
+    return finalizeTextBlocks(turn, [
+      ...visibleBlocks,
+      ...(snapshotTailText ? [snapshotTailTextBlock(turn, events, snapshotTailText)] : []),
+    ])
+  }
+  if (hasAuthoritativeEventText) {
+    return finalizeTextBlocks(turn, visibleBlocks)
+  }
+  if (snapshotCoversEvents) {
+    return [snapshotTextBlock(turn, events, snapshotText)]
+  }
+  return finalizeTextBlocks(turn, [snapshotTextBlock(turn, events, snapshotText), ...visibleBlocks])
 }
 
 function finalizeTextBlocks(
@@ -188,6 +213,25 @@ function snapshotTextBlock(
     text,
     status: textStatusFromTurn(turn),
     source: "snapshot",
+  }
+}
+
+function snapshotTailTextBlock(
+  turn: AgentRuntimeTurn,
+  events: AgentRuntimeEvent[],
+  text: string,
+): AgentRuntimeTextBlock {
+  const lastEventSeq = events.at(-1)?.seq ?? 1
+  const seq = lastEventSeq + 0.5
+  return {
+    id: `text:${turn.id}:snapshot-tail`,
+    turnId: turn.id,
+    messageId: null,
+    seqStart: seq,
+    seqEnd: seq,
+    text,
+    status: textStatusFromTurn(turn),
+    source: "snapshot+events",
   }
 }
 
@@ -458,6 +502,30 @@ function textStatusFromTurn(turn: AgentRuntimeTurn): AgentRuntimeTextBlockStatus
   if (turn.status === "cancelled") return "cancelled"
   if (turn.status === "completed") return "completed"
   return "streaming"
+}
+
+function isTerminalTurn(turn: AgentRuntimeTurn) {
+  return turn.status === "completed" || turn.status === "failed" || turn.status === "cancelled"
+}
+
+function terminalSnapshotTailText(
+  turn: AgentRuntimeTurn,
+  snapshotText: string,
+  eventText: string,
+) {
+  if (!isTerminalTurn(turn)) return null
+  return cumulativeTailText(snapshotText, eventText)
+}
+
+function cumulativeTailText(cumulativeText: string, previousText: string) {
+  const cumulative = cumulativeText.trim()
+  const previous = previousText.trim()
+  if (!previous || !cumulative.startsWith(previous)) return null
+  return cumulative.slice(previous.length).trim()
+}
+
+function normalizeText(text: string) {
+  return text.trim().replace(/\s+/g, " ")
 }
 
 export function parseRuntimeWaitingDecision(event: AgentRuntimeEvent): AgentWaitingDecision {

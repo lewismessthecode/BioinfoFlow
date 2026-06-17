@@ -2191,6 +2191,8 @@
         "rejected": "Rejected"
       },
       "details": {
+        "show": "Show details",
+        "hide": "Hide details",
         "input": "Input",
         "arguments": "Arguments",
         "output": "Output",
@@ -2253,6 +2255,7 @@
       "copied": "Copied",
       "download": "Download",
       "exitCode": "Exit code",
+      "toolLogs": "{count, plural, one {Tool log} other {Tool logs}}",
       "types": {
         "file": "File",
         "command": "Command output",

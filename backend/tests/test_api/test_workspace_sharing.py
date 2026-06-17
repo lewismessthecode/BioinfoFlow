@@ -46,15 +46,18 @@ async def _create_agent_session_for_user(
     user_id: str,
     title: str = "Test session",
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    role_profile: str = "bioinformatician",
+    lineage: dict | None = None,
 ) -> AgentSession:
     session = AgentSession(
         project_id=project_id,
         workspace_id=workspace_id,
         title=title,
         user_id=user_id,
-        role_profile="bioinformatician",
+        role_profile=role_profile,
         permission_mode="guarded_auto",
         automation_mode="assisted",
+        lineage=lineage,
     )
     db_session.add(session)
     await db_session.commit()
@@ -246,11 +249,22 @@ async def test_global_agent_session_list_is_user_scoped(async_client, db_session
         name="My Session Project",
         user_id=DEV_USER_ID,
     )
-    await _create_agent_session_for_user(
+    parent_session = await _create_agent_session_for_user(
         db_session,
         project_id=str(my_project.id),
         user_id=DEV_USER_ID,
         title="My AgentCore Session",
+    )
+    await _create_agent_session_for_user(
+        db_session,
+        project_id=str(my_project.id),
+        user_id=DEV_USER_ID,
+        title="Subagent: inspect workflow files",
+        role_profile="worker",
+        lineage={
+            "parent_session_id": str(parent_session.id),
+            "parent_turn_id": "turn-1",
+        },
     )
     await _create_agent_session_for_user(
         db_session,
@@ -270,8 +284,46 @@ async def test_global_agent_session_list_is_user_scoped(async_client, db_session
     assert resp.status_code == 200
     titles = [item["title"] for item in resp.json()["data"]]
     assert "My AgentCore Session" in titles
+    assert "Subagent: inspect workflow files" not in titles
     assert "Shared Workspace Session" not in titles
     assert "Other Workspace Session" not in titles
+
+    child_resp = await async_client.get("/api/v1/agent/sessions?include_children=true")
+    assert child_resp.status_code == 200
+    child_titles = [item["title"] for item in child_resp.json()["data"]]
+    assert "My AgentCore Session" in child_titles
+    assert "Subagent: inspect workflow files" in child_titles
+
+    scoped_child_resp = await async_client.get(
+        f"/api/v1/agent/sessions?parent_session_id={parent_session.id}"
+    )
+    assert scoped_child_resp.status_code == 200
+    assert [item["title"] for item in scoped_child_resp.json()["data"]] == [
+        "Subagent: inspect workflow files"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_agent_session_list_reports_has_more(async_client, db_session):
+    project = await _create_project_for_user(
+        db_session,
+        name="Paginated Session Project",
+        user_id=DEV_USER_ID,
+    )
+    for index in range(51):
+        await _create_agent_session_for_user(
+            db_session,
+            project_id=str(project.id),
+            user_id=DEV_USER_ID,
+            title=f"Session {index:02d}",
+        )
+
+    resp = await async_client.get("/api/v1/agent/sessions")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["data"]) == 50
+    assert body["meta"]["pagination"]["total_count"] == 51
+    assert body["meta"]["pagination"]["has_more"] is True
 
 
 @pytest.mark.asyncio

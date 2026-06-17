@@ -146,6 +146,8 @@ async def create_session(
 async def list_sessions(
     request: Request,
     project_id: str | None = Query(default=None),
+    parent_session_id: str | None = Query(default=None),
+    include_children: bool = Query(default=False),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -154,6 +156,8 @@ async def list_sessions(
         workspace_id=user.workspace_id,
         user_id=user.id,
         project_id=project_id,
+        parent_session_id=parent_session_id,
+        include_children=include_children,
     )
     return success_response(
         [_dump(_session_read(session)) for session in sessions],
@@ -554,7 +558,7 @@ async def stream_session_events(
                 yield f"id: {payload['id']}\n"
                 yield f"event: {payload['type']}\n"
                 yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
-                logger.info(
+                logger.debug(
                     "agent_core.stream.event",
                     session_id=session_id,
                     turn_id=payload.get("turn_id"),

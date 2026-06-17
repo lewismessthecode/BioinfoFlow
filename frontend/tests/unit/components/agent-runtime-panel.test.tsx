@@ -69,7 +69,7 @@ describe("ProgressTab", () => {
 })
 
 describe("ArtifactPreviewDrawer", () => {
-  it("opens command artifacts with full output", () => {
+  it("keeps routine command artifacts out of the primary list but available in tool logs", () => {
     render(
       <ArtifactPreviewDrawer
         artifacts={[
@@ -79,12 +79,27 @@ describe("ArtifactPreviewDrawer", () => {
             title: "ls output",
             payload: { command: "ls", stdout: "report.md", stderr: "" },
           }),
-          artifact({ id: "file-1", type: "file", title: "report.md", payload: { content: "QC passed" } }),
+          artifact({
+            id: "file-1",
+            type: "file",
+            title: "report.md",
+            summary: null,
+            file_path: "/workspace/report.md",
+            payload: { content: "QC passed" },
+          }),
         ]}
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: /ls output/ }))
+    const drawer = screen.getByTestId("artifact-preview-drawer")
+    const toolLogs = screen.getByText("artifacts.toolLogs").closest("details")
+    expect(within(drawer).getByRole("button", { name: /report.md/ })).toBeInTheDocument()
+    expect(screen.getByText("/workspace/report.md")).toBeInTheDocument()
+    expect(toolLogs).not.toBeNull()
+    expect(within(toolLogs as HTMLElement).getByRole("button", { name: /ls output/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText("artifacts.toolLogs"))
+    fireEvent.click(within(toolLogs as HTMLElement).getByRole("button", { name: /ls output/ }))
 
     expect(screen.getByText("$ ls")).toBeInTheDocument()
     expect(screen.getByText("report.md")).toBeInTheDocument()

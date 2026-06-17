@@ -65,6 +65,8 @@ export function ProjectList({
   } | null>(null)
   const [dropTargetProjectId, setDropTargetProjectId] = useState<string | null>(null)
 
+  const showRecentEmptyState = inboxConversations.length === 0 && projects.length === 0
+
   const handleConversationDragStart = (conversation: AgentCoreSession, projectId: string) => {
     setDraggingConversation({ id: conversation.id, projectId })
   }
@@ -158,7 +160,7 @@ export function ProjectList({
             {tSidebar("recent")}
           </div>
           <div className="space-y-0.5">
-            {inboxConversations.length === 0 ? (
+            {showRecentEmptyState ? (
               <div className="px-2.5 py-1 text-xs text-muted-foreground">
                 {tSidebar("noConversations")}
               </div>
