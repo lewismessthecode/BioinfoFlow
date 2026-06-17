@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from app.services.agent_core.tools import (
     AgentToolDispatcher,
     build_default_tool_registry,
 )
+from app.services.image_service import ImageService
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -303,6 +305,24 @@ async def test_images_list_tool_reads_catalog_without_forcing_docker_sync(db_ses
     assert result.status == "completed"
     assert result.result["images"][0]["full_name"] == "biocontainers/fastqc:latest"
     assert result.result["status"]["docker"] == "not_synced"
+
+
+@pytest.mark.asyncio
+async def test_images_list_tool_serializes_catalog_sync_timestamp(
+    db_session, monkeypatch
+):
+    dispatcher, context, _resources = await _tool_context(db_session)
+    last_synced_at = datetime(2026, 4, 8, 8, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(ImageService, "_last_sync_at", last_synced_at)
+
+    result = await dispatcher.dispatch(
+        tool_name="images.list",
+        input={"status": "local"},
+        context=context,
+    )
+
+    assert result.status == "completed"
+    assert result.result["status"]["last_synced_at"] == "2026-04-08T08:00:00+00:00"
 
 
 @pytest.mark.asyncio

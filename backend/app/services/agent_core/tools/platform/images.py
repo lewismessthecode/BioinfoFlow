@@ -79,7 +79,7 @@ class ListImagesTool:
                 for image in images
             ],
             "total_count": pagination.total_count or 0,
-            "status": status,
+            "status": _status_summary(status),
         }
 
 
@@ -295,6 +295,14 @@ def _limit(text: str, limit: int = 16000) -> str:
 
 def _value(value) -> str:
     return value.value if hasattr(value, "value") else str(value)
+
+
+def _status_summary(status: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(status)
+    last_synced_at = normalized.get("last_synced_at")
+    if hasattr(last_synced_at, "isoformat"):
+        normalized["last_synced_at"] = last_synced_at.isoformat()
+    return normalized
 
 
 def _resolve_dockerfile(context_dir: Path, dockerfile: object) -> Path:
