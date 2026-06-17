@@ -69,7 +69,7 @@ describe("ProgressTab", () => {
 })
 
 describe("ArtifactPreviewDrawer", () => {
-  it("opens command artifacts with full output", () => {
+  it("filters routine command artifacts from the default artifact list", () => {
     render(
       <ArtifactPreviewDrawer
         artifacts={[
@@ -79,15 +79,21 @@ describe("ArtifactPreviewDrawer", () => {
             title: "ls output",
             payload: { command: "ls", stdout: "report.md", stderr: "" },
           }),
-          artifact({ id: "file-1", type: "file", title: "report.md", payload: { content: "QC passed" } }),
+          artifact({
+            id: "file-1",
+            type: "file",
+            title: "report.md",
+            summary: null,
+            file_path: "/workspace/report.md",
+            payload: { content: "QC passed" },
+          }),
         ]}
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: /ls output/ }))
-
-    expect(screen.getByText("$ ls")).toBeInTheDocument()
-    expect(screen.getByText("report.md")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /ls output/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /report.md/ })).toBeInTheDocument()
+    expect(screen.getByText("/workspace/report.md")).toBeInTheDocument()
   })
 })
 

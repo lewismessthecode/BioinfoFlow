@@ -55,7 +55,7 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
               {artifact.title}
             </div>
             <div className="truncate text-xs text-muted-foreground">
-              {artifact.summary || artifactTypeLabel(t, artifact.type)}
+              {artifact.summary || artifact.file_path || artifactTypeLabel(t, artifact.type)}
             </div>
           </div>
         </button>
@@ -64,6 +64,23 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
   )
 }
 
+const HIDDEN_ARTIFACT_TYPES = new Set(["command", "log_summary", "todo_list"])
+const PREVIEW_ARTIFACT_TYPES = new Set([
+  "file",
+  "html",
+  "image",
+  "pdf",
+  "project",
+  "report",
+  "run",
+  "sheet",
+  "spreadsheet",
+  "workflow",
+  "workflow_bundle",
+])
+
 function isPreviewArtifact(artifact: AgentRuntimeArtifact) {
-  return artifact.type !== "todo_list"
+  if (HIDDEN_ARTIFACT_TYPES.has(artifact.type)) return false
+  if (artifact.file_path || artifact.resource_ref) return true
+  return PREVIEW_ARTIFACT_TYPES.has(artifact.type)
 }

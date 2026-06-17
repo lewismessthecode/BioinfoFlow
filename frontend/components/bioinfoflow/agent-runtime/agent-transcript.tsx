@@ -51,27 +51,27 @@ export function AgentTranscript({
   return (
     <div
       ref={scrollRef}
-      className="min-h-0 flex-1 overflow-y-auto px-4 pb-36 pt-8 sm:px-6"
+      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-36 pt-8 sm:px-6"
       data-testid="agent-transcript-scroll"
       onScroll={updateBottomState}
     >
-      <div className="mx-auto grid w-full max-w-3xl gap-8">
+      <div className="mx-auto grid w-full min-w-0 max-w-3xl gap-8">
         {timeline.map((entry) => (
-          <article key={entry.turn.id} className="grid gap-4">
+          <article key={entry.turn.id} className="grid min-w-0 gap-4">
             <div className="flex justify-end">
               <div className="max-w-[82%] rounded-[22px] bg-muted px-4 py-3 text-[15px] leading-6 text-foreground">
                 {entry.turn.input_text}
               </div>
             </div>
             <div className="flex justify-start">
-              <div className="w-full max-w-[88%] px-1">
+              <div className="w-full min-w-0 max-w-[88%] px-1">
                 <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
                   <TurnStatusIcon status={entry.turn.status} />
                   <span>{turnStatusLabel(t, entry.turn.status)}</span>
                 </div>
 
                 {entry.segments.length ? (
-                  <div className="grid gap-3">
+                  <div className="grid min-w-0 gap-3">
                     {entry.segments.map((segment) => (
                       <TranscriptSegment
                         key={segment.id}

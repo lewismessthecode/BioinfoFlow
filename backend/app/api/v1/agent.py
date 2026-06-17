@@ -146,6 +146,7 @@ async def create_session(
 async def list_sessions(
     request: Request,
     project_id: str | None = Query(default=None),
+    include_children: bool = Query(default=False),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -154,6 +155,7 @@ async def list_sessions(
         workspace_id=user.workspace_id,
         user_id=user.id,
         project_id=project_id,
+        include_children=include_children,
     )
     return success_response(
         [_dump(_session_read(session)) for session in sessions],

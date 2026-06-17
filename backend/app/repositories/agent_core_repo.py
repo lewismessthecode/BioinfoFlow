@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import desc, func, or_, select, update
 
 from app.models.agent_core import (
     AgentAction,
@@ -28,6 +28,7 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         user_id: str,
         project_id: str | None = None,
         include_archived: bool = False,
+        include_children: bool = False,
         limit: int = 50,
     ) -> tuple[list[AgentSession], Pagination]:
         stmt = select(self.model).where(
@@ -38,6 +39,13 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
             stmt = stmt.where(self.model.project_id == project_id)
         if not include_archived:
             stmt = stmt.where(self.model.status == AgentSessionStatus.ACTIVE)
+        if not include_children:
+            stmt = stmt.where(
+                or_(
+                    self.model.lineage.is_(None),
+                    self.model.lineage["parent_session_id"].as_string().is_(None),
+                )
+            )
         stmt = stmt.order_by(desc(self.model.updated_at), desc(self.model.id))
         result = await self.session.execute(stmt.limit(limit))
         items = list(result.scalars().all())

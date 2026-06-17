@@ -369,6 +369,46 @@ describe("AgentTranscript", () => {
     })
   })
 
+  it("keeps activity groups compact in the collapsed transcript", () => {
+    renderTranscript({
+      events: [
+        event("event-tool", 1, "assistant.tool_call.completed", {
+          message_id: "message-1",
+          call_id: "call-1",
+          name: "glob",
+          status: "completed",
+          arguments: { pattern: "**/*.wdl" },
+          index: 0,
+        }),
+      ],
+    })
+
+    const group = screen.getByTestId("agent-activity-group")
+    const button = group.querySelector("button")
+    expect(group).toHaveClass("my-0.5")
+    expect(button).toHaveClass("rounded-md")
+    expect(button).not.toHaveClass("bg-muted/35")
+  })
+
+  it("keeps wide transcript content inside the transcript scroller", () => {
+    const longPath = `/workspace/${"very-long-directory-name-".repeat(12)}result.json`
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: `Here is the path: ${longPath}\n\n\`\`\`json\n{\"path\":\"${longPath}\"}\n\`\`\``,
+        }),
+      ],
+    })
+
+    expect(screen.getByTestId("agent-transcript-scroll")).toHaveClass("overflow-x-hidden")
+    expect(screen.getByText(`Here is the path: ${longPath}`)).toHaveClass("break-words")
+    const code = screen.getByText((content, element) =>
+      element?.tagName.toLowerCase() === "code" && content.includes(longPath),
+    )
+    expect(code.closest("pre")).toHaveClass("overflow-x-auto")
+  })
+
   it("keeps text, tool calls, and later text in segment order", () => {
     renderTranscript({
       turn: { ...baseTurn, status: "running", final_text: null },

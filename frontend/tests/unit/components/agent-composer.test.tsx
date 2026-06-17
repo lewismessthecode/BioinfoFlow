@@ -149,4 +149,26 @@ describe("AgentComposer", () => {
 
     expect(onPermissionModeChange).toHaveBeenCalledWith("bypass")
   })
+
+  it("wraps control clusters for constrained side-panel layouts", () => {
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        permissionMode="bypass"
+        onPermissionModeChange={vi.fn()}
+        mode="execution"
+        onModeChange={vi.fn()}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId("agent-composer-controls")).toHaveClass("flex-wrap")
+    expect(screen.getByRole("button", { name: "Permission mode" })).toHaveClass("max-w-[11rem]")
+  })
 })

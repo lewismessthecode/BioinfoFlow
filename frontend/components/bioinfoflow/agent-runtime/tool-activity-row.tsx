@@ -19,10 +19,10 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
 
   return (
     <div
-      className="grid gap-2 border-l border-border/60 pl-3 text-xs"
+      className="grid gap-1.5 text-xs"
       data-testid="agent-tool-activity-row"
     >
-      <div className="flex items-center gap-2 text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-muted-foreground">
         <ActivityStatusIcon status={activity.status} />
         <span className="min-w-0 flex-1 truncate font-mono text-foreground/80">
           {activity.name}
@@ -48,7 +48,7 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
       ) : null}
 
       {hasDetails ? (
-        <div className="grid gap-2 text-muted-foreground">
+        <div className="grid gap-1.5 text-muted-foreground">
           {activity.inputPreview ? <Detail label={t("activity.details.input")} value={activity.inputPreview} /> : null}
           {activity.arguments ? (
             <Detail
@@ -82,11 +82,11 @@ function Detail({ label, value, pre = false }: { label: string; value: string; p
         {label}
       </div>
       {pre ? (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/40 p-2 text-[11px] leading-5 text-foreground/80">
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80">
           {value}
         </pre>
       ) : (
-        <div className="break-words rounded-lg bg-muted/40 p-2 text-[11px] leading-5 text-foreground/80">
+        <div className="break-words rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80">
           {value}
         </div>
       )}

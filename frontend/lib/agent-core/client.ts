@@ -43,9 +43,15 @@ export type UpdateAgentSessionInput = {
   metadata?: Record<string, unknown> | null
 }
 
-export const listAgentSessions = async (projectId?: string) => {
+export const listAgentSessions = async (
+  projectId?: string,
+  options?: { includeChildren?: boolean },
+) => {
+  const params: Record<string, string | boolean> = {}
+  if (projectId) params.project_id = projectId
+  if (options?.includeChildren) params.include_children = true
   const response = await apiRequest<AgentCoreSession[]>("/agent/sessions", {
-    params: projectId ? { project_id: projectId } : undefined,
+    params: Object.keys(params).length ? params : undefined,
   })
   return response.data
 }

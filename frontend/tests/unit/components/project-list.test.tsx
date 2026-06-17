@@ -146,6 +146,7 @@ describe("ProjectList", () => {
     )
 
     const recentSection = screen.getByTestId("sidebar-recent-section")
+    expect(screen.queryByText("noConversations")).not.toBeInTheDocument()
 
     fireEvent.dragStart(screen.getByTestId("project-conversation-conversation-1"))
     fireEvent.dragOver(recentSection)

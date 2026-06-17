@@ -87,7 +87,7 @@ function CodeBlock({
   }, [cacheKey, code, language])
 
   return (
-    <div className="mb-3 overflow-hidden rounded-xl border border-border/60 bg-secondary/60">
+    <div className="mb-3 min-w-0 overflow-hidden rounded-xl border border-border/60 bg-secondary/60">
       <div className="flex items-center justify-between border-b border-border/50 px-3 py-1.5">
         <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           {language}
@@ -109,7 +109,7 @@ function CodeBlock({
 
 export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
   return (
-    <div className={cn("prose prose-sm dark:prose-invert max-w-none", className)}>
+    <div className={cn("prose prose-sm dark:prose-invert min-w-0 max-w-none overflow-hidden break-words", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -129,7 +129,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
 
           // Paragraphs
           p: ({ children }) => (
-            <p className="text-sm leading-relaxed text-foreground mb-3 last:mb-0">{children}</p>
+            <p className="text-sm leading-relaxed text-foreground mb-3 last:mb-0 break-words">{children}</p>
           ),
 
           // Lists

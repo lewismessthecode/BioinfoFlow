@@ -154,7 +154,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           disabled={disabled}
           style={{ overflowY: "hidden" }}
         />
-        <div className="flex min-h-11 items-center gap-2">
+        <div className="flex min-h-11 flex-wrap items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -187,19 +187,22 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
+          <div
+            className="ml-auto flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2"
+            data-testid="agent-composer-controls"
+          >
             {onPermissionModeChange ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
                     variant="ghost"
-                    className="hidden h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground sm:inline-flex"
+                    className="hidden h-9 max-w-[11rem] shrink items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground sm:inline-flex"
                     disabled={disabled}
                     aria-label={t("permission.label")}
                   >
                     <PermissionIcon className="h-3.5 w-3.5" />
-                    <span>{t(`permission.options.${permissionMode}.label`)}</span>
+                    <span className="min-w-0 truncate">{t(`permission.options.${permissionMode}.label`)}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
@@ -253,7 +256,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 ))}
               </div>
             ) : null}
-            <div className="hidden shrink-0 sm:flex sm:items-center">
+            <div className="hidden min-w-0 shrink sm:flex sm:items-center">
               <ModelSelector
                 models={models}
                 selectedModel={selectedModel}
