@@ -27,6 +27,7 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         workspace_id: str,
         user_id: str,
         project_id: str | None = None,
+        parent_session_id: str | None = None,
         include_archived: bool = False,
         limit: int = 50,
     ) -> tuple[list[AgentSession], Pagination]:
@@ -36,6 +37,11 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         )
         if project_id:
             stmt = stmt.where(self.model.project_id == project_id)
+        parent_id = func.json_extract(self.model.lineage, "$.parent_session_id")
+        if parent_session_id is None:
+            stmt = stmt.where(parent_id.is_(None))
+        else:
+            stmt = stmt.where(parent_id == parent_session_id)
         if not include_archived:
             stmt = stmt.where(self.model.status == AgentSessionStatus.ACTIVE)
         stmt = stmt.order_by(desc(self.model.updated_at), desc(self.model.id))

@@ -110,11 +110,11 @@ function Detail({ label, value, pre = false }: { label: string; value: string; p
         {label}
       </div>
       {pre ? (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/40 p-2 text-[11px] leading-5 text-foreground/80">
+        <pre className="max-h-48 min-w-0 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/40 p-2 text-[11px] leading-5 text-foreground/80">
           {value}
         </pre>
       ) : (
-        <div className="break-words rounded-lg bg-muted/40 p-2 text-[11px] leading-5 text-foreground/80">
+        <div className="min-w-0 max-w-full break-words rounded-lg bg-muted/40 p-2 text-[11px] leading-5 text-foreground/80">
           {value}
         </div>
       )}

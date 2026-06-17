@@ -136,14 +136,14 @@ function AgentPageContent({
   }, [toggleRightSidebar, showShortcuts])
 
   return (
-    <div className="flex h-full bg-background">
+    <div className="flex h-full min-w-0 overflow-hidden bg-background">
       <AgentWorkbench
         ref={chatRef}
         projectId={conversationProjectId || null}
         activeSessionId={activeConversationId}
         onActiveSessionIdChange={setActiveConversationId}
         workspaceEnabled
-        className="flex-1"
+        className="min-w-0 flex-1"
       />
       {showShortcuts && (
         <KeyboardShortcutsOverlay

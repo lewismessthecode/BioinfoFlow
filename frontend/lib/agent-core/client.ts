@@ -32,6 +32,11 @@ type CreateAgentTurnInput = {
   metadata?: Record<string, unknown>
 }
 
+type ListAgentSessionsOptions = {
+  projectId?: string | null
+  parentSessionId?: string | null
+}
+
 export type UpdateAgentSessionInput = {
   title?: string
   roleProfile?: string
@@ -43,9 +48,19 @@ export type UpdateAgentSessionInput = {
   metadata?: Record<string, unknown> | null
 }
 
-export const listAgentSessions = async (projectId?: string) => {
+export const listAgentSessions = async (
+  projectIdOrOptions?: string | ListAgentSessionsOptions | null,
+) => {
+  const options =
+    typeof projectIdOrOptions === "string"
+      ? { projectId: projectIdOrOptions }
+      : projectIdOrOptions
+  const params = {
+    ...(options?.projectId ? { project_id: options.projectId } : {}),
+    ...(options?.parentSessionId ? { parent_session_id: options.parentSessionId } : {}),
+  }
   const response = await apiRequest<AgentCoreSession[]>("/agent/sessions", {
-    params: projectId ? { project_id: projectId } : undefined,
+    params: Object.keys(params).length ? params : undefined,
   })
   return response.data
 }

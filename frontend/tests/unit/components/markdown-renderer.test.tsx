@@ -72,4 +72,30 @@ describe("MarkdownRenderer link sanitization", () => {
     expect(screen.getByText("python")).toBeInTheDocument()
     expect(screen.getByText("print('hello')")).toBeInTheDocument()
   })
+
+  it("bounds wide code blocks and tables to internal horizontal scrolling", () => {
+    const longPath = "/mnt/nas/bioinfoflow/projects/example/" + "nested/".repeat(20)
+    const { container } = render(
+      <MarkdownRenderer
+        content={[
+          "```json",
+          JSON.stringify({ path: longPath }),
+          "```",
+          "",
+          "| Column | Value |",
+          "| --- | --- |",
+          `| path | ${longPath} |`,
+        ].join("\n")}
+      />,
+    )
+
+    const codeBlock = container.querySelector("[data-testid='markdown-code-block']")
+    expect(codeBlock?.className).toContain("min-w-0")
+    expect(codeBlock?.className).toContain("max-w-full")
+    expect(codeBlock?.className).toContain("overflow-hidden")
+
+    const tableScroller = container.querySelector("[data-testid='markdown-table-scroller']")
+    expect(tableScroller?.className).toContain("max-w-full")
+    expect(tableScroller?.className).toContain("overflow-x-auto")
+  })
 })

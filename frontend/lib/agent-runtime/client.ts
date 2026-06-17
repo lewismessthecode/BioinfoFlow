@@ -22,9 +22,24 @@ type CreateAgentRuntimeSessionInput = {
   modelSelection?: AgentModelSelection | null
 }
 
-export const listAgentRuntimeSessions = async (projectId?: string | null) => {
+type ListAgentRuntimeSessionsOptions = {
+  projectId?: string | null
+  parentSessionId?: string | null
+}
+
+export const listAgentRuntimeSessions = async (
+  projectIdOrOptions?: string | ListAgentRuntimeSessionsOptions | null,
+) => {
+  const options =
+    typeof projectIdOrOptions === "string"
+      ? { projectId: projectIdOrOptions }
+      : projectIdOrOptions
+  const params = {
+    ...(options?.projectId ? { project_id: options.projectId } : {}),
+    ...(options?.parentSessionId ? { parent_session_id: options.parentSessionId } : {}),
+  }
   const response = await apiRequest<AgentRuntimeSession[]>("/agent/sessions", {
-    params: projectId ? { project_id: projectId } : undefined,
+    params: Object.keys(params).length ? params : undefined,
   })
   return response.data
 }

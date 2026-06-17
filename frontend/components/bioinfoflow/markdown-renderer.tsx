@@ -87,7 +87,10 @@ function CodeBlock({
   }, [cacheKey, code, language])
 
   return (
-    <div className="mb-3 overflow-hidden rounded-xl border border-border/60 bg-secondary/60">
+    <div
+      className="mb-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-secondary/60"
+      data-testid="markdown-code-block"
+    >
       <div className="flex items-center justify-between border-b border-border/50 px-3 py-1.5">
         <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           {language}
@@ -95,11 +98,11 @@ function CodeBlock({
       </div>
       {highlightedHtml ? (
         <div
-          className="[&_.shiki]:m-0 [&_.shiki]:overflow-x-auto [&_.shiki]:bg-transparent! [&_.shiki]:p-3 [&_.shiki_pre]:m-0"
+          className="min-w-0 max-w-full overflow-hidden [&_.shiki]:m-0 [&_.shiki]:max-w-full [&_.shiki]:overflow-x-auto [&_.shiki]:bg-transparent! [&_.shiki]:p-3 [&_.shiki_pre]:m-0"
           dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />
       ) : (
-        <pre className="overflow-x-auto p-3 text-sm-tight">
+        <pre className="max-w-full overflow-x-auto p-3 text-sm-tight">
           <code className={`font-mono language-${language}`}>{code}</code>
         </pre>
       )}
@@ -109,7 +112,12 @@ function CodeBlock({
 
 export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
   return (
-    <div className={cn("prose prose-sm dark:prose-invert max-w-none", className)}>
+    <div
+      className={cn(
+        "prose prose-sm dark:prose-invert min-w-0 max-w-full overflow-hidden break-words",
+        className,
+      )}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -209,7 +217,10 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
 
           // Tables
           table: ({ children }) => (
-            <div className="overflow-x-auto mb-3">
+            <div
+              className="mb-3 max-w-full overflow-x-auto"
+              data-testid="markdown-table-scroller"
+            >
               <table className="min-w-full border-collapse text-sm">{children}</table>
             </div>
           ),

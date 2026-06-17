@@ -12,6 +12,8 @@ from app.auth.session import AuthUser
 from app.config import settings
 from app.path_layout import project_home
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
+from app.models.agent_core import AgentSessionStatus
+from app.repositories.agent_core_repo import AgentSessionRepository
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -323,6 +325,55 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
     cancel = await async_client.post(f"/api/v1/agent/turns/{turn['id']}/cancel")
     assert cancel.status_code == 200
     assert cancel.json()["data"]["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_agent_core_session_list_scopes_child_sessions_to_parent(async_client, db_session):
+    project_id = await _create_project(async_client)
+    create_parent = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "project_id": project_id,
+            "title": "Parent analysis",
+            "permission_mode": "guarded_auto",
+            "automation_mode": "assisted",
+        },
+    )
+    assert create_parent.status_code == 201
+    parent = create_parent.json()["data"]
+
+    child = await AgentSessionRepository(db_session).create(
+        project_id=project_id,
+        workspace_id=parent["workspace_id"],
+        user_id=parent["user_id"],
+        title="Subagent: Investigate workflow inputs",
+        role_profile="worker",
+        permission_mode="guarded_auto",
+        automation_mode="assisted",
+        runtime_mode="api",
+        lineage={"parent_session_id": parent["id"], "parent_turn_id": "turn-child"},
+        status=AgentSessionStatus.ACTIVE,
+    )
+
+    root_sessions = await async_client.get(
+        "/api/v1/agent/sessions",
+        params={"project_id": project_id},
+    )
+    assert root_sessions.status_code == 200
+    root_ids = [item["id"] for item in root_sessions.json()["data"]]
+    assert parent["id"] in root_ids
+    assert str(child.id) not in root_ids
+
+    child_sessions = await async_client.get(
+        "/api/v1/agent/sessions",
+        params={"project_id": project_id, "parent_session_id": parent["id"]},
+    )
+    assert child_sessions.status_code == 200
+    assert [item["id"] for item in child_sessions.json()["data"]] == [str(child.id)]
+    assert child_sessions.json()["data"][0]["lineage"] == {
+        "parent_session_id": parent["id"],
+        "parent_turn_id": "turn-child",
+    }
 
 
 @pytest.mark.asyncio
