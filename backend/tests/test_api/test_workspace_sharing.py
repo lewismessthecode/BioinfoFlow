@@ -294,6 +294,14 @@ async def test_global_agent_session_list_is_user_scoped(async_client, db_session
     assert "My AgentCore Session" in child_titles
     assert "Subagent: inspect workflow files" in child_titles
 
+    scoped_child_resp = await async_client.get(
+        f"/api/v1/agent/sessions?parent_session_id={parent_session.id}"
+    )
+    assert scoped_child_resp.status_code == 200
+    assert [item["title"] for item in scoped_child_resp.json()["data"]] == [
+        "Subagent: inspect workflow files"
+    ]
+
 
 @pytest.mark.asyncio
 async def test_agent_session_list_reports_has_more(async_client, db_session):

@@ -311,6 +311,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onSelectModel={(model) => void setSelectedModel(model)}
         contextAttachments={contextAttachments}
         onRemoveContextAttachment={removeContextAttachment}
+        compactControls={sidecarVisible}
       />
     )
 

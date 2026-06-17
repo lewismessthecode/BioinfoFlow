@@ -45,10 +45,11 @@ export type UpdateAgentSessionInput = {
 
 export const listAgentSessions = async (
   projectId?: string,
-  options?: { includeChildren?: boolean },
+  options?: { includeChildren?: boolean; parentSessionId?: string },
 ) => {
   const params: Record<string, string | boolean> = {}
   if (projectId) params.project_id = projectId
+  if (options?.parentSessionId) params.parent_session_id = options.parentSessionId
   if (options?.includeChildren) params.include_children = true
   const response = await apiRequest<AgentCoreSession[]>("/agent/sessions", {
     params: Object.keys(params).length ? params : undefined,

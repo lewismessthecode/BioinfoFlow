@@ -175,4 +175,35 @@ describe("AgentComposer", () => {
     expect(screen.getByRole("link", { name: "Configure providers" })).toBeVisible()
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled()
   })
+
+  it("compresses secondary controls when rendered beside the side panel", () => {
+    render(
+      <AgentComposer
+        value="Run QC"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        permissionMode="bypass"
+        onPermissionModeChange={vi.fn()}
+        mode="execution"
+        onModeChange={vi.fn()}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        compactControls
+      />,
+    )
+
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-compact-controls",
+      "true",
+    )
+    expect(screen.getByRole("button", { name: "Permission mode" })).toHaveClass(
+      "max-w-9",
+    )
+    const modeGroup = screen.getByRole("group", { name: "Agent mode" })
+    expect(modeGroup).toHaveClass("hidden")
+    expect(modeGroup).not.toHaveClass("sm:flex")
+  })
 })

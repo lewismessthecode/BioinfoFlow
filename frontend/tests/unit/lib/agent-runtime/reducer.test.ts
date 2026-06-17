@@ -918,6 +918,54 @@ describe("agentRuntimeReducer", () => {
     ])
   })
 
+  it("does not duplicate cumulative completed text after a tool-interleaved stream", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [turn("running")],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "Before tool." },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "glob",
+              status: "completed",
+              arguments: { pattern: "**/*.wdl" },
+              index: 0,
+            },
+          },
+          {
+            ...event("event-text-completed", 3),
+            type: "assistant.text.completed",
+            payload: {
+              message_id: "message-1",
+              content: "Before tool.\n\nAfter tool.",
+            },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Before tool.",
+      "After tool.",
+    ])
+    expect(loaded.timeline[0].assistant.text).toBe("Before tool.\n\nAfter tool.")
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+    ])
+  })
+
   it("does not leave completed decisions pending without a decision event", () => {
     const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",

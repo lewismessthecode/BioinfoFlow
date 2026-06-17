@@ -87,8 +87,15 @@ function buildTextBlocks(
 
     const messageId = stringValue(event.payload.message_id)
     let key: string
+    let precedingMessageText = ""
     if (messageId) {
       const shouldStartNewBlock = interruptedMessages.has(messageId)
+      if (shouldStartNewBlock) {
+        precedingMessageText = blocks
+          .filter((block) => block.messageId === messageId)
+          .map((block) => block.text)
+          .join("\n\n")
+      }
       key = shouldStartNewBlock
         ? `message:${messageId}:seq:${event.seq}:${event.id}`
         : activeKeyByMessage.get(messageId) ?? `message:${messageId}`
@@ -117,7 +124,9 @@ function buildTextBlocks(
     const cumulative = firstStringPayload(event.payload, ["content", "text"])
     const delta = firstStringPayload(event.payload, ["delta", "text_delta"])
     if (cumulative !== null) {
-      block.text = cumulative
+      block.text = precedingMessageText
+        ? cumulativeTailText(cumulative, precedingMessageText) ?? cumulative
+        : cumulative
       block.sawCumulative = true
     } else if (delta !== null) {
       block.text = `${block.text}${delta}`
@@ -147,7 +156,7 @@ function buildTextBlocks(
     isTerminalTurn(turn) &&
     visibleBlocks.every((block) => normalizeText(snapshotText).includes(normalizeText(block.text)))
 
-  if (hasAuthoritativeEventText || snapshotMatchesEvents) {
+  if (snapshotMatchesEvents) {
     return finalizeTextBlocks(turn, visibleBlocks)
   }
   if (snapshotTailText !== null) {
@@ -155,6 +164,9 @@ function buildTextBlocks(
       ...visibleBlocks,
       ...(snapshotTailText ? [snapshotTailTextBlock(turn, events, snapshotTailText)] : []),
     ])
+  }
+  if (hasAuthoritativeEventText) {
+    return finalizeTextBlocks(turn, visibleBlocks)
   }
   if (snapshotCoversEvents) {
     return [snapshotTextBlock(turn, events, snapshotText)]
@@ -502,10 +514,14 @@ function terminalSnapshotTailText(
   eventText: string,
 ) {
   if (!isTerminalTurn(turn)) return null
-  const snapshot = snapshotText.trim()
-  const events = eventText.trim()
-  if (!events || !snapshot.startsWith(events)) return null
-  return snapshot.slice(events.length).trim()
+  return cumulativeTailText(snapshotText, eventText)
+}
+
+function cumulativeTailText(cumulativeText: string, previousText: string) {
+  const cumulative = cumulativeText.trim()
+  const previous = previousText.trim()
+  if (!previous || !cumulative.startsWith(previous)) return null
+  return cumulative.slice(previous.length).trim()
 }
 
 function normalizeText(text: string) {

@@ -22,9 +22,16 @@ type CreateAgentRuntimeSessionInput = {
   modelSelection?: AgentModelSelection | null
 }
 
-export const listAgentRuntimeSessions = async (projectId?: string | null) => {
+export const listAgentRuntimeSessions = async (
+  projectId?: string | null,
+  options?: { includeChildren?: boolean; parentSessionId?: string },
+) => {
+  const params: Record<string, string | boolean> = {}
+  if (projectId) params.project_id = projectId
+  if (options?.parentSessionId) params.parent_session_id = options.parentSessionId
+  if (options?.includeChildren) params.include_children = true
   const response = await apiRequest<AgentRuntimeSession[]>("/agent/sessions", {
-    params: projectId ? { project_id: projectId } : undefined,
+    params: Object.keys(params).length ? params : undefined,
   })
   return response.data
 }

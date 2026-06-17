@@ -27,6 +27,7 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         workspace_id: str,
         user_id: str,
         project_id: str | None = None,
+        parent_session_id: str | None = None,
         include_archived: bool = False,
         include_children: bool = False,
         limit: int = 50,
@@ -39,7 +40,11 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
             stmt = stmt.where(self.model.project_id == project_id)
         if not include_archived:
             stmt = stmt.where(self.model.status == AgentSessionStatus.ACTIVE)
-        if not include_children:
+        if parent_session_id is not None:
+            stmt = stmt.where(
+                self.model.lineage["parent_session_id"].as_string() == parent_session_id
+            )
+        elif not include_children:
             stmt = stmt.where(
                 or_(
                     self.model.lineage.is_(None),

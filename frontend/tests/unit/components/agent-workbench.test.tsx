@@ -1,5 +1,5 @@
 import type * as React from "react"
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentWorkbench } from "@/components/bioinfoflow/agent-runtime/agent-workbench"
@@ -289,7 +289,9 @@ describe("AgentWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open environment" }))
     expect(await screen.findByTestId("agent-environment-floating-panel")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Open run panel" }))
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Open run panel" }))
+    })
 
     expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
     expect(screen.getByTestId("agent-sidecar-column")).toHaveClass("w-1/2")
@@ -300,6 +302,28 @@ describe("AgentWorkbench", () => {
     expect(
       within(screen.getByTestId("artifact-panel")).queryByTestId("agent-environment-card"),
     ).not.toBeInTheDocument()
+  })
+
+  it("uses compact composer controls while the right drawer is open", async () => {
+    setupRuntime({ session: baseSession })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    expect(screen.getByTestId("agent-composer")).not.toHaveAttribute(
+      "data-compact-controls",
+      "true",
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open run panel" }))
+      await Promise.resolve()
+    })
+
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-compact-controls",
+      "true",
+    )
   })
 
   it("moves the composer to the bottom after a turn exists", () => {

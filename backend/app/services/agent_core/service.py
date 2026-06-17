@@ -100,12 +100,14 @@ class AgentCoreService:
         workspace_id: str,
         user_id: str,
         project_id: str | None = None,
+        parent_session_id: str | None = None,
         include_children: bool = False,
     ):
         return await self.session_repo.list_for_user(
             workspace_id=workspace_id,
             user_id=user_id,
             project_id=project_id,
+            parent_session_id=parent_session_id,
             include_children=include_children,
         )
 

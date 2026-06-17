@@ -39,6 +39,8 @@ vi.mock("next-intl", () => ({
       "activity.status.cancelled": "Cancelled",
       "activity.status.rejected": "Rejected",
       "activity.status.waiting": "Waiting",
+      "activity.details.show": "Show details",
+      "activity.details.hide": "Hide details",
       "activity.details.input": "Input",
       "activity.details.arguments": "Arguments",
       "activity.details.output": "Output",
@@ -242,6 +244,15 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("glob")).toBeInTheDocument()
     expect(screen.getByText("files__read")).toBeInTheDocument()
     expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
+    expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
+
+    const detailsButton = screen.getAllByRole("button", { name: /Show details/ })[1]
+    expect(detailsButton).toHaveAttribute("aria-expanded", "false")
+
+    fireEvent.click(detailsButton)
+
+    expect(detailsButton).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByText("Arguments")).toBeInTheDocument()
     expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
   })
 
@@ -263,6 +274,12 @@ describe("AgentTranscript", () => {
     ).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /Submit run/ }))
+
+    expect(
+      screen.queryByText("Image quay.io/example/missing:tag was not found"),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
 
     expect(
       screen.getByText("Image quay.io/example/missing:tag was not found"),
@@ -390,6 +407,10 @@ describe("AgentTranscript", () => {
 
     expect(screen.getByTestId("agent-tool-activity-row")).toBeInTheDocument()
     expect(screen.getByText("glob")).toBeInTheDocument()
+    expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+
     expect(screen.getByText("Arguments")).toBeInTheDocument()
   })
 
