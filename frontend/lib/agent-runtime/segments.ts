@@ -180,9 +180,9 @@ function trimCumulativeTextOverlaps(
 ): TextDraftForDedupe[] {
   const visible: TextDraftForDedupe[] = []
   for (const block of blocks) {
-    const previous = visible.at(-1)
-    if (previous && block.sawCumulative) {
-      const nextText = stripRepeatedPrefix(block.text, previous.text)
+    const previousBlocks = priorTextBlocksForCumulativeBlock(block, visible)
+    if (previousBlocks.length > 0 && block.sawCumulative) {
+      const nextText = stripRepeatedVisiblePrefix(block.text, previousBlocks)
       if (!nextText) continue
       visible.push({ ...block, text: nextText })
       continue
@@ -193,6 +193,33 @@ function trimCumulativeTextOverlaps(
 }
 
 type TextDraftForDedupe = AgentRuntimeTextBlock & { sawCumulative?: boolean }
+
+function priorTextBlocksForCumulativeBlock(
+  block: TextDraftForDedupe,
+  visible: TextDraftForDedupe[],
+) {
+  return visible.filter((previous) => {
+    if (block.messageId || previous.messageId) return previous.messageId === block.messageId
+    return true
+  })
+}
+
+function stripRepeatedVisiblePrefix(text: string, previousBlocks: TextDraftForDedupe[]) {
+  const prefixes = [
+    previousBlocks.map((block) => block.text).join(""),
+    previousBlocks.map((block) => block.text).join(" "),
+    previousBlocks.map((block) => block.text).join("\n"),
+    previousBlocks.map((block) => block.text).join("\n\n"),
+  ]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+
+  for (const prefix of prefixes) {
+    const nextText = stripRepeatedPrefix(text, prefix)
+    if (nextText !== text) return nextText
+  }
+  return text
+}
 
 function stripRepeatedPrefix(text: string, prefix: string) {
   if (text.trim() === prefix.trim()) return ""

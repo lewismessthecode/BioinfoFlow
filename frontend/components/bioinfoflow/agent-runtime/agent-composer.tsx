@@ -51,6 +51,7 @@ type AgentComposerProps = {
   onSelectModel: (selection: ModelSelection | null) => void
   contextAttachments?: AgentRuntimeFileRefPart[]
   onRemoveContextAttachment?: (path: string) => void
+  compactControls?: boolean
   className?: string
 }
 
@@ -90,6 +91,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       onSelectModel,
       contextAttachments = [],
       onRemoveContextAttachment,
+      compactControls = false,
       className,
     },
     ref,
@@ -124,6 +126,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           className,
         )}
         data-testid="agent-composer"
+        data-compact-controls={compactControls ? "true" : "false"}
       >
         <ContextAttachments
           attachments={contextAttachments}
@@ -194,12 +197,17 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                   <Button
                     type="button"
                     variant="ghost"
-                    className="hidden h-9 min-w-9 max-w-[9.5rem] shrink items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground sm:inline-flex lg:max-w-[11rem]"
+                    className={cn(
+                      "hidden h-9 min-w-9 shrink items-center gap-1.5 rounded-full text-xs font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground sm:inline-flex",
+                      compactControls
+                        ? "max-w-9 px-2"
+                        : "max-w-[9.5rem] px-2.5 lg:max-w-[11rem]",
+                    )}
                     disabled={disabled}
                     aria-label={t("permission.label")}
                   >
                     <PermissionIcon className="h-3.5 w-3.5 shrink-0" />
-                    <span className="min-w-0 truncate">
+                    <span className={cn("min-w-0 truncate", compactControls && "sr-only")}>
                       {t(`permission.options.${permissionMode}.label`)}
                     </span>
                   </Button>
@@ -232,7 +240,10 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             ) : null}
             {onModeChange ? (
               <div
-                className="hidden h-9 shrink-0 items-center rounded-full border border-border/70 bg-card p-0.5 sm:flex"
+                className={cn(
+                  "hidden h-9 shrink-0 items-center rounded-full border border-border/70 bg-card p-0.5",
+                  !compactControls && "sm:flex",
+                )}
                 role="group"
                 aria-label={t("mode.label")}
               >
@@ -255,7 +266,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 ))}
               </div>
             ) : null}
-            <div className="hidden shrink-0 sm:flex sm:items-center">
+            <div className={cn("hidden shrink-0", !compactControls && "sm:flex sm:items-center")}>
               <ModelSelector
                 models={models}
                 selectedModel={selectedModel}

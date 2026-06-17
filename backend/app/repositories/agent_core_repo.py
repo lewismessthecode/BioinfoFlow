@@ -18,6 +18,10 @@ from app.repositories.base import BaseRepository
 from app.schemas.common import Pagination
 
 
+def agent_session_parent_id_expr(model: type[AgentSession]):
+    return model.lineage["parent_session_id"].as_string()
+
+
 class AgentSessionRepository(BaseRepository[AgentSession]):
     model = AgentSession
 
@@ -37,7 +41,7 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         )
         if project_id:
             stmt = stmt.where(self.model.project_id == project_id)
-        parent_id = func.json_extract(self.model.lineage, "$.parent_session_id")
+        parent_id = agent_session_parent_id_expr(self.model)
         if parent_session_id is None:
             stmt = stmt.where(parent_id.is_(None))
         else:

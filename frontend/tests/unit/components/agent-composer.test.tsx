@@ -174,4 +174,34 @@ describe("AgentComposer", () => {
     expect(permissionButton).toHaveClass("max-w-[9.5rem]")
     expect(permissionButton.querySelector("span")).toHaveClass("truncate")
   })
+
+  it("uses compact controls when constrained by the side panel", () => {
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        mode="execution"
+        onModeChange={vi.fn()}
+        permissionMode="bypass"
+        onPermissionModeChange={vi.fn()}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        compactControls
+      />,
+    )
+
+    const composer = screen.getByTestId("agent-composer")
+    const permissionButton = screen.getByRole("button", { name: "Permission mode" })
+
+    expect(composer).toHaveAttribute("data-compact-controls", "true")
+    expect(permissionButton).toHaveClass("max-w-9")
+    expect(permissionButton.querySelector("span")).toHaveClass("sr-only")
+    expect(screen.getByRole("group", { name: "Agent mode", hidden: true })).not.toHaveClass(
+      "sm:flex",
+    )
+  })
 })

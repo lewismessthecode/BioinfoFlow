@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useId, useState } from "react"
 import {
   AlertTriangle,
   CheckCircle2,
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivity }) {
   const t = useTranslations("agentRuntime")
   const [expanded, setExpanded] = useState(false)
+  const detailsId = useId()
   const hasDetails = Boolean(
     activity.arguments ||
       activity.inputPreview ||
@@ -56,8 +57,10 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
         {hasDetails ? (
           <button
             type="button"
-            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
             onClick={() => setExpanded((current) => !current)}
+            aria-expanded={expanded}
+            aria-controls={detailsId}
           >
             {expanded ? (
               <ChevronDown className="h-3 w-3" />
@@ -76,7 +79,7 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
       ) : null}
 
       {hasDetails && expanded ? (
-        <div className="grid gap-2 text-muted-foreground">
+        <div id={detailsId} className="grid gap-2 text-muted-foreground">
           {activity.inputPreview ? <Detail label={t("activity.details.input")} value={activity.inputPreview} /> : null}
           {activity.arguments ? (
             <Detail

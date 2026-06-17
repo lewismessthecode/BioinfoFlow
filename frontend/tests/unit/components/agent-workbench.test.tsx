@@ -292,6 +292,10 @@ describe("AgentWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open run panel" }))
 
     expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-compact-controls",
+      "true",
+    )
     await waitFor(() => {
       expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
     })

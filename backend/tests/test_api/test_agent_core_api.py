@@ -4,6 +4,8 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 
 import app.api.v1.agent as agent_api_module
 import app.services.agent_core.ledger as agent_ledger_module
@@ -11,9 +13,12 @@ from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
 from app.path_layout import project_home
+from app.models.agent_core import AgentSession, AgentSessionStatus
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
-from app.models.agent_core import AgentSessionStatus
-from app.repositories.agent_core_repo import AgentSessionRepository
+from app.repositories.agent_core_repo import (
+    AgentSessionRepository,
+    agent_session_parent_id_expr,
+)
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -59,6 +64,20 @@ async def _wait_for_turn(async_client, turn_id: str) -> dict:
 
 def _event_types(events: list[dict]) -> list[str]:
     return [item["type"] for item in events]
+
+
+def test_agent_core_session_parent_filter_compiles_for_postgres() -> None:
+    parent_id = agent_session_parent_id_expr(AgentSession)
+    root_stmt = select(AgentSession).where(parent_id.is_(None))
+    child_stmt = select(AgentSession).where(parent_id == "session-parent")
+
+    root_sql = str(root_stmt.compile(dialect=postgresql.dialect()))
+    child_sql = str(child_stmt.compile(dialect=postgresql.dialect()))
+
+    assert "json_extract" not in root_sql.lower()
+    assert "json_extract" not in child_sql.lower()
+    assert "->>" in root_sql
+    assert "->>" in child_sql
 
 
 async def _create_llm_model(async_client) -> dict:

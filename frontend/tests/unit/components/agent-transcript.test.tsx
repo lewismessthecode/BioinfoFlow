@@ -246,8 +246,13 @@ describe("AgentTranscript", () => {
     expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
     expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getAllByRole("button", { name: /Show details/ })[1])
+    const detailsButtons = screen.getAllByRole("button", { name: /Show details/ })
+    expect(detailsButtons[1]).toHaveAttribute("aria-expanded", "false")
 
+    fireEvent.click(detailsButtons[1])
+
+    expect(detailsButtons[1]).toHaveAttribute("aria-expanded", "true")
+    expect(detailsButtons[1]).toHaveAttribute("aria-controls")
     expect(screen.getByText("Arguments")).toBeInTheDocument()
     expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
   })

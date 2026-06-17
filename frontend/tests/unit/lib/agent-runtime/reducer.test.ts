@@ -568,6 +568,50 @@ describe("agentRuntimeReducer", () => {
     ])
   })
 
+  it("deduplicates cumulative completed text across multiple tool interruptions", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("completed"), final_text: "Scanned files. Parsed workflow. Ready." }],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", content: "Scanned files." },
+          },
+          {
+            ...event("event-tool-1", 2),
+            type: "assistant.tool_call.completed",
+            payload: { message_id: "message-1", call_id: "call-1", name: "glob", status: "completed", index: 0 },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", content: "Parsed workflow." },
+          },
+          {
+            ...event("event-tool-2", 4),
+            type: "assistant.tool_call.completed",
+            payload: { message_id: "message-1", call_id: "call-2", name: "read", status: "completed", index: 1 },
+          },
+          {
+            ...event("event-text-3", 5),
+            type: "assistant.text.completed",
+            payload: { message_id: "message-1", content: "Scanned files. Parsed workflow. Ready." },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Scanned files.",
+      "Parsed workflow.",
+      "Ready.",
+    ])
+    expect(loaded.timeline[0].assistant.text).toBe("Scanned files.\n\nParsed workflow.\n\nReady.")
+  })
+
   it("does not add a final text snapshot when delta fragments already reconstruct it", () => {
     const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",
