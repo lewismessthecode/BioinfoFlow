@@ -126,6 +126,10 @@ async def test_read_only_subagent_can_run_delegated_child_turn(db_session, monke
 
     child_session = await service.session_repo.get(result["child_session_id"])
     assert child_session is not None
+    assert child_session.lineage == {
+        "parent_session_id": str(parent_session.id),
+        "parent_turn_id": str(parent_turn.id),
+    }
     assert child_session.toolset_policy == {
         "name": "default",
         "allowed_tools": ["projects.list", "skills.list"],

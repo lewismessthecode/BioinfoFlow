@@ -142,12 +142,19 @@ function buildTextBlocks(
   const hasAuthoritativeEventText = visibleBlocks.some((block) => block.sawCumulative)
   const eventText = visibleBlocks.map((block) => block.text).join("\n\n")
   const snapshotMatchesEvents = normalizeText(snapshotText) === normalizeText(eventText)
+  const snapshotTailText = terminalSnapshotTailText(turn, snapshotText, eventText)
   const snapshotCoversEvents =
     isTerminalTurn(turn) &&
     visibleBlocks.every((block) => normalizeText(snapshotText).includes(normalizeText(block.text)))
 
   if (hasAuthoritativeEventText || snapshotMatchesEvents) {
     return finalizeTextBlocks(turn, visibleBlocks)
+  }
+  if (snapshotTailText !== null) {
+    return finalizeTextBlocks(turn, [
+      ...visibleBlocks,
+      ...(snapshotTailText ? [snapshotTailTextBlock(turn, events, snapshotTailText)] : []),
+    ])
   }
   if (snapshotCoversEvents) {
     return [snapshotTextBlock(turn, events, snapshotText)]
@@ -194,6 +201,25 @@ function snapshotTextBlock(
     text,
     status: textStatusFromTurn(turn),
     source: "snapshot",
+  }
+}
+
+function snapshotTailTextBlock(
+  turn: AgentRuntimeTurn,
+  events: AgentRuntimeEvent[],
+  text: string,
+): AgentRuntimeTextBlock {
+  const lastEventSeq = events.at(-1)?.seq ?? 1
+  const seq = lastEventSeq + 0.5
+  return {
+    id: `text:${turn.id}:snapshot-tail`,
+    turnId: turn.id,
+    messageId: null,
+    seqStart: seq,
+    seqEnd: seq,
+    text,
+    status: textStatusFromTurn(turn),
+    source: "snapshot+events",
   }
 }
 
@@ -468,6 +494,18 @@ function textStatusFromTurn(turn: AgentRuntimeTurn): AgentRuntimeTextBlockStatus
 
 function isTerminalTurn(turn: AgentRuntimeTurn) {
   return turn.status === "completed" || turn.status === "failed" || turn.status === "cancelled"
+}
+
+function terminalSnapshotTailText(
+  turn: AgentRuntimeTurn,
+  snapshotText: string,
+  eventText: string,
+) {
+  if (!isTerminalTurn(turn)) return null
+  const snapshot = snapshotText.trim()
+  const events = eventText.trim()
+  if (!events || !snapshot.startsWith(events)) return null
+  return snapshot.slice(events.length).trim()
 }
 
 function normalizeText(text: string) {

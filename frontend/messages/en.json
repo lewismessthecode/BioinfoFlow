@@ -2253,6 +2253,7 @@
       "copied": "Copied",
       "download": "Download",
       "exitCode": "Exit code",
+      "toolLogs": "{count, plural, one {Tool log} other {Tool logs}}",
       "types": {
         "file": "File",
         "command": "Command output",

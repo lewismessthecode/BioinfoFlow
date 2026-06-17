@@ -719,6 +719,52 @@ describe("agentRuntimeReducer", () => {
     ])
   })
 
+  it("preserves replay text order when terminal final text adds a tail", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("completed"), final_text: "Before tool.\n\nAfter tool.\n\nFinal note." }],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "Before tool." },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: {
+              message_id: "message-1",
+              call_id: "call-1",
+              name: "glob",
+              status: "completed",
+              arguments: { pattern: "**/*.wdl" },
+              index: 0,
+            },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.delta",
+            payload: { message_id: "message-1", delta: "After tool." },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Before tool.",
+      "After tool.",
+      "Final note.",
+    ])
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+      "assistant_text",
+    ])
+  })
+
   it("dedupes replayed events by session sequence when event ids differ", () => {
     const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",

@@ -369,7 +369,7 @@ describe("AgentTranscript", () => {
     })
   })
 
-  it("keeps activity groups compact in the collapsed transcript", () => {
+  it("keeps activity details collapsed until the user expands them", () => {
     renderTranscript({
       events: [
         event("event-tool", 1, "assistant.tool_call.completed", {
@@ -383,11 +383,14 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    const group = screen.getByTestId("agent-activity-group")
-    const button = group.querySelector("button")
-    expect(group).toHaveClass("my-0.5")
-    expect(button).toHaveClass("rounded-md")
-    expect(button).not.toHaveClass("bg-muted/35")
+    expect(screen.getByText("Read project structure")).toBeInTheDocument()
+    expect(screen.queryByTestId("agent-tool-activity-row")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Read project structure/ }))
+
+    expect(screen.getByTestId("agent-tool-activity-row")).toBeInTheDocument()
+    expect(screen.getByText("glob")).toBeInTheDocument()
+    expect(screen.getByText("Arguments")).toBeInTheDocument()
   })
 
   it("keeps wide transcript content inside the transcript scroller", () => {

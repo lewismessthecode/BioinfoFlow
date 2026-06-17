@@ -69,7 +69,7 @@ describe("ProgressTab", () => {
 })
 
 describe("ArtifactPreviewDrawer", () => {
-  it("filters routine command artifacts from the default artifact list", () => {
+  it("keeps routine command artifacts out of the primary list but available in tool logs", () => {
     render(
       <ArtifactPreviewDrawer
         artifacts={[
@@ -91,9 +91,18 @@ describe("ArtifactPreviewDrawer", () => {
       />,
     )
 
-    expect(screen.queryByRole("button", { name: /ls output/ })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /report.md/ })).toBeInTheDocument()
+    const drawer = screen.getByTestId("artifact-preview-drawer")
+    const toolLogs = screen.getByText("artifacts.toolLogs").closest("details")
+    expect(within(drawer).getByRole("button", { name: /report.md/ })).toBeInTheDocument()
     expect(screen.getByText("/workspace/report.md")).toBeInTheDocument()
+    expect(toolLogs).not.toBeNull()
+    expect(within(toolLogs as HTMLElement).getByRole("button", { name: /ls output/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText("artifacts.toolLogs"))
+    fireEvent.click(within(toolLogs as HTMLElement).getByRole("button", { name: /ls output/ }))
+
+    expect(screen.getByText("$ ls")).toBeInTheDocument()
+    expect(screen.getByText("report.md")).toBeInTheDocument()
   })
 })
 

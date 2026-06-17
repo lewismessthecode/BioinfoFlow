@@ -296,6 +296,29 @@ async def test_global_agent_session_list_is_user_scoped(async_client, db_session
 
 
 @pytest.mark.asyncio
+async def test_agent_session_list_reports_has_more(async_client, db_session):
+    project = await _create_project_for_user(
+        db_session,
+        name="Paginated Session Project",
+        user_id=DEV_USER_ID,
+    )
+    for index in range(51):
+        await _create_agent_session_for_user(
+            db_session,
+            project_id=str(project.id),
+            user_id=DEV_USER_ID,
+            title=f"Session {index:02d}",
+        )
+
+    resp = await async_client.get("/api/v1/agent/sessions")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["data"]) == 50
+    assert body["meta"]["pagination"]["total_count"] == 51
+    assert body["meta"]["pagination"]["has_more"] is True
+
+
+@pytest.mark.asyncio
 async def test_runs_are_workspace_shared(async_client, db_session):
     my_project = await _create_project_for_user(
         db_session,

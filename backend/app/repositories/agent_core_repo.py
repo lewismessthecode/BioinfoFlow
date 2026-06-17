@@ -51,7 +51,8 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         items = list(result.scalars().all())
         count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
         total_count = await self.session.scalar(count_stmt)
-        return items, Pagination(limit=limit, has_more=False, total_count=total_count or 0)
+        total = total_count or 0
+        return items, Pagination(limit=limit, has_more=total > len(items), total_count=total)
 
 
 class AgentTurnRepository(BaseRepository[AgentTurn]):
