@@ -42,7 +42,7 @@ class AgentEventLedger:
                         visibility=visibility,
                         schema_version=schema_version,
                     )
-                    logger.info(
+                    logger.debug(
                         "agent_core.event.appended",
                         **agent_event_log_fields(
                             session_id=session_id,

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 import app.api.v1.agent as agent_api_module
+import app.services.agent_core.ledger as agent_ledger_module
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
@@ -142,13 +143,32 @@ async def _create_scoped_llm_model(
 
 @pytest.mark.asyncio
 async def test_agent_core_session_turn_event_and_artifact_contract(async_client, monkeypatch):
-    stream_log_records: list[tuple[str, dict]] = []
+    stream_info_records: list[tuple[str, dict]] = []
+    stream_debug_records: list[tuple[str, dict]] = []
+    ledger_info_records: list[tuple[str, dict]] = []
+    ledger_debug_records: list[tuple[str, dict]] = []
 
     class SpyLogger:
-        def info(self, event: str, **fields):
-            stream_log_records.append((event, fields))
+        def __init__(self, info_records: list[tuple[str, dict]], debug_records: list[tuple[str, dict]]):
+            self.info_records = info_records
+            self.debug_records = debug_records
 
-    monkeypatch.setattr(agent_api_module, "logger", SpyLogger())
+        def info(self, event: str, **fields):
+            self.info_records.append((event, fields))
+
+        def debug(self, event: str, **fields):
+            self.debug_records.append((event, fields))
+
+    monkeypatch.setattr(
+        agent_api_module,
+        "logger",
+        SpyLogger(stream_info_records, stream_debug_records),
+    )
+    monkeypatch.setattr(
+        agent_ledger_module,
+        "logger",
+        SpyLogger(ledger_info_records, ledger_debug_records),
+    )
 
     async def fake_completion(*args, **kwargs):
         class FakeUsage:
@@ -248,9 +268,31 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
                 break
     assert "event: turn.created" in stream_lines
     assert "event: ready" in stream_lines
-    delivered_logs = [
+    delivered_info_logs = [
         fields
-        for event_name, fields in stream_log_records
+        for event_name, fields in stream_info_records
+        if event_name == "agent_core.stream.event"
+    ]
+    assert delivered_info_logs == []
+    assert any(
+        event_name == "agent_core.stream.batch"
+        and fields["session_id"] == session["id"]
+        and fields["event_count"] == 5
+        and fields["first_seq"] == 1
+        and fields["last_seq"] == 5
+        and fields["event_type_counts"] == {
+            "turn.created": 1,
+            "turn.started": 1,
+            "model.selected": 1,
+            "assistant.text.completed": 1,
+            "turn.completed": 1,
+        }
+        and fields["follow"] is False
+        for event_name, fields in stream_info_records
+    )
+    delivered_debug_logs = [
+        fields
+        for event_name, fields in stream_debug_records
         if event_name == "agent_core.stream.event"
     ]
     assert {
@@ -259,8 +301,18 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
         "seq": 1,
         "event_type": "turn.created",
         "follow": False,
-    } in delivered_logs
-    assert all("payload" not in fields for fields in delivered_logs)
+    } in delivered_debug_logs
+    assert all("payload" not in fields for fields in delivered_debug_logs)
+    assert [
+        event_name
+        for event_name, _fields in ledger_info_records
+        if event_name == "agent_core.event.appended"
+    ] == []
+    assert any(
+        event_name == "agent_core.event.appended"
+        and fields["event_type"] == "assistant.text.completed"
+        for event_name, fields in ledger_debug_records
+    )
 
     artifacts = await async_client.get(
         f"/api/v1/agent/sessions/{session['id']}/artifacts"

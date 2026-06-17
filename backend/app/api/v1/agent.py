@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import Counter
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -554,7 +555,7 @@ async def stream_session_events(
                 yield f"id: {payload['id']}\n"
                 yield f"event: {payload['type']}\n"
                 yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
-                logger.info(
+                logger.debug(
                     "agent_core.stream.event",
                     session_id=session_id,
                     turn_id=payload.get("turn_id"),
@@ -563,12 +564,14 @@ async def stream_session_events(
                     follow=follow,
                 )
             if events:
+                event_type_counts = dict(Counter(event.type for event in events))
                 logger.info(
                     "agent_core.stream.batch",
                     session_id=session_id,
                     event_count=len(events),
                     first_seq=int(events[0].seq),
                     last_seq=int(events[-1].seq),
+                    event_type_counts=event_type_counts,
                     follow=follow,
                 )
             if not ready_sent:
