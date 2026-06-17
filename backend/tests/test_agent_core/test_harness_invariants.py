@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import app.services.agent_core.ledger as ledger_module
 from app.config import settings
 from app.models.llm import LlmModel, LlmProvider
 from app.models.project import Project
@@ -370,6 +371,63 @@ async def test_event_ledger_serializes_concurrent_sequence_allocation():
     )
 
     assert sorted([first.seq, second.seq]) == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_event_ledger_logs_event_append_at_debug(monkeypatch):
+    records: list[tuple[str, str, dict]] = []
+
+    class SpyLogger:
+        def info(self, event: str, **fields):
+            records.append(("info", event, fields))
+
+        def debug(self, event: str, **fields):
+            records.append(("debug", event, fields))
+
+    class FakeSession:
+        async def rollback(self):
+            return None
+
+    class FakeEvent:
+        def __init__(self, seq: int):
+            self.seq = seq
+
+    class FakeEventRepository:
+        session = FakeSession()
+
+        async def next_seq(self, session_id: str) -> int:
+            assert session_id == "session-1"
+            return 7
+
+        async def create(self, **payload):
+            return FakeEvent(payload["seq"])
+
+    monkeypatch.setattr(ledger_module, "logger", SpyLogger())
+    ledger = AgentEventLedger.__new__(AgentEventLedger)
+    ledger.event_repo = FakeEventRepository()
+
+    await ledger.append(
+        session_id="session-1",
+        turn_id="turn-1",
+        type="assistant.text.completed",
+        payload={"content": "large reply", "status": "completed"},
+    )
+
+    assert not [record for record in records if record[:2] == ("info", "agent_core.event.appended")]
+    debug_logs = [
+        fields
+        for level, event_name, fields in records
+        if level == "debug" and event_name == "agent_core.event.appended"
+    ]
+    assert debug_logs == [
+        {
+            "session_id": "session-1",
+            "turn_id": "turn-1",
+            "seq": 7,
+            "event_type": "assistant.text.completed",
+            "status": "completed",
+        }
+    ]
 
 
 def test_toolset_exposure_does_not_expose_shell_by_default():

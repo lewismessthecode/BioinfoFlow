@@ -554,7 +554,7 @@ async def stream_session_events(
                 yield f"id: {payload['id']}\n"
                 yield f"event: {payload['type']}\n"
                 yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
-                logger.info(
+                logger.debug(
                     "agent_core.stream.event",
                     session_id=session_id,
                     turn_id=payload.get("turn_id"),

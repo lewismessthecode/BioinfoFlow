@@ -140,13 +140,19 @@ function buildTextBlocks(
   }
 
   const hasAuthoritativeEventText = visibleBlocks.some((block) => block.sawCumulative)
-  const duplicatesSnapshot = visibleBlocks.some(
-    (block) => block.text.trim() === snapshotText.trim(),
-  )
-  if (!hasAuthoritativeEventText && !duplicatesSnapshot) {
-    return finalizeTextBlocks(turn, [snapshotTextBlock(turn, events, snapshotText), ...visibleBlocks])
+  const eventText = visibleBlocks.map((block) => block.text).join("\n\n")
+  const snapshotMatchesEvents = normalizeText(snapshotText) === normalizeText(eventText)
+  const snapshotCoversEvents =
+    isTerminalTurn(turn) &&
+    visibleBlocks.every((block) => normalizeText(snapshotText).includes(normalizeText(block.text)))
+
+  if (hasAuthoritativeEventText || snapshotMatchesEvents) {
+    return finalizeTextBlocks(turn, visibleBlocks)
   }
-  return finalizeTextBlocks(turn, visibleBlocks)
+  if (snapshotCoversEvents) {
+    return [snapshotTextBlock(turn, events, snapshotText)]
+  }
+  return finalizeTextBlocks(turn, [snapshotTextBlock(turn, events, snapshotText), ...visibleBlocks])
 }
 
 function finalizeTextBlocks(
@@ -458,6 +464,14 @@ function textStatusFromTurn(turn: AgentRuntimeTurn): AgentRuntimeTextBlockStatus
   if (turn.status === "cancelled") return "cancelled"
   if (turn.status === "completed") return "completed"
   return "streaming"
+}
+
+function isTerminalTurn(turn: AgentRuntimeTurn) {
+  return turn.status === "completed" || turn.status === "failed" || turn.status === "cancelled"
+}
+
+function normalizeText(text: string) {
+  return text.trim().replace(/\s+/g, " ")
 }
 
 export function parseRuntimeWaitingDecision(event: AgentRuntimeEvent): AgentWaitingDecision {

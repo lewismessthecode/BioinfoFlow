@@ -151,9 +151,9 @@ function sortTurns(turns: AgentRuntimeTurn[]) {
 }
 
 function dedupeEvents(events: AgentRuntimeEvent[]) {
-  const byId = new Map<string, AgentRuntimeEvent>()
-  for (const event of events) byId.set(event.id, event)
-  return [...byId.values()]
+  const bySequence = new Map<string, AgentRuntimeEvent>()
+  for (const event of events) bySequence.set(`${event.session_id}:${event.seq}`, event)
+  return [...bySequence.values()]
 }
 
 function sortEvents(events: AgentRuntimeEvent[]) {

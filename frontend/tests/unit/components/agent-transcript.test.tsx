@@ -400,6 +400,39 @@ describe("AgentTranscript", () => {
     expect(screen.queryByText("Working on it...")).not.toBeInTheDocument()
   })
 
+  it("renders completed replay text only once when final text matches streamed text", () => {
+    renderTranscript({
+      turn: {
+        ...baseTurn,
+        status: "completed",
+        final_text: "I am checking the workflow registry before reading files.\n\nThe workflow file is present.",
+      },
+      events: [
+        event("event-text-1", 1, "assistant.text.delta", {
+          message_id: "message-1",
+          delta: "I am checking the workflow registry before reading files.",
+        }),
+        event("event-tool", 2, "assistant.tool_call.completed", {
+          message_id: "message-1",
+          call_id: "call-1",
+          name: "glob",
+          status: "completed",
+          arguments: { pattern: "**/*.wdl" },
+          index: 0,
+        }),
+        event("event-text-2", 3, "assistant.text.delta", {
+          message_id: "message-1",
+          delta: "The workflow file is present.",
+        }),
+      ],
+    })
+
+    expect(
+      screen.getAllByText("I am checking the workflow registry before reading files."),
+    ).toHaveLength(1)
+    expect(screen.getAllByText("The workflow file is present.")).toHaveLength(1)
+  })
+
   it("keeps thinking content expanded when tool calls arrive later", () => {
     renderTranscript({
       events: [
