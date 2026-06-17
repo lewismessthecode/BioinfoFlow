@@ -131,7 +131,9 @@ function buildTextBlocks(
     }
   }
 
-  const visibleBlocks = blocks.filter((block) => block.text.length > 0)
+  const visibleBlocks = trimCumulativeTextOverlaps(
+    blocks.filter((block) => block.text.length > 0),
+  )
   const snapshotText = turn.final_text ?? ""
   if (!snapshotText) return finalizeTextBlocks(turn, visibleBlocks)
 
@@ -140,10 +142,11 @@ function buildTextBlocks(
   }
 
   const hasAuthoritativeEventText = visibleBlocks.some((block) => block.sawCumulative)
+  const eventTextReconstructsSnapshot = textBlocksContainSnapshot(visibleBlocks, snapshotText)
   const duplicatesSnapshot = visibleBlocks.some(
     (block) => block.text.trim() === snapshotText.trim(),
   )
-  if (!hasAuthoritativeEventText && !duplicatesSnapshot) {
+  if (!hasAuthoritativeEventText && !duplicatesSnapshot && !eventTextReconstructsSnapshot) {
     return finalizeTextBlocks(turn, [snapshotTextBlock(turn, events, snapshotText), ...visibleBlocks])
   }
   return finalizeTextBlocks(turn, visibleBlocks)
@@ -170,6 +173,42 @@ function finalizeTextBlocks(
       return textBlock
     })
     .sort((a, b) => a.seqStart - b.seqStart || a.id.localeCompare(b.id))
+}
+
+function trimCumulativeTextOverlaps(
+  blocks: TextDraftForDedupe[],
+): TextDraftForDedupe[] {
+  const visible: TextDraftForDedupe[] = []
+  for (const block of blocks) {
+    const previous = visible.at(-1)
+    if (previous && block.sawCumulative) {
+      const nextText = stripRepeatedPrefix(block.text, previous.text)
+      if (!nextText) continue
+      visible.push({ ...block, text: nextText })
+      continue
+    }
+    visible.push(block)
+  }
+  return visible
+}
+
+type TextDraftForDedupe = AgentRuntimeTextBlock & { sawCumulative?: boolean }
+
+function stripRepeatedPrefix(text: string, prefix: string) {
+  if (text.trim() === prefix.trim()) return ""
+  if (!text.startsWith(prefix)) return text
+  return text.slice(prefix.length).replace(/^\s+/, "")
+}
+
+function textBlocksContainSnapshot(
+  blocks: TextDraftForDedupe[],
+  snapshotText: string,
+) {
+  const snapshot = snapshotText.trim()
+  if (!snapshot) return false
+  const concatenated = blocks.map((block) => block.text).join("").trim()
+  const paragraphJoined = blocks.map((block) => block.text).join("\n\n").trim()
+  return concatenated === snapshot || paragraphJoined === snapshot
 }
 
 function snapshotTextBlock(

@@ -45,6 +45,8 @@ vi.mock("next-intl", () => ({
       "activity.details.exitCode": "Exit code",
       "activity.details.error": "Error",
       "activity.details.files": "Files",
+      "activity.details.show": "Show details",
+      "activity.details.hide": "Hide details",
       "turnStatus.queued": "Queued",
       "turnStatus.running": "Working",
       "turnStatus.waiting_user": "Waiting for you",
@@ -242,6 +244,11 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("glob")).toBeInTheDocument()
     expect(screen.getByText("files__read")).toBeInTheDocument()
     expect(screen.getAllByTestId("agent-tool-activity-row")).toHaveLength(2)
+    expect(screen.queryByText("Arguments")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Show details/ })[1])
+
+    expect(screen.getByText("Arguments")).toBeInTheDocument()
     expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
   })
 
@@ -263,6 +270,8 @@ describe("AgentTranscript", () => {
     ).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /Submit run/ }))
+
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
 
     expect(
       screen.getByText("Image quay.io/example/missing:tag was not found"),
@@ -398,6 +407,31 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("Read project structure")).toBeInTheDocument()
     expect(screen.getByText("The workflow file is present.")).toBeInTheDocument()
     expect(screen.queryByText("Working on it...")).not.toBeInTheDocument()
+  })
+
+  it("deduplicates cumulative text completed after a tool interruption", () => {
+    renderTranscript({
+      turn: { ...baseTurn, final_text: "First paragraph.\n\nSecond paragraph." },
+      events: [
+        event("event-delta", 1, "assistant.text.delta", {
+          delta: "First paragraph.",
+        }),
+        event("event-tool", 2, "assistant.tool_call.completed", {
+          call_id: "call-1",
+          name: "glob",
+          status: "completed",
+          arguments: { pattern: "**/*.wdl" },
+          index: 0,
+        }),
+        event("event-completed", 3, "assistant.text.completed", {
+          content: "First paragraph.\n\nSecond paragraph.",
+        }),
+      ],
+    })
+
+    expect(screen.getAllByText("First paragraph.", { exact: false })).toHaveLength(1)
+    expect(screen.getByText("Second paragraph.", { exact: false })).toBeInTheDocument()
+    expect(screen.getByText("Read project structure")).toBeInTheDocument()
   })
 
   it("keeps thinking content expanded when tool calls arrive later", () => {

@@ -531,6 +531,78 @@ describe("agentRuntimeReducer", () => {
     expect(loaded.timeline[0].assistant.text).toBe("Hello world!")
   })
 
+  it("deduplicates cumulative completed text that repeats pre-tool text", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("completed"), final_text: "Hello world" }],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.delta",
+            payload: { content: "Hello" },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: { call_id: "call-1", name: "glob", status: "completed", index: 0 },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.completed",
+            payload: { content: "Hello world" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Hello",
+      "world",
+    ])
+    expect(loaded.timeline[0].segments.map((segment) => segment.kind)).toEqual([
+      "assistant_text",
+      "activity_group",
+      "assistant_text",
+    ])
+  })
+
+  it("does not add a final text snapshot when delta fragments already reconstruct it", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("completed"), final_text: "Hello world" }],
+        events: [
+          {
+            ...event("event-text-1", 1),
+            type: "assistant.text.delta",
+            payload: { delta: "Hello" },
+          },
+          {
+            ...event("event-tool", 2),
+            type: "assistant.tool_call.completed",
+            payload: { call_id: "call-1", name: "glob", status: "completed", index: 0 },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.delta",
+            payload: { text_delta: " world" },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.text)).toEqual([
+      "Hello",
+      " world",
+    ])
+    expect(
+      loaded.timeline[0].assistant.textBlocks.some((block) => block.source === "snapshot"),
+    ).toBe(false)
+  })
+
   it("keeps newer streamed events when a stale state snapshot loads", () => {
     const running = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",

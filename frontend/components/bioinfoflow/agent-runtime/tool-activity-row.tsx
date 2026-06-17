@@ -1,6 +1,14 @@
 "use client"
 
-import { AlertTriangle, CheckCircle2, Clock3, Loader2 } from "lucide-react"
+import { useState } from "react"
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Clock3,
+  Loader2,
+} from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import type { AgentRuntimeToolActivity } from "@/lib/agent-runtime"
@@ -8,6 +16,7 @@ import { cn } from "@/lib/utils"
 
 export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivity }) {
   const t = useTranslations("agentRuntime")
+  const [expanded, setExpanded] = useState(false)
   const hasDetails = Boolean(
     activity.arguments ||
       activity.inputPreview ||
@@ -19,18 +28,23 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
 
   return (
     <div
-      className="grid gap-2 border-l border-border/60 pl-3 text-xs"
+      className="grid gap-1.5 text-xs"
       data-testid="agent-tool-activity-row"
     >
-      <div className="flex items-center gap-2 text-muted-foreground">
+      <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
         <ActivityStatusIcon status={activity.status} />
         <span className="min-w-0 flex-1 truncate font-mono text-foreground/80">
           {activity.name}
         </span>
+        {activity.summary || activity.inputPreview ? (
+          <span className="hidden min-w-0 flex-[1.4] truncate text-muted-foreground sm:block">
+            {activity.summary || activity.inputPreview}
+          </span>
+        ) : null}
         {activity.status !== "completed" ? (
           <span
             className={cn(
-              "shrink-0 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide",
+              "shrink-0 rounded-full px-1.5 py-0.5 text-[10px]",
               activity.status === "failed" || activity.status === "cancelled" || activity.status === "rejected"
                 ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
                 : "bg-muted text-muted-foreground",
@@ -39,15 +53,29 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
             {t(`activity.status.${activity.status}`)}
           </span>
         ) : null}
+        {hasDetails ? (
+          <button
+            type="button"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+            <span>{expanded ? t("activity.details.hide") : t("activity.details.show")}</span>
+          </button>
+        ) : null}
       </div>
 
       {activity.summary || activity.inputPreview ? (
-        <p className="truncate text-muted-foreground">
+        <p className="truncate text-muted-foreground sm:hidden">
           {activity.summary || activity.inputPreview}
         </p>
       ) : null}
 
-      {hasDetails ? (
+      {hasDetails && expanded ? (
         <div className="grid gap-2 text-muted-foreground">
           {activity.inputPreview ? <Detail label={t("activity.details.input")} value={activity.inputPreview} /> : null}
           {activity.arguments ? (

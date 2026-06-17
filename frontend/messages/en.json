@@ -2191,6 +2191,8 @@
         "rejected": "Rejected"
       },
       "details": {
+        "show": "Show details",
+        "hide": "Hide details",
         "input": "Input",
         "arguments": "Arguments",
         "output": "Output",
