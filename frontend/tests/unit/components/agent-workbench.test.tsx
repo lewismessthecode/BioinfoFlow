@@ -292,6 +292,7 @@ describe("AgentWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open run panel" }))
 
     expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-sidecar-column")).toHaveClass("w-1/2")
     await waitFor(() => {
       expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
     })
