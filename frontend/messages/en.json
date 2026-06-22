@@ -2164,9 +2164,10 @@
     "activity": {
       "groups": {
         "workspace": "Prepare workspace",
-        "read": "Read project structure",
+        "read": "Read data",
+        "command": "Run commands",
         "write": "Create or edit files",
-        "register": "Register workflow",
+        "register": "Manage workflows",
         "run": "Submit run",
         "verify": "Verify results",
         "other": "Use tools"
@@ -2174,8 +2175,9 @@
       "summary": {
         "workspace": "Prepared {count, plural, one {# item} other {# items}}",
         "read": "Read {count, plural, one {# source} other {# sources}}",
+        "command": "Ran {count, plural, one {# command} other {# commands}}",
         "write": "Edited {count, plural, one {# file} other {# files}}",
-        "register": "Registered {count, plural, one {# workflow} other {# workflows}}",
+        "register": "Managed {count, plural, one {# workflow} other {# workflows}}",
         "run": "Submitted {count, plural, one {# run} other {# runs}}",
         "verify": "Verified {count, plural, one {# check} other {# checks}}",
         "other": "Ran {count, plural, one {# tool} other {# tools}}"
