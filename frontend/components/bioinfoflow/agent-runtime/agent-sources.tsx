@@ -1,6 +1,15 @@
 "use client"
 
-import { useMemo, useState, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react"
 import { ExternalLink, FileText, Github, Globe2, Search } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -29,28 +38,76 @@ export function SourceCitation({
 }: SourceCitationProps) {
   const t = useTranslations("agentRuntime")
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewPosition, setPreviewPosition] = useState<{
+    left: number
+    top: number
+    width: number
+  } | null>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const tooltipId = useId()
+  const updatePreviewPosition = useCallback(() => {
+    const trigger = buttonRef.current
+    if (!trigger) return
+    const rect = trigger.getBoundingClientRect()
+    const width = Math.min(320, window.innerWidth - 32)
+    const left = Math.min(
+      window.innerWidth - width / 2 - 16,
+      Math.max(width / 2 + 16, rect.left + rect.width / 2),
+    )
+    setPreviewPosition({
+      left,
+      top: rect.bottom + 8,
+      width,
+    })
+  }, [])
+
+  const openPreview = useCallback(() => {
+    updatePreviewPosition()
+    setPreviewOpen(true)
+  }, [updatePreviewPosition])
+
+  useEffect(() => {
+    if (!previewOpen) return
+    updatePreviewPosition()
+    window.addEventListener("resize", updatePreviewPosition)
+    window.addEventListener("scroll", updatePreviewPosition, true)
+    return () => {
+      window.removeEventListener("resize", updatePreviewPosition)
+      window.removeEventListener("scroll", updatePreviewPosition, true)
+    }
+  }, [previewOpen, updatePreviewPosition])
 
   return (
     <span
       className="relative inline-flex align-baseline"
-      onMouseEnter={() => setPreviewOpen(true)}
+      onMouseEnter={openPreview}
       onMouseLeave={() => setPreviewOpen(false)}
-      onFocus={() => setPreviewOpen(true)}
+      onFocus={openPreview}
       onBlur={() => setPreviewOpen(false)}
     >
       <button
+        ref={buttonRef}
         type="button"
         className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-primary/25 bg-primary/8 px-1.5 text-[11px] font-semibold leading-none text-primary shadow-none transition-colors hover:border-primary/45 hover:bg-primary/12 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={`Source ${index + 1}: ${source.title}`}
+        aria-label={t("sources.citationLabel", {
+          index: index + 1,
+          title: source.title,
+        })}
+        aria-describedby={previewOpen ? tooltipId : undefined}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setPreviewOpen(false)
+        }}
         onClick={() => onOpen(source.id)}
       >
         {children}
       </button>
       {previewOpen ? (
         <SourcePreview
+          id={tooltipId}
           source={source}
-          className="absolute left-0 top-6 z-30 w-80"
+          className="fixed z-30 -translate-x-1/2"
           heading={t("sources.preview")}
+          style={previewPosition ?? undefined}
         />
       ) : null}
     </span>
@@ -72,7 +129,7 @@ export function SourceEvidenceFooter({
       <button
         type="button"
         className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/70 bg-background px-2.5 font-medium text-foreground/82 shadow-sm transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={t("sources.open")}
+        aria-label={t("sources.openWithCount", { count: sources.length })}
         onClick={onOpen}
       >
         <SourceIcon sourceType={sources[0]?.sourceType} className="h-3.5 w-3.5" />
@@ -114,6 +171,7 @@ export function SourcesDrawer({
         side="right"
         className="w-full gap-0 overflow-hidden p-0 sm:max-w-md"
         aria-label={t("sources.title")}
+        closeLabel={t("sources.close")}
       >
         <SheetHeader className="border-b border-border/60 px-5 py-4">
           <SheetTitle className="text-lg">{t("sources.title")}</SheetTitle>
@@ -143,30 +201,11 @@ export function SourcesDrawer({
 
               <div className="grid gap-2">
                 {group.sources.map((source) => (
-                  <a
+                  <SourceDrawerLink
                     key={source.id}
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={cn(
-                      "grid gap-1 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                      highlightedSourceId === source.id && "border-primary/45 bg-primary/5",
-                    )}
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <SourceIcon sourceType={source.sourceType} className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                        {source.title}
-                      </span>
-                      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {source.domain}
-                    </span>
-                    <span className="line-clamp-2 text-xs leading-5 text-muted-foreground">
-                      {source.snippet || t("sources.noSnippet")}
-                    </span>
-                  </a>
+                    source={source}
+                    highlighted={highlightedSourceId === source.id}
+                  />
                 ))}
               </div>
             </section>
@@ -178,21 +217,27 @@ export function SourcesDrawer({
 }
 
 function SourcePreview({
+  id,
   source,
   heading,
   className,
+  style,
 }: {
+  id: string
   source: AgentRuntimeSource
   heading: string
   className?: string
+  style?: CSSProperties
 }) {
   const t = useTranslations("agentRuntime")
   return (
     <span
+      id={id}
       className={cn(
         "block rounded-lg border border-border/70 bg-popover p-3 text-left text-popover-foreground shadow-lg",
         className,
       )}
+      style={style}
       role="tooltip"
     >
       <span className="mb-2 block text-[11px] font-medium uppercase text-muted-foreground">
@@ -215,6 +260,53 @@ function SourcePreview({
   )
 }
 
+function SourceDrawerLink({
+  source,
+  highlighted,
+}: {
+  source: AgentRuntimeSource
+  highlighted: boolean
+}) {
+  const t = useTranslations("agentRuntime")
+  const ref = useRef<HTMLAnchorElement>(null)
+
+  useEffect(() => {
+    if (!highlighted) return
+    ref.current?.scrollIntoView({ block: "center" })
+  }, [highlighted])
+
+  return (
+    <a
+      ref={ref}
+      href={source.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        "grid gap-1 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+        highlighted && "border-primary/45 bg-primary/5",
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <SourceIcon sourceType={source.sourceType} className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+          {source.title}
+        </span>
+        <ExternalLink
+          aria-hidden="true"
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+        />
+      </span>
+      <span className="truncate text-xs text-muted-foreground">
+        {source.domain}
+        <span className="sr-only"> {t("sources.opensInNewTab")}</span>
+      </span>
+      <span className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+        {source.snippet || t("sources.noSnippet")}
+      </span>
+    </a>
+  )
+}
+
 function SourceIcon({
   sourceType,
   className,
@@ -230,7 +322,17 @@ function SourceIcon({
 }
 
 function sourceTypeLabel(t: (key: string) => string, sourceType: string) {
-  return t(`sources.types.${sourceType}`)
+  const knownTypes = new Set([
+    "web",
+    "pubmed",
+    "ncbi",
+    "biorxiv",
+    "github",
+    "docs",
+    "workflow",
+    "artifact",
+  ])
+  return knownTypes.has(sourceType) ? t(`sources.types.${sourceType}`) : sourceType
 }
 
 function groupSourcesByQuery(sources: AgentRuntimeSource[]) {
@@ -240,7 +342,7 @@ function groupSourcesByQuery(sources: AgentRuntimeSource[]) {
   >()
   for (const source of sources) {
     const query = source.query || source.domain || source.url
-    const key = query
+    const key = `${source.toolRunId ?? "source"}:${query}`
     const group = groups.get(key) ?? {
       key,
       query,

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useId, useState } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -10,6 +10,7 @@ import { ToolActivityRow } from "./tool-activity-row"
 
 export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
   const t = useTranslations("agentRuntime")
+  const detailsId = useId()
   const expansionKey = `${group.id}:${group.status}`
   const defaultExpanded = false
   const [expansion, setExpansion] = useState({
@@ -28,6 +29,7 @@ export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
           group.status === "failed" || group.status === "cancelled" || group.status === "rejected"
             ? "text-amber-700 dark:text-amber-300"
             : "text-muted-foreground",
+          "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
         )}
         onClick={() =>
           setExpansion({
@@ -36,6 +38,7 @@ export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
           })
         }
         aria-expanded={expanded}
+        aria-controls={expanded ? detailsId : undefined}
       >
         {expanded ? (
           <ChevronDown className="h-3.5 w-3.5 shrink-0" />
@@ -61,7 +64,7 @@ export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
       </button>
 
       {expanded ? (
-        <div className="mt-1 grid gap-1.5 pl-5">
+        <div id={detailsId} className="mt-1 grid gap-1.5 pl-5">
           {group.activities.map((activity) => (
             <ToolActivityRow key={activity.id} activity={activity} />
           ))}
@@ -78,9 +81,19 @@ function activitySummary(
   const count =
     group.kind === "search"
       ? group.activities.reduce(
-          (total, activity) => total + Math.max(activity.sources.length, 1),
+          (total, activity) =>
+            total + (activity.sourceResultCount ?? activity.sources.length),
           0,
         )
       : group.activities.length
+  if (
+    group.kind === "search" &&
+    group.status !== "completed" &&
+    group.activities.some(
+      (activity) => activity.sourceResultCount === null || activity.sourceResultCount === undefined,
+    )
+  ) {
+    return t("activity.summary.searching")
+  }
   return t(`activity.summary.${group.kind}`, { count })
 }

@@ -60,7 +60,7 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
         {hasDetails ? (
           <button
             type="button"
-            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setExpanded((current) => !current)}
             aria-expanded={expanded}
             aria-controls={detailsId}
@@ -97,14 +97,18 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
                     href={source.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex min-w-0 items-center gap-2 rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80 transition-colors hover:bg-muted/45"
+                    className="flex min-w-0 items-center gap-2 rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80 transition-colors hover:bg-muted/45 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <Globe2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">{source.title}</span>
+                    <span className="sr-only">{t("sources.opensInNewTab")}</span>
                     <span className="hidden shrink-0 text-muted-foreground sm:inline">
                       {source.domain}
                     </span>
-                    <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <ExternalLink
+                      aria-hidden="true"
+                      className="h-3 w-3 shrink-0 text-muted-foreground"
+                    />
                   </a>
                 ))}
               </div>

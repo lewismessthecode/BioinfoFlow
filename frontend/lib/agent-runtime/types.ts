@@ -135,6 +135,7 @@ export type AgentRuntimeSource = {
   query?: string | null
   toolRunId?: string | null
   citationId?: string | null
+  citationAliases?: string[]
   accessedAt?: string | null
   resultCount?: number | null
 }

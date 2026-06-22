@@ -183,10 +183,11 @@ function SourceBackedTextSegment({
 }) {
   const sources = segment.textBlock.sources
   const sourceById = new Map(
-    sources.flatMap((source) => [
-      [source.id, source] as const,
-      [source.citationId ?? source.id, source] as const,
-    ]),
+    sources.flatMap((source) =>
+      [source.id, source.citationId, ...(source.citationAliases ?? [])]
+        .filter((key): key is string => Boolean(key))
+        .map((key) => [key, source] as const),
+    ),
   )
 
   return (
@@ -199,10 +200,11 @@ function SourceBackedTextSegment({
           const source = sourceById.get(sourceId)
           if (!source) return children
           const index = Math.max(0, sources.findIndex((item) => item.id === source.id))
+          const citationIndex = numericCitationIndex(sourceId) ?? index
           return (
             <SourceCitation
               source={source}
-              index={index}
+              index={citationIndex}
               onOpen={(highlightedSourceId) =>
                 onOpenSources?.(sources, highlightedSourceId)
               }
@@ -218,6 +220,11 @@ function SourceBackedTextSegment({
       />
     </div>
   )
+}
+
+function numericCitationIndex(sourceId: string) {
+  if (!/^\d+$/.test(sourceId)) return null
+  return Math.max(0, Number(sourceId) - 1)
 }
 
 function turnStatusLabel(

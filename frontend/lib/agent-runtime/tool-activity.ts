@@ -1,9 +1,15 @@
 import type {
   AgentRuntimeEvent,
-  AgentRuntimeSource,
   AgentRuntimeToolActivity,
   AgentRuntimeToolActivityStatus,
 } from "./types"
+import {
+  mergeSources,
+  resultError,
+  sourceQueryFromAction,
+  sourceResultCount,
+  sourcesFromActionResult,
+} from "./sources"
 
 export function buildAgentRuntimeToolActivities(
   events: AgentRuntimeEvent[],
@@ -59,20 +65,23 @@ export function buildAgentRuntimeToolActivities(
       const result = recordValue(event.payload.result)
       const error = recordValue(event.payload.error)
       const sources = sourcesFromActionResult(result, event)
+      const resultErrorMessage = resultError(result)
+      const resultCount = sourceResultCount(result)
       const activity = ensureActivity(activities, key, event, {
         id: key,
         callId: toolCallId,
         actionId,
         name: stringValue(event.payload.name) || stringValue(event.payload.kind) || "action",
-        status: actionStatus(event),
+        status: resultErrorMessage ? "failed" : actionStatus(event),
         inputPreview: stringValue(event.payload.input_preview),
         outputPreview: outputPreview(result),
         exitCode: numberValue(result?.exit_code),
         durationMs: numberValue(event.payload.duration_ms),
-        errorMessage: errorMessage(error) ?? stringValue(event.payload.error_message),
+        errorMessage:
+          errorMessage(error) ?? stringValue(event.payload.error_message) ?? resultErrorMessage,
         sources,
         sourceQuery: sourceQueryFromAction(result, event.payload),
-        sourceResultCount: sources.length || null,
+        sourceResultCount: resultCount,
         relatedFiles: [],
         seqStart: event.seq,
         seqEnd: event.seq,
@@ -80,16 +89,21 @@ export function buildAgentRuntimeToolActivities(
       activity.actionId = actionId
       activity.callId = toolCallId || activity.callId
       activity.name = stringValue(event.payload.name) || activity.name
-      activity.status = actionStatus(event)
+      activity.status = resultErrorMessage ? "failed" : actionStatus(event)
       activity.inputPreview = stringValue(event.payload.input_preview) ?? activity.inputPreview
       activity.outputPreview = outputPreview(result) ?? activity.outputPreview
       activity.exitCode = numberValue(result?.exit_code) ?? activity.exitCode
       activity.durationMs = numberValue(event.payload.duration_ms) ?? activity.durationMs
-      activity.errorMessage = errorMessage(error) ?? stringValue(event.payload.error_message) ?? activity.errorMessage
+      activity.errorMessage =
+        errorMessage(error) ??
+        stringValue(event.payload.error_message) ??
+        resultErrorMessage ??
+        activity.errorMessage
       activity.summary = stringValue(event.payload.summary) ?? activity.summary
       activity.sources = mergeSources(activity.sources, sources)
       activity.sourceQuery = sourceQueryFromAction(result, event.payload) ?? activity.sourceQuery
-      activity.sourceResultCount = activity.sources.length || activity.sourceResultCount
+      activity.sourceResultCount =
+        resultCount ?? activity.sourceResultCount ?? null
       activity.relatedFiles = uniqueStrings([
         ...activity.relatedFiles,
         ...relatedFilesFromRecord(recordValue(event.payload.input)),
@@ -251,92 +265,4 @@ function numberValue(value: unknown) {
 function truncate(value: string, maxLength: number) {
   if (value.length <= maxLength) return value || null
   return `${value.slice(0, maxLength - 1)}…`
-}
-
-function sourcesFromActionResult(
-  result: Record<string, unknown> | null | undefined,
-  event: AgentRuntimeEvent,
-): AgentRuntimeSource[] {
-  if (!result) return []
-  const results = Array.isArray(result.results) ? result.results : []
-  const searchSources = results.flatMap((item, index) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return []
-    const record = item as Record<string, unknown>
-    const url = stringValue(record.url)
-    if (!url) return []
-    return [
-      {
-        id: `source-${event.id}-${index + 1}`,
-        title: stringValue(record.title) ?? url,
-        url,
-        domain: domainFromUrl(url),
-        snippet: stringValue(record.snippet),
-        sourceType: sourceTypeFromUrl(url),
-        query: sourceQueryFromAction(result, event.payload),
-        toolRunId: stringValue(event.payload.action_id),
-        citationId: `source-${event.id}-${index + 1}`,
-        accessedAt: event.created_at,
-        resultCount: results.length,
-      },
-    ]
-  })
-
-  const fetchedUrl = stringValue(result.url)
-  if (!searchSources.length && fetchedUrl) {
-    return [
-      {
-        id: `source-${event.id}-fetch`,
-        title: fetchedUrl,
-        url: fetchedUrl,
-        domain: domainFromUrl(fetchedUrl),
-        snippet: truncate(stringValue(result.content) ?? "", 240),
-        sourceType: sourceTypeFromUrl(fetchedUrl),
-        query: sourceQueryFromAction(result, event.payload),
-        toolRunId: stringValue(event.payload.action_id),
-        citationId: `source-${event.id}-fetch`,
-        accessedAt: event.created_at,
-        resultCount: 1,
-      },
-    ]
-  }
-
-  return searchSources
-}
-
-function sourceQueryFromAction(
-  result: Record<string, unknown> | null | undefined,
-  payload: Record<string, unknown>,
-) {
-  return (
-    stringValue(result?.query) ??
-    stringValue(recordValue(payload.input)?.query) ??
-    stringValue(recordValue(payload.arguments)?.query) ??
-    stringValue(payload.input_preview)
-  )
-}
-
-function mergeSources(
-  existing: AgentRuntimeSource[],
-  next: AgentRuntimeSource[],
-): AgentRuntimeSource[] {
-  if (!next.length) return existing
-  const byId = new Map(existing.map((source) => [source.id, source]))
-  for (const source of next) byId.set(source.id, source)
-  return [...byId.values()]
-}
-
-function domainFromUrl(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "")
-  } catch {
-    return url
-  }
-}
-
-function sourceTypeFromUrl(url: string) {
-  const domain = domainFromUrl(url)
-  if (domain.includes("pubmed") || domain.includes("ncbi.nlm.nih.gov")) return "pubmed"
-  if (domain.includes("biorxiv.org")) return "biorxiv"
-  if (domain.includes("github.com") || domain.includes("githubusercontent.com")) return "github"
-  return "web"
 }

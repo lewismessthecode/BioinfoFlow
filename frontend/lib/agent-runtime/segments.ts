@@ -1,5 +1,10 @@
 import { classifyActivity } from "./activity-groups"
 import { buildAgentRuntimeToolActivities } from "./tool-activity"
+import {
+  mergeSources,
+  parseSourcePayloads,
+  sourcesFromActionResult,
+} from "./sources"
 import type {
   AgentActionDecision,
   AgentAskUserQuestion,
@@ -75,11 +80,19 @@ function buildTextBlocks(
   const byKey = new Map<string, TextDraft>()
   const activeKeyByMessage = new Map<string, string>()
   const interruptedMessages = new Set<string>()
+  let priorSources: AgentRuntimeSource[] = []
   let syntheticKey: string | null = null
   let previousWasText = false
 
   for (const event of events) {
     if (!isTextEvent(event)) {
+      const result = recordValue(event.payload.result)
+      if (event.type === "action.completed" && result) {
+        priorSources = mergeSources(
+          priorSources,
+          sourcesFromActionResult(result, event, priorSources.length),
+        )
+      }
       const messageId = stringValue(event.payload.message_id)
       if (messageId) interruptedMessages.add(messageId)
       previousWasText = false
@@ -136,7 +149,12 @@ function buildTextBlocks(
     block.seqStart = Math.min(block.seqStart, event.seq)
     block.seqEnd = Math.max(block.seqEnd, event.seq)
     block.status = event.type === "assistant.text.completed" ? "completed" : "streaming"
-    block.sources = mergeSources(block.sources, parseSources(event.payload.sources, event))
+    const eventSources = parseSourcePayloads(
+      event.payload.sources,
+      event,
+      priorSources.length,
+    )
+    block.sources = mergeSources(block.sources, mergeSources(priorSources, eventSources))
     if (!existing) {
       byKey.set(key, block)
       blocks.push(block)
@@ -602,58 +620,8 @@ function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null
 }
 
-function parseSources(value: unknown, event: AgentRuntimeEvent): AgentRuntimeSource[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((item, index) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return []
-    const record = item as Record<string, unknown>
-    const url = stringValue(record.url)
-    if (!url) return []
-    const title = stringValue(record.title) ?? url
-    const id =
-      stringValue(record.id) ??
-      stringValue(record.citationId) ??
-      `source-${event.id}-${index + 1}`
-    return [
-      {
-        id,
-        title,
-        url,
-        domain: stringValue(record.domain) ?? domainFromUrl(url),
-        snippet: stringValue(record.snippet),
-        sourceType: stringValue(record.sourceType) ?? stringValue(record.source_type) ?? "web",
-        query: stringValue(record.query),
-        toolRunId:
-          stringValue(record.toolRunId) ??
-          stringValue(record.tool_run_id) ??
-          stringValue(event.payload.call_id) ??
-          stringValue(event.payload.action_id),
-        citationId: stringValue(record.citationId) ?? stringValue(record.citation_id) ?? id,
-        accessedAt: stringValue(record.accessedAt) ?? stringValue(record.accessed_at),
-        resultCount: numberValue(record.resultCount) ?? numberValue(record.result_count),
-      },
-    ]
-  })
-}
-
-function mergeSources(
-  existing: AgentRuntimeSource[],
-  next: AgentRuntimeSource[],
-): AgentRuntimeSource[] {
-  if (!next.length) return existing
-  const byId = new Map(existing.map((source) => [source.id, source]))
-  for (const source of next) byId.set(source.id, source)
-  return [...byId.values()]
-}
-
-function domainFromUrl(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "")
-  } catch {
-    return url
-  }
-}
-
-function numberValue(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }
