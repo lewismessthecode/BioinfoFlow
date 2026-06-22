@@ -2357,7 +2357,11 @@
     },
     "ask": {
       "title": "智能助手需要你的输入",
-      "submit": "提交回答"
+      "submit": "提交回答",
+      "customLabel": "自定义回答",
+      "customPlaceholder": "告诉 Bioinfoflow 应该使用什么",
+      "recommended": "推荐",
+      "skip": "跳过"
     }
   },
   "agent": {

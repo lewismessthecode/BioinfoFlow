@@ -23,6 +23,10 @@ vi.mock("next-intl", () => ({
       "approval.state.cancelled": "Cancelled",
       "ask.title": "The agent needs your input",
       "ask.submit": "Submit answer",
+      "ask.customLabel": "Custom answer",
+      "ask.customPlaceholder": "Tell Bioinfoflow what to use",
+      "ask.recommended": "Recommended",
+      "ask.skip": "Skip",
       "progress.tasks": "Tasks",
       "progress.empty": "No tasks yet",
       "plan.reviewTitle": "Review the plan",
@@ -492,7 +496,7 @@ describe("AgentTranscript", () => {
                 question: "Which reference genome?",
                 multiSelect: false,
                 options: [
-                  { label: "hg38", description: "Human GRCh38" },
+                  { label: "hg38", description: "Human GRCh38", recommended: true },
                   { label: "mm10", description: "Mouse mm10" },
                 ],
               },
@@ -504,11 +508,14 @@ describe("AgentTranscript", () => {
     })
 
     expect(screen.getByTestId("inline-ask-user-card")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: /hg38/ }))
+    expect(screen.getByText("Recommended")).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText("Tell Bioinfoflow what to use"), {
+      target: { value: "T2T-CHM13" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Submit answer" }))
 
     expect(onDecision).toHaveBeenCalledWith("action-ask", "answer", {
-      answer: { Genome: "hg38" },
+      answer: { Genome: "T2T-CHM13" },
     })
   })
 
