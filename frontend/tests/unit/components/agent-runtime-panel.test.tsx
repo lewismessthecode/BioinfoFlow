@@ -223,6 +223,105 @@ describe("PendingDecisionCards", () => {
     })
   })
 
+  it("submits a custom ask_user answer", () => {
+    const onDecision = vi.fn()
+    render(
+      <PendingDecisionCards
+        events={[
+          waitingEvent({
+            action_id: "a1",
+            name: "ask_user",
+            interaction: {
+              kind: "user_input",
+              questions: [
+                {
+                  question: "Which DB?",
+                  header: "DB",
+                  options: [
+                    { label: "Postgres", description: "Relational" },
+                    { label: "SQLite", description: "Embedded" },
+                  ],
+                },
+              ],
+            },
+          }),
+        ]}
+        onDecision={onDecision}
+      />,
+    )
+    fireEvent.change(screen.getByPlaceholderText("ask.customPlaceholder"), {
+      target: { value: "DuckDB with parquet staging" },
+    })
+    fireEvent.click(screen.getByText("ask.submit"))
+    expect(onDecision).toHaveBeenCalledWith("a1", "answer", {
+      answer: { DB: "DuckDB with parquet staging" },
+    })
+  })
+
+  it("keeps custom text when adding a multi-select ask_user option", () => {
+    const onDecision = vi.fn()
+    render(
+      <PendingDecisionCards
+        events={[
+          waitingEvent({
+            action_id: "a1",
+            name: "ask_user",
+            interaction: {
+              kind: "user_input",
+              questions: [
+                {
+                  question: "Which checks?",
+                  header: "Checks",
+                  multiSelect: true,
+                  options: [
+                    { label: "FastQC", description: "Read-level QC" },
+                    { label: "MultiQC", description: "Aggregate reports" },
+                  ],
+                },
+              ],
+            },
+          }),
+        ]}
+        onDecision={onDecision}
+      />,
+    )
+    fireEvent.change(screen.getByPlaceholderText("ask.customPlaceholder"), {
+      target: { value: "Adapter trimming summary" },
+    })
+    fireEvent.click(screen.getByText("FastQC"))
+    fireEvent.click(screen.getByText("ask.submit"))
+    expect(onDecision).toHaveBeenCalledWith("a1", "answer", {
+      answer: { Checks: ["FastQC", "Adapter trimming summary"] },
+    })
+  })
+
+  it("labels the custom input and reject action explicitly", () => {
+    render(
+      <PendingDecisionCards
+        events={[
+          waitingEvent({
+            action_id: "a1",
+            name: "ask_user",
+            interaction: {
+              kind: "user_input",
+              questions: [
+                {
+                  question: "Which DB?",
+                  header: "DB",
+                  options: [{ label: "SQLite", description: "Embedded" }],
+                },
+              ],
+            },
+          }),
+        ]}
+        onDecision={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText("ask.customLabel")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "ask.rejectQuestion" })).toBeInTheDocument()
+  })
+
   it("approves a plan", () => {
     const onDecision = vi.fn()
     render(

@@ -55,7 +55,7 @@ async def test_ask_user_pauses_even_under_bypass_then_resumes_with_answer(db_ses
                     "question": "Which database?",
                     "header": "DB",
                     "options": [
-                        {"label": "Postgres", "description": "Relational"},
+                        {"label": "Postgres", "description": "Relational", "recommended": True},
                         {"label": "SQLite", "description": "Embedded"},
                     ],
                 }
@@ -77,6 +77,7 @@ async def test_ask_user_pauses_even_under_bypass_then_resumes_with_answer(db_ses
     assert waiting and waiting[-1].payload["name"] == "ask_user"
     assert waiting[-1].payload["interaction"]["kind"] == "user_input"
     assert waiting[-1].payload["interaction"]["questions"][0]["header"] == "DB"
+    assert waiting[-1].payload["interaction"]["questions"][0]["options"][0]["recommended"] is True
 
     decided = await core.decide_action(
         action_id=pending.action_id,

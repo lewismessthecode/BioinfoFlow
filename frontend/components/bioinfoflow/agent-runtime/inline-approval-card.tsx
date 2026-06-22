@@ -1,12 +1,11 @@
 "use client"
 
-import { useState } from "react"
 import { AlertTriangle, Check, CheckCircle2, XCircle } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
-import type { AgentAnswer, AgentAskUserQuestion, AgentRuntimeDecisionView } from "@/lib/agent-runtime"
-import { cn } from "@/lib/utils"
+import type { AgentAskUserQuestion, AgentRuntimeDecisionView } from "@/lib/agent-runtime"
+import { AskUserDecisionCard } from "./ask-user-card"
 import type { AgentDecisionHandler } from "./types"
 
 export function InlineApprovalCard({
@@ -101,87 +100,15 @@ function InlineAskUserCard({
   questions: AgentAskUserQuestion[]
   onDecision?: AgentDecisionHandler
 }) {
-  const t = useTranslations("agentRuntime")
-  const [selections, setSelections] = useState<Record<string, string[]>>({})
-
-  const toggle = (question: AgentAskUserQuestion, label: string) => {
-    setSelections((current) => {
-      const existing = current[question.header] ?? []
-      if (question.multiSelect) {
-        const next = existing.includes(label)
-          ? existing.filter((item) => item !== label)
-          : [...existing, label]
-        return { ...current, [question.header]: next }
-      }
-      return { ...current, [question.header]: [label] }
-    })
-  }
-
-  const complete = questions.every(
-    (question) => (selections[question.header]?.length ?? 0) > 0,
-  )
-
-  const submit = () => {
-    const answer: AgentAnswer = {}
-    for (const question of questions) {
-      const picked = selections[question.header] ?? []
-      answer[question.header] = question.multiSelect ? picked : picked[0] ?? ""
-    }
-    onDecision?.(actionId, "answer", { answer })
-  }
-
   return (
-    <div
+    <AskUserDecisionCard
       id={`agent-decision-${actionId}`}
-      className="mb-3 rounded-2xl border border-sky-500/30 bg-sky-500/10 px-3 py-3 text-sm"
-      data-testid="inline-ask-user-card"
-    >
-      <div className="mb-2 font-medium text-sky-900 dark:text-sky-200">
-        {t("ask.title")}
-      </div>
-      <div className="grid gap-3">
-        {questions.map((question) => (
-          <div key={question.header} className="grid gap-1.5">
-            <div className="text-xs font-medium text-foreground">{question.question}</div>
-            <div className="grid gap-1.5">
-              {question.options.map((option) => {
-                const active = (selections[question.header] ?? []).includes(option.label)
-                return (
-                  <button
-                    key={option.label}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => toggle(question, option.label)}
-                    className={cn(
-                      "flex flex-col items-start rounded-xl border px-2.5 py-1.5 text-left transition-colors",
-                      active
-                        ? "border-primary bg-primary/10"
-                        : "border-border/60 bg-card hover:bg-muted/40",
-                    )}
-                  >
-                    <span className="text-sm font-medium text-foreground">{option.label}</span>
-                    {option.description ? (
-                      <span className="text-xs text-muted-foreground">{option.description}</span>
-                    ) : null}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3">
-        <Button
-          type="button"
-          size="sm"
-          className="h-8 rounded-full"
-          disabled={!complete || !onDecision}
-          onClick={submit}
-        >
-          {t("ask.submit")}
-        </Button>
-      </div>
-    </div>
+      actionId={actionId}
+      questions={questions}
+      onDecision={onDecision}
+      inline
+      testId="inline-ask-user-card"
+    />
   )
 }
 

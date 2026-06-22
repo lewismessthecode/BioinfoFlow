@@ -23,6 +23,10 @@ vi.mock("next-intl", () => ({
       "approval.state.cancelled": "Cancelled",
       "ask.title": "The agent needs your input",
       "ask.submit": "Submit answer",
+      "ask.customLabel": "Custom answer",
+      "ask.customPlaceholder": "Tell Bioinfoflow what to use",
+      "ask.recommended": "Recommended",
+      "ask.rejectQuestion": "Reject question",
       "progress.tasks": "Tasks",
       "progress.empty": "No tasks yet",
       "plan.reviewTitle": "Review the plan",
@@ -30,10 +34,16 @@ vi.mock("next-intl", () => ({
       "plan.keepPlanning": "Keep planning",
       "plan.status.pending": "Pending",
       "activity.groups.search": "Searched web",
-      "activity.groups.read": "Read project structure",
+      "activity.groups.read": "Read data",
+      "activity.groups.command": "Run commands",
+      "activity.groups.write": "Create or edit files",
+      "activity.groups.register": "Manage workflows",
       "activity.groups.run": "Submit run",
       "activity.groups.verify": "Verify results",
       "activity.summary.read": "Read {count} sources",
+      "activity.summary.command": "Ran {count} commands",
+      "activity.summary.write": "Edited {count} files",
+      "activity.summary.register": "Managed {count} workflows",
       "activity.summary.run": "Submitted 1 run",
       "activity.summary.verify": "Verified 1 check",
       "activity.summary.search": "Found {count} sources",
@@ -257,11 +267,11 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read project structure")).toBeInTheDocument()
+    expect(screen.getByText("Read data")).toBeInTheDocument()
     expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
     expect(screen.queryByText("glob")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: /Read project structure/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Read data/ }))
 
     expect(screen.getByText("glob")).toBeInTheDocument()
     expect(screen.getByText("files__read")).toBeInTheDocument()
@@ -276,6 +286,153 @@ describe("AgentTranscript", () => {
     expect(detailsButton).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByText("Arguments")).toBeInTheDocument()
     expect(screen.getAllByText(/workflow\.wdl/).length).toBeGreaterThan(0)
+  })
+
+  it("classifies workflow list and source lookups as reads, not workflow registration", () => {
+    renderTranscript({
+      events: [
+        event("event-workflow-list", 1, "assistant.tool_call.completed", {
+          call_id: "call-workflow-list",
+          name: "workflows.list",
+          status: "completed",
+          arguments: { project_id: "project-1" },
+          index: 0,
+        }),
+        event("event-workflow-source", 2, "assistant.tool_call.completed", {
+          call_id: "call-workflow-source",
+          name: "workflows.source",
+          status: "completed",
+          arguments: { workflow_id: "workflow-1" },
+          index: 1,
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Read data")).toBeInTheDocument()
+    expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
+    expect(screen.queryByText("Manage workflows")).not.toBeInTheDocument()
+  })
+
+  it("classifies real platform read, workflow, command, and verify tools into coarse groups", () => {
+    renderTranscript({
+      events: [
+        event("event-runs-logs", 1, "assistant.tool_call.completed", {
+          call_id: "call-runs-logs",
+          name: "runs.logs",
+          status: "completed",
+          arguments: { run_id: "run-1" },
+          index: 0,
+        }),
+        event("event-runs-outputs", 2, "assistant.tool_call.completed", {
+          call_id: "call-runs-outputs",
+          name: "runs.outputs",
+          status: "completed",
+          arguments: { run_id: "run-1" },
+          index: 1,
+        }),
+        event("event-workflows-bind", 3, "assistant.tool_call.completed", {
+          call_id: "call-workflows-bind",
+          name: "projects.workflows.bind",
+          status: "completed",
+          arguments: { project_id: "project-1", workflow_id: "workflow-1" },
+          index: 2,
+        }),
+        event("event-image-build", 4, "assistant.tool_call.completed", {
+          call_id: "call-image-build",
+          name: "images.build",
+          status: "completed",
+          arguments: { dockerfile: "Dockerfile" },
+          index: 3,
+        }),
+        event("event-mixed-verify", 5, "action.completed", {
+          action_id: "action-mixed-verify",
+          name: "bash",
+          input_preview: "rg failing-test && bun run test",
+          result: { exit_code: 0, stdout: "ok" },
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Read data")).toBeInTheDocument()
+    expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
+    expect(screen.getByText("Manage workflows")).toBeInTheDocument()
+    expect(screen.getByText("Managed 1 workflows")).toBeInTheDocument()
+    expect(screen.getByText("Run commands")).toBeInTheDocument()
+    expect(screen.getByText("Ran 1 commands")).toBeInTheDocument()
+    expect(screen.getByText("Verify results")).toBeInTheDocument()
+    expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
+    expect(screen.queryByText("activity.groups.other")).not.toBeInTheDocument()
+  })
+
+  it("uses tool-call arguments as fallback hints for bash activity classification", () => {
+    renderTranscript({
+      events: [
+        event("event-bash-verify", 1, "assistant.tool_call.completed", {
+          call_id: "call-bash-verify",
+          name: "bash",
+          status: "completed",
+          arguments: { command: "bun run test" },
+          index: 0,
+        }),
+        event("event-bash-write", 2, "assistant.tool_call.completed", {
+          call_id: "call-bash-write",
+          name: "bash",
+          status: "completed",
+          arguments: { command: "rm build/" },
+          index: 1,
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Verify results")).toBeInTheDocument()
+    expect(screen.getByText("Create or edit files")).toBeInTheDocument()
+    expect(screen.queryByText("Run commands")).not.toBeInTheDocument()
+  })
+
+  it("compacts same-category tool calls inside one contiguous tool burst", () => {
+    renderTranscript({
+      events: [
+        event("event-glob-1", 1, "assistant.tool_call.completed", {
+          call_id: "call-glob-1",
+          name: "glob",
+          status: "completed",
+          arguments: { pattern: "**/*.wdl" },
+          index: 0,
+        }),
+        event("event-bash-1", 2, "action.completed", {
+          action_id: "action-bash-1",
+          name: "bash",
+          input_preview: "docker inspect minibwa:1.0",
+          result: { exit_code: 0, stdout: "ok" },
+        }),
+        event("event-source", 3, "assistant.tool_call.completed", {
+          call_id: "call-source",
+          name: "workflows.source",
+          status: "completed",
+          arguments: { workflow_id: "workflow-1" },
+          index: 1,
+        }),
+        event("event-bash-2", 4, "action.completed", {
+          action_id: "action-bash-2",
+          name: "bash",
+          input_preview: "docker run --rm minibwa:1.0 --help",
+          result: { exit_code: 0, stdout: "usage" },
+        }),
+        event("event-glob-2", 5, "assistant.tool_call.completed", {
+          call_id: "call-glob-2",
+          name: "glob",
+          status: "completed",
+          arguments: { pattern: "**/*.json" },
+          index: 2,
+        }),
+      ],
+    })
+
+    expect(screen.getAllByTestId("agent-activity-group")).toHaveLength(2)
+    expect(screen.getByText("Read data")).toBeInTheDocument()
+    expect(screen.getByText("Read 3 sources")).toBeInTheDocument()
+    expect(screen.getByText("Run commands")).toBeInTheDocument()
+    expect(screen.getByText("Ran 2 commands")).toBeInTheDocument()
   })
 
   it("renders failed tool activity as collapsed narrative groups by default", () => {
@@ -388,7 +545,7 @@ describe("AgentTranscript", () => {
                 question: "Which reference genome?",
                 multiSelect: false,
                 options: [
-                  { label: "hg38", description: "Human GRCh38" },
+                  { label: "hg38", description: "Human GRCh38", recommended: true },
                   { label: "mm10", description: "Mouse mm10" },
                 ],
               },
@@ -400,11 +557,14 @@ describe("AgentTranscript", () => {
     })
 
     expect(screen.getByTestId("inline-ask-user-card")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: /hg38/ }))
+    expect(screen.getByText("Recommended")).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText("Tell Bioinfoflow what to use"), {
+      target: { value: "T2T-CHM13" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Submit answer" }))
 
     expect(onDecision).toHaveBeenCalledWith("action-ask", "answer", {
-      answer: { Genome: "hg38" },
+      answer: { Genome: "T2T-CHM13" },
     })
   })
 
@@ -422,10 +582,10 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read project structure")).toBeInTheDocument()
+    expect(screen.getByText("Read data")).toBeInTheDocument()
     expect(screen.queryByTestId("agent-tool-activity-row")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: /Read project structure/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Read data/ }))
 
     expect(screen.getByTestId("agent-tool-activity-row")).toBeInTheDocument()
     expect(screen.getByText("glob")).toBeInTheDocument()
@@ -481,7 +641,7 @@ describe("AgentTranscript", () => {
     expect(
       screen.getByText("I am checking the workflow registry before reading files."),
     ).toBeInTheDocument()
-    expect(screen.getByText("Read project structure")).toBeInTheDocument()
+    expect(screen.getByText("Read data")).toBeInTheDocument()
     expect(screen.getByText("The workflow file is present.")).toBeInTheDocument()
     expect(screen.queryByText("Working on it...")).not.toBeInTheDocument()
   })
