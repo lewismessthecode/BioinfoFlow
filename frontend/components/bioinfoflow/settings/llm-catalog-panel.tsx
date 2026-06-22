@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useLlmCatalog } from "@/hooks/use-llm-catalog"
+import { celebrateMilestone } from "@/lib/celebrations"
 import type {
   LlmConfiguredProvider,
   LlmProviderTemplate,
@@ -119,6 +120,7 @@ export function LlmCatalogPanel() {
       } else {
         toast.success(t("providerCards.saved"))
       }
+      celebrateMilestone("first-provider-key")
     } finally {
       setSavingTemplateId(null)
     }

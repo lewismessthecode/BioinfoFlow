@@ -26,7 +26,7 @@ import { ProjectGroupCard } from "./components/project-group-card"
 import { HubWorkflowsTable, ProjectWorkflowsTable } from "./components/workflow-table-views"
 import { useWorkflowActions } from "./components/use-workflow-actions"
 import { buildHubWorkflowGroups } from "@/lib/workflow-groups"
-import { emitReadinessRefresh } from "@/lib/readiness-events"
+import { celebrateMilestone } from "@/lib/celebrations"
 
 const WorkflowRegisterDialog = dynamic(
   () => import("./components/workflow-register-dialog").then((m) => ({ default: m.WorkflowRegisterDialog })),
@@ -209,7 +209,7 @@ export default function WorkflowsPage() {
                 open={registerOpen}
                 onOpenChange={setRegisterOpen}
                 onRegistered={(wf) => {
-                  emitReadinessRefresh("workflow-registered")
+                  celebrateMilestone("first-workflow-registered")
                   setHubWorkflows((prev) => {
                     return [wf, ...prev]
                   })

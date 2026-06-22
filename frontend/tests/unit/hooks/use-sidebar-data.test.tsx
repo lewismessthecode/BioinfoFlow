@@ -8,11 +8,11 @@ import type { AgentCoreSession } from "@/lib/agent-core"
 import type { Project } from "@/lib/types"
 import { createAppWrapper } from "@/tests/app-test-utils"
 
-const { pushMock, toastErrorMock, toastSuccessMock, emitReadinessRefreshMock } = vi.hoisted(() => ({
+const { pushMock, toastErrorMock, toastSuccessMock, celebrateMilestoneMock } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
-  emitReadinessRefreshMock: vi.fn(),
+  celebrateMilestoneMock: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
@@ -35,8 +35,8 @@ vi.mock("@/lib/api", async () => {
   }
 })
 
-vi.mock("@/lib/readiness-events", () => ({
-  emitReadinessRefresh: (...args: unknown[]) => emitReadinessRefreshMock(...args),
+vi.mock("@/lib/celebrations", () => ({
+  celebrateMilestone: (...args: unknown[]) => celebrateMilestoneMock(...args),
 }))
 
 describe("useSidebarData", () => {
@@ -66,7 +66,7 @@ describe("useSidebarData", () => {
     pushMock.mockReset()
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
-    emitReadinessRefreshMock.mockReset()
+    celebrateMilestoneMock.mockReset()
     window.localStorage.clear()
   })
 
@@ -289,7 +289,7 @@ describe("useSidebarData", () => {
 
     expect(toastErrorMock).not.toHaveBeenCalled()
     expect(toastSuccessMock).toHaveBeenCalled()
-    expect(emitReadinessRefreshMock).toHaveBeenCalledWith("project-created")
+    expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-project")
   })
 
   it("quick-creates a project with only name and description (no workspace)", async () => {
@@ -342,7 +342,7 @@ describe("useSidebarData", () => {
 
     expect(toastSuccessMock).toHaveBeenCalled()
     expect(result.current.project.activeProjectId).toBe("project-quick")
-    expect(emitReadinessRefreshMock).toHaveBeenCalledWith("project-created")
+    expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-project")
   })
 
   it("starts an inbox draft when no real project is selected", async () => {
