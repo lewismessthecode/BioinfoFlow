@@ -110,6 +110,7 @@ class AgentLoopController:
         tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
         token_usage: dict[str, Any] | None = None
         previous_tool_call_signatures: list[str] = []
+        repeated_tool_call_count = 0
         empty_response_retries_remaining = 1
 
         while budget.consume():
@@ -191,7 +192,16 @@ class AgentLoopController:
             tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
             if tool_calls:
                 tool_call_signatures = [_tool_call_signature(tool_call) for tool_call in tool_calls]
-                if no_progress_detected(previous_tool_call_signatures, tool_call_signatures):
+                repeated_tool_call_count = (
+                    repeated_tool_call_count + 1
+                    if previous_tool_call_signatures == tool_call_signatures
+                    else 1
+                )
+                if no_progress_detected(
+                    previous_tool_call_signatures,
+                    tool_call_signatures,
+                    repeat_count=repeated_tool_call_count,
+                ):
                     await self.ledger.append(
                         session_id=str(agent_session.id),
                         turn_id=str(turn.id),
@@ -250,6 +260,7 @@ class AgentLoopController:
                 continue
 
             previous_tool_call_signatures = []
+            repeated_tool_call_count = 0
             final_text = streamed.text
             if not final_text:
                 if empty_response_retries_remaining > 0:
