@@ -7,6 +7,8 @@ actionable, and specific to this repo.
 
 - Always run `rtk git branch --show-current` and `rtk git worktree list` before
   editing. This worktree may be detached.
+- When preparing a commit or PR from a worktree, sync the remote default branch
+  first so recently merged sibling worktrees do not surprise you with conflicts.
 - In a worktree, treat "repo root" as the current worktree root, not the original
   checkout.
 - Inspect the relevant code before changing it. Prefer `rtk rg` and
@@ -168,6 +170,9 @@ rtk bun run test:coverage
   `<type>: <imperative summary>`.
 - Valid types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`.
 - Avoid vague titles such as `update`, `misc fixes`, `wip`, or `tweak`.
+- Before opening or updating a PR, sync the remote main branch into your branch:
+  `rtk git fetch origin --prune && rtk git rebase origin/main` (or merge
+  `origin/main` if the branch should avoid rebasing).
 - Treat the PR title as the canonical squash-merge commit message. Normalize it
   unless the user explicitly asks otherwise.
 
