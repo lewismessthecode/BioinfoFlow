@@ -32,7 +32,7 @@ def _settings(tmp_path: Path):
         scheduler_safety_memory_gb=2.0,
         scheduler_safety_disk_gb=10.0,
         agent_max_tokens=16384,
-        agent_max_rounds=50,
+        agent_max_iterations=90,
         agent_compact_threshold=50000,
         agent_sandbox_enabled=False,
         agent_observability=True,
@@ -82,6 +82,8 @@ def test_build_startup_summary_surfaces_operational_config_without_secrets(tmp_p
     assert summary["scheduler"]["max_concurrency"] == 4
     assert summary["agent_core"]["runtime"] == "agent_core"
     assert summary["agent_core"]["model_source"] == "llm_catalog"
+    assert summary["agent_core"]["max_iterations"] == 90
+    assert "max_rounds" not in summary["agent_core"]
     assert "agent" not in summary
     assert "hermes" not in repr(summary).lower()
     assert "legacy" not in repr(summary).lower()

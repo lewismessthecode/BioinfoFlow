@@ -214,6 +214,85 @@ describe("useAgentRuntime", () => {
     expect(result.current.sessions[0]?.title).toBe("RNA-seq QC Plan")
   })
 
+  it("limits the initial state event payload for large sessions", async () => {
+    renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() =>
+      expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1", {
+        eventLimit: 500,
+      }),
+    )
+  })
+
+  it("starts the live stream after capped state load from the latest loaded event", async () => {
+    let resolveState: (payload: {
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }) => void
+    mocks.getAgentRuntimeState.mockReturnValue(
+      new Promise((resolve) => {
+        resolveState = resolve
+      }),
+    )
+
+    renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    expect(mocks.subscribeAgentRuntimeEvents).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveState({
+        session,
+        turns: [],
+        events: [
+          { ...event, id: "event-499", seq: 499 },
+          { ...event, id: "event-500", seq: 500 },
+        ],
+      })
+    })
+
+    await waitFor(() =>
+      expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-1",
+          afterSeq: 500,
+        }),
+      ),
+    )
+  })
+
+  it("marks state as a limited event window when the capped payload is full", async () => {
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session,
+      turns: [],
+      events: Array.from({ length: 500 }, (_, index) => ({
+        ...event,
+        id: `event-${index + 1}`,
+        seq: index + 1,
+      })),
+    })
+
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.eventWindowLimited).toBe(true))
+  })
+
   it("treats refreshed session lists as authoritative when a title is cleared", async () => {
     mocks.listAgentRuntimeSessions.mockResolvedValue([{ ...session, title: "Old title" }])
     const { result } = renderHook(() =>

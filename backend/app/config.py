@@ -93,7 +93,12 @@ class Settings(BaseSettings):
     agent_max_tokens: int = 16384
     agent_observability: bool = True
     agent_log_truncate_chars: int = 1200
-    agent_max_rounds: int = 50  # Loop safety limit
+    agent_max_iterations: int = 90  # Per-turn loop safety limit
+    removed_agent_max_rounds: str | None = Field(
+        default=None,
+        validation_alias="AGENT_MAX_ROUNDS",
+        exclude=True,
+    )
     agent_retry_max_attempts: int = 3
     agent_retry_base_delay_seconds: float = 0.25
     agent_retry_max_delay_seconds: float = 2.0
@@ -206,6 +211,14 @@ class Settings(BaseSettings):
         if not candidate.is_absolute():
             candidate = REPO_ROOT / candidate
         return str(candidate.resolve())
+
+    @model_validator(mode="after")
+    def reject_removed_agent_max_rounds(self) -> Settings:
+        if self.removed_agent_max_rounds is not None:
+            raise ValueError(
+                "AGENT_MAX_ROUNDS was removed. Use AGENT_MAX_ITERATIONS instead."
+            )
+        return self
 
     @model_validator(mode="after")
     def apply_path_defaults(self) -> Settings:

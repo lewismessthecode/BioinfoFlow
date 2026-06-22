@@ -380,6 +380,7 @@ class AgentCoreService:
         workspace_id: str,
         user_id: str,
         after_seq: int = 0,
+        limit: int | None = None,
     ):
         await self.require_session(
             session_id=session_id,
@@ -389,6 +390,7 @@ class AgentCoreService:
         return await self.event_repo.list_for_session(
             session_id=session_id,
             after_seq=after_seq,
+            limit=limit,
         )
 
     async def decide_action(

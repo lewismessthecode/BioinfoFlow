@@ -6,12 +6,13 @@ import sys
 
 import pytest
 
-from app.config import settings
+from app.config import Settings, settings
 from app.models.agent_core import AgentActionStatus
 from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
 from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
+from app.services.agent_core.core.loop import _max_iterations
 import app.services.agent_core.runner as runner_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 from app.models.workspace import Workspace
@@ -55,6 +56,34 @@ async def _seed_catalog_model(
     await db_session.commit()
     await db_session.refresh(model)
     return model
+
+
+def test_agent_max_iterations_prefers_explicit_setting(monkeypatch):
+    monkeypatch.setattr(settings, "agent_max_iterations", 120)
+
+    assert _max_iterations() == 120
+
+
+def test_agent_max_rounds_legacy_setting_is_removed(monkeypatch):
+    monkeypatch.delenv("AGENT_MAX_ROUNDS", raising=False)
+    isolated_settings = Settings(_env_file=None)
+
+    assert not hasattr(isolated_settings, "agent_max_rounds")
+    assert not hasattr(settings, "agent_max_rounds")
+
+
+def test_agent_max_iterations_defaults_to_90(monkeypatch):
+    monkeypatch.delenv("AGENT_MAX_ITERATIONS", raising=False)
+
+    assert Settings(_env_file=None).agent_max_iterations == 90
+
+
+def test_agent_max_rounds_legacy_env_is_rejected(monkeypatch):
+    monkeypatch.delenv("AGENT_MAX_ITERATIONS", raising=False)
+    monkeypatch.setenv("AGENT_MAX_ROUNDS", "12")
+
+    with pytest.raises(ValueError, match="AGENT_MAX_ROUNDS"):
+        Settings(_env_file=None)
 
 
 @pytest.mark.asyncio

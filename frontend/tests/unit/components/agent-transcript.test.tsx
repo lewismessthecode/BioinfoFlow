@@ -12,6 +12,7 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, string | number>) => {
     const labels: Record<string, string> = {
       pendingResponse: "Working on it...",
+      recentActivityWindow: "Showing recent activity",
       thinking: "Thinking",
       approve: "Approve",
       reject: "Reject",
@@ -142,15 +143,18 @@ function renderTranscript({
   turn = baseTurn,
   events = [],
   onDecision,
+  eventWindowLimited = false,
 }: {
   turn?: AgentRuntimeTurn
   events?: AgentRuntimeEvent[]
   onDecision?: Parameters<typeof AgentTranscript>[0]["onDecision"]
+  eventWindowLimited?: boolean
 } = {}) {
   return render(
     <AgentTranscript
       timeline={buildAgentRuntimeTimeline([turn], events)}
       onDecision={onDecision}
+      eventWindowLimited={eventWindowLimited}
     />,
   )
 }
@@ -168,6 +172,12 @@ function textTimeline(text: string) {
 }
 
 describe("AgentTranscript", () => {
+  it("marks long conversations when only the recent activity window is loaded", () => {
+    renderTranscript({ eventWindowLimited: true })
+
+    expect(screen.getByText("Showing recent activity")).toBeInTheDocument()
+  })
+
   it("renders assistant markdown content through the shared markdown renderer", () => {
     renderTranscript({
       turn: {

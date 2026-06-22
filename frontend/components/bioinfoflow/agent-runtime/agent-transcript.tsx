@@ -26,9 +26,11 @@ const BOTTOM_FOLLOW_THRESHOLD = 80
 export function AgentTranscript({
   timeline,
   onDecision,
+  eventWindowLimited = false,
 }: {
   timeline: AgentRuntimeTimelineEntry[]
   onDecision?: AgentDecisionHandler
+  eventWindowLimited?: boolean
 }) {
   const t = useTranslations("agentRuntime")
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -66,6 +68,11 @@ export function AgentTranscript({
       onScroll={updateBottomState}
     >
       <div className="mx-auto grid w-full min-w-0 max-w-3xl gap-8">
+        {eventWindowLimited ? (
+          <div className="justify-self-start rounded-full border border-border/60 bg-muted/35 px-3 py-1 text-xs text-muted-foreground">
+            {t("recentActivityWindow")}
+          </div>
+        ) : null}
         {timeline.map((entry) => (
           <article key={entry.turn.id} className="grid min-w-0 gap-4">
             <div className="flex justify-end">

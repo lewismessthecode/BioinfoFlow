@@ -313,6 +313,7 @@ async def interrupt_turn(
 async def get_session_state(
     session_id: str,
     request: Request,
+    event_limit: int | None = Query(default=None, ge=1, le=5000),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -331,6 +332,7 @@ async def get_session_state(
         session_id=session_id,
         workspace_id=user.workspace_id,
         user_id=user.id,
+        limit=event_limit,
     )
     return success_response(
         {
