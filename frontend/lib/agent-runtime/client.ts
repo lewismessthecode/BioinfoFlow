@@ -53,6 +53,13 @@ export const createAgentRuntimeSession = async (
   return response.data
 }
 
+export const getAgentRuntimeSession = async (sessionId: string) => {
+  const response = await apiRequest<AgentRuntimeSession>(
+    `/agent/sessions/${sessionId}`,
+  )
+  return response.data
+}
+
 export const updateAgentRuntimeSessionMode = async (
   sessionId: string,
   mode: AgentMode,
@@ -137,9 +144,17 @@ export const getAgentFsFile = async (path: string) => {
   return response.data
 }
 
-export const getAgentRuntimeState = async (sessionId: string) => {
+export const getAgentRuntimeState = async (
+  sessionId: string,
+  options?: { eventLimit?: number },
+) => {
   const response = await apiRequest<AgentRuntimeStatePayload>(
     `/agent/sessions/${sessionId}/state`,
+    {
+      params: options?.eventLimit
+        ? { event_limit: options.eventLimit }
+        : undefined,
+    },
   )
   return response.data
 }

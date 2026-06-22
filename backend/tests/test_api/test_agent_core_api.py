@@ -9,8 +9,10 @@ import app.api.v1.agent as agent_api_module
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
-from app.path_layout import project_home
+from app.models.agent_core import AgentEvent
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
+from app.path_layout import project_home
+from app.services.agent_core import AgentCoreService
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -279,7 +281,52 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
     assert artifacts.status_code == 200
     assert artifacts.json()["data"] == []
 
-    cancel = await async_client.post(f"/api/v1/agent/turns/{turn['id']}/cancel")
+
+@pytest.mark.asyncio
+async def test_agent_session_state_can_limit_large_event_payload(async_client, db_session):
+    project_id = await _create_project(async_client)
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "project_id": project_id,
+            "title": "Large tool trace",
+            "permission_mode": "guarded_auto",
+            "automation_mode": "assisted",
+        },
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+
+    turn = await AgentCoreService(db_session).create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="inspect a long run",
+    )
+
+    for seq in range(100, 107):
+        db_session.add(
+            AgentEvent(
+                session_id=session["id"],
+                turn_id=str(turn.id),
+                seq=seq,
+                type="assistant.tool_call.completed",
+                payload={"index": seq},
+                visibility="user",
+                schema_version=1,
+            )
+        )
+    await db_session.commit()
+
+    state = await async_client.get(
+        f"/api/v1/agent/sessions/{session['id']}/state?event_limit=3"
+    )
+    assert state.status_code == 200
+    payload = state.json()["data"]
+    assert [event["seq"] for event in payload["events"]] == [104, 105, 106]
+    assert [item["id"] for item in payload["turns"]] == [str(turn.id)]
+
+    cancel = await async_client.post(f"/api/v1/agent/turns/{turn.id}/cancel")
     assert cancel.status_code == 200
     assert cancel.json()["data"]["status"] == "cancelled"
 

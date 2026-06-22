@@ -96,7 +96,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     setActiveConversationId(conversation.id)
     setStoredAgentSessionId(projectId, conversation.id)
     onOpenChange(false)
-    router.push("/agent")
+    router.push(`/agent/${conversation.id}`)
   }
 
   const handleNewConversation = async () => {
@@ -160,7 +160,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     setActiveConversationId(item.id)
                     setStoredAgentSessionId(item.projectId, item.id)
                     onOpenChange(false)
-                    router.push("/agent")
+                    router.push(`/agent/${item.id}`)
                   }}
                 >
                   <span className="truncate">{item.title || "Untitled"}</span>

@@ -12,6 +12,7 @@ from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
 from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
+from app.services.agent_core.core.loop import _max_iterations
 import app.services.agent_core.runner as runner_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 from app.models.workspace import Workspace
@@ -55,6 +56,20 @@ async def _seed_catalog_model(
     await db_session.commit()
     await db_session.refresh(model)
     return model
+
+
+def test_agent_max_iterations_prefers_explicit_setting(monkeypatch):
+    monkeypatch.setattr(settings, "agent_max_iterations", 80)
+    monkeypatch.setattr(settings, "agent_max_rounds", 50)
+
+    assert _max_iterations() == 80
+
+
+def test_agent_max_iterations_falls_back_to_legacy_rounds(monkeypatch):
+    monkeypatch.setattr(settings, "agent_max_iterations", None)
+    monkeypatch.setattr(settings, "agent_max_rounds", 75)
+
+    assert _max_iterations() == 75
 
 
 @pytest.mark.asyncio

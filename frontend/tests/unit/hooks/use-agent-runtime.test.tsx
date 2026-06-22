@@ -214,6 +214,42 @@ describe("useAgentRuntime", () => {
     expect(result.current.sessions[0]?.title).toBe("RNA-seq QC Plan")
   })
 
+  it("limits the initial state event payload for large sessions", async () => {
+    renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() =>
+      expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1", {
+        eventLimit: 500,
+      }),
+    )
+  })
+
+  it("marks state as a limited event window when the capped payload is full", async () => {
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session,
+      turns: [],
+      events: Array.from({ length: 500 }, (_, index) => ({
+        ...event,
+        id: `event-${index + 1}`,
+        seq: index + 1,
+      })),
+    })
+
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.eventWindowLimited).toBe(true))
+  })
+
   it("treats refreshed session lists as authoritative when a title is cleared", async () => {
     mocks.listAgentRuntimeSessions.mockResolvedValue([{ ...session, title: "Old title" }])
     const { result } = renderHook(() =>

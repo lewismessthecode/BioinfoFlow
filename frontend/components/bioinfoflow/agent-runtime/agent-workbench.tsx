@@ -77,6 +77,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       useLlmSettings()
     const {
       state,
+      eventWindowLimited,
       mode,
       setMode,
       permissionMode,
@@ -327,6 +328,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               <AgentTranscript
                 timeline={transcriptTimeline}
                 onDecision={decideAction}
+                eventWindowLimited={eventWindowLimited}
               />
               <div
                 className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-4 pt-10 sm:px-6"

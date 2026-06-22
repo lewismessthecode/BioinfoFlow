@@ -1,7 +1,8 @@
 import * as React from "react"
 import { act, fireEvent, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import AgentPage from "@/app/(app)/agent/page"
+import AgentSessionPage from "@/app/(app)/agent/[sessionId]/page"
+import AgentPage, { AgentPageContent } from "@/app/(app)/agent/page"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { renderAppPage } from "@/tests/app-test-utils"
 
@@ -10,7 +11,10 @@ let mockRunToSelect: Record<string, unknown> | null = null
 
 const useEventsMock = vi.fn()
 const useIsMobileMock = vi.fn(() => false)
+const useParamsMock = vi.fn(() => ({ sessionId: "session-9" }))
 const workspaceShellMock = vi.fn(() => undefined)
+const getAgentRuntimeSessionMock = vi.fn()
+const apiRequestMock = vi.fn()
 
 vi.mock("@/hooks/use-events", () => ({
   useEvents: (...args: unknown[]) => useEventsMock(...args),
@@ -20,6 +24,19 @@ vi.mock("@/hooks/use-media-query", () => ({
   useIsMobile: () => useIsMobileMock(),
 }))
 
+vi.mock("next/navigation", () => ({
+  useParams: () => useParamsMock(),
+}))
+
+vi.mock("@/lib/agent-runtime/client", () => ({
+  getAgentRuntimeSession: (...args: unknown[]) =>
+    getAgentRuntimeSessionMock(...args),
+}))
+
+vi.mock("@/lib/api", () => ({
+  apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+}))
+
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
   useOptionalWorkspaceShell: () => workspaceShellMock(),
 }))
@@ -27,13 +44,15 @@ vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
 vi.mock("@/components/bioinfoflow/agent-runtime/agent-workbench", () => ({
   AgentWorkbench: ({
     projectId,
+    activeSessionId,
     workspaceEnabled,
   }: {
     projectId?: string
+    activeSessionId?: string
     workspaceEnabled?: boolean
   }) => (
     <div data-testid="agent-core-chat">
-      agent-core:{projectId || "none"}|workspace:{workspaceEnabled ? "on" : "off"}
+      agent-core:{projectId || "none"}|session:{activeSessionId || "draft"}|workspace:{workspaceEnabled ? "on" : "off"}
     </div>
   ),
 }))
@@ -89,6 +108,26 @@ describe("AgentPage", () => {
     localStorage.clear()
     workspaceShellMock.mockReset()
     workspaceShellMock.mockReturnValue(undefined)
+    useParamsMock.mockReset()
+    useParamsMock.mockReturnValue({ sessionId: "session-9" })
+    getAgentRuntimeSessionMock.mockReset()
+    getAgentRuntimeSessionMock.mockResolvedValue({
+      id: "session-9",
+      project_id: "project-2",
+      workspace_id: "workspace-1",
+      user_id: "dev",
+      role_profile: "bioinformatician",
+      permission_mode: "guarded_auto",
+      automation_mode: "assisted",
+      runtime_mode: "api",
+      status: "active",
+      created_at: "2026-06-08T00:00:00Z",
+      updated_at: "2026-06-08T00:00:00Z",
+    })
+    apiRequestMock.mockReset()
+    apiRequestMock.mockResolvedValue({
+      data: { id: "project-default", name: "Inbox", is_default: true },
+    })
   })
 
   it("keeps the right sidebar hidden by default and toggles with the keyboard shortcut", async () => {
@@ -101,7 +140,7 @@ describe("AgentPage", () => {
       projectContext: { activeProjectId: "project-1" },
     })
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-1|workspace:on")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-1|session:draft|workspace:on")
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true })
@@ -183,7 +222,7 @@ describe("AgentPage", () => {
       },
     })
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-default|workspace:on")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-default|session:draft|workspace:on")
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
   })
 
@@ -202,22 +241,126 @@ describe("AgentPage", () => {
       },
     )
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:on")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|session:draft|workspace:on")
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText("select project"))
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-9|workspace:on")
+      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-9|session:draft|workspace:on")
     })
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText("clear project"))
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:on")
+      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|session:draft|workspace:on")
     })
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
+  })
+
+  it("passes a route-selected session id into the shared agent page content", () => {
+    renderAppPage(
+      <AgentPageContent
+        selectedProjectId="project-1"
+        conversationProjectId="project-1"
+        activeConversationId="session-9"
+      />,
+    )
+
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent(
+      "agent-core:project-1|session:session-9|workspace:on",
+    )
+  })
+
+  it("loads a deep-linked session and syncs its owning project into page context", async () => {
+    renderAppPage(<AgentSessionPage />, {
+      projectContext: {
+        selectedProjectId: "project-stale",
+        conversationProjectId: "project-stale",
+      },
+    })
+
+    expect(getAgentRuntimeSessionMock).toHaveBeenCalledWith("session-9")
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent(
+        "agent-core:project-2|session:session-9|workspace:on",
+      )
+    })
+    expect(localStorage.getItem("bioinfoflow:agent-core-session:project-2")).toBe(
+      "session-9",
+    )
+  })
+
+  it("keeps default-project deep links in inbox mode", async () => {
+    localStorage.setItem("right-sidebar-collapsed", "false")
+    getAgentRuntimeSessionMock.mockResolvedValue({
+      id: "session-inbox",
+      project_id: "project-default",
+      workspace_id: "workspace-1",
+      user_id: "dev",
+      role_profile: "bioinformatician",
+      permission_mode: "guarded_auto",
+      automation_mode: "assisted",
+      runtime_mode: "api",
+      status: "active",
+      created_at: "2026-06-08T00:00:00Z",
+      updated_at: "2026-06-08T00:00:00Z",
+    })
+    useParamsMock.mockReturnValue({ sessionId: "session-inbox" })
+
+    renderAppPage(<AgentSessionPage />, {
+      projectContext: {
+        selectedProjectId: "project-stale",
+        conversationProjectId: "project-stale",
+      },
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent(
+        "agent-core:project-default|session:session-inbox|workspace:on",
+      )
+    })
+    expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
+  })
+
+  it("does not mount the deep-linked workbench before route session reconciliation", async () => {
+    let resolveSession: (value: Awaited<ReturnType<typeof getAgentRuntimeSessionMock>>) => void
+    getAgentRuntimeSessionMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSession = resolve
+      }),
+    )
+
+    renderAppPage(<AgentSessionPage />, {
+      projectContext: {
+        selectedProjectId: "project-stale",
+        conversationProjectId: "project-stale",
+      },
+    })
+
+    expect(screen.queryByTestId("agent-core-chat")).not.toBeInTheDocument()
+
+    resolveSession!({
+      id: "session-9",
+      project_id: "project-2",
+      workspace_id: "workspace-1",
+      user_id: "dev",
+      role_profile: "bioinformatician",
+      permission_mode: "guarded_auto",
+      automation_mode: "assisted",
+      runtime_mode: "api",
+      status: "active",
+      created_at: "2026-06-08T00:00:00Z",
+      updated_at: "2026-06-08T00:00:00Z",
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent(
+        "agent-core:project-2|session:session-9|workspace:on",
+      )
+    })
   })
 
   it("leaves project restoration to the workspace shell instead of restoring inside AgentPage", async () => {
@@ -238,6 +381,6 @@ describe("AgentPage", () => {
       },
     })
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|workspace:on")
+    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|session:draft|workspace:on")
   })
 })

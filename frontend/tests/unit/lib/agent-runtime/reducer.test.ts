@@ -719,6 +719,46 @@ describe("agentRuntimeReducer", () => {
     ])
   })
 
+  it("keeps completed turn snapshots visible when limited state only includes recent events", () => {
+    const oldTurn: AgentRuntimeTurn = {
+      ...turn("completed"),
+      id: "turn-old",
+      input_text: "Summarize the previous analysis",
+      final_text: "Older completed answer from the persisted turn snapshot.",
+      updated_at: "2026-06-08T00:00:00Z",
+    }
+    const recentTurn: AgentRuntimeTurn = {
+      ...turn("running"),
+      id: "turn-recent",
+      input_text: "Continue",
+      final_text: null,
+      updated_at: "2026-06-08T00:01:00Z",
+    }
+
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [oldTurn, recentTurn],
+        events: [
+          {
+            ...event("event-recent", 501),
+            turn_id: "turn-recent",
+            type: "assistant.text.delta",
+            payload: { message_id: "message-recent", delta: "Recent streaming text." },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline.map((entry) => entry.assistant.text)).toEqual([
+      "Older completed answer from the persisted turn snapshot.",
+      "Recent streaming text.",
+    ])
+    expect(loaded.timeline[0].assistant.textBlocks[0]?.source).toBe("snapshot")
+    expect(loaded.timeline[0].assistant.status).toBe("completed")
+  })
+
   it("preserves replay text order when terminal final text adds a tail", () => {
     const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",
