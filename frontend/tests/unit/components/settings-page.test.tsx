@@ -23,6 +23,7 @@ const testProviderMock = vi.fn(
   }),
 )
 const celebratePreviewMock = vi.fn()
+const reducedMotionState = { value: false }
 const celebrationsPreference = createCelebrationsPreferenceMock()
 
 vi.mock("next-intl", () => ({
@@ -40,12 +41,12 @@ vi.mock("next-intl", () => ({
       "appearance.presets.dark": "Dark preset",
       "appearance.preview.light": "Light preview",
       "appearance.preview.dark": "Dark preview",
-      "appearance.celebrations.title": "Celebrations",
-      "appearance.celebrations.description": "Show confetti when first-time setup milestones succeed.",
-      "appearance.celebrations.enabledLabel": "Enabled",
-      "appearance.celebrations.disabledLabel": "Disabled",
-      "appearance.celebrations.preview": "Preview confetti",
-      "appearance.celebrations.reducedMotion": "Confetti is disabled while reduced motion is enabled.",
+      "appearance.celebrations.title": "Quiet celebrations",
+      "appearance.celebrations.description": "Show a short, one-time confetti burst when first setup milestones succeed.",
+      "appearance.celebrations.enabledLabel": "On",
+      "appearance.celebrations.disabledLabel": "Off",
+      "appearance.celebrations.preview": "Preview",
+      "appearance.celebrations.reducedMotion": "Reduced motion is on, so confetti is paused.",
       title: "AI Providers",
       subtitle: "Configure providers",
       apiKey: "API Key",
@@ -97,10 +98,11 @@ vi.mock("@/lib/appearance/use-appearance", () => ({
 
 vi.mock("@/lib/celebrations", () => ({
   celebratePreview: (...args: unknown[]) => celebratePreviewMock(...args),
+  celebrateMilestone: vi.fn(),
   isCelebrationsEnabled: () => celebrationsPreference.getEnabled(),
   useCelebrationsEnabledPreference: () =>
     celebrationsPreference.useCelebrationsEnabledPreference(),
-  useReducedMotionPreference: () => false,
+  useReducedMotionPreference: () => reducedMotionState.value,
   setCelebrationsEnabled: (enabled: boolean) => {
     celebrationsPreference.setEnabled(enabled)
   },
@@ -136,6 +138,7 @@ describe("SettingsPage", () => {
     testProviderMock.mockClear()
     celebratePreviewMock.mockReset()
     celebrationsPreference.reset()
+    reducedMotionState.value = false
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
       matches: false,
       media: "(prefers-reduced-motion: reduce)",
@@ -455,16 +458,16 @@ describe("SettingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
 
-    expect(screen.getByText("Celebrations")).toBeInTheDocument()
+    expect(screen.getByText("Quiet celebrations")).toBeInTheDocument()
     expect(
-      screen.getByText("Show confetti when first-time setup milestones succeed."),
+      screen.getByText("Show a short, one-time confetti burst when first setup milestones succeed."),
     ).toBeInTheDocument()
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true")
 
     fireEvent.click(screen.getByRole("switch"))
 
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false")
-    expect(screen.getByText("Disabled")).toBeInTheDocument()
+    expect(screen.getByText("Off")).toBeInTheDocument()
   })
 
   it("previews confetti from the appearance section", async () => {
@@ -482,9 +485,31 @@ describe("SettingsPage", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
-    fireEvent.click(screen.getByRole("button", { name: "Preview confetti" }))
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }))
 
     expect(celebratePreviewMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("pauses the settings preview but keeps the celebration switch available for reduced motion", async () => {
+    reducedMotionState.value = true
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          role: "owner",
+          mode: "team",
+          canManageMembers: true,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
+
+    expect(screen.getByText("Reduced motion is on, so confetti is paused.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled()
+    expect(screen.getByRole("switch", { name: "Quiet celebrations" })).not.toBeDisabled()
   })
 
   it("shows the members panel only to admins and owners", async () => {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { renderHook } from "@testing-library/react"
 
 import {
   buildStageConfettiEmitters,
@@ -7,6 +8,7 @@ import {
   isCelebrationsEnabled,
   setCelebrationsEnabled,
   subscribeToCelebrationsPreference,
+  useReducedMotionPreference,
 } from "@/lib/celebrations"
 
 describe("celebrations", () => {
@@ -163,6 +165,33 @@ describe("celebrations", () => {
     celebratePreview()
 
     expect(appendSpy).not.toHaveBeenCalled()
+  })
+
+  it("uses the modern reduced-motion subscription without also attaching the legacy listener", () => {
+    const addEventListener = vi.fn()
+    const addListener = vi.fn()
+    const removeEventListener = vi.fn()
+    const removeListener = vi.fn()
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addEventListener,
+      removeEventListener,
+      addListener,
+      removeListener,
+      dispatchEvent: vi.fn(),
+    }))
+
+    const { unmount } = renderHook(() => useReducedMotionPreference())
+
+    expect(addEventListener).toHaveBeenCalledWith("change", expect.any(Function))
+    expect(addListener).not.toHaveBeenCalled()
+
+    unmount()
+
+    expect(removeEventListener).toHaveBeenCalledWith("change", expect.any(Function))
+    expect(removeListener).not.toHaveBeenCalled()
   })
 
   it("does not persist preview as a milestone", () => {

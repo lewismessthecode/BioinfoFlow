@@ -96,9 +96,10 @@
     }
   },
   "celebrations": {
-    "title": "庆祝效果",
-    "toggle": "开启庆祝效果",
-    "preview": "预览彩纸"
+    "title": "安静庆祝",
+    "toggle": "里程碑彩纸",
+    "preview": "预览",
+    "reducedMotion": "已开启减少动态效果，彩纸已暂停。"
   },
   "sidebar": {
     "projects": "项目",
@@ -1367,8 +1368,9 @@
     "closeTerminal": "关闭终端",
     "reconnectTerminal": "重新连接终端",
     "clearTerminal": "清空终端",
-    "celebrationsOn": "庆祝效果已开启",
-    "celebrationsOff": "庆祝效果已关闭"
+    "celebrationsOn": "里程碑彩纸已开启",
+    "celebrationsOff": "里程碑彩纸已关闭",
+    "celebrationsPaused": "里程碑彩纸因减少动态效果已暂停"
   },
   "landing": {
     "announcement": {
@@ -1939,12 +1941,12 @@
         "dark": "深色预览"
       },
       "celebrations": {
-        "title": "庆祝效果",
-        "description": "当首次完成关键配置时显示彩纸庆祝动画。",
-        "enabledLabel": "已开启",
-        "disabledLabel": "已关闭",
-        "preview": "预览彩纸",
-        "reducedMotion": "启用减少动态效果时，彩纸动画会自动停用。"
+        "title": "安静庆祝",
+        "description": "首次完成设置里程碑时，显示一次短暂的彩纸效果。",
+        "enabledLabel": "开启",
+        "disabledLabel": "关闭",
+        "preview": "预览",
+        "reducedMotion": "已开启减少动态效果，彩纸已暂停。"
       }
     },
     "title": "AI 服务商",

@@ -96,9 +96,10 @@
     }
   },
   "celebrations": {
-    "title": "Celebrations",
-    "toggle": "Enable celebrations",
-    "preview": "Preview confetti"
+    "title": "Quiet celebrations",
+    "toggle": "Milestone confetti",
+    "preview": "Preview",
+    "reducedMotion": "Reduced motion is on, so confetti is paused."
   },
   "sidebar": {
     "projects": "Projects",
@@ -1367,8 +1368,9 @@
     "closeTerminal": "Close terminal",
     "reconnectTerminal": "Reconnect terminal",
     "clearTerminal": "Clear terminal",
-    "celebrationsOn": "Celebrations on",
-    "celebrationsOff": "Celebrations off"
+    "celebrationsOn": "Milestone confetti on",
+    "celebrationsOff": "Milestone confetti off",
+    "celebrationsPaused": "Milestone confetti paused by reduced motion"
   },
   "landing": {
     "announcement": {
@@ -1939,12 +1941,12 @@
         "dark": "Dark preview"
       },
       "celebrations": {
-        "title": "Celebrations",
-        "description": "Show confetti when first-time setup milestones succeed.",
-        "enabledLabel": "Enabled",
-        "disabledLabel": "Disabled",
-        "preview": "Preview confetti",
-        "reducedMotion": "Confetti is disabled while reduced motion is enabled."
+        "title": "Quiet celebrations",
+        "description": "Show a short, one-time confetti burst when first setup milestones succeed.",
+        "enabledLabel": "On",
+        "disabledLabel": "Off",
+        "preview": "Preview",
+        "reducedMotion": "Reduced motion is on, so confetti is paused."
       }
     },
     "title": "AI Providers",
