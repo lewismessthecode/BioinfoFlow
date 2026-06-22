@@ -124,8 +124,8 @@ describe("SchedulerPage", () => {
       expect(screen.getByText("scheduler.status.activeBody")).toBeInTheDocument()
       expect(screen.getByText("scheduler.guidance.title")).toBeInTheDocument()
       expect(screen.getByText("scheduler.guidance.body")).toBeInTheDocument()
-      // The new live monitor renders the pressure + active-runs cells.
-      expect(screen.getByText("scheduler.pressure.label")).toBeInTheDocument()
+      // The live monitor waits for the first resource sample before showing pressure.
+      expect(screen.getByText("scheduler.resourceSnapshotPending")).toBeInTheDocument()
       expect(screen.getByText("scheduler.activeRuns.title")).toBeInTheDocument()
       expect(screen.getByText("scheduler.advanced.button")).toBeInTheDocument()
     })
@@ -165,9 +165,8 @@ describe("SchedulerPage", () => {
     await waitFor(() => {
       expect(screen.getByText("scheduler.status.fallbackTitle")).toBeInTheDocument()
       expect(screen.getByText("scheduler.status.fallbackBody")).toBeInTheDocument()
-      // Pressure panel still renders in fallback; it shows healthy when
-      // no data is available rather than raising an error.
-      expect(screen.getByText("scheduler.pressure.label")).toBeInTheDocument()
+      // Fallback mode should not present missing resource samples as healthy capacity.
+      expect(screen.getByText("scheduler.resourcesUnavailable")).toBeInTheDocument()
     })
   })
 })

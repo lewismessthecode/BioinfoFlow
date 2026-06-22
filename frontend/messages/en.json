@@ -1728,6 +1728,7 @@
     "refreshDescription": "Counts are refreshed on a timer, not streamed live.",
     "resourceUnavailable": "Unavailable",
     "resourceSnapshotPending": "Waiting for the first sample",
+    "resourceSnapshotPendingBody": "Live capacity data will appear as soon as the resource stream sends its first snapshot.",
     "resourcesUnavailable": "Resource monitoring is unavailable",
     "resourcesUnavailableBody": "This usually means the scheduler is running in fallback mode or resource sampling is disabled.",
     "cardDescriptions": {

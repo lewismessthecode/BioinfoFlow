@@ -1728,6 +1728,7 @@
     "refreshDescription": "页面按定时轮询刷新，不是实时流式更新。",
     "resourceUnavailable": "不可用",
     "resourceSnapshotPending": "等待首个采样结果",
+    "resourceSnapshotPendingBody": "资源流发送首个快照后，这里会显示实时容量数据。",
     "resourcesUnavailable": "资源监控当前不可用",
     "resourcesUnavailableBody": "这通常表示系统处于回退模式，或资源采样功能被关闭。",
     "cardDescriptions": {

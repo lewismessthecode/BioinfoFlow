@@ -52,8 +52,8 @@ function formatUtcTimestamp(value: string | null) {
 }
 
 function formatRefreshTimestamp(value: Date | null) {
-  if (!value) return "..."
-  return formatUtcTimestamp(value.toISOString()) ?? "..."
+  if (!value) return "…"
+  return formatUtcTimestamp(value.toISOString()) ?? "…"
 }
 
 export default function SchedulerPage() {
@@ -116,7 +116,7 @@ export default function SchedulerPage() {
   if (isLoading) {
     return (
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-6xl space-y-5 p-6">
+        <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
           <div>
             <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">{t("subtitle")}</p>
@@ -151,14 +151,14 @@ export default function SchedulerPage() {
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <StatusBadge variant={isPersistentActive ? "success" : "warning"}>
               {isPersistentActive ? (
-                <Activity className="h-3 w-3" />
+                <Activity className="h-3 w-3" aria-hidden="true" />
               ) : (
-                <ShieldAlert className="h-3 w-3" />
+                <ShieldAlert className="h-3 w-3" aria-hidden="true" />
               )}
               {isPersistentActive ? t("status.persistentBadge") : t("status.fallbackBadge")}
             </StatusBadge>
             <span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              <RefreshCw className="h-3 w-3" />
+              <RefreshCw className="h-3 w-3" aria-hidden="true" />
               {t("autoRefresh")}
             </span>
           </div>
@@ -179,7 +179,7 @@ export default function SchedulerPage() {
           </>
         )}
 
-        <ResourceMonitor />
+        <ResourceMonitor schedulerStatus={status} />
         <GuidanceCard />
       </div>
     </div>
@@ -208,7 +208,7 @@ function SchedulerStateStrip({
                 : "border-warning-border bg-warning-muted text-warning"
             }`}
           >
-            <Gauge className="h-5 w-5" />
+            <Gauge className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -255,7 +255,7 @@ function StateMetric({
     <div className="rounded-lg border border-border/70 bg-muted/25 px-3 py-2.5">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p
-        className={`mt-1 truncate font-mono text-sm font-medium ${
+        className={`mt-1 break-words font-mono text-xs font-medium sm:text-sm ${
           muted ? "text-muted-foreground" : "text-foreground"
         }`}
       >

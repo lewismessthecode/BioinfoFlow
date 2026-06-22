@@ -12,6 +12,7 @@ import {
 import type {
   ResourceStreamConnectionState,
   ResourceStreamFrame,
+  SchedulerStatus,
 } from "@/lib/types"
 import { useResourceStream } from "@/hooks/use-resource-stream"
 import { PrimaryChart } from "./primary-chart"
@@ -23,9 +24,35 @@ import { computePressure } from "./scoring"
 
 type ResourceMonitorProps = {
   initialFrame?: ResourceStreamFrame | null
+  schedulerStatus?: SchedulerStatus | null
 }
 
-export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
+function frameFromStatus(status: SchedulerStatus): ResourceStreamFrame {
+  return {
+    mode: status.mode,
+    effective_mode: status.effective_mode,
+    scheduler_available: status.scheduler_available,
+    resources: {
+      enabled: status.resource_monitoring_enabled,
+      sampled_at: null,
+      cpu: { total: null, available: null },
+      memory: { total_gb: null, available_gb: null },
+      disk: { total_gb: null, available_gb: null },
+      gpu: { count: 0, memory_gb: 0 },
+    },
+    active_runs: status.active_runs,
+    queue_depth: status.queue_depth,
+    states: status.states,
+    total_slots: status.total_slots,
+    used_slots: status.used_slots,
+    available_slots: status.available_slots,
+  }
+}
+
+export function ResourceMonitor({
+  initialFrame = null,
+  schedulerStatus = null,
+}: ResourceMonitorProps) {
   const t = useTranslations("scheduler")
   const { connectionState, frame, samples, events } = useResourceStream({
     maxSamples: 60,
@@ -35,7 +62,8 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
 
   useDrawerToggleKey(() => setDrawerOpen((p) => !p))
 
-  const latestFrame = frame ?? initialFrame
+  const latestFrame =
+    frame ?? initialFrame ?? (schedulerStatus ? frameFromStatus(schedulerStatus) : null)
 
   const current = samples.at(-1) ?? null
   const cpuPercent = current?.cpu ?? null
@@ -47,18 +75,14 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
       : null
   const queueDepth = latestFrame?.queue_depth ?? 0
 
-  const pressure = useMemo(
-    () =>
-      computePressure({
-        cpu: cpuPercent ?? 0,
-        memUsedGb: memUsedGb ?? 0,
-        memTotalGb: memTotalGb || 1,
-        load: load ?? 0,
-        cores: current?.cpuCores ?? 0,
-        queue: queueDepth,
-      }),
-    [cpuPercent, memUsedGb, memTotalGb, load, current?.cpuCores, queueDepth],
-  )
+  const pressure = computePressure({
+    cpu: cpuPercent ?? 0,
+    memUsedGb: memUsedGb ?? 0,
+    memTotalGb: memTotalGb || 1,
+    load: load ?? 0,
+    cores: current?.cpuCores ?? 0,
+    queue: queueDepth,
+  })
 
   const timestamps = useMemo(() => samples.map((s) => s.t), [samples])
   const cpuValues = useMemo(() => samples.map((s) => s.cpu), [samples])
@@ -108,6 +132,13 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
           ? t("trust.connecting")
           : t("trust.disconnected")
 
+  const capacityState =
+    latestFrame?.scheduler_available === false || latestFrame?.resources.enabled === false
+      ? "unavailable"
+      : samples.length === 0
+        ? "pending"
+        : "ready"
+
   return (
     <>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -117,10 +148,14 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
             badge={<LiveStatus connectionState={connectionState} label={trustText} />}
           />
           <CardContent className="p-5">
-            <PressureHero
-              pressure={pressure}
-              factors={{ cpu: cpuPercent, memUsedGb, load, queueDepth }}
-            />
+            {capacityState === "ready" ? (
+              <PressureHero
+                pressure={pressure}
+                factors={{ cpu: cpuPercent, memUsedGb, load, queueDepth }}
+              />
+            ) : (
+              <CapacityNotice state={capacityState} />
+            )}
           </CardContent>
         </CardRoot>
 
@@ -136,7 +171,7 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
               <button
                 type="button"
                 onClick={() => setDrawerOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 <ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
                 {t("advanced.button")}
@@ -175,7 +210,7 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
               <MiniMetric
                 label={t("charts.diskIo")}
                 value={diskCur}
-                icon={<Database className="h-3.5 w-3.5" />}
+                icon={<Database className="h-3.5 w-3.5" aria-hidden="true" />}
                 timestamps={timestamps}
                 values={diskValues}
                 maxScale={diskMax}
@@ -183,7 +218,7 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
               <MiniMetric
                 label={t("charts.gpuFree")}
                 value={gpuCur}
-                icon={<MonitorSmartphone className="h-3.5 w-3.5" />}
+                icon={<MonitorSmartphone className="h-3.5 w-3.5" aria-hidden="true" />}
                 timestamps={timestamps}
                 values={gpuValues}
                 maxScale={gpuMax}
@@ -231,6 +266,35 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
 
       <AdvancedDrawer open={drawerOpen} onOpenChange={setDrawerOpen} />
     </>
+  )
+}
+
+function CapacityNotice({ state }: { state: "pending" | "unavailable" }) {
+  const t = useTranslations("scheduler")
+  const unavailable = state === "unavailable"
+
+  return (
+    <div
+      className={`rounded-lg border px-4 py-5 ${
+        unavailable
+          ? "border-warning-border bg-warning-muted/50"
+          : "border-border/70 bg-muted/20"
+      }`}
+    >
+      <div
+        className={`mb-4 h-1.5 w-16 rounded-full ${
+          unavailable ? "bg-warning" : "bg-muted-foreground/40"
+        }`}
+      />
+      <p className="text-sm font-medium text-foreground">
+        {unavailable ? t("resourcesUnavailable") : t("resourceSnapshotPending")}
+      </p>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        {unavailable
+          ? t("resourcesUnavailableBody")
+          : t("resourceSnapshotPendingBody")}
+      </p>
+    </div>
   )
 }
 

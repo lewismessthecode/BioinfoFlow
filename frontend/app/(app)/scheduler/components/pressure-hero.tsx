@@ -26,8 +26,8 @@ const STATUS_STYLES: Record<
     pill: "bg-warning-muted border-warning-border text-warning",
   },
   saturated: {
-    number: "text-destructive",
-    pill: "bg-destructive-muted border-destructive-border text-destructive",
+    number: "text-error",
+    pill: "bg-error-muted border-error-border text-error",
   },
 }
 

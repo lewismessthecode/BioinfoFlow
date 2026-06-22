@@ -52,7 +52,8 @@ export function ActiveRunsList({
     <div className="space-y-2">
       {runs.map((r) => {
         const share = (r.weight || 1) / totalWeight
-        const pct = cpuPercent == null ? 0 : Math.max(2, Math.round(share * cpuPercent))
+        const cpuShare = cpuPercent == null ? 0 : Math.round(share * cpuPercent)
+        const barPct = Math.max(2, Math.round(share * 100))
         const active = highlightedRunId === r.run_id
 
         return (
@@ -60,7 +61,8 @@ export function ActiveRunsList({
             key={r.run_id}
             type="button"
             onClick={() => onToggleHighlight(r.run_id)}
-            className={`grid w-full grid-cols-[8px_minmax(0,1fr)_64px] items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors hover:bg-muted/60 ${
+            aria-pressed={active}
+            className={`grid w-full grid-cols-[8px_minmax(0,1fr)_64px] items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
               active
                 ? "border-success-border bg-success-muted"
                 : "border-border/70 bg-card"
@@ -80,12 +82,12 @@ export function ActiveRunsList({
               <span className="mt-2 block h-1 rounded-full bg-muted">
                 <span
                   className="block h-full rounded-full bg-success transition-[width] duration-300"
-                  style={{ width: `${Math.round(share * 100)}%` }}
+                  style={{ width: `${barPct}%` }}
                 />
               </span>
             </span>
             <span className="text-right font-mono text-sm text-muted-foreground">
-              {pct}%
+              {cpuShare}%
             </span>
           </button>
         )
