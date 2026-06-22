@@ -1705,7 +1705,7 @@
   },
   "scheduler": {
     "title": "调度器",
-    "subtitle": "用于观察队列压力、调度器可用性和本机资源容量的健康面板。",
+    "subtitle": "集中观察调度队列、资源压力和正在运行的任务。",
     "mode": "模式",
     "configuredMode": "配置模式",
     "configuredModeLabel": "当前配置：",
@@ -1716,7 +1716,7 @@
     "dispatched": "已分配",
     "completed": "已完成",
     "failed": "失败",
-    "resources": "系统资源",
+    "resources": "实时容量",
     "cpu": "CPU",
     "memory": "内存",
     "disk": "磁盘",
@@ -1724,7 +1724,7 @@
     "snapshot": "快照时间",
     "utilization": "使用率",
     "noGpu": "未检测到 GPU",
-    "autoRefresh": "每 30 秒自动刷新",
+    "autoRefresh": "每 30 秒更新",
     "refreshDescription": "页面按定时轮询刷新，不是实时流式更新。",
     "resourceUnavailable": "不可用",
     "resourceSnapshotPending": "等待首个采样结果",
@@ -1740,7 +1740,11 @@
       "activeTitle": "持久化调度器已启用",
       "activeBody": "新的 run 会先写入持久化队列，再由 worker 从队列中认领执行。",
       "fallbackTitle": "虽然配置为 persistent，但当前处于回退模式",
-      "fallbackBody": "应用正在无持久化调度实例的情况下提供运行能力，因此队列可见性和恢复能力都会受限。"
+      "fallbackBody": "应用正在无持久化调度实例的情况下提供运行能力，因此队列可见性和恢复能力都会受限。",
+      "persistentBadge": "persistent",
+      "fallbackBadge": "fallback",
+      "ready": "可分派",
+      "attention": "需关注"
     },
     "guidance": {
       "title": "如何使用这个页面",
@@ -1764,10 +1768,15 @@
       "loadFailed": "无法加载调度器状态。请检查后端是否正在运行。"
     },
     "pressure": {
-      "label": "系统压力",
+      "label": "容量状态",
       "healthy": "健康",
       "moderate": "偏紧",
       "saturated": "饱和",
+      "messages": {
+        "healthy": "当前资源可以继续分派新的 run。",
+        "moderate": "如果 CPU 或内存继续升高，分派速度可能放缓。",
+        "saturated": "建议等资源压力下降后再分派新的 run。"
+      },
       "factors": {
         "cpu": "CPU",
         "mem": "内存",
@@ -1776,12 +1785,27 @@
       }
     },
     "activeRuns": {
-      "title": "活动 run · 资源占用来源",
+      "title": "活动 run",
       "count": "{count} 个运行中",
       "empty": "当前没有正在执行的 run。",
+      "emptyStates": {
+        "idle": {
+          "title": "当前空闲",
+          "body": "没有正在执行或排队的 run；新 run 分派后会出现在这里。"
+        },
+        "queued": {
+          "title": "等待分派",
+          "body": "队列里已有 run，但当前还没有 worker 开始执行。"
+        },
+        "disconnected": {
+          "title": "实时流已断开",
+          "body": "重新连接资源流后，才能看到当前正在执行的 run。"
+        }
+      },
       "unknownWorkflow": "未知 workflow"
     },
     "charts": {
+      "trendsTitle": "资源趋势",
       "cpuUtil": "CPU 使用率",
       "memory": "内存",
       "diskIo": "磁盘占用",
@@ -1809,6 +1833,7 @@
       "dispatch": "分派",
       "complete": "完成",
       "window": "60 秒窗口 · 2 秒刷新 · 点击 run 高亮",
+      "last60s": "最近 60 秒",
       "minus60s": "−60s",
       "minus30s": "−30s",
       "now": "现在"

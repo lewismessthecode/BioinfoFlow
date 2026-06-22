@@ -1,9 +1,18 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import { useTranslations } from "next-intl"
 import { ChevronsRight, Database, MonitorSmartphone } from "lucide-react"
-import type { ResourceStreamFrame } from "@/lib/types"
+import {
+  CardContent,
+  CardHeader,
+  CardRoot,
+} from "@/components/bioinfoflow/card/card-base"
+import type {
+  ResourceStreamConnectionState,
+  ResourceStreamFrame,
+} from "@/lib/types"
 import { useResourceStream } from "@/hooks/use-resource-stream"
 import { PrimaryChart } from "./primary-chart"
 import { PressureHero } from "./pressure-hero"
@@ -13,18 +22,9 @@ import { AdvancedDrawer } from "./advanced-drawer"
 import { computePressure } from "./scoring"
 
 type ResourceMonitorProps = {
-  /** Fallback when the stream has not yet delivered a frame. */
   initialFrame?: ResourceStreamFrame | null
 }
 
-/**
- * Orchestrator for the live scheduler resource panel.
- *
- * Data flow: `useResourceStream` owns the EventSource connection and keeps
- * the sliding window of samples; every child is a pure view of that state.
- * `computePressure` is intentionally host-agnostic (see scoring.ts) so the
- * same math could drive a CLI summary or a notification rule later.
- */
 export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
   const t = useTranslations("scheduler")
   const { connectionState, frame, samples, events } = useResourceStream({
@@ -33,8 +33,6 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
   const [highlightedRunId, setHighlightedRunId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // Keyboard shortcut for power users: `t` toggles the Advanced drawer.
-  // Guarded so text inputs and editors don't swallow it accidentally.
   useDrawerToggleKey(() => setDrawerOpen((p) => !p))
 
   const latestFrame = frame ?? initialFrame
@@ -112,109 +110,118 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
 
   return (
     <>
-      <div className="rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-divider px-5 py-3">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-foreground">
-              {t("resources")}
-            </span>
-            <span className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
-              <LiveDot connected={connectionState === "connected"} />
-              {trustText}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
-          >
-            <ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
-            {t("advanced.button")}
-            <kbd className="ml-1 rounded border border-border bg-muted px-1.5 py-[1px] font-mono text-[10px] text-muted-foreground">
-              t
-            </kbd>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-px bg-divider lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-          <div className="bg-card p-5">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+        <CardRoot className="lg:col-span-5">
+          <CardHeader
+            title={t("resources")}
+            badge={<LiveStatus connectionState={connectionState} label={trustText} />}
+          />
+          <CardContent className="p-5">
             <PressureHero
               pressure={pressure}
               factors={{ cpu: cpuPercent, memUsedGb, load, queueDepth }}
             />
-          </div>
-          <div className="bg-card p-5">
+          </CardContent>
+        </CardRoot>
+
+        <CardRoot className="lg:col-span-7 lg:row-span-2">
+          <CardHeader
+            title={t("charts.trendsTitle")}
+            badge={
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                {t("legend.last60s")}
+              </span>
+            }
+            action={
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                <ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
+                {t("advanced.button")}
+                <kbd className="ml-1 rounded border border-border bg-muted px-1.5 py-[1px] font-mono text-[10px] text-muted-foreground">
+                  t
+                </kbd>
+              </button>
+            }
+          />
+          <CardContent className="space-y-5 p-5">
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+              <ChartPanel label={t("charts.cpuUtil")} value={cpuCur}>
+                <PrimaryChart
+                  timestamps={timestamps}
+                  values={cpuValues}
+                  thresholds={[60, 85]}
+                  maxScale={100}
+                  unit="%"
+                  events={events}
+                  className="h-full w-full"
+                />
+              </ChartPanel>
+              <ChartPanel label={t("charts.memory")} value={memCur}>
+                <PrimaryChart
+                  timestamps={timestamps}
+                  values={memValues}
+                  thresholds={memThresholds}
+                  maxScale={memMax}
+                  unit=" GB"
+                  events={events}
+                  className="h-full w-full"
+                />
+              </ChartPanel>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <MiniMetric
+                label={t("charts.diskIo")}
+                value={diskCur}
+                icon={<Database className="h-3.5 w-3.5" />}
+                timestamps={timestamps}
+                values={diskValues}
+                maxScale={diskMax}
+              />
+              <MiniMetric
+                label={t("charts.gpuFree")}
+                value={gpuCur}
+                icon={<MonitorSmartphone className="h-3.5 w-3.5" />}
+                timestamps={timestamps}
+                values={gpuValues}
+                maxScale={gpuMax}
+              />
+            </div>
+          </CardContent>
+        </CardRoot>
+
+        <CardRoot className="lg:col-span-5">
+          <CardHeader
+            title={t("activeRuns.title")}
+            badge={
+              <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground">
+                {t("activeRuns.count", { count: latestFrame?.active_runs.length ?? 0 })}
+              </span>
+            }
+          />
+          <CardContent className="p-5">
             <ActiveRunsList
               runs={latestFrame?.active_runs ?? []}
               cpuPercent={cpuPercent}
               highlightedRunId={highlightedRunId}
+              queueDepth={queueDepth}
+              connectionState={connectionState}
               onToggleHighlight={(id) =>
                 setHighlightedRunId((prev) => (prev === id ? null : id))
               }
             />
-          </div>
-
-          <div className="bg-card p-5">
-            <ChartHeader label={t("charts.cpuUtil")} value={cpuCur} />
-            <div className="relative -mx-1 h-[88px]">
-              <PrimaryChart
-                timestamps={timestamps}
-                values={cpuValues}
-                thresholds={[60, 85]}
-                maxScale={100}
-                unit="%"
-                events={events}
-                className="h-full w-full"
-              />
-            </div>
-            <AxisTicks />
-          </div>
-          <div className="bg-card p-5">
-            <ChartHeader label={t("charts.memory")} value={memCur} />
-            <div className="relative -mx-1 h-[88px]">
-              <PrimaryChart
-                timestamps={timestamps}
-                values={memValues}
-                thresholds={memThresholds}
-                maxScale={memMax}
-                unit=" GB"
-                events={events}
-                className="h-full w-full"
-              />
-            </div>
-            <AxisTicks />
-          </div>
-
-          <div className="col-span-full grid grid-cols-1 gap-4 bg-card p-5 md:grid-cols-2">
-            <MiniMetric
-              label={t("charts.diskIo")}
-              value={diskCur}
-              icon={<Database className="h-3.5 w-3.5" />}
-              timestamps={timestamps}
-              values={diskValues}
-              maxScale={diskMax}
-            />
-            <MiniMetric
-              label={t("charts.gpuFree")}
-              value={gpuCur}
-              icon={<MonitorSmartphone className="h-3.5 w-3.5" />}
-              timestamps={timestamps}
-              values={gpuValues}
-              maxScale={gpuMax}
-            />
-          </div>
-        </div>
+          </CardContent>
+        </CardRoot>
       </div>
 
-      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 px-1 text-[11.5px] text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-[11.5px] text-muted-foreground">
         <div className="flex flex-wrap items-center gap-4">
           <LegendBand tone="success" label={t("legend.safe")} />
           <LegendBand tone="warning" label={t("legend.warn")} />
           <LegendBand tone="destructive" label={t("legend.danger")} />
-          <LegendMarker
-            tone="success"
-            label={t("legend.dispatch")}
-          />
+          <LegendMarker tone="success" label={t("legend.dispatch")} />
           <LegendMarker tone="muted" label={t("legend.complete")} />
         </div>
         <div className="font-mono text-muted-foreground/80">
@@ -227,13 +234,33 @@ export function ResourceMonitor({ initialFrame = null }: ResourceMonitorProps) {
   )
 }
 
+function ChartPanel({
+  label,
+  value,
+  children,
+}: {
+  label: string
+  value: string
+  children: ReactNode
+}) {
+  return (
+    <div>
+      <ChartHeader label={label} value={value} />
+      <div className="relative -mx-1 h-[120px]">
+        {children}
+      </div>
+      <AxisTicks />
+    </div>
+  )
+}
+
 function ChartHeader({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mb-2 flex items-baseline justify-between">
-      <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+    <div className="mb-2 flex items-baseline justify-between gap-3">
+      <span className="text-xs font-medium text-muted-foreground">
         {label}
       </span>
-      <span className="font-mono text-[16px] font-medium -tracking-[0.015em] text-foreground">
+      <span className="font-mono text-base font-medium -tracking-[0.015em] text-foreground">
         {value}
       </span>
     </div>
@@ -248,6 +275,21 @@ function AxisTicks() {
       <span>{t("legend.minus30s")}</span>
       <span>{t("legend.now")}</span>
     </div>
+  )
+}
+
+function LiveStatus({
+  connectionState,
+  label,
+}: {
+  connectionState: ResourceStreamConnectionState
+  label: string
+}) {
+  return (
+    <span className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+      <LiveDot connected={connectionState === "connected"} />
+      {label}
+    </span>
   )
 }
 
@@ -288,7 +330,10 @@ function LegendBand({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className={`inline-block h-1.5 w-3.5 rounded-sm ${BAND_TONES[tone]}`} aria-hidden="true" />
+      <span
+        className={`inline-block h-1.5 w-3.5 rounded-sm ${BAND_TONES[tone]}`}
+        aria-hidden="true"
+      />
       {label}
     </span>
   )
