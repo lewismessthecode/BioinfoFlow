@@ -80,6 +80,8 @@ export function useAgentRuntime(
     () => sessions.find((session) => session.id === activeSessionId) ?? state.session,
     [activeSessionId, sessions, state.session],
   )
+  const streamCanStart =
+    !activeSessionId || eventWindow?.sessionId === activeSessionId
 
   const setActiveSessionId = useCallback(
     (sessionId: string | null) => {
@@ -184,6 +186,7 @@ export function useAgentRuntime(
   useEffect(() => {
     if (!activeSessionId) return
     if (!isLiveRuntime) return
+    if (!streamCanStart) return
     return subscribeAgentRuntimeEvents({
       sessionId: activeSessionId,
       afterSeq: streamCursorRef.current,
@@ -200,7 +203,7 @@ export function useAgentRuntime(
         dispatch({ type: "event.append", event })
       },
     })
-  }, [activeSessionId, isLiveRuntime, refreshState])
+  }, [activeSessionId, isLiveRuntime, refreshState, streamCanStart])
 
   const ensureSession = useCallback(
     async (modelSelection?: AgentModelSelection | null) => {

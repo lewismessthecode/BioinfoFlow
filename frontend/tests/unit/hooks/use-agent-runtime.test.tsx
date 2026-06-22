@@ -229,6 +229,49 @@ describe("useAgentRuntime", () => {
     )
   })
 
+  it("starts the live stream after capped state load from the latest loaded event", async () => {
+    let resolveState: (payload: {
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }) => void
+    mocks.getAgentRuntimeState.mockReturnValue(
+      new Promise((resolve) => {
+        resolveState = resolve
+      }),
+    )
+
+    renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    expect(mocks.subscribeAgentRuntimeEvents).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveState({
+        session,
+        turns: [],
+        events: [
+          { ...event, id: "event-499", seq: 499 },
+          { ...event, id: "event-500", seq: 500 },
+        ],
+      })
+    })
+
+    await waitFor(() =>
+      expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-1",
+          afterSeq: 500,
+        }),
+      ),
+    )
+  })
+
   it("marks state as a limited event window when the capped payload is full", async () => {
     mocks.getAgentRuntimeState.mockResolvedValue({
       session,
