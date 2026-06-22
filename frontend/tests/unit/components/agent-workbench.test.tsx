@@ -29,7 +29,7 @@ vi.mock("next-intl", () => ({
       showThinking: "Show thinking",
       hideThinking: "Hide thinking",
       toolCalls: "Tool calls",
-      "activity.groups.read": "Read project structure",
+      "activity.groups.read": "Read data",
       "activity.summary.read": "Read 1 source",
       approve: "Approve",
       reject: "Reject",
@@ -530,7 +530,7 @@ describe("AgentWorkbench", () => {
 
     expect(await screen.findByText("Thinking")).toBeInTheDocument()
     expect(screen.getByText("Project scan complete.")).toBeInTheDocument()
-    expect(screen.getByText("Read project structure")).toBeInTheDocument()
+    expect(screen.getByText("Read data")).toBeInTheDocument()
   })
 
   it("keeps an approved approval visible in the transcript until resume progress arrives", () => {
