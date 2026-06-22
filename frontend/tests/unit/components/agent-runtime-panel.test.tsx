@@ -223,6 +223,41 @@ describe("PendingDecisionCards", () => {
     })
   })
 
+  it("submits a custom ask_user answer", () => {
+    const onDecision = vi.fn()
+    render(
+      <PendingDecisionCards
+        events={[
+          waitingEvent({
+            action_id: "a1",
+            name: "ask_user",
+            interaction: {
+              kind: "user_input",
+              questions: [
+                {
+                  question: "Which DB?",
+                  header: "DB",
+                  options: [
+                    { label: "Postgres", description: "Relational" },
+                    { label: "SQLite", description: "Embedded" },
+                  ],
+                },
+              ],
+            },
+          }),
+        ]}
+        onDecision={onDecision}
+      />,
+    )
+    fireEvent.change(screen.getByPlaceholderText("ask.customPlaceholder"), {
+      target: { value: "DuckDB with parquet staging" },
+    })
+    fireEvent.click(screen.getByText("ask.submit"))
+    expect(onDecision).toHaveBeenCalledWith("a1", "answer", {
+      answer: { DB: "DuckDB with parquet staging" },
+    })
+  })
+
   it("approves a plan", () => {
     const onDecision = vi.fn()
     render(

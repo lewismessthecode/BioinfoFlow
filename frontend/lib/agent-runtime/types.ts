@@ -317,6 +317,7 @@ export type AgentTodoDisplayItem = AgentTodoItem & {
 export type AgentAskUserOption = {
   label: string
   description?: string
+  recommended?: boolean
 }
 
 export type AgentAskUserQuestion = {
