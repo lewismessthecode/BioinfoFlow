@@ -1705,7 +1705,7 @@
   },
   "scheduler": {
     "title": "Scheduler",
-    "subtitle": "A health dashboard for queue pressure, scheduler availability, and local system capacity.",
+    "subtitle": "Dispatch queue, resource pressure, and active workload in one operations view.",
     "mode": "Mode",
     "configuredMode": "Configured Mode",
     "configuredModeLabel": "Configured mode:",
@@ -1716,7 +1716,7 @@
     "dispatched": "Dispatched",
     "completed": "Completed",
     "failed": "Failed",
-    "resources": "System Resources",
+    "resources": "Live capacity",
     "cpu": "CPU",
     "memory": "Memory",
     "disk": "Disk",
@@ -1724,7 +1724,7 @@
     "snapshot": "Snapshot",
     "utilization": "Utilization",
     "noGpu": "No GPU detected",
-    "autoRefresh": "Auto-refreshes every 30s",
+    "autoRefresh": "Updates every 30s",
     "refreshDescription": "Counts are refreshed on a timer, not streamed live.",
     "resourceUnavailable": "Unavailable",
     "resourceSnapshotPending": "Waiting for the first sample",
@@ -1740,7 +1740,11 @@
       "activeTitle": "Persistent scheduler is active",
       "activeBody": "New runs are being written to the scheduler queue and claimed by workers from persistent state.",
       "fallbackTitle": "Persistent mode is configured, but fallback is active",
-      "fallbackBody": "The app is serving runs without an active persistent scheduler instance, so queue visibility and recovery features are limited."
+      "fallbackBody": "The app is serving runs without an active persistent scheduler instance, so queue visibility and recovery features are limited.",
+      "persistentBadge": "persistent",
+      "fallbackBadge": "fallback",
+      "ready": "ready",
+      "attention": "attention"
     },
     "guidance": {
       "title": "How to use this page",
@@ -1764,10 +1768,15 @@
       "loadFailed": "Couldn't load scheduler status. Check that the backend is running."
     },
     "pressure": {
-      "label": "System pressure",
+      "label": "Capacity status",
       "healthy": "healthy",
       "moderate": "moderate",
       "saturated": "saturated",
+      "messages": {
+        "healthy": "Resources are available for new dispatches.",
+        "moderate": "Dispatch may slow if CPU or memory continues rising.",
+        "saturated": "Hold new dispatches until pressure drops."
+      },
       "factors": {
         "cpu": "CPU",
         "mem": "Memory",
@@ -1776,12 +1785,27 @@
       }
     },
     "activeRuns": {
-      "title": "Active runs · causing load",
+      "title": "Active workload",
       "count": "{count} running",
       "empty": "No runs currently dispatched.",
+      "emptyStates": {
+        "idle": {
+          "title": "Idle",
+          "body": "No runs are executing or waiting; newly dispatched runs will appear here."
+        },
+        "queued": {
+          "title": "Waiting to dispatch",
+          "body": "Runs are queued, but no worker has started executing one yet."
+        },
+        "disconnected": {
+          "title": "Live stream disconnected",
+          "body": "Reconnect the resource stream to see currently executing runs."
+        }
+      },
       "unknownWorkflow": "unknown workflow"
     },
     "charts": {
+      "trendsTitle": "Resource trends",
       "cpuUtil": "CPU utilisation",
       "memory": "Memory",
       "diskIo": "Disk used",
@@ -1809,6 +1833,7 @@
       "dispatch": "dispatch",
       "complete": "complete",
       "window": "60s window · 2s tick · click a run to highlight",
+      "last60s": "last 60s",
       "minus60s": "−60s",
       "minus30s": "−30s",
       "now": "now"
