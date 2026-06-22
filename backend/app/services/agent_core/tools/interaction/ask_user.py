@@ -47,6 +47,7 @@ class AskUserTool:
                                     "properties": {
                                         "label": {"type": "string", "minLength": 1},
                                         "description": {"type": "string"},
+                                        "recommended": {"type": "boolean"},
                                     },
                                     "required": ["label", "description"],
                                     "additionalProperties": False,

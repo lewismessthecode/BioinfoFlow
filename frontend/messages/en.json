@@ -2358,7 +2358,11 @@
     },
     "ask": {
       "title": "The agent needs your input",
-      "submit": "Submit answer"
+      "submit": "Submit answer",
+      "customLabel": "Custom answer",
+      "customPlaceholder": "Tell Bioinfoflow what to use",
+      "recommended": "Recommended",
+      "rejectQuestion": "Reject question"
     }
   },
   "agent": {
