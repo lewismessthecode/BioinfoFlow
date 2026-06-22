@@ -2,11 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   buildStageConfettiEmitters,
-  celebrateOnce,
+  celebrateMilestone,
   celebratePreview,
-  celebrateReadinessTransitions,
   isCelebrationsEnabled,
-  readinessMilestonesFromSummary,
   setCelebrationsEnabled,
   subscribeToCelebrationsPreference,
 } from "@/lib/celebrations"
@@ -33,16 +31,6 @@ describe("celebrations", () => {
     } as unknown as CanvasRenderingContext2D)
   })
 
-  it("derives first-run milestones from readiness summary", () => {
-    expect(
-      readinessMilestonesFromSummary({
-        provider_key_configured: true,
-        projects: 1,
-        workflows: 1,
-      }),
-    ).toEqual(["provider-key", "first-project", "first-workflow"])
-  })
-
   it("builds a stage-style emitter layout with multiple launch points near the bottom edges", () => {
     const emitters = buildStageConfettiEmitters(1440, 900)
 
@@ -55,8 +43,8 @@ describe("celebrations", () => {
   it("fires a celebration only once per milestone", () => {
     const appendSpy = vi.spyOn(document.body, "appendChild")
 
-    celebrateOnce("first-project")
-    celebrateOnce("first-project")
+    celebrateMilestone("first-project")
+    celebrateMilestone("first-project")
 
     expect(appendSpy).toHaveBeenCalledTimes(1)
     expect(window.localStorage.getItem("bioinfoflow:celebrated:first-project")).toBe(
@@ -77,12 +65,10 @@ describe("celebrations", () => {
     }))
     const appendSpy = vi.spyOn(document.body, "appendChild")
 
-    celebrateOnce("provider-key")
+    celebrateMilestone("first-provider-key")
 
     expect(appendSpy).not.toHaveBeenCalled()
-    expect(window.localStorage.getItem("bioinfoflow:celebrated:provider-key")).toBe(
-      "1",
-    )
+    expect(window.localStorage.getItem("bioinfoflow:celebrated:first-provider-key")).toBe("1")
   })
 
   it("defaults celebrations to enabled and notifies preference subscribers", () => {
@@ -105,10 +91,23 @@ describe("celebrations", () => {
     const appendSpy = vi.spyOn(document.body, "appendChild")
 
     setCelebrationsEnabled(false)
-    celebrateOnce("provider-api-key-saved")
+    celebrateMilestone("first-provider-key")
 
     expect(appendSpy).not.toHaveBeenCalled()
-    expect(window.localStorage.getItem("bioinfoflow:celebrated:provider-api-key-saved")).toBe("1")
+    expect(window.localStorage.getItem("bioinfoflow:celebrated:first-provider-key")).toBe("1")
+  })
+
+  it("coalesces near-simultaneous milestones into one quiet animation while recording each one", () => {
+    const appendSpy = vi.spyOn(document.body, "appendChild")
+
+    celebrateMilestone("first-project")
+    celebrateMilestone("first-workflow-registered")
+    celebrateMilestone("first-workflow-bound")
+
+    expect(appendSpy).toHaveBeenCalledTimes(1)
+    expect(window.localStorage.getItem("bioinfoflow:celebrated:first-project")).toBe("1")
+    expect(window.localStorage.getItem("bioinfoflow:celebrated:first-workflow-registered")).toBe("1")
+    expect(window.localStorage.getItem("bioinfoflow:celebrated:first-workflow-bound")).toBe("1")
   })
 
   it("reuses a single confetti canvas for repeated preview triggers", () => {
@@ -166,30 +165,9 @@ describe("celebrations", () => {
     expect(appendSpy).not.toHaveBeenCalled()
   })
 
-  it("fires once when a readiness check transitions from incomplete to pass", () => {
-    const appendSpy = vi.spyOn(document.body, "appendChild")
+  it("does not persist preview as a milestone", () => {
+    celebratePreview()
 
-    celebrateReadinessTransitions(
-      [{ id: "project", status: "fail" }],
-      [{ id: "project", status: "pass" }],
-    )
-    celebrateReadinessTransitions(
-      [{ id: "project", status: "warn" }],
-      [{ id: "project", status: "pass" }],
-    )
-
-    expect(appendSpy).toHaveBeenCalledTimes(1)
-    expect(window.localStorage.getItem("bioinfoflow:celebrated:readiness-check:project")).toBe("1")
-  })
-
-  it("does not fire for checks that were already complete on the previous snapshot", () => {
-    const appendSpy = vi.spyOn(document.body, "appendChild")
-
-    celebrateReadinessTransitions(
-      [{ id: "docker", status: "pass" }],
-      [{ id: "docker", status: "pass" }],
-    )
-
-    expect(appendSpy).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem("bioinfoflow:celebrated:preview")).toBeNull()
   })
 })
