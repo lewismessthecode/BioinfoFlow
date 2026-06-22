@@ -24,6 +24,32 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   ),
 }))
 
+vi.mock("@/components/ui/select", () => ({
+  Select: ({
+    children,
+    value,
+    onValueChange,
+  }: {
+    children: React.ReactNode
+    value: string
+    onValueChange: (value: string) => void
+  }) => (
+    <select
+      aria-label="table.version"
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {children}
+    </select>
+  ),
+  SelectTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SelectValue: () => null,
+  SelectContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SelectItem: ({ children, value }: { children: React.ReactNode; value: string }) => (
+    <option value={value}>{children}</option>
+  ),
+}))
+
 const image: DockerImage = {
   id: "img-1",
   name: "pancancer-core-callers",
@@ -58,16 +84,17 @@ describe("ImageCardsGrid", () => {
     expect(screen.getAllByRole("heading", { name: "minibwa" })).toHaveLength(1)
     const card = screen.getByRole("heading", { name: "minibwa" }).closest("article")
     expect(card).not.toBeNull()
-    expect(within(card as HTMLElement).getByText("1.0")).toBeInTheDocument()
-    expect(within(card as HTMLElement).getByText("1.1")).toBeInTheDocument()
-    expect(within(card as HTMLElement).getByText("1.0-FIXED")).toBeInTheDocument()
-    expect(within(card as HTMLElement).getByText("167 MB")).toBeInTheDocument()
+    expect(within(card as HTMLElement).getByRole("combobox", { name: "table.version" })).toHaveValue("img-1")
+    expect(within(card as HTMLElement).getByText("card.versionCount")).toBeInTheDocument()
+    expect(within(card as HTMLElement).getByText("139 MB")).toBeInTheDocument()
+    expect(within(card as HTMLElement).queryByTestId("image-version-row")).not.toBeInTheDocument()
   })
 
   it("keeps version actions scoped to the selected tag", () => {
     const onPull = vi.fn()
     const onViewDetails = vi.fn()
     const onCopyName = vi.fn()
+    const onCopyPullCommand = vi.fn()
     const onDeleteLocal = vi.fn()
     const oneZero = { ...image, id: "img-1", tag: "1.0", full_name: "minibwa:1.0", name: "minibwa" }
     const oneOne = { ...image, id: "img-2", tag: "1.1", full_name: "minibwa:1.1", name: "minibwa", status: "remote" as const }
@@ -80,21 +107,24 @@ describe("ImageCardsGrid", () => {
         onPull={onPull}
         onViewDetails={onViewDetails}
         onCopyName={onCopyName}
-        onCopyPullCommand={vi.fn()}
+        onCopyPullCommand={onCopyPullCommand}
         onDeleteLocal={onDeleteLocal}
       />,
     )
 
-    const row = screen.getByText("1.1").closest("[data-testid='image-version-row']")
-    expect(row).not.toBeNull()
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: /actions.pull/i }))
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "actions.viewDetails" }))
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: /actions.copyName/i }))
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "actions.deleteLocal" }))
+    fireEvent.change(screen.getByRole("combobox", { name: "table.version" }), {
+      target: { value: "img-2" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /actions.pull/i }))
+    fireEvent.click(screen.getAllByRole("button", { name: "actions.viewDetails" })[0])
+    fireEvent.click(screen.getByRole("button", { name: /actions.copyName/i }))
+    fireEvent.click(screen.getByRole("button", { name: /actions.copyPullCommand/i }))
+    fireEvent.click(screen.getByRole("button", { name: "actions.deleteLocal" }))
 
     expect(onPull).toHaveBeenCalledWith(oneOne)
     expect(onViewDetails).toHaveBeenCalledWith(oneOne)
     expect(onCopyName).toHaveBeenCalledWith(oneOne)
+    expect(onCopyPullCommand).toHaveBeenCalledWith(oneOne)
     expect(onDeleteLocal).toHaveBeenCalledWith(oneOne)
   })
 

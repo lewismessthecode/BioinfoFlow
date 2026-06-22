@@ -1,3 +1,6 @@
+"use client"
+
+import { useMemo, useState } from "react"
 import {
   Check,
   Cloud,
@@ -19,6 +22,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table"
 import { cn } from "@/lib/utils"
@@ -159,64 +169,25 @@ export function ImageCardsGrid({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {groups.map((group) => {
-        const image = group.primaryImage
-        return (
-          <Card key={group.key} className="group relative overflow-hidden border-border/60 bg-card/92 hover:shadow-sm hover:border-border/90 transition-all duration-200 h-full flex flex-col">
-            <article className="flex h-full flex-col">
-            <CardContent className="p-4 flex-1 flex flex-col">
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex min-w-0 w-full cursor-default items-center gap-2.5">
-                        <div className="quiet-card-icon-shell quiet-card-icon-shell--artifact shrink-0">
-                          <Package2 className="quiet-card-icon-glyph h-4 w-4" strokeWidth={1.8} />
-                        </div>
-                        <h2 className="min-w-0 truncate text-sm font-semibold text-foreground leading-tight">{group.label}</h2>
-                      </div>
-                    </TooltipTrigger>
-                    {image.description && (
-                      <TooltipContent side="right" className="max-w-xs">
-                        {image.description}
-                      </TooltipContent>
-                    )}
-                  </Tooltip>
-                </div>
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant="secondary" className="text-xs-tight">
-                  {tImages("card.versionCount", { count: group.images.length })}
-                </Badge>
-              </div>
-
-              <div className="mt-3 grid gap-2">
-                {group.images.map((version) => (
-                  <ImageVersionRow
-                    key={version.id}
-                    image={version}
-                    tImages={tImages}
-                    tCommon={tCommon}
-                    onPull={onPull}
-                    onViewDetails={onViewDetails}
-                    onCopyName={onCopyName}
-                    onCopyPullCommand={onCopyPullCommand}
-                    onDeleteLocal={onDeleteLocal}
-                  />
-                ))}
-              </div>
-            </CardContent>
-            </article>
-          </Card>
-        )
-      })}
+      {groups.map((group) => (
+        <ImageRepositoryCard
+          key={group.key}
+          group={group}
+          tImages={tImages}
+          tCommon={tCommon}
+          onPull={onPull}
+          onViewDetails={onViewDetails}
+          onCopyName={onCopyName}
+          onCopyPullCommand={onCopyPullCommand}
+          onDeleteLocal={onDeleteLocal}
+        />
+      ))}
     </div>
   )
 }
 
-function ImageVersionRow({
-  image,
+function ImageRepositoryCard({
+  group,
   tImages,
   tCommon,
   onPull,
@@ -225,7 +196,7 @@ function ImageVersionRow({
   onCopyPullCommand,
   onDeleteLocal,
 }: {
-  image: DockerImage
+  group: ImageRepositoryGroup
   tImages: ImageTranslator
   tCommon: (key: string) => string
   onPull: (image: DockerImage) => void
@@ -234,51 +205,117 @@ function ImageVersionRow({
   onCopyPullCommand: (image: DockerImage) => void
   onDeleteLocal?: ((image: DockerImage) => void) | undefined
 }) {
+  const [selectedImageId, setSelectedImageId] = useState(group.primaryImage.id)
+  const image = useMemo(
+    () => group.images.find((item) => item.id === selectedImageId) ?? group.primaryImage,
+    [group.images, group.primaryImage, selectedImageId],
+  )
+  const hasMultipleVersions = group.images.length > 1
+
   return (
-    <div
-      className="grid gap-2 rounded-lg border border-border/55 bg-background/70 p-2"
-      data-testid="image-version-row"
-    >
-      <div className="flex min-w-0 items-start justify-between gap-2">
-        <div className="min-w-0">
-          <Badge variant="secondary" className="max-w-full text-xs-tight">
-            <span className="truncate">{image.tag}</span>
-          </Badge>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <HardDrive className="h-3 w-3" />
-              {formatSize(image.size_bytes)}
-            </span>
+    <Card className="group relative overflow-hidden border-border/60 bg-card/84 hover:shadow-sm hover:border-border/90 transition-all duration-200 h-full flex flex-col">
+      <article className="flex h-full flex-col">
+        <CardContent className="p-4 flex-1 flex flex-col">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex min-w-0 w-full cursor-default items-center gap-2.5">
+                    <div className="quiet-card-icon-shell quiet-card-icon-shell--artifact shrink-0">
+                      <Package2 className="quiet-card-icon-glyph h-4 w-4" strokeWidth={1.8} />
+                    </div>
+                    <h2 className="min-w-0 truncate text-sm font-semibold text-foreground leading-tight">{group.label}</h2>
+                  </div>
+                </TooltipTrigger>
+                {image.description && (
+                  <TooltipContent side="right" className="max-w-xs">
+                    {image.description}
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </div>
+            <ImageActionsMenu
+              image={image}
+              tImages={tImages}
+              tCommon={tCommon}
+              onViewDetails={onViewDetails}
+              onCopyName={onCopyName}
+              onCopyPullCommand={onCopyPullCommand}
+              onDeleteLocal={onDeleteLocal}
+              triggerClassName="h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 shrink-0"
+              ariaLabel={tImages("actions.versionActions", { tag: image.tag })}
+            />
+          </div>
+
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="metadata-pill text-xs-tight font-mono">
+              {image.registry || "local"}
+            </Badge>
             <ImageStatusBadge image={image} tImages={tImages} />
           </div>
-        </div>
-        <ImageActionsMenu
-          image={image}
-          tImages={tImages}
-          tCommon={tCommon}
-          onViewDetails={onViewDetails}
-          onCopyName={onCopyName}
-          onCopyPullCommand={onCopyPullCommand}
-          onDeleteLocal={onDeleteLocal}
-          triggerClassName="h-7 w-7 shrink-0"
-          ariaLabel={tImages("actions.versionActions", { tag: image.tag })}
-        />
-      </div>
-      <Button
-        className="h-8 w-full"
-        size="sm"
-        variant={image.status === "local" ? "outline" : "default"}
-        disabled={image.status === "pulling"}
-        onClick={() => onPull(image)}
-      >
-        <Download className="h-3.5 w-3.5 mr-2" />
-        {image.status === "pulling"
-          ? tImages("actions.pulling")
-          : image.status === "local"
-            ? tImages("actions.repull")
-            : tImages("actions.pull")}
-      </Button>
-    </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            {hasMultipleVersions ? (
+              <Select value={image.id} onValueChange={setSelectedImageId}>
+                <SelectTrigger
+                  className="h-8 min-w-0 flex-1 rounded-full bg-background text-xs"
+                  aria-label={tImages("table.version")}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {group.images.map((version) => (
+                    <SelectItem key={version.id} value={version.id}>
+                      {version.tag}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Badge variant="secondary" className="min-w-0 max-w-[65%] rounded-full px-3 py-1.5 text-xs-tight font-mono">
+                <span className="truncate">{image.tag}</span>
+              </Badge>
+            )}
+            <Badge variant="secondary" className="rounded-full px-2.5 text-xs-tight">
+              {tImages("card.versionCount", { count: group.images.length })}
+            </Badge>
+          </div>
+
+          <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
+            <HardDrive className="h-3 w-3" />
+            {formatSize(image.size_bytes)}
+          </div>
+
+          <div className="mt-auto pt-3 grid grid-cols-2 gap-2">
+            <Button
+              className="w-full min-w-0"
+              size="sm"
+              variant={image.status === "local" ? "outline" : "default"}
+              disabled={image.status === "pulling"}
+              onClick={() => onPull(image)}
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+              <span className="truncate">
+                {image.status === "pulling"
+                  ? tImages("actions.pulling")
+                  : image.status === "local"
+                    ? tImages("actions.repull")
+                    : tImages("actions.pull")}
+              </span>
+            </Button>
+            <Button
+              className="w-full min-w-0"
+              size="sm"
+              variant="outline"
+              data-testid="image-card-view-details"
+              onClick={() => onViewDetails(image)}
+            >
+              <span className="truncate">{tImages("actions.viewDetails")}</span>
+            </Button>
+          </div>
+        </CardContent>
+      </article>
+    </Card>
   )
 }
 
