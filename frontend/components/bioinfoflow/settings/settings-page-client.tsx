@@ -662,11 +662,17 @@ export default function SettingsPageClient({
                               : t("appearance.celebrations.disabledLabel")}
                           </span>
                         </div>
-                        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                        <p
+                          id="celebrations-description"
+                          className="max-w-2xl text-sm leading-6 text-muted-foreground"
+                        >
                           {t("appearance.celebrations.description")}
                         </p>
                         {reducedMotion ? (
-                          <p className="text-xs text-muted-foreground">
+                          <p
+                            id="celebrations-reduced-motion"
+                            className="text-xs text-muted-foreground"
+                          >
                             {t("appearance.celebrations.reducedMotion")}
                           </p>
                         ) : null}
@@ -688,6 +694,11 @@ export default function SettingsPageClient({
                       </Button>
                       <Switch
                         aria-label={t("appearance.celebrations.title")}
+                        aria-describedby={
+                          reducedMotion
+                            ? "celebrations-description celebrations-reduced-motion"
+                            : "celebrations-description"
+                        }
                         checked={celebrationsEnabled}
                         onCheckedChange={(checked) =>
                           persistCelebrationsEnabled(Boolean(checked))

@@ -11,6 +11,7 @@ const {
   setModeMock,
   celebratePreviewMock,
   setCelebrationsEnabledMock,
+  reducedMotionState,
 } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   replaceMock: vi.fn(),
@@ -18,6 +19,7 @@ const {
   setModeMock: vi.fn(),
   celebratePreviewMock: vi.fn(),
   setCelebrationsEnabledMock: vi.fn(),
+  reducedMotionState: { value: false },
 }))
 
 const celebrationsPreference = createCelebrationsPreferenceMock()
@@ -63,13 +65,15 @@ vi.mock("next-intl", () => ({
         toggleTheme: "Toggle theme",
         openMenu: "Open menu",
         hidePanel: "Hide panel",
-        celebrationsOn: "Celebrations on",
-        celebrationsOff: "Celebrations off",
+        celebrationsOn: "Milestone confetti on",
+        celebrationsOff: "Milestone confetti off",
+        celebrationsPaused: "Milestone confetti paused by reduced motion",
       },
       celebrations: {
-        title: "Celebrations",
-        toggle: "Enable celebrations",
-        preview: "Preview confetti",
+        title: "Quiet celebrations",
+        toggle: "Milestone confetti",
+        preview: "Preview",
+        reducedMotion: "Reduced motion is on, so confetti is paused.",
       },
     }
     return copy[namespace]?.[key] ?? key
@@ -81,6 +85,7 @@ vi.mock("@/lib/celebrations", () => ({
   isCelebrationsEnabled: () => celebrationsPreference.getEnabled(),
   useCelebrationsEnabledPreference: () =>
     celebrationsPreference.useCelebrationsEnabledPreference(),
+  useReducedMotionPreference: () => reducedMotionState.value,
   setCelebrationsEnabled: (enabled: boolean) => {
     celebrationsPreference.setEnabled(enabled)
     setCelebrationsEnabledMock(enabled)
@@ -128,11 +133,13 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   ),
   DropdownMenuItem: ({
     children,
+    disabled,
     onClick,
   }: {
     children: React.ReactNode
+    disabled?: boolean
     onClick?: () => void
-  }) => <button onClick={onClick}>{children}</button>,
+  }) => <button disabled={disabled} onClick={onClick}>{children}</button>,
 }))
 
 import { Navbar } from "@/components/bioinfoflow/navbar"
@@ -154,6 +161,7 @@ describe("Navbar", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     celebrationsPreference.reset()
+    reducedMotionState.value = false
   })
 
   it("toggles the theme from light to dark", async () => {
@@ -199,20 +207,37 @@ describe("Navbar", () => {
     const user = userEvent.setup()
     render(<Navbar viewer={AUTH_VIEWER} />)
 
-    expect(screen.getByRole("button", { name: "Celebrations on" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Milestone confetti on" })).toBeInTheDocument()
 
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Enable celebrations" }))
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Milestone confetti" }))
 
     expect(setCelebrationsEnabledMock).toHaveBeenCalledWith(false)
-    expect(screen.getByRole("button", { name: "Celebrations off" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Milestone confetti off" })).toBeInTheDocument()
   })
 
   it("fires preview confetti from the top-right control", async () => {
     const user = userEvent.setup()
     render(<Navbar viewer={AUTH_VIEWER} />)
 
-    await user.click(screen.getByRole("button", { name: "Preview confetti" }))
+    await user.click(screen.getByRole("button", { name: "Preview" }))
 
     expect(celebratePreviewMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("pauses navbar preview while reduced motion is active", async () => {
+    const user = userEvent.setup()
+    reducedMotionState.value = true
+    render(<Navbar viewer={AUTH_VIEWER} />)
+
+    expect(
+      screen.getByRole("button", { name: "Milestone confetti paused by reduced motion" }),
+    ).toBeInTheDocument()
+    expect(screen.getByText("Reduced motion is on, so confetti is paused.")).toBeInTheDocument()
+
+    const preview = screen.getByRole("button", { name: "Preview" })
+    expect(preview).toBeDisabled()
+    await user.click(preview)
+
+    expect(celebratePreviewMock).not.toHaveBeenCalled()
   })
 })

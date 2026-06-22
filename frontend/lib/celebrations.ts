@@ -283,11 +283,17 @@ function subscribeToReducedMotionPreference(callback: () => void): () => void {
   const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY)
   const handleChange = () => callback()
 
-  mediaQuery.addEventListener?.("change", handleChange)
-  mediaQuery.addListener?.(handleChange)
+  if (typeof mediaQuery.addEventListener === "function") {
+    mediaQuery.addEventListener("change", handleChange)
+  } else {
+    mediaQuery.addListener?.(handleChange)
+  }
 
   return () => {
-    mediaQuery.removeEventListener?.("change", handleChange)
-    mediaQuery.removeListener?.(handleChange)
+    if (typeof mediaQuery.removeEventListener === "function") {
+      mediaQuery.removeEventListener("change", handleChange)
+    } else {
+      mediaQuery.removeListener?.(handleChange)
+    }
   }
 }

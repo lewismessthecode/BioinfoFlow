@@ -18,6 +18,7 @@ import {
   celebratePreview,
   setCelebrationsEnabled,
   useCelebrationsEnabledPreference,
+  useReducedMotionPreference,
 } from "@/lib/celebrations"
 import { Breadcrumbs } from "./breadcrumbs"
 import { ConnectionStatus } from "./connection-status"
@@ -46,6 +47,12 @@ export function Navbar({
   const tAccessibility = useTranslations("accessibility")
   const tCelebrations = useTranslations("celebrations")
   const celebrationsEnabled = useCelebrationsEnabledPreference()
+  const reducedMotion = useReducedMotionPreference()
+  const celebrationStateLabel = reducedMotion && celebrationsEnabled
+    ? tAccessibility("celebrationsPaused")
+    : celebrationsEnabled
+      ? tAccessibility("celebrationsOn")
+      : tAccessibility("celebrationsOff")
 
   const actionButtonClassName =
     "h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
@@ -88,18 +95,10 @@ export function Navbar({
                   ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
                   : "text-muted-foreground hover:text-foreground",
               )}
-              title={
-                celebrationsEnabled
-                  ? tAccessibility("celebrationsOn")
-                  : tAccessibility("celebrationsOff")
-              }
+              title={celebrationStateLabel}
             >
               <PartyPopper className="h-4 w-4" />
-              <span className="sr-only">
-                {celebrationsEnabled
-                  ? tAccessibility("celebrationsOn")
-                  : tAccessibility("celebrationsOff")}
-              </span>
+              <span className="sr-only">{celebrationStateLabel}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
@@ -110,11 +109,16 @@ export function Navbar({
             >
               {tCelebrations("toggle")}
             </DropdownMenuCheckboxItem>
+            {reducedMotion && celebrationsEnabled ? (
+              <p className="px-2 py-1.5 text-xs leading-5 text-muted-foreground">
+                {tCelebrations("reducedMotion")}
+              </p>
+            ) : null}
             <DropdownMenuItem
               onClick={() => {
                 celebratePreview()
               }}
-              disabled={!celebrationsEnabled}
+              disabled={!celebrationsEnabled || reducedMotion}
             >
               <PartyPopper className="h-4 w-4" />
               {tCelebrations("preview")}
