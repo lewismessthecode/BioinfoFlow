@@ -191,8 +191,10 @@ describe("FilesTab", () => {
     fireEvent.click(await screen.findByRole("button", { name: "workflow.wdl" }))
     expect(await screen.findByText("workflow content")).toBeInTheDocument()
 
-    const row = screen.getByRole("treeitem", { name: "workflow.wdl" })
-    expect(row).toHaveAttribute("aria-selected", "true")
+    const rowButton = screen.getByRole("button", { name: "workflow.wdl" })
+    const row = rowButton.closest("[data-file-kind='workflow']")
+    expect(rowButton).toHaveAttribute("aria-current", "true")
+    expect(row).toHaveAttribute("data-selected", "true")
     expect(row).toHaveAttribute("data-file-kind", "workflow")
   })
 

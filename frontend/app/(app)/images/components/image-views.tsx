@@ -165,7 +165,7 @@ export function ImageCardsGrid({
           <Card key={group.key} className="group relative overflow-hidden border-border/60 bg-card/92 hover:shadow-sm hover:border-border/90 transition-all duration-200 h-full flex flex-col">
             <article className="flex h-full flex-col">
             <CardContent className="p-4 flex-1 flex flex-col">
-              <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -183,16 +183,6 @@ export function ImageCardsGrid({
                     )}
                   </Tooltip>
                 </div>
-                <ImageActionsMenu
-                  image={image}
-                  tImages={tImages}
-                  tCommon={tCommon}
-                  onViewDetails={onViewDetails}
-                  onCopyName={onCopyName}
-                  onCopyPullCommand={onCopyPullCommand}
-                  onDeleteLocal={onDeleteLocal}
-                  triggerClassName="h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 shrink-0"
-                />
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

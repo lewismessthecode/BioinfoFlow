@@ -102,7 +102,7 @@ export function AgentWorkspaceTree({
         </div>
       ) : null}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
-        <div className="grid min-w-0 gap-0.5" role="tree">
+        <div className="grid min-w-0 gap-0.5">
         <TreeRows
           entries={visibleEntries}
           depth={0}
@@ -171,10 +171,9 @@ function TreeRows({
     return (
       <div key={entry.path} className="grid min-w-0 gap-0.5">
         <div
-          role="treeitem"
           aria-label={entry.name}
-          aria-selected={isSelected}
           aria-expanded={entry.type === "dir" ? expanded : undefined}
+          data-selected={isSelected ? "true" : undefined}
           data-file-kind={fileKind}
           className={cn(
             "group flex min-h-7 min-w-0 items-center gap-1 rounded-md py-1 pr-1.5 text-sm transition-colors hover:bg-muted/55",
@@ -187,6 +186,7 @@ function TreeRows({
             onClick={() => entry.type === "dir" ? onToggleDirectory(entry) : onOpenFile(entry)}
             className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-left"
             aria-label={entry.name}
+            aria-current={isSelected ? "true" : undefined}
             title={entry.path}
           >
             {entry.type === "dir" ? (

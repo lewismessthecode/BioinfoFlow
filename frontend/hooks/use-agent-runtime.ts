@@ -148,7 +148,7 @@ export function useAgentRuntime(
     dispatch({ type: "loading" })
     try {
       const payload = await getAgentRuntimeState(sessionId)
-      if (activeSessionIdRef.current && activeSessionIdRef.current !== sessionId) return
+      if (activeSessionIdRef.current !== sessionId) return
       setEventWindow({
         sessionId,
         limited: false,
@@ -157,6 +157,7 @@ export function useAgentRuntime(
       emitRuntimeSessionUpdated(payload.session)
       dispatch({ type: "state.loaded", payload })
     } catch (error) {
+      if (activeSessionIdRef.current !== sessionId) return
       dispatch({
         type: "error",
         message: error instanceof Error ? error.message : "Failed to load agent state",

@@ -333,6 +333,40 @@ describe("useAgentRuntime", () => {
     expect(result.current.state.session?.id).toBe("session-2")
   })
 
+  it("ignores stale state refreshes after returning to a controlled draft", async () => {
+    let resolveState: (payload: {
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }) => void
+    mocks.getAgentRuntimeState.mockReturnValue(
+      new Promise((resolve) => {
+        resolveState = resolve
+      }),
+    )
+
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1"))
+
+    rerender({ activeSessionId: "" })
+
+    await act(async () => {
+      resolveState({ session, turns: [turn], events: [event] })
+    })
+
+    expect(result.current.state.session).toBeNull()
+    expect(result.current.state.turns).toEqual([])
+    expect(result.current.state.events).toEqual([])
+  })
+
   it("clears the previous session state immediately when the active session changes", async () => {
     const session2: AgentRuntimeSession = { ...session, id: "session-2" }
     mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])

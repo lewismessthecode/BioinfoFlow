@@ -81,6 +81,13 @@ describe("ArtifactPreviewDrawer", () => {
             payload: { command: "ls", stdout: "report.md", stderr: "" },
           }),
           artifact({
+            id: "run-1",
+            type: "run",
+            title: "Run record",
+            resource_ref: { url: "/api/v1/runs/run-1" },
+            payload: { run: { id: "run-1" } },
+          }),
+          artifact({
             id: "file-1",
             type: "file",
             title: "report.md",
@@ -96,6 +103,7 @@ describe("ArtifactPreviewDrawer", () => {
     expect(within(drawer).getByRole("button", { name: /report.md/ })).toBeInTheDocument()
     expect(screen.getByText("/workspace/report.md")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /ls output/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Run record/ })).not.toBeInTheDocument()
     expect(screen.queryByText("artifacts.toolLogs")).not.toBeInTheDocument()
   })
 })
@@ -166,6 +174,8 @@ describe("ArtifactViewer", () => {
       "src",
       "/api/v1/agent/artifacts/pdf-1/raw",
     )
+    expect(screen.queryByRole("button", { name: "artifacts.copy" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "artifacts.download" })).not.toBeInTheDocument()
   })
 })
 

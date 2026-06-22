@@ -61,17 +61,20 @@ function FileArtifact({ artifact }: { artifact: AgentRuntimeArtifact }) {
   const kind = artifactFileKind(artifact, path, payload)
   const table = kind === "spreadsheet" ? tableFromArtifact(payload, content, path) : null
   const resourceUrl = artifactResourceUrl(artifact)
+  const canCopyOrDownload = content.length > 0
   return (
     <div className="grid gap-3">
       <ArtifactHeader title={path} />
-      <div className="flex items-center gap-2">
-        <CopyButton text={content} label={t("artifacts.copy")} done={t("artifacts.copied")} />
-        <DownloadButton
-          text={content}
-          filename={filename}
-          label={t("artifacts.download")}
-        />
-      </div>
+      {canCopyOrDownload ? (
+        <div className="flex items-center gap-2">
+          <CopyButton text={content} label={t("artifacts.copy")} done={t("artifacts.copied")} />
+          <DownloadButton
+            text={content}
+            filename={filename}
+            label={t("artifacts.download")}
+          />
+        </div>
+      ) : null}
       {kind === "markdown" ? (
         <MarkdownRenderer
           content={content || t("artifacts.previewUnavailable")}

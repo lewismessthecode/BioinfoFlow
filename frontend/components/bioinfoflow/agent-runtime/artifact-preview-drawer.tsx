@@ -79,7 +79,7 @@ const PREVIEW_ARTIFACT_TYPES = new Set([
 
 function isPreviewArtifact(artifact: AgentRuntimeArtifact) {
   if (HIDDEN_ARTIFACT_TYPES.has(artifact.type) || isToolLogArtifact(artifact)) return false
-  if (artifact.file_path || artifact.resource_ref) return true
+  if (artifact.file_path) return true
   return PREVIEW_ARTIFACT_TYPES.has(artifact.type)
 }
 
