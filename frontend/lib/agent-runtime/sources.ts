@@ -206,9 +206,24 @@ function domainFromUrl(url: string) {
 }
 
 function sourceTypeFromUrl(url: string) {
-  const domain = domainFromUrl(url)
-  if (domain.includes("pubmed") || domain.includes("ncbi.nlm.nih.gov")) return "pubmed"
-  if (domain.includes("biorxiv.org")) return "biorxiv"
-  if (domain.includes("github.com") || domain.includes("githubusercontent.com")) return "github"
+  const host = hostnameFromUrl(url)
+  if (host === "pubmed.ncbi.nlm.nih.gov") return "pubmed"
+  if (hostMatches(host, "ncbi.nlm.nih.gov")) return "ncbi"
+  if (hostMatches(host, "biorxiv.org")) return "biorxiv"
+  if (hostMatches(host, "github.com") || hostMatches(host, "githubusercontent.com")) {
+    return "github"
+  }
   return "web"
+}
+
+function hostnameFromUrl(url: string) {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/\.$/, "").replace(/^www\./, "")
+  } catch {
+    return ""
+  }
+}
+
+function hostMatches(host: string, baseHost: string) {
+  return host === baseHost || host.endsWith(`.${baseHost}`)
 }
