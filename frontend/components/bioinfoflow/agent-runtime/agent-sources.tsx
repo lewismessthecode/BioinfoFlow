@@ -21,6 +21,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import type { AgentRuntimeSource } from "@/lib/agent-runtime"
+import { sanitizeSourceHref } from "@/lib/agent-runtime/sources"
 import { cn } from "@/lib/utils"
 
 type SourceCitationProps = {
@@ -268,41 +269,66 @@ function SourceDrawerLink({
   highlighted: boolean
 }) {
   const t = useTranslations("agentRuntime")
-  const ref = useRef<HTMLAnchorElement>(null)
+  const ref = useRef<HTMLElement>(null)
+  const href = sanitizeSourceHref(source.url)
+  const setRef = useCallback((node: HTMLAnchorElement | HTMLDivElement | null) => {
+    ref.current = node
+  }, [])
 
   useEffect(() => {
     if (!highlighted) return
     ref.current?.scrollIntoView({ block: "center" })
   }, [highlighted])
 
-  return (
-    <a
-      ref={ref}
-      href={source.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={cn(
-        "grid gap-1 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-        highlighted && "border-primary/45 bg-primary/5",
-      )}
-    >
+  const content = (
+    <>
       <span className="flex min-w-0 items-center gap-2">
         <SourceIcon sourceType={source.sourceType} className="h-4 w-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">
           {source.title}
         </span>
-        <ExternalLink
-          aria-hidden="true"
-          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-        />
+        {href ? (
+          <ExternalLink
+            aria-hidden="true"
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+          />
+        ) : null}
       </span>
       <span className="truncate text-xs text-muted-foreground">
         {source.domain}
-        <span className="sr-only"> {t("sources.opensInNewTab")}</span>
+        {href ? <span className="sr-only"> {t("sources.opensInNewTab")}</span> : null}
       </span>
       <span className="line-clamp-2 text-xs leading-5 text-muted-foreground">
         {source.snippet || t("sources.noSnippet")}
       </span>
+    </>
+  )
+
+  const className = cn(
+    "grid gap-1 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-sm shadow-sm transition-colors",
+    href
+      ? "hover:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      : "cursor-default",
+    highlighted && "border-primary/45 bg-primary/5",
+  )
+
+  if (!href) {
+    return (
+      <div ref={setRef} className={className}>
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <a
+      ref={setRef}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className}
+    >
+      {content}
     </a>
   )
 }

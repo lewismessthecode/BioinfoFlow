@@ -862,6 +862,93 @@ describe("AgentTranscript", () => {
     expect(screen.getAllByText("2 results").length).toBeGreaterThan(0)
   })
 
+  it("groups real backend search results by the action input preview", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input_preview: "ATAC-seq peak calling review",
+          result: {
+            results: [
+              {
+                title: "ATAC-seq Guidelines",
+                url: "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4374986/",
+                snippet: "ATAC-seq detects accessible chromatin.",
+              },
+            ],
+          },
+        }),
+        event("event-text", 2, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "Use the ATAC-seq guidance as a source [1](source:1).",
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open 1 sources" }))
+
+    expect(screen.getByRole("dialog", { name: "Sources" })).toBeInTheDocument()
+    expect(screen.getByText("ATAC-seq peak calling review")).toBeInTheDocument()
+  })
+
+  it("does not make unsafe source URLs navigable in the sources drawer", () => {
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "This source should not become a link [1](source:unsafe-source).",
+          sources: [
+            {
+              id: "unsafe-source",
+              title: "Unsafe source",
+              url: "javascript:alert(1)",
+              domain: "javascript:alert(1)",
+              snippet: "A non-web URL echoed by a source provider.",
+              sourceType: "web",
+              query: "unsafe source",
+              resultCount: 1,
+            },
+          ],
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open 1 sources" }))
+
+    expect(screen.getByText("Unsafe source")).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /Unsafe source/ })).not.toBeInTheDocument()
+    expect(document.querySelector('a[href^="javascript:"]')).toBeNull()
+  })
+
+  it("does not make unsafe activity-row source URLs navigable", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input_preview: "unsafe echoed source",
+          result: {
+            results: [
+              {
+                title: "Unsafe search result",
+                url: "javascript:alert(1)",
+                snippet: "A non-web URL echoed by a source provider.",
+              },
+            ],
+          },
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /Searched web/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+
+    expect(screen.getByText("Unsafe search result")).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /Unsafe search result/ })).not.toBeInTheDocument()
+    expect(document.querySelector('a[href^="javascript:"]')).toBeNull()
+  })
+
   it("keeps duplicate URL citation aliases resolvable after source dedupe", () => {
     renderTranscript({
       events: [

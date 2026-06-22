@@ -14,6 +14,7 @@ import {
 import { useTranslations } from "next-intl"
 
 import type { AgentRuntimeToolActivity } from "@/lib/agent-runtime"
+import { sanitizeSourceHref } from "@/lib/agent-runtime/sources"
 import { cn } from "@/lib/utils"
 
 export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivity }) {
@@ -92,24 +93,11 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
               </div>
               <div className="grid gap-1.5">
                 {activity.sources.map((source) => (
-                  <a
+                  <SourceActivityLink
                     key={source.id}
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex min-w-0 items-center gap-2 rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80 transition-colors hover:bg-muted/45 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Globe2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">{source.title}</span>
-                    <span className="sr-only">{t("sources.opensInNewTab")}</span>
-                    <span className="hidden shrink-0 text-muted-foreground sm:inline">
-                      {source.domain}
-                    </span>
-                    <ExternalLink
-                      aria-hidden="true"
-                      className="h-3 w-3 shrink-0 text-muted-foreground"
-                    />
-                  </a>
+                    source={source}
+                    opensInNewTabLabel={t("sources.opensInNewTab")}
+                  />
                 ))}
               </div>
             </div>
@@ -136,6 +124,48 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
         </div>
       ) : null}
     </div>
+  )
+}
+
+function SourceActivityLink({
+  source,
+  opensInNewTabLabel,
+}: {
+  source: AgentRuntimeToolActivity["sources"][number]
+  opensInNewTabLabel: string
+}) {
+  const href = sanitizeSourceHref(source.url)
+  const className = cn(
+    "flex min-w-0 items-center gap-2 rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80 transition-colors",
+    href
+      ? "hover:bg-muted/45 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      : "cursor-default",
+  )
+  const content = (
+    <>
+      <Globe2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate">{source.title}</span>
+      {href ? <span className="sr-only">{opensInNewTabLabel}</span> : null}
+      <span className="hidden shrink-0 text-muted-foreground sm:inline">
+        {source.domain}
+      </span>
+      {href ? (
+        <ExternalLink
+          aria-hidden="true"
+          className="h-3 w-3 shrink-0 text-muted-foreground"
+        />
+      ) : null}
+    </>
+  )
+
+  if (!href) {
+    return <div className={className}>{content}</div>
+  }
+
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+      {content}
+    </a>
   )
 }
 

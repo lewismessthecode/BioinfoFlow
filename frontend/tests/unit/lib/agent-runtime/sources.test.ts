@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { sourcesFromActionResult } from "@/lib/agent-runtime/sources"
+import {
+  sanitizeSourceHref,
+  sourcesFromActionResult,
+} from "@/lib/agent-runtime/sources"
 import type { AgentRuntimeEvent } from "@/lib/agent-runtime"
 
 function actionEvent(): AgentRuntimeEvent {
@@ -86,5 +89,40 @@ describe("agent runtime source extraction", () => {
       "web",
       "web",
     ])
+  })
+
+  it("only makes normal web source URLs clickable", () => {
+    expect(sanitizeSourceHref("https://pubmed.ncbi.nlm.nih.gov/23104886/")).toBe(
+      "https://pubmed.ncbi.nlm.nih.gov/23104886/",
+    )
+    expect(sanitizeSourceHref("http://example.test/source")).toBe(
+      "http://example.test/source",
+    )
+    expect(sanitizeSourceHref("javascript:alert(1)")).toBeUndefined()
+    expect(sanitizeSourceHref("data:text/html,<script>alert(1)</script>")).toBeUndefined()
+    expect(sanitizeSourceHref("/relative/source")).toBeUndefined()
+  })
+
+  it("uses action input preview as the query for backend-shaped search results", () => {
+    const sources = sourcesFromActionResult(
+      {
+        results: [
+          {
+            title: "STAR search result",
+            url: "https://pubmed.ncbi.nlm.nih.gov/23104886/",
+          },
+        ],
+      },
+      {
+        ...actionEvent(),
+        payload: {
+          action_id: "action-search",
+          name: "web.search",
+          input_preview: "STAR RNA-seq aligner PubMed",
+        },
+      },
+    )
+
+    expect(sources[0]?.query).toBe("STAR RNA-seq aligner PubMed")
   })
 })

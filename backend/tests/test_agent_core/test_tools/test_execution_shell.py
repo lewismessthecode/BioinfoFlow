@@ -108,6 +108,18 @@ async def test_bash_tool_auto_runs_safe_command_with_pipe_and_glob(db_session):
     assert result.result["exit_code"] == 0
     assert result.result["stdout"].strip() == "agent-core-ok"
 
+    events = await AgentCoreService(db_session).list_events_for_turn(
+        turn_id=context.turn_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    started = next(event for event in events if event.type == "action.started")
+    completed = next(event for event in events if event.type == "action.completed")
+    assert started.payload["name"] == "bash"
+    assert started.payload["input_preview"] == "echo agent-core-ok | cat"
+    assert completed.payload["name"] == "bash"
+    assert completed.payload["input_preview"] == "echo agent-core-ok | cat"
+
 
 @pytest.mark.asyncio
 async def test_bash_tool_hard_blocks_catastrophic_command_even_in_bypass(db_session):

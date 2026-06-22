@@ -135,6 +135,16 @@ export function sourceQueryFromAction(
   )
 }
 
+export function sanitizeSourceHref(url: string | null | undefined) {
+  if (!url) return undefined
+  try {
+    const parsed = new URL(url)
+    return ["http:", "https:"].includes(parsed.protocol) ? url : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function mergeSource(
   existing: AgentRuntimeSource,
   next: AgentRuntimeSource,
