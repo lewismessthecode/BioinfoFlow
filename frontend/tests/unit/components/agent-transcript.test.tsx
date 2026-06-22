@@ -26,7 +26,7 @@ vi.mock("next-intl", () => ({
       "ask.customLabel": "Custom answer",
       "ask.customPlaceholder": "Tell Bioinfoflow what to use",
       "ask.recommended": "Recommended",
-      "ask.skip": "Skip",
+      "ask.rejectQuestion": "Reject question",
       "progress.tasks": "Tasks",
       "progress.empty": "No tasks yet",
       "plan.reviewTitle": "Review the plan",

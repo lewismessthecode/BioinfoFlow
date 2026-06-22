@@ -2361,7 +2361,7 @@
       "customLabel": "Custom answer",
       "customPlaceholder": "Tell Bioinfoflow what to use",
       "recommended": "Recommended",
-      "skip": "Skip"
+      "rejectQuestion": "Reject question"
     }
   },
   "agent": {

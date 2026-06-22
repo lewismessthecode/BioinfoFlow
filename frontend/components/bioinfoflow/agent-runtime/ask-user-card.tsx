@@ -43,7 +43,9 @@ export function AskUserDecisionCard({
       }
       return { ...current, [question.header]: [label] }
     })
-    setCustomAnswers((current) => ({ ...current, [question.header]: "" }))
+    if (!question.multiSelect) {
+      setCustomAnswers((current) => ({ ...current, [question.header]: "" }))
+    }
   }
 
   const updateCustomAnswer = (question: AgentAskUserQuestion, value: string) => {
@@ -159,9 +161,13 @@ export function AskUserDecisionCard({
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted/60 text-muted-foreground">
                   <Edit3 className="h-3.5 w-3.5" />
                 </span>
-                <span className="sr-only">{t("ask.customLabel")}</span>
+                <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                  {t("ask.customLabel")}
+                </span>
                 <Input
                   id={customId}
+                  name={customId}
+                  autoComplete="off"
                   value={customAnswers[question.header] ?? ""}
                   onChange={(event) => updateCustomAnswer(question, event.target.value)}
                   placeholder={t("ask.customPlaceholder")}
@@ -182,7 +188,7 @@ export function AskUserDecisionCard({
           disabled={!onDecision}
           onClick={() => onDecision?.(actionId, "reject")}
         >
-          {t("ask.skip")}
+          {t("ask.rejectQuestion")}
         </Button>
         <Button
           type="button"
