@@ -1183,7 +1183,11 @@
       "repull": "重新拉取",
       "pulling": "拉取中...",
       "pull": "拉取",
-      "refresh": "刷新"
+      "refresh": "刷新",
+      "versionActions": "{tag} 的操作"
+    },
+    "card": {
+      "versionCount": "{count} 个版本"
     },
     "table": {
       "image": "镜像",

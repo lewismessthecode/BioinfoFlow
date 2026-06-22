@@ -1183,7 +1183,11 @@
       "repull": "Re-pull",
       "pulling": "Pulling...",
       "pull": "Pull",
-      "refresh": "Refresh"
+      "refresh": "Refresh",
+      "versionActions": "Actions for {tag}"
+    },
+    "card": {
+      "versionCount": "{count, plural, one {# version} other {# versions}}"
     },
     "table": {
       "image": "Image",

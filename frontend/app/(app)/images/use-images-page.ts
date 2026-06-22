@@ -303,8 +303,11 @@ export function useImagesPage() {
   const filteredImages = images.filter((img) => {
     const query = deferredSearch.toLowerCase()
     const nameMatch = img.name.toLowerCase().includes(query)
+    const tagMatch = img.tag.toLowerCase().includes(query)
+    const fullNameMatch = img.full_name.toLowerCase().includes(query)
+    const registryMatch = img.registry.toLowerCase().includes(query)
     const descriptionMatch = img.description?.toLowerCase().includes(query) ?? false
-    return nameMatch || descriptionMatch
+    return nameMatch || tagMatch || fullNameMatch || registryMatch || descriptionMatch
   })
 
   const isDockerUnavailable = dockerStatus === "unavailable"
