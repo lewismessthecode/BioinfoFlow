@@ -6,6 +6,8 @@ import {
   Copy,
   Download,
   FileJson,
+  FileCode,
+  FileSpreadsheet,
   FileText,
   ListChecks,
   Play,
@@ -15,12 +17,19 @@ import {
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
+import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import type { AgentRuntimeArtifact, AgentTodoItem } from "@/lib/agent-runtime"
 import { TodoChecklist } from "./todo-checklist"
 
 export function ArtifactViewer({ artifact }: { artifact: AgentRuntimeArtifact }) {
   switch (artifact.type) {
     case "file":
+    case "html":
+    case "markdown":
+    case "pdf":
+    case "report":
+    case "sheet":
+    case "spreadsheet":
       return <FileArtifact artifact={artifact} />
     case "command":
     case "log_summary":
@@ -46,8 +55,12 @@ export function todosFromArtifact(artifact: AgentRuntimeArtifact): AgentTodoItem
 function FileArtifact({ artifact }: { artifact: AgentRuntimeArtifact }) {
   const t = useTranslations("agentRuntime")
   const payload = artifact.payload ?? {}
-  const path = String(payload.path ?? artifact.title)
+  const path = String(payload.path ?? artifact.file_path ?? artifact.title)
   const content = typeof payload.content === "string" ? payload.content : ""
+  const filename = path.split("/").pop() || artifact.title || "artifact.txt"
+  const kind = artifactFileKind(artifact, path, payload)
+  const table = kind === "spreadsheet" ? tableFromArtifact(payload, content, path) : null
+  const resourceUrl = artifactResourceUrl(artifact)
   return (
     <div className="grid gap-3">
       <ArtifactHeader title={path} />
@@ -55,13 +68,36 @@ function FileArtifact({ artifact }: { artifact: AgentRuntimeArtifact }) {
         <CopyButton text={content} label={t("artifacts.copy")} done={t("artifacts.copied")} />
         <DownloadButton
           text={content}
-          filename={path.split("/").pop() || "file.txt"}
+          filename={filename}
           label={t("artifacts.download")}
         />
       </div>
-      <pre className="max-h-[60vh] overflow-auto rounded-2xl border border-border/70 bg-muted/30 p-3 text-xs leading-5 text-foreground">
-        <code>{content || "—"}</code>
-      </pre>
+      {kind === "markdown" ? (
+        <MarkdownRenderer
+          content={content || t("artifacts.previewUnavailable")}
+          className="rounded-2xl border border-border/70 bg-background px-4 py-3 text-sm"
+        />
+      ) : kind === "html" && (content || resourceUrl) ? (
+        <iframe
+          title={filename}
+          src={resourceUrl || undefined}
+          srcDoc={resourceUrl ? undefined : content}
+          sandbox=""
+          className="h-[60vh] w-full rounded-2xl border border-border/70 bg-background"
+        />
+      ) : kind === "pdf" && resourceUrl ? (
+        <iframe
+          title={filename}
+          src={resourceUrl}
+          className="h-[60vh] w-full rounded-2xl border border-border/70 bg-background"
+        />
+      ) : table ? (
+        <ArtifactTable rows={table} />
+      ) : (
+        <pre className="max-h-[60vh] overflow-auto rounded-2xl border border-border/70 bg-muted/30 p-3 text-xs leading-5 text-foreground">
+          <code>{content || t("artifacts.previewUnavailable")}</code>
+        </pre>
+      )}
     </div>
   )
 }
@@ -132,6 +168,36 @@ function JsonArtifact({ value }: { value: unknown }) {
   )
 }
 
+function ArtifactTable({ rows }: { rows: string[][] }) {
+  const [header, ...body] = rows
+  return (
+    <div className="max-h-[60vh] overflow-auto rounded-2xl border border-border/70 bg-background">
+      <table className="w-full border-collapse text-left text-sm">
+        <thead className="sticky top-0 bg-muted/80 text-xs font-medium text-muted-foreground">
+          <tr>
+            {header.map((cell, index) => (
+              <th key={`${cell}-${index}`} className="border-b border-border/70 px-3 py-2">
+                {cell || "—"}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((row, rowIndex) => (
+            <tr key={rowIndex} className="border-b border-border/50 last:border-b-0">
+              {header.map((_, cellIndex) => (
+                <td key={cellIndex} className="px-3 py-2 align-top text-foreground">
+                  {row[cellIndex] || ""}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function ArtifactHeader({ title }: { title: string }) {
   return (
     <div className="break-words font-mono text-xs text-muted-foreground">{title}</div>
@@ -183,7 +249,15 @@ function DownloadButton({
 export function ArtifactIcon({ type }: { type: string }) {
   const className = "mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
   switch (type) {
+    case "html":
+      return <FileCode className={className} />
+    case "sheet":
+    case "spreadsheet":
+      return <FileSpreadsheet className={className} />
     case "file":
+    case "markdown":
+    case "pdf":
+    case "report":
       return <FileText className={className} />
     case "command":
     case "log_summary":
@@ -205,9 +279,109 @@ export function artifactTypeLabel(
   t: ReturnType<typeof useTranslations>,
   type: string,
 ): string {
-  const known = ["file", "command", "run", "workflow", "image"]
+  const known = ["file", "command", "html", "markdown", "pdf", "run", "sheet", "spreadsheet", "workflow", "image"]
   if (known.includes(type)) return t(`artifacts.types.${type}`)
   if (type === "log_summary") return t("artifacts.types.command")
   if (type === "todo_list") return t("artifacts.types.todo_list")
   return t("artifacts.types.unknown")
+}
+
+function artifactFileKind(
+  artifact: AgentRuntimeArtifact,
+  path: string,
+  payload: Record<string, unknown>,
+) {
+  const type = artifact.type.toLowerCase()
+  const mimeType = stringValue(payload.mime_type)?.toLowerCase() ?? ""
+  const lowerPath = path.toLowerCase()
+  if (type === "html" || mimeType.includes("html") || lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")) {
+    return "html"
+  }
+  if (type === "pdf" || mimeType.includes("pdf") || lowerPath.endsWith(".pdf")) {
+    return "pdf"
+  }
+  if (
+    type === "sheet" ||
+    type === "spreadsheet" ||
+    mimeType.includes("csv") ||
+    mimeType.includes("tab-separated") ||
+    lowerPath.endsWith(".csv") ||
+    lowerPath.endsWith(".tsv")
+  ) {
+    return "spreadsheet"
+  }
+  if (
+    type === "markdown" ||
+    lowerPath.endsWith(".md") ||
+    lowerPath.endsWith(".markdown") ||
+    mimeType.includes("markdown")
+  ) {
+    return "markdown"
+  }
+  return "text"
+}
+
+function artifactResourceUrl(artifact: AgentRuntimeArtifact) {
+  const payload = artifact.payload ?? {}
+  const payloadUrl = stringValue(payload.url) ?? stringValue(payload.href)
+  if (payloadUrl) return payloadUrl
+  const resource = artifact.resource_ref
+  if (!resource || typeof resource !== "object") return null
+  return stringValue(resource.url) ?? stringValue(resource.href)
+}
+
+function tableFromArtifact(
+  payload: Record<string, unknown>,
+  content: string,
+  path: string,
+) {
+  if (Array.isArray(payload.rows)) {
+    const rows = payload.rows
+      .filter(Array.isArray)
+      .map((row) => row.map((cell) => String(cell ?? "")))
+    return rows.length ? rows : null
+  }
+  if (!content.trim()) return null
+  const delimiter = path.toLowerCase().endsWith(".tsv") ? "\t" : ","
+  const rows = parseDelimitedRows(content, delimiter)
+  return rows.length ? rows : null
+}
+
+function parseDelimitedRows(content: string, delimiter: "," | "\t") {
+  return content
+    .trim()
+    .split(/\r?\n/)
+    .slice(0, 200)
+    .map((line) => parseDelimitedLine(line, delimiter))
+    .filter((row) => row.some((cell) => cell.trim().length > 0))
+}
+
+function parseDelimitedLine(line: string, delimiter: "," | "\t") {
+  const cells: string[] = []
+  let current = ""
+  let quoted = false
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') {
+        current += '"'
+        index += 1
+      } else {
+        quoted = !quoted
+      }
+      continue
+    }
+    if (char === delimiter && !quoted) {
+      cells.push(current)
+      current = ""
+      continue
+    }
+    current += char
+  }
+  cells.push(current)
+  return cells
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.length > 0 ? value : null
 }

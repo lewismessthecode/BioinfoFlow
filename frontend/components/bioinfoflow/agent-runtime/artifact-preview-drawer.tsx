@@ -14,12 +14,8 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
     () => artifacts.filter(isPreviewArtifact),
     [artifacts],
   )
-  const toolLogArtifacts = useMemo(
-    () => artifacts.filter(isToolLogArtifact),
-    [artifacts],
-  )
   const selected =
-    [...previewArtifacts, ...toolLogArtifacts].find((artifact) => artifact.id === selectedId) ?? null
+    previewArtifacts.find((artifact) => artifact.id === selectedId) ?? null
 
   if (selected) {
     return (
@@ -37,7 +33,7 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
     )
   }
 
-  if (!previewArtifacts.length && !toolLogArtifacts.length) {
+  if (!previewArtifacts.length) {
     return (
       <p className="text-sm text-muted-foreground" data-testid="artifact-preview-drawer">
         {t("artifacts.empty")}
@@ -65,27 +61,6 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
           </div>
         </button>
       ))}
-      {toolLogArtifacts.length ? (
-        <details className="rounded-2xl border border-border/60 bg-muted/15">
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">
-            {t("artifacts.toolLogs", { count: toolLogArtifacts.length })}
-          </summary>
-          <div className="grid gap-1.5 border-t border-border/50 p-2">
-            {toolLogArtifacts.map((artifact) => (
-              <button
-                key={artifact.id}
-                type="button"
-                onClick={() => setSelectedId(artifact.id)}
-                className="flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-              >
-                <ArtifactIcon type={artifact.type} />
-                <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
-                <span className="shrink-0">{artifact.summary || artifactTypeLabel(t, artifact.type)}</span>
-              </button>
-            ))}
-          </div>
-        </details>
-      ) : null}
     </div>
   )
 }
@@ -95,15 +70,11 @@ const TOOL_LOG_ARTIFACT_TYPES = new Set(["command", "log_summary"])
 const PREVIEW_ARTIFACT_TYPES = new Set([
   "file",
   "html",
-  "image",
   "pdf",
-  "project",
   "report",
-  "run",
+  "markdown",
   "sheet",
   "spreadsheet",
-  "workflow",
-  "workflow_bundle",
 ])
 
 function isPreviewArtifact(artifact: AgentRuntimeArtifact) {

@@ -214,7 +214,7 @@ describe("useAgentRuntime", () => {
     expect(result.current.sessions[0]?.title).toBe("RNA-seq QC Plan")
   })
 
-  it("limits the initial state event payload for large sessions", async () => {
+  it("loads complete session state when restoring a conversation", async () => {
     renderHook(() =>
       useAgentRuntime(null, {
         activeSessionId: "session-1",
@@ -223,13 +223,11 @@ describe("useAgentRuntime", () => {
     )
 
     await waitFor(() =>
-      expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1", {
-        eventLimit: 500,
-      }),
+      expect(mocks.getAgentRuntimeState).toHaveBeenCalledWith("session-1"),
     )
   })
 
-  it("starts the live stream after capped state load from the latest loaded event", async () => {
+  it("starts the live stream after state load from the latest loaded event", async () => {
     let resolveState: (payload: {
       session: AgentRuntimeSession
       turns: AgentRuntimeTurn[]
@@ -272,7 +270,7 @@ describe("useAgentRuntime", () => {
     )
   })
 
-  it("marks state as a limited event window when the capped payload is full", async () => {
+  it("does not mark restored state as a limited event window", async () => {
     mocks.getAgentRuntimeState.mockResolvedValue({
       session,
       turns: [],
@@ -290,7 +288,7 @@ describe("useAgentRuntime", () => {
       }),
     )
 
-    await waitFor(() => expect(result.current.eventWindowLimited).toBe(true))
+    await waitFor(() => expect(result.current.eventWindowLimited).toBe(false))
   })
 
   it("treats refreshed session lists as authoritative when a title is cleared", async () => {

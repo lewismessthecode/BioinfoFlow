@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
 import { ArtifactPreviewDrawer } from "@/components/bioinfoflow/agent-runtime/artifact-preview-drawer"
+import { ArtifactViewer } from "@/components/bioinfoflow/agent-runtime/artifact-viewers"
 import { resolveSameOriginBrowserUrl } from "@/components/bioinfoflow/agent-runtime/browser-tab"
 import { PendingDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-decision-cards"
 import { ProgressTab } from "@/components/bioinfoflow/agent-runtime/progress-tab"
@@ -69,7 +70,7 @@ describe("ProgressTab", () => {
 })
 
 describe("ArtifactPreviewDrawer", () => {
-  it("keeps routine command artifacts out of the primary list but available in tool logs", () => {
+  it("keeps routine command artifacts out of the preview tab", () => {
     render(
       <ArtifactPreviewDrawer
         artifacts={[
@@ -92,17 +93,79 @@ describe("ArtifactPreviewDrawer", () => {
     )
 
     const drawer = screen.getByTestId("artifact-preview-drawer")
-    const toolLogs = screen.getByText("artifacts.toolLogs").closest("details")
     expect(within(drawer).getByRole("button", { name: /report.md/ })).toBeInTheDocument()
     expect(screen.getByText("/workspace/report.md")).toBeInTheDocument()
-    expect(toolLogs).not.toBeNull()
-    expect(within(toolLogs as HTMLElement).getByRole("button", { name: /ls output/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /ls output/ })).not.toBeInTheDocument()
+    expect(screen.queryByText("artifacts.toolLogs")).not.toBeInTheDocument()
+  })
+})
 
-    fireEvent.click(screen.getByText("artifacts.toolLogs"))
-    fireEvent.click(within(toolLogs as HTMLElement).getByRole("button", { name: /ls output/ }))
+describe("ArtifactViewer", () => {
+  it("renders markdown file artifacts through the markdown renderer", () => {
+    render(
+      <ArtifactViewer
+        artifact={artifact({
+          id: "markdown-1",
+          type: "file",
+          title: "report.md",
+          payload: { path: "/workspace/report.md", content: "# QC Report\n\n| sample | status |\n| --- | --- |\n| A | pass |" },
+        })}
+      />,
+    )
 
-    expect(screen.getByText("$ ls")).toBeInTheDocument()
-    expect(screen.getByText("report.md")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "QC Report" })).toBeInTheDocument()
+    expect(screen.getByRole("table")).toHaveTextContent("sample")
+  })
+
+  it("renders html artifacts in a sandboxed frame", () => {
+    render(
+      <ArtifactViewer
+        artifact={artifact({
+          id: "html-1",
+          type: "html",
+          title: "report.html",
+          payload: { content: "<h1>Interactive report</h1>" },
+        })}
+      />,
+    )
+
+    const frame = screen.getByTitle("report.html")
+    expect(frame).toHaveAttribute("sandbox", "")
+    expect(frame).toHaveAttribute("srcdoc", "<h1>Interactive report</h1>")
+  })
+
+  it("renders csv artifacts as a table", () => {
+    render(
+      <ArtifactViewer
+        artifact={artifact({
+          id: "sheet-1",
+          type: "file",
+          title: "metrics.csv",
+          payload: { path: "/workspace/metrics.csv", content: "sample,reads\nA,42" },
+        })}
+      />,
+    )
+
+    expect(screen.getByRole("table")).toHaveTextContent("reads")
+    expect(screen.getByRole("table")).toHaveTextContent("42")
+  })
+
+  it("renders pdf artifacts with an embedded viewer when a URL is available", () => {
+    render(
+      <ArtifactViewer
+        artifact={artifact({
+          id: "pdf-1",
+          type: "pdf",
+          title: "summary.pdf",
+          payload: { url: "/api/v1/agent/artifacts/pdf-1/raw" },
+        })}
+      />,
+    )
+
+    expect(screen.getByTitle("summary.pdf")).toHaveAttribute(
+      "src",
+      "/api/v1/agent/artifacts/pdf-1/raw",
+    )
   })
 })
 
