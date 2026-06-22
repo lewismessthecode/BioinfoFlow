@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 interface MarkdownRendererProps {
   content: string
   className?: string
+  allowOverflow?: boolean
   renderSourceCitation?: (sourceId: string, children: ReactNode) => ReactNode
 }
 
@@ -114,10 +115,17 @@ function CodeBlock({
 export function MarkdownRenderer({
   content,
   className,
+  allowOverflow = false,
   renderSourceCitation,
 }: MarkdownRendererProps) {
   return (
-    <div className={cn("prose prose-sm dark:prose-invert min-w-0 max-w-none overflow-hidden break-words", className)}>
+    <div
+      className={cn(
+        "prose prose-sm dark:prose-invert min-w-0 max-w-none break-words",
+        allowOverflow ? "overflow-visible" : "overflow-hidden",
+        className,
+      )}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         urlTransform={(url) => {

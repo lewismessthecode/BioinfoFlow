@@ -75,5 +75,12 @@ function activitySummary(
   t: (key: string, values?: Record<string, number>) => string,
   group: AgentRuntimeActivityGroup,
 ) {
-  return t(`activity.summary.${group.kind}`, { count: group.activities.length })
+  const count =
+    group.kind === "search"
+      ? group.activities.reduce(
+          (total, activity) => total + Math.max(activity.sources.length, 1),
+          0,
+        )
+      : group.activities.length
+  return t(`activity.summary.${group.kind}`, { count })
 }

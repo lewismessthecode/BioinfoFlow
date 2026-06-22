@@ -194,6 +194,7 @@ function SourceBackedTextSegment({
       <MarkdownRenderer
         className="text-[15px] leading-7"
         content={segment.textBlock.text}
+        allowOverflow={sources.length > 0}
         renderSourceCitation={(sourceId, children) => {
           const source = sourceById.get(sourceId)
           if (!source) return children

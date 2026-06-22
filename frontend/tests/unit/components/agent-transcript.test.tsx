@@ -564,7 +564,28 @@ describe("AgentTranscript", () => {
   it("renders source-backed answers with inline citation previews and a sources drawer", () => {
     renderTranscript({
       events: [
-        event("event-text", 1, "assistant.text.completed", {
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input: { query: "STAR RNA-seq aligner PubMed" },
+          result: {
+            query: "STAR RNA-seq aligner PubMed",
+            results: [
+              {
+                title: "STAR: ultrafast universal RNA-seq aligner",
+                url: "https://pubmed.ncbi.nlm.nih.gov/23104886/",
+                snippet:
+                  "STAR aligns RNA-seq reads using sequential maximum mappable seed search.",
+              },
+              {
+                title: "Frequently Asked Questions",
+                url: "https://www.biorxiv.org/about/FAQ",
+                snippet: "bioRxiv distributes complete but unpublished manuscripts.",
+              },
+            ],
+          },
+        }),
+        event("event-text", 2, "assistant.text.completed", {
           message_id: "message-1",
           content:
             "STAR is appropriate for splice-aware RNA-seq alignment [1](source:pubmed-star). For preprints, inspect the bioRxiv page [2](source:biorxiv-faq).",
@@ -594,6 +615,8 @@ describe("AgentTranscript", () => {
       ],
     })
 
+    expect(screen.getByText("Searched web")).toBeInTheDocument()
+    expect(screen.getByText("Found 2 sources")).toBeInTheDocument()
     const firstCitation = screen.getByRole("button", {
       name: /Source 1: STAR: ultrafast universal RNA-seq aligner/,
     })
