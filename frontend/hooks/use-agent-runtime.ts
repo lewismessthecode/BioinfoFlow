@@ -38,7 +38,6 @@ type AgentRuntimeStreamSignal = {
 
 const DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode"
 const DEFAULT_PERMISSION_MODE: AgentPermissionMode = "guarded_auto"
-const INITIAL_STATE_EVENT_LIMIT = 500
 
 export function useAgentRuntime(
   projectId?: string | null,
@@ -148,13 +147,11 @@ export function useAgentRuntime(
   const refreshState = useCallback(async (sessionId: string) => {
     dispatch({ type: "loading" })
     try {
-      const payload = await getAgentRuntimeState(sessionId, {
-        eventLimit: INITIAL_STATE_EVENT_LIMIT,
-      })
+      const payload = await getAgentRuntimeState(sessionId)
       if (activeSessionIdRef.current && activeSessionIdRef.current !== sessionId) return
       setEventWindow({
         sessionId,
-        limited: payload.events.length >= INITIAL_STATE_EVENT_LIMIT,
+        limited: false,
       })
       setSessions((current) => mergeSessionList(current, payload.session))
       emitRuntimeSessionUpdated(payload.session)
