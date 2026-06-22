@@ -530,7 +530,7 @@ describe("AgentWorkbench", () => {
 
     expect(await screen.findByText("Thinking")).toBeInTheDocument()
     expect(screen.getByText("Project scan complete.")).toBeInTheDocument()
-    expect(screen.getByText("Read data")).toBeInTheDocument()
+    expect(screen.getByText("Read 1 source")).toBeInTheDocument()
   })
 
   it("keeps an approved approval visible in the transcript until resume progress arrives", () => {

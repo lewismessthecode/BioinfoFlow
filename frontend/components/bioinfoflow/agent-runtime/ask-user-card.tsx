@@ -174,12 +174,12 @@ export function AskUserDecisionCard({
 
               {readOnly ? (
                 answeredLabels.length ? (
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <span>{t("ask.answerLabel")}</span>
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="shrink-0">{t("ask.answerLabel")}</span>
                     {answeredLabels.map((item) => (
                       <span
                         key={item}
-                        className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/70"
+                        className="min-w-0 max-w-full break-all rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/70"
                       >
                         {item}
                       </span>

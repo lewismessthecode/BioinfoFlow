@@ -110,6 +110,7 @@ class AgentLoopController:
         tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
         token_usage: dict[str, Any] | None = None
         previous_tool_call_signatures: list[str] = []
+        previous_tool_result_signatures: list[str] = []
         repeated_tool_call_count = 0
         empty_response_retries_remaining = 1
 
@@ -192,34 +193,6 @@ class AgentLoopController:
             tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
             if tool_calls:
                 tool_call_signatures = [_tool_call_signature(tool_call) for tool_call in tool_calls]
-                repeated_tool_call_count = (
-                    repeated_tool_call_count + 1
-                    if previous_tool_call_signatures == tool_call_signatures
-                    else 1
-                )
-                if no_progress_detected(
-                    previous_tool_call_signatures,
-                    tool_call_signatures,
-                    repeat_count=repeated_tool_call_count,
-                ):
-                    await self.ledger.append(
-                        session_id=str(agent_session.id),
-                        turn_id=str(turn.id),
-                        type=AgentEventType.TURN_NO_PROGRESS,
-                        payload={
-                            "tool_calls": tool_call_signatures,
-                            "iteration_count": budget.used_iterations,
-                        },
-                    )
-                    return LoopResult(
-                        termination_reason="no_progress",
-                        final_text=None,
-                        iteration_count=budget.used_iterations,
-                        token_usage=token_usage,
-                        error_code="no_progress_detected",
-                        error_message="Agent repeated the same tool call without making progress.",
-                    )
-                previous_tool_call_signatures = tool_call_signatures
                 await self._append_assistant_tool_calls(
                     agent_session=agent_session,
                     turn=turn,
@@ -229,7 +202,7 @@ class AgentLoopController:
                     text=streamed.text or None,
                 )
                 try:
-                    waiting = await self._execute_tool_calls(
+                    waiting, tool_result_signatures = await self._execute_tool_calls(
                         agent_session=agent_session,
                         turn=turn,
                         tool_calls=tool_calls,
@@ -257,9 +230,42 @@ class AgentLoopController:
                         iteration_count=budget.used_iterations,
                         token_usage=token_usage,
                     )
+                repeated_tool_call_count = (
+                    repeated_tool_call_count + 1
+                    if previous_tool_call_signatures == tool_call_signatures
+                    else 1
+                )
+                if no_progress_detected(
+                    previous_tool_call_signatures,
+                    tool_call_signatures,
+                    previous_tool_results=previous_tool_result_signatures,
+                    next_tool_results=tool_result_signatures,
+                    repeat_count=repeated_tool_call_count,
+                ):
+                    await self.ledger.append(
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                        type=AgentEventType.TURN_NO_PROGRESS,
+                        payload={
+                            "tool_calls": tool_call_signatures,
+                            "tool_results": tool_result_signatures,
+                            "iteration_count": budget.used_iterations,
+                        },
+                    )
+                    return LoopResult(
+                        termination_reason="no_progress",
+                        final_text=None,
+                        iteration_count=budget.used_iterations,
+                        token_usage=token_usage,
+                        error_code="no_progress_detected",
+                        error_message="Agent repeated the same tool call without making progress.",
+                    )
+                previous_tool_call_signatures = tool_call_signatures
+                previous_tool_result_signatures = tool_result_signatures
                 continue
 
             previous_tool_call_signatures = []
+            previous_tool_result_signatures = []
             repeated_tool_call_count = 0
             final_text = streamed.text
             if not final_text:
@@ -306,8 +312,15 @@ class AgentLoopController:
             error_message="Agent turn exhausted its iteration budget.",
         )
 
-    async def _execute_tool_calls(self, *, agent_session, turn, tool_calls: list[dict]) -> bool:
+    async def _execute_tool_calls(
+        self,
+        *,
+        agent_session,
+        turn,
+        tool_calls: list[dict],
+    ) -> tuple[bool, list[str]]:
         waiting = False
+        result_signatures: list[str] = []
         index = 0
         while index < len(tool_calls):
             turn = await self._renew_turn_lease(turn)
@@ -337,6 +350,7 @@ class AgentLoopController:
                     if result.requires_resume:
                         waiting = True
                         continue
+                    result_signatures.append(_tool_result_signature(name, result))
                     await self._append_tool_result(
                         agent_session=agent_session,
                         turn=turn,
@@ -366,6 +380,7 @@ class AgentLoopController:
                 waiting = True
                 index += 1
                 continue
+            result_signatures.append(_tool_result_signature(tool_name, result))
             await self._append_tool_result(
                 agent_session=agent_session,
                 turn=turn,
@@ -374,7 +389,7 @@ class AgentLoopController:
                 result=result,
             )
             index += 1
-        return waiting
+        return waiting, result_signatures
 
     async def resume_turn_from_action(
         self,
@@ -1057,6 +1072,21 @@ def _tool_call_signature(tool_call: dict[str, Any]) -> str:
         sort_keys=True,
         separators=(",", ":"),
         default=str,
+    )
+
+
+def _tool_result_signature(tool_name: str, result: ToolExecutionResult) -> str:
+    return json.dumps(
+        {
+            "tool": tool_name,
+            "status": result.status,
+            "result": result.result,
+            "error": result.error,
+        },
+        default=str,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
 
 

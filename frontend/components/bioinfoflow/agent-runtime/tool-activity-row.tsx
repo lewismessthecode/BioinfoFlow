@@ -42,12 +42,12 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
           {activity.name}
         </span>
         {activity.summary || activity.inputPreview ? (
-          <span className="hidden min-w-0 flex-1 truncate text-muted-foreground/85 sm:block">
+          <span className="hidden min-w-0 flex-1 truncate text-muted-foreground sm:block">
             {activity.summary || activity.inputPreview}
           </span>
         ) : null}
         {activity.status !== "completed" ? (
-          <span className="shrink-0 text-[11px] text-muted-foreground/80">
+          <span className="shrink-0 text-[11px] text-muted-foreground">
             {t(`activity.status.${activity.status}`)}
           </span>
         ) : null}
@@ -81,7 +81,7 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
           {activity.sourceQuery ? <Detail label={t("sources.query")} value={activity.sourceQuery} /> : null}
           {activity.sources.length ? (
             <div className="grid gap-1">
-              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 {t("sources.title")}
               </div>
               <div className="grid gap-1.5">
@@ -129,7 +129,7 @@ function SourceActivityLink({
 }) {
   const href = sanitizeSourceHref(source.url)
   const className = cn(
-    "flex min-w-0 items-center gap-2 rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/70 transition-colors",
+    "flex min-w-0 items-center gap-2 rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/75 transition-colors",
     href
       ? "hover:bg-muted/45 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       : "cursor-default",
@@ -165,15 +165,15 @@ function SourceActivityLink({
 function Detail({ label, value, pre = false }: { label: string; value: string; pre?: boolean }) {
   return (
     <div className="grid gap-1">
-      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
       {pre ? (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/70">
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/75">
           {value}
         </pre>
       ) : (
-        <div className="break-words rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/70">
+        <div className="break-words rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/75">
           {value}
         </div>
       )}
