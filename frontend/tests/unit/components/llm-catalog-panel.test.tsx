@@ -6,6 +6,7 @@ import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-p
 const useLlmCatalogMock = vi.fn()
 const toastErrorMock = vi.fn()
 const toastSuccessMock = vi.fn()
+const celebrateMilestoneMock = vi.fn()
 
 vi.mock("@/hooks/use-llm-catalog", () => ({
   useLlmCatalog: () => useLlmCatalogMock(),
@@ -44,6 +45,10 @@ vi.mock("sonner", () => ({
     error: (...args: unknown[]) => toastErrorMock(...args),
     success: (...args: unknown[]) => toastSuccessMock(...args),
   },
+}))
+
+vi.mock("@/lib/celebrations", () => ({
+  celebrateMilestone: (...args: unknown[]) => celebrateMilestoneMock(...args),
 }))
 
 describe("LlmCatalogPanel", () => {
@@ -100,6 +105,7 @@ describe("LlmCatalogPanel", () => {
     useLlmCatalogMock.mockReset()
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
+    celebrateMilestoneMock.mockReset()
   })
 
   it("renders the provider key grid with common hosted and local providers", () => {
@@ -191,6 +197,7 @@ describe("LlmCatalogPanel", () => {
       })
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
+    expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-provider-key")
   })
 
   it("sets up a branded provider and does not show success when setup fails", async () => {
@@ -228,6 +235,7 @@ describe("LlmCatalogPanel", () => {
     })
     expect(toastErrorMock).toHaveBeenCalledWith("Provider could not be saved")
     expect(toastSuccessMock).not.toHaveBeenCalled()
+    expect(celebrateMilestoneMock).not.toHaveBeenCalled()
   })
 
   it("sets up endpoint-only vLLM with a manual model id in one save", async () => {
@@ -271,6 +279,7 @@ describe("LlmCatalogPanel", () => {
       })
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
+    expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-provider-key")
   })
 
   it("lets discoverable providers refresh models through provider setup", async () => {

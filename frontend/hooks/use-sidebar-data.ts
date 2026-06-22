@@ -19,7 +19,7 @@ import {
   setStoredAgentSessionId,
   sortAgentSessions,
 } from "@/lib/agent-core/session-storage"
-import { emitReadinessRefresh } from "@/lib/readiness-events"
+import { celebrateMilestone } from "@/lib/celebrations"
 
 const LAST_USED_PROJECT_STORAGE_KEY = "bioinfoflow:last-used-project"
 
@@ -294,7 +294,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       setProjects((prev) => [data, ...prev])
       selectWorkspaceProject(data.id)
       toast.success(tSidebar("toasts.projectCreated", { name: data.name }))
-      emitReadinessRefresh("project-created")
+      celebrateMilestone("first-project")
     } catch (error) {
       const message = getApiErrorMessage(error, tSidebar("errors.createProjectFailed"))
       toast.error(message)
@@ -420,7 +420,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
       setProjects((prev) => [created, ...prev])
       selectWorkspaceProject(created.id)
       toast.success(tSidebar("toasts.projectCreated", { name: created.name }))
-      emitReadinessRefresh("project-created")
+      celebrateMilestone("first-project")
     } catch (error) {
       const message = getApiErrorMessage(error, tSidebar("errors.createProjectFailed"))
       toast.error(message)

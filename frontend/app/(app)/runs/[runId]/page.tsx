@@ -19,6 +19,7 @@ import { openInNewTab } from "@/lib/window-utils";
 import { useProjectContext } from "@/components/bioinfoflow/project-context";
 import { useEvents } from "@/hooks/use-events";
 import { useSetBreadcrumbDetail } from "@/hooks/use-set-breadcrumb-detail";
+import { celebrateMilestone } from "@/lib/celebrations";
 import dynamic from "next/dynamic";
 import { RunDetailContent } from "../components/run-detail-content";
 import { RunStagePanel } from "@/components/bioinfoflow/run-stage-panel";
@@ -146,6 +147,9 @@ export default function RunDetailPage() {
         if (typeof tasks_total === "number") updates.tasks_total = tasks_total;
         return { ...prev, ...updates };
       });
+      if (status === "completed") {
+        celebrateMilestone("first-run-success");
+      }
       if (TERMINAL_RUN_STATUSES.has(status)) {
         void refreshArtifacts();
       }

@@ -24,7 +24,6 @@ import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useIsMobile } from "@/hooks/use-media-query"
-import { useReadinessCelebration } from "@/hooks/use-readiness-celebration"
 import type { ViewerIdentity } from "@/lib/auth-config"
 import { RuntimeProvider, getActiveRuntime, type RuntimeMode } from "@/lib/runtime"
 
@@ -155,7 +154,6 @@ export default function AppLayout({
 
   return (
     <RuntimeProvider mode={runtimeMode}>
-      <ReadinessCelebrationWatcher />
       <ProjectProvider
         value={{
           selectedProjectId,
@@ -271,11 +269,6 @@ export default function AppLayout({
 function WorkspaceNavbarActions() {
   const { navbarActions } = useWorkspaceShell()
   return navbarActions
-}
-
-function ReadinessCelebrationWatcher() {
-  useReadinessCelebration()
-  return null
 }
 
 function TerminalNavbarAction({ label }: { label: string }) {

@@ -9,6 +9,7 @@ import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useEvents } from "@/hooks/use-events"
 import type { DagData, Pagination, Run, RunLogs, RunOutputs, RunStatus, Workflow } from "@/lib/types"
 import { openInNewTab } from "@/lib/window-utils"
+import { celebrateMilestone } from "@/lib/celebrations"
 import { parseContainerImagePreparationMessage } from "./run-log-toast-utils"
 
 type RunsScope = "all" | "project"
@@ -188,6 +189,9 @@ export function useRunsPage() {
         updates.tasks_total = tasks_total
       }
       handleRunStatus(run_id, updates)
+      if (status === "completed") {
+        celebrateMilestone("first-run-success")
+      }
       if (
         expandedRunIdRef.current === run_id &&
         TERMINAL_RUN_STATUSES.has(status)

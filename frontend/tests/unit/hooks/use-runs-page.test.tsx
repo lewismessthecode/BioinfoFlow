@@ -17,6 +17,7 @@ const {
   toastSuccessMock,
   toastWarningMock,
   openInNewTabMock,
+  celebrateMilestoneMock,
 } = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
   routerReplaceMock: vi.fn(),
@@ -29,6 +30,7 @@ const {
   toastSuccessMock: vi.fn(),
   toastWarningMock: vi.fn(),
   openInNewTabMock: vi.fn(),
+  celebrateMilestoneMock: vi.fn(),
 }))
 
 const searchParamsState = {
@@ -107,6 +109,10 @@ vi.mock("@/lib/window-utils", () => ({
   openInNewTab: (...args: unknown[]) => openInNewTabMock(...args),
 }))
 
+vi.mock("@/lib/celebrations", () => ({
+  celebrateMilestone: (...args: unknown[]) => celebrateMilestoneMock(...args),
+}))
+
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api")
   return {
@@ -164,6 +170,7 @@ describe("useRunsPage", () => {
     toastSuccessMock.mockReset()
     toastWarningMock.mockReset()
     openInNewTabMock.mockReset()
+    celebrateMilestoneMock.mockReset()
     useEventsMock.mockReset()
     useEventsMock.mockReturnValue({ connectionState: "connected" })
   })
@@ -313,6 +320,7 @@ describe("useRunsPage", () => {
 
     await waitFor(() => expect(result.current.outputs?.files).toHaveLength(1))
     expect(result.current.filteredRuns[0]?.status).toBe("completed")
+    expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-run-success")
   })
 
   it("surfaces container image preparation logs as a toast", async () => {
