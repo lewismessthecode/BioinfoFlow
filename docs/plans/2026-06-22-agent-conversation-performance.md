@@ -10,8 +10,7 @@ initial payload used to render large historical conversations.
 
 - The loop uses `IterationBudget` and resolves runtime max iterations through
   `_max_iterations()` in `backend/app/services/agent_core/core/loop.py`.
-- The default runtime value currently comes from `agent_max_rounds`, which is
-  `50` in `backend/app/config.py`; this worktree has no `.env` override.
+- The runtime value comes from `AGENT_MAX_ITERATIONS`, which defaults to `90`.
 - Local Codex config does not expose an equivalent turn-iteration setting in
   `~/.codex/config.toml`, so Bioinfoflow should own its setting.
 - The `/agent` page stores the selected conversation in React context and local
@@ -22,8 +21,8 @@ initial payload used to render large historical conversations.
 
 ## Design
 
-1. Add an explicit `AGENT_MAX_ITERATIONS` setting with a conservative default of
-   `80`, while preserving `AGENT_MAX_ROUNDS` as a legacy fallback.
+1. Add an explicit `AGENT_MAX_ITERATIONS` setting with an evidence-backed default
+   of `90`, matching Hermes Agent's default for most parent-agent tasks.
 2. Keep `/agent` as the draft/default route and add `/agent/[sessionId]` as the
    canonical route for an existing conversation.
 3. Update sidebar conversation selection to navigate to `/agent/{sessionId}`.

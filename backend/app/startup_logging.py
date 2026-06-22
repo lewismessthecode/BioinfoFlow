@@ -95,11 +95,7 @@ def build_startup_summary(settings: Any) -> dict[str, Any]:
             "runtime": "agent_core",
             "model_source": "llm_catalog",
             "max_tokens": int(settings.agent_max_tokens),
-            "max_iterations": int(
-                getattr(settings, "agent_max_iterations", None)
-                or settings.agent_max_rounds
-            ),
-            "max_rounds": int(settings.agent_max_rounds),
+            "max_iterations": int(settings.agent_max_iterations),
             "compact_threshold": int(settings.agent_compact_threshold),
             "sandbox_enabled": bool(settings.agent_sandbox_enabled),
             "observability": bool(settings.agent_observability),
