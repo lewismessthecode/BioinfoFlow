@@ -591,7 +591,7 @@ describe("useSidebarData", () => {
     expect(result.current.project.activeProjectId).toBe("project-1")
     expect(result.current.project.activeConversationId).toBe("session-9")
     expect(window.localStorage.getItem("bioinfoflow:agent-core-session:project-1")).toBe("session-9")
-    expect(pushMock).toHaveBeenCalledWith("/agent")
+    expect(pushMock).toHaveBeenCalledWith("/agent/session-9")
   })
 
   it("updates sidebar conversation titles when the active chat emits a title refresh", async () => {

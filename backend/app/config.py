@@ -93,7 +93,8 @@ class Settings(BaseSettings):
     agent_max_tokens: int = 16384
     agent_observability: bool = True
     agent_log_truncate_chars: int = 1200
-    agent_max_rounds: int = 50  # Loop safety limit
+    agent_max_iterations: int | None = None  # Preferred per-turn loop safety limit
+    agent_max_rounds: int = 80  # Legacy alias for AGENT_MAX_ITERATIONS
     agent_retry_max_attempts: int = 3
     agent_retry_base_delay_seconds: float = 0.25
     agent_retry_max_delay_seconds: float = 2.0

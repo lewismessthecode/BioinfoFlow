@@ -365,7 +365,7 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     setConversationProjectId(projectId)
     setActiveConversationId(conversation.id)
     setStoredAgentSessionId(projectId, conversation.id)
-    router.push("/agent")
+    router.push(`/agent/${conversation.id}`)
   }
 
   const handleCreateConversation = async (projectId?: string) => {

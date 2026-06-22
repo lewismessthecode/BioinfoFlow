@@ -178,14 +178,21 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
         *,
         session_id: str,
         after_seq: int = 0,
+        limit: int | None = None,
     ) -> list[AgentEvent]:
-        stmt = (
-            select(self.model)
-            .where(self.model.session_id == session_id, self.model.seq > after_seq)
-            .order_by(self.model.seq)
+        stmt = select(self.model).where(
+            self.model.session_id == session_id,
+            self.model.seq > after_seq,
         )
+        if limit is not None:
+            stmt = stmt.order_by(desc(self.model.seq)).limit(limit)
+        else:
+            stmt = stmt.order_by(self.model.seq)
         result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+        events = list(result.scalars().all())
+        if limit is not None:
+            events.sort(key=lambda event: event.seq)
+        return events
 
 
 class AgentActionRepository(BaseRepository[AgentAction]):

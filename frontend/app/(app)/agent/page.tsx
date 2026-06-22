@@ -30,7 +30,7 @@ export default function AgentPage() {
   )
 }
 
-function AgentPageContent({
+export function AgentPageContent({
   selectedProjectId,
   conversationProjectId,
   activeConversationId,

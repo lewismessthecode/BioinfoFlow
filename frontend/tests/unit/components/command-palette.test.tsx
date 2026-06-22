@@ -203,4 +203,59 @@ describe("CommandPalette", () => {
     expect(setStoredAgentSessionIdMock).not.toHaveBeenCalled()
     expect(apiRequestMock).not.toHaveBeenCalledWith("/demos", expect.anything())
   })
+
+  it("opens existing conversations with a session deep link", async () => {
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/projects/default") {
+        return {
+          data: {
+            id: "project-default",
+            name: "Recent",
+            project_root: "asset://project",
+            is_default: true,
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/projects") {
+        return {
+          data: [{ id: "project-a", name: "Alpha", project_root: "asset://project" }],
+          meta: undefined,
+        }
+      }
+      if (path === "/runs") {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/agent/sessions" && !options?.method) {
+        return {
+          data: [
+            {
+              id: "session-9",
+              project_id: "project-a",
+              workspace_id: "workspace-1",
+              user_id: "dev",
+              title: "Genome QC",
+              role_profile: "bioinformatician",
+              permission_mode: "guarded_auto",
+              automation_mode: "assisted",
+              runtime_mode: "api",
+              status: "active",
+              created_at: "2026-06-04T00:00:00Z",
+              updated_at: "2026-06-04T00:00:00Z",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    render(<CommandPalette open onOpenChange={vi.fn()} />)
+
+    fireEvent.click(await screen.findByText("Genome QC"))
+
+    expect(setConversationProjectIdMock).toHaveBeenCalledWith("project-a")
+    expect(setActiveConversationIdMock).toHaveBeenCalledWith("session-9")
+    expect(setStoredAgentSessionIdMock).toHaveBeenCalledWith("project-a", "session-9")
+    expect(pushMock).toHaveBeenCalledWith("/agent/session-9")
+  })
 })

@@ -396,7 +396,7 @@ describe("WorkspaceShell sidebar integration", () => {
     expect(screen.getByTestId("active-conversation-id")).toHaveTextContent("conv-alpha-1")
     expect(screen.getByTestId("active-project-name")).toHaveTextContent("Alpha")
     expect(screen.getByTestId("active-conversation-title")).toHaveTextContent("Alpha thread")
-    expect(routerPushMock).toHaveBeenCalledWith("/agent")
+    expect(routerPushMock).toHaveBeenCalledWith("/agent/conv-alpha-1")
   })
 
   it("restores the last used regular project into workspace context on /agent", async () => {
