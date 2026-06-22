@@ -153,6 +153,10 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
     [childrenByPath, expandedPaths, loadingPaths, loadChildren],
   )
 
+  const collapseAll = useCallback(() => {
+    setExpandedPaths(new Set())
+  }, [])
+
   const openFile = useCallback((entry: AgentFsEntry) => {
     void loadFile(entry.path)
   }, [loadFile])
@@ -193,7 +197,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
 
       {rootError ? <p className="text-sm text-destructive">{rootError}</p> : null}
       <div
-        className="grid min-h-0 min-w-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+        className="grid min-h-0 min-w-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(280px,36%)]"
         data-testid="files-tab-split"
       >
         <section
@@ -232,6 +236,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
             errorByPath={errorByPath}
             selectedPath={selectedPath}
             loadedNodeCount={loadedNodeCount}
+            onCollapseAll={collapseAll}
             onToggleDirectory={toggleDirectory}
             onOpenFile={openFile}
             onAddFile={(path) => onAddContext?.(path)}

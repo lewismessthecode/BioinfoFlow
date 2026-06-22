@@ -16,6 +16,9 @@ vi.mock("next-intl", () => ({
       "files.selectPreview": "Select a file to preview",
       "files.truncated": "File truncated",
       "files.search": "Search loaded files",
+      "files.clearSearch": "Clear search",
+      "files.collapseAll": "Collapse all",
+      "files.closePreview": "Close preview",
       "files.loadedOnly": `${values?.count ?? 0} loaded items`,
       "files.loading": "Loading...",
       "files.addToContext": "Add to context",
@@ -121,7 +124,7 @@ describe("FilesTab", () => {
     )
     expect(screen.getByTestId("file-tree-pane").className).toContain("overflow-x-hidden")
     expect(screen.getByText("src")).toBeInTheDocument()
-    expect(screen.getByText("main.nf")).toBeInTheDocument()
+    expect(within(screen.getByTestId("file-tree-pane")).getByText("main.nf")).toBeInTheDocument()
 
     const addButtons = within(screen.getByTestId("file-preview-pane")).getAllByRole("button", {
       name: "Add to context",
@@ -165,6 +168,46 @@ describe("FilesTab", () => {
     })
     expect(screen.getByText("main.nf")).toBeInTheDocument()
     expect(screen.queryByText("workflow.wdl")).not.toBeInTheDocument()
+  })
+
+  it("offers an accessible search box with a clear control", async () => {
+    render(<FilesTab projectId="project-1" />)
+
+    const search = await screen.findByRole("searchbox", { name: "Search loaded files" })
+    fireEvent.change(search, { target: { value: "workflow" } })
+
+    expect(screen.getByText("workflow.wdl")).toBeInTheDocument()
+    expect(screen.queryByText("src")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }))
+
+    expect(search).toHaveValue("")
+    expect(screen.getByText("src")).toBeInTheDocument()
+  })
+
+  it("marks selected files and exposes extension-aware row kinds", async () => {
+    render(<FilesTab projectId="project-1" />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "workflow.wdl" }))
+    expect(await screen.findByText("workflow content")).toBeInTheDocument()
+
+    const row = screen.getByRole("treeitem", { name: "workflow.wdl" })
+    expect(row).toHaveAttribute("aria-selected", "true")
+    expect(row).toHaveAttribute("data-file-kind", "workflow")
+  })
+
+  it("collapses all expanded directories without clearing cached children", async () => {
+    render(<FilesTab projectId="project-1" />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "src" }))
+    expect(await screen.findByText("main.nf")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }))
+
+    expect(screen.queryByText("main.nf")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "src" }))
+    expect(screen.getByText("main.nf")).toBeInTheDocument()
+    expect(getAgentFsTree).toHaveBeenCalledTimes(2)
   })
 
   it("clears cached children and previews when the project changes", async () => {
