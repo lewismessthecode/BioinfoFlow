@@ -182,6 +182,7 @@ export type AgentRuntimeToolActivity = {
 export type AgentRuntimeActivityGroupKind =
   | "workspace"
   | "read"
+  | "command"
   | "write"
   | "register"
   | "run"

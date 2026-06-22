@@ -2164,9 +2164,10 @@
     "activity": {
       "groups": {
         "workspace": "准备工作区",
-        "read": "读取项目结构",
+        "read": "读取数据",
+        "command": "运行命令",
         "write": "创建或编辑文件",
-        "register": "注册 workflow",
+        "register": "管理工作流",
         "run": "提交运行",
         "verify": "验证结果",
         "other": "使用工具"
@@ -2174,8 +2175,9 @@
       "summary": {
         "workspace": "准备了 {count} 项",
         "read": "读取了 {count} 项",
+        "command": "运行了 {count} 条命令",
         "write": "编辑了 {count} 个文件",
-        "register": "注册了 {count} 个 workflow",
+        "register": "处理了 {count} 个工作流",
         "run": "提交了 {count} 次运行",
         "verify": "验证了 {count} 项检查",
         "other": "运行了 {count} 个工具"
