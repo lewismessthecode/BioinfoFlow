@@ -310,11 +310,78 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session,
     failed_turn = await service.runtime.run_turn(str(turn.id))
     events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
 
-    assert calls == 2
+    assert calls == 3
     assert failed_turn.status == "failed"
     assert failed_turn.termination_reason == "no_progress"
     assert failed_turn.error_code == "no_progress_detected"
     assert events[-1].type == "turn.no_progress"
+
+
+@pytest.mark.asyncio
+async def test_runtime_allows_one_repeated_tool_call_before_no_progress(db_session, monkeypatch):
+    calls = 0
+
+    async def polling_completion(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        if calls <= 2:
+            class FakeMessage:
+                pass
+
+            class FakeFunction:
+                name = "projects__list"
+                arguments = "{}"
+
+            class FakeToolCall:
+                id = f"tool-call-{calls}"
+                function = FakeFunction()
+
+            message = FakeMessage()
+            message.content = ""
+            message.tool_calls = [FakeToolCall()]
+        else:
+            class FakeMessage:
+                content = "The repeated status check completed."
+                tool_calls = None
+
+            message = FakeMessage()
+
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", polling_completion)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="polling-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Poll until the tool result settles.",
+    )
+    completed_turn = await service.runtime.run_turn(str(turn.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+
+    assert calls == 3
+    assert completed_turn.status == "completed"
+    assert completed_turn.final_text == "The repeated status check completed."
+    assert not any(event.type == "turn.no_progress" for event in events)
 
 
 @pytest.mark.asyncio
