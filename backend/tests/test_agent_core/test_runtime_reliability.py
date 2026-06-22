@@ -59,17 +59,17 @@ async def _seed_catalog_model(
 
 
 def test_agent_max_iterations_prefers_explicit_setting(monkeypatch):
-    monkeypatch.setattr(settings, "agent_max_iterations", 80)
-    monkeypatch.setattr(settings, "agent_max_rounds", 50)
+    monkeypatch.setattr(settings, "agent_max_iterations", 120)
 
-    assert _max_iterations() == 80
+    assert _max_iterations() == 120
 
 
-def test_agent_max_iterations_falls_back_to_legacy_rounds(monkeypatch):
-    monkeypatch.setattr(settings, "agent_max_iterations", None)
-    monkeypatch.setattr(settings, "agent_max_rounds", 75)
+def test_agent_max_rounds_legacy_setting_is_removed():
+    assert not hasattr(settings, "agent_max_rounds")
 
-    assert _max_iterations() == 75
+
+def test_agent_max_iterations_defaults_to_90():
+    assert settings.agent_max_iterations == 90
 
 
 @pytest.mark.asyncio

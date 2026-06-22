@@ -1068,7 +1068,7 @@ def _tool_permission_error_code(exc: PermissionDeniedError) -> str:
 
 
 def _max_iterations() -> int:
-    return int(getattr(settings, "agent_max_iterations", None) or settings.agent_max_rounds or 80)
+    return int(settings.agent_max_iterations)
 
 
 def _value(source: Any, key: str) -> Any:
