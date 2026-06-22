@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Check, Edit3 } from "lucide-react"
+import { Check, CircleHelp, Edit3 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Badge } from "@/components/ui/badge"
@@ -18,6 +18,9 @@ type AskUserDecisionCardProps = {
   inline?: boolean
   id?: string
   testId?: string
+  answer?: AgentAnswer | null
+  readOnly?: boolean
+  stateLabel?: string | null
 }
 
 export function AskUserDecisionCard({
@@ -27,6 +30,9 @@ export function AskUserDecisionCard({
   inline = false,
   id,
   testId = "ask-user-card",
+  answer = null,
+  readOnly = false,
+  stateLabel = null,
 }: AskUserDecisionCardProps) {
   const t = useTranslations("agentRuntime")
   const [selections, setSelections] = useState<Record<string, string[]>>({})
@@ -62,6 +68,7 @@ export function AskUserDecisionCard({
   }
 
   const complete = questions.every(hasAnswer)
+  const canSubmit = !readOnly && complete && Boolean(onDecision)
 
   const submit = () => {
     const answer: AgentAnswer = {}
@@ -82,59 +89,70 @@ export function AskUserDecisionCard({
     <div
       id={id}
       className={cn(
-        "rounded-2xl border border-cyan-500/25 bg-cyan-500/[0.07] px-3 py-3 text-sm shadow-[0_14px_35px_-28px_rgba(8,145,178,0.75)]",
+        "rounded-lg border border-border/55 bg-muted/[0.18] px-3 py-2.5 text-sm text-muted-foreground",
         inline && "mb-3",
       )}
       data-testid={testId}
     >
-      <div className="mb-3 flex items-center gap-2 text-xs font-medium text-cyan-900/80 dark:text-cyan-100/80">
-        <span className="h-1.5 w-1.5 rounded-full bg-cyan-500 shadow-[0_0_0_3px_rgba(6,182,212,0.12)]" />
-        <span>{t("ask.title")}</span>
+      <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <CircleHelp className="h-3.5 w-3.5 shrink-0" />
+        <span className="font-medium text-foreground/65">{t("ask.title")}</span>
+        {stateLabel ? <span className="ml-auto text-[11px]">{stateLabel}</span> : null}
       </div>
 
-      <div className="grid gap-4">
+      <div className="grid gap-3">
         {questions.map((question, questionIndex) => {
           const customId = `${actionId}-${questionIndex}-custom-answer`
+          const answeredValue = answer?.[question.header]
+          const answeredLabels = Array.isArray(answeredValue)
+            ? answeredValue
+            : answeredValue
+              ? [answeredValue]
+              : []
           return (
             <div key={question.header} className="grid gap-2">
-              <div className="text-[13px] font-semibold leading-5 text-foreground">
+              <div className="text-[13px] leading-5 text-foreground/80">
                 {question.question}
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-1">
                 {question.options.map((option, optionIndex) => {
-                  const active = (selections[question.header] ?? []).includes(option.label)
+                  const active = readOnly
+                    ? answeredLabels.includes(option.label)
+                    : (selections[question.header] ?? []).includes(option.label)
                   return (
                     <button
                       key={option.label}
                       type="button"
                       aria-pressed={active}
+                      disabled={readOnly}
                       onClick={() => toggle(question, option.label)}
                       className={cn(
-                        "group flex min-h-11 items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-[background-color,border-color,box-shadow]",
+                        "group flex min-h-9 items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
                         active
-                          ? "border-cyan-500/70 bg-background shadow-[inset_3px_0_0_rgb(6,182,212)]"
-                          : "border-border/70 bg-background/80 hover:border-cyan-500/40 hover:bg-background",
+                          ? "border-foreground/18 bg-background text-foreground/85"
+                          : "border-border/60 bg-background/55 text-muted-foreground hover:border-foreground/15 hover:bg-background/80",
+                        readOnly && "cursor-default hover:border-border/60 hover:bg-background/55",
                       )}
                     >
                       <span
                         className={cn(
-                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold",
+                          "mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border text-[10px]",
                           active
-                            ? "border-cyan-900 bg-cyan-950 text-white dark:border-cyan-200 dark:bg-cyan-100 dark:text-cyan-950"
-                            : "border-border bg-muted/60 text-muted-foreground",
+                            ? "border-foreground/40 bg-foreground text-background"
+                            : "border-border bg-muted/45 text-muted-foreground",
                         )}
                       >
                         {optionIndex + 1}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-1.5">
-                          <span className="break-words font-medium text-foreground">
+                          <span className="break-words text-foreground/75">
                             {option.label}
                           </span>
                           {option.recommended ? (
                             <Badge
                               variant="secondary"
-                              className="h-5 rounded-full border-cyan-500/20 bg-cyan-500/10 px-1.5 text-[10px] text-cyan-900 dark:text-cyan-100"
+                              className="h-5 rounded-full border-border bg-muted/60 px-1.5 text-[10px] text-muted-foreground"
                             >
                               {t("ask.recommended")}
                             </Badge>
@@ -147,39 +165,55 @@ export function AskUserDecisionCard({
                         ) : null}
                       </span>
                       {active ? (
-                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-cyan-700 dark:text-cyan-200" />
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                       ) : null}
                     </button>
                   )
                 })}
               </div>
 
-              <label
-                htmlFor={customId}
-                className="flex min-h-11 items-center gap-2 rounded-lg border border-dashed border-border/80 bg-background/75 px-2.5 py-1.5 focus-within:border-cyan-500/60 focus-within:ring-2 focus-within:ring-cyan-500/15"
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted/60 text-muted-foreground">
-                  <Edit3 className="h-3.5 w-3.5" />
-                </span>
-                <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                  {t("ask.customLabel")}
-                </span>
-                <Input
-                  id={customId}
-                  name={customId}
-                  autoComplete="off"
-                  value={customAnswers[question.header] ?? ""}
-                  onChange={(event) => updateCustomAnswer(question, event.target.value)}
-                  placeholder={t("ask.customPlaceholder")}
-                  className="h-8 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
-                />
-              </label>
+              {readOnly ? (
+                answeredLabels.length ? (
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>{t("ask.answerLabel")}</span>
+                    {answeredLabels.map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/70"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : null
+              ) : (
+                <label
+                  htmlFor={customId}
+                  className="flex min-h-9 items-center gap-2 rounded-md border border-dashed border-border/70 bg-background/55 px-2 py-1 focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-ring/20"
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-muted/45 text-muted-foreground">
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {t("ask.customLabel")}
+                  </span>
+                  <Input
+                    id={customId}
+                    name={customId}
+                    autoComplete="off"
+                    value={customAnswers[question.header] ?? ""}
+                    onChange={(event) => updateCustomAnswer(question, event.target.value)}
+                    placeholder={t("ask.customPlaceholder")}
+                    className="h-7 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+                  />
+                </label>
+              )}
             </div>
           )
         })}
       </div>
 
-      <div className="mt-3 flex items-center justify-end gap-2">
+      {!readOnly ? <div className="mt-3 flex items-center justify-end gap-2">
         <Button
           type="button"
           size="sm"
@@ -193,13 +227,14 @@ export function AskUserDecisionCard({
         <Button
           type="button"
           size="sm"
-          className="h-8 rounded-full bg-cyan-600 text-white hover:bg-cyan-700"
-          disabled={!complete || !onDecision}
+          variant="secondary"
+          className="h-8 rounded-full"
+          disabled={!canSubmit}
           onClick={submit}
         >
           {t("ask.submit")}
         </Button>
-      </div>
+      </div> : null}
     </div>
   )
 }

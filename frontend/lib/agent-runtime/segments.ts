@@ -7,6 +7,7 @@ import {
 } from "./sources"
 import type {
   AgentActionDecision,
+  AgentAnswer,
   AgentAskUserQuestion,
   AgentRuntimeActivityGroup,
   AgentRuntimeDecisionState,
@@ -349,6 +350,7 @@ function buildDecisionSegments(
     if (event.type === "action.decision_recorded") {
       existing.state = decisionState(event)
       existing.seqEnd = Math.max(existing.seqEnd, event.seq)
+      existing.answer = answerFromPayload(event.payload.answer) ?? existing.answer ?? null
       continue
     }
 
@@ -368,6 +370,10 @@ function buildDecisionSegments(
       if (existing.state !== "rejected" && existing.state !== "failed" && existing.state !== "cancelled") {
         existing.state = "completed"
       }
+      existing.answer =
+        answerFromPayload(recordValue(event.payload.result)?.answers) ??
+        existing.answer ??
+        null
       existing.seqEnd = Math.max(existing.seqEnd, event.seq)
     }
   }
@@ -613,8 +619,24 @@ function parseWaitingDecision(event: AgentRuntimeEvent): AgentWaitingDecision {
       typeof payload.tool_call_id === "string" ? payload.tool_call_id : null,
     inputPreview:
       typeof payload.input_preview === "string" ? payload.input_preview : null,
+    answer: null,
     interaction,
   }
+}
+
+function answerFromPayload(value: unknown): AgentAnswer | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const answer: AgentAnswer = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") {
+      answer[key] = entry
+      continue
+    }
+    if (Array.isArray(entry) && entry.every((item) => typeof item === "string")) {
+      answer[key] = entry
+    }
+  }
+  return Object.keys(answer).length ? answer : null
 }
 
 function decisionState(event: AgentRuntimeEvent): AgentRuntimeDecisionState {

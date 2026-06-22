@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { AlertTriangle, CheckCircle2, ChevronDown, CircleDashed } from "lucide-react"
+import { AlertTriangle, Brain, CheckCircle2, ChevronDown, CircleDashed } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { ScrollToBottom } from "@/components/bioinfoflow/chat/scroll-to-bottom"
@@ -153,12 +153,13 @@ function TranscriptSegment({
     case "assistant_thinking":
       return (
         <details
-          className="group rounded-2xl border border-border/50 bg-muted/20 px-3 py-2"
+          className="group rounded-lg border border-border/45 bg-muted/[0.14] px-3 py-2"
           open
         >
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground">
-            <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground">
+            <Brain className="h-4 w-4 text-muted-foreground/75" />
             <span>{t("thinking")}</span>
+            <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
           </summary>
           <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
             {segment.thinkingBlock.content}
@@ -171,8 +172,8 @@ function TranscriptSegment({
       return <InlineApprovalCard decision={segment.decision} onDecision={onDecision} />
     case "turn_error":
       return (
-        <div className="flex items-start gap-2 rounded-2xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm leading-6 text-destructive">
-          <AlertTriangle className="mt-1 h-4 w-4 shrink-0" />
+        <div className="flex items-start gap-2 rounded-lg border border-border/55 bg-muted/[0.18] px-3 py-2 text-sm leading-6 text-muted-foreground">
+          <AlertTriangle className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/75" />
           <span className="break-words">
             {segment.message || t(`turnStatus.${segment.status as AgentRuntimeTurn["status"]}`)}
           </span>

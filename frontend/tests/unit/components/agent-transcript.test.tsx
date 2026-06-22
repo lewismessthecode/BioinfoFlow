@@ -27,6 +27,7 @@ vi.mock("next-intl", () => ({
       "ask.customLabel": "Custom answer",
       "ask.customPlaceholder": "Tell Bioinfoflow what to use",
       "ask.recommended": "Recommended",
+      "ask.answerLabel": "Answer",
       "ask.rejectQuestion": "Reject question",
       "progress.tasks": "Tasks",
       "progress.empty": "No tasks yet",
@@ -53,6 +54,7 @@ vi.mock("next-intl", () => ({
       "activity.status.cancelled": "Cancelled",
       "activity.status.rejected": "Rejected",
       "activity.status.waiting": "Waiting",
+      "activity.status.running": "Running",
       "activity.details.show": "Show details",
       "activity.details.hide": "Hide details",
       "activity.details.input": "Input",
@@ -277,11 +279,10 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read data")).toBeInTheDocument()
     expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
     expect(screen.queryByText("glob")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: /Read data/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Read 2 sources/ }))
 
     expect(screen.getByText("glob")).toBeInTheDocument()
     expect(screen.getByText("files__read")).toBeInTheDocument()
@@ -318,7 +319,6 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read data")).toBeInTheDocument()
     expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
     expect(screen.queryByText("Manage workflows")).not.toBeInTheDocument()
   })
@@ -363,13 +363,9 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read data")).toBeInTheDocument()
     expect(screen.getByText("Read 2 sources")).toBeInTheDocument()
-    expect(screen.getByText("Manage workflows")).toBeInTheDocument()
     expect(screen.getByText("Managed 1 workflows")).toBeInTheDocument()
-    expect(screen.getByText("Run commands")).toBeInTheDocument()
     expect(screen.getByText("Ran 1 commands")).toBeInTheDocument()
-    expect(screen.getByText("Verify results")).toBeInTheDocument()
     expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
     expect(screen.queryByText("activity.groups.other")).not.toBeInTheDocument()
   })
@@ -394,9 +390,9 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Verify results")).toBeInTheDocument()
-    expect(screen.getByText("Create or edit files")).toBeInTheDocument()
-    expect(screen.queryByText("Run commands")).not.toBeInTheDocument()
+    expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
+    expect(screen.getByText("Edited 1 files")).toBeInTheDocument()
+    expect(screen.queryByText("Ran 1 commands")).not.toBeInTheDocument()
   })
 
   it("compacts same-category tool calls inside one contiguous tool burst", () => {
@@ -439,9 +435,7 @@ describe("AgentTranscript", () => {
     })
 
     expect(screen.getAllByTestId("agent-activity-group")).toHaveLength(2)
-    expect(screen.getByText("Read data")).toBeInTheDocument()
     expect(screen.getByText("Read 3 sources")).toBeInTheDocument()
-    expect(screen.getByText("Run commands")).toBeInTheDocument()
     expect(screen.getByText("Ran 2 commands")).toBeInTheDocument()
   })
 
@@ -456,13 +450,13 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Submit run")).toBeInTheDocument()
+    expect(screen.getByText("Submitted 1 run")).toBeInTheDocument()
     expect(screen.getByText("Failed")).toBeInTheDocument()
     expect(
       screen.queryByText("Image quay.io/example/missing:tag was not found"),
     ).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: /Submit run/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Submitted 1 run/ }))
 
     expect(
       screen.queryByText("Image quay.io/example/missing:tag was not found"),
@@ -519,7 +513,7 @@ describe("AgentTranscript", () => {
 
     expect(screen.getByTestId("inline-approval-card")).toBeInTheDocument()
     expect(screen.getByText("Needs your decision")).toBeInTheDocument()
-    expect(screen.getByText("rm build/")).toBeInTheDocument()
+    expect(screen.getAllByText("rm build/").length).toBeGreaterThan(0)
     fireEvent.click(screen.getByRole("button", { name: "Approve" }))
     expect(onDecision).toHaveBeenCalledWith("action-1", "approve")
   })
@@ -578,6 +572,76 @@ describe("AgentTranscript", () => {
     })
   })
 
+  it("renders answered ask-user decisions as grayscale transcript content", () => {
+    renderTranscript({
+      turn: { ...baseTurn, status: "running", final_text: null },
+      events: [
+        event("event-ask", 1, "action.waiting_decision", {
+          action_id: "action-ask",
+          name: "ask_user",
+          input_preview:
+            '{"questions":[{"question":"flaky_count \\u63a7\\u5236 FLALY"}]}',
+          interaction: {
+            kind: "user_input",
+            questions: [
+              {
+                header: "Retry",
+                question: "flaky_count 控制 FLAKY 任务重试次数吗？",
+                multiSelect: false,
+                options: [
+                  { label: "2", description: "Retry twice", recommended: true },
+                  { label: "1", description: "Retry once" },
+                ],
+              },
+            ],
+          },
+        }),
+        event("event-answer", 2, "action.decision_recorded", {
+          action_id: "action-ask",
+          decision: "answer",
+          answer: { Retry: "2" },
+        }),
+        event("event-completed", 3, "action.completed", {
+          action_id: "action-ask",
+          name: "ask_user",
+          result: { answers: { Retry: "2" } },
+        }),
+      ],
+    })
+
+    expect(screen.getByTestId("inline-ask-user-card")).toBeInTheDocument()
+    expect(screen.getByText("flaky_count 控制 FLAKY 任务重试次数吗？")).toBeInTheDocument()
+    expect(screen.getByText("Answer")).toBeInTheDocument()
+    expect(screen.getAllByText("2").length).toBeGreaterThan(0)
+    expect(screen.queryByText(/\\u63a7/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId("inline-approval-card")).not.toBeInTheDocument()
+  })
+
+  it("expands active tool groups by default and collapses completed groups", () => {
+    renderTranscript({
+      turn: { ...baseTurn, status: "running", final_text: null },
+      events: [
+        event("event-running", 1, "action.started", {
+          action_id: "action-running",
+          name: "bash",
+          input_preview: "bun run test",
+        }),
+        event("event-completed", 2, "assistant.tool_call.completed", {
+          call_id: "call-1",
+          name: "glob",
+          status: "completed",
+          arguments: { pattern: "**/*.wdl" },
+          index: 0,
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
+    expect(screen.getByText("bash")).toBeInTheDocument()
+    expect(screen.getByText("Read 1 sources")).toBeInTheDocument()
+    expect(screen.queryByText("glob")).not.toBeInTheDocument()
+  })
+
   it("keeps activity details collapsed until the user expands them", () => {
     renderTranscript({
       events: [
@@ -592,10 +656,10 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Read data")).toBeInTheDocument()
+    expect(screen.getByText("Read 1 sources")).toBeInTheDocument()
     expect(screen.queryByTestId("agent-tool-activity-row")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: /Read data/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Read 1 sources/ }))
 
     expect(screen.getByTestId("agent-tool-activity-row")).toBeInTheDocument()
     expect(screen.getByText("glob")).toBeInTheDocument()
@@ -651,7 +715,7 @@ describe("AgentTranscript", () => {
     expect(
       screen.getByText("I am checking the workflow registry before reading files."),
     ).toBeInTheDocument()
-    expect(screen.getByText("Read data")).toBeInTheDocument()
+    expect(screen.getByText("Read 1 sources")).toBeInTheDocument()
     expect(screen.getByText("The workflow file is present.")).toBeInTheDocument()
     expect(screen.queryByText("Working on it...")).not.toBeInTheDocument()
   })
@@ -792,7 +856,6 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Searched web")).toBeInTheDocument()
     expect(screen.getByText("Found 2 sources")).toBeInTheDocument()
     const firstCitation = screen.getByRole("button", {
       name: /Source 1: STAR: ultrafast universal RNA-seq aligner/,
@@ -941,7 +1004,7 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    fireEvent.click(screen.getByRole("button", { name: /Searched web/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Found 1 sources/ }))
     fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
 
     expect(screen.getByText("Unsafe search result")).toBeInTheDocument()
@@ -1009,7 +1072,6 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Searched web")).toBeInTheDocument()
     expect(screen.getByText("Found 0 sources")).toBeInTheDocument()
   })
 
@@ -1024,7 +1086,6 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Searched web")).toBeInTheDocument()
     expect(screen.getByText("Searching sources...")).toBeInTheDocument()
     expect(screen.queryByText("Found 0 sources")).not.toBeInTheDocument()
   })
@@ -1046,9 +1107,9 @@ describe("AgentTranscript", () => {
     })
 
     expect(screen.getByText("Found 0 sources")).toBeInTheDocument()
-    expect(screen.getByText("Failed")).toBeInTheDocument()
+    expect(screen.getAllByText("Failed").length).toBeGreaterThan(0)
 
-    fireEvent.click(screen.getByRole("button", { name: /Searched web/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Found 0 sources/ }))
     fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
 
     expect(screen.getByText("Error")).toBeInTheDocument()

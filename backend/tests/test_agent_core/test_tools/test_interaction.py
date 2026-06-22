@@ -87,6 +87,11 @@ async def test_ask_user_pauses_even_under_bypass_then_resumes_with_answer(db_ses
         answer={"DB": "SQLite"},
     )
     assert decided.status == "requested"
+    events = await core.list_events_for_turn(
+        turn_id=turn_id, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    decisions = [e for e in events if e.type == "action.decision_recorded"]
+    assert decisions and decisions[-1].payload["answer"] == {"DB": "SQLite"}
 
     resumed = await dispatcher.resume_action(action_id=pending.action_id, context=context)
     assert resumed.status == "completed"

@@ -2390,6 +2390,7 @@
       "customLabel": "Custom answer",
       "customPlaceholder": "Tell Bioinfoflow what to use",
       "recommended": "Recommended",
+      "answerLabel": "Answer",
       "rejectQuestion": "Reject question"
     }
   },

@@ -365,6 +365,7 @@ export type AgentWaitingDecision = {
   riskLevel?: string
   toolCallId?: string | null
   inputPreview?: string | null
+  answer?: AgentAnswer | null
   interaction?:
     | { kind: "user_input"; questions: AgentAskUserQuestion[] }
     | { kind: "plan_approval"; plan: string }
