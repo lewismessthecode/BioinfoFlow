@@ -2163,6 +2163,7 @@
     "toolCalls": "工具调用",
     "activity": {
       "groups": {
+        "search": "已搜索网页",
         "workspace": "准备工作区",
         "read": "读取项目结构",
         "write": "创建或编辑文件",
@@ -2172,6 +2173,7 @@
         "other": "使用工具"
       },
       "summary": {
+        "search": "找到 {count} 个来源",
         "workspace": "准备了 {count} 项",
         "read": "读取了 {count} 项",
         "write": "编辑了 {count} 个文件",
@@ -2199,6 +2201,28 @@
         "exitCode": "退出码",
         "error": "错误",
         "files": "文件"
+      }
+    },
+    "sources": {
+      "title": "来源",
+      "description": "查看支撑本次回答的链接和搜索查询。",
+      "open": "打开来源",
+      "close": "关闭来源",
+      "count": "{count} 个来源",
+      "searchedWeb": "已搜索网页",
+      "resultCount": "{count} 个结果",
+      "preview": "来源预览",
+      "query": "查询",
+      "noSnippet": "暂无摘要。",
+      "types": {
+        "web": "网页",
+        "pubmed": "PubMed",
+        "ncbi": "NCBI",
+        "biorxiv": "bioRxiv",
+        "github": "GitHub",
+        "docs": "文档",
+        "workflow": "工作流",
+        "artifact": "产物"
       }
     },
     "approve": "批准",

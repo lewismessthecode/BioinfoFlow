@@ -112,6 +112,31 @@ export type AgentRuntimeTextBlock = {
   text: string
   status: AgentRuntimeTextBlockStatus
   source: AgentRuntimeTextBlockSource
+  sources: AgentRuntimeSource[]
+}
+
+export type AgentRuntimeSourceType =
+  | "web"
+  | "pubmed"
+  | "ncbi"
+  | "biorxiv"
+  | "github"
+  | "docs"
+  | "workflow"
+  | "artifact"
+
+export type AgentRuntimeSource = {
+  id: string
+  title: string
+  url: string
+  domain: string
+  snippet?: string | null
+  sourceType: AgentRuntimeSourceType | string
+  query?: string | null
+  toolRunId?: string | null
+  citationId?: string | null
+  accessedAt?: string | null
+  resultCount?: number | null
 }
 
 type AgentRuntimeThinkingState = {
@@ -173,6 +198,9 @@ export type AgentRuntimeToolActivity = {
   errorMessage?: string | null
   relatedFiles: string[]
   summary?: string | null
+  sources: AgentRuntimeSource[]
+  sourceQuery?: string | null
+  sourceResultCount?: number | null
   artifactId?: string | null
   artifactType?: string | null
   seqStart: number
@@ -180,6 +208,7 @@ export type AgentRuntimeToolActivity = {
 }
 
 export type AgentRuntimeActivityGroupKind =
+  | "search"
   | "workspace"
   | "read"
   | "write"

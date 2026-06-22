@@ -29,12 +29,14 @@ vi.mock("next-intl", () => ({
       "plan.approveAndAct": "Approve & act",
       "plan.keepPlanning": "Keep planning",
       "plan.status.pending": "Pending",
+      "activity.groups.search": "Searched web",
       "activity.groups.read": "Read project structure",
       "activity.groups.run": "Submit run",
       "activity.groups.verify": "Verify results",
       "activity.summary.read": "Read 2 sources",
       "activity.summary.run": "Submitted 1 run",
       "activity.summary.verify": "Verified 1 check",
+      "activity.summary.search": "Found 2 sources",
       "activity.status.failed": "Failed",
       "activity.status.cancelled": "Cancelled",
       "activity.status.rejected": "Rejected",
@@ -55,6 +57,19 @@ vi.mock("next-intl", () => ({
       "turnStatus.failed": "Failed",
       "turnStatus.cancelled": "Cancelled",
       scrollToBottom: "Jump to latest",
+      "sources.title": "Sources",
+      "sources.open": "Open sources",
+      "sources.close": "Close sources",
+      "sources.count": "2 sources",
+      "sources.searchedWeb": "Searched web",
+      "sources.resultCount": "2 results",
+      "sources.preview": "Source preview",
+      "sources.description": "Review sources.",
+      "sources.query": "Query",
+      "sources.noSnippet": "No snippet available.",
+      "sources.types.pubmed": "PubMed",
+      "sources.types.biorxiv": "bioRxiv",
+      "sources.types.web": "Web",
     }
     return labels[key] ?? key
   },
@@ -544,5 +559,59 @@ describe("AgentTranscript", () => {
     const followUp = screen.getByText("Now let me try another way.")
     expect(followUp.closest(".text-destructive")).toBeNull()
     expect(screen.getByText("files__read failed")).toBeInTheDocument()
+  })
+
+  it("renders source-backed answers with inline citation previews and a sources drawer", () => {
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content:
+            "STAR is appropriate for splice-aware RNA-seq alignment [1](source:pubmed-star). For preprints, inspect the bioRxiv page [2](source:biorxiv-faq).",
+          sources: [
+            {
+              id: "pubmed-star",
+              title: "STAR: ultrafast universal RNA-seq aligner",
+              url: "https://pubmed.ncbi.nlm.nih.gov/23104886/",
+              domain: "pubmed.ncbi.nlm.nih.gov",
+              snippet: "STAR aligns RNA-seq reads using sequential maximum mappable seed search.",
+              sourceType: "pubmed",
+              query: "STAR RNA-seq aligner PubMed",
+              resultCount: 2,
+            },
+            {
+              id: "biorxiv-faq",
+              title: "Frequently Asked Questions",
+              url: "https://www.biorxiv.org/about/FAQ",
+              domain: "biorxiv.org",
+              snippet: "bioRxiv distributes complete but unpublished manuscripts.",
+              sourceType: "biorxiv",
+              query: "bioRxiv FAQ preprint",
+              resultCount: 2,
+            },
+          ],
+        }),
+      ],
+    })
+
+    const firstCitation = screen.getByRole("button", {
+      name: /Source 1: STAR: ultrafast universal RNA-seq aligner/,
+    })
+    expect(firstCitation).toBeInTheDocument()
+
+    fireEvent.focus(firstCitation)
+    expect(screen.getByText("Source preview")).toBeInTheDocument()
+    expect(screen.getByText("STAR: ultrafast universal RNA-seq aligner")).toBeInTheDocument()
+    expect(screen.getByText(/sequential maximum mappable seed/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open sources" }))
+    expect(screen.getByRole("dialog", { name: "Sources" })).toBeInTheDocument()
+    expect(screen.getAllByText("Searched web").length).toBeGreaterThan(0)
+    expect(screen.getByText("STAR RNA-seq aligner PubMed")).toBeInTheDocument()
+    expect(screen.getAllByText("2 results").length).toBeGreaterThan(0)
+    expect(screen.getByRole("link", { name: /pubmed\.ncbi\.nlm\.nih\.gov/ })).toHaveAttribute(
+      "href",
+      "https://pubmed.ncbi.nlm.nih.gov/23104886/",
+    )
   })
 })

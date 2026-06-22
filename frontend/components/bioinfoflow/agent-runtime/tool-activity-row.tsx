@@ -7,6 +7,8 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  ExternalLink,
+  Globe2,
   Loader2,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
@@ -23,6 +25,7 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
       activity.inputPreview ||
       activity.outputPreview ||
       activity.errorMessage ||
+      activity.sources.length ||
       activity.exitCode !== undefined ||
       activity.relatedFiles.length,
   )
@@ -81,6 +84,32 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
       {hasDetails && expanded ? (
         <div id={detailsId} className="grid gap-1.5 text-muted-foreground">
           {activity.inputPreview ? <Detail label={t("activity.details.input")} value={activity.inputPreview} /> : null}
+          {activity.sourceQuery ? <Detail label={t("sources.query")} value={activity.sourceQuery} /> : null}
+          {activity.sources.length ? (
+            <div className="grid gap-1">
+              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                {t("sources.title")}
+              </div>
+              <div className="grid gap-1.5">
+                {activity.sources.map((source) => (
+                  <a
+                    key={source.id}
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex min-w-0 items-center gap-2 rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80 transition-colors hover:bg-muted/45"
+                  >
+                    <Globe2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{source.title}</span>
+                    <span className="hidden shrink-0 text-muted-foreground sm:inline">
+                      {source.domain}
+                    </span>
+                    <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {activity.arguments ? (
             <Detail
               label={t("activity.details.arguments")}

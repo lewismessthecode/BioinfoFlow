@@ -2163,6 +2163,7 @@
     "toolCalls": "Tool calls",
     "activity": {
       "groups": {
+        "search": "Searched web",
         "workspace": "Prepare workspace",
         "read": "Read project structure",
         "write": "Create or edit files",
@@ -2172,6 +2173,7 @@
         "other": "Use tools"
       },
       "summary": {
+        "search": "Found {count, plural, one {# source} other {# sources}}",
         "workspace": "Prepared {count, plural, one {# item} other {# items}}",
         "read": "Read {count, plural, one {# source} other {# sources}}",
         "write": "Edited {count, plural, one {# file} other {# files}}",
@@ -2199,6 +2201,28 @@
         "exitCode": "Exit code",
         "error": "Error",
         "files": "Files"
+      }
+    },
+    "sources": {
+      "title": "Sources",
+      "description": "Review the links and search queries that support this answer.",
+      "open": "Open sources",
+      "close": "Close sources",
+      "count": "{count, plural, one {# source} other {# sources}}",
+      "searchedWeb": "Searched web",
+      "resultCount": "{count, plural, one {# result} other {# results}}",
+      "preview": "Source preview",
+      "query": "Query",
+      "noSnippet": "No snippet available.",
+      "types": {
+        "web": "Web",
+        "pubmed": "PubMed",
+        "ncbi": "NCBI",
+        "biorxiv": "bioRxiv",
+        "github": "GitHub",
+        "docs": "Docs",
+        "workflow": "Workflow",
+        "artifact": "Artifact"
       }
     },
     "approve": "Approve",
