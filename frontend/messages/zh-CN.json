@@ -1370,7 +1370,8 @@
     "clearTerminal": "清空终端",
     "celebrationsOn": "里程碑彩纸已开启",
     "celebrationsOff": "里程碑彩纸已关闭",
-    "celebrationsPaused": "里程碑彩纸因减少动态效果已暂停"
+    "celebrationsPaused": "里程碑彩纸因减少动态效果已暂停",
+    "celebrationsMenuState": "安静庆祝：{state}"
   },
   "landing": {
     "announcement": {

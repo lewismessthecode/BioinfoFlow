@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { renderHook } from "@testing-library/react"
+import { act, renderHook } from "@testing-library/react"
 
 import {
   buildStageConfettiEmitters,
@@ -99,6 +99,15 @@ describe("celebrations", () => {
     expect(window.localStorage.getItem("bioinfoflow:celebrated:first-provider-key")).toBe("1")
   })
 
+  it("stops an active celebration when celebrations are disabled", () => {
+    celebratePreview()
+    expect(document.body.querySelectorAll("canvas[aria-hidden='true']")).toHaveLength(1)
+
+    setCelebrationsEnabled(false)
+
+    expect(document.body.querySelectorAll("canvas[aria-hidden='true']")).toHaveLength(0)
+  })
+
   it("coalesces near-simultaneous milestones into one quiet animation while recording each one", () => {
     const appendSpy = vi.spyOn(document.body, "appendChild")
 
@@ -192,6 +201,54 @@ describe("celebrations", () => {
 
     expect(removeEventListener).toHaveBeenCalledWith("change", expect.any(Function))
     expect(removeListener).not.toHaveBeenCalled()
+  })
+
+  it("uses the legacy reduced-motion listener when modern media query events are unavailable", () => {
+    const addListener = vi.fn()
+    const removeListener = vi.fn()
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addListener,
+      removeListener,
+      dispatchEvent: vi.fn(),
+    }))
+
+    const { unmount } = renderHook(() => useReducedMotionPreference())
+
+    expect(addListener).toHaveBeenCalledWith(expect.any(Function))
+
+    unmount()
+
+    expect(removeListener).toHaveBeenCalledWith(expect.any(Function))
+  })
+
+  it("stops active confetti when reduced motion turns on", () => {
+    let changeHandler: (() => void) | null = null
+    const mediaQuery = {
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addEventListener: vi.fn((_event: string, handler: () => void) => {
+        changeHandler = handler
+      }),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue(mediaQuery))
+    renderHook(() => useReducedMotionPreference())
+    celebratePreview()
+    expect(document.body.querySelectorAll("canvas[aria-hidden='true']")).toHaveLength(1)
+
+    act(() => {
+      mediaQuery.matches = true
+      changeHandler?.()
+    })
+
+    expect(document.body.querySelectorAll("canvas[aria-hidden='true']")).toHaveLength(0)
   })
 
   it("does not persist preview as a milestone", () => {

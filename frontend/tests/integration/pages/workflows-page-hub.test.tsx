@@ -293,6 +293,9 @@ describe("WorkflowsPage - hub actions", () => {
       ) {
         return { data: null, meta: undefined }
       }
+      if (path === "/projects/project-9/workflows") {
+        return { data: [], meta: undefined }
+      }
       throw new Error(`Unexpected path: ${path}`)
     })
 
@@ -318,6 +321,72 @@ describe("WorkflowsPage - hub actions", () => {
     expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-workflow-bound")
   })
 
+  it("does not celebrate binding when the project already has workflows", async () => {
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/workflows") {
+        return {
+          data: [
+            {
+              id: "wf-hub-existing",
+              name: "viral-mini-nf",
+              description: "Hub workflow",
+              source: "nf-core",
+              engine: "nextflow",
+              version: "2.0.0",
+              updated_at: "2026-03-16T00:00:00Z",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      if (path === "/projects/project-9/workflows") {
+        return {
+          data: [
+            {
+              source: "local",
+              name: "already-bound",
+              engine: "wdl",
+              pinned_workflow: {
+                id: "wf-existing",
+                name: "already-bound",
+                source: "local",
+                engine: "wdl",
+                version: "1.0.0",
+                updated_at: "2026-03-16T00:00:00Z",
+              },
+              versions: [],
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      if (
+        path === "/projects/project-9/workflows/wf-hub-existing:bind" &&
+        options?.method === "POST"
+      ) {
+        return { data: null, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<WorkflowsPage />, {
+      projectContext: { activeProjectId: "project-9" },
+    })
+
+    fireEvent.click(await screen.findByRole("tab", { name: "workflows.scopes.hub" }))
+    expect(await screen.findByText("nf-core/viral-mini-nf")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "workflows.actions.add" }))
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "/projects/project-9/workflows/wf-hub-existing:bind",
+        { method: "POST" }
+      )
+    })
+    expect(celebrateMilestoneMock).not.toHaveBeenCalled()
+  })
+
   it("shows an error toast when binding a workflow fails", async () => {
     apiRequestMock.mockImplementation(async (path, options) => {
       if (path === "/workflows") {
@@ -341,6 +410,9 @@ describe("WorkflowsPage - hub actions", () => {
         options?.method === "POST"
       ) {
         throw new ApiError("Bind failed")
+      }
+      if (path === "/projects/project-2/workflows") {
+        return { data: [], meta: undefined }
       }
       throw new Error(`Unexpected path: ${path}`)
     })
@@ -525,6 +597,9 @@ describe("WorkflowsPage - hub actions", () => {
         options?.method === "POST"
       ) {
         throw new ApiError("Bind failed")
+      }
+      if (path === "/projects/project-8/workflows") {
+        return { data: [], meta: undefined }
       }
       throw new Error(`Unexpected path: ${path}`)
     })

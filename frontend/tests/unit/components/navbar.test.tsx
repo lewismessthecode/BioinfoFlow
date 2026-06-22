@@ -47,7 +47,7 @@ vi.mock("@/lib/appearance/use-appearance", () => ({
 }))
 
 vi.mock("next-intl", () => ({
-  useTranslations: (namespace: string) => (key: string) => {
+  useTranslations: (namespace: string) => (key: string, values?: Record<string, string>) => {
     const copy: Record<string, Record<string, string>> = {
       userMenu: {
         "toasts.signingOut": "Signing out",
@@ -68,6 +68,7 @@ vi.mock("next-intl", () => ({
         celebrationsOn: "Milestone confetti on",
         celebrationsOff: "Milestone confetti off",
         celebrationsPaused: "Milestone confetti paused by reduced motion",
+        celebrationsMenuState: `Quiet celebrations: ${values?.state ?? ""}`,
       },
       celebrations: {
         title: "Quiet celebrations",
@@ -207,12 +208,12 @@ describe("Navbar", () => {
     const user = userEvent.setup()
     render(<Navbar viewer={AUTH_VIEWER} />)
 
-    expect(screen.getByRole("button", { name: "Milestone confetti on" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Quiet celebrations: Milestone confetti on" })).toBeInTheDocument()
 
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Milestone confetti" }))
 
     expect(setCelebrationsEnabledMock).toHaveBeenCalledWith(false)
-    expect(screen.getByRole("button", { name: "Milestone confetti off" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Quiet celebrations: Milestone confetti off" })).toBeInTheDocument()
   })
 
   it("fires preview confetti from the top-right control", async () => {
@@ -230,7 +231,7 @@ describe("Navbar", () => {
     render(<Navbar viewer={AUTH_VIEWER} />)
 
     expect(
-      screen.getByRole("button", { name: "Milestone confetti paused by reduced motion" }),
+      screen.getByRole("button", { name: "Quiet celebrations: Milestone confetti paused by reduced motion" }),
     ).toBeInTheDocument()
     expect(screen.getByText("Reduced motion is on, so confetti is paused.")).toBeInTheDocument()
 

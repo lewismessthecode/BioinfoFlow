@@ -87,6 +87,9 @@ export default function RunDetailPage() {
     try {
       const { data } = await apiRequest<Run>(`/runs/${runId}`);
       setRun(data);
+      if (data.status === "completed") {
+        celebrateMilestone("first-run-success");
+      }
 
       // Fetch workflow name
       if (data.workflow_id) {

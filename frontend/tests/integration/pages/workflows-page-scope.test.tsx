@@ -487,7 +487,7 @@ describe("WorkflowsPage - scope, search, and views", () => {
     expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-workflow-registered")
   })
 
-  it("celebrates workflow registration when the hub already has workflows", async () => {
+  it("does not celebrate workflow registration when the hub already has workflows", async () => {
     searchParamsState.scope = "hub"
     apiRequestMock.mockImplementation(async (path, options) => {
       if (path === "/workflows" && !options?.method) {
@@ -520,7 +520,7 @@ describe("WorkflowsPage - scope, search, and views", () => {
     await waitFor(() => {
       expect(screen.getByText("test-workflow")).toBeInTheDocument()
     })
-    expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-workflow-registered")
+    expect(celebrateMilestoneMock).not.toHaveBeenCalled()
   })
 
   it("closes the register dialog via onOpenChange", async () => {

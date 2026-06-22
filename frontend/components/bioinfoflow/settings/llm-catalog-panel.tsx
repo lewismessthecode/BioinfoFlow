@@ -107,7 +107,9 @@ export function LlmCatalogPanel() {
   const saveProvider = async (template: LlmProviderTemplate) => {
     setSavingTemplateId(template.id)
     try {
-      const result = await setupProvider(buildSetupInput(template, true))
+      const hadConfiguredProvider = configuredProviders.some(providerIsUsable)
+      const setupInput = buildSetupInput(template, true)
+      const result = await setupProvider(setupInput)
       if (!result) {
         toast.error(t("providerCards.saveFailed"))
         return
@@ -120,7 +122,13 @@ export function LlmCatalogPanel() {
       } else {
         toast.success(t("providerCards.saved"))
       }
-      celebrateMilestone("first-provider-key")
+      if (
+        !hadConfiguredProvider &&
+        setupInput.apiKey &&
+        providerIsUsable(result.provider)
+      ) {
+        celebrateMilestone("first-provider-key")
+      }
     } finally {
       setSavingTemplateId(null)
     }
@@ -320,6 +328,13 @@ function providerConfigured(
   if (!provider?.enabled) return false
   if (provider.credential?.configured || provider.credential?.available) return true
   return !apiKeyRequired(template) && provider.credential?.source === "none"
+}
+
+function providerIsUsable(provider: LlmConfiguredProvider) {
+  return Boolean(
+    provider.enabled &&
+      (provider.credential?.configured || provider.credential?.available),
+  )
 }
 
 function credentialNote(

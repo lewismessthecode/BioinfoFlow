@@ -323,6 +323,30 @@ describe("useRunsPage", () => {
     expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-run-success")
   })
 
+  it("records first run success from initially fetched completed runs", async () => {
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/workflows") {
+        return { data: [makeWorkflow()], meta: undefined }
+      }
+      if (path === "/runs") {
+        return {
+          data: [makeRun({ status: "completed", tasks_completed: 2 })],
+          meta: { pagination: { next_cursor: null, prev_cursor: null, has_more: false } },
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper({
+      activeProjectId: "project-url",
+    })
+    renderHook(() => useRunsPage(), { wrapper: Wrapper })
+
+    await waitFor(() => {
+      expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-run-success")
+    })
+  })
+
   it("surfaces container image preparation logs as a toast", async () => {
     let eventHandlers:
       | {

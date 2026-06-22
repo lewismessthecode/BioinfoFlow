@@ -5,9 +5,10 @@ import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { apiRequest } from "@/lib/api"
 import { renderAppPage } from "@/tests/app-test-utils"
 
-const { toastErrorMock, toastInfoMock } = vi.hoisted(() => ({
+const { toastErrorMock, toastInfoMock, celebrateMilestoneMock } = vi.hoisted(() => ({
   toastErrorMock: vi.fn(),
   toastInfoMock: vi.fn(),
+  celebrateMilestoneMock: vi.fn(),
 }))
 const { translateMock } = vi.hoisted(() => ({
   translateMock: vi.fn((key: string) => key),
@@ -66,6 +67,10 @@ vi.mock("@/lib/api", async () => {
   }
 })
 
+vi.mock("@/lib/celebrations", () => ({
+  celebrateMilestone: (...args: unknown[]) => celebrateMilestoneMock(...args),
+}))
+
 function ProjectContextProbe() {
   const { activeProjectId } = useProjectContext()
   return <div data-testid="active-project-id">{activeProjectId || "none"}</div>
@@ -78,6 +83,7 @@ describe("RunDetailPage", () => {
     apiRequestMock.mockReset()
     toastErrorMock.mockReset()
     toastInfoMock.mockReset()
+    celebrateMilestoneMock.mockReset()
     useEventsMock.mockReset()
     useEventsMock.mockReturnValue({ connectionState: "connected" })
 
@@ -236,6 +242,109 @@ describe("RunDetailPage", () => {
         "run-123:outputs:1"
       )
     })
+    expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-run-success")
+  })
+
+  it("records first run success when the fetched run is already completed", async () => {
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/runs/run-123") {
+        return {
+          data: {
+            id: "run-model-id",
+            run_id: "run-123",
+            project_id: "project-from-run",
+            workflow_id: "workflow-1",
+            status: "completed",
+            workspace: ".",
+            config: {},
+            samples_count: 1,
+            tasks_total: 4,
+            tasks_completed: 4,
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/workflows/workflow-1") {
+        return {
+          data: {
+            id: "workflow-1",
+            name: "RNA QC",
+            source: "github",
+            engine: "nextflow",
+            version: "1.0.0",
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/runs/run-123/logs") {
+        return { data: { logs: [] }, meta: undefined }
+      }
+      if (path === "/runs/run-123/outputs") {
+        return { data: { files: [] }, meta: undefined }
+      }
+      if (path === "/runs/run-123/dag") {
+        return { data: { nodes: [], edges: [] }, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<RunDetailPage />)
+
+    expect(await screen.findByTestId("run-detail-content")).toHaveTextContent(
+      "run-123"
+    )
+    expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-run-success")
+  })
+
+  it("does not record first run success for fetched failed runs", async () => {
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/runs/run-123") {
+        return {
+          data: {
+            id: "run-model-id",
+            run_id: "run-123",
+            project_id: "project-from-run",
+            workflow_id: "workflow-1",
+            status: "failed",
+            workspace: ".",
+            config: {},
+            samples_count: 1,
+            tasks_total: 4,
+            tasks_completed: 2,
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/workflows/workflow-1") {
+        return {
+          data: {
+            id: "workflow-1",
+            name: "RNA QC",
+            source: "github",
+            engine: "nextflow",
+            version: "1.0.0",
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/runs/run-123/logs") {
+        return { data: { logs: [] }, meta: undefined }
+      }
+      if (path === "/runs/run-123/outputs") {
+        return { data: { files: [] }, meta: undefined }
+      }
+      if (path === "/runs/run-123/dag") {
+        return { data: { nodes: [], edges: [] }, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<RunDetailPage />)
+
+    expect(await screen.findByTestId("run-detail-content")).toHaveTextContent(
+      "run-123"
+    )
+    expect(celebrateMilestoneMock).not.toHaveBeenCalled()
   })
 
   it("surfaces container image preparation logs as a toast", async () => {
