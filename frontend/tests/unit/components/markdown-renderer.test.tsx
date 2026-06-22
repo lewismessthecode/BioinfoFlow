@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 
 describe("MarkdownRenderer link sanitization", () => {
@@ -62,6 +62,46 @@ describe("MarkdownRenderer link sanitization", () => {
     const link = container.querySelector("a")
     expect(link).not.toBeNull()
     expect(link!.getAttribute("href")).toBe("/docs/readme")
+  })
+
+  it("does not render source pseudo-links as navigable anchors without a citation renderer", () => {
+    const { container } = render(<MarkdownRenderer content="[1](source:1)" />)
+
+    const link = container.querySelector("a")
+    expect(link).not.toBeNull()
+    expect(link!.getAttribute("href")).toBeNull()
+    expect(link).toHaveTextContent("1")
+  })
+
+  it("delegates known source pseudo-links to the citation renderer", () => {
+    const renderSourceCitation = vi.fn((sourceId, children) => (
+      <button type="button" data-testid="source-citation" data-source-id={sourceId}>
+        {children}
+      </button>
+    ))
+
+    render(
+      <MarkdownRenderer
+        content="[7](source:pubmed-7)"
+        renderSourceCitation={renderSourceCitation}
+      />,
+    )
+
+    expect(screen.getByTestId("source-citation")).toHaveAttribute(
+      "data-source-id",
+      "pubmed-7",
+    )
+    expect(screen.getByTestId("source-citation")).toHaveTextContent("7")
+  })
+
+  it("does not make source-prefixed javascript payloads navigable", () => {
+    const { container } = render(
+      <MarkdownRenderer content="[bad](source:javascript:alert(1))" />,
+    )
+
+    const link = container.querySelector("a")
+    expect(link).not.toBeNull()
+    expect(link!.getAttribute("href")).toBeNull()
   })
 
   it("renders fenced code blocks with the declared language metadata", () => {

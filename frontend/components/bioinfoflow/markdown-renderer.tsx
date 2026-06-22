@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils"
 interface MarkdownRendererProps {
   content: string
   className?: string
+  allowOverflow?: boolean
+  renderSourceCitation?: (sourceId: string, children: ReactNode) => ReactNode
 }
 
 const highlightedCodeCache = new Map<string, string>()
@@ -110,11 +112,31 @@ function CodeBlock({
   )
 }
 
-export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
+export function MarkdownRenderer({
+  content,
+  className,
+  allowOverflow = false,
+  renderSourceCitation,
+}: MarkdownRendererProps) {
   return (
-    <div className={cn("prose prose-sm dark:prose-invert min-w-0 max-w-none overflow-hidden break-words", className)}>
+    <div
+      className={cn(
+        "prose prose-sm dark:prose-invert min-w-0 max-w-none break-words",
+        allowOverflow ? "overflow-visible" : "overflow-hidden",
+        className,
+      )}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={(url) => {
+          if (url.startsWith("source:")) return url
+          try {
+            const parsed = new URL(url, "https://placeholder.invalid")
+            return ["http:", "https:", "mailto:"].includes(parsed.protocol) ? url : ""
+          } catch {
+            return ""
+          }
+        }}
         components={{
           // Headings
           h1: ({ children }) => (
@@ -176,6 +198,9 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
 
           // Links
           a: ({ href, children }) => {
+            if (href?.startsWith("source:") && renderSourceCitation) {
+              return <>{renderSourceCitation(href.slice("source:".length), children)}</>
+            }
             const sanitizedHref = (() => {
               if (!href) return undefined
               try {

@@ -2164,6 +2164,7 @@
     "toolCalls": "Tool calls",
     "activity": {
       "groups": {
+        "search": "Searched web",
         "workspace": "Prepare workspace",
         "read": "Read data",
         "command": "Run commands",
@@ -2174,6 +2175,8 @@
         "other": "Use tools"
       },
       "summary": {
+        "search": "Found {count, plural, one {# source} other {# sources}}",
+        "searching": "Searching sources...",
         "workspace": "Prepared {count, plural, one {# item} other {# items}}",
         "read": "Read {count, plural, one {# source} other {# sources}}",
         "command": "Ran {count, plural, one {# command} other {# commands}}",
@@ -2202,6 +2205,31 @@
         "exitCode": "Exit code",
         "error": "Error",
         "files": "Files"
+      }
+    },
+    "sources": {
+      "title": "Sources",
+      "description": "Review the links and search queries that support this answer.",
+      "open": "Open sources",
+      "openWithCount": "Open {count, plural, one {# source} other {# sources}}",
+      "close": "Close sources",
+      "citationLabel": "Source {index}: {title}",
+      "count": "{count, plural, one {# source} other {# sources}}",
+      "searchedWeb": "Searched web",
+      "resultCount": "{count, plural, one {# result} other {# results}}",
+      "preview": "Source preview",
+      "query": "Query",
+      "noSnippet": "No snippet available.",
+      "opensInNewTab": "Opens in a new tab.",
+      "types": {
+        "web": "Web",
+        "pubmed": "PubMed",
+        "ncbi": "NCBI",
+        "biorxiv": "bioRxiv",
+        "github": "GitHub",
+        "docs": "Docs",
+        "workflow": "Workflow",
+        "artifact": "Artifact"
       }
     },
     "approve": "Approve",

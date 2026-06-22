@@ -9,7 +9,7 @@ import type {
 } from "@/lib/agent-runtime"
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string, values?: Record<string, number>) => {
+  useTranslations: () => (key: string, values?: Record<string, string | number>) => {
     const labels: Record<string, string> = {
       pendingResponse: "Working on it...",
       recentActivityWindow: "Showing recent activity",
@@ -34,16 +34,21 @@ vi.mock("next-intl", () => ({
       "plan.approveAndAct": "Approve & act",
       "plan.keepPlanning": "Keep planning",
       "plan.status.pending": "Pending",
+      "activity.groups.search": "Searched web",
       "activity.groups.read": "Read data",
       "activity.groups.command": "Run commands",
+      "activity.groups.write": "Create or edit files",
       "activity.groups.register": "Manage workflows",
       "activity.groups.run": "Submit run",
       "activity.groups.verify": "Verify results",
-      "activity.summary.read": `Read ${values?.count ?? 0} sources`,
-      "activity.summary.command": `Ran ${values?.count ?? 0} commands`,
-      "activity.summary.register": `Managed ${values?.count ?? 0} workflows`,
+      "activity.summary.read": "Read {count} sources",
+      "activity.summary.command": "Ran {count} commands",
+      "activity.summary.write": "Edited {count} files",
+      "activity.summary.register": "Managed {count} workflows",
       "activity.summary.run": "Submitted 1 run",
       "activity.summary.verify": "Verified 1 check",
+      "activity.summary.search": "Found {count} sources",
+      "activity.summary.searching": "Searching sources...",
       "activity.status.failed": "Failed",
       "activity.status.cancelled": "Cancelled",
       "activity.status.rejected": "Rejected",
@@ -64,8 +69,27 @@ vi.mock("next-intl", () => ({
       "turnStatus.failed": "Failed",
       "turnStatus.cancelled": "Cancelled",
       scrollToBottom: "Jump to latest",
+      "sources.title": "Sources",
+      "sources.open": "Open sources",
+      "sources.openWithCount": "Open {count} sources",
+      "sources.close": "Close sources",
+      "sources.citationLabel": "Source {index}: {title}",
+      "sources.count": "{count} sources",
+      "sources.searchedWeb": "Searched web",
+      "sources.resultCount": "{count} results",
+      "sources.preview": "Source preview",
+      "sources.description": "Review sources.",
+      "sources.query": "Query",
+      "sources.noSnippet": "No snippet available.",
+      "sources.types.pubmed": "PubMed",
+      "sources.types.biorxiv": "bioRxiv",
+      "sources.types.web": "Web",
     }
-    return labels[key] ?? key
+    const label = labels[key] ?? key
+    return label
+      .replace("{count}", String(values?.count ?? "{count}"))
+      .replace("{index}", String(values?.index ?? "{index}"))
+      .replace("{title}", String(values?.title ?? "{title}"))
   },
 }))
 
@@ -348,6 +372,31 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("Verify results")).toBeInTheDocument()
     expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
     expect(screen.queryByText("activity.groups.other")).not.toBeInTheDocument()
+  })
+
+  it("uses tool-call arguments as fallback hints for bash activity classification", () => {
+    renderTranscript({
+      events: [
+        event("event-bash-verify", 1, "assistant.tool_call.completed", {
+          call_id: "call-bash-verify",
+          name: "bash",
+          status: "completed",
+          arguments: { command: "bun run test" },
+          index: 0,
+        }),
+        event("event-bash-write", 2, "assistant.tool_call.completed", {
+          call_id: "call-bash-write",
+          name: "bash",
+          status: "completed",
+          arguments: { command: "rm build/" },
+          index: 1,
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Verify results")).toBeInTheDocument()
+    expect(screen.getByText("Create or edit files")).toBeInTheDocument()
+    expect(screen.queryByText("Run commands")).not.toBeInTheDocument()
   })
 
   it("compacts same-category tool calls inside one contiguous tool burst", () => {
@@ -687,5 +736,322 @@ describe("AgentTranscript", () => {
     const followUp = screen.getByText("Now let me try another way.")
     expect(followUp.closest(".text-destructive")).toBeNull()
     expect(screen.getByText("files__read failed")).toBeInTheDocument()
+  })
+
+  it("renders source-backed answers with inline citation previews and a sources drawer", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input: { query: "STAR RNA-seq aligner PubMed" },
+          result: {
+            query: "STAR RNA-seq aligner PubMed",
+            results: [
+              {
+                title: "STAR: ultrafast universal RNA-seq aligner",
+                url: "https://pubmed.ncbi.nlm.nih.gov/23104886/",
+                snippet:
+                  "STAR aligns RNA-seq reads using sequential maximum mappable seed search.",
+              },
+              {
+                title: "Frequently Asked Questions",
+                url: "https://www.biorxiv.org/about/FAQ",
+                snippet: "bioRxiv distributes complete but unpublished manuscripts.",
+              },
+            ],
+          },
+        }),
+        event("event-text", 2, "assistant.text.completed", {
+          message_id: "message-1",
+          content:
+            "STAR is appropriate for splice-aware RNA-seq alignment [1](source:pubmed-star). For preprints, inspect the bioRxiv page [2](source:biorxiv-faq).",
+          sources: [
+            {
+              id: "pubmed-star",
+              title: "STAR: ultrafast universal RNA-seq aligner",
+              url: "https://pubmed.ncbi.nlm.nih.gov/23104886/",
+              domain: "pubmed.ncbi.nlm.nih.gov",
+              snippet: "STAR aligns RNA-seq reads using sequential maximum mappable seed search.",
+              sourceType: "pubmed",
+              query: "STAR RNA-seq aligner PubMed",
+              resultCount: 2,
+            },
+            {
+              id: "biorxiv-faq",
+              title: "Frequently Asked Questions",
+              url: "https://www.biorxiv.org/about/FAQ",
+              domain: "biorxiv.org",
+              snippet: "bioRxiv distributes complete but unpublished manuscripts.",
+              sourceType: "biorxiv",
+              query: "bioRxiv FAQ preprint",
+              resultCount: 2,
+            },
+          ],
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Searched web")).toBeInTheDocument()
+    expect(screen.getByText("Found 2 sources")).toBeInTheDocument()
+    const firstCitation = screen.getByRole("button", {
+      name: /Source 1: STAR: ultrafast universal RNA-seq aligner/,
+    })
+    expect(firstCitation).toBeInTheDocument()
+
+    fireEvent.focus(firstCitation)
+    expect(screen.getByText("Source preview")).toBeInTheDocument()
+    expect(screen.getByText("STAR: ultrafast universal RNA-seq aligner")).toBeInTheDocument()
+    expect(screen.getByText(/sequential maximum mappable seed/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open 2 sources" }))
+    expect(screen.getByRole("dialog", { name: "Sources" })).toBeInTheDocument()
+    expect(screen.getAllByText("Searched web").length).toBeGreaterThan(0)
+    expect(screen.getByText("STAR RNA-seq aligner PubMed")).toBeInTheDocument()
+    expect(screen.getAllByText("2 results").length).toBeGreaterThan(0)
+    expect(screen.getByRole("link", { name: /pubmed\.ncbi\.nlm\.nih\.gov/ })).toHaveAttribute(
+      "href",
+      "https://pubmed.ncbi.nlm.nih.gov/23104886/",
+    )
+  })
+
+  it("binds answer citations to prior search results without explicit source payloads", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input: { query: "single-cell RNA-seq normalization sources" },
+          result: {
+            query: "single-cell RNA-seq normalization sources",
+            results: [
+              {
+                title: "Normalization and variance stabilization of single-cell RNA-seq data",
+                url: "https://pubmed.ncbi.nlm.nih.gov/31870423/",
+                snippet: "Regularized negative binomial regression normalizes UMI count data.",
+              },
+              {
+                title: "Scanpy preprocessing tutorial",
+                url: "https://scanpy.readthedocs.io/en/stable/tutorials/basics/clustering.html",
+                snippet: "Scanpy documents preprocessing and clustering workflows.",
+              },
+            ],
+          },
+        }),
+        event("event-text", 2, "assistant.text.completed", {
+          message_id: "message-1",
+          content:
+            "Use a model-aware normalization for UMI counts [1](source:1), then inspect Scanpy preprocessing guidance [2](source:2).",
+        }),
+      ],
+    })
+
+    const firstCitation = screen.getByRole("button", {
+      name: /Source 1: Normalization and variance stabilization/,
+    })
+    expect(firstCitation).toBeInTheDocument()
+
+    fireEvent.focus(firstCitation)
+    expect(screen.getByText("Source preview")).toBeInTheDocument()
+    expect(screen.getByText(/Regularized negative binomial regression/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open 2 sources" }))
+    expect(
+      screen.getByRole("link", { name: /Normalization and variance stabilization/ }),
+    ).toHaveAttribute("href", "https://pubmed.ncbi.nlm.nih.gov/31870423/")
+    expect(screen.getAllByText("2 results").length).toBeGreaterThan(0)
+  })
+
+  it("groups real backend search results by the action input preview", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input_preview: "ATAC-seq peak calling review",
+          result: {
+            results: [
+              {
+                title: "ATAC-seq Guidelines",
+                url: "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4374986/",
+                snippet: "ATAC-seq detects accessible chromatin.",
+              },
+            ],
+          },
+        }),
+        event("event-text", 2, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "Use the ATAC-seq guidance as a source [1](source:1).",
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open 1 sources" }))
+
+    expect(screen.getByRole("dialog", { name: "Sources" })).toBeInTheDocument()
+    expect(screen.getByText("ATAC-seq peak calling review")).toBeInTheDocument()
+  })
+
+  it("does not make unsafe source URLs navigable in the sources drawer", () => {
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "This source should not become a link [1](source:unsafe-source).",
+          sources: [
+            {
+              id: "unsafe-source",
+              title: "Unsafe source",
+              url: "javascript:alert(1)",
+              domain: "javascript:alert(1)",
+              snippet: "A non-web URL echoed by a source provider.",
+              sourceType: "web",
+              query: "unsafe source",
+              resultCount: 1,
+            },
+          ],
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open 1 sources" }))
+
+    expect(screen.getByText("Unsafe source")).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /Unsafe source/ })).not.toBeInTheDocument()
+    expect(document.querySelector('a[href^="javascript:"]')).toBeNull()
+  })
+
+  it("does not make unsafe activity-row source URLs navigable", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input_preview: "unsafe echoed source",
+          result: {
+            results: [
+              {
+                title: "Unsafe search result",
+                url: "javascript:alert(1)",
+                snippet: "A non-web URL echoed by a source provider.",
+              },
+            ],
+          },
+        }),
+      ],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /Searched web/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+
+    expect(screen.getByText("Unsafe search result")).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /Unsafe search result/ })).not.toBeInTheDocument()
+    expect(document.querySelector('a[href^="javascript:"]')).toBeNull()
+  })
+
+  it("keeps duplicate URL citation aliases resolvable after source dedupe", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input: { query: "duplicate source citations" },
+          result: {
+            query: "duplicate source citations",
+            results: [
+              {
+                title: "Primary PubMed result",
+                url: "https://pubmed.ncbi.nlm.nih.gov/12345/",
+                snippet: "The first result snippet.",
+              },
+              {
+                title: "Duplicate PubMed result",
+                url: "https://pubmed.ncbi.nlm.nih.gov/12345/#abstract",
+                snippet: "The second result snippet.",
+              },
+            ],
+          },
+        }),
+        event("event-text", 2, "assistant.text.completed", {
+          message_id: "message-1",
+          content:
+            "Both result aliases should stay clickable [1](source:1) and [2](source:2).",
+        }),
+      ],
+    })
+
+    expect(
+      screen.getByRole("button", { name: /Source 1: Duplicate PubMed result/ }),
+    ).toBeInTheDocument()
+    const secondCitation = screen.getByRole("button", {
+      name: /Source 2: Duplicate PubMed result/,
+    })
+    expect(secondCitation).toBeInTheDocument()
+
+    fireEvent.focus(secondCitation)
+    expect(screen.getByText("Source preview")).toBeInTheDocument()
+    fireEvent.keyDown(secondCitation, { key: "Escape" })
+    expect(screen.queryByText("Source preview")).not.toBeInTheDocument()
+  })
+
+  it("reports empty search results without inventing a source count", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input: { query: "unlikely empty bioinformatics query" },
+          result: {
+            query: "unlikely empty bioinformatics query",
+            results: [],
+          },
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Searched web")).toBeInTheDocument()
+    expect(screen.getByText("Found 0 sources")).toBeInTheDocument()
+  })
+
+  it("keeps running searches in a searching state before results arrive", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.started", {
+          action_id: "action-search",
+          name: "web.search",
+          input: { query: "long running literature search" },
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Searched web")).toBeInTheDocument()
+    expect(screen.getByText("Searching sources...")).toBeInTheDocument()
+    expect(screen.queryByText("Found 0 sources")).not.toBeInTheDocument()
+  })
+
+  it("shows provider search errors as failed activity with zero sources", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          input: { query: "PubMed transient outage" },
+          result: {
+            query: "PubMed transient outage",
+            results: [],
+            error: "Search provider unavailable",
+          },
+        }),
+      ],
+    })
+
+    expect(screen.getByText("Found 0 sources")).toBeInTheDocument()
+    expect(screen.getByText("Failed")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Searched web/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }))
+
+    expect(screen.getByText("Error")).toBeInTheDocument()
+    expect(screen.getByText("Search provider unavailable")).toBeInTheDocument()
   })
 })

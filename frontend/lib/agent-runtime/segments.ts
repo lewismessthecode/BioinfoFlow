@@ -1,5 +1,10 @@
 import { classifyActivity } from "./activity-groups"
 import { buildAgentRuntimeToolActivities } from "./tool-activity"
+import {
+  mergeSources,
+  parseSourcePayloads,
+  sourcesFromActionResult,
+} from "./sources"
 import type {
   AgentActionDecision,
   AgentAskUserQuestion,
@@ -7,6 +12,7 @@ import type {
   AgentRuntimeDecisionState,
   AgentRuntimeDecisionView,
   AgentRuntimeEvent,
+  AgentRuntimeSource,
   AgentRuntimeTextBlock,
   AgentRuntimeTextBlockStatus,
   AgentRuntimeThinkingBlock,
@@ -74,11 +80,19 @@ function buildTextBlocks(
   const byKey = new Map<string, TextDraft>()
   const activeKeyByMessage = new Map<string, string>()
   const interruptedMessages = new Set<string>()
+  let priorSources: AgentRuntimeSource[] = []
   let syntheticKey: string | null = null
   let previousWasText = false
 
   for (const event of events) {
     if (!isTextEvent(event)) {
+      const result = recordValue(event.payload.result)
+      if (event.type === "action.completed" && result) {
+        priorSources = mergeSources(
+          priorSources,
+          sourcesFromActionResult(result, event, priorSources.length),
+        )
+      }
       const messageId = stringValue(event.payload.message_id)
       if (messageId) interruptedMessages.add(messageId)
       previousWasText = false
@@ -119,6 +133,7 @@ function buildTextBlocks(
       text: "",
       status: "streaming" as AgentRuntimeTextBlockStatus,
       source: "events" as const,
+      sources: [],
       sawCumulative: false,
     }
     const cumulative = firstStringPayload(event.payload, ["content", "text"])
@@ -134,6 +149,12 @@ function buildTextBlocks(
     block.seqStart = Math.min(block.seqStart, event.seq)
     block.seqEnd = Math.max(block.seqEnd, event.seq)
     block.status = event.type === "assistant.text.completed" ? "completed" : "streaming"
+    const eventSources = parseSourcePayloads(
+      event.payload.sources,
+      event,
+      priorSources.length,
+    )
+    block.sources = mergeSources(block.sources, mergeSources(priorSources, eventSources))
     if (!existing) {
       byKey.set(key, block)
       blocks.push(block)
@@ -189,6 +210,7 @@ function finalizeTextBlocks(
         text: block.text,
         status: block.status,
         source: block.source,
+        sources: block.sources,
       }
       if (turn.status === "failed") return { ...textBlock, status: "failed" as const }
       if (turn.status === "cancelled") return { ...textBlock, status: "cancelled" as const }
@@ -213,6 +235,7 @@ function snapshotTextBlock(
     text,
     status: textStatusFromTurn(turn),
     source: "snapshot",
+    sources: [],
   }
 }
 
@@ -232,6 +255,7 @@ function snapshotTailTextBlock(
     text,
     status: textStatusFromTurn(turn),
     source: "snapshot+events",
+    sources: [],
   }
 }
 
@@ -622,4 +646,10 @@ function firstStringPayload(payload: Record<string, unknown>, keys: string[]) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }

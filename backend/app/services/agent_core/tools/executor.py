@@ -290,7 +290,13 @@ class AgentToolExecutor:
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
             type=AgentEventType.ACTION_STARTED,
-            payload={"action_id": str(action.id), "tool": tool.spec.name},
+            payload={
+                "action_id": str(action.id),
+                "tool": tool.spec.name,
+                "name": action.name,
+                "tool_call_id": str(action.tool_call_id) if action.tool_call_id else None,
+                "input_preview": action.input_preview,
+            },
         )
         agent_metrics.increment("tools.started")
         try:
@@ -363,7 +369,14 @@ class AgentToolExecutor:
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
             type=AgentEventType.ACTION_COMPLETED,
-            payload={"action_id": str(action.id), "result": result, "artifact_ids": artifact_ids},
+            payload={
+                "action_id": str(action.id),
+                "name": action.name,
+                "tool_call_id": str(action.tool_call_id) if action.tool_call_id else None,
+                "input_preview": action.input_preview,
+                "result": result,
+                "artifact_ids": artifact_ids,
+            },
         )
         agent_metrics.increment("tools.completed")
         return ToolExecutionResult(

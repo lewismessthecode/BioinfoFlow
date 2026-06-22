@@ -8,16 +8,26 @@ export function classifyActivity(
 ): AgentRuntimeActivityGroupKind {
   const name = normalizeToolName(activity.name)
   const preview = (activity.inputPreview ?? "").toLowerCase()
+  const argumentHint = stringifyArguments(activity.arguments).toLowerCase()
+  const fallbackText = `${preview} ${argumentHint}`.trim()
 
-  if (isRunTool(name) || /\b(nextflow|miniwdl)\s+run\b/.test(preview)) return "run"
-  if (isWorkflowMutationTool(name) || /\b(register|validate)\s+workflow\b/.test(preview)) {
-    return "register"
+  if (activity.sources.length || isSearchTool(name) || isSearchCommand(fallbackText)) {
+    return "search"
   }
-  if (isFileMutationTool(name) || isFileMutationCommand(preview)) return "write"
-  if (isVerificationTool(name) || isVerificationCommand(preview)) return "verify"
-  if (isReadTool(name) || isReadCommand(preview)) return "read"
+  if (isRunTool(name)) return "run"
+  if (isWorkflowMutationTool(name)) return "register"
+  if (isFileMutationTool(name)) return "write"
+  if (isVerificationTool(name)) return "verify"
+  if (isReadTool(name)) return "read"
   if (isWorkspaceTool(name)) return "workspace"
-  if (isCommandTool(name) || isCommandLike(preview)) return "command"
+
+  if (/\b(nextflow|miniwdl)\s+run\b/.test(fallbackText)) return "run"
+  if (/\b(register|validate)\s+workflow\b/.test(fallbackText)) return "register"
+  if (isFileMutationCommand(fallbackText)) return "write"
+  if (isVerificationCommand(fallbackText)) return "verify"
+  if (isReadCommand(fallbackText)) return "read"
+  if (isWorkspaceCommand(fallbackText)) return "workspace"
+  if (isCommandTool(name) || isCommandLike(fallbackText)) return "command"
   return "other"
 }
 
@@ -27,6 +37,10 @@ function normalizeToolName(name: string) {
 
 function terminalName(name: string) {
   return name.split("__").filter(Boolean).at(-1) ?? name
+}
+
+function isSearchTool(name: string) {
+  return /(^|__)web__?search$/.test(name) || /\b(literature|pubmed|web)__?search\b/.test(name)
 }
 
 function isRunTool(name: string) {
@@ -90,18 +104,35 @@ function isCommandTool(name: string) {
   return ["bash", "shell", "command", "terminal", "build", "inspect", "pull", "run"].includes(last)
 }
 
-function isFileMutationCommand(preview: string) {
-  return /(?:^|[;&|]\s*)(write|edit|patch|create|mkdir|touch|rm|delete|move|rename|mv)\b/.test(preview)
+function isSearchCommand(text: string) {
+  return /\b(web[_.-]?search|searched web|literature search)\b/.test(text)
 }
 
-function isReadCommand(preview: string) {
-  return /\b(read|grep|glob|search|find|list|ls|cat|rg)\b/.test(preview)
+function isFileMutationCommand(text: string) {
+  return /(?:^|[\s"'`:{,[;&|]\s*)(write|edit|patch|create|mkdir|touch|rm|delete|move|rename|mv)\b/.test(text)
 }
 
-function isVerificationCommand(preview: string) {
-  return /\b(test|pytest|vitest|lint|ruff|doctor|verify|validate|check)\b/.test(preview)
+function isReadCommand(text: string) {
+  return /\b(read|grep|glob|search|find|list|ls|cat|rg)\b/.test(text)
 }
 
-function isCommandLike(preview: string) {
-  return /\b(docker|bun|npm|pnpm|yarn|uv|python|python3|pip|alembic|git)\b/.test(preview)
+function isVerificationCommand(text: string) {
+  return /\b(test|pytest|vitest|lint|ruff|doctor|verify|validate|check)\b/.test(text)
+}
+
+function isWorkspaceCommand(text: string) {
+  return /\b(workspace|pwd|tree|init|setup|prepare|cp|clone)\b/.test(text)
+}
+
+function isCommandLike(text: string) {
+  return /\b(docker|bun|npm|pnpm|yarn|uv|python|python3|pip|alembic|git)\b/.test(text)
+}
+
+function stringifyArguments(argumentsValue: Record<string, unknown> | null | undefined) {
+  if (!argumentsValue) return ""
+  try {
+    return JSON.stringify(argumentsValue)
+  } catch {
+    return ""
+  }
 }

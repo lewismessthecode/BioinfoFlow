@@ -7,11 +7,17 @@ import { useTranslations } from "next-intl"
 import { ScrollToBottom } from "@/components/bioinfoflow/chat/scroll-to-bottom"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import type {
+  AgentRuntimeSource,
   AgentRuntimeTimelineEntry,
   AgentRuntimeTranscriptSegment,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 import { ActivityGroup } from "./activity-group"
+import {
+  SourceCitation,
+  SourceEvidenceFooter,
+  SourcesDrawer,
+} from "./agent-sources"
 import { InlineApprovalCard } from "./inline-approval-card"
 import type { AgentDecisionHandler } from "./types"
 
@@ -30,6 +36,10 @@ export function AgentTranscript({
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [isFollowingBottom, setIsFollowingBottom] = useState(true)
+  const [sourceDrawer, setSourceDrawer] = useState<{
+    sources: AgentRuntimeSource[]
+    highlightedSourceId: string | null
+  } | null>(null)
 
   const scrollToBottom = useCallback(() => {
     const scroller = scrollRef.current
@@ -84,6 +94,9 @@ export function AgentTranscript({
                         key={segment.id}
                         segment={segment}
                         onDecision={onDecision}
+                        onOpenSources={(sources, highlightedSourceId = null) =>
+                          setSourceDrawer({ sources, highlightedSourceId })
+                        }
                       />
                     ))}
                   </div>
@@ -111,6 +124,14 @@ export function AgentTranscript({
           />
         </div>
       </div>
+      <SourcesDrawer
+        open={Boolean(sourceDrawer)}
+        sources={sourceDrawer?.sources ?? []}
+        highlightedSourceId={sourceDrawer?.highlightedSourceId ?? null}
+        onOpenChange={(open) => {
+          if (!open) setSourceDrawer(null)
+        }}
+      />
     </div>
   )
 }
@@ -118,20 +139,17 @@ export function AgentTranscript({
 function TranscriptSegment({
   segment,
   onDecision,
+  onOpenSources,
 }: {
   segment: AgentRuntimeTranscriptSegment
   onDecision?: AgentDecisionHandler
+  onOpenSources?: (sources: AgentRuntimeSource[], highlightedSourceId?: string | null) => void
 }) {
   const t = useTranslations("agentRuntime")
 
   switch (segment.kind) {
     case "assistant_text":
-      return (
-        <MarkdownRenderer
-          className="text-[15px] leading-7"
-          content={segment.textBlock.text}
-        />
-      )
+      return <SourceBackedTextSegment segment={segment} onOpenSources={onOpenSources} />
     case "assistant_thinking":
       return (
         <details
@@ -161,6 +179,59 @@ function TranscriptSegment({
         </div>
       )
   }
+}
+
+function SourceBackedTextSegment({
+  segment,
+  onOpenSources,
+}: {
+  segment: Extract<AgentRuntimeTranscriptSegment, { kind: "assistant_text" }>
+  onOpenSources?: (sources: AgentRuntimeSource[], highlightedSourceId?: string | null) => void
+}) {
+  const sources = segment.textBlock.sources
+  const sourceById = new Map(
+    sources.flatMap((source) =>
+      [source.id, source.citationId, ...(source.citationAliases ?? [])]
+        .filter((key): key is string => Boolean(key))
+        .map((key) => [key, source] as const),
+    ),
+  )
+
+  return (
+    <div>
+      <MarkdownRenderer
+        className="text-[15px] leading-7"
+        content={segment.textBlock.text}
+        allowOverflow={sources.length > 0}
+        renderSourceCitation={(sourceId, children) => {
+          const source = sourceById.get(sourceId)
+          if (!source) return children
+          const index = Math.max(0, sources.findIndex((item) => item.id === source.id))
+          const citationIndex = numericCitationIndex(sourceId) ?? index
+          return (
+            <SourceCitation
+              source={source}
+              index={citationIndex}
+              onOpen={(highlightedSourceId) =>
+                onOpenSources?.(sources, highlightedSourceId)
+              }
+            >
+              {children}
+            </SourceCitation>
+          )
+        }}
+      />
+      <SourceEvidenceFooter
+        sources={sources}
+        onOpen={() => onOpenSources?.(sources)}
+      />
+    </div>
+  )
+}
+
+function numericCitationIndex(sourceId: string) {
+  if (!/^\d+$/.test(sourceId)) return null
+  return Math.max(0, Number(sourceId) - 1)
 }
 
 function turnStatusLabel(

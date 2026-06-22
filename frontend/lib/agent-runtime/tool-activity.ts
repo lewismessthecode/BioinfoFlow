@@ -3,6 +3,13 @@ import type {
   AgentRuntimeToolActivity,
   AgentRuntimeToolActivityStatus,
 } from "./types"
+import {
+  mergeSources,
+  resultError,
+  sourceQueryFromAction,
+  sourceResultCount,
+  sourcesFromActionResult,
+} from "./sources"
 
 export function buildAgentRuntimeToolActivities(
   events: AgentRuntimeEvent[],
@@ -24,6 +31,7 @@ export function buildAgentRuntimeToolActivities(
         name: stringValue(event.payload.name) || "tool",
         status: toolCallStatus(event),
         arguments: recordValue(event.payload.arguments),
+        sources: [],
         relatedFiles: [],
         seqStart: event.seq,
         seqEnd: event.seq,
@@ -56,17 +64,24 @@ export function buildAgentRuntimeToolActivities(
 
       const result = recordValue(event.payload.result)
       const error = recordValue(event.payload.error)
+      const sources = sourcesFromActionResult(result, event)
+      const resultErrorMessage = resultError(result)
+      const resultCount = sourceResultCount(result)
       const activity = ensureActivity(activities, key, event, {
         id: key,
         callId: toolCallId,
         actionId,
         name: stringValue(event.payload.name) || stringValue(event.payload.kind) || "action",
-        status: actionStatus(event),
+        status: resultErrorMessage ? "failed" : actionStatus(event),
         inputPreview: stringValue(event.payload.input_preview),
         outputPreview: outputPreview(result),
         exitCode: numberValue(result?.exit_code),
         durationMs: numberValue(event.payload.duration_ms),
-        errorMessage: errorMessage(error) ?? stringValue(event.payload.error_message),
+        errorMessage:
+          errorMessage(error) ?? stringValue(event.payload.error_message) ?? resultErrorMessage,
+        sources,
+        sourceQuery: sourceQueryFromAction(result, event.payload),
+        sourceResultCount: resultCount,
         relatedFiles: [],
         seqStart: event.seq,
         seqEnd: event.seq,
@@ -74,13 +89,21 @@ export function buildAgentRuntimeToolActivities(
       activity.actionId = actionId
       activity.callId = toolCallId || activity.callId
       activity.name = stringValue(event.payload.name) || activity.name
-      activity.status = actionStatus(event)
+      activity.status = resultErrorMessage ? "failed" : actionStatus(event)
       activity.inputPreview = stringValue(event.payload.input_preview) ?? activity.inputPreview
       activity.outputPreview = outputPreview(result) ?? activity.outputPreview
       activity.exitCode = numberValue(result?.exit_code) ?? activity.exitCode
       activity.durationMs = numberValue(event.payload.duration_ms) ?? activity.durationMs
-      activity.errorMessage = errorMessage(error) ?? stringValue(event.payload.error_message) ?? activity.errorMessage
+      activity.errorMessage =
+        errorMessage(error) ??
+        stringValue(event.payload.error_message) ??
+        resultErrorMessage ??
+        activity.errorMessage
       activity.summary = stringValue(event.payload.summary) ?? activity.summary
+      activity.sources = mergeSources(activity.sources, sources)
+      activity.sourceQuery = sourceQueryFromAction(result, event.payload) ?? activity.sourceQuery
+      activity.sourceResultCount =
+        resultCount ?? activity.sourceResultCount ?? null
       activity.relatedFiles = uniqueStrings([
         ...activity.relatedFiles,
         ...relatedFilesFromRecord(recordValue(event.payload.input)),
@@ -100,6 +123,7 @@ export function buildAgentRuntimeToolActivities(
         actionId,
         name: stringValue(event.payload.title) || stringValue(event.payload.type) || "artifact",
         status: "completed",
+        sources: [],
         relatedFiles: [],
         seqStart: event.seq,
         seqEnd: event.seq,
@@ -154,6 +178,9 @@ function mergeActivities(
   to.durationMs = to.durationMs ?? from.durationMs
   to.errorMessage = to.errorMessage ?? from.errorMessage
   to.summary = to.summary ?? from.summary
+  to.sources = mergeSources(to.sources, from.sources)
+  to.sourceQuery = to.sourceQuery ?? from.sourceQuery
+  to.sourceResultCount = to.sourceResultCount ?? from.sourceResultCount
   to.artifactId = to.artifactId ?? from.artifactId
   to.artifactType = to.artifactType ?? from.artifactType
   to.relatedFiles = uniqueStrings([...to.relatedFiles, ...from.relatedFiles])
