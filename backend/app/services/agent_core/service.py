@@ -453,7 +453,12 @@ class AgentCoreService:
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
             type=AgentEventType.ACTION_DECISION_RECORDED,
-            payload={"action_id": str(action.id), "decision": decision, "note": note},
+            payload={
+                "action_id": str(action.id),
+                "decision": decision,
+                "note": note,
+                **({"answer": answer} if decision == "answer" else {}),
+            },
         )
         if decision in {"approve", "modify", "reject", "answer"} and updated.kind == "tool":
             enqueue_turn_resume(

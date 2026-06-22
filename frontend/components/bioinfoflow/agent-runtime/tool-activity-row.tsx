@@ -2,7 +2,6 @@
 
 import { useId, useState } from "react"
 import {
-  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -10,6 +9,7 @@ import {
   ExternalLink,
   Globe2,
   Loader2,
+  TerminalSquare,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -33,45 +33,38 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
 
   return (
     <div
-      className="grid gap-1.5 text-xs"
+      className="grid gap-1 text-xs text-muted-foreground"
       data-testid="agent-tool-activity-row"
     >
-      <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+      <div className="flex min-w-0 items-center gap-1.5">
         <ActivityStatusIcon status={activity.status} />
-        <span className="min-w-0 flex-1 truncate font-mono text-foreground/80">
+        <span className="min-w-0 truncate rounded-md bg-muted/45 px-1.5 py-0.5 font-mono text-[11px] text-foreground/65">
           {activity.name}
         </span>
         {activity.summary || activity.inputPreview ? (
-          <span className="hidden min-w-0 flex-[1.4] truncate text-muted-foreground sm:block">
+          <span className="hidden min-w-0 flex-1 truncate text-muted-foreground/85 sm:block">
             {activity.summary || activity.inputPreview}
           </span>
         ) : null}
         {activity.status !== "completed" ? (
-          <span
-            className={cn(
-              "shrink-0 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide",
-              activity.status === "failed" || activity.status === "cancelled" || activity.status === "rejected"
-                ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                : "bg-muted text-muted-foreground",
-            )}
-          >
+          <span className="shrink-0 text-[11px] text-muted-foreground/80">
             {t(`activity.status.${activity.status}`)}
           </span>
         ) : null}
         {hasDetails ? (
           <button
             type="button"
-            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className="ml-auto inline-flex shrink-0 items-center rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setExpanded((current) => !current)}
             aria-expanded={expanded}
             aria-controls={detailsId}
+            aria-label={expanded ? t("activity.details.hide") : t("activity.details.show")}
           >
             {expanded ? (
               <ChevronDown className="h-3 w-3" />
             ) : (
               <ChevronRight className="h-3 w-3" />
             )}
-            <span>{expanded ? t("activity.details.hide") : t("activity.details.show")}</span>
           </button>
         ) : null}
       </div>
@@ -136,7 +129,7 @@ function SourceActivityLink({
 }) {
   const href = sanitizeSourceHref(source.url)
   const className = cn(
-    "flex min-w-0 items-center gap-2 rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80 transition-colors",
+    "flex min-w-0 items-center gap-2 rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/70 transition-colors",
     href
       ? "hover:bg-muted/45 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       : "cursor-default",
@@ -176,11 +169,11 @@ function Detail({ label, value, pre = false }: { label: string; value: string; p
         {label}
       </div>
       {pre ? (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80">
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/70">
           {value}
         </pre>
       ) : (
-        <div className="break-words rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/80">
+        <div className="break-words rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/70">
           {value}
         </div>
       )}
@@ -190,7 +183,7 @@ function Detail({ label, value, pre = false }: { label: string; value: string; p
 
 function ActivityStatusIcon({ status }: { status: AgentRuntimeToolActivity["status"] }) {
   if (status === "failed" || status === "cancelled" || status === "rejected") {
-    return <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+    return <TerminalSquare className="h-3.5 w-3.5 text-muted-foreground/75" />
   }
   if (status === "completed") {
     return <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground/70" />

@@ -2390,6 +2390,7 @@
       "customLabel": "自定义回答",
       "customPlaceholder": "告诉 Bioinfoflow 应该使用什么",
       "recommended": "推荐",
+      "answerLabel": "回答",
       "rejectQuestion": "拒绝问题"
     }
   },

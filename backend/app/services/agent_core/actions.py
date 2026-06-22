@@ -159,7 +159,10 @@ def _input_preview(*, name: str, action_input: dict) -> str | None:
         if isinstance(value, str) and value.strip():
             return _truncate(value.strip(), 200)
     try:
-        return _truncate(json.dumps(action_input, separators=(",", ":"), default=str), 200)
+        return _truncate(
+            json.dumps(action_input, ensure_ascii=False, separators=(",", ":"), default=str),
+            200,
+        )
     except (TypeError, ValueError):
         return None
 
