@@ -9,7 +9,7 @@ describe("images page card styling", () => {
       "utf8"
     )
 
-    expect(source).toContain("bg-card/92")
+    expect(source).toContain("bg-card/84")
     expect(source).toContain("hover:shadow-sm")
     expect(source).not.toContain("hover:shadow-lg")
     expect(source).not.toContain("bg-card/70")

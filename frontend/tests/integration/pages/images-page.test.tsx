@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react"
+import { fireEvent, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import ImagesPage from "@/app/(app)/images/page"
@@ -246,7 +246,7 @@ describe("ImagesPage", () => {
     renderAppPage(<ImagesPage />)
 
     expect(await screen.findByText("ghcr.io/demo/tool")).toBeInTheDocument()
-    fireEvent.click(within(screen.getByTestId("image-version-row")).getByText("images.actions.viewDetails"))
+    fireEvent.click(screen.getByTestId("image-card-view-details"))
 
     expect(screen.getByText("images.details.title")).toBeInTheDocument()
     expect(screen.getByText("ghcr.io/demo/tool:1.0.0")).toBeInTheDocument()
@@ -330,7 +330,7 @@ describe("ImagesPage", () => {
     renderAppPage(<ImagesPage />)
 
     expect(await screen.findByText("ghcr.io/demo/tool")).toBeInTheDocument()
-    fireEvent.click(within(screen.getByTestId("image-version-row")).getByText("images.actions.deleteLocal"))
+    fireEvent.click(screen.getByText("images.actions.deleteLocal"))
 
     await deleteActions[0]()
 
