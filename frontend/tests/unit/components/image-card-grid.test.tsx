@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { ImageCardsGrid } from "@/app/(app)/images/components/image-views"
@@ -15,6 +15,60 @@ const image: DockerImage = {
 }
 
 describe("ImageCardsGrid", () => {
+  it("groups the same image repository into one card with multiple versions", () => {
+    const images: DockerImage[] = [
+      { ...image, id: "img-1", tag: "1.0", full_name: "minibwa:1.0", name: "minibwa" },
+      { ...image, id: "img-2", tag: "1.1", full_name: "minibwa:1.1", name: "minibwa", size_bytes: 167 * 1024 * 1024 },
+      { ...image, id: "img-3", tag: "1.0-FIXED", full_name: "minibwa:1.0-FIXED", name: "minibwa" },
+    ]
+
+    render(
+      <ImageCardsGrid
+        images={images}
+        tImages={(key) => key}
+        tCommon={(key) => key}
+        onPull={vi.fn()}
+        onViewDetails={vi.fn()}
+        onCopyName={vi.fn()}
+        onCopyPullCommand={vi.fn()}
+        onDeleteLocal={vi.fn()}
+      />,
+    )
+
+    expect(screen.getAllByRole("heading", { name: "minibwa" })).toHaveLength(1)
+    const card = screen.getByRole("heading", { name: "minibwa" }).closest("article")
+    expect(card).not.toBeNull()
+    expect(within(card as HTMLElement).getByText("1.0")).toBeInTheDocument()
+    expect(within(card as HTMLElement).getByText("1.1")).toBeInTheDocument()
+    expect(within(card as HTMLElement).getByText("1.0-FIXED")).toBeInTheDocument()
+    expect(within(card as HTMLElement).getByText("167 MB")).toBeInTheDocument()
+  })
+
+  it("keeps version actions scoped to the selected tag", () => {
+    const onPull = vi.fn()
+    const oneZero = { ...image, id: "img-1", tag: "1.0", full_name: "minibwa:1.0", name: "minibwa" }
+    const oneOne = { ...image, id: "img-2", tag: "1.1", full_name: "minibwa:1.1", name: "minibwa", status: "remote" as const }
+
+    render(
+      <ImageCardsGrid
+        images={[oneZero, oneOne]}
+        tImages={(key) => key}
+        tCommon={(key) => key}
+        onPull={onPull}
+        onViewDetails={vi.fn()}
+        onCopyName={vi.fn()}
+        onCopyPullCommand={vi.fn()}
+        onDeleteLocal={vi.fn()}
+      />,
+    )
+
+    const row = screen.getByText("1.1").closest("[data-testid='image-version-row']")
+    expect(row).not.toBeNull()
+    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: /actions.pull/i }))
+
+    expect(onPull).toHaveBeenCalledWith(oneOne)
+  })
+
   it("renders local status as a neutral metadata pill while keeping the quieter package glyph", () => {
     const { container } = render(
       <ImageCardsGrid

@@ -219,6 +219,39 @@ describe("useImagesPage", () => {
     expect(toastSuccessMock).toHaveBeenCalled()
   })
 
+  it("filters images by tag and full image name", async () => {
+    apiRequestMock.mockResolvedValue({
+      data: [
+        makeImage({
+          id: "img-1",
+          name: "minibwa",
+          tag: "1.0",
+          full_name: "minibwa:1.0",
+        }),
+        makeImage({
+          id: "img-2",
+          name: "minibwa",
+          tag: "1.0-FIXED",
+          full_name: "minibwa:1.0-FIXED",
+        }),
+      ],
+      meta: { status: imageStatus() },
+    })
+
+    const Wrapper = createAppWrapper()
+    const { result } = renderHook(() => useImagesPage(), { wrapper: Wrapper })
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    act(() => {
+      result.current.setSearch("fixed")
+    })
+
+    await waitFor(() => {
+      expect(result.current.images.map((item) => item.tag)).toEqual(["1.0-FIXED"])
+    })
+  })
+
   it("forces a silent refresh on window focus when docker is available", async () => {
     apiRequestMock
       .mockResolvedValueOnce({
