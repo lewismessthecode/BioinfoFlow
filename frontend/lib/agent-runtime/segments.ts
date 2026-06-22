@@ -38,7 +38,7 @@ export function buildTurnSegments(
   )
   const errorSegment = buildTurnErrorSegment(turn, sortedEvents)
 
-  return mergeAdjacentActivitySegments(
+  return compactActivitySegments(
     [
       ...thinkingBlocks.map((thinkingBlock): AgentRuntimeTranscriptSegment => ({
         id: thinkingBlock.id,
@@ -418,34 +418,62 @@ function activityGroupSegment(
   }
 }
 
-function mergeAdjacentActivitySegments(
+function compactActivitySegments(
   segments: AgentRuntimeTranscriptSegment[],
 ): AgentRuntimeTranscriptSegment[] {
   const merged: AgentRuntimeTranscriptSegment[] = []
+  let activityRun: AgentRuntimeTranscriptSegment[] = []
+
+  const flushActivityRun = () => {
+    if (!activityRun.length) return
+    merged.push(...mergeActivityRun(activityRun))
+    activityRun = []
+  }
+
   for (const segment of segments) {
-    const previous = merged.at(-1)
-    if (
-      previous?.kind === "activity_group" &&
-      segment.kind === "activity_group" &&
-      previous.activityGroup.kind === segment.activityGroup.kind
-    ) {
-      const activities = [
-        ...previous.activityGroup.activities,
-        ...segment.activityGroup.activities,
-      ]
-      previous.activityGroup = {
-        ...previous.activityGroup,
-        activities,
-        status: aggregateStatus(activities),
-        seqEnd: Math.max(previous.seqEnd, segment.seqEnd),
-      }
-      previous.seqEnd = previous.activityGroup.seqEnd
-      previous.status = previous.activityGroup.status
+    if (segment.kind === "activity_group") {
+      activityRun.push(segment)
       continue
     }
+    flushActivityRun()
     merged.push(segment)
   }
+  flushActivityRun()
   return merged
+}
+
+function mergeActivityRun(
+  segments: AgentRuntimeTranscriptSegment[],
+): AgentRuntimeTranscriptSegment[] {
+  const byKind = new Map<AgentRuntimeActivityGroup["kind"], AgentRuntimeTranscriptSegment>()
+
+  for (const segment of segments) {
+    if (segment.kind !== "activity_group") continue
+    const existing = byKind.get(segment.activityGroup.kind)
+    if (!existing || existing.kind !== "activity_group") {
+      byKind.set(segment.activityGroup.kind, segment)
+      continue
+    }
+
+    const activities = [
+      ...existing.activityGroup.activities,
+      ...segment.activityGroup.activities,
+    ].sort((a, b) => a.seqStart - b.seqStart || a.seqEnd - b.seqEnd || a.id.localeCompare(b.id))
+    existing.activityGroup = {
+      ...existing.activityGroup,
+      id: `${existing.activityGroup.kind}-${Math.min(existing.seqStart, segment.seqStart)}-${Math.max(existing.seqEnd, segment.seqEnd)}`,
+      activities,
+      status: aggregateStatus(activities),
+      seqStart: Math.min(existing.seqStart, segment.seqStart),
+      seqEnd: Math.max(existing.seqEnd, segment.seqEnd),
+    }
+    existing.id = `activity:${existing.activityGroup.id}`
+    existing.seqStart = existing.activityGroup.seqStart
+    existing.seqEnd = existing.activityGroup.seqEnd
+    existing.status = existing.activityGroup.status
+  }
+
+  return [...byKind.values()].sort(compareSegments)
 }
 
 function compareSegments(
