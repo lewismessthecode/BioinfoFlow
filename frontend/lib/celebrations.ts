@@ -3,23 +3,11 @@
 import { useSyncExternalStore } from "react"
 
 export type CelebrationMilestone =
-  | "provider-key"
+  | "first-provider-key"
   | "first-project"
-  | "first-workflow"
-  | "provider-api-key-saved"
   | "first-workflow-registered"
-  | "first-workflow-bound-to-project"
-
-type ReadinessSummary = {
-  provider_key_configured?: boolean
-  projects?: number
-  workflows?: number
-}
-
-type ReadinessCelebrationCheck = {
-  id: string
-  status: "pass" | "fail" | "warn" | "skip"
-}
+  | "first-workflow-bound"
+  | "first-run-success"
 
 type StageConfettiEmitter = {
   x: number
@@ -37,50 +25,6 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)"
 const COLORS = ["#15b8a6", "#f4b740", "#ec5b56", "#5c8df6", "#f7f3e8"]
 const celebrationPreferenceSubscribers = new Set<(enabled: boolean) => void>()
 let activeConfettiCanvas: HTMLCanvasElement | null = null
-
-export function readinessMilestonesFromSummary(
-  summary?: ReadinessSummary | null,
-): CelebrationMilestone[] {
-  if (!summary) {
-    return []
-  }
-
-  const milestones: CelebrationMilestone[] = []
-  if (summary.provider_key_configured) {
-    milestones.push("provider-key")
-  }
-  if ((summary.projects ?? 0) > 0) {
-    milestones.push("first-project")
-  }
-  if ((summary.workflows ?? 0) > 0) {
-    milestones.push("first-workflow")
-  }
-  return milestones
-}
-
-export function celebrateReadinessTransitions(
-  previousChecks: ReadonlyArray<ReadinessCelebrationCheck> | null | undefined,
-  nextChecks: ReadonlyArray<ReadinessCelebrationCheck>,
-): void {
-  if (!previousChecks) {
-    return
-  }
-
-  const previousStatus = new Map(
-    previousChecks.map((check) => [check.id, check.status]),
-  )
-
-  for (const check of nextChecks) {
-    if (check.status !== "pass") {
-      continue
-    }
-
-    const before = previousStatus.get(check.id)
-    if (before && before !== "pass") {
-      celebrateOnce(`readiness-check:${check.id}`)
-    }
-  }
-}
 
 export function isCelebrationsEnabled(): boolean {
   if (typeof window === "undefined") {
@@ -134,9 +78,7 @@ export function useReducedMotionPreference(): boolean {
   )
 }
 
-export function celebrateOnce(
-  milestone: CelebrationMilestone | `readiness-check:${string}`,
-): boolean {
+export function celebrateMilestone(milestone: CelebrationMilestone): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return false
   }
@@ -265,7 +207,7 @@ function launchCanvasConfetti() {
   )
 
   let frame = 0
-  const maxFrames = 176
+  const maxFrames = 132
 
   function draw() {
     if (!canvas.isConnected) {
