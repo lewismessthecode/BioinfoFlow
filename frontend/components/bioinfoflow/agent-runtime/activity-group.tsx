@@ -38,7 +38,7 @@ export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
         type="button"
         className={cn(
           "flex min-h-6 w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/25",
-          group.status !== "completed" && "text-foreground/60",
+          group.status !== "completed" && "text-foreground/70",
           "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
         )}
         onClick={() =>
@@ -55,7 +55,7 @@ export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
           {activitySummary(t, group)}
         </span>
         {group.status !== "completed" ? (
-          <span className="shrink-0 text-[11px] text-muted-foreground/80">
+          <span className="shrink-0 text-[11px] text-muted-foreground">
             {t(`activity.status.${group.status}`)}
           </span>
         ) : null}

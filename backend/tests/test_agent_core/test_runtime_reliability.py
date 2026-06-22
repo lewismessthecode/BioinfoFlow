@@ -13,6 +13,7 @@ from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRe
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.loop import _max_iterations
+from app.services.agent_core.tools.executor import ToolExecutionResult
 import app.services.agent_core.runner as runner_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 from app.models.workspace import Workspace
@@ -318,8 +319,9 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session,
 
 
 @pytest.mark.asyncio
-async def test_runtime_allows_one_repeated_tool_call_before_no_progress(db_session, monkeypatch):
+async def test_runtime_allows_repeated_tool_polling_when_results_change(db_session, monkeypatch):
     calls = 0
+    tool_executions = 0
 
     async def polling_completion(*args, **kwargs):
         nonlocal calls
@@ -331,7 +333,7 @@ async def test_runtime_allows_one_repeated_tool_call_before_no_progress(db_sessi
         class FakeChoice:
             pass
 
-        if calls <= 2:
+        if calls <= 3:
             class FakeMessage:
                 pass
 
@@ -359,7 +361,20 @@ async def test_runtime_allows_one_repeated_tool_call_before_no_progress(db_sessi
         response.choices = [choice]
         return response
 
+    async def changing_tool_result(*args, **kwargs):
+        nonlocal tool_executions
+        tool_executions += 1
+        return ToolExecutionResult(
+            action_id=f"action-{tool_executions}",
+            status="completed",
+            result={"state": f"running-{tool_executions}"},
+        )
+
     monkeypatch.setattr("app.services.agent_core.runtime.acompletion", polling_completion)
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.executor.AgentToolExecutor.execute",
+        changing_tool_result,
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="polling-model")
 
@@ -378,7 +393,8 @@ async def test_runtime_allows_one_repeated_tool_call_before_no_progress(db_sessi
     completed_turn = await service.runtime.run_turn(str(turn.id))
     events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
 
-    assert calls == 3
+    assert calls == 4
+    assert tool_executions == 3
     assert completed_turn.status == "completed"
     assert completed_turn.final_text == "The repeated status check completed."
     assert not any(event.type == "turn.no_progress" for event in events)
