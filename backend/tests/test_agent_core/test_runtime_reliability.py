@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from app.config import settings
+from app.config import Settings, settings
 from app.models.agent_core import AgentActionStatus
 from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
 from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRepository
@@ -64,12 +64,26 @@ def test_agent_max_iterations_prefers_explicit_setting(monkeypatch):
     assert _max_iterations() == 120
 
 
-def test_agent_max_rounds_legacy_setting_is_removed():
+def test_agent_max_rounds_legacy_setting_is_removed(monkeypatch):
+    monkeypatch.delenv("AGENT_MAX_ROUNDS", raising=False)
+    isolated_settings = Settings(_env_file=None)
+
+    assert not hasattr(isolated_settings, "agent_max_rounds")
     assert not hasattr(settings, "agent_max_rounds")
 
 
-def test_agent_max_iterations_defaults_to_90():
-    assert settings.agent_max_iterations == 90
+def test_agent_max_iterations_defaults_to_90(monkeypatch):
+    monkeypatch.delenv("AGENT_MAX_ITERATIONS", raising=False)
+
+    assert Settings(_env_file=None).agent_max_iterations == 90
+
+
+def test_agent_max_rounds_legacy_env_is_rejected(monkeypatch):
+    monkeypatch.delenv("AGENT_MAX_ITERATIONS", raising=False)
+    monkeypatch.setenv("AGENT_MAX_ROUNDS", "12")
+
+    with pytest.raises(ValueError, match="AGENT_MAX_ROUNDS"):
+        Settings(_env_file=None)
 
 
 @pytest.mark.asyncio

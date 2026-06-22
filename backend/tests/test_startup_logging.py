@@ -83,6 +83,7 @@ def test_build_startup_summary_surfaces_operational_config_without_secrets(tmp_p
     assert summary["agent_core"]["runtime"] == "agent_core"
     assert summary["agent_core"]["model_source"] == "llm_catalog"
     assert summary["agent_core"]["max_iterations"] == 90
+    assert "max_rounds" not in summary["agent_core"]
     assert "agent" not in summary
     assert "hermes" not in repr(summary).lower()
     assert "legacy" not in repr(summary).lower()
