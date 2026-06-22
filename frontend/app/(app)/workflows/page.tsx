@@ -209,8 +209,10 @@ export default function WorkflowsPage() {
                 open={registerOpen}
                 onOpenChange={setRegisterOpen}
                 onRegistered={(wf) => {
-                  celebrateMilestone("first-workflow-registered")
                   setHubWorkflows((prev) => {
+                    if (prev.length === 0) {
+                      celebrateMilestone("first-workflow-registered")
+                    }
                     return [wf, ...prev]
                   })
                 }}

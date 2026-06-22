@@ -40,6 +40,9 @@ export function setCelebrationsEnabled(enabled: boolean): void {
   }
 
   window.localStorage.setItem(CELEBRATIONS_ENABLED_KEY, enabled ? "1" : "0")
+  if (!enabled) {
+    stopActiveConfetti()
+  }
   for (const subscriber of celebrationPreferenceSubscribers) {
     subscriber(enabled)
   }
@@ -257,6 +260,11 @@ function launchCanvasConfetti() {
   scheduleFrame(draw)
 }
 
+function stopActiveConfetti() {
+  activeConfettiCanvas?.remove()
+  activeConfettiCanvas = null
+}
+
 function subscribeToCelebrationsStore(callback: () => void): () => void {
   if (typeof window !== "undefined") {
     const handleStorage = (event: StorageEvent) => {
@@ -281,7 +289,12 @@ function subscribeToReducedMotionPreference(callback: () => void): () => void {
   }
 
   const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY)
-  const handleChange = () => callback()
+  const handleChange = () => {
+    if (mediaQuery.matches) {
+      stopActiveConfetti()
+    }
+    callback()
+  }
 
   if (typeof mediaQuery.addEventListener === "function") {
     mediaQuery.addEventListener("change", handleChange)

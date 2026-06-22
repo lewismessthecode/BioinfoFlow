@@ -47,9 +47,12 @@ export function useWorkflowActions({
       return false
     }
     try {
+      const beforeBind = await fetchBoundWorkflowGroups(activeProjectId)
       await apiRequest(`/projects/${activeProjectId}/workflows/${workflow.id}:bind`, { method: "POST" })
       toast.success(tWorkflows("toasts.addedToProject", { name: formatWorkflowName(workflow) }))
-      celebrateMilestone("first-workflow-bound")
+      if (beforeBind.length === 0) {
+        celebrateMilestone("first-workflow-bound")
+      }
       if (scope === "project") {
         await fetchProjectWorkflows()
       }
@@ -149,4 +152,11 @@ export function useWorkflowActions({
     handleDuplicate,
     handleDelete,
   }
+}
+
+async function fetchBoundWorkflowGroups(projectId: string): Promise<ProjectWorkflowGroup[]> {
+  const { data } = await apiRequest<ProjectWorkflowGroup[]>(
+    `/projects/${projectId}/workflows`,
+  )
+  return data
 }

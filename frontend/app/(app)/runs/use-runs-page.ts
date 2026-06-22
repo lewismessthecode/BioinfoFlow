@@ -124,6 +124,9 @@ export function useRunsPage() {
       ])
 
       setRuns(data)
+      if (data.some((run) => run.status === "completed")) {
+        celebrateMilestone("first-run-success")
+      }
       setPagination(meta?.pagination ?? null)
     } catch (error) {
       const message = getApiErrorMessage(error, tRuns("errors.loadRunsFailed"))

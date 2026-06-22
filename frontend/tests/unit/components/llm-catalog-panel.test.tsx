@@ -197,6 +197,54 @@ describe("LlmCatalogPanel", () => {
       })
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
+    expect(celebrateMilestoneMock).not.toHaveBeenCalled()
+  })
+
+  it("celebrates the first provider key when setup creates the first usable keyed provider", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      provider: {
+        id: "provider-openai",
+        name: "OpenAI",
+        kind: "openai",
+        base_url: "https://api.openai.com/v1",
+        metadata: { providerTemplate: "openai" },
+        enabled: true,
+        credential: { source: "stored", configured: true, available: true },
+      },
+      models: [],
+      discovered: false,
+    })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      discoverModels: vi.fn(),
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "sk-first" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(setupProvider).toHaveBeenCalledWith({
+        templateId: "openai",
+        name: "OpenAI",
+        apiKey: "sk-first",
+        baseUrl: "https://api.openai.com/v1",
+        modelIds: [],
+        discover: true,
+        scope: "user",
+        enabled: true,
+      })
+    })
     expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-provider-key")
   })
 
@@ -279,7 +327,7 @@ describe("LlmCatalogPanel", () => {
       })
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
-    expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-provider-key")
+    expect(celebrateMilestoneMock).not.toHaveBeenCalled()
   })
 
   it("lets discoverable providers refresh models through provider setup", async () => {

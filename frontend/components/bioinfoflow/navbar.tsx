@@ -53,6 +53,9 @@ export function Navbar({
     : celebrationsEnabled
       ? tAccessibility("celebrationsOn")
       : tAccessibility("celebrationsOff")
+  const celebrationMenuLabel = tAccessibility("celebrationsMenuState", {
+    state: celebrationStateLabel,
+  })
 
   const actionButtonClassName =
     "h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
@@ -95,10 +98,10 @@ export function Navbar({
                   ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
                   : "text-muted-foreground hover:text-foreground",
               )}
-              title={celebrationStateLabel}
+              title={celebrationMenuLabel}
             >
               <PartyPopper className="h-4 w-4" />
-              <span className="sr-only">{celebrationStateLabel}</span>
+              <span className="sr-only">{celebrationMenuLabel}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
