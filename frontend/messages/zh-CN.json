@@ -68,6 +68,7 @@
     "workflows": "工作流",
     "runs": "运行记录",
     "images": "镜像管理",
+    "connections": "连接中心",
     "scheduler": "调度器",
     "settings": "设置"
   },
@@ -1945,6 +1946,92 @@
     "customProjectDescription": "如果你需要自定义目录结构、命名方式或工作区路径，可以从空白项目开始并自行配置。",
     "customProject": "创建自定义项目"
   },
+  "connections": {
+    "title": "连接中心",
+    "subtitle": "连接常用服务器，把路径、标签和使用说明交给 Agent。",
+    "demoBadge": "前端演示",
+    "addNode": "添加节点",
+    "nodeCount": "{count} 个演示节点",
+    "searchPlaceholder": "搜索 IP、标签或 skill...",
+    "demoOnly": "这些配置只用于前端演示，不会保存，也不会连接真实服务器。",
+    "list": {
+      "title": "节点列表",
+      "description": "选择一个节点，查看对话时可以带给 Agent 的上下文。",
+      "empty": "没有匹配的节点。换个 IP、标签或 skill 试试。"
+    },
+    "detail": {
+      "currentContext": "当前上下文"
+    },
+    "sections": {
+      "address": "地址",
+      "general": "基本信息",
+      "ssh": "SSH",
+      "agentContext": "Agent 上下文"
+    },
+    "fields": {
+      "address": "IP 或主机名",
+      "label": "名称",
+      "group": "分组",
+      "status": "状态",
+      "tags": "标签",
+      "port": "端口",
+      "username": "账号",
+      "auth": "认证方式",
+      "skills": "Skills",
+      "prompt": "使用说明",
+      "paths": "可访问路径",
+      "apis": "API 和端口",
+      "environmentVariables": "环境变量",
+      "startupSnippet": "启动片段"
+    },
+    "status": {
+      "online": "在线",
+      "offline": "离线",
+      "partial": "部分可用",
+      "unknown": "未测试"
+    },
+    "auth": {
+      "password": "密码",
+      "key": "SSH key",
+      "certificate": "证书",
+      "fido2": "FIDO2"
+    },
+    "empty": {
+      "skills": "暂未配置 skill",
+      "paths": "暂未配置路径",
+      "apis": "暂未配置 API",
+      "environmentVariables": "暂未配置环境变量",
+      "prompt": "暂未填写使用说明",
+      "startupSnippet": "暂未配置启动片段"
+    },
+    "dialog": {
+      "title": "添加节点",
+      "description": "添加一个演示节点，填写 SSH 信息、标签、路径和给 Agent 的使用说明。",
+      "add": "添加节点"
+    },
+    "form": {
+      "addTag": "添加标签",
+      "defaultApiName": "API {index}",
+      "defaultGroup": "未分组",
+      "defaultUsername": "user",
+      "placeholders": {
+        "address": "10.227.5.224 或 login.example.internal",
+        "label": "仿真环境 sz01",
+        "group": "生信分析",
+        "tag": "添加 FASTQ、GPU 等标签",
+        "username": "bioflow",
+        "skills": "phoenix, harbor",
+        "paths": "/mnt/nas/pipelines\n/mnt/nas/results",
+        "apis": "http://10.227.5.224:8080",
+        "environmentVariables": "BIOFLOW_DATA=/mnt/nas",
+        "prompt": "告诉 Agent 这个节点上的日志、输出目录和使用约定在哪里。",
+        "startupSnippet": "source /etc/profile\nmodule load nextflow"
+      }
+    },
+    "toasts": {
+      "nodeAdded": "已添加演示节点 {address}"
+    }
+  },
   "settings": {
     "pageTitle": "设置",
     "nav": {
@@ -2285,6 +2372,18 @@
       "runPreflight": "运行预检查",
       "diagnoseRun": "诊断运行",
       "comingSoon": "即将支持"
+    },
+    "connectedNode": {
+      "placeholder": "选择节点",
+      "selectedAria": "当前对话节点 {address}，{status}",
+      "menuTitle": "已连接节点",
+      "manage": "管理连接中心",
+      "status": {
+        "online": "在线",
+        "offline": "离线",
+        "partial": "部分可用",
+        "unknown": "未测试"
+      }
     },
     "turnStatus": {
       "queued": "排队中",

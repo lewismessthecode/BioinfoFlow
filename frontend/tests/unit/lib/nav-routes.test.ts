@@ -10,6 +10,7 @@ describe("NAV_ROUTES", () => {
       "workflows",
       "runs",
       "images",
+      "connections",
       "scheduler",
       "settings",
     ])
@@ -23,6 +24,7 @@ describe("NAV_ROUTES", () => {
     expect(new Set(hrefs).size).toBe(hrefs.length)
     expect(hrefs).toContain("/agent")
     expect(hrefs).toContain("/runs")
+    expect(hrefs).toContain("/connections")
     expect(hrefs).toContain("/settings")
   })
 })
