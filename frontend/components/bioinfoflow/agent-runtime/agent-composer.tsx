@@ -33,6 +33,7 @@ import type {
 } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 import { ContextAttachments } from "./context-attachments"
+import { ConnectedNodeSelector } from "./connected-node-selector"
 
 type AgentComposerProps = {
   value: string
@@ -194,6 +195,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             className="ml-auto flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2"
             data-testid="agent-composer-controls"
           >
+            <ConnectedNodeSelector disabled={disabled} compact={compactControls} />
             {onPermissionModeChange ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

@@ -6,6 +6,7 @@ import {
   GitBranch,
   LayoutDashboard,
   Play,
+  Server,
   Settings,
 } from "lucide-react"
 
@@ -22,6 +23,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
   { key: "workflows", href: "/workflows", icon: GitBranch },
   { key: "runs", href: "/runs", icon: Play },
   { key: "images", href: "/images", icon: Container },
+  { key: "connections", href: "/connections", icon: Server },
   { key: "scheduler", href: "/scheduler", icon: Gauge },
   { key: "settings", href: "/settings", icon: Settings },
 ] as const

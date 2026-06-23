@@ -68,6 +68,7 @@
     "workflows": "Workflows",
     "runs": "Runs",
     "images": "Images",
+    "connections": "Connections",
     "scheduler": "Scheduler",
     "settings": "Settings"
   },
@@ -1945,6 +1946,92 @@
     "customProjectDescription": "Need a custom folder structure, naming scheme, or workspace path? Start with a blank project and configure it yourself.",
     "customProject": "Create a custom project"
   },
+  "connections": {
+    "title": "Connection Center",
+    "subtitle": "Connect the servers you use often, then hand paths, tags, and usage notes to the Agent.",
+    "demoBadge": "Frontend demo",
+    "addNode": "Add node",
+    "nodeCount": "{count} demo nodes",
+    "searchPlaceholder": "Search IP, tag, or skill...",
+    "demoOnly": "These settings are only used for the interactive demo. They are not saved and Bioinfoflow will not connect to real servers.",
+    "list": {
+      "title": "Nodes",
+      "description": "Pick a host to preview the context an Agent could use.",
+      "empty": "No matching nodes. Try another IP, tag, or skill."
+    },
+    "detail": {
+      "currentContext": "Current context"
+    },
+    "sections": {
+      "address": "Address",
+      "general": "General",
+      "ssh": "SSH",
+      "agentContext": "Agent Context"
+    },
+    "fields": {
+      "address": "IP or hostname",
+      "label": "Label",
+      "group": "Group",
+      "status": "Status",
+      "tags": "Tags",
+      "port": "Port",
+      "username": "Username",
+      "auth": "Auth method",
+      "skills": "Skills",
+      "prompt": "Usage notes",
+      "paths": "Accessible paths",
+      "apis": "APIs and ports",
+      "environmentVariables": "Environment variables",
+      "startupSnippet": "Startup snippet"
+    },
+    "status": {
+      "online": "Online",
+      "offline": "Offline",
+      "partial": "Partial",
+      "unknown": "Not tested"
+    },
+    "auth": {
+      "password": "Password",
+      "key": "SSH key",
+      "certificate": "Certificate",
+      "fido2": "FIDO2"
+    },
+    "empty": {
+      "skills": "No skills yet",
+      "paths": "No paths yet",
+      "apis": "No APIs yet",
+      "environmentVariables": "No variables yet",
+      "prompt": "No usage notes yet",
+      "startupSnippet": "No startup snippet yet"
+    },
+    "dialog": {
+      "title": "Add node",
+      "description": "Add a demo host with SSH details, tags, paths, and Agent usage notes.",
+      "add": "Add node"
+    },
+    "form": {
+      "addTag": "Add tag",
+      "defaultApiName": "API {index}",
+      "defaultGroup": "Ungrouped",
+      "defaultUsername": "user",
+      "placeholders": {
+        "address": "10.227.5.224 or login.example.internal",
+        "label": "Simulation host sz01",
+        "group": "Bioinformatics analysis",
+        "tag": "Add a tag such as FASTQ or GPU",
+        "username": "bioflow",
+        "skills": "phoenix, harbor",
+        "paths": "/mnt/nas/pipelines\n/mnt/nas/results",
+        "apis": "http://10.227.5.224:8080",
+        "environmentVariables": "BIOFLOW_DATA=/mnt/nas",
+        "prompt": "Tell the Agent where logs, outputs, and important conventions live on this node.",
+        "startupSnippet": "source /etc/profile\nmodule load nextflow"
+      }
+    },
+    "toasts": {
+      "nodeAdded": "Demo node {address} added"
+    }
+  },
   "settings": {
     "pageTitle": "Settings",
     "nav": {
@@ -2285,6 +2372,18 @@
       "runPreflight": "Run preflight",
       "diagnoseRun": "Diagnose run",
       "comingSoon": "Coming soon"
+    },
+    "connectedNode": {
+      "placeholder": "Choose node",
+      "selectedAria": "Conversation node {address}, {status}",
+      "menuTitle": "Connected nodes",
+      "manage": "Manage connection center",
+      "status": {
+        "online": "Online",
+        "offline": "Offline",
+        "partial": "Partial",
+        "unknown": "Not tested"
+      }
     },
     "turnStatus": {
       "queued": "Queued",
