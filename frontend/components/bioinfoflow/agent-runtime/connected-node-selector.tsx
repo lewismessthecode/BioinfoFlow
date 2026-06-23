@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   demoConnectionNodes,
+  getDemoConnectionText,
   type DemoConnectionStatus,
 } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
@@ -43,6 +44,8 @@ function StatusDot({ status }: { status: DemoConnectionStatus }) {
 
 export function ConnectedNodeSelector({ disabled = false, compact = false }: ConnectedNodeSelectorProps) {
   const t = useTranslations("agentRuntime.connectedNode")
+  const locale =
+    typeof document === "undefined" ? "en" : document.documentElement.lang || navigator.language || "en"
   const [selectedNodeId, setSelectedNodeId] = useState(demoConnectionNodes[0]?.id ?? "")
   const selectedNode = useMemo(
     () => demoConnectionNodes.find((node) => node.id === selectedNodeId) ?? null,
@@ -86,7 +89,7 @@ export function ConnectedNodeSelector({ disabled = false, compact = false }: Con
         </DropdownMenuLabel>
         {demoConnectionNodes.map((node) => {
           const selected = node.id === selectedNodeId
-          const label = node.label.en
+          const label = getDemoConnectionText(node.label, locale)
           const summary = [label, node.tags.join(" / ")].filter(Boolean).join(" · ")
           return (
             <DropdownMenuItem
