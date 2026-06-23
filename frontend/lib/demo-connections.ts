@@ -104,8 +104,8 @@ export const demoConnectionNodes: DemoConnectionNode[] = [
     environmentVariables: ["ODP_HOME=/opt/odp"],
     startupSnippet: "source /etc/profile",
     issue: {
-      en: "The last demo connection test failed.",
-      zhCN: "最近一次演示连接测试失败。",
+      en: "The last connection test failed.",
+      zhCN: "最近一次连接测试失败。",
     },
   },
 ]

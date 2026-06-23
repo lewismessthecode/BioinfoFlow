@@ -1949,11 +1949,8 @@
   "connections": {
     "title": "连接中心",
     "subtitle": "连接常用服务器，把路径、标签和使用说明交给 Agent。",
-    "demoBadge": "前端演示",
     "addNode": "添加节点",
-    "nodeCount": "{count} 个演示节点",
     "searchPlaceholder": "搜索 IP、标签或 skill...",
-    "demoOnly": "这些配置只用于前端演示，不会保存，也不会连接真实服务器。",
     "list": {
       "title": "节点列表",
       "description": "选择一个节点，查看对话时可以带给 Agent 的上下文。",
@@ -2006,7 +2003,7 @@
     },
     "dialog": {
       "title": "添加节点",
-      "description": "添加一个演示节点，填写 SSH 信息、标签、路径和给 Agent 的使用说明。",
+      "description": "添加一个节点，填写 SSH 信息、标签、路径和给 Agent 的使用说明。",
       "add": "添加节点"
     },
     "form": {
@@ -2029,7 +2026,7 @@
       }
     },
     "toasts": {
-      "nodeAdded": "已添加演示节点 {address}"
+      "nodeAdded": "已添加节点 {address}"
     }
   },
   "settings": {

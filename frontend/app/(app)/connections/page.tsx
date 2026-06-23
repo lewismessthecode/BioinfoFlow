@@ -123,7 +123,7 @@ function ConnectionTag({ tag, active = true }: { tag: string; active?: boolean }
     <Badge
       variant="outline"
       className={cn(
-        "rounded-full border px-2.5 py-1 text-[11px] font-medium",
+        "rounded-full border px-2 py-0.5 text-[11px] font-medium",
         demoConnectionTagStyles[tag] ?? "border-border bg-muted/60 text-muted-foreground",
         !active && "opacity-45",
       )}
@@ -221,32 +221,16 @@ export default function ConnectionsPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.09),transparent_34rem)]">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 p-4 sm:p-6">
-        <header className="overflow-hidden rounded-[2rem] border border-border/70 bg-card/85 shadow-xl shadow-foreground/5 backdrop-blur">
-          <div className="relative grid gap-6 p-5 sm:p-7 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div className="absolute inset-y-0 right-0 hidden w-72 bg-[linear-gradient(135deg,transparent,hsl(var(--primary)/0.12))] lg:block" />
-            <div className="relative space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="rounded-full px-3 py-1 text-xs">
-                  {t("demoBadge")}
-                </Badge>
-                <span className="rounded-full border border-border/70 px-3 py-1 text-xs text-muted-foreground">
-                  {t("nodeCount", { count: nodes.length })}
-                </span>
-              </div>
-              <div className="space-y-2">
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                  {t("title")}
-                </h1>
-                <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                  {t("subtitle")}
-                </p>
-              </div>
-            </div>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-6xl p-4 sm:p-6">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">{t("subtitle")}</p>
+          </div>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="relative rounded-full px-4">
+                <Button className="w-fit rounded-full px-4">
                   <Plus className="h-4 w-4" />
                   {t("addNode")}
                 </Button>
@@ -479,13 +463,12 @@ export default function ConnectionsPage() {
                   </DialogFooter>
                 </form>
               </DialogContent>
-            </Dialog>
-          </div>
-        </header>
+          </Dialog>
+        </div>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(380px,1.1fr)]">
-          <Card className="overflow-hidden border-border/70 bg-card/85 py-0 shadow-xl shadow-foreground/5 backdrop-blur">
-            <CardHeader className="border-b border-border/70 px-5 py-4">
+        <div className="grid gap-4 lg:grid-cols-[minmax(280px,34%)_minmax(0,1fr)]">
+          <Card className="overflow-hidden border-border/70 bg-card py-0 shadow-sm shadow-foreground/5">
+            <CardHeader className="border-b border-border/70 px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">{t("list.title")}</CardTitle>
@@ -493,17 +476,17 @@ export default function ConnectionsPage() {
                 </div>
                 <Server className="h-5 w-5 text-muted-foreground" />
               </div>
-              <div className="relative mt-4">
+              <div className="relative mt-3">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder={t("searchPlaceholder")}
-                  className="pl-9"
+                  className="h-9 pl-9"
                 />
               </div>
             </CardHeader>
-            <CardContent className="grid gap-2 p-3">
+            <CardContent className="grid gap-2 p-2">
               {filteredNodes.length > 0 ? (
                 filteredNodes.map((node) => {
                   const selected = node.id === selectedNode.id
@@ -515,14 +498,14 @@ export default function ConnectionsPage() {
                       type="button"
                       onClick={() => setSelectedNodeId(node.id)}
                       className={cn(
-                        "group rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-muted/40 hover:shadow-lg hover:shadow-foreground/5",
+                        "group rounded-xl border p-3 text-left transition hover:border-primary/25 hover:bg-muted/35",
                         selected
-                          ? "border-primary/35 bg-primary/10 shadow-lg shadow-primary/5"
+                          ? "border-primary/35 bg-primary/10 shadow-sm shadow-primary/5"
                           : "border-transparent bg-transparent",
                       )}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/70 text-muted-foreground group-hover:text-foreground">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-muted-foreground group-hover:text-foreground">
                           <TerminalSquare className="h-4 w-4" />
                         </div>
                         <div className="min-w-0 flex-1">
@@ -535,7 +518,7 @@ export default function ConnectionsPage() {
                           </div>
                           <p className="mt-1 truncate text-sm font-medium text-foreground">{label}</p>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">{group}</p>
-                          <div className="mt-3 flex flex-wrap gap-1.5">
+                          <div className="mt-2 flex flex-wrap gap-1.5">
                             {node.tags.map((tag) => (
                               <ConnectionTag key={tag} tag={tag} />
                             ))}
@@ -554,71 +537,73 @@ export default function ConnectionsPage() {
           </Card>
 
           {selectedNode ? (
-            <section className="grid gap-5">
-              <Card className="overflow-hidden border-border/70 bg-card/85 py-0 shadow-xl shadow-foreground/5 backdrop-blur">
+            <section>
+              <Card className="overflow-hidden border-border/70 bg-card py-0 shadow-sm shadow-foreground/5">
                 <CardContent className="p-0">
-                  <div className="border-b border-border/70 bg-[linear-gradient(135deg,hsl(var(--muted)/0.8),transparent)] p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="border-b border-border/70 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background/80 text-foreground">
                           <TerminalSquare className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="truncate font-mono text-lg font-semibold tracking-tight text-foreground">
+                            <h2 className="truncate font-mono text-base font-semibold tracking-tight text-foreground">
                               {selectedNode.address}
                             </h2>
                             <Badge
                               variant="outline"
-                              className={cn("rounded-full border px-2.5 py-1", statusBorderClassNames[selectedNode.status])}
+                              className={cn("rounded-full border px-2 py-0.5 text-xs", statusBorderClassNames[selectedNode.status])}
                             >
                               <StatusDot status={selectedNode.status} className="h-2 w-2 shadow-none" />
                               {t(`status.${selectedNode.status}`)}
                             </Badge>
                           </div>
-                          <p className="mt-1 text-sm font-medium text-foreground">
+                          <p className="mt-0.5 text-sm font-medium text-foreground">
                             {getDemoConnectionText(selectedNode.label, locale)}
                           </p>
-                          <p className="text-sm text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {getDemoConnectionText(selectedNode.group, locale)}
                           </p>
                         </div>
                       </div>
-                      <Badge variant="secondary" className="rounded-full px-3 py-1">
+                      <span className="text-xs font-medium text-muted-foreground">
                         {t("detail.currentContext")}
-                      </Badge>
+                      </span>
                     </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="mt-3 flex flex-wrap gap-1.5">
                       {selectedNode.tags.map((tag) => (
                         <ConnectionTag key={tag} tag={tag} />
                       ))}
                     </div>
                   </div>
 
-                  <div className="grid gap-5 p-5">
-                    <DetailSection title={t("sections.general")}>
-                      <DetailGrid>
-                        <DetailItem label={t("fields.address")} value={selectedNode.address} mono />
-                        <DetailItem label={t("fields.group")} value={getDemoConnectionText(selectedNode.group, locale)} />
-                        <DetailItem label={t("fields.status")} value={t(`status.${selectedNode.status}`)} />
-                      </DetailGrid>
-                      {selectedNode.issue ? (
-                        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
-                          {getDemoConnectionText(selectedNode.issue, locale)}
-                        </div>
-                      ) : null}
-                    </DetailSection>
+                  <div className="grid gap-3 p-4">
+                    <div className="grid gap-3 xl:grid-cols-2">
+                      <DetailSection title={t("sections.general")}>
+                        <DetailGrid>
+                          <DetailItem label={t("fields.address")} value={selectedNode.address} mono />
+                          <DetailItem label={t("fields.group")} value={getDemoConnectionText(selectedNode.group, locale)} />
+                          <DetailItem label={t("fields.status")} value={t(`status.${selectedNode.status}`)} />
+                        </DetailGrid>
+                        {selectedNode.issue ? (
+                          <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+                            {getDemoConnectionText(selectedNode.issue, locale)}
+                          </div>
+                        ) : null}
+                      </DetailSection>
 
-                    <DetailSection title={t("sections.ssh")}>
-                      <DetailGrid>
-                        <DetailItem label={t("fields.port")} value={String(selectedNode.ssh.port)} mono />
-                        <DetailItem label={t("fields.username")} value={selectedNode.ssh.username} mono />
-                        <DetailItem label={t("fields.auth")} value={t(`auth.${selectedNode.ssh.auth}`)} />
-                      </DetailGrid>
-                    </DetailSection>
+                      <DetailSection title={t("sections.ssh")}>
+                        <DetailGrid>
+                          <DetailItem label={t("fields.port")} value={String(selectedNode.ssh.port)} mono />
+                          <DetailItem label={t("fields.username")} value={selectedNode.ssh.username} mono />
+                          <DetailItem label={t("fields.auth")} value={t(`auth.${selectedNode.ssh.auth}`)} />
+                        </DetailGrid>
+                      </DetailSection>
+                    </div>
 
                     <DetailSection title={t("sections.agentContext")}>
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <TokenPanel title={t("fields.skills")} values={selectedNode.skills} empty={t("empty.skills")} />
                         <TokenPanel title={t("fields.paths")} values={selectedNode.paths} empty={t("empty.paths")} mono />
                         <TokenPanel
@@ -634,6 +619,9 @@ export default function ConnectionsPage() {
                           mono
                         />
                       </div>
+                    </DetailSection>
+
+                    <div className="grid gap-3 xl:grid-cols-2">
                       <TextPanel
                         title={t("fields.prompt")}
                         value={selectedNode.prompts.map((prompt) => getDemoConnectionText(prompt, locale)).join("\n")}
@@ -645,14 +633,10 @@ export default function ConnectionsPage() {
                         empty={t("empty.startupSnippet")}
                         mono
                       />
-                    </DetailSection>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
-
-              <div className="rounded-3xl border border-dashed border-border/80 bg-muted/25 p-4 text-sm leading-6 text-muted-foreground">
-                {t("demoOnly")}
-              </div>
             </section>
           ) : null}
         </div>
@@ -701,7 +685,7 @@ function TextFieldArea({
 
 function DetailSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="grid gap-3">
+    <section className="grid gap-3 rounded-2xl bg-muted/20 p-4">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       {children}
     </section>
@@ -709,14 +693,14 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
 }
 
 function DetailGrid({ children }: { children: ReactNode }) {
-  return <div className="grid gap-3 sm:grid-cols-3">{children}</div>
+  return <dl className="grid gap-3 sm:grid-cols-3">{children}</dl>
 }
 
 function DetailItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 truncate text-sm font-medium text-foreground", mono && "font-mono")}>{value}</p>
+    <div className="min-w-0">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className={cn("mt-1 break-words text-sm font-medium text-foreground", mono && "whitespace-nowrap font-mono")}>{value}</dd>
     </div>
   )
 }
@@ -733,25 +717,20 @@ function TokenPanel({
   mono?: boolean
 }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-muted/25 p-4">
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{title}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {values.length > 0 ? (
-          values.map((value) => (
-            <span
-              key={value}
-              className={cn(
-                "rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs text-foreground",
-                mono && "font-mono",
-              )}
-            >
-              {value}
-            </span>
-          ))
-        ) : (
-          <span className="text-sm text-muted-foreground">{empty}</span>
-        )}
-      </div>
+    <div className="min-w-0">
+      <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
+      {values.length > 0 ? (
+        <ul className="mt-2 space-y-1.5">
+          {values.map((value) => (
+            <li key={value} className="flex min-w-0 items-start gap-2 text-sm text-foreground">
+              <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/45" aria-hidden="true" />
+              <span className={cn("min-w-0 break-words", mono && "break-all font-mono text-[13px]")}>{value}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-muted-foreground">{empty}</p>
+      )}
     </div>
   )
 }
@@ -768,11 +747,11 @@ function TextPanel({
   mono?: boolean
 }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-muted/25 p-4">
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{title}</p>
+    <div className="rounded-2xl bg-muted/20 p-4">
+      <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
       <pre
         className={cn(
-          "mt-3 whitespace-pre-wrap break-words rounded-xl bg-background/70 p-3 text-sm leading-6 text-foreground",
+          "mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-foreground",
           mono ? "font-mono" : "font-sans",
         )}
       >

@@ -1949,11 +1949,8 @@
   "connections": {
     "title": "Connection Center",
     "subtitle": "Connect the servers you use often, then hand paths, tags, and usage notes to the Agent.",
-    "demoBadge": "Frontend demo",
     "addNode": "Add node",
-    "nodeCount": "{count} demo nodes",
     "searchPlaceholder": "Search IP, tag, or skill...",
-    "demoOnly": "These settings are only used for the interactive demo. They are not saved and Bioinfoflow will not connect to real servers.",
     "list": {
       "title": "Nodes",
       "description": "Pick a host to preview the context an Agent could use.",
@@ -2006,7 +2003,7 @@
     },
     "dialog": {
       "title": "Add node",
-      "description": "Add a demo host with SSH details, tags, paths, and Agent usage notes.",
+      "description": "Add a node with SSH details, tags, paths, and Agent usage notes.",
       "add": "Add node"
     },
     "form": {
@@ -2029,7 +2026,7 @@
       }
     },
     "toasts": {
-      "nodeAdded": "Demo node {address} added"
+      "nodeAdded": "Node {address} added"
     }
   },
   "settings": {
