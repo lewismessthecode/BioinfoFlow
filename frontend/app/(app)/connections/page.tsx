@@ -251,7 +251,7 @@ export default function ConnectionsPage() {
                   {t("addNode")}
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-h-[min(88vh,760px)] overflow-y-auto rounded-3xl p-0 sm:max-w-3xl">
+              <DialogContent className="max-h-[min(88vh,760px)] overflow-y-auto rounded-3xl border-border/70 bg-card p-0 text-card-foreground shadow-2xl shadow-foreground/20 sm:max-w-3xl">
                 <form onSubmit={handleSubmit}>
                   <DialogHeader className="border-b border-border/70 px-6 py-5">
                     <DialogTitle>{t("dialog.title")}</DialogTitle>
