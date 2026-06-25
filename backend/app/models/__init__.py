@@ -31,6 +31,11 @@ from app.models.notification import NotificationConfig
 from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
 from app.models.project_workflow_pin import ProjectWorkflowPin
+from app.models.remote_connection import (
+    RemoteConnection,
+    RemoteConnectionAuthMethod,
+    RemoteConnectionStatus,
+)
 from app.models.run import Run, RunStatus
 from app.models.run_config import RunConfigHelper
 from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
@@ -65,6 +70,9 @@ __all__ = [
     "Project",
     "ProjectWorkflowBinding",
     "ProjectWorkflowPin",
+    "RemoteConnection",
+    "RemoteConnectionAuthMethod",
+    "RemoteConnectionStatus",
     "Workflow",
     "WorkflowEngine",
     "WorkflowSource",
