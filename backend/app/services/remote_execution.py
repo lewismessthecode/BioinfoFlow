@@ -243,6 +243,10 @@ class SshRemoteExecutor:
                     frame = await asyncio.wait_for(queue.get(), timeout=0.1)
                 except asyncio.TimeoutError:
                     continue
+                if frame.type == "truncated" and process.returncode is None:
+                    with contextlib.suppress(ProcessLookupError):
+                        process.kill()
+                    await wait_task
                 yield frame
         finally:
             if not completed and process.returncode is None:
