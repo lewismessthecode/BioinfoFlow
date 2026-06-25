@@ -385,106 +385,108 @@ export default function ConnectionsPage() {
         </div>
 
         <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-          <DialogContent className="max-h-[min(92vh,780px)] overflow-hidden rounded-2xl border-border/70 bg-card p-0 text-card-foreground shadow-2xl shadow-foreground/20 sm:max-w-3xl">
+          <DialogContent className="max-h-[min(92vh,780px)] overflow-hidden rounded-2xl border-border/70 bg-card p-0 text-card-foreground shadow-2xl shadow-foreground/20 sm:max-w-4xl">
             <form onSubmit={handleSubmit} noValidate className="flex max-h-[min(92vh,780px)] flex-col">
-              <DialogHeader className="border-b border-border/70 px-5 py-4">
+              <DialogHeader className="border-b border-border/70 px-5 py-3.5">
                 <DialogTitle>
                   {dialogMode === "edit" ? t("dialog.editTitle") : t("dialog.title")}
                 </DialogTitle>
                 <DialogDescription>{t("dialog.description")}</DialogDescription>
               </DialogHeader>
 
-              <div className="grid gap-4 overflow-y-auto px-5 py-4">
-                <section className="grid gap-3">
-                  <FormSectionTitle title={t("sections.connection")} icon={<Server className="h-4 w-4" />} />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label={t("fields.name")} htmlFor="connection-name">
-                      <Input
-                        id="connection-name"
-                        value={form.name}
-                        onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                        placeholder={t("form.placeholders.name")}
-                      />
-                    </Field>
-                    <Field label={t("fields.host")} htmlFor="connection-host">
-                      <Input
-                        id="connection-host"
-                        value={form.host}
-                        onChange={(event) => setForm((current) => ({ ...current, host: event.target.value }))}
-                        placeholder={t("form.placeholders.host")}
-                        required
-                      />
-                    </Field>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-[minmax(90px,0.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
-                    <Field label={t("fields.port")} htmlFor="connection-port">
-                      <Input
-                        id="connection-port"
-                        value={form.port}
-                        inputMode="numeric"
-                        onChange={(event) => setForm((current) => ({ ...current, port: event.target.value }))}
-                        aria-invalid={formErrorField === "port"}
-                        aria-describedby={formErrorField === "port" ? "connection-form-error" : undefined}
-                      />
-                    </Field>
-                    <Field label={t("fields.username")} htmlFor="connection-username">
-                      <Input
-                        id="connection-username"
-                        value={form.username}
-                        onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
-                        placeholder={t("form.placeholders.username")}
-                      />
-                    </Field>
-                    <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
-                      <Input
-                        id="connection-ssh-alias"
-                        value={form.ssh_alias}
-                        onChange={(event) => setForm((current) => ({ ...current, ssh_alias: event.target.value }))}
-                        placeholder={t("form.placeholders.sshAlias")}
-                        required={form.auth_method === "ssh_config"}
-                        aria-invalid={formErrorField === "ssh_alias"}
-                        aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
-                      />
-                    </Field>
-                  </div>
-                </section>
+              <div className="grid gap-4 overflow-y-auto px-5 py-3.5 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.9fr)] lg:overflow-visible">
+                <div className="grid gap-3">
+                  <section className="grid gap-2.5">
+                    <FormSectionTitle title={t("sections.connection")} icon={<Server className="h-4 w-4" />} />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label={t("fields.name")} htmlFor="connection-name">
+                        <Input
+                          id="connection-name"
+                          value={form.name}
+                          onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                          placeholder={t("form.placeholders.name")}
+                        />
+                      </Field>
+                      <Field label={t("fields.host")} htmlFor="connection-host">
+                        <Input
+                          id="connection-host"
+                          value={form.host}
+                          onChange={(event) => setForm((current) => ({ ...current, host: event.target.value }))}
+                          placeholder={t("form.placeholders.host")}
+                          required
+                        />
+                      </Field>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-[minmax(84px,0.55fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                      <Field label={t("fields.port")} htmlFor="connection-port">
+                        <Input
+                          id="connection-port"
+                          value={form.port}
+                          inputMode="numeric"
+                          onChange={(event) => setForm((current) => ({ ...current, port: event.target.value }))}
+                          aria-invalid={formErrorField === "port"}
+                          aria-describedby={formErrorField === "port" ? "connection-form-error" : undefined}
+                        />
+                      </Field>
+                      <Field label={t("fields.username")} htmlFor="connection-username">
+                        <Input
+                          id="connection-username"
+                          value={form.username}
+                          onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
+                          placeholder={t("form.placeholders.username")}
+                        />
+                      </Field>
+                      <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
+                        <Input
+                          id="connection-ssh-alias"
+                          value={form.ssh_alias}
+                          onChange={(event) => setForm((current) => ({ ...current, ssh_alias: event.target.value }))}
+                          placeholder={t("form.placeholders.sshAlias")}
+                          required={form.auth_method === "ssh_config"}
+                          aria-invalid={formErrorField === "ssh_alias"}
+                          aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
+                        />
+                      </Field>
+                    </div>
+                  </section>
 
-                <section className="grid gap-3">
-                  <FormSectionTitle title={t("sections.ssh")} icon={<KeyRound className="h-4 w-4" />} />
-                  <div aria-label={t("fields.auth")} className="grid gap-2 sm:grid-cols-3">
-                    {authMethods.map((method) => (
-                      <AuthMethodButton
-                        key={method}
-                        method={method}
-                        selected={form.auth_method === method}
-                        title={t(`auth.${method}`)}
-                        description={t(`authHelp.${method}`)}
-                        onSelect={() =>
-                          setForm((current) => ({
-                            ...current,
-                            auth_method: method,
-                            key_path: method === "key_file" ? current.key_path : "",
-                          }))
-                        }
+                  <section className="grid gap-2.5">
+                    <FormSectionTitle title={t("sections.ssh")} icon={<KeyRound className="h-4 w-4" />} />
+                    <div aria-label={t("fields.auth")} className="grid gap-2 sm:grid-cols-3">
+                      {authMethods.map((method) => (
+                        <AuthMethodButton
+                          key={method}
+                          method={method}
+                          selected={form.auth_method === method}
+                          title={t(`auth.${method}`)}
+                          description={t(`authHelp.${method}`)}
+                          onSelect={() =>
+                            setForm((current) => ({
+                              ...current,
+                              auth_method: method,
+                              key_path: method === "key_file" ? current.key_path : "",
+                            }))
+                          }
+                        />
+                      ))}
+                    </div>
+                    <Field label={t("fields.keyPath")} htmlFor="connection-key-path">
+                      <Input
+                        id="connection-key-path"
+                        value={form.key_path}
+                        onChange={(event) => setForm((current) => ({ ...current, key_path: event.target.value }))}
+                        placeholder={t("form.placeholders.keyPath")}
+                        required={form.auth_method === "key_file"}
+                        disabled={form.auth_method !== "key_file"}
+                        aria-invalid={formErrorField === "key_path"}
+                        aria-describedby={formErrorField === "key_path" ? "connection-form-error" : undefined}
                       />
-                    ))}
-                  </div>
-                  <Field label={t("fields.keyPath")} htmlFor="connection-key-path">
-                    <Input
-                      id="connection-key-path"
-                      value={form.key_path}
-                      onChange={(event) => setForm((current) => ({ ...current, key_path: event.target.value }))}
-                      placeholder={t("form.placeholders.keyPath")}
-                      required={form.auth_method === "key_file"}
-                      disabled={form.auth_method !== "key_file"}
-                      aria-invalid={formErrorField === "key_path"}
-                      aria-describedby={formErrorField === "key_path" ? "connection-form-error" : undefined}
-                    />
-                  </Field>
-                  <p className="text-xs leading-5 text-muted-foreground">{t("form.secretsNote")}</p>
-                </section>
+                    </Field>
+                    <p className="text-xs leading-5 text-muted-foreground">{t("form.secretsNote")}</p>
+                  </section>
+                </div>
 
-                <section className="grid gap-3">
+                <section className="grid content-start gap-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <FormSectionTitle title={t("sections.agentSkill")} icon={<BookOpenText className="h-4 w-4" />} />
                     <DropdownMenu>
@@ -547,7 +549,7 @@ export default function ConnectionsPage() {
                   {formError}
                 </div>
               ) : null}
-              <DialogFooter className="border-t border-border/70 px-5 py-4">
+              <DialogFooter className="border-t border-border/70 px-5 py-3">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
                   {tCommon("cancel")}
                 </Button>
@@ -824,7 +826,7 @@ function AuthMethodButton({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "min-h-20 rounded-xl border p-3 text-left transition hover:border-primary/40 hover:bg-muted/35",
+        "min-h-[4.75rem] rounded-xl border p-2.5 text-left transition hover:border-primary/40 hover:bg-muted/35",
         selected ? "border-primary/45 bg-primary/10 shadow-sm shadow-primary/10" : "border-border/70 bg-background/70",
       )}
     >
@@ -832,7 +834,7 @@ function AuthMethodButton({
         <span className="text-sm font-semibold text-foreground">{title}</span>
         {selected ? <CheckCircle2 className="h-4 w-4 text-primary" /> : null}
       </span>
-      <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
+      <span className="mt-1 block text-xs leading-4 text-muted-foreground">{description}</span>
       <span className="sr-only">{method}</span>
     </button>
   )
@@ -859,7 +861,7 @@ function TextFieldArea({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="min-h-24 resize-none"
+        className="min-h-28 resize-none lg:min-h-40"
       />
     </div>
   )
