@@ -1981,13 +1981,12 @@
     "status": {
       "online": "Online",
       "offline": "Offline",
-      "partial": "Partial",
+      "error": "Connection error",
       "unknown": "Not tested"
     },
     "auth": {
-      "password": "Password",
-      "key": "SSH key",
-      "certificate": "Certificate",
+      "ssh_config": "SSH config alias",
+      "key_file": "Key file",
       "agent": "SSH agent"
     },
     "empty": {
@@ -2365,7 +2364,7 @@
       "status": {
         "online": "Online",
         "offline": "Offline",
-        "partial": "Partial",
+        "error": "Connection error",
         "unknown": "Not tested"
       }
     },

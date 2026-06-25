@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.remote_connection import RemoteConnection, RemoteConnectionStatus
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
+from app.services.remote_execution import RemoteConnectionConfig, SshRemoteExecutor
 from app.utils.exceptions import ConflictError, ValidationError
 
 
@@ -34,6 +35,25 @@ class UnavailableRemoteConnectionTester:
         )
 
 
+class SshRemoteConnectionTester:
+    def __init__(self, executor: SshRemoteExecutor | None = None) -> None:
+        self.executor = executor or SshRemoteExecutor()
+
+    async def test(self, connection: RemoteConnection) -> RemoteConnectionTestResult:
+        result = await self.executor.run(
+            remote_connection_config_from_model(connection),
+            "printf bioinfoflow-ok",
+            timeout_seconds=10,
+            output_limit=2000,
+        )
+        if result.exit_code == 0 and "bioinfoflow-ok" in result.stdout:
+            return RemoteConnectionTestResult(status=RemoteConnectionStatus.ONLINE)
+        return RemoteConnectionTestResult(
+            status=RemoteConnectionStatus.ERROR,
+            error=(result.stderr or result.stdout or "SSH connection test failed").strip(),
+        )
+
+
 class RemoteConnectionService:
     def __init__(
         self,
@@ -42,7 +62,7 @@ class RemoteConnectionService:
         tester: RemoteConnectionTester | None = None,
     ) -> None:
         self.repo = RemoteConnectionRepository(session)
-        self.tester = tester or UnavailableRemoteConnectionTester()
+        self.tester = tester or SshRemoteConnectionTester()
 
     async def list_connections(
         self,
@@ -120,3 +140,19 @@ class RemoteConnectionService:
             checked_at=checked_at,
         )
         return updated, updated.last_checked_at or checked_at
+
+
+def remote_connection_config_from_model(
+    connection: RemoteConnection,
+) -> RemoteConnectionConfig:
+    return RemoteConnectionConfig(
+        id=str(connection.id),
+        name=connection.name,
+        host=connection.host,
+        username=connection.username,
+        port=connection.port,
+        ssh_alias=connection.ssh_alias,
+        key_path=connection.key_path,
+        status=connection.last_status,
+        skill_summary=connection.skill_instructions,
+    )

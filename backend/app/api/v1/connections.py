@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+import asyncio
+import contextlib
+
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
+from app.auth.dependencies import resolve_websocket_user
 from app.auth.session import AuthUser
 from app.schemas.remote_connection import (
     RemoteConnectionCreate,
@@ -13,8 +17,10 @@ from app.schemas.remote_connection import (
 )
 from app.services.remote_connection_service import (
     RemoteConnectionService,
-    UnavailableRemoteConnectionTester,
+    SshRemoteConnectionTester,
+    remote_connection_config_from_model,
 )
+from app.services.remote_execution import SshRemoteExecutor
 from app.utils.responses import error_response, success_response
 
 
@@ -22,7 +28,7 @@ router = APIRouter(prefix="/connections", tags=["connections"])
 
 
 def get_remote_connection_tester():
-    return UnavailableRemoteConnectionTester()
+    return SshRemoteConnectionTester()
 
 
 def _serialize(connection) -> dict:
@@ -160,3 +166,67 @@ async def test_connection(
         ),
     ).model_dump(mode="json")
     return success_response(data, request=request)
+
+
+@router.websocket("/{connection_id}/exec/ws")
+async def exec_connection_socket(
+    connection_id: str,
+    websocket: WebSocket,
+    db: AsyncSession = Depends(get_db),
+):
+    await websocket.accept()
+    try:
+        user = await resolve_websocket_user(websocket, db)
+    except HTTPException as exc:
+        code = 4401 if exc.status_code == 401 else 4403
+        await websocket.close(code=code, reason="Unauthorized")
+        return
+
+    service = RemoteConnectionService(db)
+    connection = await service.get_connection(
+        connection_id,
+        workspace_id=user.workspace_id,
+    )
+    if not connection:
+        await websocket.close(code=4404, reason="Remote connection not found")
+        return
+
+    executor = SshRemoteExecutor()
+
+    try:
+        first = await asyncio.wait_for(websocket.receive_json(), timeout=5)
+    except asyncio.TimeoutError:
+        await websocket.close(code=4400, reason="Command required")
+        return
+    except WebSocketDisconnect:
+        return
+
+    command = str(first.get("command") or "").strip()
+    if not command:
+        await websocket.send_json(
+            {"type": "error", "message": "command must be a non-empty string"}
+        )
+        await websocket.close(code=4400)
+        return
+    timeout_seconds = int(first.get("timeout_seconds") or 60)
+
+    try:
+        async for frame in executor.stream(
+            remote_connection_config_from_model(connection),
+            command,
+            timeout_seconds=timeout_seconds,
+        ):
+            payload = {
+                "type": frame.type,
+                "data": frame.data,
+                "exit_code": frame.exit_code,
+                "timed_out": frame.timed_out,
+            }
+            await websocket.send_json(
+                {key: value for key, value in payload.items() if value is not None}
+            )
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:  # noqa: BLE001 - websocket must return structured error
+        with contextlib.suppress(RuntimeError):
+            await websocket.send_json({"type": "error", "message": str(exc)})

@@ -145,7 +145,7 @@ async def test_remote_connection_test_uses_mockable_tester_and_persists_status(
         return RemoteConnectionTestResult(status="online", error=None)
 
     monkeypatch.setattr(
-        "app.services.remote_connection_service.UnavailableRemoteConnectionTester.test",
+        "app.services.remote_connection_service.SshRemoteConnectionTester.test",
         fake_test,
     )
 
@@ -165,3 +165,58 @@ async def test_remote_connection_test_uses_mockable_tester_and_persists_status(
     assert persisted["last_status"] == "online"
     assert persisted["last_error"] is None
     assert persisted["last_checked_at"] == test_data["checked_at"]
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_test_uses_ssh_executor_by_default(
+    async_client,
+    monkeypatch,
+):
+    create_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="agent", key_path=None),
+    )
+    assert create_resp.status_code == 201
+    connection_id = create_resp.json()["data"]["id"]
+
+    from app.services.remote_execution import RemoteCommandResult
+
+    calls = []
+
+    async def fake_run(self, connection, command, *, timeout_seconds, output_limit):
+        calls.append(
+            {
+                "connection": connection,
+                "command": command,
+                "timeout_seconds": timeout_seconds,
+                "output_limit": output_limit,
+            }
+        )
+        return RemoteCommandResult(
+            exit_code=0,
+            stdout="bioinfoflow-ok",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+
+    monkeypatch.setattr(
+        "app.services.remote_execution.SshRemoteExecutor.run",
+        fake_run,
+    )
+
+    test_resp = await async_client.post(f"/api/v1/connections/{connection_id}/test")
+
+    assert test_resp.status_code == 200
+    assert test_resp.json()["data"]["status"] == "online"
+    assert calls == [
+        {
+            "connection": calls[0]["connection"],
+            "command": "printf bioinfoflow-ok",
+            "timeout_seconds": 10,
+            "output_limit": 2000,
+        }
+    ]
+    assert calls[0]["connection"].host == "login.example.org"

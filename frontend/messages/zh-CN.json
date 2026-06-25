@@ -1981,13 +1981,12 @@
     "status": {
       "online": "在线",
       "offline": "离线",
-      "partial": "部分可用",
+      "error": "连接异常",
       "unknown": "未测试"
     },
     "auth": {
-      "password": "密码",
-      "key": "SSH key",
-      "certificate": "证书",
+      "ssh_config": "SSH 配置别名",
+      "key_file": "密钥文件",
       "agent": "SSH agent"
     },
     "empty": {
@@ -2365,7 +2364,7 @@
       "status": {
         "online": "在线",
         "offline": "离线",
-        "partial": "部分可用",
+        "error": "连接异常",
         "unknown": "未测试"
       }
     },

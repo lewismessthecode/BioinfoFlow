@@ -16,6 +16,7 @@ from app.services.agent_core.tools.remote import (
 from app.services.agent_core.tools.specs import AgentToolContext
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.services.remote_execution import RemoteCommandResult, RemoteConnectionConfig
+from app.services.remote_connection_service import RemoteConnectionService
 
 
 def _tool_context(db_session) -> AgentToolContext:
@@ -90,6 +91,37 @@ async def test_remote_connections_list_returns_workspace_summaries(db_session):
         ],
         "total_count": 1,
     }
+
+
+@pytest.mark.asyncio
+async def test_remote_connections_list_reads_workspace_database_connections(db_session):
+    service = RemoteConnectionService(db_session)
+    created = await service.create_connection(
+        {
+            "name": "DB HPC login",
+            "host": "db-login.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "db-hpc",
+            "skill_instructions": "Use the shared module stack.",
+        },
+        workspace_id="workspace-1",
+    )
+    tool = RemoteConnectionsListTool()
+
+    result = await tool.run({}, _tool_context(db_session))
+
+    assert result["connections"] == [
+        {
+            "id": str(created.id),
+            "name": "DB HPC login",
+            "host": "db-login.cluster.example.org",
+            "username": "alice",
+            "status": "unknown",
+            "skill_summary": "Use the shared module stack.",
+        }
+    ]
 
 
 @pytest.mark.asyncio

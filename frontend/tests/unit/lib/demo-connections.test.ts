@@ -1,14 +1,22 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import {
   demoConnectionNodes,
+  fetchRemoteConnections,
+  remoteConnectionsApiPath,
   type RemoteConnectionStatus,
 } from "@/lib/demo-connections"
+
+import { apiRequest } from "@/lib/api"
+
+vi.mock("@/lib/api", () => ({
+  apiRequest: vi.fn(),
+}))
 
 const supportedStatuses: RemoteConnectionStatus[] = [
   "online",
   "offline",
-  "partial",
+  "error",
   "unknown",
 ]
 
@@ -38,5 +46,38 @@ describe("demo connection fallback data", () => {
       expect(connection).not.toHaveProperty("environmentVariables")
       expect(connection).not.toHaveProperty("startupSnippet")
     }
+  })
+
+  it("fetches live connections from the canonical backend endpoint", async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      data: [
+        {
+          id: "conn-live",
+          name: "Live host",
+          host: "login.example.org",
+          port: 22,
+          username: "alice",
+          auth_method: "ssh_config",
+          ssh_alias: null,
+          key_path: null,
+          last_status: "online",
+          last_error: null,
+          skill_instructions: "Use module load nextflow.",
+        },
+      ],
+    })
+
+    const connections = await fetchRemoteConnections()
+
+    expect(apiRequest).toHaveBeenCalledWith("/connections")
+    expect(remoteConnectionsApiPath).toBe("/connections")
+    expect(connections).toEqual([
+      expect.objectContaining({
+        id: "conn-live",
+        status: "online",
+        ssh_alias: "",
+        key_path: "",
+      }),
+    ])
   })
 })

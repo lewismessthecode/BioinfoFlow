@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { Check, ChevronDown, Server } from "lucide-react"
 import { useTranslations } from "next-intl"
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   demoConnectionNodes,
+  fetchRemoteConnections,
   type RemoteConnectionStatus,
 } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
@@ -28,7 +29,7 @@ type ConnectedNodeSelectorProps = {
 const statusDotClassNames: Record<RemoteConnectionStatus, string> = {
   online: "bg-emerald-500 shadow-emerald-500/40",
   offline: "bg-rose-500 shadow-rose-500/40",
-  partial: "bg-amber-500 shadow-amber-500/40",
+  error: "bg-amber-500 shadow-amber-500/40",
   unknown: "bg-slate-400 shadow-slate-400/30",
 }
 
@@ -44,9 +45,31 @@ function StatusDot({ status }: { status: RemoteConnectionStatus }) {
 export function ConnectedNodeSelector({ disabled = false, compact = false }: ConnectedNodeSelectorProps) {
   const t = useTranslations("agentRuntime.connectedNode")
   const [selectedConnectionId, setSelectedConnectionId] = useState(demoConnectionNodes[0]?.id ?? "")
+  const [connections, setConnections] = useState(demoConnectionNodes)
+  useEffect(() => {
+    let disposed = false
+
+    fetchRemoteConnections()
+      .then((remoteConnections) => {
+        if (disposed || remoteConnections.length === 0) return
+        setConnections(remoteConnections)
+        setSelectedConnectionId((current) =>
+          remoteConnections.some((connection) => connection.id === current)
+            ? current
+            : remoteConnections[0]?.id ?? "",
+        )
+      })
+      .catch(() => {
+        // Keep demo fallback data when the live backend is unavailable.
+      })
+
+    return () => {
+      disposed = true
+    }
+  }, [])
   const selectedConnection = useMemo(
-    () => demoConnectionNodes.find((connection) => connection.id === selectedConnectionId) ?? null,
-    [selectedConnectionId],
+    () => connections.find((connection) => connection.id === selectedConnectionId) ?? null,
+    [connections, selectedConnectionId],
   )
   const selectedStatus = selectedConnection ? t(`status.${selectedConnection.status}`) : ""
 
@@ -88,7 +111,7 @@ export function ConnectedNodeSelector({ disabled = false, compact = false }: Con
         <DropdownMenuLabel className="px-2.5 py-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
           {t("menuTitle")}
         </DropdownMenuLabel>
-        {demoConnectionNodes.map((connection) => {
+        {connections.map((connection) => {
           const selected = connection.id === selectedConnectionId
           const sshTarget = `${connection.username}@${connection.host}:${connection.port}`
           const summary = [sshTarget, connection.ssh_alias].filter(Boolean).join(" · ")

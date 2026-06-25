@@ -1,6 +1,6 @@
 "use client"
 
-import { type FormEvent, type ReactNode, useMemo, useState } from "react"
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react"
 import { BookOpenText, KeyRound, Plus, Search, Server } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
@@ -29,6 +29,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import {
   demoConnectionNodes,
+  fetchRemoteConnections,
   type RemoteConnection,
   type RemoteConnectionAuthMethod,
   type RemoteConnectionStatus,
@@ -52,7 +53,7 @@ const initialForm: ConnectionFormState = {
   host: "",
   port: "22",
   username: "",
-  auth_method: "key",
+  auth_method: "ssh_config",
   ssh_alias: "",
   key_path: "",
   status: "unknown",
@@ -62,19 +63,19 @@ const initialForm: ConnectionFormState = {
 const statusDotClassNames: Record<RemoteConnectionStatus, string> = {
   online: "bg-emerald-500 shadow-emerald-500/40",
   offline: "bg-rose-500 shadow-rose-500/40",
-  partial: "bg-amber-500 shadow-amber-500/40",
+  error: "bg-amber-500 shadow-amber-500/40",
   unknown: "bg-slate-400 shadow-slate-400/30",
 }
 
 const statusBorderClassNames: Record<RemoteConnectionStatus, string> = {
   online: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   offline: "border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-  partial: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  error: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   unknown: "border-slate-500/25 bg-slate-500/10 text-slate-700 dark:text-slate-300",
 }
 
-const authMethods: RemoteConnectionAuthMethod[] = ["key", "agent", "certificate", "password"]
-const statusOptions: RemoteConnectionStatus[] = ["online", "offline", "partial", "unknown"]
+const authMethods: RemoteConnectionAuthMethod[] = ["ssh_config", "key_file", "agent"]
+const statusOptions: RemoteConnectionStatus[] = ["online", "offline", "error", "unknown"]
 
 function parsePort(value: string) {
   const port = Number.parseInt(value, 10)
@@ -98,6 +99,28 @@ export default function ConnectionsPage() {
   const [search, setSearch] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<ConnectionFormState>(initialForm)
+
+  useEffect(() => {
+    let disposed = false
+
+    fetchRemoteConnections()
+      .then((remoteConnections) => {
+        if (disposed || remoteConnections.length === 0) return
+        setConnections(remoteConnections)
+        setSelectedConnectionId((current) =>
+          remoteConnections.some((connection) => connection.id === current)
+            ? current
+            : remoteConnections[0]?.id ?? "",
+        )
+      })
+      .catch(() => {
+        // Keep the demo fallback available when the backend is not running.
+      })
+
+    return () => {
+      disposed = true
+    }
+  }, [])
 
   const filteredConnections = useMemo(() => {
     const query = search.trim().toLowerCase()
