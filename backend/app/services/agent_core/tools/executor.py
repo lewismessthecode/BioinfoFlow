@@ -87,14 +87,19 @@ def _artifact_descriptor(
         }
 
     # Command / log output (bash and other stdout-producing tools).
-    if (artifact_type == "command" or policy.get("stdout") or policy.get("stderr")) and any(
-        key in result for key in ("stdout", "stderr", "exit_code")
-    ):
+    command_result = result
+    if isinstance(result.get("result"), dict):
+        command_result = result["result"]
+    if (
+        artifact_type in {"command", "remote_command", "remote_file", "remote_directory"}
+        or policy.get("stdout")
+        or policy.get("stderr")
+    ) and any(key in command_result for key in ("stdout", "stderr", "exit_code")):
         return {
             "type": "command",
-            "title": str(result.get("command") or f"{tool_name} output"),
-            "summary": f"exit code {result.get('exit_code', '?')}",
-            "payload": result,
+            "title": str(result.get("command") or result.get("path") or f"{tool_name} output"),
+            "summary": f"exit code {command_result.get('exit_code', '?')}",
+            "payload": {**result, **command_result},
         }
     return None
 
