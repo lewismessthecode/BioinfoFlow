@@ -1,149 +1,82 @@
-export type DemoConnectionStatus = "online" | "offline" | "partial" | "unknown"
+import { apiRequest } from "@/lib/api"
 
-export type LocalizedDemoText = {
-  en: string
-  zhCN: string
-}
+export type RemoteConnectionStatus = "online" | "offline" | "partial" | "unknown"
 
-export type DemoConnectionApi = {
-  name: string
-  baseUrl: string
-}
+export type RemoteConnectionAuthMethod = "password" | "key" | "certificate" | "agent"
 
-export type DemoConnectionNode = {
+export type RemoteConnection = {
   id: string
-  address: string
-  label: LocalizedDemoText
-  group: LocalizedDemoText
-  status: DemoConnectionStatus
-  tags: string[]
-  ssh: {
-    port: number
-    username: string
-    auth: "password" | "key" | "certificate" | "fido2"
+  name: string
+  host: string
+  port: number
+  username: string
+  auth_method: RemoteConnectionAuthMethod
+  ssh_alias: string
+  key_path: string
+  status: RemoteConnectionStatus
+  skill_instructions: string
+  status_message?: string
+  last_checked_at?: string
+}
+
+type RemoteConnectionListResponse =
+  | RemoteConnection[]
+  | {
+      connections?: RemoteConnection[]
+      data?: RemoteConnection[]
+    }
+
+export const remoteConnectionsApiPath = "/remote/connections"
+
+export async function fetchRemoteConnections(): Promise<RemoteConnection[]> {
+  const response = await apiRequest<RemoteConnectionListResponse>(remoteConnectionsApiPath)
+
+  if (Array.isArray(response)) {
+    return response
   }
-  skills: string[]
-  prompts: LocalizedDemoText[]
-  paths: string[]
-  apis: DemoConnectionApi[]
-  environmentVariables: string[]
-  startupSnippet: string
-  issue?: LocalizedDemoText
+
+  return response.connections ?? response.data ?? []
 }
 
-export const demoConnectionNodes: DemoConnectionNode[] = [
+export const demoConnectionNodes: RemoteConnection[] = [
   {
-    id: "node-sim-224",
-    address: "10.227.5.224",
-    label: { en: "Simulation host sz01", zhCN: "仿真环境 sz01" },
-    group: { en: "Bioinformatics analysis", zhCN: "生信分析" },
+    id: "connection-sim-224",
+    name: "Simulation host sz01",
+    host: "10.227.5.224",
+    port: 22,
+    username: "bioflow",
+    auth_method: "key",
+    ssh_alias: "bioflow-sim-sz01",
+    key_path: "~/.ssh/bioflow_sim_ed25519",
     status: "online",
-    tags: ["Phoenix", "FASTQ", "Logs"],
-    ssh: {
-      port: 22,
-      username: "bioflow",
-      auth: "key",
-    },
-    skills: ["phoenix"],
-    prompts: [
-      {
-        en: "Phoenix outputs are usually under /mnt/nas/phoenix-output. Check logs/current_step.log first when a task fails.",
-        zhCN: "Phoenix 输出目录通常在 /mnt/nas/phoenix-output。任务失败时优先查看 logs/current_step.log。",
-      },
-    ],
-    paths: ["/mnt/nas/pipelines", "/mnt/nas/phoenix-output", "/mnt/nas/fastq"],
-    apis: [{ name: "Phoenix API", baseUrl: "http://10.227.5.224:8080" }],
-    environmentVariables: ["PHOENIX_HOME=/opt/phoenix", "BIOFLOW_DATA=/mnt/nas"],
-    startupSnippet: "source /etc/profile\nmodule load nextflow",
+    skill_instructions:
+      "Use this host for Phoenix simulation runs. Phoenix outputs usually live under /mnt/nas/phoenix-output, and failed tasks should be checked in logs/current_step.log before reruns. Load the Nextflow environment with the site profile before submitting long jobs.",
   },
   {
-    id: "node-test-231",
-    address: "10.227.5.231",
-    label: { en: "Test host sz03", zhCN: "测试环境 sz03" },
-    group: { en: "Bioinformatics analysis", zhCN: "生信分析" },
+    id: "connection-test-231",
+    name: "Test host sz03",
+    host: "10.227.5.231",
+    port: 22,
+    username: "bioflow",
+    auth_method: "certificate",
+    ssh_alias: "bioflow-test-sz03",
+    key_path: "~/.ssh/bioflow_test-cert.pub",
     status: "online",
-    tags: ["Phoenix", "Harbor", "Omics One"],
-    ssh: {
-      port: 22,
-      username: "bioflow",
-      auth: "certificate",
-    },
-    skills: ["phoenix", "harbor"],
-    prompts: [
-      {
-        en: "FASTQ inputs are mounted at /mnt/nas/fastq. Container images and run artifacts are grouped by project name.",
-        zhCN: "FASTQ 输入挂载在 /mnt/nas/fastq。镜像和运行结果按项目名归档。",
-      },
-    ],
-    paths: ["/mnt/nas/fastq", "/mnt/nas/results"],
-    apis: [{ name: "Harbor", baseUrl: "https://10.227.5.231:8443" }],
-    environmentVariables: ["BIOFLOW_DATA=/mnt/nas", "CONTAINER_REGISTRY=10.227.5.231:8443"],
-    startupSnippet: "source /etc/profile\nmodule load singularity",
+    skill_instructions:
+      "Use this host for FASTQ validation and container-backed test runs. Inputs are mounted at /mnt/nas/fastq, results are grouped by project under /mnt/nas/results, and the local registry endpoint is available from the host network.",
   },
   {
-    id: "node-uat-245",
-    address: "10.227.5.245",
-    label: { en: "Acceptance host sz02", zhCN: "验收环境 sz02" },
-    group: { en: "Acceptance", zhCN: "验收" },
+    id: "connection-uat-245",
+    name: "Acceptance host sz02",
+    host: "10.227.5.245",
+    port: 22,
+    username: "odp-user",
+    auth_method: "agent",
+    ssh_alias: "odp-uat-sz02",
+    key_path: "",
     status: "offline",
-    tags: ["ODP", "Results"],
-    ssh: {
-      port: 22,
-      username: "odp-user",
-      auth: "password",
-    },
-    skills: ["odp"],
-    prompts: [
-      {
-        en: "ODP outputs are staged under /mnt/nas/odp-output. Confirm the latest delivery folder before reading results.",
-        zhCN: "ODP 输出会暂存在 /mnt/nas/odp-output。读取结果前先确认最新交付目录。",
-      },
-    ],
-    paths: ["/mnt/nas/odp-output"],
-    apis: [],
-    environmentVariables: ["ODP_HOME=/opt/odp"],
-    startupSnippet: "source /etc/profile",
-    issue: {
-      en: "The last connection test failed.",
-      zhCN: "最近一次连接测试失败。",
-    },
+    status_message: "The last connection test failed.",
+    skill_instructions:
+      "Use this host for ODP acceptance checks after confirming availability. ODP outputs are staged under /mnt/nas/odp-output, and the latest delivery folder should be confirmed before reading results.",
   },
 ]
-
-export const demoConnectionTagStyles: Record<string, string> = {
-  Phoenix: "border-orange-400/25 bg-orange-500/10 text-orange-700 dark:text-orange-300",
-  ODP: "border-sky-400/25 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  Harbor: "border-blue-400/25 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-  "Omics One": "border-fuchsia-400/25 bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300",
-  FASTQ: "border-emerald-400/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  Logs: "border-amber-400/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  Results: "border-violet-400/25 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-  WDL: "border-purple-400/25 bg-purple-500/10 text-purple-700 dark:text-purple-300",
-  Nextflow: "border-teal-400/25 bg-teal-500/10 text-teal-700 dark:text-teal-300",
-  Slurm: "border-lime-400/25 bg-lime-500/10 text-lime-700 dark:text-lime-300",
-  GPU: "border-rose-400/25 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-  Test: "border-slate-400/25 bg-slate-500/10 text-slate-700 dark:text-slate-300",
-  UAT: "border-cyan-400/25 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
-}
-
-export const defaultDemoConnectionTags = [
-  "Phoenix",
-  "ODP",
-  "Harbor",
-  "Omics One",
-  "FASTQ",
-  "WDL",
-  "Nextflow",
-  "Slurm",
-  "GPU",
-  "Test",
-  "UAT",
-]
-
-export function getDemoConnectionText(text: LocalizedDemoText, locale: string) {
-  return locale.startsWith("zh") ? text.zhCN : text.en
-}
-
-export function createLocalizedDemoText(value: string): LocalizedDemoText {
-  return { en: value, zhCN: value }
-}
