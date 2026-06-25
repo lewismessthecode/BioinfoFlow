@@ -20,6 +20,7 @@ type CreateAgentRuntimeSessionInput = {
   permissionMode?: AgentPermissionMode
   mode?: AgentMode
   modelSelection?: AgentModelSelection | null
+  metadata?: Record<string, unknown> | null
 }
 
 export const listAgentRuntimeSessions = async (
@@ -48,6 +49,7 @@ export const createAgentRuntimeSession = async (
       automation_mode: "assisted",
       mode: input.mode,
       model_selection: input.modelSelection,
+      metadata: input.metadata,
     }),
   })
   return response.data
@@ -78,6 +80,17 @@ export const updateAgentRuntimeSessionPermissionMode = async (
   const response = await apiRequest<AgentRuntimeSession>(
     `/agent/sessions/${sessionId}`,
     { method: "PATCH", body: JSON.stringify({ permission_mode: permissionMode }) },
+  )
+  return response.data
+}
+
+export const updateAgentRuntimeSessionMetadata = async (
+  sessionId: string,
+  metadata: Record<string, unknown> | null,
+) => {
+  const response = await apiRequest<AgentRuntimeSession>(
+    `/agent/sessions/${sessionId}`,
+    { method: "PATCH", body: JSON.stringify({ metadata }) },
   )
   return response.data
 }

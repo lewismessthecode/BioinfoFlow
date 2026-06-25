@@ -31,6 +31,15 @@ vi.mock("next-intl", () => ({
       configure: "Configure providers",
       noProviders: "No model available",
       searchModels: "Search models...",
+      "connectedNode.placeholder": "Remote connection",
+      "connectedNode.menuTitle": "Remote connections",
+      "connectedNode.manage": "Manage connections",
+      "connectedNode.status.online": "Online",
+      "connectedNode.status.offline": "Offline",
+      "connectedNode.status.error": "Connection error",
+      "connectedNode.status.unknown": "Not tested",
+      "connectedNode.selectedAria": "Selected remote connection",
+      selectedAria: "Selected remote connection",
     }
     return labels[key] ?? key
   },
@@ -205,5 +214,28 @@ describe("AgentComposer", () => {
     const modeGroup = screen.getByRole("group", { name: "Agent mode" })
     expect(modeGroup).toHaveClass("hidden")
     expect(modeGroup).not.toHaveClass("sm:flex")
+  })
+
+  it("surfaces selected remote connection changes", async () => {
+    const onRemoteConnectionChange = vi.fn()
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        selectedRemoteConnectionId="connection-sim-224"
+        onRemoteConnectionChange={onRemoteConnectionChange}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Selected remote connection" }))
+    fireEvent.click(await screen.findByText("Test host sz03"))
+
+    expect(onRemoteConnectionChange).toHaveBeenCalledWith("connection-test-231")
   })
 })

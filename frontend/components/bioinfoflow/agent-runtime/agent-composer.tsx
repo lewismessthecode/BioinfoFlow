@@ -52,6 +52,8 @@ type AgentComposerProps = {
   onSelectModel: (selection: ModelSelection | null) => void
   contextAttachments?: AgentRuntimeFileRefPart[]
   onRemoveContextAttachment?: (path: string) => void
+  selectedRemoteConnectionId?: string
+  onRemoteConnectionChange?: (connectionId: string) => void
   compactControls?: boolean
   className?: string
 }
@@ -92,6 +94,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       onSelectModel,
       contextAttachments = [],
       onRemoveContextAttachment,
+      selectedRemoteConnectionId,
+      onRemoteConnectionChange,
       compactControls = false,
       className,
     },
@@ -195,7 +199,12 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             className="ml-auto flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2"
             data-testid="agent-composer-controls"
           >
-            <ConnectedNodeSelector disabled={disabled} compact={compactControls} />
+            <ConnectedNodeSelector
+              disabled={disabled}
+              compact={compactControls}
+              selectedConnectionId={selectedRemoteConnectionId}
+              onSelectedConnectionChange={onRemoteConnectionChange}
+            />
             {onPermissionModeChange ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

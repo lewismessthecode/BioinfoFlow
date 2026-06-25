@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   subscribeAgentRuntimeEvents: vi.fn(),
   getAgentRuntimeState: vi.fn(),
   listAgentRuntimeSessions: vi.fn(),
+  updateAgentRuntimeSessionMetadata: vi.fn(),
   updateAgentRuntimeSessionPermissionMode: vi.fn(),
 }))
 
@@ -32,6 +33,7 @@ vi.mock("@/lib/agent-runtime", async (importOriginal) => {
     interruptAgentRuntimeTurn: vi.fn(),
     listAgentRuntimeSessions: mocks.listAgentRuntimeSessions,
     subscribeAgentRuntimeEvents: mocks.subscribeAgentRuntimeEvents,
+    updateAgentRuntimeSessionMetadata: mocks.updateAgentRuntimeSessionMetadata,
     updateAgentRuntimeSessionPermissionMode: mocks.updateAgentRuntimeSessionPermissionMode,
   }
 })
@@ -95,6 +97,7 @@ describe("useAgentRuntime", () => {
       created_at: "2026-06-08T00:00:00Z",
       updated_at: "2026-06-08T00:00:00Z",
     })
+    mocks.updateAgentRuntimeSessionMetadata.mockResolvedValue(session)
     mocks.updateAgentRuntimeSessionPermissionMode.mockResolvedValue(session)
   })
 
@@ -186,6 +189,112 @@ describe("useAgentRuntime", () => {
           { kind: "file_ref", path: "/workspace/workflow.wdl", label: "workflow.wdl" },
         ],
       }),
+    )
+  })
+
+  it("stores the selected remote connection on newly created session metadata", async () => {
+    mocks.createAgentRuntimeSession.mockResolvedValue({
+      ...session,
+      metadata: { remote_connection_id: "connection-1" },
+    })
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await act(async () => {
+      await result.current.send("hello", {
+        remoteConnectionId: "connection-1",
+      })
+    })
+
+    expect(mocks.createAgentRuntimeSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: { remote_connection_id: "connection-1" },
+      }),
+    )
+  })
+
+  it("updates existing session metadata before sending with a new remote connection", async () => {
+    const updatedSession = {
+      ...session,
+      metadata: { remote_connection_id: "connection-2" },
+      updated_at: "2026-06-08T00:00:03Z",
+    }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([
+      { ...session, metadata: { remote_connection_id: "connection-1" } },
+    ])
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: { ...session, metadata: { remote_connection_id: "connection-1" } },
+      turns: [],
+      events: [],
+    })
+    mocks.updateAgentRuntimeSessionMetadata.mockResolvedValue(updatedSession)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+
+    await act(async () => {
+      await result.current.send("hello", {
+        remoteConnectionId: "connection-2",
+      })
+    })
+
+    expect(mocks.updateAgentRuntimeSessionMetadata).toHaveBeenCalledWith(
+      "session-1",
+      { remote_connection_id: "connection-2" },
+    )
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-1" }),
+    )
+  })
+
+  it("clears stale remote connection metadata before sending without a selection", async () => {
+    const updatedSession = {
+      ...session,
+      metadata: { batch: "b001" },
+      updated_at: "2026-06-08T00:00:03Z",
+    }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([
+      {
+        ...session,
+        metadata: { batch: "b001", remote_connection_id: "connection-1" },
+      },
+    ])
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: {
+        ...session,
+        metadata: { batch: "b001", remote_connection_id: "connection-1" },
+      },
+      turns: [],
+      events: [],
+    })
+    mocks.updateAgentRuntimeSessionMetadata.mockResolvedValue(updatedSession)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+
+    await act(async () => {
+      await result.current.send("hello", {
+        remoteConnectionId: null,
+      })
+    })
+
+    expect(mocks.updateAgentRuntimeSessionMetadata).toHaveBeenCalledWith(
+      "session-1",
+      { batch: "b001" },
     )
   })
 

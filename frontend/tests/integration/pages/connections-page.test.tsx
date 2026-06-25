@@ -1,7 +1,10 @@
-import { render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import ConnectionsPage from "@/app/(app)/connections/page"
+import { apiRequest } from "@/lib/api"
+import type { RemoteConnection } from "@/lib/demo-connections"
 import enMessages from "@/messages/en.json"
 
 function readMessage(namespace: string, key: string, params?: Record<string, string | number>) {
@@ -33,10 +36,37 @@ vi.mock("next-intl", () => ({
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
+    error: vi.fn(),
   },
 }))
 
+vi.mock("@/lib/api", () => ({
+  apiRequest: vi.fn(),
+  getApiErrorMessage: (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback,
+}))
+
+const apiRequestMock = vi.mocked(apiRequest)
+
+const liveConnection: RemoteConnection = {
+  id: "live-connection-1",
+  name: "Live HPC",
+  host: "login.live.example.org",
+  port: 2222,
+  username: "bioflow",
+  auth_method: "ssh_config",
+  ssh_alias: "live-hpc",
+  key_path: "",
+  status: "unknown",
+  skill_instructions: "Use /data/live for analysis outputs.",
+}
+
 describe("ConnectionsPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiRequestMock.mockRejectedValue(new Error("backend unavailable"))
+  })
+
   it("focuses the main flow on SSH config and Agent Skill instructions", () => {
     render(<ConnectionsPage />)
 
@@ -53,5 +83,69 @@ describe("ConnectionsPage", () => {
     expect(screen.queryByText("APIs and ports")).not.toBeInTheDocument()
     expect(screen.queryByText("Environment variables")).not.toBeInTheDocument()
     expect(screen.queryByText("Startup snippet")).not.toBeInTheDocument()
+  })
+
+  it("shows an empty state when the backend returns no live connections", async () => {
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+
+    render(<ConnectionsPage />)
+
+    expect(
+      await screen.findByText("No matching connections. Try another name, host, alias, or note."),
+    ).toBeInTheDocument()
+    expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
+  })
+
+  it("saves new connections through the backend", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+    apiRequestMock.mockResolvedValueOnce({ data: liveConnection })
+
+    render(<ConnectionsPage />)
+
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    await user.type(screen.getByLabelText("Connection name"), "Live HPC")
+    await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
+    await user.clear(screen.getByLabelText("Port"))
+    await user.type(screen.getByLabelText("Port"), "2222")
+    await user.type(screen.getByLabelText("Username"), "bioflow")
+    await user.type(
+      screen.getByLabelText("Agent Skill instructions"),
+      "Use /data/live for analysis outputs.",
+    )
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "Live HPC",
+          host: "login.live.example.org",
+          port: 2222,
+          username: "bioflow",
+          auth_method: "ssh_config",
+          ssh_alias: null,
+          key_path: null,
+          skill_instructions: "Use /data/live for analysis outputs.",
+        }),
+      }),
+    )
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+  })
+
+  it("keeps invalid ports on the client instead of silently replacing them", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+
+    render(<ConnectionsPage />)
+
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
+    await user.clear(screen.getByLabelText("Port"))
+    await user.type(screen.getByLabelText("Port"), "70000")
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+
+    expect(await screen.findByText("Port must be between 1 and 65535.")).toBeInTheDocument()
+    expect(apiRequestMock).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,4 +1,5 @@
 from app.services.agent_core.tools.remote.resources import (
+    DatabaseRemoteConnectionResolver,
     RemoteConnectionsListTool,
     RemoteConnectionResolver,
     RemoteExecTool,
@@ -11,6 +12,7 @@ from app.services.agent_core.tools.remote.resources import (
 __all__ = [
     "RemoteConnectionsListTool",
     "RemoteConnectionResolver",
+    "DatabaseRemoteConnectionResolver",
     "RemoteExecTool",
     "RemoteListDirTool",
     "RemoteReadFileTool",

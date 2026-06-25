@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { Check, ChevronDown, Server } from "lucide-react"
 import { useTranslations } from "next-intl"
@@ -17,6 +17,7 @@ import {
 import {
   demoConnectionNodes,
   fetchRemoteConnections,
+  type RemoteConnection,
   type RemoteConnectionStatus,
 } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
@@ -24,6 +25,8 @@ import { cn } from "@/lib/utils"
 type ConnectedNodeSelectorProps = {
   disabled?: boolean
   compact?: boolean
+  selectedConnectionId?: string
+  onSelectedConnectionChange?: (connectionId: string) => void
 }
 
 const statusDotClassNames: Record<RemoteConnectionStatus, string> = {
@@ -42,22 +45,53 @@ function StatusDot({ status }: { status: RemoteConnectionStatus }) {
   )
 }
 
-export function ConnectedNodeSelector({ disabled = false, compact = false }: ConnectedNodeSelectorProps) {
+export function ConnectedNodeSelector({
+  disabled = false,
+  compact = false,
+  selectedConnectionId,
+  onSelectedConnectionChange,
+}: ConnectedNodeSelectorProps) {
   const t = useTranslations("agentRuntime.connectedNode")
-  const [selectedConnectionId, setSelectedConnectionId] = useState(demoConnectionNodes[0]?.id ?? "")
-  const [connections, setConnections] = useState(demoConnectionNodes)
+  const [internalSelectedConnectionId, setInternalSelectedConnectionId] = useState(
+    demoConnectionNodes[0]?.id ?? "",
+  )
+  const [connections, setConnections] = useState<RemoteConnection[]>(demoConnectionNodes)
+  const requestedSelectedConnectionId = selectedConnectionId ?? internalSelectedConnectionId
+  const currentSelectedConnectionId = connections.some(
+    (connection) => connection.id === requestedSelectedConnectionId,
+  )
+    ? requestedSelectedConnectionId
+    : ""
+  const selectedConnectionIdRef = useRef(requestedSelectedConnectionId)
+  const onSelectedConnectionChangeRef = useRef(onSelectedConnectionChange)
+  const updateSelectedConnection = useCallback((connectionId: string) => {
+    setInternalSelectedConnectionId(connectionId)
+    onSelectedConnectionChange?.(connectionId)
+  }, [onSelectedConnectionChange])
+
+  useEffect(() => {
+    selectedConnectionIdRef.current = requestedSelectedConnectionId
+  }, [requestedSelectedConnectionId])
+
+  useEffect(() => {
+    onSelectedConnectionChangeRef.current = onSelectedConnectionChange
+  }, [onSelectedConnectionChange])
+
   useEffect(() => {
     let disposed = false
 
     fetchRemoteConnections()
       .then((remoteConnections) => {
-        if (disposed || remoteConnections.length === 0) return
+        if (disposed) return
         setConnections(remoteConnections)
-        setSelectedConnectionId((current) =>
-          remoteConnections.some((connection) => connection.id === current)
-            ? current
-            : remoteConnections[0]?.id ?? "",
-        )
+        const currentSelected = selectedConnectionIdRef.current
+        const nextSelected = remoteConnections.some((connection) => connection.id === currentSelected)
+          ? currentSelected
+          : remoteConnections[0]?.id ?? ""
+        setInternalSelectedConnectionId(nextSelected)
+        if (nextSelected !== currentSelected) {
+          onSelectedConnectionChangeRef.current?.(nextSelected)
+        }
       })
       .catch(() => {
         // Keep demo fallback data when the live backend is unavailable.
@@ -68,10 +102,20 @@ export function ConnectedNodeSelector({ disabled = false, compact = false }: Con
     }
   }, [])
   const selectedConnection = useMemo(
-    () => connections.find((connection) => connection.id === selectedConnectionId) ?? null,
-    [connections, selectedConnectionId],
+    () => connections.find((connection) => connection.id === currentSelectedConnectionId) ?? null,
+    [connections, currentSelectedConnectionId],
   )
   const selectedStatus = selectedConnection ? t(`status.${selectedConnection.status}`) : ""
+
+  useEffect(() => {
+    if (requestedSelectedConnectionId && !currentSelectedConnectionId) {
+      onSelectedConnectionChange?.("")
+    }
+  }, [
+    currentSelectedConnectionId,
+    onSelectedConnectionChange,
+    requestedSelectedConnectionId,
+  ])
 
   return (
     <DropdownMenu>
@@ -112,7 +156,7 @@ export function ConnectedNodeSelector({ disabled = false, compact = false }: Con
           {t("menuTitle")}
         </DropdownMenuLabel>
         {connections.map((connection) => {
-          const selected = connection.id === selectedConnectionId
+          const selected = connection.id === currentSelectedConnectionId
           const sshTarget = `${connection.username}@${connection.host}:${connection.port}`
           const summary = [sshTarget, connection.ssh_alias].filter(Boolean).join(" · ")
 
@@ -120,7 +164,7 @@ export function ConnectedNodeSelector({ disabled = false, compact = false }: Con
             <DropdownMenuItem
               key={connection.id}
               className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm"
-              onSelect={() => setSelectedConnectionId(connection.id)}
+              onSelect={() => updateSelectedConnection(connection.id)}
             >
               <StatusDot status={connection.status} />
               <span className="min-w-0 flex-1">

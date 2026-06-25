@@ -83,6 +83,8 @@ def error_response(
 def _scrub_trace_payload(value: Any, *, key: str | None = None) -> Any:
     if key and key.lower() in _SENSITIVE_TRACE_KEYS:
         return _REDACTED
+    if isinstance(value, BaseException):
+        return repr(value)
     if isinstance(value, str):
         return value
     if isinstance(value, dict):

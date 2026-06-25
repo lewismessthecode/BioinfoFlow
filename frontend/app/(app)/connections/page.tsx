@@ -29,6 +29,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import {
   demoConnectionNodes,
+  createRemoteConnection,
   fetchRemoteConnections,
   type RemoteConnection,
   type RemoteConnectionAuthMethod,
@@ -77,9 +78,9 @@ const statusBorderClassNames: Record<RemoteConnectionStatus, string> = {
 const authMethods: RemoteConnectionAuthMethod[] = ["ssh_config", "key_file", "agent"]
 const statusOptions: RemoteConnectionStatus[] = ["online", "offline", "error", "unknown"]
 
-function parsePort(value: string) {
+function parsePort(value: string): number | null {
   const port = Number.parseInt(value, 10)
-  return Number.isFinite(port) && port > 0 ? port : 22
+  return Number.isFinite(port) && port >= 1 && port <= 65535 ? port : null
 }
 
 function StatusDot({ status, className }: { status: RemoteConnectionStatus; className?: string }) {
@@ -99,13 +100,15 @@ export default function ConnectionsPage() {
   const [search, setSearch] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<ConnectionFormState>(initialForm)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     let disposed = false
 
     fetchRemoteConnections()
       .then((remoteConnections) => {
-        if (disposed || remoteConnections.length === 0) return
+        if (disposed) return
         setConnections(remoteConnections)
         setSelectedConnectionId((current) =>
           remoteConnections.some((connection) => connection.id === current)
@@ -140,30 +143,43 @@ export default function ConnectionsPage() {
   const selectedConnection =
     connections.find((connection) => connection.id === selectedConnectionId) ?? connections[0]
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const host = form.host.trim()
     const name = form.name.trim() || host
     if (!host || !name) return
-
-    const nextConnection: RemoteConnection = {
-      id: `connection-${Date.now()}`,
-      name,
-      host,
-      port: parsePort(form.port),
-      username: form.username.trim() || t("form.defaultUsername"),
-      auth_method: form.auth_method,
-      ssh_alias: form.ssh_alias.trim(),
-      key_path: form.key_path.trim(),
-      status: form.status,
-      skill_instructions: form.skill_instructions.trim(),
+    const port = parsePort(form.port)
+    if (port === null) {
+      setFormError(t("form.errors.invalidPort"))
+      return
     }
 
-    setConnections((current) => [nextConnection, ...current])
-    setSelectedConnectionId(nextConnection.id)
-    setDialogOpen(false)
-    setForm(initialForm)
-    toast.success(t("toasts.connectionAdded", { name }))
+    setIsSaving(true)
+    setFormError(null)
+    try {
+      const nextConnection = await createRemoteConnection({
+        name,
+        host,
+        port,
+        username: form.username.trim() || t("form.defaultUsername"),
+        auth_method: form.auth_method,
+        ssh_alias: form.ssh_alias.trim() || null,
+        key_path: form.key_path.trim() || null,
+        skill_instructions: form.skill_instructions.trim() || null,
+      })
+
+      setConnections((current) => [nextConnection, ...current])
+      setSelectedConnectionId(nextConnection.id)
+      setDialogOpen(false)
+      setForm(initialForm)
+      toast.success(t("toasts.connectionAdded", { name }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("form.errors.saveFailed")
+      setFormError(message)
+      toast.error(message)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -213,14 +229,14 @@ export default function ConnectionsPage() {
                       </div>
                     </div>
                     <div className="grid gap-2">
-                      <Label>{t("fields.status")}</Label>
+                      <Label htmlFor="connection-status">{t("fields.status")}</Label>
                       <Select
                         value={form.status}
                         onValueChange={(value) =>
                           setForm((current) => ({ ...current, status: value as RemoteConnectionStatus }))
                         }
                       >
-                        <SelectTrigger className="w-full">
+                        <SelectTrigger id="connection-status" className="w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -259,7 +275,7 @@ export default function ConnectionsPage() {
                         />
                       </div>
                       <div className="grid gap-2">
-                        <Label>{t("fields.auth")}</Label>
+                        <Label htmlFor="connection-auth">{t("fields.auth")}</Label>
                         <Select
                           value={form.auth_method}
                           onValueChange={(value) =>
@@ -269,7 +285,7 @@ export default function ConnectionsPage() {
                             }))
                           }
                         >
-                          <SelectTrigger className="w-full">
+                          <SelectTrigger id="connection-auth" className="w-full">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -318,11 +334,23 @@ export default function ConnectionsPage() {
                   </section>
                 </div>
 
+                {formError ? (
+                  <div className="mx-6 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {formError}
+                  </div>
+                ) : null}
                 <DialogFooter className="border-t border-border/70 px-6 py-4">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDialogOpen(false)}
+                    disabled={isSaving}
+                  >
                     {tCommon("cancel")}
                   </Button>
-                  <Button type="submit">{t("dialog.add")}</Button>
+                  <Button type="submit" disabled={isSaving}>
+                    {isSaving ? t("dialog.saving") : t("dialog.add")}
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -342,6 +370,7 @@ export default function ConnectionsPage() {
               <div className="relative mt-3">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
+                  aria-label={t("searchPlaceholder")}
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder={t("searchPlaceholder")}

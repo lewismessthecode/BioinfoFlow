@@ -63,6 +63,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const [input, setInput] = useState("")
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
+    const [selectedRemoteConnectionId, setSelectedRemoteConnectionId] = useState("")
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [optimisticTurn, setOptimisticTurn] = useState<AgentRuntimeTurn | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
@@ -215,7 +216,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         projectId,
       })
       setOptimisticTurn(nextOptimisticTurn)
-      void send(text, { modelSelection: selectedModel, inputParts }).then(() => {
+      void send(text, {
+        modelSelection: selectedModel,
+        inputParts,
+        remoteConnectionId: selectedRemoteConnectionId || null,
+      }).then(() => {
         setOptimisticTurn((current) =>
           current?.id === nextOptimisticTurn.id ? null : current,
         )
@@ -312,6 +317,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onSelectModel={(model) => void setSelectedModel(model)}
         contextAttachments={contextAttachments}
         onRemoveContextAttachment={removeContextAttachment}
+        selectedRemoteConnectionId={selectedRemoteConnectionId}
+        onRemoteConnectionChange={setSelectedRemoteConnectionId}
         compactControls={sidecarVisible}
       />
     )

@@ -1996,12 +1996,17 @@
     "dialog": {
       "title": "Add SSH connection",
       "description": "Save connection metadata only. Passwords and private key contents stay outside Bioinfoflow.",
-      "add": "Add connection"
+      "add": "Add connection",
+      "saving": "Saving..."
     },
     "form": {
       "defaultUsername": "user",
       "secretsNote": "Store only SSH aliases and file paths. Do not paste passwords or private key contents.",
       "skillGuidance": "Put paths, APIs, environment notes, and startup commands in the skill text.",
+      "errors": {
+        "invalidPort": "Port must be between 1 and 65535.",
+        "saveFailed": "Failed to save connection."
+      },
       "placeholders": {
         "name": "Simulation host sz01",
         "host": "10.227.5.224 or login.example.internal",
