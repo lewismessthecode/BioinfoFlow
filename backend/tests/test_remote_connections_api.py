@@ -290,6 +290,27 @@ async def test_remote_connection_test_uses_mockable_tester_and_persists_status(
     assert persisted["last_error"] is None
     assert persisted["last_checked_at"] == test_data["checked_at"]
 
+    skill_resp = await async_client.patch(
+        f"/api/v1/connections/{connection_id}",
+        json={"skill_instructions": "Use /data/project for runs."},
+    )
+    assert skill_resp.status_code == 200
+    skill_updated = skill_resp.json()["data"]
+    assert skill_updated["last_status"] == "online"
+    assert skill_updated["last_error"] is None
+    assert skill_updated["last_checked_at"] == test_data["checked_at"]
+
+    target_resp = await async_client.patch(
+        f"/api/v1/connections/{connection_id}",
+        json={"host": "login-2.example.org"},
+    )
+    assert target_resp.status_code == 200
+    target_updated = target_resp.json()["data"]
+    assert target_updated["host"] == "login-2.example.org"
+    assert target_updated["last_status"] == "unknown"
+    assert target_updated["last_error"] is None
+    assert target_updated["last_checked_at"] is None
+
 
 @pytest.mark.asyncio
 async def test_remote_connection_test_uses_ssh_executor_by_default(
