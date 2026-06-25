@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -67,6 +67,14 @@ class RemoteCommandResult:
         }
 
 
+@dataclass(frozen=True)
+class RemoteOutputFrame:
+    type: str
+    data: str | None = None
+    exit_code: int | None = None
+    timed_out: bool = False
+
+
 class RemoteExecutor(Protocol):
     async def run(
         self,
@@ -77,6 +85,15 @@ class RemoteExecutor(Protocol):
         output_limit: int,
     ) -> RemoteCommandResult:
         """Run a bounded command on a remote connection."""
+
+    def stream(
+        self,
+        connection: RemoteConnectionConfig,
+        command: str,
+        *,
+        timeout_seconds: int,
+    ) -> AsyncIterator[RemoteOutputFrame]:
+        """Stream stdout/stderr frames from a remote command."""
 
 
 class SshRemoteExecutor:
@@ -164,6 +181,68 @@ class SshRemoteExecutor:
             stderr_truncated=stderr_truncated,
         )
 
+    async def stream(
+        self,
+        connection: RemoteConnectionConfig,
+        command: str,
+        *,
+        timeout_seconds: int,
+    ) -> AsyncIterator[RemoteOutputFrame]:
+        if timeout_seconds < 1:
+            raise BadRequestError("timeout_seconds must be >= 1")
+        argv = self.build_argv(
+            connection,
+            command,
+            connect_timeout_seconds=timeout_seconds,
+        )
+        process = await self.process_factory(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        queue: asyncio.Queue[RemoteOutputFrame] = asyncio.Queue()
+        stdout_task = asyncio.create_task(
+            _pump_stream(process.stdout, "stdout", queue)
+        )
+        stderr_task = asyncio.create_task(
+            _pump_stream(process.stderr, "stderr", queue)
+        )
+        wait_task = asyncio.create_task(process.wait())
+        timed_out = False
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+
+        try:
+            while True:
+                if not wait_task.done() and asyncio.get_running_loop().time() >= deadline:
+                    timed_out = True
+                    with contextlib.suppress(ProcessLookupError):
+                        process.kill()
+                    await wait_task
+                if (
+                    wait_task.done()
+                    and stdout_task.done()
+                    and stderr_task.done()
+                    and queue.empty()
+                ):
+                    break
+                try:
+                    frame = await asyncio.wait_for(queue.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    continue
+                yield frame
+        finally:
+            for task in (stdout_task, stderr_task):
+                if not task.done():
+                    task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+        yield RemoteOutputFrame(
+            type="exit",
+            exit_code=int(process.returncode if process.returncode is not None else -1),
+            timed_out=timed_out,
+        )
+
 
 async def _read_limited(stream: Any, output_limit: int) -> tuple[str, bool]:
     if stream is None:
@@ -184,6 +263,25 @@ async def _read_limited(stream: Any, output_limit: int) -> tuple[str, bool]:
         else:
             truncated = True
     return b"".join(chunks).decode("utf-8", errors="replace"), truncated
+
+
+async def _pump_stream(
+    stream: Any,
+    stream_type: str,
+    queue: asyncio.Queue[RemoteOutputFrame],
+) -> None:
+    if stream is None:
+        return
+    while True:
+        chunk = await stream.read(4096)
+        if not chunk:
+            return
+        await queue.put(
+            RemoteOutputFrame(
+                type=stream_type,
+                data=chunk.decode("utf-8", errors="replace"),
+            )
+        )
 
 
 def _format_target(host: str, username: str | None) -> str:

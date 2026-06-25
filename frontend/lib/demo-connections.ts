@@ -1,8 +1,8 @@
 import { apiRequest } from "@/lib/api"
 
-export type RemoteConnectionStatus = "online" | "offline" | "partial" | "unknown"
+export type RemoteConnectionStatus = "online" | "offline" | "error" | "unknown"
 
-export type RemoteConnectionAuthMethod = "password" | "key" | "certificate" | "agent"
+export type RemoteConnectionAuthMethod = "ssh_config" | "key_file" | "agent"
 
 export type RemoteConnection = {
   id: string
@@ -14,8 +14,10 @@ export type RemoteConnection = {
   ssh_alias: string
   key_path: string
   status: RemoteConnectionStatus
+  last_status?: RemoteConnectionStatus
   skill_instructions: string
   status_message?: string
+  last_error?: string | null
   last_checked_at?: string
 }
 
@@ -26,16 +28,29 @@ type RemoteConnectionListResponse =
       data?: RemoteConnection[]
     }
 
-export const remoteConnectionsApiPath = "/remote/connections"
+export const remoteConnectionsApiPath = "/connections"
 
 export async function fetchRemoteConnections(): Promise<RemoteConnection[]> {
   const response = await apiRequest<RemoteConnectionListResponse>(remoteConnectionsApiPath)
+  const payload = response.data
 
-  if (Array.isArray(response)) {
-    return response
+  if (Array.isArray(payload)) {
+    return payload.map(normalizeRemoteConnection)
   }
 
-  return response.connections ?? response.data ?? []
+  return (payload.connections ?? payload.data ?? []).map(normalizeRemoteConnection)
+}
+
+function normalizeRemoteConnection(connection: RemoteConnection): RemoteConnection {
+  const status = connection.status ?? connection.last_status ?? "unknown"
+  return {
+    ...connection,
+    status,
+    ssh_alias: connection.ssh_alias ?? "",
+    key_path: connection.key_path ?? "",
+    skill_instructions: connection.skill_instructions ?? "",
+    status_message: connection.status_message ?? connection.last_error ?? undefined,
+  }
 }
 
 export const demoConnectionNodes: RemoteConnection[] = [
@@ -45,7 +60,7 @@ export const demoConnectionNodes: RemoteConnection[] = [
     host: "10.227.5.224",
     port: 22,
     username: "bioflow",
-    auth_method: "key",
+    auth_method: "key_file",
     ssh_alias: "bioflow-sim-sz01",
     key_path: "~/.ssh/bioflow_sim_ed25519",
     status: "online",
@@ -58,7 +73,7 @@ export const demoConnectionNodes: RemoteConnection[] = [
     host: "10.227.5.231",
     port: 22,
     username: "bioflow",
-    auth_method: "certificate",
+    auth_method: "ssh_config",
     ssh_alias: "bioflow-test-sz03",
     key_path: "~/.ssh/bioflow_test-cert.pub",
     status: "online",

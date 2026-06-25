@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import shlex
+import uuid
 from collections.abc import Callable
 from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentSessionRepository
+from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
+from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.remote_execution import (
     RemoteCommandResult,
     RemoteConnectionConfig,
@@ -70,14 +73,7 @@ class StaticRemoteConnectionResolver:
         raise NotFoundError("Remote connection not found")
 
 
-class SessionMetadataRemoteConnectionResolver:
-    """Temporary resolver until the canonical remote connection service lands.
-
-    Integration point for Agent A: replace this resolver factory with the
-    workspace connection repository/service, preserving the public tool input
-    and output shape.
-    """
-
+class DatabaseRemoteConnectionResolver:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
@@ -88,14 +84,21 @@ class SessionMetadataRemoteConnectionResolver:
         user_id: str,
         session_id: str | None = None,
     ) -> list[RemoteConnectionConfig]:
-        if not session_id:
-            return []
-        session = await AgentSessionRepository(self.db).get(session_id)
-        if session is None:
-            return []
-        if str(session.workspace_id) != workspace_id or str(session.user_id) != user_id:
-            return []
-        return _connections_from_session_policy(session)
+        connections, _pagination = await RemoteConnectionRepository(self.db).list_for_workspace(
+            workspace_id=workspace_id,
+            limit=100,
+        )
+        session_connections = await _session_metadata_connections(
+            self.db,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            session_id=session_id,
+        )
+        seen = {str(connection.id) for connection in connections}
+        return [
+            *(remote_connection_config_from_model(connection) for connection in connections),
+            *(connection for connection in session_connections if connection.id not in seen),
+        ]
 
     async def get(
         self,
@@ -105,6 +108,12 @@ class SessionMetadataRemoteConnectionResolver:
         user_id: str,
         session_id: str | None = None,
     ) -> RemoteConnectionConfig:
+        connection = await RemoteConnectionRepository(self.db).get_for_workspace(
+            connection_id,
+            workspace_id=workspace_id,
+        )
+        if connection is not None:
+            return remote_connection_config_from_model(connection)
         for connection in await self.list(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -113,6 +122,9 @@ class SessionMetadataRemoteConnectionResolver:
             if connection.id == connection_id:
                 return connection
         raise NotFoundError("Remote connection not found")
+
+
+SessionMetadataRemoteConnectionResolver = DatabaseRemoteConnectionResolver
 
 
 class RemoteConnectionsListTool:
@@ -370,6 +382,27 @@ async def _resolve_connection(
         user_id=context.user_id,
         session_id=context.session_id,
     )
+
+
+async def _session_metadata_connections(
+    db: AsyncSession,
+    *,
+    workspace_id: str,
+    user_id: str,
+    session_id: str | None,
+) -> list[RemoteConnectionConfig]:
+    if not session_id:
+        return []
+    try:
+        uuid.UUID(str(session_id))
+    except (TypeError, ValueError):
+        return []
+    session = await AgentSessionRepository(db).get(session_id)
+    if session is None:
+        return []
+    if str(session.workspace_id) != workspace_id or str(session.user_id) != user_id:
+        return []
+    return _connections_from_session_policy(session)
 
 
 def _connections_from_session_policy(agent_session) -> list[RemoteConnectionConfig]:

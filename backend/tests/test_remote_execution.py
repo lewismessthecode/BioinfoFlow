@@ -138,3 +138,55 @@ async def test_ssh_executor_returns_timeout_result_and_kills_process():
     assert result.timed_out is True
     assert result.stdout == "partial"
     assert result.stderr == ""
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_streams_stdout_stderr_and_exit_frames():
+    async def process_factory(*_argv, **_kwargs):
+        return _FakeProcess(
+            stdout=[b"hello\n", b"world\n"],
+            stderr=[b"warn\n"],
+            returncode=7,
+        )
+
+    executor = SshRemoteExecutor(process_factory=process_factory)
+
+    frames = [
+        frame
+        async for frame in executor.stream(
+            RemoteConnectionConfig(id="conn-1", name="Cluster", host="cluster"),
+            "tail -f run.log",
+            timeout_seconds=5,
+        )
+    ]
+
+    assert [frame.type for frame in frames] == ["stdout", "stderr", "stdout", "exit"]
+    assert frames[0].data == "hello\n"
+    assert frames[1].data == "warn\n"
+    assert frames[2].data == "world\n"
+    assert frames[3].exit_code == 7
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_stream_timeout_kills_quiet_process():
+    process = _FakeProcess(returncode=None, wait_forever=True)
+
+    async def process_factory(*_argv, **_kwargs):
+        return process
+
+    executor = SshRemoteExecutor(process_factory=process_factory)
+
+    frames = [
+        frame
+        async for frame in executor.stream(
+            RemoteConnectionConfig(id="conn-1", name="Cluster", host="cluster"),
+            "sleep 60",
+            timeout_seconds=1,
+        )
+    ]
+
+    assert process.killed is True
+    assert len(frames) == 1
+    assert frames[0].type == "exit"
+    assert frames[0].exit_code == -9
+    assert frames[0].timed_out is True
