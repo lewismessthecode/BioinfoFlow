@@ -10,6 +10,7 @@ from app.repositories.image_repo import ImageRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.run_repo import RunRepository
 from app.repositories.workflow_repo import WorkflowRepository
+from app.services.agent_core.context.remote import render_remote_connection_context
 from app.services.agent_core.context.system_prompt import resolve_system_prompt_prefix
 from app.services.agent_core.plugins import AgentPluginRegistry
 from app.services.agent_core.sandbox import FilesystemPolicy
@@ -117,6 +118,11 @@ class AgentContextAssembler:
                 "- PLAN MODE: read and search tools only. Investigate, then call "
                 "exit_plan_mode with a concrete plan to request approval to act."
             )
+
+        remote_context = await render_remote_connection_context(self.db, agent_session)
+        if remote_context:
+            lines.append("")
+            lines.append(remote_context)
 
         inventory = await self._platform_inventory(agent_session)
         if inventory:

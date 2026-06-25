@@ -51,6 +51,12 @@ from app.services.agent_core.tools.platform import (
     WorkflowSourceTool,
 )
 from app.services.agent_core.tools.registry import AgentToolRegistry
+from app.services.agent_core.tools.remote import (
+    RemoteConnectionsListTool,
+    RemoteExecTool,
+    RemoteListDirTool,
+    RemoteReadFileTool,
+)
 from app.services.agent_core.tools.skills import (
     ListPluginsTool,
     ListSkillsTool,
@@ -84,6 +90,10 @@ def build_default_tool_registry() -> AgentToolRegistry:
     registry.register(ListSkillsTool())
     registry.register(LoadSkillTool())
     registry.register(ListPluginsTool())
+    registry.register(RemoteConnectionsListTool())
+    registry.register(RemoteExecTool())
+    registry.register(RemoteReadFileTool())
+    registry.register(RemoteListDirTool())
 
     # ── interaction + task-management tools ────────────────────────────────
     registry.register(TodoWriteTool())
