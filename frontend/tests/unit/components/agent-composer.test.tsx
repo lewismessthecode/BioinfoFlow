@@ -1,7 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent-runtime/agent-composer"
+import { apiRequest } from "@/lib/api"
+
+vi.mock("@/lib/api", () => ({
+  apiRequest: vi.fn(),
+}))
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
@@ -51,7 +56,41 @@ vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
   ),
 }))
 
+const apiRequestMock = vi.mocked(apiRequest)
+
+const composerConnections = [
+  {
+    id: "connection-sim-224",
+    name: "Simulation host sz01",
+    host: "10.227.5.224",
+    port: 22,
+    username: "bioflow",
+    auth_method: "key_file",
+    ssh_alias: "",
+    key_path: "~/.ssh/bioflow_sim_ed25519",
+    status: "online",
+    skill_instructions: "Use /data/sim.",
+  },
+  {
+    id: "connection-test-231",
+    name: "Test host sz03",
+    host: "10.227.5.231",
+    port: 22,
+    username: "bioflow",
+    auth_method: "ssh_config",
+    ssh_alias: "bioflow-test-sz03",
+    key_path: "",
+    status: "online",
+    skill_instructions: "Use /data/test.",
+  },
+]
+
 describe("AgentComposer", () => {
+  beforeEach(() => {
+    apiRequestMock.mockReset()
+    apiRequestMock.mockReturnValue(new Promise(() => {}))
+  })
+
   it("grows with input until the max height cap", () => {
     const onChange = vi.fn()
     render(
@@ -218,6 +257,8 @@ describe("AgentComposer", () => {
 
   it("surfaces selected remote connection changes", async () => {
     const onRemoteConnectionChange = vi.fn()
+    apiRequestMock.mockResolvedValueOnce({ data: composerConnections })
+
     render(
       <AgentComposer
         value=""
@@ -233,7 +274,7 @@ describe("AgentComposer", () => {
       />,
     )
 
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Selected remote connection" }))
+    fireEvent.pointerDown(await screen.findByRole("button", { name: "Selected remote connection" }))
     fireEvent.click(await screen.findByText("Test host sz03"))
 
     expect(onRemoteConnectionChange).toHaveBeenCalledWith("connection-test-231")
