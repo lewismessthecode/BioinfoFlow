@@ -16,9 +16,11 @@ from app.services.agent_core.tools.remote import (
 )
 from app.services.agent_core.tools.specs import AgentToolContext
 from app.services.agent_core.tools.toolsets import ToolsetExposure
+from app.config import settings
+from app.models.workspace import WorkspaceMembership
 from app.services.remote_execution import RemoteCommandResult, RemoteConnectionConfig
 from app.services.remote_connection_service import RemoteConnectionService
-from app.utils.exceptions import NotFoundError
+from app.utils.exceptions import NotFoundError, PermissionDeniedError
 
 
 def _tool_context(db_session, *, session_id: str | None = "session-1") -> AgentToolContext:
@@ -41,9 +43,16 @@ def _tool_context_without_session(db_session) -> AgentToolContext:
     )
 
 
-async def _create_agent_session(db_session, *, remote_connection_id: str | None):
+async def _create_agent_session(
+    db_session,
+    *,
+    remote_connection_id: str | None = None,
+    session_metadata: dict | None = None,
+):
     from app.models.agent_core import AgentSession, AgentSessionStatus
 
+    if session_metadata is None and remote_connection_id:
+        session_metadata = {"remote_connection_id": remote_connection_id}
     session = AgentSession(
         workspace_id="workspace-1",
         user_id="user-1",
@@ -52,11 +61,7 @@ async def _create_agent_session(db_session, *, remote_connection_id: str | None)
         automation_mode="assisted",
         runtime_mode="api",
         status=AgentSessionStatus.ACTIVE,
-        session_metadata=(
-            {"remote_connection_id": remote_connection_id}
-            if remote_connection_id
-            else None
-        ),
+        session_metadata=session_metadata,
     )
     db_session.add(session)
     await db_session.commit()
@@ -247,6 +252,119 @@ async def test_remote_tools_only_resolve_selected_workspace_connection(db_sessio
             user_id="user-1",
             session_id=str(agent_session.id),
         )
+
+
+@pytest.mark.asyncio
+async def test_remote_tools_ignore_inline_session_metadata_connection(db_session):
+    agent_session = await _create_agent_session(
+        db_session,
+        session_metadata={
+            "remote_connection_id": "evil",
+            "remote_connection": {
+                "id": "evil",
+                "name": "Injected target",
+                "host": "evil.example.org",
+                "username": "mallory",
+                "key_path": "/tmp/mallory",
+            },
+        },
+    )
+    resolver = DatabaseRemoteConnectionResolver(db_session)
+
+    assert await resolver.list(
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+    ) == []
+    with pytest.raises(NotFoundError):
+        await resolver.get(
+            "evil",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "payload"),
+    [
+        (RemoteExecTool, {"connection_id": "conn-1", "command": "hostname"}),
+        (RemoteReadFileTool, {"connection_id": "conn-1", "path": "/etc/hosts"}),
+        (RemoteListDirTool, {"connection_id": "conn-1", "path": "/scratch"}),
+    ],
+)
+async def test_remote_operations_require_admin_role_in_team_mode(
+    db_session,
+    monkeypatch,
+    tool,
+    payload,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            role="member",
+        )
+    )
+    await db_session.commit()
+
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="ok",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    instance = tool(
+        resolver_factory=_resolver_factory([_connection()]),
+        executor=executor,
+    )
+
+    with pytest.raises(PermissionDeniedError):
+        await instance.run(payload, _tool_context(db_session))
+    assert executor.calls == []
+
+
+@pytest.mark.asyncio
+async def test_remote_exec_allows_admin_role_in_team_mode(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            role="admin",
+        )
+    )
+    await db_session.commit()
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="ok",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    tool = RemoteExecTool(
+        resolver_factory=_resolver_factory([_connection()]),
+        executor=executor,
+    )
+
+    result = await tool.run(
+        {"connection_id": "conn-1", "command": "hostname"},
+        _tool_context(db_session),
+    )
+
+    assert executor.calls[0]["command"] == "hostname"
+    assert result["result"]["exit_code"] == 0
 
 
 @pytest.mark.asyncio

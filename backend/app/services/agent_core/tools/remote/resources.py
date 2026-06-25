@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentSessionRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
+from app.services.authorization_service import AuthorizationService
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.remote_execution import (
@@ -102,16 +103,6 @@ class DatabaseRemoteConnectionResolver:
             )
             if connection is not None:
                 connections.append(remote_connection_config_from_model(connection))
-                continue
-            metadata_connection = await _session_metadata_connection(
-                self.db,
-                connection_id=connection_id,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                session_id=session_id,
-            )
-            if metadata_connection is not None:
-                connections.append(metadata_connection)
         return connections
 
     async def get(
@@ -231,6 +222,7 @@ class RemoteExecTool:
         self.executor = executor or SshRemoteExecutor()
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        await _require_remote_operation_access(context)
         connection = await _resolve_connection(input, context, self.resolver_factory)
         command = _required_string(input, "command")
         result = await self.executor.run(
@@ -292,6 +284,7 @@ class RemoteReadFileTool:
         self.executor = executor or SshRemoteExecutor()
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        await _require_remote_operation_access(context)
         connection = await _resolve_connection(input, context, self.resolver_factory)
         path = _required_string(input, "path")
         max_bytes = int(input.get("max_bytes") or 16000)
@@ -361,6 +354,7 @@ class RemoteListDirTool:
         self.executor = executor or SshRemoteExecutor()
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        await _require_remote_operation_access(context)
         connection = await _resolve_connection(input, context, self.resolver_factory)
         path = _required_string(input, "path")
         limit = int(input.get("limit") or 50)
@@ -394,44 +388,11 @@ async def _resolve_connection(
     )
 
 
-async def _session_metadata_connections(
-    db: AsyncSession,
-    *,
-    workspace_id: str,
-    user_id: str,
-    session_id: str | None,
-) -> list[RemoteConnectionConfig]:
-    if not session_id:
-        return []
-    try:
-        uuid.UUID(str(session_id))
-    except (TypeError, ValueError):
-        return []
-    session = await AgentSessionRepository(db).get(session_id)
-    if session is None:
-        return []
-    if str(session.workspace_id) != workspace_id or str(session.user_id) != user_id:
-        return []
-    return _connections_from_session_policy(session)
-
-
-async def _session_metadata_connection(
-    db: AsyncSession,
-    *,
-    connection_id: str,
-    workspace_id: str,
-    user_id: str,
-    session_id: str | None,
-) -> RemoteConnectionConfig | None:
-    for connection in await _session_metadata_connections(
-        db,
-        workspace_id=workspace_id,
-        user_id=user_id,
-        session_id=session_id,
-    ):
-        if connection.id == connection_id:
-            return connection
-    return None
+async def _require_remote_operation_access(context: AgentToolContext) -> None:
+    await AuthorizationService(context.db).require_destructive_business_access(
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+    )
 
 
 async def _selected_remote_connection_ids(
@@ -461,38 +422,13 @@ async def _selected_remote_connection_ids(
         getattr(session, "toolset_policy", None),
     ):
         for connection_id in _selected_ids_from_policy(policy):
+            if not _is_uuid_string(connection_id):
+                continue
             if connection_id in seen:
                 continue
             seen.add(connection_id)
             selected.append(connection_id)
     return selected
-
-
-def _connections_from_session_policy(agent_session) -> list[RemoteConnectionConfig]:
-    raw_connections: list[Any] = []
-    for policy in (
-        getattr(agent_session, "session_metadata", None),
-        getattr(agent_session, "context_policy", None),
-        getattr(agent_session, "toolset_policy", None),
-    ):
-        if not isinstance(policy, dict):
-            continue
-        collection = policy.get("remote_connections")
-        if isinstance(collection, list):
-            raw_connections.extend(collection)
-        single = policy.get("remote_connection")
-        if isinstance(single, dict):
-            raw_connections.append(single)
-
-    connections: list[RemoteConnectionConfig] = []
-    seen: set[str] = set()
-    for raw in raw_connections:
-        connection = _coerce_connection(raw)
-        if connection is None or connection.id in seen:
-            continue
-        seen.add(connection.id)
-        connections.append(connection)
-    return connections
 
 
 def _selected_ids_from_policy(policy: Any) -> list[str]:
@@ -516,32 +452,12 @@ def _selected_ids_from_policy(policy: Any) -> list[str]:
     return ids
 
 
-def _coerce_connection(raw: Any) -> RemoteConnectionConfig | None:
-    if not isinstance(raw, dict):
-        return None
-    connection_id = raw.get("id") or raw.get("connection_id")
-    host = raw.get("host") or raw.get("hostname") or raw.get("ssh_host")
-    if not connection_id or not host:
-        return None
-    port = raw.get("port")
+def _is_uuid_string(value: str) -> bool:
     try:
-        normalized_port = int(port) if port is not None else None
+        uuid.UUID(value)
     except (TypeError, ValueError):
-        normalized_port = None
-    return RemoteConnectionConfig(
-        id=str(connection_id),
-        name=str(raw.get("name") or connection_id),
-        host=str(host),
-        username=_optional_string(raw.get("username") or raw.get("user")),
-        port=normalized_port,
-        ssh_alias=_optional_string(raw.get("ssh_alias") or raw.get("alias")),
-        key_path=_optional_string(raw.get("key_path") or raw.get("identity_file")),
-        ssh_config_path=_optional_string(raw.get("ssh_config_path") or raw.get("config_path")),
-        status=str(raw.get("status") or "unknown"),
-        skill_summary=_optional_string(
-            raw.get("skill_summary") or raw.get("skillSummary") or raw.get("instructions")
-        ),
-    )
+        return False
+    return True
 
 
 def _connection_matches(connection: RemoteConnectionConfig, search: str) -> bool:
@@ -565,13 +481,6 @@ def _required_string(input: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise BadRequestError(f"{key} must be a non-empty string")
     return value
-
-
-def _optional_string(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value)
-    return text if text else None
 
 
 def _read_file_command(path: str, max_bytes: int) -> str:
