@@ -189,7 +189,7 @@ export async function runRemoteConnectionCommand(
 }
 
 function normalizeRemoteConnection(connection: RemoteConnection): RemoteConnection {
-  const status = connection.status ?? connection.last_status ?? "unknown"
+  const status = connection.last_status ?? connection.status ?? "unknown"
   return {
     ...connection,
     status,

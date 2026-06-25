@@ -1990,15 +1990,55 @@
       "key_file": "Key file",
       "agent": "SSH agent"
     },
+    "authHelp": {
+      "ssh_config": "Use a Host entry from the backend machine's ~/.ssh/config.",
+      "key_file": "Use host, user, port, and a private key path available to the backend.",
+      "agent": "Use keys already loaded in the backend user's ssh-agent."
+    },
     "empty": {
       "notSet": "Not set",
       "skillInstructions": "No skill instructions yet"
     },
+    "actions": {
+      "testConnection": "Test connection",
+      "testing": "Testing...",
+      "editConnection": "Edit connection",
+      "runProbe": "Run probe",
+      "runningProbe": "Running...",
+      "insertPreset": "Insert preset skill"
+    },
     "dialog": {
       "title": "Add SSH connection",
+      "editTitle": "Edit SSH connection",
       "description": "Save connection metadata only. Passwords and private key contents stay outside Bioinfoflow.",
       "add": "Add connection",
+      "save": "Save changes",
       "saving": "Saving..."
+    },
+    "skillDrop": {
+      "title": "Drop a skill text file here",
+      "hint": "Plain text and Markdown notes are appended to the Agent Skill."
+    },
+    "skillPresets": {
+      "nextflowHpc": {
+        "name": "Nextflow HPC",
+        "text": "Load the site environment before diagnostics.\nRun module load nextflow when modules are available.\nCheck workflow outputs, .nextflow.log, and work/ task folders before reruns."
+      },
+      "slurmDiagnostics": {
+        "name": "Slurm diagnostics",
+        "text": "Use squeue, sacct, sinfo, and tail recent scheduler logs for diagnostics.\nAvoid cancelling jobs unless the user explicitly asks."
+      },
+      "readonlyInspection": {
+        "name": "Read-only inspection",
+        "text": "Prefer remote.list_dir and remote.read_file for inspection.\nOnly run short diagnostic commands and keep outputs bounded."
+      }
+    },
+    "probe": {
+      "title": "Remote probe",
+      "description": "Streams one short SSH command through Bioinfoflow.",
+      "placeholder": "Run a probe to verify streamed remote output.",
+      "emptyOutput": "Command completed with no output.",
+      "failed": "Remote probe failed."
     },
     "form": {
       "defaultUsername": "user",
@@ -2008,6 +2048,7 @@
         "invalidPort": "Port must be between 1 and 65535.",
         "sshAliasRequired": "SSH alias is required for SSH config auth.",
         "keyPathRequired": "Private key path is required for key file auth.",
+        "skillFileFailed": "Failed to import the skill file.",
         "saveFailed": "Failed to save connection."
       },
       "placeholders": {
@@ -2020,7 +2061,11 @@
       }
     },
     "toasts": {
-      "connectionAdded": "Connection {name} added"
+      "connectionAdded": "Connection {name} added",
+      "connectionUpdated": "Connection {name} updated",
+      "testSucceeded": "{name} is reachable",
+      "testFailed": "{name} test failed",
+      "skillImported": "Skill text imported"
     }
   },
   "settings": {

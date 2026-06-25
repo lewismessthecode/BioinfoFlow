@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import ConnectionsPage from "@/app/(app)/connections/page"
-import { apiRequest } from "@/lib/api"
+import { apiRequest, buildWebSocketUrl } from "@/lib/api"
 import type { RemoteConnection } from "@/lib/demo-connections"
 import enMessages from "@/messages/en.json"
 
@@ -42,11 +42,13 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/lib/api", () => ({
   apiRequest: vi.fn(),
+  buildWebSocketUrl: vi.fn(),
   getApiErrorMessage: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }))
 
 const apiRequestMock = vi.mocked(apiRequest)
+const buildWebSocketUrlMock = vi.mocked(buildWebSocketUrl)
 
 const liveConnection: RemoteConnection = {
   id: "live-connection-1",
@@ -65,6 +67,7 @@ describe("ConnectionsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiRequestMock.mockRejectedValue(new Error("backend unavailable"))
+    buildWebSocketUrlMock.mockImplementation((path: string) => `ws://example.test${path}`)
   })
 
   it("focuses the main flow on SSH config and Agent Skill instructions", async () => {
@@ -168,5 +171,161 @@ describe("ConnectionsPage", () => {
     expect(error).toHaveTextContent("SSH alias is required for SSH config auth.")
     expect(screen.getByLabelText("SSH alias")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("tests the selected SSH connection and refreshes the visible status", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        status: "online",
+        error: null,
+        checked_at: "2026-06-25T10:11:12Z",
+        connection: {
+          ...liveConnection,
+          last_status: "online",
+          last_error: null,
+          last_checked_at: "2026-06-25T10:11:12Z",
+        },
+      },
+    })
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Test connection" }))
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-1/test", {
+        method: "POST",
+      }),
+    )
+    expect(await screen.findAllByText("Online")).not.toHaveLength(0)
+  })
+
+  it("opens an existing connection for editing and saves the patch", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        ...liveConnection,
+        name: "Live HPC Login",
+        host: "login2.live.example.org",
+        last_status: "unknown",
+      },
+    })
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Edit connection" }))
+    expect(screen.getByRole("heading", { name: "Edit SSH connection" })).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText("Connection name"))
+    await user.type(screen.getByLabelText("Connection name"), "Live HPC Login")
+    await user.clear(screen.getByLabelText("Host or IP"))
+    await user.type(screen.getByLabelText("Host or IP"), "login2.live.example.org")
+    await user.click(screen.getByRole("button", { name: "Save changes" }))
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-1", {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: "Live HPC Login",
+          host: "login2.live.example.org",
+          port: 2222,
+          username: "bioflow",
+          auth_method: "ssh_config",
+          ssh_alias: "live-hpc",
+          key_path: null,
+          skill_instructions: "Use /data/live for analysis outputs.",
+        }),
+      }),
+    )
+    expect(await screen.findByRole("heading", { name: "Live HPC Login" })).toBeInTheDocument()
+  })
+
+  it("requires a private key path for key file connections", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+
+    render(<ConnectionsPage />)
+
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
+    await user.click(screen.getByRole("button", { name: /Key file/ }))
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+
+    expect(await screen.findByText("Private key path is required for key file auth.")).toBeInTheDocument()
+    expect(screen.getByLabelText("Private key path")).toHaveAttribute("aria-invalid", "true")
+    expect(apiRequestMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("adds preset and dropped Agent Skill instructions", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+
+    render(<ConnectionsPage />)
+
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    await user.click(screen.getByRole("button", { name: "Insert preset skill" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Nextflow HPC" }))
+    expect(screen.getByLabelText("Agent Skill instructions")).toHaveValue(
+      "Load the site environment before diagnostics.\nRun module load nextflow when modules are available.\nCheck workflow outputs, .nextflow.log, and work/ task folders before reruns.",
+    )
+
+    const file = new File(["Outputs live under /scratch/project/results."], "skill.txt", {
+      type: "text/plain",
+    })
+    Object.defineProperty(file, "text", {
+      value: vi.fn().mockResolvedValue("Outputs live under /scratch/project/results."),
+    })
+    fireEvent.drop(screen.getByText("Drop a skill text file here"), {
+      dataTransfer: { files: [file] },
+    })
+
+    expect(await screen.findByDisplayValue(/scratch\/project\/results/)).toBeInTheDocument()
+  })
+
+  it("streams a remote probe command back into the detail panel", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    class MockWebSocket {
+      static OPEN = 1
+      readyState = MockWebSocket.OPEN
+      onopen: (() => void) | null = null
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onclose: (() => void) | null = null
+      onerror: (() => void) | null = null
+
+      constructor(readonly url: string) {
+        queueMicrotask(() => this.onopen?.())
+        queueMicrotask(() =>
+          this.onmessage?.({ data: JSON.stringify({ type: "stdout", data: "bioinfoflow-ok\n" }) } as MessageEvent),
+        )
+        queueMicrotask(() =>
+          this.onmessage?.({ data: JSON.stringify({ type: "exit", exit_code: 0 }) } as MessageEvent),
+        )
+      }
+
+      send() {}
+      close() {
+        this.onclose?.()
+      }
+    }
+
+    vi.stubGlobal("WebSocket", MockWebSocket)
+    try {
+      render(<ConnectionsPage />)
+
+      expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Run probe" }))
+
+      expect(await screen.findByText("bioinfoflow-ok")).toBeInTheDocument()
+      expect(buildWebSocketUrlMock).toHaveBeenCalledWith("/connections/live-connection-1/exec/ws")
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

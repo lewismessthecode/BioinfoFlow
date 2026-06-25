@@ -1990,15 +1990,55 @@
       "key_file": "密钥文件",
       "agent": "SSH agent"
     },
+    "authHelp": {
+      "ssh_config": "使用后端机器 ~/.ssh/config 里的 Host 条目。",
+      "key_file": "使用后端可访问的主机、账号、端口和私钥路径。",
+      "agent": "使用后端用户 ssh-agent 里已经加载的密钥。"
+    },
     "empty": {
       "notSet": "未设置",
       "skillInstructions": "暂未填写 skill 说明"
     },
+    "actions": {
+      "testConnection": "测试连接",
+      "testing": "测试中...",
+      "editConnection": "编辑连接",
+      "runProbe": "运行探针",
+      "runningProbe": "运行中...",
+      "insertPreset": "插入预置 skill"
+    },
     "dialog": {
       "title": "添加 SSH 连接",
+      "editTitle": "编辑 SSH 连接",
       "description": "只保存连接元数据。密码和私钥内容不要放进 Bioinfoflow。",
       "add": "添加连接",
+      "save": "保存修改",
       "saving": "保存中..."
+    },
+    "skillDrop": {
+      "title": "把 skill 文本文件拖到这里",
+      "hint": "纯文本或 Markdown 备注会追加到 Agent Skill。"
+    },
+    "skillPresets": {
+      "nextflowHpc": {
+        "name": "Nextflow HPC",
+        "text": "诊断前先加载站点环境。\n如果有 module 系统，先运行 module load nextflow。\n重跑前先检查 workflow 输出、.nextflow.log 和 work/ task 目录。"
+      },
+      "slurmDiagnostics": {
+        "name": "Slurm 诊断",
+        "text": "诊断时使用 squeue、sacct、sinfo，并查看最近的调度日志。\n除非用户明确要求，不要取消任务。"
+      },
+      "readonlyInspection": {
+        "name": "只读查看",
+        "text": "查看时优先使用 remote.list_dir 和 remote.read_file。\n只运行短诊断命令，并限制输出大小。"
+      }
+    },
+    "probe": {
+      "title": "远程探针",
+      "description": "通过 Bioinfoflow 流式执行一条短 SSH 命令。",
+      "placeholder": "运行探针，验证远程输出能实时返回。",
+      "emptyOutput": "命令已完成，没有输出。",
+      "failed": "远程探针失败。"
     },
     "form": {
       "defaultUsername": "user",
@@ -2008,6 +2048,7 @@
         "invalidPort": "端口必须在 1 到 65535 之间。",
         "sshAliasRequired": "使用 SSH 配置认证时必须填写 SSH 别名。",
         "keyPathRequired": "使用密钥文件认证时必须填写私钥路径。",
+        "skillFileFailed": "导入 skill 文件失败。",
         "saveFailed": "保存连接失败。"
       },
       "placeholders": {
@@ -2020,7 +2061,11 @@
       }
     },
     "toasts": {
-      "connectionAdded": "已添加连接 {name}"
+      "connectionAdded": "已添加连接 {name}",
+      "connectionUpdated": "已更新连接 {name}",
+      "testSucceeded": "{name} 可连接",
+      "testFailed": "{name} 测试失败",
+      "skillImported": "已导入 skill 文本"
     }
   },
   "settings": {
