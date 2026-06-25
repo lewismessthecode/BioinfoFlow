@@ -1,7 +1,27 @@
 "use client"
 
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react"
-import { BookOpenText, KeyRound, Plus, Search, Server } from "lucide-react"
+import {
+  type DragEvent,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react"
+import {
+  BookOpenText,
+  CheckCircle2,
+  FileText,
+  KeyRound,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Server,
+  TerminalSquare,
+  Upload,
+} from "lucide-react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
@@ -15,24 +35,26 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  demoConnectionNodes,
   createRemoteConnection,
+  demoConnectionNodes,
   fetchRemoteConnections,
+  runRemoteConnectionCommand,
+  testRemoteConnection,
+  updateRemoteConnection,
   type RemoteConnection,
   type RemoteConnectionAuthMethod,
+  type RemoteConnectionCreateInput,
   type RemoteConnectionStatus,
 } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
@@ -48,6 +70,7 @@ type ConnectionFormState = {
   skill_instructions: string
 }
 
+type DialogMode = "create" | "edit"
 type FormErrorField = "port" | "ssh_alias" | "key_path" | null
 
 const initialForm: ConnectionFormState = {
@@ -60,6 +83,9 @@ const initialForm: ConnectionFormState = {
   key_path: "",
   skill_instructions: "",
 }
+
+const authMethods: RemoteConnectionAuthMethod[] = ["ssh_config", "key_file", "agent"]
+const skillPresetKeys = ["nextflowHpc", "slurmDiagnostics", "readonlyInspection"] as const
 
 const statusDotClassNames: Record<RemoteConnectionStatus, string> = {
   online: "bg-emerald-500 shadow-emerald-500/40",
@@ -75,11 +101,22 @@ const statusBorderClassNames: Record<RemoteConnectionStatus, string> = {
   unknown: "border-slate-500/25 bg-slate-500/10 text-slate-700 dark:text-slate-300",
 }
 
-const authMethods: RemoteConnectionAuthMethod[] = ["ssh_config", "key_file", "agent"]
-
 function parsePort(value: string): number | null {
   const port = Number.parseInt(value, 10)
   return Number.isFinite(port) && port >= 1 && port <= 65535 ? port : null
+}
+
+function formFromConnection(connection: RemoteConnection): ConnectionFormState {
+  return {
+    name: connection.name,
+    host: connection.host,
+    port: String(connection.port),
+    username: connection.username,
+    auth_method: connection.auth_method,
+    ssh_alias: connection.ssh_alias,
+    key_path: connection.key_path,
+    skill_instructions: connection.skill_instructions,
+  }
 }
 
 function StatusDot({ status, className }: { status: RemoteConnectionStatus; className?: string }) {
@@ -98,11 +135,17 @@ export default function ConnectionsPage() {
   const [selectedConnectionId, setSelectedConnectionId] = useState("")
   const [search, setSearch] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogMode, setDialogMode] = useState<DialogMode>("create")
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null)
   const [form, setForm] = useState<ConnectionFormState>(initialForm)
   const [formError, setFormError] = useState<string | null>(null)
   const [formErrorField, setFormErrorField] = useState<FormErrorField>(null)
+  const [skillDragActive, setSkillDragActive] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoadingConnections, setIsLoadingConnections] = useState(true)
+  const [testingConnectionId, setTestingConnectionId] = useState<string | null>(null)
+  const [probeConnectionId, setProbeConnectionId] = useState<string | null>(null)
+  const [probeOutput, setProbeOutput] = useState("")
 
   useEffect(() => {
     let disposed = false
@@ -149,50 +192,106 @@ export default function ConnectionsPage() {
   const selectedConnection =
     connections.find((connection) => connection.id === selectedConnectionId) ?? connections[0]
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const resetFormState = () => {
+    setForm(initialForm)
+    setFormError(null)
+    setFormErrorField(null)
+    setEditingConnectionId(null)
+    setDialogMode("create")
+    setSkillDragActive(false)
+  }
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open)
+    if (!open) resetFormState()
+  }
+
+  const openCreateDialog = () => {
+    resetFormState()
+    setDialogMode("create")
+    setDialogOpen(true)
+  }
+
+  const openEditDialog = (connection: RemoteConnection) => {
+    setForm(formFromConnection(connection))
+    setFormError(null)
+    setFormErrorField(null)
+    setDialogMode("edit")
+    setEditingConnectionId(connection.id)
+    setDialogOpen(true)
+  }
+
+  const buildPayload = (): RemoteConnectionCreateInput | null => {
     const host = form.host.trim()
     const name = form.name.trim() || host
-    if (!host || !name) return
+    if (!host || !name) return null
+
     const port = parsePort(form.port)
     if (port === null) {
       setFormError(t("form.errors.invalidPort"))
       setFormErrorField("port")
-      return
+      return null
     }
+
     const sshAlias = form.ssh_alias.trim()
     const keyPath = form.key_path.trim()
     if (form.auth_method === "ssh_config" && !sshAlias) {
       setFormError(t("form.errors.sshAliasRequired"))
       setFormErrorField("ssh_alias")
-      return
+      return null
     }
     if (form.auth_method === "key_file" && !keyPath) {
       setFormError(t("form.errors.keyPathRequired"))
       setFormErrorField("key_path")
-      return
+      return null
     }
 
-    setIsSaving(true)
     setFormError(null)
     setFormErrorField(null)
-    try {
-      const nextConnection = await createRemoteConnection({
-        name,
-        host,
-        port,
-        username: form.username.trim() || t("form.defaultUsername"),
-        auth_method: form.auth_method,
-        ssh_alias: sshAlias || null,
-        key_path: form.auth_method === "key_file" ? keyPath : null,
-        skill_instructions: form.skill_instructions.trim() || null,
-      })
+    return {
+      name,
+      host,
+      port,
+      username: form.username.trim() || t("form.defaultUsername"),
+      auth_method: form.auth_method,
+      ssh_alias: sshAlias || null,
+      key_path: form.auth_method === "key_file" ? keyPath : null,
+      skill_instructions: form.skill_instructions.trim() || null,
+    }
+  }
 
-      setConnections((current) => [nextConnection, ...current])
-      setSelectedConnectionId(nextConnection.id)
+  const upsertConnection = (nextConnection: RemoteConnection) => {
+    setConnections((current) => {
+      if (current.some((connection) => connection.id === nextConnection.id)) {
+        return current.map((connection) =>
+          connection.id === nextConnection.id ? nextConnection : connection,
+        )
+      }
+      return [nextConnection, ...current]
+    })
+    setSelectedConnectionId(nextConnection.id)
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const payload = buildPayload()
+    if (!payload) return
+
+    setIsSaving(true)
+    try {
+      const nextConnection =
+        dialogMode === "edit" && editingConnectionId
+          ? await updateRemoteConnection(editingConnectionId, payload)
+          : await createRemoteConnection(payload)
+
+      upsertConnection(nextConnection)
       setDialogOpen(false)
-      setForm(initialForm)
-      toast.success(t("toasts.connectionAdded", { name }))
+      resetFormState()
+      toast.success(
+        dialogMode === "edit"
+          ? t("toasts.connectionUpdated", { name: nextConnection.name })
+          : t("toasts.connectionAdded", { name: nextConnection.name }),
+      )
     } catch (error) {
       const message = error instanceof Error ? error.message : t("form.errors.saveFailed")
       setFormError(message)
@@ -200,6 +299,74 @@ export default function ConnectionsPage() {
       toast.error(message)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleTestConnection = async (connection: RemoteConnection) => {
+    setTestingConnectionId(connection.id)
+    try {
+      const result = await testRemoteConnection(connection.id)
+      upsertConnection(result.connection)
+      if (result.status === "online") {
+        toast.success(t("toasts.testSucceeded", { name: result.connection.name }))
+      } else {
+        toast.error(result.error || t("toasts.testFailed", { name: result.connection.name }))
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("toasts.testFailed", { name: connection.name })
+      toast.error(message)
+    } finally {
+      setTestingConnectionId(null)
+    }
+  }
+
+  const handleRunProbe = async (connection: RemoteConnection) => {
+    setProbeConnectionId(connection.id)
+    setProbeOutput("")
+    try {
+      const result = await runRemoteConnectionCommand(connection.id, {
+        command: "printf bioinfoflow-ok",
+        timeout_seconds: 10,
+        onFrame: (frame) => {
+          if ((frame.type === "stdout" || frame.type === "stderr" || frame.type === "truncated") && frame.data) {
+            setProbeOutput((current) => `${current}${frame.data}`)
+          }
+          if (frame.type === "error" && frame.message) {
+            setProbeOutput((current) => `${current}${frame.message}\n`)
+          }
+        },
+      })
+      setProbeOutput((current) => current || result.output || t("probe.emptyOutput"))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("probe.failed")
+      setProbeOutput(message)
+      toast.error(message)
+    } finally {
+      setProbeConnectionId(null)
+    }
+  }
+
+  const appendSkillText = (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    setForm((current) => ({
+      ...current,
+      skill_instructions: current.skill_instructions.trim()
+        ? `${current.skill_instructions.trim()}\n\n${trimmed}`
+        : trimmed,
+    }))
+  }
+
+  const handleSkillDrop = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setSkillDragActive(false)
+    const file = event.dataTransfer.files?.[0]
+    if (!file) return
+    try {
+      appendSkillText(await file.text())
+      toast.success(t("toasts.skillImported"))
+    } catch {
+      toast.error(t("form.errors.skillFileFailed"))
     }
   }
 
@@ -211,164 +378,190 @@ export default function ConnectionsPage() {
             <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
             <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">{t("subtitle")}</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="w-fit rounded-full px-4">
-                <Plus className="h-4 w-4" />
-                {t("addNode")}
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[min(88vh,760px)] overflow-y-auto rounded-3xl border-border/70 bg-card p-0 text-card-foreground shadow-2xl shadow-foreground/20 sm:max-w-2xl">
-              <form onSubmit={handleSubmit} noValidate>
-                <DialogHeader className="border-b border-border/70 px-6 py-5">
-                  <DialogTitle>{t("dialog.title")}</DialogTitle>
-                  <DialogDescription>{t("dialog.description")}</DialogDescription>
-                </DialogHeader>
-
-                <div className="grid gap-6 px-6 py-5">
-                  <section className="grid gap-4">
-                    <FormSectionTitle title={t("sections.connection")} icon={<Server className="h-4 w-4" />} />
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="grid gap-2">
-                        <Label htmlFor="connection-name">{t("fields.name")}</Label>
-                        <Input
-                          id="connection-name"
-                          value={form.name}
-                          onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                          placeholder={t("form.placeholders.name")}
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="connection-host">{t("fields.host")}</Label>
-                        <Input
-                          id="connection-host"
-                          value={form.host}
-                          onChange={(event) => setForm((current) => ({ ...current, host: event.target.value }))}
-                          placeholder={t("form.placeholders.host")}
-                          required
-                        />
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="grid gap-4">
-                    <FormSectionTitle title={t("sections.ssh")} icon={<KeyRound className="h-4 w-4" />} />
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <div className="grid gap-2">
-                        <Label htmlFor="connection-port">{t("fields.port")}</Label>
-                        <Input
-                          id="connection-port"
-                          value={form.port}
-                          inputMode="numeric"
-                          onChange={(event) => setForm((current) => ({ ...current, port: event.target.value }))}
-                          aria-invalid={formErrorField === "port"}
-                          aria-describedby={formErrorField === "port" ? "connection-form-error" : undefined}
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="connection-username">{t("fields.username")}</Label>
-                        <Input
-                          id="connection-username"
-                          value={form.username}
-                          onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
-                          placeholder={t("form.placeholders.username")}
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="connection-auth">{t("fields.auth")}</Label>
-                        <Select
-                          value={form.auth_method}
-                          onValueChange={(value) =>
-                            setForm((current) => ({
-                              ...current,
-                              auth_method: value as RemoteConnectionAuthMethod,
-                              key_path: value === "key_file" ? current.key_path : "",
-                            }))
-                          }
-                        >
-                          <SelectTrigger id="connection-auth" className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {authMethods.map((method) => (
-                              <SelectItem key={method} value={method}>
-                                {t(`auth.${method}`)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="grid gap-2">
-                        <Label htmlFor="connection-ssh-alias">{t("fields.sshAlias")}</Label>
-                        <Input
-                          id="connection-ssh-alias"
-                          value={form.ssh_alias}
-                          onChange={(event) => setForm((current) => ({ ...current, ssh_alias: event.target.value }))}
-                          placeholder={t("form.placeholders.sshAlias")}
-                          required={form.auth_method === "ssh_config"}
-                          aria-invalid={formErrorField === "ssh_alias"}
-                          aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="connection-key-path">{t("fields.keyPath")}</Label>
-                        <Input
-                          id="connection-key-path"
-                          value={form.key_path}
-                          onChange={(event) => setForm((current) => ({ ...current, key_path: event.target.value }))}
-                          placeholder={t("form.placeholders.keyPath")}
-                          required={form.auth_method === "key_file"}
-                          disabled={form.auth_method !== "key_file"}
-                          aria-invalid={formErrorField === "key_path"}
-                          aria-describedby={formErrorField === "key_path" ? "connection-form-error" : undefined}
-                        />
-                      </div>
-                    </div>
-                    <p className="text-xs leading-5 text-muted-foreground">{t("form.secretsNote")}</p>
-                  </section>
-
-                  <section className="grid gap-3">
-                    <FormSectionTitle title={t("sections.agentSkill")} icon={<BookOpenText className="h-4 w-4" />} />
-                    <p className="text-sm leading-6 text-muted-foreground">{t("form.skillGuidance")}</p>
-                    <TextFieldArea
-                      id="connection-skill-instructions"
-                      label={t("fields.skillInstructions")}
-                      value={form.skill_instructions}
-                      onChange={(value) => setForm((current) => ({ ...current, skill_instructions: value }))}
-                      placeholder={t("form.placeholders.skillInstructions")}
-                    />
-                  </section>
-                </div>
-
-                {formError ? (
-                  <div
-                    id="connection-form-error"
-                    role="alert"
-                    aria-live="polite"
-                    className="mx-6 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                  >
-                    {formError}
-                  </div>
-                ) : null}
-                <DialogFooter className="border-t border-border/70 px-6 py-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setDialogOpen(false)}
-                    disabled={isSaving}
-                  >
-                    {tCommon("cancel")}
-                  </Button>
-                  <Button type="submit" disabled={isSaving}>
-                    {isSaving ? t("dialog.saving") : t("dialog.add")}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button className="w-fit rounded-full px-4" onClick={openCreateDialog}>
+            <Plus className="h-4 w-4" />
+            {t("addNode")}
+          </Button>
         </div>
+
+        <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
+          <DialogContent className="max-h-[min(92vh,780px)] overflow-hidden rounded-2xl border-border/70 bg-card p-0 text-card-foreground shadow-2xl shadow-foreground/20 sm:max-w-3xl">
+            <form onSubmit={handleSubmit} noValidate className="flex max-h-[min(92vh,780px)] flex-col">
+              <DialogHeader className="border-b border-border/70 px-5 py-4">
+                <DialogTitle>
+                  {dialogMode === "edit" ? t("dialog.editTitle") : t("dialog.title")}
+                </DialogTitle>
+                <DialogDescription>{t("dialog.description")}</DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-4 overflow-y-auto px-5 py-4">
+                <section className="grid gap-3">
+                  <FormSectionTitle title={t("sections.connection")} icon={<Server className="h-4 w-4" />} />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label={t("fields.name")} htmlFor="connection-name">
+                      <Input
+                        id="connection-name"
+                        value={form.name}
+                        onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                        placeholder={t("form.placeholders.name")}
+                      />
+                    </Field>
+                    <Field label={t("fields.host")} htmlFor="connection-host">
+                      <Input
+                        id="connection-host"
+                        value={form.host}
+                        onChange={(event) => setForm((current) => ({ ...current, host: event.target.value }))}
+                        placeholder={t("form.placeholders.host")}
+                        required
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-[minmax(90px,0.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                    <Field label={t("fields.port")} htmlFor="connection-port">
+                      <Input
+                        id="connection-port"
+                        value={form.port}
+                        inputMode="numeric"
+                        onChange={(event) => setForm((current) => ({ ...current, port: event.target.value }))}
+                        aria-invalid={formErrorField === "port"}
+                        aria-describedby={formErrorField === "port" ? "connection-form-error" : undefined}
+                      />
+                    </Field>
+                    <Field label={t("fields.username")} htmlFor="connection-username">
+                      <Input
+                        id="connection-username"
+                        value={form.username}
+                        onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
+                        placeholder={t("form.placeholders.username")}
+                      />
+                    </Field>
+                    <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
+                      <Input
+                        id="connection-ssh-alias"
+                        value={form.ssh_alias}
+                        onChange={(event) => setForm((current) => ({ ...current, ssh_alias: event.target.value }))}
+                        placeholder={t("form.placeholders.sshAlias")}
+                        required={form.auth_method === "ssh_config"}
+                        aria-invalid={formErrorField === "ssh_alias"}
+                        aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
+                      />
+                    </Field>
+                  </div>
+                </section>
+
+                <section className="grid gap-3">
+                  <FormSectionTitle title={t("sections.ssh")} icon={<KeyRound className="h-4 w-4" />} />
+                  <div aria-label={t("fields.auth")} className="grid gap-2 sm:grid-cols-3">
+                    {authMethods.map((method) => (
+                      <AuthMethodButton
+                        key={method}
+                        method={method}
+                        selected={form.auth_method === method}
+                        title={t(`auth.${method}`)}
+                        description={t(`authHelp.${method}`)}
+                        onSelect={() =>
+                          setForm((current) => ({
+                            ...current,
+                            auth_method: method,
+                            key_path: method === "key_file" ? current.key_path : "",
+                          }))
+                        }
+                      />
+                    ))}
+                  </div>
+                  <Field label={t("fields.keyPath")} htmlFor="connection-key-path">
+                    <Input
+                      id="connection-key-path"
+                      value={form.key_path}
+                      onChange={(event) => setForm((current) => ({ ...current, key_path: event.target.value }))}
+                      placeholder={t("form.placeholders.keyPath")}
+                      required={form.auth_method === "key_file"}
+                      disabled={form.auth_method !== "key_file"}
+                      aria-invalid={formErrorField === "key_path"}
+                      aria-describedby={formErrorField === "key_path" ? "connection-form-error" : undefined}
+                    />
+                  </Field>
+                  <p className="text-xs leading-5 text-muted-foreground">{t("form.secretsNote")}</p>
+                </section>
+
+                <section className="grid gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <FormSectionTitle title={t("sections.agentSkill")} icon={<BookOpenText className="h-4 w-4" />} />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" size="sm" className="h-8">
+                          <FileText className="h-4 w-4" />
+                          {t("actions.insertPreset")}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        {skillPresetKeys.map((key) => (
+                          <DropdownMenuItem
+                            key={key}
+                            onSelect={() => appendSkillText(t(`skillPresets.${key}.text`))}
+                          >
+                            {t(`skillPresets.${key}.name`)}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <TextFieldArea
+                    id="connection-skill-instructions"
+                    label={t("fields.skillInstructions")}
+                    value={form.skill_instructions}
+                    onChange={(value) => setForm((current) => ({ ...current, skill_instructions: value }))}
+                    placeholder={t("form.placeholders.skillInstructions")}
+                  />
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onDragEnter={(event) => {
+                      event.preventDefault()
+                      setSkillDragActive(true)
+                    }}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDragLeave={() => setSkillDragActive(false)}
+                    onDrop={handleSkillDrop}
+                    className={cn(
+                      "flex items-center gap-3 rounded-xl border border-dashed px-3 py-2 text-sm text-muted-foreground transition",
+                      skillDragActive ? "border-primary/60 bg-primary/10 text-foreground" : "border-border bg-muted/20",
+                    )}
+                  >
+                    <Upload className="h-4 w-4" />
+                    <div>
+                      <p className="font-medium text-foreground">{t("skillDrop.title")}</p>
+                      <p className="text-xs">{t("skillDrop.hint")}</p>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              {formError ? (
+                <div
+                  id="connection-form-error"
+                  role="alert"
+                  aria-live="polite"
+                  className="mx-5 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                >
+                  {formError}
+                </div>
+              ) : null}
+              <DialogFooter className="border-t border-border/70 px-5 py-4">
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
+                  {tCommon("cancel")}
+                </Button>
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving
+                    ? t("dialog.saving")
+                    : dialogMode === "edit"
+                      ? t("dialog.save")
+                      : t("dialog.add")}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(280px,34%)_minmax(0,1fr)]">
           <Card className="overflow-hidden border-border/70 bg-card py-0 shadow-sm shadow-foreground/5">
@@ -480,7 +673,43 @@ export default function ConnectionsPage() {
                           </p>
                         </div>
                       </div>
-                      <span className="text-xs font-medium text-muted-foreground">{t("detail.currentContext")}</span>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleTestConnection(selectedConnection)}
+                          disabled={testingConnectionId === selectedConnection.id}
+                        >
+                          <RefreshCw
+                            className={cn(
+                              "h-4 w-4",
+                              testingConnectionId === selectedConnection.id && "animate-spin",
+                            )}
+                          />
+                          {testingConnectionId === selectedConnection.id
+                            ? t("actions.testing")
+                            : t("actions.testConnection")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditDialog(selectedConnection)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          {t("actions.editConnection")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => handleRunProbe(selectedConnection)}
+                          disabled={probeConnectionId === selectedConnection.id}
+                        >
+                          <Play className="h-4 w-4" />
+                          {probeConnectionId === selectedConnection.id ? t("actions.runningProbe") : t("actions.runProbe")}
+                        </Button>
+                      </div>
                     </div>
                   </div>
 
@@ -527,6 +756,16 @@ export default function ConnectionsPage() {
                         empty={t("empty.skillInstructions")}
                       />
                     </DetailSection>
+
+                    <DetailSection title={t("probe.title")}>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <TerminalSquare className="h-4 w-4" />
+                        <span>{t("probe.description")}</span>
+                      </div>
+                      <pre className="min-h-12 rounded-xl bg-background/80 p-3 font-mono text-xs leading-5 text-foreground">
+                        {probeOutput || t("probe.placeholder")}
+                      </pre>
+                    </DetailSection>
                   </div>
                 </CardContent>
               </Card>
@@ -534,6 +773,23 @@ export default function ConnectionsPage() {
           ) : null}
         </div>
       </div>
+    </div>
+  )
+}
+
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string
+  htmlFor: string
+  children: ReactNode
+}) {
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
     </div>
   )
 }
@@ -546,6 +802,39 @@ function FormSectionTitle({ title, icon }: { title: string; icon: ReactNode }) {
       </span>
       {title}
     </div>
+  )
+}
+
+function AuthMethodButton({
+  method,
+  selected,
+  title,
+  description,
+  onSelect,
+}: {
+  method: RemoteConnectionAuthMethod
+  selected: boolean
+  title: string
+  description: string
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onSelect}
+      className={cn(
+        "min-h-20 rounded-xl border p-3 text-left transition hover:border-primary/40 hover:bg-muted/35",
+        selected ? "border-primary/45 bg-primary/10 shadow-sm shadow-primary/10" : "border-border/70 bg-background/70",
+      )}
+    >
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-foreground">{title}</span>
+        {selected ? <CheckCircle2 className="h-4 w-4 text-primary" /> : null}
+      </span>
+      <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
+      <span className="sr-only">{method}</span>
+    </button>
   )
 }
 
@@ -563,14 +852,14 @@ function TextFieldArea({
   placeholder: string
 }) {
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>
       <Textarea
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="min-h-36 resize-none"
+        className="min-h-24 resize-none"
       />
     </div>
   )
@@ -578,7 +867,7 @@ function TextFieldArea({
 
 function DetailSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="grid gap-3 rounded-2xl bg-muted/20 p-4">
+    <section className="grid gap-3 rounded-xl bg-muted/20 p-4">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       {children}
     </section>
@@ -600,7 +889,7 @@ function DetailItem({ label, value, mono = false }: { label: string; value: stri
 
 function TextPanel({ title, value, empty }: { title: string; value: string; empty: string }) {
   return (
-    <div className="rounded-2xl bg-background/70 p-4">
+    <div className="rounded-xl bg-background/70 p-4">
       <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
       <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">
         {value || empty}
