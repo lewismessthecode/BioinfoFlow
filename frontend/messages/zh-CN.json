@@ -1991,7 +1991,7 @@
       "agent": "SSH agent"
     },
     "authHelp": {
-      "ssh_config": "使用后端机器 ~/.ssh/config 里的 Host 条目。",
+      "ssh_config": "通过 Bioinfoflow 后端用户 ~/.ssh/config 里的 Host 条目连接。",
       "key_file": "使用后端可访问的主机、账号、端口和私钥路径。",
       "agent": "使用后端用户 ssh-agent 里已经加载的密钥。"
     },
@@ -2043,6 +2043,7 @@
     "form": {
       "defaultUsername": "user",
       "secretsNote": "只保存 SSH 别名和文件路径。不要粘贴密码或私钥内容。",
+      "sshConfigNote": "这个别名会在 Bioinfoflow 后端解析。主机、账号和端口会作为可读元数据和备用信息保存。",
       "skillGuidance": "路径、API、环境备注和启动命令都写进 skill 文本。",
       "errors": {
         "invalidPort": "端口必须在 1 到 65535 之间。",

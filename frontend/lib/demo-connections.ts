@@ -132,9 +132,35 @@ export async function runRemoteConnectionCommand(
     const socket = new WebSocket(
       buildWebSocketUrl(`${remoteConnectionsApiPath}/${connectionId}/exec/ws`),
     )
+    let settled = false
 
     const finish = () => {
+      if (settled) return
+      settled = true
+      cleanup()
       resolve({ frames, output, exitCode, timedOut })
+    }
+
+    const fail = (error: Error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    }
+
+    const cleanup = () => {
+      socket.onopen = null
+      socket.onmessage = null
+      socket.onerror = null
+      socket.onclose = null
+    }
+
+    const closeSocket = () => {
+      try {
+        socket.close()
+      } catch {
+        // The promise has already settled; close errors should not mask the real result.
+      }
     }
 
     const addFrame = (frame: RemoteCommandFrame) => {
@@ -153,48 +179,57 @@ export async function runRemoteConnectionCommand(
     }
 
     socket.onopen = () => {
-      socket.send(
-        JSON.stringify({
-          command: options.command,
-          timeout_seconds: options.timeout_seconds ?? 15,
-        }),
-      )
+      try {
+        socket.send(
+          JSON.stringify({
+            command: options.command,
+            timeout_seconds: options.timeout_seconds ?? 15,
+          }),
+        )
+      } catch {
+        fail(new Error("Remote command stream failed"))
+        closeSocket()
+      }
     }
 
     socket.onmessage = (event) => {
       try {
         const frame = JSON.parse(event.data) as RemoteCommandFrame
         addFrame(frame)
+        if (frame.type === "error") {
+          fail(new Error(frame.message || "Remote command failed"))
+          closeSocket()
+          return
+        }
         if (frame.type === "exit") {
-          socket.close()
           finish()
+          closeSocket()
         }
       } catch {
-        const error = new Error("Failed to parse remote command output")
-        socket.close()
-        reject(error)
+        fail(new Error("Failed to parse remote command output"))
+        closeSocket()
       }
     }
 
     socket.onerror = () => {
-      reject(new Error("Remote command stream failed"))
+      fail(new Error("Remote command stream failed"))
+      closeSocket()
     }
 
     socket.onclose = () => {
-      if (exitCode !== null || frames.some((frame) => frame.type === "error")) {
-        finish()
-      }
+      fail(new Error("Remote command stream closed before completion"))
     }
   })
 }
 
 function normalizeRemoteConnection(connection: RemoteConnection): RemoteConnection {
   const status = connection.last_status ?? connection.status ?? "unknown"
+  const authMethod = connection.auth_method
   return {
     ...connection,
     status,
-    ssh_alias: connection.ssh_alias ?? "",
-    key_path: connection.key_path ?? "",
+    ssh_alias: authMethod === "ssh_config" ? connection.ssh_alias ?? "" : "",
+    key_path: authMethod === "key_file" ? connection.key_path ?? "" : "",
     skill_instructions: connection.skill_instructions ?? "",
     status_message: connection.status_message ?? connection.last_error ?? undefined,
   }
@@ -208,7 +243,7 @@ export const demoConnectionNodes: RemoteConnection[] = [
     port: 22,
     username: "bioflow",
     auth_method: "key_file",
-    ssh_alias: "bioflow-sim-sz01",
+    ssh_alias: "",
     key_path: "~/.ssh/bioflow_sim_ed25519",
     status: "online",
     skill_instructions:
@@ -234,7 +269,7 @@ export const demoConnectionNodes: RemoteConnection[] = [
     port: 22,
     username: "odp-user",
     auth_method: "agent",
-    ssh_alias: "odp-uat-sz02",
+    ssh_alias: "",
     key_path: "",
     status: "offline",
     status_message: "The last connection test failed.",
