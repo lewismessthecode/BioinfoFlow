@@ -1,11 +1,14 @@
 "use client"
 
 import {
+  type ChangeEvent,
   type DragEvent,
   type FormEvent,
+  type KeyboardEvent,
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react"
 import {
@@ -72,6 +75,9 @@ type ConnectionFormState = {
 
 type DialogMode = "create" | "edit"
 type FormErrorField = "port" | "ssh_alias" | "key_path" | null
+type UpsertConnectionOptions = {
+  select?: boolean
+}
 
 const initialForm: ConnectionFormState = {
   name: "",
@@ -145,7 +151,11 @@ export default function ConnectionsPage() {
   const [isLoadingConnections, setIsLoadingConnections] = useState(true)
   const [testingConnectionId, setTestingConnectionId] = useState<string | null>(null)
   const [probeConnectionId, setProbeConnectionId] = useState<string | null>(null)
+  const [probeOutputConnectionId, setProbeOutputConnectionId] = useState("")
   const [probeOutput, setProbeOutput] = useState("")
+  const skillFileInputRef = useRef<HTMLInputElement>(null)
+  const testRequestRef = useRef(0)
+  const probeRequestRef = useRef(0)
 
   useEffect(() => {
     let disposed = false
@@ -254,13 +264,13 @@ export default function ConnectionsPage() {
       port,
       username: form.username.trim() || t("form.defaultUsername"),
       auth_method: form.auth_method,
-      ssh_alias: sshAlias || null,
+      ssh_alias: form.auth_method === "ssh_config" ? sshAlias : null,
       key_path: form.auth_method === "key_file" ? keyPath : null,
       skill_instructions: form.skill_instructions.trim() || null,
     }
   }
 
-  const upsertConnection = (nextConnection: RemoteConnection) => {
+  const upsertConnection = (nextConnection: RemoteConnection, options: UpsertConnectionOptions = {}) => {
     setConnections((current) => {
       if (current.some((connection) => connection.id === nextConnection.id)) {
         return current.map((connection) =>
@@ -269,7 +279,9 @@ export default function ConnectionsPage() {
       }
       return [nextConnection, ...current]
     })
-    setSelectedConnectionId(nextConnection.id)
+    if (options.select ?? true) {
+      setSelectedConnectionId(nextConnection.id)
+    }
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -303,10 +315,12 @@ export default function ConnectionsPage() {
   }
 
   const handleTestConnection = async (connection: RemoteConnection) => {
+    const requestId = testRequestRef.current + 1
+    testRequestRef.current = requestId
     setTestingConnectionId(connection.id)
     try {
       const result = await testRemoteConnection(connection.id)
-      upsertConnection(result.connection)
+      upsertConnection(result.connection, { select: false })
       if (result.status === "online") {
         toast.success(t("toasts.testSucceeded", { name: result.connection.name }))
       } else {
@@ -316,18 +330,24 @@ export default function ConnectionsPage() {
       const message = error instanceof Error ? error.message : t("toasts.testFailed", { name: connection.name })
       toast.error(message)
     } finally {
-      setTestingConnectionId(null)
+      if (testRequestRef.current === requestId) {
+        setTestingConnectionId(null)
+      }
     }
   }
 
   const handleRunProbe = async (connection: RemoteConnection) => {
+    const requestId = probeRequestRef.current + 1
+    probeRequestRef.current = requestId
     setProbeConnectionId(connection.id)
+    setProbeOutputConnectionId(connection.id)
     setProbeOutput("")
     try {
       const result = await runRemoteConnectionCommand(connection.id, {
         command: "printf bioinfoflow-ok",
         timeout_seconds: 10,
         onFrame: (frame) => {
+          if (probeRequestRef.current !== requestId) return
           if ((frame.type === "stdout" || frame.type === "stderr" || frame.type === "truncated") && frame.data) {
             setProbeOutput((current) => `${current}${frame.data}`)
           }
@@ -336,13 +356,18 @@ export default function ConnectionsPage() {
           }
         },
       })
-      setProbeOutput((current) => current || result.output || t("probe.emptyOutput"))
+      if (probeRequestRef.current === requestId) {
+        setProbeOutput((current) => current || result.output || t("probe.emptyOutput"))
+      }
     } catch (error) {
+      if (probeRequestRef.current !== requestId) return
       const message = error instanceof Error ? error.message : t("probe.failed")
       setProbeOutput(message)
       toast.error(message)
     } finally {
-      setProbeConnectionId(null)
+      if (probeRequestRef.current === requestId) {
+        setProbeConnectionId(null)
+      }
     }
   }
 
@@ -357,10 +382,7 @@ export default function ConnectionsPage() {
     }))
   }
 
-  const handleSkillDrop = async (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    setSkillDragActive(false)
-    const file = event.dataTransfer.files?.[0]
+  const importSkillFile = async (file?: File | null) => {
     if (!file) return
     try {
       appendSkillText(await file.text())
@@ -369,6 +391,26 @@ export default function ConnectionsPage() {
       toast.error(t("form.errors.skillFileFailed"))
     }
   }
+
+  const handleSkillDrop = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setSkillDragActive(false)
+    await importSkillFile(event.dataTransfer.files?.[0])
+  }
+
+  const handleSkillFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    await importSkillFile(event.target.files?.[0])
+    event.target.value = ""
+  }
+
+  const handleSkillDropKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return
+    event.preventDefault()
+    skillFileInputRef.current?.click()
+  }
+
+  const selectedProbeOutput =
+    selectedConnection && probeOutputConnectionId === selectedConnection.id ? probeOutput : ""
 
   return (
     <div className="h-full overflow-y-auto">
@@ -394,7 +436,7 @@ export default function ConnectionsPage() {
                 <DialogDescription>{t("dialog.description")}</DialogDescription>
               </DialogHeader>
 
-              <div className="grid gap-4 overflow-y-auto px-5 py-3.5 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.9fr)] lg:overflow-visible">
+              <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-3.5 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.9fr)]">
                 <div className="grid gap-3">
                   <section className="grid gap-2.5">
                     <FormSectionTitle title={t("sections.connection")} icon={<Server className="h-4 w-4" />} />
@@ -417,7 +459,14 @@ export default function ConnectionsPage() {
                         />
                       </Field>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-[minmax(84px,0.55fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                    <div
+                      className={cn(
+                        "grid gap-3",
+                        form.auth_method === "ssh_config"
+                          ? "sm:grid-cols-[minmax(84px,0.55fr)_minmax(0,1fr)_minmax(0,1fr)]"
+                          : "sm:grid-cols-[minmax(84px,0.55fr)_minmax(0,1fr)]",
+                      )}
+                    >
                       <Field label={t("fields.port")} htmlFor="connection-port">
                         <Input
                           id="connection-port"
@@ -436,18 +485,23 @@ export default function ConnectionsPage() {
                           placeholder={t("form.placeholders.username")}
                         />
                       </Field>
-                      <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
-                        <Input
-                          id="connection-ssh-alias"
-                          value={form.ssh_alias}
-                          onChange={(event) => setForm((current) => ({ ...current, ssh_alias: event.target.value }))}
-                          placeholder={t("form.placeholders.sshAlias")}
-                          required={form.auth_method === "ssh_config"}
-                          aria-invalid={formErrorField === "ssh_alias"}
-                          aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
-                        />
-                      </Field>
+                      {form.auth_method === "ssh_config" ? (
+                        <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
+                          <Input
+                            id="connection-ssh-alias"
+                            value={form.ssh_alias}
+                            onChange={(event) => setForm((current) => ({ ...current, ssh_alias: event.target.value }))}
+                            placeholder={t("form.placeholders.sshAlias")}
+                            required
+                            aria-invalid={formErrorField === "ssh_alias"}
+                            aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
+                          />
+                        </Field>
+                      ) : null}
                     </div>
+                    {form.auth_method === "ssh_config" ? (
+                      <p className="text-xs leading-5 text-muted-foreground">{t("form.sshConfigNote")}</p>
+                    ) : null}
                   </section>
 
                   <section className="grid gap-2.5">
@@ -518,6 +572,9 @@ export default function ConnectionsPage() {
                   <div
                     role="button"
                     tabIndex={0}
+                    aria-label={t("skillDrop.title")}
+                    onClick={() => skillFileInputRef.current?.click()}
+                    onKeyDown={handleSkillDropKeyDown}
                     onDragEnter={(event) => {
                       event.preventDefault()
                       setSkillDragActive(true)
@@ -536,6 +593,13 @@ export default function ConnectionsPage() {
                       <p className="text-xs">{t("skillDrop.hint")}</p>
                     </div>
                   </div>
+                  <input
+                    ref={skillFileInputRef}
+                    type="file"
+                    accept=".txt,.md,.markdown,text/plain,text/markdown"
+                    className="sr-only"
+                    onChange={handleSkillFileChange}
+                  />
                 </section>
               </div>
 
@@ -735,11 +799,13 @@ export default function ConnectionsPage() {
                           <DetailItem label={t("fields.port")} value={String(selectedConnection.port)} mono />
                           <DetailItem label={t("fields.username")} value={selectedConnection.username} mono />
                           <DetailItem label={t("fields.auth")} value={t(`auth.${selectedConnection.auth_method}`)} />
-                          <DetailItem
-                            label={t("fields.sshAlias")}
-                            value={selectedConnection.ssh_alias || t("empty.notSet")}
-                            mono
-                          />
+                          {selectedConnection.auth_method === "ssh_config" ? (
+                            <DetailItem
+                              label={t("fields.sshAlias")}
+                              value={selectedConnection.ssh_alias || t("empty.notSet")}
+                              mono
+                            />
+                          ) : null}
                           <DetailItem
                             label={t("fields.keyPath")}
                             value={selectedConnection.key_path || t("empty.notSet")}
@@ -765,7 +831,7 @@ export default function ConnectionsPage() {
                         <span>{t("probe.description")}</span>
                       </div>
                       <pre className="min-h-12 rounded-xl bg-background/80 p-3 font-mono text-xs leading-5 text-foreground">
-                        {probeOutput || t("probe.placeholder")}
+                        {selectedProbeOutput || t("probe.placeholder")}
                       </pre>
                     </DetailSection>
                   </div>

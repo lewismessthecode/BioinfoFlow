@@ -1991,7 +1991,7 @@
       "agent": "SSH agent"
     },
     "authHelp": {
-      "ssh_config": "Use a Host entry from the backend machine's ~/.ssh/config.",
+      "ssh_config": "Run through a Host entry in the Bioinfoflow backend user's ~/.ssh/config.",
       "key_file": "Use host, user, port, and a private key path available to the backend.",
       "agent": "Use keys already loaded in the backend user's ssh-agent."
     },
@@ -2043,6 +2043,7 @@
     "form": {
       "defaultUsername": "user",
       "secretsNote": "Store only SSH aliases and file paths. Do not paste passwords or private key contents.",
+      "sshConfigNote": "The alias is resolved on the Bioinfoflow backend. Host, user, and port are saved as readable metadata and fallbacks.",
       "skillGuidance": "Put paths, APIs, environment notes, and startup commands in the skill text.",
       "errors": {
         "invalidPort": "Port must be between 1 and 65535.",

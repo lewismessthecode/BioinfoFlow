@@ -63,8 +63,23 @@ const liveConnection: RemoteConnection = {
   skill_instructions: "Use /data/live for analysis outputs.",
 }
 
+const secondConnection: RemoteConnection = {
+  id: "live-connection-2",
+  name: "Backup HPC",
+  host: "backup.live.example.org",
+  port: 22,
+  username: "bioflow",
+  auth_method: "agent",
+  ssh_alias: "",
+  key_path: "",
+  status: "unknown",
+  skill_instructions: "Use /backup/live for read-only checks.",
+}
+
 describe("ConnectionsPage", () => {
   beforeEach(() => {
+    apiRequestMock.mockReset()
+    buildWebSocketUrlMock.mockReset()
     vi.clearAllMocks()
     apiRequestMock.mockRejectedValue(new Error("backend unavailable"))
     buildWebSocketUrlMock.mockImplementation((path: string) => `ws://example.test${path}`)
@@ -203,6 +218,41 @@ describe("ConnectionsPage", () => {
     expect(await screen.findAllByText("Online")).not.toHaveLength(0)
   })
 
+  it("does not switch the selected connection when a stale test finishes", async () => {
+    const user = userEvent.setup()
+    let resolveTest: (value: unknown) => void = () => {}
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, secondConnection] })
+    apiRequestMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTest = resolve
+        }),
+    )
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Test connection" }))
+    await user.click(screen.getByRole("button", { name: /Backup HPC/ }))
+
+    resolveTest({
+      data: {
+        status: "online",
+        error: null,
+        checked_at: "2026-06-25T10:11:12Z",
+        connection: {
+          ...liveConnection,
+          last_status: "online",
+          last_error: null,
+          last_checked_at: "2026-06-25T10:11:12Z",
+        },
+      },
+    })
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Backup HPC" })).toBeInTheDocument())
+    expect(screen.queryByRole("heading", { name: "Live HPC" })).not.toBeInTheDocument()
+  })
+
   it("opens an existing connection for editing and saves the patch", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
@@ -259,6 +309,46 @@ describe("ConnectionsPage", () => {
     expect(await screen.findByText("Private key path is required for key file auth.")).toBeInTheDocument()
     expect(screen.getByLabelText("Private key path")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not send an SSH alias for key file connections", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        ...liveConnection,
+        auth_method: "key_file",
+        ssh_alias: null,
+        key_path: "~/.ssh/id_ed25519",
+      },
+    })
+
+    render(<ConnectionsPage />)
+
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    await user.type(screen.getByLabelText("Connection name"), "Key HPC")
+    await user.type(screen.getByLabelText("Host or IP"), "login.key.example.org")
+    await user.type(screen.getByLabelText("Username"), "bioflow")
+    await user.click(screen.getByRole("button", { name: /Key file/ }))
+    await user.type(screen.getByLabelText("Private key path"), "~/.ssh/id_ed25519")
+    expect(screen.queryByLabelText("SSH alias")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "Key HPC",
+          host: "login.key.example.org",
+          port: 22,
+          username: "bioflow",
+          auth_method: "key_file",
+          ssh_alias: null,
+          key_path: "~/.ssh/id_ed25519",
+          skill_instructions: null,
+        }),
+      }),
+    )
   })
 
   it("adds preset and dropped Agent Skill instructions", async () => {

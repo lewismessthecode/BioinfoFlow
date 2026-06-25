@@ -279,4 +279,79 @@ describe("demo connection fallback data", () => {
       vi.unstubAllGlobals()
     }
   })
+
+  it("rejects when the remote command websocket closes before an exit frame", async () => {
+    vi.mocked(buildWebSocketUrl).mockReturnValue("ws://example.test/connections/conn-live/exec/ws")
+
+    class MockWebSocket {
+      static OPEN = 1
+      readyState = MockWebSocket.OPEN
+      onopen: (() => void) | null = null
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: (() => void) | null = null
+      onclose: (() => void) | null = null
+
+      constructor(readonly url: string) {
+        queueMicrotask(() => this.onopen?.())
+        queueMicrotask(() => this.onclose?.())
+      }
+
+      send() {}
+      close() {
+        this.onclose?.()
+      }
+    }
+
+    vi.stubGlobal("WebSocket", MockWebSocket)
+    try {
+      await expect(
+        runRemoteConnectionCommand("conn-live", {
+          command: "hostname",
+        }),
+      ).rejects.toThrow("Remote command stream closed before completion")
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("rejects backend error frames from the remote command websocket", async () => {
+    vi.mocked(buildWebSocketUrl).mockReturnValue("ws://example.test/connections/conn-live/exec/ws")
+    const frames: unknown[] = []
+
+    class MockWebSocket {
+      static OPEN = 1
+      readyState = MockWebSocket.OPEN
+      onopen: (() => void) | null = null
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: (() => void) | null = null
+      onclose: (() => void) | null = null
+
+      constructor(readonly url: string) {
+        queueMicrotask(() => this.onopen?.())
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: JSON.stringify({ type: "error", message: "Unauthorized" }),
+          } as MessageEvent),
+        )
+      }
+
+      send() {}
+      close() {
+        this.onclose?.()
+      }
+    }
+
+    vi.stubGlobal("WebSocket", MockWebSocket)
+    try {
+      await expect(
+        runRemoteConnectionCommand("conn-live", {
+          command: "hostname",
+          onFrame: (frame) => frames.push(frame),
+        }),
+      ).rejects.toThrow("Unauthorized")
+      expect(frames).toEqual([{ type: "error", message: "Unauthorized" }])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

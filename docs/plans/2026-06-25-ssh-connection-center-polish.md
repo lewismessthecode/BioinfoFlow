@@ -16,10 +16,10 @@
 - Modify: `frontend/lib/demo-connections.ts`
 - Test: `frontend/tests/unit/lib/demo-connections.test.ts`
 
-- [ ] Add failing tests for `updateRemoteConnection`, `testRemoteConnection`, and streamed command WebSocket URL/message behavior.
-- [ ] Implement typed helpers for PATCH, POST test, and command stream callbacks.
-- [ ] Run `rtk bun run test frontend/tests/unit/lib/demo-connections.test.ts`.
-- [ ] Commit with `feat: add remote connection client actions`.
+- [x] Add failing tests for `updateRemoteConnection`, `testRemoteConnection`, and streamed command WebSocket URL/message behavior.
+- [x] Implement typed helpers for PATCH, POST test, and command stream callbacks.
+- [x] Run `rtk bun run test frontend/tests/unit/lib/demo-connections.test.ts`.
+- [x] Commit with `feat: add remote connection client actions`.
 
 ### Task 2: Connection Page Behavior
 
@@ -29,12 +29,12 @@
 - Modify: `frontend/messages/zh-CN.json`
 - Test: `frontend/tests/integration/pages/connections-page.test.tsx`
 
-- [ ] Add failing integration tests for visible test action, edit action, key-file validation, and streamed command probe output.
-- [ ] Refactor the dialog into add/edit modes using the same validation and payload builder.
-- [ ] Add detail actions: test connection, edit connection, and run remote probe.
-- [ ] Update list/detail state after test and edit without losing selection.
-- [ ] Run `rtk bun run test frontend/tests/integration/pages/connections-page.test.tsx`.
-- [ ] Commit with `feat: make ssh connections testable and editable`.
+- [x] Add failing integration tests for visible test action, edit action, key-file validation, and streamed command probe output.
+- [x] Refactor the dialog into add/edit modes using the same validation and payload builder.
+- [x] Add detail actions: test connection, edit connection, and run remote probe.
+- [x] Update list/detail state after test and edit without losing selection.
+- [x] Run `rtk bun run test frontend/tests/integration/pages/connections-page.test.tsx`.
+- [x] Commit with `feat: make ssh connections testable and editable`.
 
 ### Task 3: Compact SSH Profile UX
 
@@ -44,20 +44,20 @@
 - Modify: `frontend/messages/zh-CN.json`
 - Test: `frontend/tests/integration/pages/connections-page.test.tsx`
 
-- [ ] Compress the add/edit dialog into one fixed footer card that does not push actions out of view on desktop.
-- [ ] Replace auth selection with profile-style options that explain SSH config alias, key file, and ssh-agent.
-- [ ] Add Agent Skill preset dropdown and drag/drop text-file import.
-- [ ] Keep user-facing text concise and operational.
-- [ ] Run `rtk bun run lint:i18n` and the focused connection page tests.
-- [ ] Commit with `feat: polish ssh profile dialog skill UX`.
+- [x] Compress the add/edit dialog into one fixed footer card that does not push actions out of view on desktop.
+- [x] Replace auth selection with profile-style options that explain SSH config alias, key file, and ssh-agent.
+- [x] Add Agent Skill preset dropdown and drag/drop text-file import.
+- [x] Keep user-facing text concise and operational.
+- [x] Run `rtk bun run lint:i18n` and the focused connection page tests.
+- [x] Commit with `feat: polish ssh profile dialog skill UX`.
 
 ### Task 4: Validation, Review, And PR Update
 
 **Files:**
 - All changed frontend files.
 
-- [ ] Run focused frontend tests, lint, and i18n checks.
-- [ ] Run relevant backend SSH/Agent tests to confirm real remote execution path remains intact.
-- [ ] Perform browser visual review with `AUTH_MODE=dev` if local services are needed.
-- [ ] Spawn review agents for spec and code quality; fix Critical/Important findings.
+- [x] Run focused frontend tests, lint, and i18n checks.
+- [x] Run relevant backend SSH/Agent tests to confirm real remote execution path remains intact.
+- [x] Perform browser visual review with `AUTH_MODE=dev` if local services are needed.
+- [x] Spawn review agents for spec and code quality; fix Critical/Important findings.
 - [ ] Rebase on `origin/main`, push `codex/remote-connections-ssh-agent`, and update PR #70.
