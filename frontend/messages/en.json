@@ -1948,38 +1948,35 @@
   },
   "connections": {
     "title": "Connection Center",
-    "subtitle": "Connect the servers you use often, then hand paths, tags, and usage notes to the Agent.",
-    "addNode": "Add node",
-    "searchPlaceholder": "Search IP, tag, or skill...",
+    "subtitle": "Save SSH host details and one Agent Skill note. Paths and usage notes belong in the skill text, not separate platform fields.",
+    "addNode": "Add connection",
+    "searchPlaceholder": "Search name, host, alias, or notes...",
     "list": {
-      "title": "Nodes",
-      "description": "Pick a host to preview the context an Agent could use.",
-      "empty": "No matching nodes. Try another IP, tag, or skill."
+      "title": "Connections",
+      "description": "Pick a connection to preview the SSH config and Agent instructions.",
+      "empty": "No matching connections. Try another name, host, alias, or note."
     },
     "detail": {
-      "currentContext": "Current context"
+      "currentContext": "Agent-ready config",
+      "aliasPrefix": "SSH alias:",
+      "secretsNote": "Only store an alias or path here. Do not paste passwords or private key contents.",
+      "skillGuidance": "Put paths, APIs, environment notes, and startup commands in the skill text."
     },
     "sections": {
-      "address": "Address",
-      "general": "General",
-      "ssh": "SSH",
-      "agentContext": "Agent Context"
+      "connection": "Connection",
+      "ssh": "SSH config",
+      "agentSkill": "Agent Skill"
     },
     "fields": {
-      "address": "IP or hostname",
-      "label": "Label",
-      "group": "Group",
+      "name": "Connection name",
+      "host": "Host or IP",
       "status": "Status",
-      "tags": "Tags",
       "port": "Port",
       "username": "Username",
       "auth": "Auth method",
-      "skills": "Skills",
-      "prompt": "Usage notes",
-      "paths": "Accessible paths",
-      "apis": "APIs and ports",
-      "environmentVariables": "Environment variables",
-      "startupSnippet": "Startup snippet"
+      "sshAlias": "SSH alias",
+      "keyPath": "Private key path",
+      "skillInstructions": "Agent Skill instructions"
     },
     "status": {
       "online": "Online",
@@ -1991,42 +1988,32 @@
       "password": "Password",
       "key": "SSH key",
       "certificate": "Certificate",
-      "fido2": "FIDO2"
+      "agent": "SSH agent"
     },
     "empty": {
-      "skills": "No skills yet",
-      "paths": "No paths yet",
-      "apis": "No APIs yet",
-      "environmentVariables": "No variables yet",
-      "prompt": "No usage notes yet",
-      "startupSnippet": "No startup snippet yet"
+      "notSet": "Not set",
+      "skillInstructions": "No skill instructions yet"
     },
     "dialog": {
-      "title": "Add node",
-      "description": "Add a node with SSH details, tags, paths, and Agent usage notes.",
-      "add": "Add node"
+      "title": "Add SSH connection",
+      "description": "Save connection metadata only. Passwords and private key contents stay outside Bioinfoflow.",
+      "add": "Add connection"
     },
     "form": {
-      "addTag": "Add tag",
-      "defaultApiName": "API {index}",
-      "defaultGroup": "Ungrouped",
       "defaultUsername": "user",
+      "secretsNote": "Store only SSH aliases and file paths. Do not paste passwords or private key contents.",
+      "skillGuidance": "Put paths, APIs, environment notes, and startup commands in the skill text.",
       "placeholders": {
-        "address": "10.227.5.224 or login.example.internal",
-        "label": "Simulation host sz01",
-        "group": "Bioinformatics analysis",
-        "tag": "Add a tag such as FASTQ or GPU",
+        "name": "Simulation host sz01",
+        "host": "10.227.5.224 or login.example.internal",
         "username": "bioflow",
-        "skills": "phoenix, harbor",
-        "paths": "/mnt/nas/pipelines\n/mnt/nas/results",
-        "apis": "http://10.227.5.224:8080",
-        "environmentVariables": "BIOFLOW_DATA=/mnt/nas",
-        "prompt": "Tell the Agent where logs, outputs, and important conventions live on this node.",
-        "startupSnippet": "source /etc/profile\nmodule load nextflow"
+        "sshAlias": "bioflow-sim-sz01",
+        "keyPath": "~/.ssh/bioflow_sim_ed25519",
+        "skillInstructions": "Tell the Agent where paths, outputs, APIs, environment setup, and important conventions live for this connection."
       }
     },
     "toasts": {
-      "nodeAdded": "Node {address} added"
+      "connectionAdded": "Connection {name} added"
     }
   },
   "settings": {
@@ -2371,10 +2358,10 @@
       "comingSoon": "Coming soon"
     },
     "connectedNode": {
-      "placeholder": "Choose node",
-      "selectedAria": "Conversation node {address}, {status}",
-      "menuTitle": "Connected nodes",
-      "manage": "Manage connection center",
+      "placeholder": "Choose connection",
+      "selectedAria": "Conversation connection {name} at {host}, {status}",
+      "menuTitle": "Remote connections",
+      "manage": "Manage connections",
       "status": {
         "online": "Online",
         "offline": "Offline",

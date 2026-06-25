@@ -1948,38 +1948,35 @@
   },
   "connections": {
     "title": "连接中心",
-    "subtitle": "连接常用服务器，把路径、标签和使用说明交给 Agent。",
-    "addNode": "添加节点",
-    "searchPlaceholder": "搜索 IP、标签或 skill...",
+    "subtitle": "保存 SSH 主机信息和一段 Agent Skill 说明。路径和使用备注写进 skill 文本，不再拆成平台字段。",
+    "addNode": "添加连接",
+    "searchPlaceholder": "搜索名称、主机、别名或说明...",
     "list": {
-      "title": "节点列表",
-      "description": "选择一个节点，查看对话时可以带给 Agent 的上下文。",
-      "empty": "没有匹配的节点。换个 IP、标签或 skill 试试。"
+      "title": "连接列表",
+      "description": "选择一个连接，查看 SSH 配置和给 Agent 的说明。",
+      "empty": "没有匹配的连接。换个名称、主机、别名或说明试试。"
     },
     "detail": {
-      "currentContext": "当前上下文"
+      "currentContext": "Agent 可用配置",
+      "aliasPrefix": "SSH 别名：",
+      "secretsNote": "这里只保存别名或路径。不要粘贴密码或私钥内容。",
+      "skillGuidance": "路径、API、环境备注和启动命令都写进 skill 文本。"
     },
     "sections": {
-      "address": "地址",
-      "general": "基本信息",
-      "ssh": "SSH",
-      "agentContext": "Agent 上下文"
+      "connection": "连接信息",
+      "ssh": "SSH 配置",
+      "agentSkill": "Agent Skill"
     },
     "fields": {
-      "address": "IP 或主机名",
-      "label": "名称",
-      "group": "分组",
+      "name": "连接名称",
+      "host": "主机或 IP",
       "status": "状态",
-      "tags": "标签",
       "port": "端口",
       "username": "账号",
       "auth": "认证方式",
-      "skills": "Skills",
-      "prompt": "使用说明",
-      "paths": "可访问路径",
-      "apis": "API 和端口",
-      "environmentVariables": "环境变量",
-      "startupSnippet": "启动片段"
+      "sshAlias": "SSH 别名",
+      "keyPath": "私钥路径",
+      "skillInstructions": "Agent Skill 说明"
     },
     "status": {
       "online": "在线",
@@ -1991,42 +1988,32 @@
       "password": "密码",
       "key": "SSH key",
       "certificate": "证书",
-      "fido2": "FIDO2"
+      "agent": "SSH agent"
     },
     "empty": {
-      "skills": "暂未配置 skill",
-      "paths": "暂未配置路径",
-      "apis": "暂未配置 API",
-      "environmentVariables": "暂未配置环境变量",
-      "prompt": "暂未填写使用说明",
-      "startupSnippet": "暂未配置启动片段"
+      "notSet": "未设置",
+      "skillInstructions": "暂未填写 skill 说明"
     },
     "dialog": {
-      "title": "添加节点",
-      "description": "添加一个节点，填写 SSH 信息、标签、路径和给 Agent 的使用说明。",
-      "add": "添加节点"
+      "title": "添加 SSH 连接",
+      "description": "只保存连接元数据。密码和私钥内容不要放进 Bioinfoflow。",
+      "add": "添加连接"
     },
     "form": {
-      "addTag": "添加标签",
-      "defaultApiName": "API {index}",
-      "defaultGroup": "未分组",
       "defaultUsername": "user",
+      "secretsNote": "只保存 SSH 别名和文件路径。不要粘贴密码或私钥内容。",
+      "skillGuidance": "路径、API、环境备注和启动命令都写进 skill 文本。",
       "placeholders": {
-        "address": "10.227.5.224 或 login.example.internal",
-        "label": "仿真环境 sz01",
-        "group": "生信分析",
-        "tag": "添加 FASTQ、GPU 等标签",
+        "name": "仿真环境 sz01",
+        "host": "10.227.5.224 或 login.example.internal",
         "username": "bioflow",
-        "skills": "phoenix, harbor",
-        "paths": "/mnt/nas/pipelines\n/mnt/nas/results",
-        "apis": "http://10.227.5.224:8080",
-        "environmentVariables": "BIOFLOW_DATA=/mnt/nas",
-        "prompt": "告诉 Agent 这个节点上的日志、输出目录和使用约定在哪里。",
-        "startupSnippet": "source /etc/profile\nmodule load nextflow"
+        "sshAlias": "bioflow-sim-sz01",
+        "keyPath": "~/.ssh/bioflow_sim_ed25519",
+        "skillInstructions": "告诉 Agent 这个连接里的路径、输出、API、环境初始化和重要使用约定。"
       }
     },
     "toasts": {
-      "nodeAdded": "已添加节点 {address}"
+      "connectionAdded": "已添加连接 {name}"
     }
   },
   "settings": {
@@ -2371,10 +2358,10 @@
       "comingSoon": "即将支持"
     },
     "connectedNode": {
-      "placeholder": "选择节点",
-      "selectedAria": "当前对话节点 {address}，{status}",
-      "menuTitle": "已连接节点",
-      "manage": "管理连接中心",
+      "placeholder": "选择连接",
+      "selectedAria": "当前对话连接 {name}（{host}），{status}",
+      "menuTitle": "远程连接",
+      "manage": "管理连接",
       "status": {
         "online": "在线",
         "offline": "离线",
