@@ -1,11 +1,7 @@
 # CLI Reference
 
-The `bif` CLI is defined in `backend/app/cli/main.py` and registered as:
-
-```toml
-[project.scripts]
-bif = "app.cli.main:app"
-```
+`bif` is an HTTP client for a running Bioinfoflow backend. Use it for scripts,
+local automation, and terminal-first workflows.
 
 Run it from `backend/` during local development:
 
@@ -59,7 +55,7 @@ first, or point the CLI at another API with `--base-url` / `BIOFLOW_API_URL`.
 
 ## Registered Command Groups
 
-`backend/app/cli/main.py` currently registers:
+The CLI includes these command groups:
 
 - `config`
 - `project`
@@ -72,8 +68,15 @@ first, or point the CLI at another API with `--base-url` / `BIOFLOW_API_URL`.
 - `run outputs`
 - `run batch`
 - `agent`
-- `agent approvals`
 - `doctor`
+
+The `agent` group includes session, turn, action, and artifact commands for
+AgentCore:
+
+- `agent session`
+- `agent turn`
+- `agent action`
+- `agent artifacts`
 
 Use command-specific help for exact parameters:
 
@@ -81,6 +84,7 @@ Use command-specific help for exact parameters:
 uv run bif run --help
 uv run bif workflow --help
 uv run bif agent --help
+uv run bif agent action --help
 ```
 
 ## JSON Output
@@ -105,9 +109,15 @@ Streaming commands may emit newline-delimited JSON.
 ```bash
 uv run bif doctor
 uv run bif project list
+uv run bif project create --name "RNA-seq" --external-root /data/projects/rnaseq
 uv run bif config use-project <project-id>
 uv run bif workflow list
 uv run bif run list
 uv run bif run show <run-id>
+uv run bif run outputs list <run-id>
 uv run bif run cancel <run-id> --force
+uv run bif events stream
+uv run bif open agent
+uv run bif agent session list
+uv run bif agent send --session <session-id> "Check the latest run logs"
 ```

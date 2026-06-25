@@ -25,6 +25,18 @@ and task containers can pass absolute paths without translation.
 The per-run directory under a project's `runs/<run_id>/` tree. It contains
 materialized inputs, engine work directories, results, and audit metadata.
 
+### Managed Project
+
+A project whose data and runs live under
+`BIOINFOFLOW_HOME/projects/<project_id>/`.
+
+### External Project
+
+A project whose root is an absolute path supplied at project creation or update
+time. External roots are useful when a lab already has a project directory on a
+shared filesystem. Bioinfoflow still creates the same `data/` and `runs/`
+layout inside that root.
+
 ## Workflow Terms
 
 ### Engine Adapter
@@ -60,21 +72,39 @@ dispatches only when enough slots and resources are available.
 
 ### Agent Runtime
 
-The default agent orchestration path under
-`backend/app/services/agent/runtime/`. It runs an explicit async loop for LLM
-streaming, tool calls, context compaction, todo/task state, background commands,
-skills, subagents, and SSE event delivery.
+The default agent orchestration path under `backend/app/services/agent_core/`.
+It stores durable sessions, turns, actions, artifacts, model selection, prompt
+snapshots, toolset policy, and context policy.
 
 ### Tool Dispatch
 
-The map from model tool requests to Python tool implementations. Tools use
-`BaseTool` plus `@register_tool` and carry a risk level: `read`, `act_low`, or
-`act_high`.
+The map from model tool requests to Python tool implementations. Tools implement
+the `AgentTool` protocol and describe themselves with `AgentToolSpec`, including
+input/output schemas, risk level, scopes, timeout, audit text, and optional
+artifact policy.
+
+### Toolset
+
+The policy that decides which registered tools are visible to the agent. Current
+toolsets are `default`, `plan`, and `execution`.
 
 ### Approval
 
 The review gate for high-impact agent actions. `act_high` tools route through
 the approval service before side effects are executed.
+
+### Remote Connection
+
+A workspace-scoped SSH profile stored by Bioinfoflow. It can use an SSH config
+alias, a backend-visible key file path, or the backend user's SSH agent. Remote
+Connections support backend tests, streamed probes, and selected AgentCore
+remote tools.
+
+### Agent Skill
+
+Connection- or workflow-specific instructions that guide AgentCore behavior.
+For Remote Connections, skill text usually describes remote paths, modules,
+service endpoints, and operational rules.
 
 ## Abbreviations
 

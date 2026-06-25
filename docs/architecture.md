@@ -13,6 +13,10 @@ bioinformatics workflows on infrastructure you control.
 - Nextflow and WDL/MiniWDL execution live behind a workflow engine abstraction.
 - A persistent scheduler owns queue depth, slots, resource checks, retries,
   timeouts, cleanup, and run completion hooks.
+- AgentCore provides durable agent sessions, streamed turns, tool actions,
+  artifacts, approvals, skills, subagents, and bounded tool execution.
+- Remote Connections store SSH metadata for diagnostics and agent-assisted
+  inspection. SSH is not the workflow dispatch backend.
 - `BIOINFOFLOW_HOME` is the shared platform root for state, inputs, references,
   caches, and outputs.
 
@@ -39,20 +43,50 @@ instead of growing a catch-all facade.
 Agent Runtime lives in:
 
 ```text
-backend/app/services/agent/runtime/
+backend/app/services/agent_core/
 ```
 
-The current runtime is an explicit async loop with provider selection,
-streaming, context compaction, task/todo state, skill loading, background
-commands, subagents, and tool dispatch. The default flow is:
+AgentCore stores sessions, turns, actions, artifacts, model selection, prompt
+snapshots, toolset policy, and context policy in the backend database. Turns run
+as asynchronous tasks and publish persisted events that the frontend reads over
+SSE.
+
+The default flow is:
 
 ```text
-user input -> agent service -> async runtime loop -> tool dispatch -> persisted/SSE events -> frontend
+user input
+  -> AgentCore service
+  -> async runtime loop
+  -> tool dispatch and approvals
+  -> persisted actions, events, and artifacts
+  -> frontend SSE stream
 ```
 
-Agent tools use `BaseTool` plus `@register_tool`. Risk levels are `read`,
-`act_low`, and `act_high`, so higher-impact actions can be surfaced for review
-instead of being hidden inside a chat transcript.
+Tools implement the `AgentTool` protocol and describe themselves with
+`AgentToolSpec`. The default registry exposes file, shell, search, memory,
+skills, platform, web, subagent, and SSH remote tools. Toolsets are `default`,
+`plan`, and `execution`; higher-risk actions can pause for approval before they
+run.
+
+## Remote Connections
+
+Remote Connections live under the `/api/v1/connections` API and the
+`frontend/app/(app)/connections/` route.
+
+They are workspace-scoped SSH profiles with one of three authentication methods:
+
+- SSH config alias
+- key file path
+- backend SSH agent
+
+Bioinfoflow stores aliases and file paths, not passwords or private key
+contents. The backend runs the system `ssh` binary with `BatchMode=yes`,
+timeouts, and bounded output. The UI can test a connection and stream a short
+probe command over WebSocket.
+
+When a user selects a connection in the Agent composer, AgentCore can expose
+read-only remote file and directory inspection tools plus an approval-gated
+`remote.exec` tool for short diagnostic commands.
 
 ## Local-First Path Model
 

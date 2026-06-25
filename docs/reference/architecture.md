@@ -1,6 +1,8 @@
 # Architecture Reference
 
-This page summarizes the current implementation boundaries visible in `backend/`, `frontend/`, and `docker-compose.yml`.
+This page describes the implementation boundaries for the Bioinfoflow backend,
+frontend, workflow engine, scheduler, AgentCore runtime, and remote connection
+features.
 
 ## Backend
 
@@ -11,10 +13,10 @@ Startup lifecycle:
 1. configure logging from `backend/app/config.py`
 2. enforce the `BIOINFOFLOW_HOME` identity-mount invariant with `assert_identity_mount()`
 3. create platform storage roots with `ensure_platform_layout()`
-4. initialize Hermes/agent state
+4. initialize AgentCore state
 5. initialize the database and verify Alembic schema state
 6. ensure the default workspace
-7. reconcile stale Hermes responses
+7. reconcile stale agent responses
 8. start the persistent run scheduler and resource monitor
 9. wire run dispatch through `SchedulerDispatcher`
 10. recover stale runs
@@ -57,7 +59,9 @@ frontend/app/auth/
 frontend/app/api/auth/[...all]/
 ```
 
-The frontend talks to the backend through REST for normal API calls, SSE for long-running run/agent events, and WebSocket for terminal sessions.
+The frontend talks to the backend through REST for normal API calls, SSE for
+long-running run and agent events, and WebSocket for terminal sessions and
+remote connection probes.
 
 ## Configuration
 
@@ -89,18 +93,69 @@ workflow runner, and task containers must see the same absolute paths.
 
 Workflow execution uses a thin run service facade plus dedicated submission, DAG, lifecycle, archive, and dispatch services. New business logic should go into focused services instead of growing the facade.
 
-## Agent Runtime
+Workflow runs execute from the backend scheduler through registered engine
+adapters. The current engine registry supports Nextflow and WDL/MiniWDL. SSH
+Remote Connections are used for diagnostics and agent-assisted inspection; they
+do not dispatch workflow runs.
 
-Agent Runtime lives under:
+## AgentCore Runtime
+
+AgentCore lives under:
 
 ```text
-backend/app/services/agent/runtime/
+backend/app/services/agent_core/
 ```
 
-The default flow is:
+Durable agent sessions record role profile, permission mode, automation mode,
+model selection, prompt snapshot, toolset policy, context policy, and session
+metadata. Turns are queued as background tasks; each turn publishes persisted
+events that the frontend consumes through SSE.
+
+The runtime flow is:
 
 ```text
-user input -> agent service -> async runtime loop -> tool dispatch -> persisted/SSE events -> frontend
+user input
+  -> AgentCore service
+  -> async runtime loop
+  -> tool dispatcher
+  -> persisted actions, events, and artifacts
+  -> frontend SSE stream
 ```
 
-Agent tools use the `BaseTool` abstract class plus `@register_tool`. Tool risk levels are `read`, `act_low`, and `act_high`, with high-impact actions routed through approvals.
+Tools implement the `AgentTool` protocol and define an `AgentToolSpec` with
+input and output schemas, risk level, scopes, timeout, audit text, and optional
+artifact policy. Tools are registered through `build_default_tool_registry()`.
+
+Toolsets are:
+
+- `default`: read-oriented tools for inspection
+- `plan`: planning and clarification tools
+- `execution`: all registered tools, still subject to permission policy
+
+Tool execution can pause for approvals, interaction requests, or plan approval.
+Completed tools persist actions, events, and artifacts.
+
+## Remote Connections
+
+Remote Connections are workspace-scoped SSH profiles stored by the backend and
+managed from `frontend/app/(app)/connections/`.
+
+API routes live under:
+
+```text
+/api/v1/connections
+```
+
+Authentication methods:
+
+- `ssh_config`: pass the saved alias as the exact SSH target
+- `key_file`: run SSH with a backend-visible key path
+- `agent`: use the backend user's `ssh-agent`
+
+The backend executes the system `ssh` binary with argv-based subprocess calls,
+`BatchMode=yes`, connect timeouts, and bounded stdout/stderr. The Connections
+page supports CRUD, testing, and a streamed WebSocket probe.
+
+AgentCore remote tools only resolve connections explicitly selected in the
+current agent session. `remote.read_file` and `remote.list_dir` are read tools;
+`remote.exec` is an elevated tool for short diagnostic commands.

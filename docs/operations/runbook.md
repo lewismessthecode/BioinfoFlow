@@ -52,6 +52,11 @@ That keeps the same absolute path visible on the host and inside containers.
 - `MINIWDL_BIN` for WDL execution
 - one provider credential for agent use, configured in **Settings -> AI Providers** or bootstrapped with env vars such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `VLLM_BASE_URL` + `VLLM_MODEL`
 
+For Remote Connections, SSH access is evaluated from the backend environment.
+If you use SSH config aliases, key files, or `ssh-agent`, make sure the backend
+host or backend container can see the relevant `~/.ssh/config`, key path, or
+`SSH_AUTH_SOCK`.
+
 ## Scheduler Defaults
 
 - `RUN_SCHEDULER_MODE=persistent`
@@ -98,3 +103,13 @@ For Docker or remote image builds, rebuild after changing it:
 ```bash
 docker compose up -d --build
 ```
+
+### Remote connection tests fail from the UI
+
+Check the backend environment, not the browser machine:
+
+- `ssh` is installed
+- the SSH config alias resolves for the backend user
+- key paths are visible inside the backend container
+- `SSH_AUTH_SOCK` is mounted and set when using SSH agent auth
+- the target host accepts non-interactive `BatchMode=yes` SSH commands
