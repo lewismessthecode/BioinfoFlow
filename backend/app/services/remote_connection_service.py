@@ -15,6 +15,18 @@ from app.services.remote_execution import RemoteConnectionConfig, SshRemoteExecu
 from app.utils.exceptions import ConflictError, ValidationError
 
 
+REMOTE_CONNECTION_TARGET_FIELDS = frozenset(
+    {
+        "host",
+        "port",
+        "username",
+        "auth_method",
+        "ssh_alias",
+        "key_path",
+    }
+)
+
+
 @dataclass(frozen=True)
 class RemoteConnectionTestResult:
     status: str
@@ -129,6 +141,13 @@ class RemoteConnectionService:
             ssh_alias=data.get("ssh_alias", connection.ssh_alias),
             key_path=data.get("key_path", connection.key_path),
         )
+        if _changes_remote_target(connection, data):
+            data = {
+                **data,
+                "last_status": RemoteConnectionStatus.UNKNOWN,
+                "last_error": None,
+                "last_checked_at": None,
+            }
         try:
             return await self.repo.update_all(connection, **data)
         except IntegrityError as exc:
@@ -189,3 +208,10 @@ def remote_connection_config_from_model(
 def _remote_test_error_message(exc: Exception) -> str:
     message = str(exc).strip() or exc.__class__.__name__
     return f"SSH connection test failed: {message}"
+
+
+def _changes_remote_target(connection: RemoteConnection, data: dict) -> bool:
+    for field in REMOTE_CONNECTION_TARGET_FIELDS:
+        if field in data and data[field] != getattr(connection, field):
+            return True
+    return False
