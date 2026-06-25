@@ -50,7 +50,6 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
   createRemoteConnection,
-  demoConnectionNodes,
   fetchRemoteConnections,
   runRemoteConnectionCommand,
   testRemoteConnection,
@@ -149,6 +148,7 @@ export default function ConnectionsPage() {
   const [skillDragActive, setSkillDragActive] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoadingConnections, setIsLoadingConnections] = useState(true)
+  const [connectionsLoadError, setConnectionsLoadError] = useState(false)
   const [testingConnectionId, setTestingConnectionId] = useState<string | null>(null)
   const [probeConnectionId, setProbeConnectionId] = useState<string | null>(null)
   const [probeOutputConnectionId, setProbeOutputConnectionId] = useState("")
@@ -164,6 +164,7 @@ export default function ConnectionsPage() {
       .then((remoteConnections) => {
         if (disposed) return
         setConnections(remoteConnections)
+        setConnectionsLoadError(false)
         setSelectedConnectionId((current) =>
           remoteConnections.some((connection) => connection.id === current)
             ? current
@@ -172,8 +173,9 @@ export default function ConnectionsPage() {
       })
       .catch(() => {
         if (disposed) return
-        setConnections(demoConnectionNodes)
-        setSelectedConnectionId(demoConnectionNodes[0]?.id ?? "")
+        setConnections([])
+        setConnectionsLoadError(true)
+        setSelectedConnectionId("")
       })
       .finally(() => {
         if (!disposed) setIsLoadingConnections(false)
@@ -279,6 +281,7 @@ export default function ConnectionsPage() {
       }
       return [nextConnection, ...current]
     })
+    setConnectionsLoadError(false)
     if (options.select ?? true) {
       setSelectedConnectionId(nextConnection.id)
     }
@@ -654,6 +657,10 @@ export default function ConnectionsPage() {
               {isLoadingConnections ? (
                 <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
                   {t("list.loading")}
+                </div>
+              ) : connectionsLoadError ? (
+                <div className="rounded-2xl border border-dashed border-amber-500/30 bg-amber-500/10 p-8 text-center text-sm text-amber-700 dark:text-amber-300">
+                  {t("list.error")}
                 </div>
               ) : filteredConnections.length > 0 ? (
                 filteredConnections.map((connection) => {

@@ -255,6 +255,53 @@ async def test_remote_tools_only_resolve_selected_workspace_connection(db_sessio
 
 
 @pytest.mark.asyncio
+async def test_remote_exec_uses_persisted_selected_connection(db_session):
+    service = RemoteConnectionService(db_session)
+    selected = await service.create_connection(
+        {
+            "name": "Selected HPC",
+            "host": "selected.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "selected-hpc",
+            "skill_instructions": "Use /scratch/project for outputs.",
+        },
+        workspace_id="workspace-1",
+    )
+    agent_session = await _create_agent_session(
+        db_session,
+        remote_connection_id=str(selected.id),
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="selected.cluster.example.org\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    tool = RemoteExecTool(executor=executor)
+
+    result = await tool.run(
+        {
+            "connection_id": str(selected.id),
+            "command": "hostname",
+        },
+        _tool_context(db_session, session_id=str(agent_session.id)),
+    )
+
+    assert result["connection"]["id"] == str(selected.id)
+    assert result["connection"]["skill_summary"] == "Use /scratch/project for outputs."
+    assert result["result"]["stdout"] == "selected.cluster.example.org\n"
+    assert executor.calls[0]["connection"].id == str(selected.id)
+    assert executor.calls[0]["command"] == "hostname"
+
+
+@pytest.mark.asyncio
 async def test_remote_tools_ignore_inline_session_metadata_connection(db_session):
     agent_session = await _create_agent_session(
         db_session,
@@ -490,11 +537,13 @@ def test_default_registry_registers_remote_tools_with_expected_exposure():
     }.issubset(names)
     assert "remote.exec" not in exposure.exposed_names(policy={"name": "default"})
     assert "remote.connections.list" in exposure.exposed_names(policy={"name": "default"})
-    assert "remote.read_file" not in exposure.exposed_names(policy={"name": "default"})
-    assert "remote.list_dir" not in exposure.exposed_names(policy={"name": "default"})
+    assert "remote.read_file" in exposure.exposed_names(policy={"name": "default"})
+    assert "remote.list_dir" in exposure.exposed_names(policy={"name": "default"})
     assert registry.get("remote.exec").spec.risk_level == "act_high"
-    assert registry.get("remote.read_file").spec.risk_level == "act_high"
-    assert registry.get("remote.list_dir").spec.risk_level == "act_high"
+    assert registry.get("remote.read_file").spec.risk_level == "read"
+    assert registry.get("remote.read_file").spec.write_scope == []
+    assert registry.get("remote.list_dir").spec.risk_level == "read"
+    assert registry.get("remote.list_dir").spec.write_scope == []
 
 
 @pytest.mark.asyncio

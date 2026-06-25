@@ -42,12 +42,18 @@ class SshRemoteConnectionTester:
         self.executor = executor or SshRemoteExecutor()
 
     async def test(self, connection: RemoteConnection) -> RemoteConnectionTestResult:
-        result = await self.executor.run(
-            remote_connection_config_from_model(connection),
-            "printf bioinfoflow-ok",
-            timeout_seconds=10,
-            output_limit=2000,
-        )
+        try:
+            result = await self.executor.run(
+                remote_connection_config_from_model(connection),
+                "printf bioinfoflow-ok",
+                timeout_seconds=10,
+                output_limit=2000,
+            )
+        except Exception as exc:  # noqa: BLE001 - test failures should persist status
+            return RemoteConnectionTestResult(
+                status=RemoteConnectionStatus.ERROR,
+                error=_remote_test_error_message(exc),
+            )
         if result.exit_code == 0 and "bioinfoflow-ok" in result.stdout:
             return RemoteConnectionTestResult(status=RemoteConnectionStatus.ONLINE)
         return RemoteConnectionTestResult(
@@ -178,3 +184,8 @@ def remote_connection_config_from_model(
         status=connection.last_status,
         skill_summary=connection.skill_instructions,
     )
+
+
+def _remote_test_error_message(exc: Exception) -> str:
+    message = str(exc).strip() or exc.__class__.__name__
+    return f"SSH connection test failed: {message}"

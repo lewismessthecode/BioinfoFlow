@@ -347,6 +347,38 @@ async def test_remote_connection_test_uses_ssh_executor_by_default(
 
 
 @pytest.mark.asyncio
+async def test_remote_connection_test_persists_executor_launch_errors(
+    async_client,
+    monkeypatch,
+):
+    create_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="agent", key_path=None),
+    )
+    assert create_resp.status_code == 201
+    connection_id = create_resp.json()["data"]["id"]
+
+    async def fake_run(self, connection, command, *, timeout_seconds, output_limit):
+        del self, connection, command, timeout_seconds, output_limit
+        raise OSError("No such file or directory: 'ssh'")
+
+    monkeypatch.setattr(
+        "app.services.remote_execution.SshRemoteExecutor.run",
+        fake_run,
+    )
+
+    test_resp = await async_client.post(f"/api/v1/connections/{connection_id}/test")
+
+    assert test_resp.status_code == 200
+    test_data = test_resp.json()["data"]
+    assert test_data["status"] == "error"
+    assert "No such file or directory" in test_data["error"]
+    assert test_data["connection"]["last_status"] == "error"
+    assert test_data["connection"]["last_error"] == test_data["error"]
+    assert test_data["connection"]["last_checked_at"] == test_data["checked_at"]
+
+
+@pytest.mark.asyncio
 async def test_remote_connection_mutations_require_admin_in_team_mode(
     async_client,
     tmp_path,

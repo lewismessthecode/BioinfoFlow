@@ -42,6 +42,8 @@ class RemoteConnectionConfig:
 
     @property
     def ssh_target(self) -> str:
+        if self.ssh_alias:
+            return self.ssh_alias
         return _format_target(self.ssh_alias or self.host, self.username)
 
 
@@ -125,7 +127,7 @@ class SshRemoteExecutor:
             argv.extend(["-F", connection.ssh_config_path])
         if connection.key_path:
             argv.extend(["-i", connection.key_path])
-        if connection.port is not None:
+        if connection.port is not None and not connection.ssh_alias:
             argv.extend(["-p", str(connection.port)])
         argv.extend(["-o", "BatchMode=yes"])
         argv.extend(["-o", f"ConnectTimeout={connect_timeout_seconds}"])

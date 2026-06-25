@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import { ConnectedNodeSelector } from "@/components/bioinfoflow/agent-runtime/connected-node-selector"
@@ -97,5 +98,18 @@ describe("ConnectedNodeSelector", () => {
     )
 
     await waitFor(() => expect(onSelectedConnectionChange).toHaveBeenCalledWith(""))
+  })
+
+  it("does not expose demo connections when the live connection request fails", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockRejectedValueOnce(new Error("backend unavailable"))
+
+    render(<ConnectedNodeSelector />)
+
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
+    await user.click(screen.getByRole("button", { name: "Choose connection" }))
+
+    expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
+    expect(screen.queryByText("Test host sz03")).not.toBeInTheDocument()
   })
 })
