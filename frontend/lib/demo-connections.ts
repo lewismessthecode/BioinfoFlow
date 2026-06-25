@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api"
+import { apiRequest, buildWebSocketUrl } from "@/lib/api"
 
 export type RemoteConnectionStatus = "online" | "offline" | "error" | "unknown"
 
@@ -21,6 +21,28 @@ export type RemoteConnection = {
   last_checked_at?: string
 }
 
+export type RemoteConnectionTestResult = {
+  status: RemoteConnectionStatus
+  error: string | null
+  checked_at: string
+  connection: RemoteConnection
+}
+
+export type RemoteCommandFrame = {
+  type: "stdout" | "stderr" | "truncated" | "error" | "exit"
+  data?: string
+  message?: string
+  exit_code?: number
+  timed_out?: boolean
+}
+
+export type RemoteCommandResult = {
+  frames: RemoteCommandFrame[]
+  output: string
+  exitCode: number | null
+  timedOut: boolean
+}
+
 type RemoteConnectionListResponse =
   | RemoteConnection[]
   | {
@@ -41,6 +63,8 @@ export type RemoteConnectionCreateInput = {
   skill_instructions?: string | null
 }
 
+export type RemoteConnectionUpdateInput = Partial<RemoteConnectionCreateInput>
+
 export async function fetchRemoteConnections(): Promise<RemoteConnection[]> {
   const response = await apiRequest<RemoteConnectionListResponse>(remoteConnectionsApiPath)
   const payload = response.data
@@ -60,6 +84,108 @@ export async function createRemoteConnection(
     body: JSON.stringify(input),
   })
   return normalizeRemoteConnection(response.data)
+}
+
+export async function updateRemoteConnection(
+  connectionId: string,
+  input: RemoteConnectionUpdateInput,
+): Promise<RemoteConnection> {
+  const response = await apiRequest<RemoteConnection>(`${remoteConnectionsApiPath}/${connectionId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  })
+  return normalizeRemoteConnection(response.data)
+}
+
+export async function testRemoteConnection(
+  connectionId: string,
+): Promise<RemoteConnectionTestResult> {
+  const response = await apiRequest<{
+    status: RemoteConnectionStatus
+    error: string | null
+    checked_at: string
+    connection: RemoteConnection
+  }>(`${remoteConnectionsApiPath}/${connectionId}/test`, {
+    method: "POST",
+  })
+
+  return {
+    ...response.data,
+    connection: normalizeRemoteConnection(response.data.connection),
+  }
+}
+
+export async function runRemoteConnectionCommand(
+  connectionId: string,
+  options: {
+    command: string
+    timeout_seconds?: number
+    onFrame?: (frame: RemoteCommandFrame) => void
+  },
+): Promise<RemoteCommandResult> {
+  const frames: RemoteCommandFrame[] = []
+  let output = ""
+  let exitCode: number | null = null
+  let timedOut = false
+
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(
+      buildWebSocketUrl(`${remoteConnectionsApiPath}/${connectionId}/exec/ws`),
+    )
+
+    const finish = () => {
+      resolve({ frames, output, exitCode, timedOut })
+    }
+
+    const addFrame = (frame: RemoteCommandFrame) => {
+      frames.push(frame)
+      if ((frame.type === "stdout" || frame.type === "stderr") && frame.data) {
+        output += frame.data
+      }
+      if (frame.type === "error") {
+        output += frame.message ? `${frame.message}\n` : ""
+      }
+      if (frame.type === "exit") {
+        exitCode = frame.exit_code ?? null
+        timedOut = Boolean(frame.timed_out)
+      }
+      options.onFrame?.(frame)
+    }
+
+    socket.onopen = () => {
+      socket.send(
+        JSON.stringify({
+          command: options.command,
+          timeout_seconds: options.timeout_seconds ?? 15,
+        }),
+      )
+    }
+
+    socket.onmessage = (event) => {
+      try {
+        const frame = JSON.parse(event.data) as RemoteCommandFrame
+        addFrame(frame)
+        if (frame.type === "exit") {
+          socket.close()
+          finish()
+        }
+      } catch {
+        const error = new Error("Failed to parse remote command output")
+        socket.close()
+        reject(error)
+      }
+    }
+
+    socket.onerror = () => {
+      reject(new Error("Remote command stream failed"))
+    }
+
+    socket.onclose = () => {
+      if (exitCode !== null || frames.some((frame) => frame.type === "error")) {
+        finish()
+      }
+    }
+  })
 }
 
 function normalizeRemoteConnection(connection: RemoteConnection): RemoteConnection {
