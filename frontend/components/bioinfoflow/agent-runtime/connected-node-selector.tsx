@@ -55,6 +55,7 @@ export function ConnectedNodeSelector({
   const isControlled = selectedConnectionId !== undefined
   const [internalSelectedConnectionId, setInternalSelectedConnectionId] = useState("")
   const [connections, setConnections] = useState<RemoteConnection[]>(demoConnectionNodes)
+  const [hasLoadedRemoteConnections, setHasLoadedRemoteConnections] = useState(false)
   const requestedSelectedConnectionId = selectedConnectionId ?? internalSelectedConnectionId
   const currentSelectedConnectionId = connections.some(
     (connection) => connection.id === requestedSelectedConnectionId,
@@ -83,6 +84,7 @@ export function ConnectedNodeSelector({
       .then((remoteConnections) => {
         if (disposed) return
         setConnections(remoteConnections)
+        setHasLoadedRemoteConnections(true)
         const currentSelected = selectedConnectionIdRef.current
         const hasCurrentSelected = remoteConnections.some(
           (connection) => connection.id === currentSelected,
@@ -90,9 +92,6 @@ export function ConnectedNodeSelector({
         const nextSelected = hasCurrentSelected ? currentSelected : ""
         if (!isControlled) {
           setInternalSelectedConnectionId(nextSelected)
-        }
-        if (currentSelected && nextSelected !== currentSelected) {
-          onSelectedConnectionChangeRef.current?.("")
         }
       })
       .catch(() => {
@@ -110,11 +109,16 @@ export function ConnectedNodeSelector({
   const selectedStatus = selectedConnection ? t(`status.${selectedConnection.status}`) : ""
 
   useEffect(() => {
-    if (requestedSelectedConnectionId && !currentSelectedConnectionId) {
+    if (
+      hasLoadedRemoteConnections &&
+      requestedSelectedConnectionId &&
+      !currentSelectedConnectionId
+    ) {
       onSelectedConnectionChange?.("")
     }
   }, [
     currentSelectedConnectionId,
+    hasLoadedRemoteConnections,
     onSelectedConnectionChange,
     requestedSelectedConnectionId,
   ])

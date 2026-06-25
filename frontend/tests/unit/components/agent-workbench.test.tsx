@@ -393,7 +393,7 @@ describe("AgentWorkbench", () => {
     setupRuntime({
       session: {
         ...baseSession,
-        metadata: { remote_connection_id: "connection-test-231" },
+        metadata: { remote_connection_id: "11111111-1111-1111-1111-111111111111" },
       },
       send,
     })
@@ -407,7 +407,9 @@ describe("AgentWorkbench", () => {
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith(
         "Check the remote host",
-        expect.objectContaining({ remoteConnectionId: "connection-test-231" }),
+        expect.objectContaining({
+          remoteConnectionId: "11111111-1111-1111-1111-111111111111",
+        }),
       ),
     )
   })

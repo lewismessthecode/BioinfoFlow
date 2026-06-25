@@ -69,6 +69,22 @@ describe("ConnectedNodeSelector", () => {
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
+  it("does not clear a restored backend id before live connections load", async () => {
+    const onSelectedConnectionChange = vi.fn()
+    apiRequestMock.mockReturnValueOnce(new Promise(() => {}))
+
+    render(
+      <ConnectedNodeSelector
+        selectedConnectionId="11111111-1111-1111-1111-111111111111"
+        onSelectedConnectionChange={onSelectedConnectionChange}
+      />,
+    )
+
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
+    expect(screen.getByRole("button", { name: "Choose connection" })).toBeInTheDocument()
+    expect(onSelectedConnectionChange).not.toHaveBeenCalled()
+  })
+
   it("clears a stale controlled selection", async () => {
     const onSelectedConnectionChange = vi.fn()
     apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
