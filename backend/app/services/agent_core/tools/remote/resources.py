@@ -294,14 +294,16 @@ class RemoteReadFileTool:
             output_limit=max_bytes + 1,
         )
         content_truncated = len(result.stdout) > max_bytes
+        content = result.stdout[:max_bytes]
         observation = _result_observation(
             result,
             force_truncated=content_truncated,
+            stdout=content,
         )
         return {
             "connection": connection.summary(),
             "path": path,
-            "content": result.stdout[:max_bytes],
+            "content": content,
             "result": observation,
         }
 
@@ -543,8 +545,11 @@ def _result_observation(
     result: RemoteCommandResult,
     *,
     force_truncated: bool = False,
+    stdout: str | None = None,
 ) -> dict[str, int | str | bool]:
     observation = result.observation()
+    if stdout is not None:
+        observation["stdout"] = stdout
     if force_truncated:
         observation["truncated"] = True
         observation["stdout_truncated"] = True

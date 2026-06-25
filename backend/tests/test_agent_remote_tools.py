@@ -6,6 +6,7 @@ import pytest
 
 from app.services.agent_core.context.remote import render_remote_connection_context
 from app.services.agent_core.tools import build_default_tool_registry
+from app.services.agent_core.tools.executor import _artifact_descriptor
 from app.services.agent_core.tools.remote import (
     DatabaseRemoteConnectionResolver,
     RemoteConnectionsListTool,
@@ -489,7 +490,34 @@ async def test_remote_read_file_quotes_path_and_bounds_content(db_session):
     assert executor.calls[0]["output_limit"] == 13
     assert result["path"] == "/data/it's here.txt"
     assert result["content"] == "hello remote"
+    assert result["result"]["stdout"] == "hello remote"
     assert result["result"]["truncated"] is True
+
+
+def test_remote_exec_nested_result_promotes_command_artifact():
+    descriptor = _artifact_descriptor(
+        policy={"stdout": True, "stderr": True, "type": "remote_command"},
+        tool_name="remote.exec",
+        action_input={"connection_id": "conn-1", "command": "hostname"},
+        result={
+            "connection": {"id": "conn-1", "name": "HPC login"},
+            "command": "hostname",
+            "result": {
+                "exit_code": 0,
+                "stdout": "login.cluster.example.org\n",
+                "stderr": "",
+                "timed_out": False,
+                "truncated": False,
+            },
+        },
+    )
+
+    assert descriptor is not None
+    assert descriptor["type"] == "command"
+    assert descriptor["title"] == "hostname"
+    assert descriptor["summary"] == "exit code 0"
+    assert descriptor["payload"]["stdout"] == "login.cluster.example.org\n"
+    assert descriptor["payload"]["connection"]["id"] == "conn-1"
 
 
 @pytest.mark.asyncio
