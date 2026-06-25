@@ -96,6 +96,11 @@ class RemoteConnectionService:
         *,
         workspace_id: str,
     ) -> RemoteConnection:
+        validate_remote_connection_auth_fields(
+            auth_method=data.get("auth_method", RemoteConnectionAuthMethod.SSH_CONFIG),
+            ssh_alias=data.get("ssh_alias"),
+            key_path=data.get("key_path"),
+        )
         try:
             return await self.repo.create(
                 **data,

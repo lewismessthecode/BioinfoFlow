@@ -18,6 +18,7 @@ from app.config import settings
 from app.database import Base, stamp_database_revision
 from app.main import app as fastapi_app
 from app.services.terminal_service import terminal_manager
+from app.utils.exceptions import ValidationError
 from app.workspace import DEFAULT_WORKSPACE_ID
 from tests.support.auth import TEST_SESSION_COOKIE, create_better_auth_db
 
@@ -227,6 +228,19 @@ async def test_remote_connection_validation_enforces_auth_method_fields(async_cl
         ),
     )
     assert ssh_config_without_alias.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_service_enforces_auth_method_fields(db_session):
+    from app.services.remote_connection_service import RemoteConnectionService
+
+    service = RemoteConnectionService(db_session)
+
+    with pytest.raises(ValidationError, match="key_path is required"):
+        await service.create_connection(
+            _connection_payload(auth_method="key_file", key_path=None),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+        )
 
 
 @pytest.mark.asyncio

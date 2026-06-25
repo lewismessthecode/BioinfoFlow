@@ -236,3 +236,27 @@ async def test_ssh_executor_stream_caps_output():
     assert [frame.type for frame in frames] == ["stdout", "truncated", "exit"]
     assert frames[0].data == "abc"
     assert frames[1].data == "remote output truncated after 3 bytes"
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_stream_truncation_kills_process():
+    process = _FakeProcess(stdout=[b"abcdef"], returncode=None, wait_forever=True)
+
+    async def process_factory(*_argv, **_kwargs):
+        return process
+
+    executor = SshRemoteExecutor(process_factory=process_factory)
+
+    frames = [
+        frame
+        async for frame in executor.stream(
+            RemoteConnectionConfig(id="conn-1", name="Cluster", host="cluster"),
+            "yes",
+            timeout_seconds=60,
+            output_limit=3,
+        )
+    ]
+
+    assert process.killed is True
+    assert [frame.type for frame in frames] == ["stdout", "truncated", "exit"]
+    assert frames[-1].exit_code == -9
