@@ -96,9 +96,7 @@ describe("ConnectionsPage", () => {
     expect(screen.getByLabelText("SSH alias")).toBeInTheDocument()
     expect(screen.getByLabelText("Private key path")).toBeInTheDocument()
     expect(screen.getAllByText("Agent Skill instructions")[0]).toBeInTheDocument()
-    expect(
-      screen.getAllByText("Put paths, APIs, environment notes, and startup commands in the skill text.")[0],
-    ).toBeInTheDocument()
+    expect(screen.getByText("Drop a skill text file here")).toBeInTheDocument()
 
     expect(screen.queryByText("Tags")).not.toBeInTheDocument()
     expect(screen.queryByText("Accessible paths")).not.toBeInTheDocument()
@@ -116,6 +114,14 @@ describe("ConnectionsPage", () => {
       await screen.findByText("No matching connections. Try another name, host, alias, or note."),
     ).toBeInTheDocument()
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
+  })
+
+  it("does not show demo connections when the live backend is unavailable", async () => {
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByText("Could not load live SSH connections. Check the backend and try again.")).toBeInTheDocument()
+    expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Run probe" })).not.toBeInTheDocument()
   })
 
   it("saves new connections through the backend", async () => {

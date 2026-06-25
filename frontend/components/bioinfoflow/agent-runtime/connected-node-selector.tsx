@@ -15,7 +15,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  demoConnectionNodes,
   fetchRemoteConnections,
   type RemoteConnection,
   type RemoteConnectionStatus,
@@ -54,7 +53,7 @@ export function ConnectedNodeSelector({
   const t = useTranslations("agentRuntime.connectedNode")
   const isControlled = selectedConnectionId !== undefined
   const [internalSelectedConnectionId, setInternalSelectedConnectionId] = useState("")
-  const [connections, setConnections] = useState<RemoteConnection[]>(demoConnectionNodes)
+  const [connections, setConnections] = useState<RemoteConnection[]>([])
   const [hasLoadedRemoteConnections, setHasLoadedRemoteConnections] = useState(false)
   const requestedSelectedConnectionId = selectedConnectionId ?? internalSelectedConnectionId
   const currentSelectedConnectionId = connections.some(
@@ -95,7 +94,9 @@ export function ConnectedNodeSelector({
         }
       })
       .catch(() => {
-        // Keep demo fallback data when the live backend is unavailable.
+        if (disposed) return
+        setConnections([])
+        setHasLoadedRemoteConnections(true)
       })
 
     return () => {

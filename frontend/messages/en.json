@@ -1955,6 +1955,7 @@
       "title": "Connections",
       "description": "Pick a connection to preview the SSH config and Agent instructions.",
       "loading": "Loading connections...",
+      "error": "Could not load live SSH connections. Check the backend and try again.",
       "empty": "No matching connections. Try another name, host, alias, or note."
     },
     "detail": {

@@ -62,9 +62,7 @@ async def test_ssh_executor_builds_open_ssh_argv_without_shell_string():
         host="cluster.example.org",
         username="alice",
         port=2222,
-        ssh_alias="cluster-login",
         key_path="/Users/alice/.ssh/id_ed25519",
-        ssh_config_path="/Users/alice/.ssh/config",
     )
 
     result = await executor.run(
@@ -76,8 +74,6 @@ async def test_ssh_executor_builds_open_ssh_argv_without_shell_string():
 
     assert captured["argv"] == [
         "ssh",
-        "-F",
-        "/Users/alice/.ssh/config",
         "-i",
         "/Users/alice/.ssh/id_ed25519",
         "-p",
@@ -87,13 +83,54 @@ async def test_ssh_executor_builds_open_ssh_argv_without_shell_string():
         "-o",
         "ConnectTimeout=5",
         "--",
-        "alice@cluster-login",
+        "alice@cluster.example.org",
         "hostname",
     ]
     assert captured["kwargs"]["stdout"] == asyncio.subprocess.PIPE
     assert captured["kwargs"]["stderr"] == asyncio.subprocess.PIPE
     assert result.exit_code == 0
     assert result.stdout == "ok\n"
+
+
+@pytest.mark.asyncio
+async def test_ssh_config_alias_is_used_as_exact_target_without_user_or_port():
+    captured: dict[str, object] = {}
+
+    async def process_factory(*argv, **kwargs):
+        captured["argv"] = list(argv)
+        captured["kwargs"] = kwargs
+        return _FakeProcess(stdout=[b"ok\n"])
+
+    executor = SshRemoteExecutor(process_factory=process_factory)
+    connection = RemoteConnectionConfig(
+        id="conn-1",
+        name="Cluster",
+        host="cluster.example.org",
+        username="alice",
+        port=2222,
+        ssh_alias="cluster-login",
+        ssh_config_path="/Users/alice/.ssh/config",
+    )
+
+    await executor.run(
+        connection,
+        "hostname",
+        timeout_seconds=5,
+        output_limit=100,
+    )
+
+    assert captured["argv"] == [
+        "ssh",
+        "-F",
+        "/Users/alice/.ssh/config",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=5",
+        "--",
+        "cluster-login",
+        "hostname",
+    ]
 
 
 @pytest.mark.asyncio
