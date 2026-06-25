@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.connections import router as connections_router
 from app.api.v1.batch import router as batch_router
 from app.api.v1.events import router as events_router
 from app.api.v1.files import router as files_router
@@ -18,6 +19,7 @@ from app.api.v1.terminal import router as terminal_router
 from app.api.v1.workflows import router as workflows_router
 
 api_router = APIRouter()
+api_router.include_router(connections_router)
 api_router.include_router(projects_router)
 api_router.include_router(project_workflows_router)
 api_router.include_router(workflows_router)
