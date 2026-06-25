@@ -30,6 +30,17 @@ type RemoteConnectionListResponse =
 
 export const remoteConnectionsApiPath = "/connections"
 
+export type RemoteConnectionCreateInput = {
+  name: string
+  host: string
+  port: number
+  username: string
+  auth_method: RemoteConnectionAuthMethod
+  ssh_alias?: string | null
+  key_path?: string | null
+  skill_instructions?: string | null
+}
+
 export async function fetchRemoteConnections(): Promise<RemoteConnection[]> {
   const response = await apiRequest<RemoteConnectionListResponse>(remoteConnectionsApiPath)
   const payload = response.data
@@ -39,6 +50,16 @@ export async function fetchRemoteConnections(): Promise<RemoteConnection[]> {
   }
 
   return (payload.connections ?? payload.data ?? []).map(normalizeRemoteConnection)
+}
+
+export async function createRemoteConnection(
+  input: RemoteConnectionCreateInput,
+): Promise<RemoteConnection> {
+  const response = await apiRequest<RemoteConnection>(remoteConnectionsApiPath, {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+  return normalizeRemoteConnection(response.data)
 }
 
 function normalizeRemoteConnection(connection: RemoteConnection): RemoteConnection {

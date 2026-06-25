@@ -12,6 +12,7 @@ import {
   interruptAgentRuntimeTurn,
   listAgentRuntimeSessions,
   subscribeAgentRuntimeEvents,
+  updateAgentRuntimeSessionMetadata,
   updateAgentRuntimeSessionMode,
   updateAgentRuntimeSessionPermissionMode,
   type AgentActionDecision,
@@ -203,14 +204,18 @@ export function useAgentRuntime(
     })
   }, [activeSessionId, isLiveRuntime, refreshState, streamCanStart])
 
-  const ensureSession = useCallback(
-    async (modelSelection?: AgentModelSelection | null) => {
+  const ensureSessionWithMetadata = useCallback(
+    async (
+      modelSelection?: AgentModelSelection | null,
+      metadata?: Record<string, unknown>,
+    ) => {
       if (activeSession) return activeSession
       const created = await createAgentRuntimeSession({
         projectId: projectId || null,
         permissionMode: draftPermissionMode,
         mode: draftMode,
         modelSelection,
+        metadata,
       })
       setSessions((current) => [created, ...current])
       activeSessionIdRef.current = created.id
@@ -221,19 +226,49 @@ export function useAgentRuntime(
     [activeSession, draftMode, draftPermissionMode, projectId, setActiveSessionId],
   )
 
+  const ensureSessionRemoteConnection = useCallback(
+    async (session: AgentRuntimeSession, remoteConnectionId?: string | null) => {
+      if (session.metadata?.remote_connection_id === remoteConnectionId) return session
+      if (!remoteConnectionId && !session.metadata?.remote_connection_id) return session
+      const metadata = { ...(session.metadata ?? {}) }
+      if (remoteConnectionId) {
+        metadata.remote_connection_id = remoteConnectionId
+      } else {
+        delete metadata.remote_connection_id
+      }
+      const updated = await updateAgentRuntimeSessionMetadata(session.id, {
+        ...metadata,
+      })
+      setSessions((current) => mergeSessionList(current, updated))
+      if (activeSessionIdRef.current === updated.id) {
+        dispatch({ type: "session.selected", session: updated })
+      }
+      emitRuntimeSessionUpdated(updated)
+      return updated
+    },
+    [],
+  )
+
   const send = useCallback(
     async (
       inputText: string,
       options?: {
         modelSelection?: AgentModelSelection | null
         inputParts?: AgentRuntimeInputPart[] | null
+        remoteConnectionId?: string | null
       },
     ) => {
       const text = inputText.trim()
       if (!text) return null
       dispatch({ type: "loading" })
       try {
-        const session = await ensureSession(options?.modelSelection)
+        const metadata = options?.remoteConnectionId
+          ? { remote_connection_id: options.remoteConnectionId }
+          : undefined
+        const session = await ensureSessionRemoteConnection(
+          await ensureSessionWithMetadata(options?.modelSelection, metadata),
+          options?.remoteConnectionId,
+        )
         const turn = await createAgentRuntimeTurn({
           sessionId: session.id,
           inputText: text,
@@ -251,7 +286,7 @@ export function useAgentRuntime(
         return null
       }
     },
-    [ensureSession, refreshState],
+    [ensureSessionRemoteConnection, ensureSessionWithMetadata, refreshState],
   )
 
   const interrupt = useCallback(async () => {

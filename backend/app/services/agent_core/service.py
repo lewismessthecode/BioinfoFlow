@@ -152,14 +152,18 @@ class AgentCoreService:
         if "mode" in updates and updates["mode"]:
             update_data["toolset_policy"] = {"name": updates["mode"]}
         if "metadata" in updates or "model_selection" in updates:
-            update_data["session_metadata"] = session_metadata_with_model_selection(
-                session.session_metadata if hasattr(session, "session_metadata") else None,
-                updates.get("model_selection"),
+            current_metadata = (
+                session.session_metadata if hasattr(session, "session_metadata") else None
             )
-            if "metadata" in updates:
-                update_data["session_metadata"] = session_metadata_with_model_selection(
-                    updates["metadata"], updates.get("model_selection")
-                )
+            metadata = updates["metadata"] if "metadata" in updates else current_metadata
+            model_selection = (
+                updates["model_selection"]
+                if "model_selection" in updates
+                else (current_metadata or {}).get("model_selection")
+            )
+            update_data["session_metadata"] = session_metadata_with_model_selection(
+                metadata, model_selection
+            )
         return await self.session_repo.update_all(session, **update_data)
 
     async def delete_session(

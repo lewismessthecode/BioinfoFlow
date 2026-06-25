@@ -84,21 +84,35 @@ class DatabaseRemoteConnectionResolver:
         user_id: str,
         session_id: str | None = None,
     ) -> list[RemoteConnectionConfig]:
-        connections, _pagination = await RemoteConnectionRepository(self.db).list_for_workspace(
-            workspace_id=workspace_id,
-            limit=100,
-        )
-        session_connections = await _session_metadata_connections(
+        allowed_ids = await _selected_remote_connection_ids(
             self.db,
             workspace_id=workspace_id,
             user_id=user_id,
             session_id=session_id,
         )
-        seen = {str(connection.id) for connection in connections}
-        return [
-            *(remote_connection_config_from_model(connection) for connection in connections),
-            *(connection for connection in session_connections if connection.id not in seen),
-        ]
+        if not allowed_ids:
+            return []
+
+        repo = RemoteConnectionRepository(self.db)
+        connections: list[RemoteConnectionConfig] = []
+        for connection_id in allowed_ids:
+            connection = await repo.get_for_workspace(
+                connection_id,
+                workspace_id=workspace_id,
+            )
+            if connection is not None:
+                connections.append(remote_connection_config_from_model(connection))
+                continue
+            metadata_connection = await _session_metadata_connection(
+                self.db,
+                connection_id=connection_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                session_id=session_id,
+            )
+            if metadata_connection is not None:
+                connections.append(metadata_connection)
+        return connections
 
     async def get(
         self,
@@ -108,12 +122,6 @@ class DatabaseRemoteConnectionResolver:
         user_id: str,
         session_id: str | None = None,
     ) -> RemoteConnectionConfig:
-        connection = await RemoteConnectionRepository(self.db).get_for_workspace(
-            connection_id,
-            workspace_id=workspace_id,
-        )
-        if connection is not None:
-            return remote_connection_config_from_model(connection)
         for connection in await self.list(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -266,8 +274,9 @@ class RemoteReadFileTool:
             },
             "required": ["connection", "path", "content", "result"],
         },
-        risk_level="read",
-        read_scope=["remote_connections", "remote_files"],
+        risk_level="act_high",
+        read_scope=["remote_connections"],
+        write_scope=["remote_files"],
         audit="Read bounded remote file content over SSH.",
         timeout_seconds=40,
         artifact_policy={"stdout": True, "stderr": True, "type": "remote_file"},
@@ -334,8 +343,9 @@ class RemoteListDirTool:
             },
             "required": ["connection", "path", "entries", "result"],
         },
-        risk_level="read",
-        read_scope=["remote_connections", "remote_files"],
+        risk_level="act_high",
+        read_scope=["remote_connections"],
+        write_scope=["remote_files"],
         audit="List bounded remote directory entries over SSH.",
         timeout_seconds=40,
         artifact_policy={"stdout": True, "stderr": True, "type": "remote_directory"},
@@ -405,6 +415,59 @@ async def _session_metadata_connections(
     return _connections_from_session_policy(session)
 
 
+async def _session_metadata_connection(
+    db: AsyncSession,
+    *,
+    connection_id: str,
+    workspace_id: str,
+    user_id: str,
+    session_id: str | None,
+) -> RemoteConnectionConfig | None:
+    for connection in await _session_metadata_connections(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        session_id=session_id,
+    ):
+        if connection.id == connection_id:
+            return connection
+    return None
+
+
+async def _selected_remote_connection_ids(
+    db: AsyncSession,
+    *,
+    workspace_id: str,
+    user_id: str,
+    session_id: str | None,
+) -> list[str]:
+    if not session_id:
+        return []
+    try:
+        uuid.UUID(str(session_id))
+    except (TypeError, ValueError):
+        return []
+    session = await AgentSessionRepository(db).get(session_id)
+    if session is None:
+        return []
+    if str(session.workspace_id) != workspace_id or str(session.user_id) != user_id:
+        return []
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    for policy in (
+        getattr(session, "session_metadata", None),
+        getattr(session, "context_policy", None),
+        getattr(session, "toolset_policy", None),
+    ):
+        for connection_id in _selected_ids_from_policy(policy):
+            if connection_id in seen:
+                continue
+            seen.add(connection_id)
+            selected.append(connection_id)
+    return selected
+
+
 def _connections_from_session_policy(agent_session) -> list[RemoteConnectionConfig]:
     raw_connections: list[Any] = []
     for policy in (
@@ -430,6 +493,27 @@ def _connections_from_session_policy(agent_session) -> list[RemoteConnectionConf
         seen.add(connection.id)
         connections.append(connection)
     return connections
+
+
+def _selected_ids_from_policy(policy: Any) -> list[str]:
+    if not isinstance(policy, dict):
+        return []
+    ids: list[str] = []
+    for key in (
+        "remote_connection_id",
+        "selected_remote_connection_id",
+        "current_remote_connection_id",
+    ):
+        value = policy.get(key)
+        if isinstance(value, str) and value:
+            ids.append(value)
+    for key in ("remote_connection", "selected_remote_connection", "remote"):
+        value = policy.get(key)
+        if isinstance(value, dict):
+            nested = value.get("id") or value.get("connection_id")
+            if isinstance(nested, str) and nested:
+                ids.append(nested)
+    return ids
 
 
 def _coerce_connection(raw: Any) -> RemoteConnectionConfig | None:

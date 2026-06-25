@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 RemoteConnectionAuthMethod = Literal["ssh_config", "key_file", "agent"]
@@ -39,6 +39,15 @@ class RemoteConnectionBase(BaseModel):
             stripped = value.strip()
             return stripped or None
         return value
+
+    @model_validator(mode="after")
+    def _validate_auth_fields(self):
+        _validate_auth_method_fields(
+            auth_method=self.auth_method,
+            ssh_alias=self.ssh_alias,
+            key_path=self.key_path,
+        )
+        return self
 
 
 class RemoteConnectionCreate(RemoteConnectionBase):
@@ -75,6 +84,39 @@ class RemoteConnectionUpdate(BaseModel):
             stripped = value.strip()
             return stripped or None
         return value
+
+
+def _validate_auth_method_fields(
+    *,
+    auth_method: RemoteConnectionAuthMethod,
+    ssh_alias: str | None,
+    key_path: str | None,
+) -> None:
+    if auth_method == "ssh_config" and not ssh_alias:
+        raise ValueError("ssh_alias is required when auth_method is ssh_config")
+    if auth_method == "key_file" and not key_path:
+        raise ValueError("key_path is required when auth_method is key_file")
+    if auth_method == "agent" and key_path:
+        raise ValueError("key_path must be empty when auth_method is agent")
+
+
+def validate_remote_connection_auth_fields(
+    *,
+    auth_method: RemoteConnectionAuthMethod,
+    ssh_alias: str | None,
+    key_path: str | None,
+) -> None:
+    """Validate a complete persisted remote auth configuration."""
+    try:
+        _validate_auth_method_fields(
+            auth_method=auth_method,
+            ssh_alias=ssh_alias,
+            key_path=key_path,
+        )
+    except ValueError as exc:
+        from app.utils.exceptions import ValidationError
+
+        raise ValidationError(str(exc)) from exc
 
 
 class RemoteConnectionRead(BaseModel):

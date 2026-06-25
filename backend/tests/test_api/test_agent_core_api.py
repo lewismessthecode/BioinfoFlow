@@ -386,6 +386,37 @@ async def test_agent_core_accepts_catalog_model_selection(async_client, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_agent_core_metadata_patch_preserves_model_selection(async_client):
+    project_id = await _create_project(async_client)
+    model = await _create_llm_model(async_client)
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "project_id": project_id,
+            "title": "Remote-routed session",
+            "model_selection": {"model_id": model["id"]},
+            "metadata": {"batch": "b001"},
+        },
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+
+    update_session = await async_client.patch(
+        f"/api/v1/agent/sessions/{session['id']}",
+        json={"metadata": {"batch": "b001", "remote_connection_id": "connection-1"}},
+    )
+
+    assert update_session.status_code == 200
+    updated = update_session.json()["data"]
+    assert updated["metadata"] == {
+        "batch": "b001",
+        "remote_connection_id": "connection-1",
+        "model_selection": {"model_id": model["id"]},
+    }
+    assert updated["model_selection"] == {"model_id": model["id"]}
+
+
+@pytest.mark.asyncio
 async def test_agent_core_streams_text_and_reasoning_events(async_client, monkeypatch):
     completion_kwargs: list[dict] = []
 

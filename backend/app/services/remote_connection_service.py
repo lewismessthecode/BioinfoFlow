@@ -8,7 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.remote_connection import RemoteConnection, RemoteConnectionStatus
+from app.models.remote_connection import RemoteConnectionAuthMethod
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
+from app.schemas.remote_connection import validate_remote_connection_auth_fields
 from app.services.remote_execution import RemoteConnectionConfig, SshRemoteExecutor
 from app.utils.exceptions import ConflictError, ValidationError
 
@@ -111,6 +113,11 @@ class RemoteConnectionService:
         connection: RemoteConnection,
         data: dict,
     ) -> RemoteConnection:
+        validate_remote_connection_auth_fields(
+            auth_method=data.get("auth_method", connection.auth_method),
+            ssh_alias=data.get("ssh_alias", connection.ssh_alias),
+            key_path=data.get("key_path", connection.key_path),
+        )
         try:
             return await self.repo.update_all(connection, **data)
         except IntegrityError as exc:
@@ -145,14 +152,24 @@ class RemoteConnectionService:
 def remote_connection_config_from_model(
     connection: RemoteConnection,
 ) -> RemoteConnectionConfig:
+    key_path = (
+        connection.key_path
+        if connection.auth_method == RemoteConnectionAuthMethod.KEY_FILE
+        else None
+    )
+    ssh_alias = (
+        connection.ssh_alias
+        if connection.auth_method == RemoteConnectionAuthMethod.SSH_CONFIG
+        else None
+    )
     return RemoteConnectionConfig(
         id=str(connection.id),
         name=connection.name,
         host=connection.host,
         username=connection.username,
         port=connection.port,
-        ssh_alias=connection.ssh_alias,
-        key_path=connection.key_path,
+        ssh_alias=ssh_alias,
+        key_path=key_path,
         status=connection.last_status,
         skill_summary=connection.skill_instructions,
     )

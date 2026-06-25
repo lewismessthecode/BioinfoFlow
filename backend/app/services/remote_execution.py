@@ -92,6 +92,7 @@ class RemoteExecutor(Protocol):
         command: str,
         *,
         timeout_seconds: int,
+        output_limit: int,
     ) -> AsyncIterator[RemoteOutputFrame]:
         """Stream stdout/stderr frames from a remote command."""
 
@@ -160,13 +161,20 @@ class SshRemoteExecutor:
         stderr_task = asyncio.create_task(_read_limited(process.stderr, output_limit))
 
         timed_out = False
+        completed = False
         try:
             await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+            completed = True
         except asyncio.TimeoutError:
             timed_out = True
             with contextlib.suppress(ProcessLookupError):
                 process.kill()
             await process.wait()
+        finally:
+            if not completed and not timed_out and process.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    process.kill()
+                await process.wait()
 
         stdout, stdout_truncated = await stdout_task
         stderr, stderr_truncated = await stderr_task
@@ -187,9 +195,12 @@ class SshRemoteExecutor:
         command: str,
         *,
         timeout_seconds: int,
+        output_limit: int,
     ) -> AsyncIterator[RemoteOutputFrame]:
         if timeout_seconds < 1:
             raise BadRequestError("timeout_seconds must be >= 1")
+        if output_limit < 1:
+            raise BadRequestError("output_limit must be >= 1")
         argv = self.build_argv(
             connection,
             command,
@@ -200,15 +211,17 @@ class SshRemoteExecutor:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        queue: asyncio.Queue[RemoteOutputFrame] = asyncio.Queue()
+        queue: asyncio.Queue[RemoteOutputFrame] = asyncio.Queue(maxsize=32)
+        output_budget = _StreamOutputBudget(output_limit)
         stdout_task = asyncio.create_task(
-            _pump_stream(process.stdout, "stdout", queue)
+            _pump_stream(process.stdout, "stdout", queue, output_budget)
         )
         stderr_task = asyncio.create_task(
-            _pump_stream(process.stderr, "stderr", queue)
+            _pump_stream(process.stderr, "stderr", queue, output_budget)
         )
         wait_task = asyncio.create_task(process.wait())
         timed_out = False
+        completed = False
         deadline = asyncio.get_running_loop().time() + timeout_seconds
 
         try:
@@ -224,6 +237,7 @@ class SshRemoteExecutor:
                     and stderr_task.done()
                     and queue.empty()
                 ):
+                    completed = True
                     break
                 try:
                     frame = await asyncio.wait_for(queue.get(), timeout=0.1)
@@ -231,11 +245,20 @@ class SshRemoteExecutor:
                     continue
                 yield frame
         finally:
+            if not completed and process.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    process.kill()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await wait_task
             for task in (stdout_task, stderr_task):
                 if not task.done():
                     task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+            if not wait_task.done():
+                wait_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await wait_task
 
         yield RemoteOutputFrame(
             type="exit",
@@ -269,6 +292,7 @@ async def _pump_stream(
     stream: Any,
     stream_type: str,
     queue: asyncio.Queue[RemoteOutputFrame],
+    output_budget: _StreamOutputBudget,
 ) -> None:
     if stream is None:
         return
@@ -276,12 +300,42 @@ async def _pump_stream(
         chunk = await stream.read(4096)
         if not chunk:
             return
-        await queue.put(
-            RemoteOutputFrame(
-                type=stream_type,
-                data=chunk.decode("utf-8", errors="replace"),
+        kept, truncated = await output_budget.take(chunk)
+        if kept:
+            await queue.put(
+                RemoteOutputFrame(
+                    type=stream_type,
+                    data=kept.decode("utf-8", errors="replace"),
+                )
             )
-        )
+        if truncated:
+            await queue.put(
+                RemoteOutputFrame(
+                    type="truncated",
+                    data=f"remote output truncated after {output_budget.limit} bytes",
+                )
+            )
+            return
+
+
+class _StreamOutputBudget:
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.remaining = limit
+        self.truncated = False
+        self.lock = asyncio.Lock()
+
+    async def take(self, chunk: bytes) -> tuple[bytes, bool]:
+        async with self.lock:
+            if self.truncated:
+                return b"", False
+            if len(chunk) <= self.remaining:
+                self.remaining -= len(chunk)
+                return chunk, False
+            kept = chunk[: self.remaining]
+            self.remaining = 0
+            self.truncated = True
+            return kept, True
 
 
 def _format_target(host: str, username: str | None) -> str:

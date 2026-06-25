@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_admin
 from app.auth.dependencies import resolve_websocket_user
 from app.auth.session import AuthUser
+from app.config import settings
 from app.schemas.remote_connection import (
     RemoteConnectionCreate,
     RemoteConnectionRead,
@@ -25,6 +27,10 @@ from app.utils.responses import error_response, success_response
 
 
 router = APIRouter(prefix="/connections", tags=["connections"])
+
+_EXEC_WS_MAX_COMMAND_LENGTH = 4000
+_EXEC_WS_MAX_TIMEOUT_SECONDS = 300
+_EXEC_WS_MAX_OUTPUT_BYTES = 64 * 1024
 
 
 def get_remote_connection_tester():
@@ -72,7 +78,7 @@ async def list_connections(
 async def create_connection(
     payload: RemoteConnectionCreate,
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = RemoteConnectionService(db)
@@ -85,14 +91,14 @@ async def create_connection(
 
 @router.get("/{connection_id}")
 async def get_connection(
-    connection_id: str,
+    connection_id: UUID,
     request: Request,
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = RemoteConnectionService(db)
     connection = await service.get_connection(
-        connection_id,
+        str(connection_id),
         workspace_id=user.workspace_id,
     )
     if not connection:
@@ -102,15 +108,15 @@ async def get_connection(
 
 @router.patch("/{connection_id}")
 async def update_connection(
-    connection_id: str,
+    connection_id: UUID,
     payload: RemoteConnectionUpdate,
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = RemoteConnectionService(db)
     connection = await service.get_connection(
-        connection_id,
+        str(connection_id),
         workspace_id=user.workspace_id,
     )
     if not connection:
@@ -124,14 +130,14 @@ async def update_connection(
 
 @router.delete("/{connection_id}")
 async def delete_connection(
-    connection_id: str,
+    connection_id: UUID,
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = RemoteConnectionService(db)
     connection = await service.get_connection(
-        connection_id,
+        str(connection_id),
         workspace_id=user.workspace_id,
     )
     if not connection:
@@ -142,15 +148,15 @@ async def delete_connection(
 
 @router.post("/{connection_id}/test")
 async def test_connection(
-    connection_id: str,
+    connection_id: UUID,
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     tester=Depends(get_remote_connection_tester),
 ):
     service = RemoteConnectionService(db, tester=tester)
     connection = await service.get_connection(
-        connection_id,
+        str(connection_id),
         workspace_id=user.workspace_id,
     )
     if not connection:
@@ -170,7 +176,7 @@ async def test_connection(
 
 @router.websocket("/{connection_id}/exec/ws")
 async def exec_connection_socket(
-    connection_id: str,
+    connection_id: UUID,
     websocket: WebSocket,
     db: AsyncSession = Depends(get_db),
 ):
@@ -181,10 +187,13 @@ async def exec_connection_socket(
         code = 4401 if exc.status_code == 401 else 4403
         await websocket.close(code=code, reason="Unauthorized")
         return
+    if settings.auth_is_team and user.role not in {"owner", "admin"}:
+        await websocket.close(code=4403, reason="Forbidden")
+        return
 
     service = RemoteConnectionService(db)
     connection = await service.get_connection(
-        connection_id,
+        str(connection_id),
         workspace_id=user.workspace_id,
     )
     if not connection:
@@ -208,13 +217,42 @@ async def exec_connection_socket(
         )
         await websocket.close(code=4400)
         return
-    timeout_seconds = int(first.get("timeout_seconds") or 60)
+    if len(command) > _EXEC_WS_MAX_COMMAND_LENGTH:
+        await websocket.send_json(
+            {
+                "type": "error",
+                "message": f"command must be <= {_EXEC_WS_MAX_COMMAND_LENGTH} characters",
+            }
+        )
+        await websocket.close(code=4400)
+        return
+    try:
+        timeout_seconds = int(first.get("timeout_seconds") or 60)
+    except (TypeError, ValueError):
+        await websocket.send_json(
+            {"type": "error", "message": "timeout_seconds must be an integer"}
+        )
+        await websocket.close(code=4400)
+        return
+    if timeout_seconds < 1 or timeout_seconds > _EXEC_WS_MAX_TIMEOUT_SECONDS:
+        await websocket.send_json(
+            {
+                "type": "error",
+                "message": (
+                    "timeout_seconds must be between 1 and "
+                    f"{_EXEC_WS_MAX_TIMEOUT_SECONDS}"
+                ),
+            }
+        )
+        await websocket.close(code=4400)
+        return
 
     try:
         async for frame in executor.stream(
             remote_connection_config_from_model(connection),
             command,
             timeout_seconds=timeout_seconds,
+            output_limit=_EXEC_WS_MAX_OUTPUT_BYTES,
         ):
             payload = {
                 "type": frame.type,

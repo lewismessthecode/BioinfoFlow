@@ -1,10 +1,25 @@
 from __future__ import annotations
 
-import pytest
+import asyncio
+from collections.abc import Generator
+from pathlib import Path
 
-from app.api.deps import get_current_user
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from starlette.websockets import WebSocketDisconnect
+
+import app.database as app_database
+import app.models  # noqa: F401
+import app.runtime.jobs as runtime_jobs
+from app.api.deps import get_current_user, get_db, require_admin
 from app.auth.session import AuthUser
+from app.config import settings
+from app.database import Base, stamp_database_revision
+from app.main import app as fastapi_app
+from app.services.terminal_service import terminal_manager
 from app.workspace import DEFAULT_WORKSPACE_ID
+from tests.support.auth import TEST_SESSION_COOKIE, create_better_auth_db
 
 
 OTHER_WORKSPACE_ID = "00000000-0000-0000-0000-000000000002"
@@ -39,11 +54,70 @@ def _connection_payload(**overrides):
     return payload
 
 
+async def _prepare_database(engine) -> None:
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    await stamp_database_revision(engine)
+
+
+@pytest.fixture
+def remote_connection_test_client(
+    tmp_path: Path,
+) -> Generator[tuple[TestClient, async_sessionmaker[AsyncSession]], None, None]:
+    db_path = tmp_path / "remote-connection-ws.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", future=True)
+    asyncio.run(_prepare_database(engine))
+
+    session_maker = async_sessionmaker(
+        bind=engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    original_engine = app_database.engine
+    original_session_maker = app_database.async_session_maker
+    original_jobs_session_maker = runtime_jobs.async_session_maker
+
+    app_database.engine = engine
+    app_database.async_session_maker = session_maker
+    runtime_jobs.async_session_maker = session_maker
+
+    async def override_get_db():
+        async with session_maker() as session:
+            yield session
+
+    fastapi_app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        with TestClient(fastapi_app) as client:
+            yield client, session_maker
+    finally:
+        fastapi_app.dependency_overrides.clear()
+        asyncio.run(terminal_manager.shutdown())
+        app_database.engine = original_engine
+        app_database.async_session_maker = original_session_maker
+        runtime_jobs.async_session_maker = original_jobs_session_maker
+        asyncio.run(engine.dispose())
+
+
+def _override_user(app, user: AuthUser) -> None:
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[require_admin] = lambda: user
+
+
+def _clear_user_overrides(app) -> None:
+    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(require_admin, None)
+
+
 @pytest.mark.asyncio
 async def test_remote_connection_crud_is_scoped_to_workspace(async_client, app):
-    app.dependency_overrides[get_current_user] = lambda: _auth_user(
-        user_id="user-1",
-        workspace_id=DEFAULT_WORKSPACE_ID,
+    _override_user(
+        app,
+        _auth_user(
+            user_id="user-1",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+        ),
     )
     try:
         create_resp = await async_client.post(
@@ -51,7 +125,7 @@ async def test_remote_connection_crud_is_scoped_to_workspace(async_client, app):
             json=_connection_payload(),
         )
     finally:
-        app.dependency_overrides.pop(get_current_user, None)
+        _clear_user_overrides(app)
 
     assert create_resp.status_code == 201
     created = create_resp.json()["data"]
@@ -71,6 +145,7 @@ async def test_remote_connection_crud_is_scoped_to_workspace(async_client, app):
         f"/api/v1/connections/{connection_id}",
         json={
             "name": "HPC Login Updated",
+            "auth_method": "ssh_config",
             "ssh_alias": "hpc-login",
             "key_path": None,
         },
@@ -81,9 +156,12 @@ async def test_remote_connection_crud_is_scoped_to_workspace(async_client, app):
     assert updated["ssh_alias"] == "hpc-login"
     assert updated["key_path"] is None
 
-    app.dependency_overrides[get_current_user] = lambda: _auth_user(
-        user_id="user-2",
-        workspace_id=OTHER_WORKSPACE_ID,
+    _override_user(
+        app,
+        _auth_user(
+            user_id="user-2",
+            workspace_id=OTHER_WORKSPACE_ID,
+        ),
     )
     try:
         other_list = await async_client.get("/api/v1/connections")
@@ -94,7 +172,7 @@ async def test_remote_connection_crud_is_scoped_to_workspace(async_client, app):
         )
         other_delete = await async_client.delete(f"/api/v1/connections/{connection_id}")
     finally:
-        app.dependency_overrides.pop(get_current_user, None)
+        _clear_user_overrides(app)
 
     assert other_list.status_code == 200
     assert other_list.json()["data"] == []
@@ -124,6 +202,38 @@ async def test_remote_connection_validation_rejects_secret_material(async_client
     secret_resp = await async_client.post("/api/v1/connections", json=secret_payload)
     assert secret_resp.status_code == 422
     assert secret_resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_validation_enforces_auth_method_fields(async_client):
+    missing_key = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="key_file", key_path=None),
+    )
+    assert missing_key.status_code == 422
+
+    agent_with_key = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="agent", key_path="~/.ssh/id_ed25519"),
+    )
+    assert agent_with_key.status_code == 422
+
+    ssh_config_without_alias = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            auth_method="ssh_config",
+            ssh_alias=None,
+            key_path=None,
+        ),
+    )
+    assert ssh_config_without_alias.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_routes_reject_malformed_ids(async_client):
+    response = await async_client.get("/api/v1/connections/not-a-uuid")
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio
@@ -220,3 +330,57 @@ async def test_remote_connection_test_uses_ssh_executor_by_default(
         }
     ]
     assert calls[0]["connection"].host == "login.example.org"
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_mutations_require_admin_in_team_mode(
+    async_client,
+    tmp_path,
+    monkeypatch,
+):
+    auth_db_path = tmp_path / "better-auth-member.db"
+    create_better_auth_db(auth_db_path)
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "better_auth_db_path", str(auth_db_path))
+
+    async_client.cookies.set("better-auth.session_token", TEST_SESSION_COOKIE)
+    create_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(),
+    )
+
+    assert create_resp.status_code == 403
+
+
+def test_remote_connection_websocket_requires_admin_in_team_mode(
+    remote_connection_test_client,
+    tmp_path,
+    monkeypatch,
+):
+    client, session_maker = remote_connection_test_client
+    auth_db_path = tmp_path / "better-auth-member.db"
+    create_better_auth_db(auth_db_path)
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "better_auth_db_path", str(auth_db_path))
+
+    async def create_connection():
+        from app.services.remote_connection_service import RemoteConnectionService
+
+        async with session_maker() as session:
+            return await RemoteConnectionService(session).create_connection(
+                _connection_payload(),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+            )
+
+    connection = asyncio.run(create_connection())
+
+    client.cookies.set("better-auth.session_token", TEST_SESSION_COOKIE)
+    with client.websocket_connect(
+        f"/api/v1/connections/{connection.id}/exec/ws"
+    ) as websocket:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            websocket.send_json({"command": "hostname"})
+            websocket.receive_json()
+
+    assert exc_info.value.code == 4403

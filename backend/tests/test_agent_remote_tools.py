@@ -7,6 +7,7 @@ import pytest
 from app.services.agent_core.context.remote import render_remote_connection_context
 from app.services.agent_core.tools import build_default_tool_registry
 from app.services.agent_core.tools.remote import (
+    DatabaseRemoteConnectionResolver,
     RemoteConnectionsListTool,
     RemoteExecTool,
     RemoteListDirTool,
@@ -17,21 +18,55 @@ from app.services.agent_core.tools.specs import AgentToolContext
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.services.remote_execution import RemoteCommandResult, RemoteConnectionConfig
 from app.services.remote_connection_service import RemoteConnectionService
+from app.utils.exceptions import NotFoundError
 
 
-def _tool_context(db_session) -> AgentToolContext:
+def _tool_context(db_session, *, session_id: str | None = "session-1") -> AgentToolContext:
     return AgentToolContext(
         db=db_session,
         workspace_id="workspace-1",
         user_id="user-1",
-        session_id="session-1",
+        session_id=session_id,
         turn_id="turn-1",
     )
 
 
-def _connection() -> RemoteConnectionConfig:
+def _tool_context_without_session(db_session) -> AgentToolContext:
+    return AgentToolContext(
+        db=db_session,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=None,
+        turn_id="turn-1",
+    )
+
+
+async def _create_agent_session(db_session, *, remote_connection_id: str | None):
+    from app.models.agent_core import AgentSession, AgentSessionStatus
+
+    session = AgentSession(
+        workspace_id="workspace-1",
+        user_id="user-1",
+        role_profile="bioinformatician",
+        permission_mode="guarded_auto",
+        automation_mode="assisted",
+        runtime_mode="api",
+        status=AgentSessionStatus.ACTIVE,
+        session_metadata=(
+            {"remote_connection_id": remote_connection_id}
+            if remote_connection_id
+            else None
+        ),
+    )
+    db_session.add(session)
+    await db_session.commit()
+    await db_session.refresh(session)
+    return session
+
+
+def _connection(connection_id: str = "conn-1") -> RemoteConnectionConfig:
     return RemoteConnectionConfig(
-        id="conn-1",
+        id=connection_id,
         name="HPC login",
         host="login.cluster.example.org",
         username="alice",
@@ -108,9 +143,13 @@ async def test_remote_connections_list_reads_workspace_database_connections(db_s
         },
         workspace_id="workspace-1",
     )
+    agent_session = await _create_agent_session(
+        db_session,
+        remote_connection_id=str(created.id),
+    )
     tool = RemoteConnectionsListTool()
 
-    result = await tool.run({}, _tool_context(db_session))
+    result = await tool.run({}, _tool_context(db_session, session_id=str(agent_session.id)))
 
     assert result["connections"] == [
         {
@@ -122,6 +161,92 @@ async def test_remote_connections_list_reads_workspace_database_connections(db_s
             "skill_summary": "Use the shared module stack.",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_remote_tools_require_explicit_selected_connection(db_session):
+    service = RemoteConnectionService(db_session)
+    await service.create_connection(
+        {
+            "name": "DB HPC login",
+            "host": "db-login.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "db-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+
+    resolver = DatabaseRemoteConnectionResolver(db_session)
+
+    assert await resolver.list(
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=None,
+    ) == []
+    with pytest.raises(NotFoundError):
+        await resolver.get(
+            "conn-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_remote_tools_only_resolve_selected_workspace_connection(db_session):
+    service = RemoteConnectionService(db_session)
+    selected = await service.create_connection(
+        {
+            "name": "Selected HPC",
+            "host": "selected.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "selected-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    other = await service.create_connection(
+        {
+            "name": "Other HPC",
+            "host": "other.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "other-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    agent_session = await _create_agent_session(
+        db_session,
+        remote_connection_id=str(selected.id),
+    )
+
+    resolver = DatabaseRemoteConnectionResolver(db_session)
+    connections = await resolver.list(
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+    )
+
+    assert [connection.id for connection in connections] == [str(selected.id)]
+    assert (
+        await resolver.get(
+            str(selected.id),
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+        )
+    ).host == "selected.cluster.example.org"
+    with pytest.raises(NotFoundError):
+        await resolver.get(
+            str(other.id),
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+        )
 
 
 @pytest.mark.asyncio
@@ -246,12 +371,12 @@ def test_default_registry_registers_remote_tools_with_expected_exposure():
         "remote.list_dir",
     }.issubset(names)
     assert "remote.exec" not in exposure.exposed_names(policy={"name": "default"})
-    assert {
-        "remote.connections.list",
-        "remote.read_file",
-        "remote.list_dir",
-    }.issubset(exposure.exposed_names(policy={"name": "default"}))
+    assert "remote.connections.list" in exposure.exposed_names(policy={"name": "default"})
+    assert "remote.read_file" not in exposure.exposed_names(policy={"name": "default"})
+    assert "remote.list_dir" not in exposure.exposed_names(policy={"name": "default"})
     assert registry.get("remote.exec").spec.risk_level == "act_high"
+    assert registry.get("remote.read_file").spec.risk_level == "act_high"
+    assert registry.get("remote.list_dir").spec.risk_level == "act_high"
 
 
 @pytest.mark.asyncio
