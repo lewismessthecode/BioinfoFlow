@@ -57,7 +57,15 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 BETTER_AUTH_URL=http://localhost:3000
 ```
 
-After first sign-in, configure the agent under **Settings -> AI Providers**. Hosted providers only need an API key; Ollama, vLLM, OpenRouter, and generic OpenAI-compatible endpoints can be configured from the same page. Environment variables such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `VLLM_BASE_URL`, `VLLM_API_KEY`, and `VLLM_MODEL` are optional bootstrap defaults for fresh/headless deployments, and UI-saved configuration takes precedence.
+After first sign-in, configure the agent under **Settings -> AI Providers**.
+Hosted providers only need an API key; Ollama, vLLM, OpenRouter, and generic
+OpenAI-compatible endpoints can be configured from the same page. Environment
+variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
+`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `GROK_API_KEY`,
+`GROQ_API_KEY`, `OLLAMA_BASE_URL`, `VLLM_BASE_URL`, `VLLM_API_KEY`,
+`VLLM_MODEL`, `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, and
+`OPENAI_COMPATIBLE_MODEL` are optional bootstrap defaults for fresh/headless
+deployments. UI-saved configuration takes precedence.
 
 For localhost Docker, `BETTER_AUTH_SECRET` may stay empty. Bioinfoflow creates a persistent local secret under `BIOINFOFLOW_HOME/state/auth` on first startup. For shared or remote deployments, generate one with `openssl rand -base64 32` and set `BETTER_AUTH_SECRET` explicitly.
 
@@ -78,7 +86,7 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP_OR_DOMAIN"]
 ### Prerequisites
 
 - Docker Desktop or Docker Engine with Compose
-- An LLM provider key for agent use. You can provide it in **Settings -> AI Providers** after sign-in, or bootstrap one with environment variables such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, or the `VLLM_*` variables.
+- An LLM provider key for agent use. You can provide it in **Settings -> AI Providers** after sign-in, or bootstrap one with environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `OLLAMA_BASE_URL`, `VLLM_*`, or `OPENAI_COMPATIBLE_*`.
 
 ### First run
 

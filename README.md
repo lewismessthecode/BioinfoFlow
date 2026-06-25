@@ -2,7 +2,7 @@
   <img src="frontend/public/brand-icon.png" width="80" alt="Bioinfoflow" />
 </p>
 
-<h1 align="center">BioinfoFlow 👋</h1>
+<h1 align="center">BioinfoFlow</h1>
 
 <p align="center">
   <em>The local Agentic control plane for Nextflow &amp; WDL bioinformatics pipelines.</em>
@@ -21,11 +21,9 @@
 
 ---
 
-Bioinformatics tooling has been stuck in another era — clunky interfaces, tedious workflows, learning curves steep enough to turn away the people who need them most. Bioinfoflow's mission is simple: bring the elegance of modern software engineering to bioinformatics, and let an AI agent close the cultural gap between biologists and computer scientists.
+Bioinfoflow is a local-first control plane for bioinformatics workflows. It runs on a workstation or lab server, stores project data under one `BIOINFOFLOW_HOME`, and provides a shared web UI for registering pipelines, submitting runs, inspecting logs, and reviewing outputs.
 
-Bioinfoflow turns a workstation or a lab server into a workspace your whole team can share. It sits above Nextflow and WDL: register pipelines once, gather project data under a single `BIOINFOFLOW_HOME`, hand runs off to a built-in scheduler, and watch DAGs, logs, resource pressure, and outputs from one product surface.
-
-The bigger ambition: a single, coherent product layer above the compute — so computational biology stops being something only specialist teams can run. One sentence of natural language should be enough to launch a full analysis. With a 16 GB-class GPU, our goal is to put a Parabricks WGS run within reach of any desktop — no cloud required.
+Bioinfoflow sits above Nextflow and WDL/MiniWDL. It adds a persistent scheduler, workflow-aware storage layout, browser terminal, HTTP CLI, and an AgentCore runtime that can help prepare configs, inspect project files, operate selected SSH hosts, and launch workflow runs with approval gates for higher-impact actions.
 
 > [!TIP]
 > One-line install:
@@ -38,48 +36,26 @@ The bigger ambition: a single, coherent product layer above the compute — so c
 >
 > Then open <http://localhost:3000>.
 
-<!--
-  Hero video: replace the <img> below with a GitHub-hosted MP4 for sharper rendering.
-  Steps:
-    1. Open a new issue or PR draft on this repo (no need to submit it)
-    2. Drag-and-drop assets/product-preview.mp4 into the comment box and wait for the upload
-    3. Copy the resulting https://github.com/user-attachments/assets/<uuid> URL
-    4. Replace with: <video src="<that-url>" autoplay loop muted playsinline width="100%"></video>
--->
 <p align="center">
   <img src="assets/product-preview.gif" alt="Bioinfoflow — register a workflow, pick inputs, submit a run, watch the live DAG" width="100%" />
 </p>
 
 ---
 
-## ⭐ Features
+## Features
 
-- 🧬 **Workflow Catalog** — Register once, run anywhere; demos for nf-core/rnaseq, Parabricks WGS, and more ship out of the box.
-- 📁 **Unified Data Layout** — A single `BIOINFOFLOW_HOME` for project files, references, databases, uploads, and results.
-- 🚦 **Run Workspace** — Configure, submit, watch the live DAG, follow logs, and inspect outputs — all on one page.
-- ⚙️ **Persistent Scheduler** — A queue that doesn't lose work, resource gates that won't dispatch what won't fit, and automatic retries when something fails.
-- 🤖 **AI Agent** — Register pipelines, prepare configs, inspect files, submit runs, and interpret results — all from chat.
-- 💻 **Browser Terminal & `bif` CLI** — GUI when you want it, shell when you don't.
-- 🔐 **Local Auth & Personalization** — Switch between personal and team modes, swap themes with a click.
-
-<!--
-  TODO (Plan 3): drop 2–3 feature screenshots here for visual density.
-  Suggested shots:
-    - Workflow catalog page (sidebar + workflow cards)
-    - Run detail page (live DAG + logs side panel)
-    - Agent chat (with an approval step in view)
-  Spec: 1600px-wide PNGs, < 800KB each (run pngquant before committing).
-  Layout: three across
-    <p align="center">
-      <img src="assets/feature-catalog.png"  width="32%" />
-      <img src="assets/feature-run-dag.png"  width="32%" />
-      <img src="assets/feature-agent.png"    width="32%" />
-    </p>
--->
+- **Workflow Catalog**: Register Nextflow and WDL workflows once, then submit runs from the UI, CLI, or AgentCore tools.
+- **Unified Data Layout**: Use one `BIOINFOFLOW_HOME` for project data, references, shared databases, uploads, run inputs, and outputs.
+- **Run Workspace**: Configure inputs, submit runs, watch the DAG, follow logs, and inspect outputs from one page.
+- **Persistent Scheduler**: Queue runs with concurrency slots, resource checks, retry policy, timeout handling, cleanup, and restart recovery.
+- **AgentCore Runtime**: Use chat to inspect files, manage projects and workflows, run approved platform actions, and operate selected SSH connections.
+- **Remote Connections**: Save SSH profiles, test them through the backend, stream short probe commands, and expose selected hosts to AgentCore tools.
+- **Browser Terminal and `bif` CLI**: Use the web UI for interactive work and the CLI for scripting against a running backend.
+- **Local Auth and Team Roles**: Run in personal, team, or development auth modes with Better Auth-backed sessions.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -99,7 +75,7 @@ AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 ```
 
-After sign-in, open **Settings -> AI Providers** and paste a key for OpenAI, Anthropic, Gemini, Grok, Groq, DeepSeek, OpenRouter, or configure Ollama/vLLM/OpenAI-compatible endpoints. For headless deployments you can still bootstrap providers in `.env`, for example `VLLM_BASE_URL`, `VLLM_API_KEY`, and `VLLM_MODEL`.
+After sign-in, open **Settings -> AI Providers** and paste a key for OpenAI, Anthropic, Gemini, Grok, Groq, DeepSeek, OpenRouter, or configure Ollama, vLLM, and OpenAI-compatible endpoints. For headless deployments you can bootstrap providers in `.env` with variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `GROK_API_KEY`, `GROQ_API_KEY`, `OLLAMA_BASE_URL`, `VLLM_BASE_URL`, `VLLM_API_KEY`, `VLLM_MODEL`, `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, and `OPENAI_COMPATIBLE_MODEL`.
 
 Start the stack:
 
@@ -135,7 +111,7 @@ Published images are refreshed from `main` when backend or frontend code changes
 
 ---
 
-## 🛠 Development
+## Development
 
 Backend:
 
@@ -165,7 +141,7 @@ Backend and frontend both read the repo-root `.env` by default. Use `backend/.en
 
 ---
 
-## 💻 CLI
+## CLI
 
 `bif` is an HTTP client for a running Bioinfoflow backend:
 
@@ -182,10 +158,11 @@ Use `--base-url` or `BIOFLOW_API_URL` to point at a non-default backend. See the
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 - [Docs Home](docs/README.md)
 - [Docker Quick Start](docs/getting-started/docker.md)
+- [Remote Connections](docs/guides/remote-connections.md)
 - [nf-core/rnaseq Launch Demo](demo/nfcore-rnaseq/README.md)
 - [Storage and Data Layout](docs/concepts/storage.md)
 - [CLI Reference](docs/reference/cli.md)
@@ -195,6 +172,6 @@ Use `--base-url` or `BIOFLOW_API_URL` to point at a non-default backend. See the
 
 ---
 
-## 📜 License
+## License
 
 Bioinfoflow is released under the [MIT License](LICENSE).

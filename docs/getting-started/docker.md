@@ -1,6 +1,7 @@
 # Docker Quick Start
 
-This page describes the Docker Compose startup path implemented by `docker-compose.yml`, `backend/app/config.py`, `backend/app/main.py`, `backend/app/path_layout.py`, `backend/scripts/docker-entrypoint.sh`, and `frontend/lib/auth.ts`.
+Learn how to start Bioinfoflow locally with Docker Compose, sign in as the
+bootstrap owner, and choose the right settings for local or shared deployments.
 
 ## Prerequisites
 
@@ -31,7 +32,22 @@ AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 # BETTER_AUTH_SECRET=...
 ```
 
-Provider configuration is UI-first. Hosted providers only need an API key. Ollama, vLLM, OpenRouter, and generic OpenAI-compatible endpoints can also be configured from **Settings -> AI Providers**. For headless bootstrap, set env defaults such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, or `VLLM_BASE_URL` + `VLLM_MODEL`.
+Provider configuration is UI-first. Hosted providers only need an API key.
+Ollama, vLLM, OpenRouter, and generic OpenAI-compatible endpoints can also be
+configured from **Settings -> AI Providers**.
+
+For headless bootstrap, set environment defaults such as:
+
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `GEMINI_API_KEY`
+- `DEEPSEEK_API_KEY`
+- `OPENROUTER_API_KEY`
+- `XAI_API_KEY` or `GROK_API_KEY`
+- `GROQ_API_KEY`
+- `OLLAMA_BASE_URL`
+- `VLLM_BASE_URL`, `VLLM_API_KEY`, and `VLLM_MODEL`
+- `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, and `OPENAI_COMPATIBLE_MODEL`
 
 Start the stack:
 

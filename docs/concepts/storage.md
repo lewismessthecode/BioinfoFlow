@@ -42,6 +42,42 @@ The backend creates the platform roots during application startup. Project and r
 | Reference Library | `BIOINFOFLOW_HOME/sources/reference` | FASTA, indexes, BED/GTF, known-sites VCFs, and reusable references |
 | Database | `BIOINFOFLOW_HOME/sources/database` | shared database-style resources exposed as managed assets |
 
+## Project Storage Modes
+
+Bioinfoflow supports managed and external project roots.
+
+### Managed Projects
+
+Managed projects are the default. Bioinfoflow creates the project root under:
+
+```text
+BIOINFOFLOW_HOME/projects/<project_id>/
+```
+
+Use managed storage for new projects, local development, and deployments where
+Bioinfoflow owns the project directory layout.
+
+### External Projects
+
+External projects point Bioinfoflow at an existing absolute directory. The
+backend stores the normalized path as `external_root_path` and sets
+`storage_mode` to `external`.
+
+Use external storage when project data already lives on a lab filesystem, shared
+mount, or server path that should remain outside `BIOINFOFLOW_HOME/projects`.
+
+External project roots still use the same internal layout:
+
+```text
+<external_root_path>/
+  data/
+  runs/
+```
+
+The backend process must be able to create and write this layout. In team mode,
+creating or changing external roots is restricted to roles that can manage
+workspace storage.
+
 ## Asset URIs
 
 The run compiler resolves storage-backed inputs from asset URIs:
@@ -84,6 +120,9 @@ BIOINFOFLOW_HOME/projects/<project_id>/runs/<run_id>/
 ```
 
 The exact engine directory is normalized from the workflow engine name.
+
+For an external project, replace `BIOINFOFLOW_HOME/projects/<project_id>` with
+the configured external root.
 
 ## Identity-Mount Path Contract
 

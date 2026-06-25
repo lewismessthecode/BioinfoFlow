@@ -31,15 +31,40 @@ Change these before exposing a server.
 
 ## Better Auth Secret
 
-For local `bun run dev` development, an empty `BETTER_AUTH_SECRET` is allowed and the frontend derives a local instance secret.
+For local `bun run dev` development, an empty `BETTER_AUTH_SECRET` is allowed
+and the frontend derives a local instance secret.
 
-For Docker Compose, production, or any shared server, set:
+For localhost Docker, an empty `BETTER_AUTH_SECRET` is also allowed. The
+frontend creates a persistent local secret under `BIOINFOFLOW_HOME/state/auth`.
+
+For any shared or remote server, set:
 
 ```env
 BETTER_AUTH_SECRET=<long-random-secret>
 ```
 
-The Docker frontend runs with `NODE_ENV=production`, and the production frontend auth path throws if `BETTER_AUTH_SECRET` is missing.
+The production frontend auth path throws when `BETTER_AUTH_SECRET` is missing
+and `BETTER_AUTH_URL` points at a non-local host.
+
+## Remote Connections
+
+Remote Connections execute from the Bioinfoflow backend host or backend
+container, not from the browser.
+
+Security expectations:
+
+- store SSH aliases and key paths only; never paste passwords or private key
+  contents into Bioinfoflow
+- make key files and `SSH_AUTH_SOCK` available only to the backend environment
+  that needs them
+- use SSH config aliases for `HostName`, `User`, `Port`, `IdentityFile`, and
+  `ProxyJump` when possible
+- treat `remote.exec` as an elevated agent action; it runs a remote shell command
+  on the selected host
+- use `remote.read_file` and `remote.list_dir` for read-only inspection
+
+Remote Connections are intended for diagnostics and agent-assisted operation of
+existing remote commands. They are not a general workflow dispatch backend.
 
 ## Public Origins And Hosts
 
