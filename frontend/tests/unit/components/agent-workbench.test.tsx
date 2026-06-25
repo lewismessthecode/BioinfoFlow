@@ -182,11 +182,13 @@ function setupRuntime({
   turns = [],
   events = [],
   status = "idle",
+  send = vi.fn(),
 }: {
   session?: AgentRuntimeSession | null
   turns?: AgentRuntimeTurn[]
   events?: AgentRuntimeEvent[]
   status?: "idle" | "loading" | "running" | "error"
+  send?: ReturnType<typeof vi.fn>
 } = {}) {
   useAgentRuntimeMock.mockReturnValue({
     state: {
@@ -198,7 +200,7 @@ function setupRuntime({
       error: null,
     },
     setActiveSessionId: vi.fn(),
-    send: vi.fn(),
+    send,
     interrupt: vi.fn(),
     decideAction: vi.fn(),
   })
@@ -210,7 +212,9 @@ describe("AgentWorkbench", () => {
     useLlmSettingsMock.mockReset()
     setNavbarActionsMock.mockReset()
     apiRequestMock.mockReset()
-    apiRequestMock.mockResolvedValue({ data: [] })
+    apiRequestMock.mockImplementation((path: string) =>
+      path === "/connections" ? new Promise(() => {}) : Promise.resolve({ data: [] }),
+    )
     useLlmSettingsMock.mockReturnValue({
       models: [],
       selectedModel: null,
@@ -382,6 +386,66 @@ describe("AgentWorkbench", () => {
     )
     expect(screen.getByText("Plan RNA-seq QC")).toBeInTheDocument()
     expect(screen.getByText("Working on it...")).toBeInTheDocument()
+  })
+
+  it("hydrates the remote connection selection from session metadata before sending", async () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({
+      session: {
+        ...baseSession,
+        metadata: { remote_connection_id: "connection-test-231" },
+      },
+      send,
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Check the remote host" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Check the remote host",
+        expect.objectContaining({ remoteConnectionId: "connection-test-231" }),
+      ),
+    )
+  })
+
+  it("resyncs the remote connection selection when the active session changes", async () => {
+    const firstSend = vi.fn().mockResolvedValue(undefined)
+    const secondSend = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({
+      session: {
+        ...baseSession,
+        id: "session-1",
+        metadata: { remote_connection_id: "connection-test-231" },
+      },
+      send: firstSend,
+    })
+    const { rerender } = render(<AgentWorkbench />)
+
+    setupRuntime({
+      session: {
+        ...baseSession,
+        id: "session-2",
+        metadata: { remote_connection_id: "connection-uat-245" },
+      },
+      send: secondSend,
+    })
+    rerender(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Check the new host" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(secondSend).toHaveBeenCalledWith(
+        "Check the new host",
+        expect.objectContaining({ remoteConnectionId: "connection-uat-245" }),
+      ),
+    )
+    expect(firstSend).not.toHaveBeenCalled()
   })
 
   it("opens a placeholder attachment menu without sending a message", async () => {
@@ -586,7 +650,9 @@ describe("AgentWorkbench", () => {
   })
 
   it("does not dock an older turn todo over a newer turn", async () => {
-    apiRequestMock.mockResolvedValue({ data: [priorTodoArtifact] })
+    apiRequestMock.mockImplementation((path: string) =>
+      path === "/connections" ? new Promise(() => {}) : Promise.resolve({ data: [priorTodoArtifact] }),
+    )
     setupRuntime({
       session: baseSession,
       turns: [

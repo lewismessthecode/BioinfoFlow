@@ -52,9 +52,8 @@ export function ConnectedNodeSelector({
   onSelectedConnectionChange,
 }: ConnectedNodeSelectorProps) {
   const t = useTranslations("agentRuntime.connectedNode")
-  const [internalSelectedConnectionId, setInternalSelectedConnectionId] = useState(
-    demoConnectionNodes[0]?.id ?? "",
-  )
+  const isControlled = selectedConnectionId !== undefined
+  const [internalSelectedConnectionId, setInternalSelectedConnectionId] = useState("")
   const [connections, setConnections] = useState<RemoteConnection[]>(demoConnectionNodes)
   const requestedSelectedConnectionId = selectedConnectionId ?? internalSelectedConnectionId
   const currentSelectedConnectionId = connections.some(
@@ -85,12 +84,15 @@ export function ConnectedNodeSelector({
         if (disposed) return
         setConnections(remoteConnections)
         const currentSelected = selectedConnectionIdRef.current
-        const nextSelected = remoteConnections.some((connection) => connection.id === currentSelected)
-          ? currentSelected
-          : remoteConnections[0]?.id ?? ""
-        setInternalSelectedConnectionId(nextSelected)
-        if (nextSelected !== currentSelected) {
-          onSelectedConnectionChangeRef.current?.(nextSelected)
+        const hasCurrentSelected = remoteConnections.some(
+          (connection) => connection.id === currentSelected,
+        )
+        const nextSelected = hasCurrentSelected ? currentSelected : ""
+        if (!isControlled) {
+          setInternalSelectedConnectionId(nextSelected)
+        }
+        if (currentSelected && nextSelected !== currentSelected) {
+          onSelectedConnectionChangeRef.current?.("")
         }
       })
       .catch(() => {
@@ -100,7 +102,7 @@ export function ConnectedNodeSelector({
     return () => {
       disposed = true
     }
-  }, [])
+  }, [isControlled])
   const selectedConnection = useMemo(
     () => connections.find((connection) => connection.id === currentSelectedConnectionId) ?? null,
     [connections, currentSelectedConnectionId],

@@ -1954,6 +1954,7 @@
     "list": {
       "title": "Connections",
       "description": "Pick a connection to preview the SSH config and Agent instructions.",
+      "loading": "Loading connections...",
       "empty": "No matching connections. Try another name, host, alias, or note."
     },
     "detail": {
@@ -2005,6 +2006,8 @@
       "skillGuidance": "Put paths, APIs, environment notes, and startup commands in the skill text.",
       "errors": {
         "invalidPort": "Port must be between 1 and 65535.",
+        "sshAliasRequired": "SSH alias is required for SSH config auth.",
+        "keyPathRequired": "Private key path is required for key file auth.",
         "saveFailed": "Failed to save connection."
       },
       "placeholders": {

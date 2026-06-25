@@ -63,7 +63,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const [input, setInput] = useState("")
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
-    const [selectedRemoteConnectionId, setSelectedRemoteConnectionId] = useState("")
+    const [remoteConnectionOverride, setRemoteConnectionOverride] = useState<{
+      sessionId: string
+      value: string
+    } | null>(null)
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [optimisticTurn, setOptimisticTurn] = useState<AgentRuntimeTurn | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
@@ -92,6 +95,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       onActiveSessionIdChange,
     })
     const agentMode = mode ?? "execution"
+    const sessionId = state.session?.id ?? ""
+    const sessionRemoteConnectionId = getSessionRemoteConnectionId(state.session?.metadata)
+    const selectedRemoteConnectionId =
+      remoteConnectionOverride?.sessionId === sessionId
+        ? remoteConnectionOverride.value
+        : sessionRemoteConnectionId
 
     const disabled = !workspaceEnabled
     const visibleOptimisticTurn =
@@ -162,6 +171,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setActiveSessionId(null)
           setInput("")
           setContextAttachments([])
+          setRemoteConnectionOverride(null)
           setHasSubmittedDraft(false)
           setOptimisticTurn(null)
           setEnvironmentOpen(false)
@@ -200,6 +210,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         current.filter((attachment) => attachment.path !== path),
       )
     }, [])
+
+    const handleRemoteConnectionChange = useCallback(
+      (connectionId: string) => {
+        setRemoteConnectionOverride({ sessionId, value: connectionId })
+      },
+      [sessionId],
+    )
 
     const submit = () => {
       const text = input.trim()
@@ -318,7 +335,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         contextAttachments={contextAttachments}
         onRemoveContextAttachment={removeContextAttachment}
         selectedRemoteConnectionId={selectedRemoteConnectionId}
-        onRemoteConnectionChange={setSelectedRemoteConnectionId}
+        onRemoteConnectionChange={handleRemoteConnectionChange}
         compactControls={sidecarVisible}
       />
     )
@@ -446,4 +463,9 @@ function createOptimisticTurn({
     started_at: null,
     completed_at: null,
   }
+}
+
+function getSessionRemoteConnectionId(metadata: Record<string, unknown> | null | undefined): string {
+  const value = metadata?.remote_connection_id
+  return typeof value === "string" ? value : ""
 }
