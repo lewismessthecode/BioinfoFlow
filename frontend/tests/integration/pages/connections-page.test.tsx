@@ -67,15 +67,19 @@ describe("ConnectionsPage", () => {
     apiRequestMock.mockRejectedValue(new Error("backend unavailable"))
   })
 
-  it("focuses the main flow on SSH config and Agent Skill instructions", () => {
+  it("focuses the main flow on SSH config and Agent Skill instructions", async () => {
+    const user = userEvent.setup()
+
     render(<ConnectionsPage />)
 
     expect(screen.getByRole("heading", { name: "Connection Center" })).toBeInTheDocument()
-    expect(screen.getByText("SSH alias")).toBeInTheDocument()
-    expect(screen.getByText("Private key path")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+
+    expect(screen.getByLabelText("SSH alias")).toBeInTheDocument()
+    expect(screen.getByLabelText("Private key path")).toBeInTheDocument()
     expect(screen.getAllByText("Agent Skill instructions")[0]).toBeInTheDocument()
     expect(
-      screen.getByText("Put paths, APIs, environment notes, and startup commands in the skill text."),
+      screen.getAllByText("Put paths, APIs, environment notes, and startup commands in the skill text.")[0],
     ).toBeInTheDocument()
 
     expect(screen.queryByText("Tags")).not.toBeInTheDocument()
@@ -109,6 +113,7 @@ describe("ConnectionsPage", () => {
     await user.clear(screen.getByLabelText("Port"))
     await user.type(screen.getByLabelText("Port"), "2222")
     await user.type(screen.getByLabelText("Username"), "bioflow")
+    await user.type(screen.getByLabelText("SSH alias"), "live-hpc")
     await user.type(
       screen.getByLabelText("Agent Skill instructions"),
       "Use /data/live for analysis outputs.",
@@ -124,7 +129,7 @@ describe("ConnectionsPage", () => {
           port: 2222,
           username: "bioflow",
           auth_method: "ssh_config",
-          ssh_alias: null,
+          ssh_alias: "live-hpc",
           key_path: null,
           skill_instructions: "Use /data/live for analysis outputs.",
         }),
@@ -146,6 +151,22 @@ describe("ConnectionsPage", () => {
     await user.click(screen.getByRole("button", { name: "Add connection" }))
 
     expect(await screen.findByText("Port must be between 1 and 65535.")).toBeInTheDocument()
+    expect(apiRequestMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("requires an SSH alias before saving SSH config connections", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+
+    render(<ConnectionsPage />)
+
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+
+    const error = await screen.findByRole("alert")
+    expect(error).toHaveTextContent("SSH alias is required for SSH config auth.")
+    expect(screen.getByLabelText("SSH alias")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
   })
 })

@@ -45,9 +45,10 @@ type ConnectionFormState = {
   auth_method: RemoteConnectionAuthMethod
   ssh_alias: string
   key_path: string
-  status: RemoteConnectionStatus
   skill_instructions: string
 }
+
+type FormErrorField = "port" | "ssh_alias" | "key_path" | null
 
 const initialForm: ConnectionFormState = {
   name: "",
@@ -57,7 +58,6 @@ const initialForm: ConnectionFormState = {
   auth_method: "ssh_config",
   ssh_alias: "",
   key_path: "",
-  status: "unknown",
   skill_instructions: "",
 }
 
@@ -76,7 +76,6 @@ const statusBorderClassNames: Record<RemoteConnectionStatus, string> = {
 }
 
 const authMethods: RemoteConnectionAuthMethod[] = ["ssh_config", "key_file", "agent"]
-const statusOptions: RemoteConnectionStatus[] = ["online", "offline", "error", "unknown"]
 
 function parsePort(value: string): number | null {
   const port = Number.parseInt(value, 10)
@@ -95,13 +94,15 @@ function StatusDot({ status, className }: { status: RemoteConnectionStatus; clas
 export default function ConnectionsPage() {
   const t = useTranslations("connections")
   const tCommon = useTranslations("common")
-  const [connections, setConnections] = useState<RemoteConnection[]>(demoConnectionNodes)
-  const [selectedConnectionId, setSelectedConnectionId] = useState(demoConnectionNodes[0]?.id ?? "")
+  const [connections, setConnections] = useState<RemoteConnection[]>([])
+  const [selectedConnectionId, setSelectedConnectionId] = useState("")
   const [search, setSearch] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<ConnectionFormState>(initialForm)
   const [formError, setFormError] = useState<string | null>(null)
+  const [formErrorField, setFormErrorField] = useState<FormErrorField>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [isLoadingConnections, setIsLoadingConnections] = useState(true)
 
   useEffect(() => {
     let disposed = false
@@ -117,7 +118,12 @@ export default function ConnectionsPage() {
         )
       })
       .catch(() => {
-        // Keep the demo fallback available when the backend is not running.
+        if (disposed) return
+        setConnections(demoConnectionNodes)
+        setSelectedConnectionId(demoConnectionNodes[0]?.id ?? "")
+      })
+      .finally(() => {
+        if (!disposed) setIsLoadingConnections(false)
       })
 
     return () => {
@@ -151,11 +157,25 @@ export default function ConnectionsPage() {
     const port = parsePort(form.port)
     if (port === null) {
       setFormError(t("form.errors.invalidPort"))
+      setFormErrorField("port")
+      return
+    }
+    const sshAlias = form.ssh_alias.trim()
+    const keyPath = form.key_path.trim()
+    if (form.auth_method === "ssh_config" && !sshAlias) {
+      setFormError(t("form.errors.sshAliasRequired"))
+      setFormErrorField("ssh_alias")
+      return
+    }
+    if (form.auth_method === "key_file" && !keyPath) {
+      setFormError(t("form.errors.keyPathRequired"))
+      setFormErrorField("key_path")
       return
     }
 
     setIsSaving(true)
     setFormError(null)
+    setFormErrorField(null)
     try {
       const nextConnection = await createRemoteConnection({
         name,
@@ -163,8 +183,8 @@ export default function ConnectionsPage() {
         port,
         username: form.username.trim() || t("form.defaultUsername"),
         auth_method: form.auth_method,
-        ssh_alias: form.ssh_alias.trim() || null,
-        key_path: form.key_path.trim() || null,
+        ssh_alias: sshAlias || null,
+        key_path: form.auth_method === "key_file" ? keyPath : null,
         skill_instructions: form.skill_instructions.trim() || null,
       })
 
@@ -176,6 +196,7 @@ export default function ConnectionsPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : t("form.errors.saveFailed")
       setFormError(message)
+      setFormErrorField(null)
       toast.error(message)
     } finally {
       setIsSaving(false)
@@ -198,7 +219,7 @@ export default function ConnectionsPage() {
               </Button>
             </DialogTrigger>
             <DialogContent className="max-h-[min(88vh,760px)] overflow-y-auto rounded-3xl border-border/70 bg-card p-0 text-card-foreground shadow-2xl shadow-foreground/20 sm:max-w-2xl">
-              <form onSubmit={handleSubmit}>
+              <form onSubmit={handleSubmit} noValidate>
                 <DialogHeader className="border-b border-border/70 px-6 py-5">
                   <DialogTitle>{t("dialog.title")}</DialogTitle>
                   <DialogDescription>{t("dialog.description")}</DialogDescription>
@@ -228,29 +249,6 @@ export default function ConnectionsPage() {
                         />
                       </div>
                     </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="connection-status">{t("fields.status")}</Label>
-                      <Select
-                        value={form.status}
-                        onValueChange={(value) =>
-                          setForm((current) => ({ ...current, status: value as RemoteConnectionStatus }))
-                        }
-                      >
-                        <SelectTrigger id="connection-status" className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {statusOptions.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              <span className="flex items-center gap-2">
-                                <StatusDot status={status} className="h-2 w-2 shadow-[0_0_0_3px]" />
-                                {t(`status.${status}`)}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </section>
 
                   <section className="grid gap-4">
@@ -263,6 +261,8 @@ export default function ConnectionsPage() {
                           value={form.port}
                           inputMode="numeric"
                           onChange={(event) => setForm((current) => ({ ...current, port: event.target.value }))}
+                          aria-invalid={formErrorField === "port"}
+                          aria-describedby={formErrorField === "port" ? "connection-form-error" : undefined}
                         />
                       </div>
                       <div className="grid gap-2">
@@ -282,6 +282,7 @@ export default function ConnectionsPage() {
                             setForm((current) => ({
                               ...current,
                               auth_method: value as RemoteConnectionAuthMethod,
+                              key_path: value === "key_file" ? current.key_path : "",
                             }))
                           }
                         >
@@ -306,6 +307,9 @@ export default function ConnectionsPage() {
                           value={form.ssh_alias}
                           onChange={(event) => setForm((current) => ({ ...current, ssh_alias: event.target.value }))}
                           placeholder={t("form.placeholders.sshAlias")}
+                          required={form.auth_method === "ssh_config"}
+                          aria-invalid={formErrorField === "ssh_alias"}
+                          aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
                         />
                       </div>
                       <div className="grid gap-2">
@@ -315,6 +319,10 @@ export default function ConnectionsPage() {
                           value={form.key_path}
                           onChange={(event) => setForm((current) => ({ ...current, key_path: event.target.value }))}
                           placeholder={t("form.placeholders.keyPath")}
+                          required={form.auth_method === "key_file"}
+                          disabled={form.auth_method !== "key_file"}
+                          aria-invalid={formErrorField === "key_path"}
+                          aria-describedby={formErrorField === "key_path" ? "connection-form-error" : undefined}
                         />
                       </div>
                     </div>
@@ -335,7 +343,12 @@ export default function ConnectionsPage() {
                 </div>
 
                 {formError ? (
-                  <div className="mx-6 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <div
+                    id="connection-form-error"
+                    role="alert"
+                    aria-live="polite"
+                    className="mx-6 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                  >
                     {formError}
                   </div>
                 ) : null}
@@ -379,7 +392,11 @@ export default function ConnectionsPage() {
               </div>
             </CardHeader>
             <CardContent className="grid gap-2 p-2">
-              {filteredConnections.length > 0 ? (
+              {isLoadingConnections ? (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                  {t("list.loading")}
+                </div>
+              ) : filteredConnections.length > 0 ? (
                 filteredConnections.map((connection) => {
                   const selected = selectedConnection ? connection.id === selectedConnection.id : false
 
@@ -388,6 +405,7 @@ export default function ConnectionsPage() {
                       key={connection.id}
                       type="button"
                       onClick={() => setSelectedConnectionId(connection.id)}
+                      aria-pressed={selected}
                       className={cn(
                         "group rounded-xl border p-3 text-left transition hover:border-primary/25 hover:bg-muted/35",
                         selected

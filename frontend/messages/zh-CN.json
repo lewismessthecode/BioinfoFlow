@@ -1954,6 +1954,7 @@
     "list": {
       "title": "连接列表",
       "description": "选择一个连接，查看 SSH 配置和给 Agent 的说明。",
+      "loading": "正在加载连接...",
       "empty": "没有匹配的连接。换个名称、主机、别名或说明试试。"
     },
     "detail": {
@@ -2005,6 +2006,8 @@
       "skillGuidance": "路径、API、环境备注和启动命令都写进 skill 文本。",
       "errors": {
         "invalidPort": "端口必须在 1 到 65535 之间。",
+        "sshAliasRequired": "使用 SSH 配置认证时必须填写 SSH 别名。",
+        "keyPathRequired": "使用密钥文件认证时必须填写私钥路径。",
         "saveFailed": "保存连接失败。"
       },
       "placeholders": {
