@@ -79,6 +79,9 @@ export function DirectoryBrowser({
       if (fallbackToHome && source === "local" && path !== "~") {
         return fetchDirectories("~")
       }
+      setCurrentPath("")
+      setParentPath(null)
+      setDirectories([])
       setError(err instanceof Error ? err.message : tDir("errors.load"))
     } finally {
       setLoading(false)

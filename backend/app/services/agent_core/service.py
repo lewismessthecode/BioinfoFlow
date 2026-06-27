@@ -665,9 +665,9 @@ def _metadata_with_remote_project(metadata: dict | None, project) -> dict | None
     if not connection_id or not remote_root_path:
         return metadata
     merged = dict(metadata or {})
-    merged.setdefault("remote_connection_id", str(connection_id))
-    merged.setdefault("remote_project_id", str(project.id))
-    merged.setdefault("remote_project_root", str(remote_root_path))
+    merged["remote_connection_id"] = str(connection_id)
+    merged["remote_project_id"] = str(project.id)
+    merged["remote_project_root"] = str(remote_root_path)
     return merged
 
 

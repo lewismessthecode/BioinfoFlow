@@ -186,6 +186,7 @@
     "errors": {
       "projectNameRequired": "项目名称不能为空",
       "workspacePathRequired": "工作区路径不能为空",
+      "remoteHostsLoadFailed": "无法加载远程主机。请检查连接服务后重试。",
       "selectProjectFirst": "请先选择项目",
       "createProjectFailed": "无法创建项目。请确认工作区路径存在后重试。",
       "renameProjectFailed": "无法重命名项目。请刷新后重试。",

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
 from collections.abc import Generator
 from pathlib import Path
 
@@ -431,6 +433,48 @@ async def test_remote_directory_browse_uses_bounded_ssh_command(async_client, mo
     assert "head -n 21" in calls[0]["command"]
     assert calls[0]["timeout_seconds"] == 10
     assert calls[0]["output_limit"] == 50000
+
+
+def test_remote_directory_command_does_not_block_on_fifo(tmp_path):
+    from app.api.v1.connections import _remote_directory_command
+
+    os.mkfifo(tmp_path / "named-pipe")
+
+    result = subprocess.run(
+        ["/bin/sh", "-c", _remote_directory_command(str(tmp_path), 20)],
+        capture_output=True,
+        text=True,
+        timeout=1,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "named-pipe" in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_remote_connection_delete_conflicts_when_used_by_remote_project(async_client):
+    create_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="agent", key_path=None),
+    )
+    assert create_resp.status_code == 201
+    connection_id = create_resp.json()["data"]["id"]
+
+    project_resp = await async_client.post(
+        "/api/v1/projects",
+        json={
+            "name": "Phoenix sample",
+            "remote_connection_id": connection_id,
+            "remote_root_path": "/inspurfsms102/B2C_RD1/project/sample_xxx",
+        },
+    )
+    assert project_resp.status_code == 201
+
+    delete_resp = await async_client.delete(f"/api/v1/connections/{connection_id}")
+
+    assert delete_resp.status_code == 409
+    assert delete_resp.json()["error"]["code"] == "CONFLICT"
 
 
 @pytest.mark.asyncio

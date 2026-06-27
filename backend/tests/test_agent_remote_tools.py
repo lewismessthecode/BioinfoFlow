@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -21,7 +23,7 @@ from app.config import settings
 from app.models.workspace import WorkspaceMembership
 from app.services.remote_execution import RemoteCommandResult, RemoteConnectionConfig
 from app.services.remote_connection_service import RemoteConnectionService
-from app.utils.exceptions import NotFoundError, PermissionDeniedError
+from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 
 
 def _tool_context(db_session, *, session_id: str | None = "session-1") -> AgentToolContext:
@@ -357,6 +359,137 @@ async def test_remote_project_session_sets_connection_and_working_directory(db_s
 
 
 @pytest.mark.asyncio
+async def test_remote_project_session_ignores_metadata_connection_override(db_session):
+    service = RemoteConnectionService(db_session)
+    project_connection = await service.create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+        },
+        workspace_id="workspace-1",
+    )
+    metadata_connection = await service.create_connection(
+        {
+            "name": "Metadata override",
+            "host": "other-login.example.org",
+            "port": 22,
+            "username": "mallory",
+            "auth_method": "ssh_config",
+            "ssh_alias": "other-login",
+        },
+        workspace_id="workspace-1",
+    )
+    from app.services.agent_core.service import AgentCoreService
+    from app.services.project_service import ProjectService
+
+    project = await ProjectService(db_session).create_project(
+        {
+            "name": "Phoenix sample",
+            "workspace_id": "workspace-1",
+            "remote_connection_id": str(project_connection.id),
+            "remote_root_path": "/inspurfsms102/B2C_RD1/sample",
+        },
+        user_id="user-1",
+    )
+    agent_session = await AgentCoreService(db_session).create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        metadata={"remote_connection_id": str(metadata_connection.id)},
+    )
+
+    resolver = DatabaseRemoteConnectionResolver(db_session)
+    connections = await resolver.list(
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+    )
+
+    assert agent_session.session_metadata["remote_connection_id"] == str(project_connection.id)
+    assert [connection.id for connection in connections] == [str(project_connection.id)]
+    with pytest.raises(NotFoundError):
+        await resolver.get(
+            str(metadata_connection.id),
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+        )
+
+
+@pytest.mark.asyncio
+async def test_remote_project_resolver_ignores_metadata_added_after_session_create(
+    db_session,
+):
+    service = RemoteConnectionService(db_session)
+    project_connection = await service.create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+        },
+        workspace_id="workspace-1",
+    )
+    metadata_connection = await service.create_connection(
+        {
+            "name": "Metadata override",
+            "host": "other-login.example.org",
+            "port": 22,
+            "username": "mallory",
+            "auth_method": "ssh_config",
+            "ssh_alias": "other-login",
+        },
+        workspace_id="workspace-1",
+    )
+    from app.services.agent_core.service import AgentCoreService
+    from app.services.project_service import ProjectService
+
+    project = await ProjectService(db_session).create_project(
+        {
+            "name": "Phoenix sample",
+            "workspace_id": "workspace-1",
+            "remote_connection_id": str(project_connection.id),
+            "remote_root_path": "/inspurfsms102/B2C_RD1/sample",
+        },
+        user_id="user-1",
+    )
+    agent_service = AgentCoreService(db_session)
+    agent_session = await agent_service.create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+    )
+    await agent_service.update_session(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        updates={"metadata": {"remote_connection_id": str(metadata_connection.id)}},
+    )
+
+    resolver = DatabaseRemoteConnectionResolver(db_session)
+    connections = await resolver.list(
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+    )
+
+    assert [connection.id for connection in connections] == [str(project_connection.id)]
+    with pytest.raises(NotFoundError):
+        await resolver.get(
+            str(metadata_connection.id),
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+        )
+
+
+@pytest.mark.asyncio
 async def test_remote_tools_ignore_inline_session_metadata_connection(db_session):
     agent_session = await _create_agent_session(
         db_session,
@@ -548,6 +681,63 @@ async def test_remote_read_file_quotes_path_and_bounds_content(db_session):
     assert result["result"]["truncated"] is True
 
 
+@pytest.mark.asyncio
+async def test_remote_read_file_guards_remote_project_symlink_escape(db_session):
+    connection = await RemoteConnectionService(db_session).create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+        },
+        workspace_id="workspace-1",
+    )
+    from app.services.agent_core.service import AgentCoreService
+    from app.services.project_service import ProjectService
+
+    project = await ProjectService(db_session).create_project(
+        {
+            "name": "Phoenix sample",
+            "workspace_id": "workspace-1",
+            "remote_connection_id": str(connection.id),
+            "remote_root_path": "/inspurfsms102/B2C_RD1/sample",
+        },
+        user_id="user-1",
+    )
+    agent_session = await AgentCoreService(db_session).create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="secret",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    tool = RemoteReadFileTool(executor=executor)
+
+    await tool.run(
+        {
+            "connection_id": str(connection.id),
+            "path": "outside-link/secret.txt",
+            "max_bytes": 100,
+        },
+        _tool_context(db_session, session_id=str(agent_session.id)),
+    )
+
+    command = executor.calls[0]["command"]
+    assert "realpath --" in command
+    assert "remote path is outside the remote project" in command
+
+
 def test_remote_exec_nested_result_promotes_command_artifact():
     descriptor = _artifact_descriptor(
         policy={"stdout": True, "stderr": True, "type": "remote_command"},
@@ -604,6 +794,91 @@ async def test_remote_list_dir_builds_bounded_command_and_parses_entries(db_sess
         {"kind": "directory", "name": "results", "size_bytes": 0},
     ]
     assert result["result"]["exit_code"] == 0
+
+
+@pytest.mark.asyncio
+async def test_remote_list_dir_guards_remote_project_symlink_escape(db_session):
+    connection = await RemoteConnectionService(db_session).create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+        },
+        workspace_id="workspace-1",
+    )
+    from app.services.agent_core.service import AgentCoreService
+    from app.services.project_service import ProjectService
+
+    project = await ProjectService(db_session).create_project(
+        {
+            "name": "Phoenix sample",
+            "workspace_id": "workspace-1",
+            "remote_connection_id": str(connection.id),
+            "remote_root_path": "/inspurfsms102/B2C_RD1/sample",
+        },
+        user_id="user-1",
+    )
+    agent_session = await AgentCoreService(db_session).create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="d\tresults\t0\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    tool = RemoteListDirTool(executor=executor)
+
+    await tool.run(
+        {
+            "connection_id": str(connection.id),
+            "path": "outside-link",
+        },
+        _tool_context(db_session, session_id=str(agent_session.id)),
+    )
+
+    command = executor.calls[0]["command"]
+    assert "realpath --" in command
+    assert "remote path is outside the remote project" in command
+
+
+def test_remote_list_dir_command_does_not_block_on_fifo(tmp_path):
+    from app.services.agent_core.tools.remote.resources import _list_dir_command
+
+    os.mkfifo(tmp_path / "named-pipe")
+
+    result = subprocess.run(
+        ["/bin/sh", "-c", _list_dir_command(str(tmp_path), 20)],
+        capture_output=True,
+        text=True,
+        timeout=1,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "named-pipe" in result.stdout
+
+
+def test_remote_project_paths_cannot_escape_working_directory():
+    root = "/inspurfsms102/B2C_RD1/sample"
+    from app.services.agent_core.tools.remote.resources import _remote_path_for_context
+
+    with pytest.raises(BadRequestError):
+        _remote_path_for_context("../outside.txt", root)
+    with pytest.raises(BadRequestError):
+        _remote_path_for_context("~/outside.txt", root)
+    with pytest.raises(BadRequestError):
+        _remote_path_for_context("/etc/passwd", root)
 
 
 def test_default_registry_registers_remote_tools_with_expected_exposure():

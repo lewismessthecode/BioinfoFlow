@@ -40,6 +40,24 @@ class ProjectRepository(BaseRepository[Project]):
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def has_remote_connection_projects(
+        self,
+        connection_id: str,
+        *,
+        workspace_id: str,
+    ) -> bool:
+        stmt = (
+            select(self.model.id)
+            .where(
+                self.model.workspace_id == workspace_id,
+                self.model.remote_connection_id == connection_id,
+                self.model.storage_mode == "remote",
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def list(
         self,
         *,
