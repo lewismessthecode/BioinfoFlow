@@ -1971,11 +1971,11 @@
     "title": "Connection Center",
     "subtitle": "Manage SSH environments for remote execution, file inspection, and workflow runs.",
     "addNode": "Add connection",
-    "searchPlaceholder": "Search connections...",
+    "searchPlaceholder": "Search connections…",
     "list": {
       "title": "Connections",
       "description": "Select an environment to view access details and Agent context.",
-      "loading": "Loading connections...",
+      "loading": "Loading connections…",
       "error": "Could not load SSH connections. Check the service and try again.",
       "empty": "No connections yet. Add an SSH environment to begin.",
       "noResults": "No matching connections. Try another name, host, alias, or note."
@@ -2028,10 +2028,10 @@
     },
     "actions": {
       "testConnection": "Test connection",
-      "testing": "Testing...",
+      "testing": "Testing…",
       "editConnection": "Edit connection",
       "runProbe": "Run check",
-      "runningProbe": "Running check...",
+      "runningProbe": "Running check…",
       "insertPreset": "Insert preset"
     },
     "dialog": {
@@ -2040,7 +2040,7 @@
       "description": "Add the host details the Agent needs to connect. Keep credentials in your SSH configuration or local secure storage.",
       "add": "Add connection",
       "save": "Save changes",
-      "saving": "Saving..."
+      "saving": "Saving…"
     },
     "skillDrop": {
       "title": "Import a context file",
@@ -2049,7 +2049,7 @@
     "skillPresets": {
       "nextflowHpc": {
         "name": "Nextflow HPC",
-        "text": "Load the site environment before diagnostics.\nRun module load nextflow when modules are available.\nCheck workflow outputs, .nextflow.log, and work/ task folders before reruns."
+        "text": "Load the site environment before diagnostics.\nRun module load nextflow when modules are available.\nCheck workflow outputs, .nextflow.log, and task directories under work/ before reruns."
       },
       "slurmDiagnostics": {
         "name": "Slurm diagnostics",
@@ -2057,7 +2057,7 @@
       },
       "readonlyInspection": {
         "name": "Read-only inspection",
-        "text": "Prefer remote.list_dir and remote.read_file for inspection.\nOnly run short diagnostic commands and keep outputs bounded."
+        "text": "Inspect directories and files first.\nOnly run short diagnostic commands and keep outputs bounded."
       }
     },
     "probe": {
@@ -2085,7 +2085,7 @@
         "username": "bioflow",
         "sshAlias": "lab-gpu",
         "keyPath": "~/.ssh/id_ed25519",
-        "skillInstructions": "Paths, environment setup, limits, and commands the Agent should know."
+        "skillInstructions": "Paths, environment setup, limits, and commands the Agent should know…"
       }
     },
     "toasts": {

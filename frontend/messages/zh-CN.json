@@ -1971,11 +1971,11 @@
     "title": "连接中心",
     "subtitle": "管理用于远程执行、文件查看和工作流运行的 SSH 环境。",
     "addNode": "添加连接",
-    "searchPlaceholder": "搜索连接...",
+    "searchPlaceholder": "搜索连接…",
     "list": {
       "title": "连接",
       "description": "选择一个远程环境，查看访问方式和 Agent 上下文。",
-      "loading": "正在加载连接...",
+      "loading": "正在加载连接…",
       "error": "无法加载 SSH 连接。请检查服务后重试。",
       "empty": "还没有连接。添加一个 SSH 环境后即可开始。",
       "noResults": "没有匹配的连接。试试其他名称、主机、别名或备注。"
@@ -2028,10 +2028,10 @@
     },
     "actions": {
       "testConnection": "测试连接",
-      "testing": "测试中...",
+      "testing": "测试中…",
       "editConnection": "编辑连接",
       "runProbe": "运行检查",
-      "runningProbe": "检查中...",
+      "runningProbe": "检查中…",
       "insertPreset": "插入模板"
     },
     "dialog": {
@@ -2040,7 +2040,7 @@
       "description": "填写 Agent 连接远程环境所需的信息。敏感凭据请保存在 SSH 配置或本地安全位置。",
       "add": "添加连接",
       "save": "保存修改",
-      "saving": "保存中..."
+      "saving": "保存中…"
     },
     "skillDrop": {
       "title": "导入说明文件",
@@ -2049,7 +2049,7 @@
     "skillPresets": {
       "nextflowHpc": {
         "name": "Nextflow HPC",
-        "text": "诊断前先加载站点环境。\n如果有 module 系统，先运行 module load nextflow。\n重跑前先检查 workflow 输出、.nextflow.log 和 work/ task 目录。"
+        "text": "诊断前先加载站点环境。\n如果有 module 系统，先运行 module load nextflow。\n重跑前先检查 workflow 输出、.nextflow.log 和 work/ 下的任务目录。"
       },
       "slurmDiagnostics": {
         "name": "Slurm 诊断",
@@ -2057,7 +2057,7 @@
       },
       "readonlyInspection": {
         "name": "只读查看",
-        "text": "查看时优先使用 remote.list_dir 和 remote.read_file。\n只运行短诊断命令，并限制输出大小。"
+        "text": "先查看目录和文件内容。\n只运行短诊断命令，并限制输出大小。"
       }
     },
     "probe": {
@@ -2085,7 +2085,7 @@
         "username": "bioflow",
         "sshAlias": "lab-gpu",
         "keyPath": "~/.ssh/id_ed25519",
-        "skillInstructions": "例如：工作目录、环境初始化、队列限制和常用检查命令。"
+        "skillInstructions": "例如：工作目录、环境初始化、队列限制和常用检查命令…"
       }
     },
     "toasts": {
