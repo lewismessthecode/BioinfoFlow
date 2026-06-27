@@ -94,7 +94,7 @@ describe("ConnectionsPage", () => {
     await user.click(screen.getByRole("button", { name: "Add connection" }))
 
     expect(screen.getByLabelText("SSH alias")).toBeInTheDocument()
-    expect(screen.getByLabelText("Private key path")).toBeInTheDocument()
+    expect(screen.queryByLabelText("Private key path")).not.toBeInTheDocument()
     expect(screen.getAllByText("Instructions")[0]).toBeInTheDocument()
     expect(screen.getByText("Import a context file")).toBeInTheDocument()
 
@@ -367,7 +367,7 @@ describe("ConnectionsPage", () => {
     await user.click(screen.getByRole("button", { name: "Insert preset" }))
     await user.click(await screen.findByRole("menuitem", { name: "Nextflow HPC" }))
     expect(screen.getByLabelText("Instructions")).toHaveValue(
-      "Load the site environment before diagnostics.\nRun module load nextflow when modules are available.\nCheck workflow outputs, .nextflow.log, and work/ task folders before reruns.",
+      "Load the site environment before diagnostics.\nRun module load nextflow when modules are available.\nCheck workflow outputs, .nextflow.log, and task directories under work/ before reruns.",
     )
 
     const file = new File(["Outputs live under /scratch/project/results."], "skill.txt", {

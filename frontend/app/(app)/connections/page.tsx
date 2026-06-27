@@ -527,18 +527,19 @@ export default function ConnectionsPage() {
                         />
                       ))}
                     </div>
-                    <Field label={t("fields.keyPath")} htmlFor="connection-key-path">
-                      <Input
-                        id="connection-key-path"
-                        value={form.key_path}
-                        onChange={(event) => setForm((current) => ({ ...current, key_path: event.target.value }))}
-                        placeholder={t("form.placeholders.keyPath")}
-                        required={form.auth_method === "key_file"}
-                        disabled={form.auth_method !== "key_file"}
-                        aria-invalid={formErrorField === "key_path"}
-                        aria-describedby={formErrorField === "key_path" ? "connection-form-error" : undefined}
-                      />
-                    </Field>
+                    {form.auth_method === "key_file" ? (
+                      <Field label={t("fields.keyPath")} htmlFor="connection-key-path">
+                        <Input
+                          id="connection-key-path"
+                          value={form.key_path}
+                          onChange={(event) => setForm((current) => ({ ...current, key_path: event.target.value }))}
+                          placeholder={t("form.placeholders.keyPath")}
+                          required
+                          aria-invalid={formErrorField === "key_path"}
+                          aria-describedby={formErrorField === "key_path" ? "connection-form-error" : undefined}
+                        />
+                      </Field>
+                    ) : null}
                     <p className="text-xs leading-5 text-muted-foreground">{t("form.secretsNote")}</p>
                   </section>
                 </div>
@@ -586,7 +587,7 @@ export default function ConnectionsPage() {
                     onDragLeave={() => setSkillDragActive(false)}
                     onDrop={handleSkillDrop}
                     className={cn(
-                      "flex items-center gap-3 rounded-xl border border-dashed px-3 py-2 text-sm text-muted-foreground transition",
+                      "flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-3 py-2 text-sm text-muted-foreground transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                       skillDragActive ? "border-primary/60 bg-primary/10 text-foreground" : "border-border bg-muted/20",
                     )}
                   >
@@ -831,15 +832,17 @@ export default function ConnectionsPage() {
                       />
                     </DetailSection>
 
-                    <DetailSection title={t("probe.title")}>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <TerminalSquare className="h-4 w-4" />
-                        <span>{t("probe.description")}</span>
-                      </div>
-                      <pre className="min-h-12 rounded-xl bg-background/80 p-3 font-mono text-xs leading-5 text-foreground">
-                        {selectedProbeOutput || t("probe.placeholder")}
-                      </pre>
-                    </DetailSection>
+                    {selectedProbeOutput || probeConnectionId === selectedConnection.id ? (
+                      <DetailSection title={t("probe.title")}>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <TerminalSquare className="h-4 w-4" />
+                          <span>{t("probe.description")}</span>
+                        </div>
+                        <pre className="min-h-12 whitespace-pre-wrap break-words rounded-xl bg-background/80 p-3 font-mono text-xs leading-5 text-foreground">
+                          {selectedProbeOutput || t("probe.placeholder")}
+                        </pre>
+                      </DetailSection>
+                    ) : null}
                   </div>
                 </CardContent>
               </Card>
