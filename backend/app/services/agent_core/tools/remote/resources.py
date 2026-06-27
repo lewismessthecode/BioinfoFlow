@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import posixpath
 import shlex
 import uuid
 from collections.abc import Callable
@@ -8,6 +9,7 @@ from typing import Any, Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentSessionRepository
+from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.authorization_service import AuthorizationService
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
@@ -225,15 +227,18 @@ class RemoteExecTool:
         await _require_remote_operation_access(context)
         connection = await _resolve_connection(input, context, self.resolver_factory)
         command = _required_string(input, "command")
+        working_directory = await _remote_working_directory(context, connection.id)
+        remote_command = _command_in_remote_working_directory(command, working_directory)
         result = await self.executor.run(
             connection,
-            command,
+            remote_command,
             timeout_seconds=int(input.get("timeout_seconds") or 15),
             output_limit=int(input.get("output_limit") or 12000),
         )
         return {
             "connection": connection.summary(),
             "command": command,
+            "working_directory": working_directory,
             "result": result.observation(),
         }
 
@@ -285,7 +290,8 @@ class RemoteReadFileTool:
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         await _require_remote_operation_access(context)
         connection = await _resolve_connection(input, context, self.resolver_factory)
-        path = _required_string(input, "path")
+        working_directory = await _remote_working_directory(context, connection.id)
+        path = _remote_path_for_context(_required_string(input, "path"), working_directory)
         max_bytes = int(input.get("max_bytes") or 16000)
         result = await self.executor.run(
             connection,
@@ -303,6 +309,7 @@ class RemoteReadFileTool:
         return {
             "connection": connection.summary(),
             "path": path,
+            "working_directory": working_directory,
             "content": content,
             "result": observation,
         }
@@ -356,7 +363,8 @@ class RemoteListDirTool:
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         await _require_remote_operation_access(context)
         connection = await _resolve_connection(input, context, self.resolver_factory)
-        path = _required_string(input, "path")
+        working_directory = await _remote_working_directory(context, connection.id)
+        path = _remote_path_for_context(_required_string(input, "path"), working_directory)
         limit = int(input.get("limit") or 50)
         result = await self.executor.run(
             connection,
@@ -369,6 +377,7 @@ class RemoteListDirTool:
         return {
             "connection": connection.summary(),
             "path": path,
+            "working_directory": working_directory,
             "entries": entries[:limit],
             "result": _result_observation(result, force_truncated=entries_truncated),
         }
@@ -428,7 +437,69 @@ async def _selected_remote_connection_ids(
                 continue
             seen.add(connection_id)
             selected.append(connection_id)
+    project_connection_id = await _session_remote_project_connection_id(db, session)
+    if project_connection_id and project_connection_id not in seen:
+        selected.append(project_connection_id)
     return selected
+
+
+async def _session_remote_project_connection_id(db: AsyncSession, session) -> str | None:
+    project = await _session_remote_project(db, session)
+    if not project:
+        return None
+    connection_id = getattr(project, "remote_connection_id", None)
+    return str(connection_id) if connection_id else None
+
+
+async def _session_remote_project(db: AsyncSession, session):
+    project_id = getattr(session, "project_id", None)
+    if not project_id:
+        return None
+    project = await ProjectRepository(db).get(str(project_id))
+    if not project or getattr(project, "storage_mode", None) != "remote":
+        return None
+    return project
+
+
+async def _remote_working_directory(
+    context: AgentToolContext,
+    connection_id: str,
+) -> str | None:
+    session_id = context.session_id
+    if not session_id or not _is_uuid_string(str(session_id)):
+        return None
+    session = await AgentSessionRepository(context.db).get(str(session_id))
+    if session is None:
+        return None
+    if str(session.workspace_id) != context.workspace_id or str(session.user_id) != context.user_id:
+        return None
+    project = await _session_remote_project(context.db, session)
+    if not project or str(project.remote_connection_id) != str(connection_id):
+        return None
+    return str(project.remote_root_path) if project.remote_root_path else None
+
+
+def _command_in_remote_working_directory(command: str, working_directory: str | None) -> str:
+    if not working_directory:
+        return command
+    return f"cd {shlex.quote(working_directory)} && {command}"
+
+
+def _remote_path_for_context(path: str, working_directory: str | None) -> str:
+    if not working_directory:
+        return path
+    normalized = str(path or "").strip().replace("\\", "/")
+    if normalized.startswith(("/", "~")):
+        return normalized
+    if "\x00" in normalized:
+        raise BadRequestError("remote path contains an invalid character")
+    parts = [part for part in normalized.split("/") if part not in {"", "."}]
+    if any(part == ".." for part in parts):
+        raise BadRequestError("relative remote path cannot escape the remote project")
+    relative = posixpath.normpath("/".join(parts)) if parts else "."
+    if relative == ".":
+        return working_directory
+    return f"{working_directory.rstrip('/')}/{relative}"
 
 
 def _selected_ids_from_policy(policy: Any) -> list[str]:

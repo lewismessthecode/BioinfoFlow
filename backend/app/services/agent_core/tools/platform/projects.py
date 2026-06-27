@@ -16,6 +16,8 @@ def _project_payload(project) -> dict[str, Any]:
         "description": project.description,
         "storage_mode": project.storage_mode,
         "external_root_path": getattr(project, "external_root_path", None),
+        "remote_connection_id": getattr(project, "remote_connection_id", None),
+        "remote_root_path": getattr(project, "remote_root_path", None),
         "project_root": project.project_root,
         "is_default": bool(project.is_default),
     }
@@ -102,6 +104,8 @@ class CreateProjectTool:
                 "name": {"type": "string"},
                 "description": {"type": "string"},
                 "external_root_path": {"type": "string"},
+                "remote_connection_id": {"type": "string"},
+                "remote_root_path": {"type": "string"},
             },
             "required": ["name"],
             "additionalProperties": False,
@@ -121,7 +125,7 @@ class CreateProjectTool:
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         payload = {key: value for key, value in input.items() if value is not None}
-        if payload.get("external_root_path"):
+        if payload.get("external_root_path") or payload.get("remote_connection_id"):
             role = await AuthorizationService(context.db).resolve_workspace_role(
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
@@ -149,6 +153,8 @@ class UpdateProjectTool:
                 "name": {"type": "string"},
                 "description": {"type": "string"},
                 "external_root_path": {"type": "string"},
+                "remote_connection_id": {"type": "string"},
+                "remote_root_path": {"type": "string"},
             },
             "required": ["project_id"],
             "additionalProperties": False,
@@ -179,7 +185,7 @@ class UpdateProjectTool:
             for key, value in input.items()
             if key != "project_id" and value is not None
         }
-        if payload.get("external_root_path"):
+        if payload.get("external_root_path") or payload.get("remote_connection_id"):
             role = await AuthorizationService(context.db).resolve_workspace_role(
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,

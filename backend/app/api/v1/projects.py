@@ -50,17 +50,19 @@ async def create_project(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if payload.external_root_path and not can_manage_external_roots(user.role):
+    if (
+        payload.external_root_path or payload.remote_connection_id
+    ) and not can_manage_external_roots(user.role):
         return error_response(
             code="FORBIDDEN",
-            message="External project roots are restricted to administrators",
+            message="External and remote project roots are restricted to administrators",
             status_code=403,
             request=request,
         )
     service = ProjectService(db)
-    project = await service.create_project(
-        payload.model_dump(by_alias=True), user_id=user.id
-    )
+    project_data = payload.model_dump(mode="json", by_alias=True)
+    project_data["workspace_id"] = user.workspace_id
+    project = await service.create_project(project_data, user_id=user.id)
     return success_response(_serialize(project), request=request, status_code=201)
 
 
@@ -116,15 +118,17 @@ async def update_project(
             status_code=404,
             request=request,
         )
-    if payload.external_root_path and not can_manage_external_roots(user.role):
+    if (
+        payload.external_root_path or payload.remote_connection_id
+    ) and not can_manage_external_roots(user.role):
         return error_response(
             code="FORBIDDEN",
-            message="External project roots are restricted to administrators",
+            message="External and remote project roots are restricted to administrators",
             status_code=403,
             request=request,
         )
     updated = await service.update_project(
-        project, payload.model_dump(exclude_unset=True, by_alias=True)
+        project, payload.model_dump(mode="json", exclude_unset=True, by_alias=True)
     )
     return success_response(_serialize(updated), request=request)
 

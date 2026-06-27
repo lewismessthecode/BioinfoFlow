@@ -368,6 +368,72 @@ async def test_remote_connection_test_uses_ssh_executor_by_default(
 
 
 @pytest.mark.asyncio
+async def test_remote_directory_browse_uses_bounded_ssh_command(async_client, monkeypatch):
+    create_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="agent", key_path=None),
+    )
+    assert create_resp.status_code == 201
+    connection_id = create_resp.json()["data"]["id"]
+
+    from app.services.remote_execution import RemoteCommandResult
+
+    calls = []
+
+    async def fake_run(self, connection, command, *, timeout_seconds, output_limit):
+        calls.append(
+            {
+                "connection": connection,
+                "command": command,
+                "timeout_seconds": timeout_seconds,
+                "output_limit": output_limit,
+            }
+        )
+        return RemoteCommandResult(
+            exit_code=0,
+            stdout="d\tresults\t0\nf\tinput.json\t42\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+
+    monkeypatch.setattr(
+        "app.services.remote_execution.SshRemoteExecutor.run",
+        fake_run,
+    )
+
+    response = await async_client.get(
+        f"/api/v1/connections/{connection_id}/directories",
+        params={"path": "/scratch/run 1", "limit": 20},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["entries"] == [
+        {
+            "name": "results",
+            "path": "/scratch/run 1/results",
+            "type": "dir",
+            "kind": "directory",
+            "size": None,
+        },
+        {
+            "name": "input.json",
+            "path": "/scratch/run 1/input.json",
+            "type": "file",
+            "kind": "file",
+            "size": 42,
+        },
+    ]
+    assert "'/scratch/run 1'" in calls[0]["command"]
+    assert "head -n 21" in calls[0]["command"]
+    assert calls[0]["timeout_seconds"] == 10
+    assert calls[0]["output_limit"] == 50000
+
+
+@pytest.mark.asyncio
 async def test_remote_connection_test_persists_executor_launch_errors(
     async_client,
     monkeypatch,
