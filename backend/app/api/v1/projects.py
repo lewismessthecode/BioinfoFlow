@@ -51,7 +51,9 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
 ):
     if (
-        payload.external_root_path or payload.remote_connection_id
+        payload.external_root_path
+        or payload.remote_connection_id
+        or payload.remote_root_path
     ) and not can_manage_external_roots(user.role):
         return error_response(
             code="FORBIDDEN",
@@ -119,7 +121,9 @@ async def update_project(
             request=request,
         )
     if (
-        payload.external_root_path or payload.remote_connection_id
+        payload.external_root_path
+        or payload.remote_connection_id
+        or payload.remote_root_path
     ) and not can_manage_external_roots(user.role):
         return error_response(
             code="FORBIDDEN",

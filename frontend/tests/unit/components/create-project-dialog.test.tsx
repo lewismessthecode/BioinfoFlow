@@ -23,6 +23,7 @@ vi.mock("next-intl", () => ({
       loadingRemoteHosts: "Loading remote hosts...",
       noRemoteHosts: "No remote hosts configured",
       browseDirectories: "Browse...",
+      "errors.remoteHostsLoadFailed": "Couldn't load remote hosts. Check the connection service and try again.",
       "placeholders.remotePath": "e.g., /data/project",
       "hints.remotePath": "Agent commands run from this remote folder",
       "placeholders.projectName": "e.g., COVID Analysis",
@@ -192,7 +193,7 @@ describe("CreateProjectDialog", () => {
 
     await user.click(screen.getByRole("button", { name: "New Project" }))
     await user.type(screen.getByLabelText("Project Name"), "Phoenix sample")
-    await user.click(screen.getByRole("button", { name: /Remote/ }))
+    await user.click(screen.getByRole("radio", { name: /Remote/ }))
 
     expect(await screen.findByLabelText("Remote host")).toBeInTheDocument()
     await user.type(screen.getByLabelText("Remote folder path"), "/inspurfsms102/B2C_RD1/project/sample_xxx")
@@ -205,5 +206,17 @@ describe("CreateProjectDialog", () => {
       remoteConnectionId: "11111111-1111-1111-1111-111111111111",
       remoteRootPath: "/inspurfsms102/B2C_RD1/project/sample_xxx",
     })
+  })
+
+  it("shows an error option when remote hosts fail to load", async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchRemoteConnections).mockRejectedValueOnce(new Error("offline"))
+    render(<CreateProjectDialog collapsed={false} onCreateProject={onCreateProject} />)
+
+    await user.click(screen.getByRole("button", { name: "New Project" }))
+    await user.click(screen.getByRole("radio", { name: /Remote/ }))
+
+    expect(await screen.findByText("Couldn't load remote hosts. Check the connection service and try again."))
+      .toBeInTheDocument()
   })
 })

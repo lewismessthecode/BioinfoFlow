@@ -20,10 +20,16 @@ vi.mock("@/lib/api", () => ({
   apiRequest: vi.fn(),
 }))
 
+vi.mock("@/lib/demo-connections", () => ({
+  browseRemoteConnectionDirectory: vi.fn(),
+}))
+
 import { DirectoryBrowser } from "@/components/bioinfoflow/directory-browser"
 import { apiRequest } from "@/lib/api"
+import { browseRemoteConnectionDirectory } from "@/lib/demo-connections"
 
 const mockedApiRequest = vi.mocked(apiRequest)
+const mockedBrowseRemoteConnectionDirectory = vi.mocked(browseRemoteConnectionDirectory)
 
 const makeDirResponse = (
   path: string,
@@ -181,5 +187,42 @@ describe("DirectoryBrowser", () => {
         params: expect.objectContaining({ path: "/custom/path" }),
       })
     )
+  })
+
+  it("shows remote directories but hides non-directory symlinks", async () => {
+    mockedBrowseRemoteConnectionDirectory.mockResolvedValueOnce({
+      path: "/data/project",
+      entries: [
+        {
+          name: "results",
+          path: "/data/project/results",
+          type: "dir",
+          kind: "directory",
+          size: null,
+        },
+        {
+          name: "latest.fastq",
+          path: "/data/project/latest.fastq",
+          type: "file",
+          kind: "symlink",
+          size: 21,
+        },
+      ],
+      truncated: false,
+    })
+
+    render(
+      <DirectoryBrowser
+        open={true}
+        onOpenChange={onOpenChange}
+        onSelect={onSelect}
+        source="remote"
+        remoteConnectionId="11111111-1111-1111-1111-111111111111"
+        initialPath="/data/project"
+      />
+    )
+
+    expect(await screen.findByText("results")).toBeInTheDocument()
+    expect(screen.queryByText("latest.fastq")).not.toBeInTheDocument()
   })
 })

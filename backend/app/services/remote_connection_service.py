@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.remote_connection import RemoteConnection, RemoteConnectionStatus
 from app.models.remote_connection import RemoteConnectionAuthMethod
+from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.schemas.remote_connection import validate_remote_connection_auth_fields
 from app.services.remote_execution import RemoteConnectionConfig, SshRemoteExecutor
@@ -157,6 +158,14 @@ class RemoteConnectionService:
             ) from exc
 
     async def delete_connection(self, connection: RemoteConnection) -> None:
+        has_projects = await ProjectRepository(self.repo.session).has_remote_connection_projects(
+            str(connection.id),
+            workspace_id=str(connection.workspace_id),
+        )
+        if has_projects:
+            raise ConflictError(
+                "Remote connection is used by one or more remote projects"
+            )
         await self.repo.delete(connection)
 
     async def test_connection(

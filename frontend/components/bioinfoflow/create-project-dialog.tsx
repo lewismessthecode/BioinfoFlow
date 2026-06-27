@@ -60,6 +60,7 @@ export function CreateProjectDialog({
   const [projectType, setProjectType] = useState<ProjectCreateMode>("local")
   const [remoteConnections, setRemoteConnections] = useState<RemoteConnection[]>([])
   const [remoteConnectionsLoading, setRemoteConnectionsLoading] = useState(false)
+  const [remoteConnectionsLoadFailed, setRemoteConnectionsLoadFailed] = useState(false)
   const [remoteConnectionId, setRemoteConnectionId] = useState("")
   const [remoteRootPath, setRemoteRootPath] = useState("")
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -76,17 +77,20 @@ export function CreateProjectDialog({
   }
 
   useEffect(() => {
-    if (!createOpen || projectType !== "remote" || remoteConnections.length > 0) return
+    if (!createOpen || projectType !== "remote") return
+    if (remoteConnections.length > 0) return
     let cancelled = false
     setRemoteConnectionsLoading(true)
+    setRemoteConnectionsLoadFailed(false)
     void fetchRemoteConnections()
       .then((connections) => {
         if (cancelled) return
         setRemoteConnections(connections)
-        setRemoteConnectionId((current) => current || connections[0]?.id || "")
       })
       .catch(() => {
-        if (!cancelled) setRemoteConnections([])
+        if (cancelled) return
+        setRemoteConnections([])
+        setRemoteConnectionsLoadFailed(true)
       })
       .finally(() => {
         if (!cancelled) setRemoteConnectionsLoading(false)
@@ -95,6 +99,15 @@ export function CreateProjectDialog({
       cancelled = true
     }
   }, [createOpen, projectType, remoteConnections.length])
+
+  useEffect(() => {
+    if (!createOpen || projectType !== "remote" || remoteConnections.length === 0) return
+    setRemoteConnectionId((current) => (
+      remoteConnections.some((connection) => connection.id === current)
+        ? current
+        : remoteConnections[0]?.id || ""
+    ))
+  }, [createOpen, projectType, remoteConnections])
 
   const selectedRemoteConnection = remoteConnections.find(
     (connection) => connection.id === remoteConnectionId,
@@ -214,11 +227,13 @@ export function CreateProjectDialog({
           {/* Project Type */}
           <div className="grid gap-2">
             <Label>{tSidebar("projectType")}</Label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={tSidebar("projectType")}>
               {(["local", "remote"] as const).map((type) => (
                 <button
                   key={type}
                   type="button"
+                  role="radio"
+                  aria-checked={projectType === type}
                   className={cn(
                     "rounded-xl border px-3 py-2 text-left transition-colors",
                     projectType === type
@@ -301,6 +316,8 @@ export function CreateProjectDialog({
                 >
                   {remoteConnectionsLoading ? (
                     <option value="">{tSidebar("loadingRemoteHosts")}</option>
+                  ) : remoteConnectionsLoadFailed ? (
+                    <option value="">{tSidebar("errors.remoteHostsLoadFailed")}</option>
                   ) : remoteConnections.length ? (
                     remoteConnections.map((connection) => (
                       <option key={connection.id} value={connection.id}>

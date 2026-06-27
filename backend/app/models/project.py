@@ -15,7 +15,7 @@ class Project(Base, UUIDMixin, TimestampMixin):
     storage_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="managed")
     external_root_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     remote_connection_id: Mapped[str | None] = mapped_column(
-        ForeignKey("remote_connections.id", ondelete="SET NULL"),
+        ForeignKey("remote_connections.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
     )

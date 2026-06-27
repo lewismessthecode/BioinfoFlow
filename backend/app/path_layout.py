@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
 from app.config import settings
+from app.utils.exceptions import BadRequestError
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -113,7 +114,7 @@ def project_home(
             raise ValueError("external project requires external_root_path")
         return Path(str(override)).expanduser().resolve()
     if storage_mode == "remote":
-        raise ValueError("remote project does not have a local project root")
+        raise BadRequestError("Remote projects do not have a local project root")
     return (projects_root() / str(project.id)).resolve()
 
 

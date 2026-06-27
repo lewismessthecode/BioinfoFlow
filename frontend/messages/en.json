@@ -186,6 +186,7 @@
     "errors": {
       "projectNameRequired": "Project name is required",
       "workspacePathRequired": "Workspace path is required",
+      "remoteHostsLoadFailed": "Couldn't load remote hosts. Check the connection service and try again.",
       "selectProjectFirst": "Select a project first",
       "createProjectFailed": "Couldn't create the project. Verify the workspace path exists and try again.",
       "renameProjectFailed": "Couldn't rename the project. Check your connection and try again.",

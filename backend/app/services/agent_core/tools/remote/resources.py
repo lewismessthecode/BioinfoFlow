@@ -295,7 +295,7 @@ class RemoteReadFileTool:
         max_bytes = int(input.get("max_bytes") or 16000)
         result = await self.executor.run(
             connection,
-            _read_file_command(path, max_bytes),
+            _read_file_command(path, max_bytes, working_directory),
             timeout_seconds=int(input.get("timeout_seconds") or 10),
             output_limit=max_bytes + 1,
         )
@@ -368,7 +368,7 @@ class RemoteListDirTool:
         limit = int(input.get("limit") or 50)
         result = await self.executor.run(
             connection,
-            _list_dir_command(path, limit),
+            _list_dir_command(path, limit, working_directory),
             timeout_seconds=int(input.get("timeout_seconds") or 10),
             output_limit=int(input.get("output_limit") or 20000),
         )
@@ -422,6 +422,9 @@ async def _selected_remote_connection_ids(
         return []
     if str(session.workspace_id) != workspace_id or str(session.user_id) != user_id:
         return []
+    project_connection_id = await _session_remote_project_connection_id(db, session)
+    if project_connection_id:
+        return [project_connection_id]
 
     selected: list[str] = []
     seen: set[str] = set()
@@ -437,9 +440,6 @@ async def _selected_remote_connection_ids(
                 continue
             seen.add(connection_id)
             selected.append(connection_id)
-    project_connection_id = await _session_remote_project_connection_id(db, session)
-    if project_connection_id and project_connection_id not in seen:
-        selected.append(project_connection_id)
     return selected
 
 
@@ -489,17 +489,23 @@ def _remote_path_for_context(path: str, working_directory: str | None) -> str:
     if not working_directory:
         return path
     normalized = str(path or "").strip().replace("\\", "/")
-    if normalized.startswith(("/", "~")):
-        return normalized
     if "\x00" in normalized:
         raise BadRequestError("remote path contains an invalid character")
+    root = posixpath.normpath(working_directory)
+    if normalized.startswith("~"):
+        raise BadRequestError("home-relative paths are outside the remote project")
+    if normalized.startswith("/"):
+        absolute = posixpath.normpath(normalized)
+        if absolute == root or absolute.startswith(f"{root.rstrip('/')}/"):
+            return absolute
+        raise BadRequestError("absolute remote path is outside the remote project")
     parts = [part for part in normalized.split("/") if part not in {"", "."}]
     if any(part == ".." for part in parts):
         raise BadRequestError("relative remote path cannot escape the remote project")
     relative = posixpath.normpath("/".join(parts)) if parts else "."
     if relative == ".":
-        return working_directory
-    return f"{working_directory.rstrip('/')}/{relative}"
+        return root
+    return f"{root.rstrip('/')}/{relative}"
 
 
 def _selected_ids_from_policy(policy: Any) -> list[str]:
@@ -554,26 +560,66 @@ def _required_string(input: dict[str, Any], key: str) -> str:
     return value
 
 
-def _read_file_command(path: str, max_bytes: int) -> str:
+def _remote_scope_guard_command(path: str, working_directory: str | None) -> str:
+    if not working_directory:
+        return ""
+    quoted_root = shlex.quote(working_directory)
+    quoted_path = shlex.quote(path)
+    return (
+        f"root={quoted_root}; target={quoted_path}; "
+        'root_real=$(realpath -- "$root") || exit 23; '
+        'target_real=$(realpath -- "$target") || exit 23; '
+        'case "$target_real" in "$root_real"|"$root_real"/*) ;; '
+        "*) printf '%s\\n' 'remote path is outside the remote project' >&2; exit 23;; "
+        "esac; "
+    )
+
+
+def _read_file_command(
+    path: str,
+    max_bytes: int,
+    working_directory: str | None = None,
+) -> str:
+    scope_guard = _remote_scope_guard_command(path, working_directory)
     quoted_path = shlex.quote(path)
     read_bytes = max_bytes + 1
     return (
+        scope_guard
+        +
         f"if [ -d {quoted_path} ]; then "
         "printf '%s\\n' 'remote path is a directory' >&2; exit 21; "
         f"fi; head -c {read_bytes} -- {quoted_path}"
     )
 
 
-def _list_dir_command(path: str, limit: int) -> str:
+def _list_dir_command(
+    path: str,
+    limit: int,
+    working_directory: str | None = None,
+) -> str:
+    scope_guard = _remote_scope_guard_command(path, working_directory)
     quoted_path = shlex.quote(path)
     line_limit = limit + 1
     return (
-        f"if [ ! -d {quoted_path} ]; then "
+        scope_guard
+        +
+        f"dir={quoted_path}; "
+        'if [ ! -d "$dir" ]; then '
         "printf '%s\\n' 'remote path is not a directory' >&2; exit 22; "
         "fi; "
-        f"find {quoted_path} -maxdepth 1 -mindepth 1 "
-        "-printf '%y\\t%f\\t%s\\n' | sort | "
-        f"head -n {line_limit}"
+        "for child in \"$dir\"/* \"$dir\"/.[!.]* \"$dir\"/..?*; do "
+        '[ -e "$child" ] || [ -L "$child" ] || continue; '
+        "name=${child##*/}; "
+        'if [ "$name" = . ] || [ "$name" = .. ]; then continue; fi; '
+        'if [ -d "$child" ]; then kind=d; '
+        'elif [ -L "$child" ]; then kind=l; '
+        'elif [ -f "$child" ]; then kind=f; '
+        "else kind=o; fi; "
+        'if [ "$kind" = f ]; then '
+        'size=$(wc -c < "$child" 2>/dev/null || printf 0); '
+        "size=${size##* }; else size=0; fi; "
+        'printf "%s\\t%s\\t%s\\n" "$kind" "$name" "$size"; '
+        f"done | sort | head -n {line_limit}"
     )
 
 

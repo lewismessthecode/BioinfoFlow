@@ -125,7 +125,11 @@ class CreateProjectTool:
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         payload = {key: value for key, value in input.items() if value is not None}
-        if payload.get("external_root_path") or payload.get("remote_connection_id"):
+        if (
+            payload.get("external_root_path")
+            or payload.get("remote_connection_id")
+            or payload.get("remote_root_path")
+        ):
             role = await AuthorizationService(context.db).resolve_workspace_role(
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
@@ -185,7 +189,11 @@ class UpdateProjectTool:
             for key, value in input.items()
             if key != "project_id" and value is not None
         }
-        if payload.get("external_root_path") or payload.get("remote_connection_id"):
+        if (
+            payload.get("external_root_path")
+            or payload.get("remote_connection_id")
+            or payload.get("remote_root_path")
+        ):
             role = await AuthorizationService(context.db).resolve_workspace_role(
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,

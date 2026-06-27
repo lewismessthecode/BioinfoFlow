@@ -224,12 +224,23 @@ def _remote_directory_command(path: str, limit: int) -> str:
     quoted_path = shlex.quote(str(path or "."))
     line_limit = limit + 1
     return (
-        f"if [ ! -d {quoted_path} ]; then "
+        f"dir={quoted_path}; "
+        'if [ ! -d "$dir" ]; then '
         "printf '%s\\n' 'remote path is not a directory' >&2; exit 22; "
         "fi; "
-        f"find {quoted_path} -maxdepth 1 -mindepth 1 "
-        "-printf '%y\\t%f\\t%s\\n' | sort | "
-        f"head -n {line_limit}"
+        "for child in \"$dir\"/* \"$dir\"/.[!.]* \"$dir\"/..?*; do "
+        '[ -e "$child" ] || [ -L "$child" ] || continue; '
+        "name=${child##*/}; "
+        'if [ "$name" = . ] || [ "$name" = .. ]; then continue; fi; '
+        'if [ -d "$child" ]; then kind=d; '
+        'elif [ -L "$child" ]; then kind=l; '
+        'elif [ -f "$child" ]; then kind=f; '
+        "else kind=o; fi; "
+        'if [ "$kind" = f ]; then '
+        'size=$(wc -c < "$child" 2>/dev/null || printf 0); '
+        "size=${size##* }; else size=0; fi; "
+        'printf "%s\\t%s\\t%s\\n" "$kind" "$name" "$size"; '
+        f"done | sort | head -n {line_limit}"
     )
 
 
