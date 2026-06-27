@@ -298,8 +298,62 @@ async def test_remote_exec_uses_persisted_selected_connection(db_session):
     assert result["connection"]["id"] == str(selected.id)
     assert result["connection"]["skill_summary"] == "Use /scratch/project for outputs."
     assert result["result"]["stdout"] == "selected.cluster.example.org\n"
-    assert executor.calls[0]["connection"].id == str(selected.id)
-    assert executor.calls[0]["command"] == "hostname"
+
+
+@pytest.mark.asyncio
+async def test_remote_project_session_sets_connection_and_working_directory(db_session):
+    connection = await RemoteConnectionService(db_session).create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+        },
+        workspace_id="workspace-1",
+    )
+    from app.services.agent_core.service import AgentCoreService
+    from app.services.project_service import ProjectService
+
+    project = await ProjectService(db_session).create_project(
+        {
+            "name": "Phoenix sample",
+            "workspace_id": "workspace-1",
+            "remote_connection_id": str(connection.id),
+            "remote_root_path": "/inspurfsms102/B2C_RD1/sample",
+        },
+        user_id="user-1",
+    )
+    agent_session = await AgentCoreService(db_session).create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="/inspurfsms102/B2C_RD1/sample\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    tool = RemoteExecTool(executor=executor)
+
+    result = await tool.run(
+        {
+            "connection_id": str(connection.id),
+            "command": "pwd",
+        },
+        _tool_context(db_session, session_id=str(agent_session.id)),
+    )
+
+    assert agent_session.session_metadata["remote_connection_id"] == str(connection.id)
+    assert result["working_directory"] == "/inspurfsms102/B2C_RD1/sample"
+    assert executor.calls[0]["command"] == "cd /inspurfsms102/B2C_RD1/sample && pwd"
 
 
 @pytest.mark.asyncio

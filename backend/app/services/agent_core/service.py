@@ -63,12 +63,15 @@ class AgentCoreService:
         lineage: dict | None = None,
         toolset_policy: dict | None = None,
     ):
+        project = None
         if project_id is not None:
             project = await self.project_repo.get(project_id)
             if project is None:
                 raise NotFoundError(f"Project not found: {project_id}")
             if str(project.workspace_id) != str(workspace_id):
                 raise PermissionDeniedError("Project is not in the current workspace")
+
+        metadata = _metadata_with_remote_project(metadata, project)
 
         return await self.session_repo.create(
             project_id=str(project_id) if project_id else None,
@@ -652,6 +655,20 @@ class AgentCoreService:
             user_id=user_id,
         )
         return artifact
+
+
+def _metadata_with_remote_project(metadata: dict | None, project) -> dict | None:
+    if not project or getattr(project, "storage_mode", None) != "remote":
+        return metadata
+    connection_id = getattr(project, "remote_connection_id", None)
+    remote_root_path = getattr(project, "remote_root_path", None)
+    if not connection_id or not remote_root_path:
+        return metadata
+    merged = dict(metadata or {})
+    merged.setdefault("remote_connection_id", str(connection_id))
+    merged.setdefault("remote_project_id", str(project.id))
+    merged.setdefault("remote_project_root", str(remote_root_path))
+    return merged
 
 
 def _generated_session_title(input_text: str) -> str:

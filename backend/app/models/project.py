@@ -14,6 +14,12 @@ class Project(Base, UUIDMixin, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text)
     storage_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="managed")
     external_root_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    remote_connection_id: Mapped[str | None] = mapped_column(
+        ForeignKey("remote_connections.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    remote_root_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     created_by_user_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True, index=True
@@ -28,7 +34,11 @@ class Project(Base, UUIDMixin, TimestampMixin):
 
     runs = relationship("Run", back_populates="project", cascade="all, delete")
     workspace = relationship("Workspace", back_populates="projects")
+    remote_connection = relationship("RemoteConnection")
 
     @property
     def project_root(self) -> str:
+        if self.storage_mode == "remote" and self.remote_root_path:
+            connection = self.remote_connection_id or "remote"
+            return f"ssh://{connection}{self.remote_root_path}"
         return "asset://project"

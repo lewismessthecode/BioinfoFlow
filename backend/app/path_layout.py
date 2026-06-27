@@ -112,6 +112,8 @@ def project_home(
         if not override:
             raise ValueError("external project requires external_root_path")
         return Path(str(override)).expanduser().resolve()
+    if storage_mode == "remote":
+        raise ValueError("remote project does not have a local project root")
     return (projects_root() / str(project.id)).resolve()
 
 

@@ -59,3 +59,54 @@ async def test_default_project_endpoint_is_stable_and_not_deletable(async_client
     )
     assert delete_resp.status_code == 403
     assert delete_resp.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_create_remote_project_binds_connection_and_path(async_client):
+    connection_resp = await async_client.post(
+        "/api/v1/connections",
+        json={
+            "name": "Phoenix login",
+            "host": "login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+            "skill_instructions": "Use phoenixcli for platform jobs.",
+        },
+    )
+    assert connection_resp.status_code == 201
+    connection_id = connection_resp.json()["data"]["id"]
+
+    create_resp = await async_client.post(
+        "/api/v1/projects",
+        json={
+            "name": "Phoenix sample",
+            "description": "Remote shared-storage project",
+            "remote_connection_id": connection_id,
+            "remote_root_path": "/inspurfsms102/B2C_RD1/project/sample_xxx/",
+        },
+    )
+
+    assert create_resp.status_code == 201
+    data = create_resp.json()["data"]
+    assert data["storage_mode"] == "remote"
+    assert data["remote_connection_id"] == connection_id
+    assert data["remote_root_path"] == "/inspurfsms102/B2C_RD1/project/sample_xxx"
+    assert data["project_root"] == (
+        f"ssh://{connection_id}/inspurfsms102/B2C_RD1/project/sample_xxx"
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_remote_project_requires_workspace_connection(async_client):
+    create_resp = await async_client.post(
+        "/api/v1/projects",
+        json={
+            "name": "Missing remote",
+            "remote_connection_id": "00000000-0000-0000-0000-000000000099",
+            "remote_root_path": "/data/project",
+        },
+    )
+
+    assert create_resp.status_code == 404
+    assert create_resp.json()["error"]["code"] == "NOT_FOUND"

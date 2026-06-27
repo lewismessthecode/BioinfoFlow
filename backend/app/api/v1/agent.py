@@ -386,6 +386,8 @@ async def get_fs_tree(
         )
         if not project:
             raise NotFoundError("Project not found")
+        if getattr(project, "storage_mode", None) == "remote":
+            raise BadRequestError("Remote projects use SSH file browsing")
         base = policy.require_allowed_dir(str(project_home(project)))
     else:
         base = policy.require_allowed_dir(str(settings.repo_root))
