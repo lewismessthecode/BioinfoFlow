@@ -1969,26 +1969,26 @@
   },
   "connections": {
     "title": "连接中心",
-    "subtitle": "保存 SSH 主机信息和一段 Agent Skill 说明。路径和使用备注写进 skill 文本，不再拆成平台字段。",
+    "subtitle": "管理用于远程执行、文件查看和工作流运行的 SSH 环境。",
     "addNode": "添加连接",
-    "searchPlaceholder": "搜索名称、主机、别名或说明...",
+    "searchPlaceholder": "搜索连接...",
     "list": {
-      "title": "连接列表",
-      "description": "选择一个连接，查看 SSH 配置和给 Agent 的说明。",
+      "title": "连接",
+      "description": "选择一个远程环境，查看访问方式和 Agent 上下文。",
       "loading": "正在加载连接...",
-      "error": "无法加载实时 SSH 连接。请检查后端后重试。",
-      "empty": "没有匹配的连接。换个名称、主机、别名或说明试试。"
+      "error": "无法加载 SSH 连接。请检查服务后重试。",
+      "empty": "还没有连接。添加一个 SSH 环境后即可开始。",
+      "noResults": "没有匹配的连接。试试其他名称、主机、别名或备注。"
     },
     "detail": {
-      "currentContext": "Agent 可用配置",
-      "aliasPrefix": "SSH 别名：",
-      "secretsNote": "这里只保存别名或路径。不要粘贴密码或私钥内容。",
-      "skillGuidance": "路径、API、环境备注和启动命令都写进 skill 文本。"
+      "currentContext": "Agent 上下文",
+      "aliasPrefix": "别名：",
+      "skillGuidance": "写下路径、环境初始化和使用限制，帮助 Agent 在这台主机上工作。"
     },
     "sections": {
-      "connection": "连接信息",
-      "ssh": "SSH 配置",
-      "agentSkill": "Agent Skill"
+      "connection": "概览",
+      "ssh": "访问方式",
+      "agentSkill": "Agent 上下文"
     },
     "fields": {
       "name": "连接名称",
@@ -1999,7 +1999,7 @@
       "auth": "认证方式",
       "sshAlias": "SSH 别名",
       "keyPath": "私钥路径",
-      "skillInstructions": "Agent Skill 说明"
+      "skillInstructions": "使用说明"
     },
     "status": {
       "online": "在线",
@@ -2008,38 +2008,38 @@
       "unknown": "未测试"
     },
     "auth": {
-      "ssh_config": "SSH 配置别名",
-      "key_file": "密钥文件",
+      "ssh_config": "SSH 配置",
+      "key_file": "私钥文件",
       "agent": "SSH agent"
     },
     "authHelp": {
-      "ssh_config": "通过 Bioinfoflow 后端用户 ~/.ssh/config 里的 Host 条目连接。",
-      "key_file": "使用后端可访问的主机、账号、端口和私钥路径。",
-      "agent": "使用后端用户 ssh-agent 里已经加载的密钥。"
+      "ssh_config": "使用 SSH 配置中已有的 Host 别名。",
+      "key_file": "使用本机可访问的私钥文件路径。",
+      "agent": "使用 ssh-agent 中已经加载的身份。"
     },
     "empty": {
       "notSet": "未设置",
-      "skillInstructions": "暂未填写 skill 说明"
+      "skillInstructions": "暂未填写使用说明"
     },
     "actions": {
       "testConnection": "测试连接",
       "testing": "测试中...",
       "editConnection": "编辑连接",
-      "runProbe": "运行探针",
-      "runningProbe": "运行中...",
-      "insertPreset": "插入预置 skill"
+      "runProbe": "运行检查",
+      "runningProbe": "检查中...",
+      "insertPreset": "插入模板"
     },
     "dialog": {
       "title": "添加 SSH 连接",
       "editTitle": "编辑 SSH 连接",
-      "description": "只保存连接元数据。密码和私钥内容不要放进 Bioinfoflow。",
+      "description": "填写 Agent 连接远程环境所需的信息。敏感凭据请保存在 SSH 配置或本地安全位置。",
       "add": "添加连接",
       "save": "保存修改",
       "saving": "保存中..."
     },
     "skillDrop": {
-      "title": "把 skill 文本文件拖到这里",
-      "hint": "纯文本或 Markdown 备注会追加到 Agent Skill。"
+      "title": "导入说明文件",
+      "hint": "纯文本或 Markdown 备注会追加到使用说明。"
     },
     "skillPresets": {
       "nextflowHpc": {
@@ -2056,31 +2056,31 @@
       }
     },
     "probe": {
-      "title": "远程探针",
-      "description": "通过 Bioinfoflow 流式执行一条短 SSH 命令。",
-      "placeholder": "运行探针，验证远程输出能实时返回。",
+      "title": "连接检查",
+      "description": "运行一条短命令，确认远程输出可以返回。",
+      "placeholder": "运行检查后，这里会显示远程输出。",
       "emptyOutput": "命令已完成，没有输出。",
-      "failed": "远程探针失败。"
+      "failed": "连接检查失败。"
     },
     "form": {
       "defaultUsername": "user",
-      "secretsNote": "只保存 SSH 别名和文件路径。不要粘贴密码或私钥内容。",
-      "sshConfigNote": "这个别名会在 Bioinfoflow 后端解析。主机、账号和端口只作为可读元数据保存。",
-      "skillGuidance": "路径、API、环境备注和启动命令都写进 skill 文本。",
+      "secretsNote": "凭据保留在所选 SSH 认证方式中。",
+      "sshConfigNote": "使用你在 SSH 配置中为该环境设置的 Host 别名。",
+      "skillGuidance": "写下路径、环境初始化和使用限制，帮助 Agent 在这台主机上工作。",
       "errors": {
         "invalidPort": "端口必须在 1 到 65535 之间。",
-        "sshAliasRequired": "使用 SSH 配置认证时必须填写 SSH 别名。",
-        "keyPathRequired": "使用密钥文件认证时必须填写私钥路径。",
-        "skillFileFailed": "导入 skill 文件失败。",
-        "saveFailed": "保存连接失败。"
+        "sshAliasRequired": "请填写 SSH Host 别名。",
+        "keyPathRequired": "请填写私钥路径。",
+        "skillFileFailed": "无法导入说明文件。",
+        "saveFailed": "无法保存连接。"
       },
       "placeholders": {
-        "name": "仿真环境 sz01",
-        "host": "10.227.5.224 或 login.example.internal",
+        "name": "实验室 GPU 节点",
+        "host": "login.example.internal 或 10.0.0.12",
         "username": "bioflow",
-        "sshAlias": "bioflow-sim-sz01",
-        "keyPath": "~/.ssh/bioflow_sim_ed25519",
-        "skillInstructions": "告诉 Agent 这个连接里的路径、输出、API、环境初始化和重要使用约定。"
+        "sshAlias": "lab-gpu",
+        "keyPath": "~/.ssh/id_ed25519",
+        "skillInstructions": "例如：工作目录、环境初始化、队列限制和常用检查命令。"
       }
     },
     "toasts": {
@@ -2088,7 +2088,7 @@
       "connectionUpdated": "已更新连接 {name}",
       "testSucceeded": "{name} 可连接",
       "testFailed": "{name} 测试失败",
-      "skillImported": "已导入 skill 文本"
+      "skillImported": "已导入使用说明"
     }
   },
   "settings": {

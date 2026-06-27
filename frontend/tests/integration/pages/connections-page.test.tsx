@@ -85,7 +85,7 @@ describe("ConnectionsPage", () => {
     buildWebSocketUrlMock.mockImplementation((path: string) => `ws://example.test${path}`)
   })
 
-  it("focuses the main flow on SSH config and Agent Skill instructions", async () => {
+  it("focuses the main flow on SSH config and Agent context", async () => {
     const user = userEvent.setup()
 
     render(<ConnectionsPage />)
@@ -95,8 +95,8 @@ describe("ConnectionsPage", () => {
 
     expect(screen.getByLabelText("SSH alias")).toBeInTheDocument()
     expect(screen.getByLabelText("Private key path")).toBeInTheDocument()
-    expect(screen.getAllByText("Agent Skill instructions")[0]).toBeInTheDocument()
-    expect(screen.getByText("Drop a skill text file here")).toBeInTheDocument()
+    expect(screen.getAllByText("Instructions")[0]).toBeInTheDocument()
+    expect(screen.getByText("Import a context file")).toBeInTheDocument()
 
     expect(screen.queryByText("Tags")).not.toBeInTheDocument()
     expect(screen.queryByText("Accessible paths")).not.toBeInTheDocument()
@@ -111,7 +111,7 @@ describe("ConnectionsPage", () => {
     render(<ConnectionsPage />)
 
     expect(
-      await screen.findByText("No matching connections. Try another name, host, alias, or note."),
+      await screen.findByText("No connections yet. Add an SSH environment to begin."),
     ).toBeInTheDocument()
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
   })
@@ -119,9 +119,9 @@ describe("ConnectionsPage", () => {
   it("does not show demo connections when the live backend is unavailable", async () => {
     render(<ConnectionsPage />)
 
-    expect(await screen.findByText("Could not load live SSH connections. Check the backend and try again.")).toBeInTheDocument()
+    expect(await screen.findByText("Could not load SSH connections. Check the service and try again.")).toBeInTheDocument()
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Run probe" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Run check" })).not.toBeInTheDocument()
   })
 
   it("saves new connections through the backend", async () => {
@@ -139,7 +139,7 @@ describe("ConnectionsPage", () => {
     await user.type(screen.getByLabelText("Username"), "bioflow")
     await user.type(screen.getByLabelText("SSH alias"), "live-hpc")
     await user.type(
-      screen.getByLabelText("Agent Skill instructions"),
+      screen.getByLabelText("Instructions"),
       "Use /data/live for analysis outputs.",
     )
     await user.click(screen.getByRole("button", { name: "Add connection" }))
@@ -189,7 +189,7 @@ describe("ConnectionsPage", () => {
     await user.click(screen.getByRole("button", { name: "Add connection" }))
 
     const error = await screen.findByRole("alert")
-    expect(error).toHaveTextContent("SSH alias is required for SSH config auth.")
+    expect(error).toHaveTextContent("Enter an SSH Host alias.")
     expect(screen.getByLabelText("SSH alias")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
   })
@@ -309,10 +309,10 @@ describe("ConnectionsPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Add connection" }))
     await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
-    await user.click(screen.getByRole("button", { name: /Key file/ }))
+    await user.click(screen.getByRole("button", { name: /Private key/ }))
     await user.click(screen.getByRole("button", { name: "Add connection" }))
 
-    expect(await screen.findByText("Private key path is required for key file auth.")).toBeInTheDocument()
+    expect(await screen.findByText("Enter a private key path.")).toBeInTheDocument()
     expect(screen.getByLabelText("Private key path")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
   })
@@ -335,7 +335,7 @@ describe("ConnectionsPage", () => {
     await user.type(screen.getByLabelText("Connection name"), "Key HPC")
     await user.type(screen.getByLabelText("Host or IP"), "login.key.example.org")
     await user.type(screen.getByLabelText("Username"), "bioflow")
-    await user.click(screen.getByRole("button", { name: /Key file/ }))
+    await user.click(screen.getByRole("button", { name: /Private key/ }))
     await user.type(screen.getByLabelText("Private key path"), "~/.ssh/id_ed25519")
     expect(screen.queryByLabelText("SSH alias")).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Add connection" }))
@@ -357,16 +357,16 @@ describe("ConnectionsPage", () => {
     )
   })
 
-  it("adds preset and dropped Agent Skill instructions", async () => {
+  it("adds preset and dropped Agent instructions", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [] })
 
     render(<ConnectionsPage />)
 
     await user.click(screen.getByRole("button", { name: "Add connection" }))
-    await user.click(screen.getByRole("button", { name: "Insert preset skill" }))
+    await user.click(screen.getByRole("button", { name: "Insert preset" }))
     await user.click(await screen.findByRole("menuitem", { name: "Nextflow HPC" }))
-    expect(screen.getByLabelText("Agent Skill instructions")).toHaveValue(
+    expect(screen.getByLabelText("Instructions")).toHaveValue(
       "Load the site environment before diagnostics.\nRun module load nextflow when modules are available.\nCheck workflow outputs, .nextflow.log, and work/ task folders before reruns.",
     )
 
@@ -376,7 +376,7 @@ describe("ConnectionsPage", () => {
     Object.defineProperty(file, "text", {
       value: vi.fn().mockResolvedValue("Outputs live under /scratch/project/results."),
     })
-    fireEvent.drop(screen.getByText("Drop a skill text file here"), {
+    fireEvent.drop(screen.getByText("Import a context file"), {
       dataTransfer: { files: [file] },
     })
 
@@ -416,7 +416,7 @@ describe("ConnectionsPage", () => {
       render(<ConnectionsPage />)
 
       expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
-      await user.click(screen.getByRole("button", { name: "Run probe" }))
+      await user.click(screen.getByRole("button", { name: "Run check" }))
 
       expect(await screen.findByText("bioinfoflow-ok")).toBeInTheDocument()
       expect(buildWebSocketUrlMock).toHaveBeenCalledWith("/connections/live-connection-1/exec/ws")

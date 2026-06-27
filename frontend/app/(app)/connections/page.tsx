@@ -416,32 +416,32 @@ export default function ConnectionsPage() {
     selectedConnection && probeOutputConnectionId === selectedConnection.id ? probeOutput : ""
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-6xl p-4 sm:p-6">
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className="h-full overflow-y-auto bg-background">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:py-8">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
-            <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">{t("subtitle")}</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">{t("title")}</h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">{t("subtitle")}</p>
           </div>
-          <Button className="w-fit rounded-full px-4" onClick={openCreateDialog}>
+          <Button className="h-10 w-fit rounded-full px-4 shadow-sm shadow-foreground/5" onClick={openCreateDialog}>
             <Plus className="h-4 w-4" />
             {t("addNode")}
           </Button>
         </div>
 
         <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-          <DialogContent className="max-h-[min(92vh,780px)] overflow-hidden rounded-2xl border-border/70 bg-card p-0 text-card-foreground shadow-2xl shadow-foreground/20 sm:max-w-4xl">
-            <form onSubmit={handleSubmit} noValidate className="flex max-h-[min(92vh,780px)] flex-col">
-              <DialogHeader className="border-b border-border/70 px-5 py-3.5">
+          <DialogContent className="max-h-[min(92vh,820px)] overflow-hidden rounded-[28px] border-border/60 bg-card/95 p-0 text-card-foreground shadow-2xl shadow-foreground/15 sm:max-w-5xl">
+            <form onSubmit={handleSubmit} noValidate className="flex max-h-[min(92vh,820px)] flex-col">
+              <DialogHeader className="border-b border-border/60 px-6 py-5">
                 <DialogTitle>
                   {dialogMode === "edit" ? t("dialog.editTitle") : t("dialog.title")}
                 </DialogTitle>
                 <DialogDescription>{t("dialog.description")}</DialogDescription>
               </DialogHeader>
 
-              <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-3.5 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.9fr)]">
-                <div className="grid gap-3">
-                  <section className="grid gap-2.5">
+              <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 py-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.88fr)]">
+                <div className="grid content-start gap-4">
+                  <section className="grid gap-3 rounded-2xl border border-border/60 bg-background/55 p-4">
                     <FormSectionTitle title={t("sections.connection")} icon={<Server className="h-4 w-4" />} />
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label={t("fields.name")} htmlFor="connection-name">
@@ -507,7 +507,7 @@ export default function ConnectionsPage() {
                     ) : null}
                   </section>
 
-                  <section className="grid gap-2.5">
+                  <section className="grid gap-3 rounded-2xl border border-border/60 bg-background/55 p-4">
                     <FormSectionTitle title={t("sections.ssh")} icon={<KeyRound className="h-4 w-4" />} />
                     <div aria-label={t("fields.auth")} className="grid gap-2 sm:grid-cols-3">
                       {authMethods.map((method) => (
@@ -543,7 +543,7 @@ export default function ConnectionsPage() {
                   </section>
                 </div>
 
-                <section className="grid content-start gap-2.5">
+                <section className="grid content-start gap-3 rounded-2xl border border-border/60 bg-background/55 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <FormSectionTitle title={t("sections.agentSkill")} icon={<BookOpenText className="h-4 w-4" />} />
                     <DropdownMenu>
@@ -616,7 +616,7 @@ export default function ConnectionsPage() {
                   {formError}
                 </div>
               ) : null}
-              <DialogFooter className="border-t border-border/70 px-5 py-3">
+              <DialogFooter className="border-t border-border/60 bg-muted/10 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
                   {tCommon("cancel")}
                 </Button>
@@ -632,9 +632,9 @@ export default function ConnectionsPage() {
           </DialogContent>
         </Dialog>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(280px,34%)_minmax(0,1fr)]">
-          <Card className="overflow-hidden border-border/70 bg-card py-0 shadow-sm shadow-foreground/5">
-            <CardHeader className="border-b border-border/70 px-4 py-3">
+        <div className="grid gap-5 lg:grid-cols-[minmax(320px,0.38fr)_minmax(0,1fr)]">
+          <Card className="min-h-[calc(100vh-12rem)] overflow-hidden rounded-[28px] border-border/60 bg-card/85 py-0 shadow-sm shadow-foreground/5">
+            <CardHeader className="border-b border-border/60 px-5 py-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">{t("list.title")}</CardTitle>
@@ -653,7 +653,7 @@ export default function ConnectionsPage() {
                 />
               </div>
             </CardHeader>
-            <CardContent className="grid gap-2 p-2">
+            <CardContent className="grid gap-2.5 p-2.5">
               {isLoadingConnections ? (
                 <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
                   {t("list.loading")}
@@ -673,14 +673,14 @@ export default function ConnectionsPage() {
                       onClick={() => setSelectedConnectionId(connection.id)}
                       aria-pressed={selected}
                       className={cn(
-                        "group rounded-xl border p-3 text-left transition hover:border-primary/25 hover:bg-muted/35",
+                        "group rounded-2xl border p-3.5 text-left transition hover:border-border hover:bg-background/75",
                         selected
-                          ? "border-primary/35 bg-primary/10 shadow-sm shadow-primary/5"
+                          ? "border-foreground/15 bg-background shadow-sm shadow-foreground/5 ring-1 ring-foreground/5"
                           : "border-transparent bg-transparent",
                       )}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-muted-foreground group-hover:text-foreground">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background/80 text-muted-foreground group-hover:text-foreground">
                           <Server className="h-4 w-4" />
                         </div>
                         <div className="min-w-0 flex-1">
@@ -708,8 +708,8 @@ export default function ConnectionsPage() {
                   )
                 })
               ) : (
-                <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-                  {t("list.empty")}
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm leading-6 text-muted-foreground">
+                  {connections.length === 0 ? t("list.empty") : t("list.noResults")}
                 </div>
               )}
             </CardContent>
@@ -717,12 +717,12 @@ export default function ConnectionsPage() {
 
           {selectedConnection ? (
             <section>
-              <Card className="overflow-hidden border-border/70 bg-card py-0 shadow-sm shadow-foreground/5">
+              <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
                 <CardContent className="p-0">
-                  <div className="border-b border-border/70 p-4">
+                  <div className="border-b border-border/60 p-5">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background/80 text-foreground">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background/85 text-foreground">
                           <Server className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
@@ -766,7 +766,7 @@ export default function ConnectionsPage() {
                         </Button>
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
                           onClick={() => openEditDialog(selectedConnection)}
                         >
@@ -786,8 +786,8 @@ export default function ConnectionsPage() {
                     </div>
                   </div>
 
-                  <div className="grid gap-3 p-4">
-                    <div className="grid gap-3 xl:grid-cols-2">
+                  <div className="grid gap-4 p-5">
+                    <div className="grid gap-4 xl:grid-cols-2">
                       <DetailSection title={t("sections.connection")}>
                         <DetailGrid>
                           <DetailItem label={t("fields.name")} value={selectedConnection.name} />
@@ -819,7 +819,6 @@ export default function ConnectionsPage() {
                             mono
                           />
                         </DetailGrid>
-                        <p className="text-xs leading-5 text-muted-foreground">{t("detail.secretsNote")}</p>
                       </DetailSection>
                     </div>
 
@@ -863,7 +862,9 @@ function Field({
 }) {
   return (
     <div className="grid gap-1.5">
-      <Label htmlFor={htmlFor}>{label}</Label>
+      <Label htmlFor={htmlFor} className="text-xs font-medium text-muted-foreground">
+        {label}
+      </Label>
       {children}
     </div>
   )
@@ -872,7 +873,7 @@ function Field({
 function FormSectionTitle({ title, icon }: { title: string; icon: ReactNode }) {
   return (
     <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-      <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/70 bg-muted/50 text-muted-foreground">
+      <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground">
         {icon}
       </span>
       {title}
@@ -899,13 +900,13 @@ function AuthMethodButton({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "min-h-[4.75rem] rounded-xl border p-2.5 text-left transition hover:border-primary/40 hover:bg-muted/35",
-        selected ? "border-primary/45 bg-primary/10 shadow-sm shadow-primary/10" : "border-border/70 bg-background/70",
+        "min-h-[5.25rem] rounded-2xl border p-3 text-left transition hover:border-foreground/20 hover:bg-background/80",
+        selected ? "border-foreground/25 bg-background shadow-sm shadow-foreground/5" : "border-border/60 bg-background/50",
       )}
     >
       <span className="flex items-center justify-between gap-2">
         <span className="text-sm font-semibold text-foreground">{title}</span>
-        {selected ? <CheckCircle2 className="h-4 w-4 text-primary" /> : null}
+        {selected ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : null}
       </span>
       <span className="mt-1 block text-xs leading-4 text-muted-foreground">{description}</span>
       <span className="sr-only">{method}</span>
@@ -928,13 +929,15 @@ function TextFieldArea({
 }) {
   return (
     <div className="grid gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+        {label}
+      </Label>
       <Textarea
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="min-h-28 resize-none lg:min-h-40"
+        className="min-h-32 resize-none border-border/60 bg-background/70 lg:min-h-44"
       />
     </div>
   )
@@ -942,7 +945,7 @@ function TextFieldArea({
 
 function DetailSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="grid gap-3 rounded-xl bg-muted/20 p-4">
+    <section className="grid gap-3 rounded-2xl border border-border/40 bg-background/55 p-5">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       {children}
     </section>
@@ -950,22 +953,22 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
 }
 
 function DetailGrid({ children }: { children: ReactNode }) {
-  return <dl className="grid gap-3 sm:grid-cols-2">{children}</dl>
+  return <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">{children}</dl>
 }
 
 function DetailItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className={cn("mt-1 break-words text-sm font-medium text-foreground", mono && "font-mono")}>{value}</dd>
+      <dt className="text-[0.7rem] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</dt>
+      <dd className={cn("mt-1.5 break-words text-sm font-medium text-foreground", mono && "font-mono")}>{value}</dd>
     </div>
   )
 }
 
 function TextPanel({ title, value, empty }: { title: string; value: string; empty: string }) {
   return (
-    <div className="rounded-xl bg-background/70 p-4">
-      <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
+    <div className="rounded-2xl border border-border/40 bg-background/70 p-4">
+      <p className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
       <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">
         {value || empty}
       </pre>
