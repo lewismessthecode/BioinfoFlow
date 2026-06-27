@@ -142,6 +142,24 @@
     "thisWeek": "本周",
     "older": "更早",
     "advancedSettings": "高级设置",
+    "projectType": "项目类型",
+    "projectTypes": {
+      "local": {
+        "title": "本地",
+        "description": "使用 Bioinfoflow 管理的存储或本地外部目录。"
+      },
+      "remote": {
+        "title": "远程",
+        "description": "绑定一台 SSH 主机和远端文件夹。"
+      }
+    },
+    "remoteHost": "远程主机",
+    "remoteHostFallback": "远程主机",
+    "remotePath": "远端文件夹路径",
+    "remoteProjectBadge": "远程",
+    "remoteStoragePreview": "远程：{host} · {path}",
+    "loadingRemoteHosts": "正在加载远程主机...",
+    "noRemoteHosts": "还没有配置远程主机",
     "storageManagedPreview": "项目存储由 Bioinfoflow 自动管理",
     "workspacePreview": "存储位置：{path}",
     "workspacePreviewLabel": "存储位置",
@@ -153,11 +171,13 @@
     "placeholders": {
       "projectName": "例如：COVID 分析",
       "projectDescription": "简短描述",
-      "workspacePath": "例如：/data/projects/my-analysis"
+      "workspacePath": "例如：/data/projects/my-analysis",
+      "remotePath": "例如：/inspurfsms102/B2C_RD1/project/sample_xxx"
     },
     "hints": {
       "workspacePath": "工作区路径是存储项目文件和数据的本地目录",
-      "storageOverridePath": "高级覆盖路径，用于接入外部项目存储。留空则由 Bioinfoflow 自动管理项目根目录。"
+      "storageOverridePath": "高级覆盖路径，用于接入外部项目存储。留空则由 Bioinfoflow 自动管理项目根目录。",
+      "remotePath": "智能助手会在所选 SSH 主机的这个远端文件夹内执行命令和查看文件。"
     },
     "prompts": {
       "renameProject": "重命名项目",
@@ -2253,7 +2273,8 @@
   },
   "directoryBrowser": {
     "errors": {
-      "load": "无法加载目录"
+      "load": "无法加载目录",
+      "remoteConnectionRequired": "请先选择远程主机，再浏览目录"
     },
     "empty": "此处无条目"
   },
@@ -2487,6 +2508,7 @@
       "changes": "变更",
       "filesChanged": "已变更 {count} 个文件",
       "worktree": "工作树",
+      "remoteProject": "远程项目",
       "session": "会话",
       "pendingSession": "会话待创建",
       "model": "模型",

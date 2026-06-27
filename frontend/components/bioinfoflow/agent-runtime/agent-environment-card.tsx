@@ -40,6 +40,8 @@ export function AgentEnvironmentCard({
     ...activities.flatMap((activity) => activity.relatedFiles),
     ...artifacts.flatMap((artifact) => artifactPaths(artifact)),
   ]).slice(0, 5)
+  const remoteProjectRoot = remoteMetadataValue(session?.metadata, "remote_project_root")
+  const remoteConnectionId = remoteMetadataValue(session?.metadata, "remote_connection_id")
 
   return (
     <section
@@ -70,6 +72,13 @@ export function AgentEnvironmentCard({
           label={t("environment.worktree")}
           value={projectId || t("environment.none")}
         />
+        {remoteProjectRoot ? (
+          <EnvironmentRow
+            icon={<Waypoints className="h-4 w-4" />}
+            label={t("environment.remoteProject")}
+            value={remoteConnectionId ? `${remoteProjectRoot} · ${remoteConnectionId}` : remoteProjectRoot}
+          />
+        ) : null}
         <EnvironmentRow
           icon={<GitBranch className="h-4 w-4" />}
           label={t("environment.session")}
@@ -240,6 +249,14 @@ function modelLabel(session?: AgentRuntimeSession | null) {
   const selection = session?.model_selection
   if (!selection?.model) return null
   return [selection.provider, selection.model].filter(Boolean).join(" · ")
+}
+
+function remoteMetadataValue(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const value = metadata?.[key]
+  return typeof value === "string" && value ? value : null
 }
 
 function uniqueStrings(values: Array<string | null | undefined>) {

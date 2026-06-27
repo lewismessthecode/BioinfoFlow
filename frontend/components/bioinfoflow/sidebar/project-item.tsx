@@ -70,6 +70,8 @@ export function ProjectItem({
   tSidebar,
   tCommon,
 }: ProjectItemProps) {
+  const isRemoteProject = project.storage_mode === "remote"
+
   if (collapsed) {
     return (
       <Tooltip>
@@ -144,6 +146,11 @@ export function ProjectItem({
             <FolderKanban className="h-3.5 w-3.5 shrink-0" />
           </span>
           <span className={cn("truncate text-[13px] font-semibold", !isActive && "font-medium")}>{project.name}</span>
+          {isRemoteProject ? (
+            <span className="shrink-0 rounded-full border border-sidebar-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/60">
+              {tSidebar("remoteProjectBadge")}
+            </span>
+          ) : null}
         </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

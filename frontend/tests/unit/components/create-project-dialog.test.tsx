@@ -11,6 +11,20 @@ vi.mock("next-intl", () => ({
       projectName: "Project Name",
       workspacePath: "Workspace Path",
       advancedSettings: "Advanced Settings",
+      projectType: "Project type",
+      "projectTypes.local.title": "Local",
+      "projectTypes.local.description": "Use local storage",
+      "projectTypes.remote.title": "Remote",
+      "projectTypes.remote.description": "Use SSH storage",
+      remoteHost: "Remote host",
+      remoteHostFallback: "Remote host",
+      remotePath: "Remote folder path",
+      remoteStoragePreview: "Remote: {host} · {path}",
+      loadingRemoteHosts: "Loading remote hosts...",
+      noRemoteHosts: "No remote hosts configured",
+      browseDirectories: "Browse...",
+      "placeholders.remotePath": "e.g., /data/project",
+      "hints.remotePath": "Agent commands run from this remote folder",
       "placeholders.projectName": "e.g., COVID Analysis",
       "placeholders.workspacePath": "e.g., projects/my-analysis",
       "placeholders.projectDescription": "Short description",
@@ -21,6 +35,11 @@ vi.mock("next-intl", () => ({
   },
 }))
 
+vi.mock("@/lib/demo-connections", () => ({
+  fetchRemoteConnections: vi.fn(),
+}))
+
+import { fetchRemoteConnections } from "@/lib/demo-connections"
 import { CreateProjectDialog } from "@/components/bioinfoflow/create-project-dialog"
 
 describe("CreateProjectDialog", () => {
@@ -28,6 +47,20 @@ describe("CreateProjectDialog", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(fetchRemoteConnections).mockResolvedValue([
+      {
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Phoenix login",
+        host: "login.example.org",
+        port: 22,
+        username: "alice",
+        auth_method: "agent",
+        ssh_alias: "",
+        key_path: "",
+        status: "online",
+        skill_instructions: "Use phoenixcli.",
+      },
+    ])
   })
 
   it("shows a managed storage message when the user types a name", async () => {
@@ -150,6 +183,27 @@ describe("CreateProjectDialog", () => {
     expect(onCreateProject).toHaveBeenCalledWith({
       name: "Beta",
       description: "",
+    })
+  })
+
+  it("creates a remote project with selected host and remote path", async () => {
+    const user = userEvent.setup()
+    render(<CreateProjectDialog collapsed={false} onCreateProject={onCreateProject} />)
+
+    await user.click(screen.getByRole("button", { name: "New Project" }))
+    await user.type(screen.getByLabelText("Project Name"), "Phoenix sample")
+    await user.click(screen.getByRole("button", { name: /Remote/ }))
+
+    expect(await screen.findByLabelText("Remote host")).toBeInTheDocument()
+    await user.type(screen.getByLabelText("Remote folder path"), "/inspurfsms102/B2C_RD1/project/sample_xxx")
+    await user.click(screen.getByRole("button", { name: "Create Project" }))
+
+    expect(onCreateProject).toHaveBeenCalledWith({
+      name: "Phoenix sample",
+      description: "",
+      projectType: "remote",
+      remoteConnectionId: "11111111-1111-1111-1111-111111111111",
+      remoteRootPath: "/inspurfsms102/B2C_RD1/project/sample_xxx",
     })
   })
 })

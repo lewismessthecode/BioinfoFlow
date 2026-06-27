@@ -292,6 +292,62 @@ describe("useSidebarData", () => {
     expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-project")
   })
 
+  it("creates a remote project with remote connection fields", async () => {
+    const createdProject: Project = {
+      id: "project-remote",
+      name: "Phoenix sample",
+      project_root: "ssh://11111111-1111-1111-1111-111111111111/inspurfsms102/B2C_RD1/sample",
+      storage_mode: "remote",
+      remote_connection_id: "11111111-1111-1111-1111-111111111111",
+      remote_root_path: "/inspurfsms102/B2C_RD1/sample",
+    }
+
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/projects" && options?.method === "POST") {
+        return { data: createdProject, meta: undefined }
+      }
+      if (path === "/projects") {
+        return { data: [], meta: undefined }
+      }
+      if (path === "/projects/default") {
+        throw new Error("no default")
+      }
+      if (path === "/agent/sessions") {
+        return { data: [], meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper()
+    const { result } = renderHook(
+      () => ({ sidebar: useSidebarData(tSidebar), project: useProjectContext() }),
+      { wrapper: Wrapper },
+    )
+
+    await waitFor(() => expect(result.current.sidebar.isLoading).toBe(false))
+
+    await act(async () => {
+      await result.current.sidebar.handleCreateProject({
+        name: "Phoenix sample",
+        description: "Remote shared storage",
+        projectType: "remote",
+        remoteConnectionId: "11111111-1111-1111-1111-111111111111",
+        remoteRootPath: "/inspurfsms102/B2C_RD1/sample",
+      })
+    })
+
+    const postCall = apiRequestMock.mock.calls.find(
+      ([path, opts]) => path === "/projects" && opts?.method === "POST",
+    )
+    expect(JSON.parse(postCall![1]!.body as string)).toEqual({
+      name: "Phoenix sample",
+      description: "Remote shared storage",
+      remote_connection_id: "11111111-1111-1111-1111-111111111111",
+      remote_root_path: "/inspurfsms102/B2C_RD1/sample",
+    })
+    expect(result.current.project.activeProjectId).toBe("project-remote")
+  })
+
   it("quick-creates a project with only name and description (no workspace)", async () => {
     const createdProject: Project = {
       id: "project-quick",

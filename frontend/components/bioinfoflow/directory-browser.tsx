@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { apiRequest } from "@/lib/api"
+import { browseRemoteConnectionDirectory } from "@/lib/demo-connections"
 
 interface DirectoryEntry {
   name: string
@@ -30,6 +31,8 @@ interface DirectoryBrowserProps {
   onOpenChange: (open: boolean) => void
   initialPath?: string
   onSelect: (path: string) => void
+  source?: "local" | "remote"
+  remoteConnectionId?: string
 }
 
 export function DirectoryBrowser({
@@ -37,6 +40,8 @@ export function DirectoryBrowser({
   onOpenChange,
   initialPath,
   onSelect,
+  source = "local",
+  remoteConnectionId,
 }: DirectoryBrowserProps) {
   const t = useTranslations("sidebar")
   const tCommon = useTranslations("common")
@@ -51,15 +56,27 @@ export function DirectoryBrowser({
     setLoading(true)
     setError(null)
     try {
-      const { data } = await apiRequest<DirectoryListData>(
-        "/system/directories",
-        { params: { path } }
-      )
-      setCurrentPath(data.path)
-      setParentPath(data.parent)
-      setDirectories(data.directories)
+      if (source === "remote") {
+        if (!remoteConnectionId) throw new Error(tDir("errors.remoteConnectionRequired"))
+        const data = await browseRemoteConnectionDirectory(remoteConnectionId, path || "/")
+        setCurrentPath(data.path)
+        setParentPath(remoteParentPath(data.path))
+        setDirectories(
+          data.entries
+            .filter((entry) => entry.type === "dir" || entry.kind === "directory")
+            .map((entry) => ({ name: entry.name, path: entry.path })),
+        )
+      } else {
+        const { data } = await apiRequest<DirectoryListData>(
+          "/system/directories",
+          { params: { path } }
+        )
+        setCurrentPath(data.path)
+        setParentPath(data.parent)
+        setDirectories(data.directories)
+      }
     } catch (err) {
-      if (fallbackToHome && path !== "~") {
+      if (fallbackToHome && source === "local" && path !== "~") {
         return fetchDirectories("~")
       }
       setError(err instanceof Error ? err.message : tDir("errors.load"))
@@ -70,13 +87,13 @@ export function DirectoryBrowser({
     // render in the test mock; depending on it here caused an infinite
     // refetch loop under vitest.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [remoteConnectionId, source])
 
   useEffect(() => {
     if (open) {
-      fetchDirectories(initialPath || "~", true)
+      fetchDirectories(initialPath || (source === "remote" ? "/" : "~"), true)
     }
-  }, [open, initialPath, fetchDirectories])
+  }, [open, initialPath, source, fetchDirectories])
 
   const handleNavigate = (path: string) => {
     fetchDirectories(path)
@@ -161,4 +178,12 @@ export function DirectoryBrowser({
       </DialogContent>
     </Dialog>
   )
+}
+
+function remoteParentPath(path: string): string | null {
+  const normalized = (path || "/").replace(/\/+$/, "") || "/"
+  if (normalized === "/" || normalized === ".") return null
+  const index = normalized.lastIndexOf("/")
+  if (index <= 0) return "/"
+  return normalized.slice(0, index)
 }
