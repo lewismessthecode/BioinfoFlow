@@ -844,7 +844,21 @@ export default function ConnectionsPage() {
                 </CardContent>
               </Card>
             </section>
-          ) : null}
+          ) : (
+            <Card className="flex min-h-[calc(100vh-12rem)] items-center justify-center rounded-[28px] border-border/60 bg-card/60 py-0 shadow-sm shadow-foreground/5">
+              <CardContent className="max-w-md p-8 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-border/60 bg-background/70 text-muted-foreground">
+                  <TerminalSquare className="h-5 w-5" />
+                </div>
+                <h2 className="mt-5 text-base font-semibold text-foreground">{t("emptyDetail.title")}</h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("emptyDetail.description")}</p>
+                <Button type="button" className="mt-5 rounded-full" onClick={openCreateDialog}>
+                  <Plus className="h-4 w-4" />
+                  {t("emptyDetail.action")}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

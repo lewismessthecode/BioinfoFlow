@@ -2021,6 +2021,11 @@
       "notSet": "未设置",
       "skillInstructions": "暂未填写使用说明"
     },
+    "emptyDetail": {
+      "title": "准备连接远程环境",
+      "description": "添加连接后，可以测试访问、运行检查，并为 Agent 提供这台主机的上下文。",
+      "action": "添加第一个连接"
+    },
     "actions": {
       "testConnection": "测试连接",
       "testing": "测试中...",

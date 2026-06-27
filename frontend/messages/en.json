@@ -2021,6 +2021,11 @@
       "notSet": "Not set",
       "skillInstructions": "No instructions yet"
     },
+    "emptyDetail": {
+      "title": "Ready for a remote environment",
+      "description": "Add a connection to test access, run checks, and give the Agent the context it needs for this host.",
+      "action": "Add first connection"
+    },
     "actions": {
       "testConnection": "Test connection",
       "testing": "Testing...",
