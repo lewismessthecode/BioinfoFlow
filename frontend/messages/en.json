@@ -142,6 +142,24 @@
     "thisWeek": "This Week",
     "older": "Older",
     "advancedSettings": "Advanced Settings",
+    "projectType": "Project type",
+    "projectTypes": {
+      "local": {
+        "title": "Local",
+        "description": "Use Bioinfoflow-managed or local external storage."
+      },
+      "remote": {
+        "title": "Remote",
+        "description": "Bind this project to an SSH host and remote folder."
+      }
+    },
+    "remoteHost": "Remote host",
+    "remoteHostFallback": "Remote host",
+    "remotePath": "Remote folder path",
+    "remoteProjectBadge": "Remote",
+    "remoteStoragePreview": "Remote: {host} · {path}",
+    "loadingRemoteHosts": "Loading remote hosts...",
+    "noRemoteHosts": "No remote hosts configured",
     "storageManagedPreview": "Storage managed by Bioinfoflow",
     "workspacePreview": "Storage: {path}",
     "workspacePreviewLabel": "Storage location",
@@ -153,11 +171,13 @@
     "placeholders": {
       "projectName": "e.g., COVID Analysis",
       "projectDescription": "Short description",
-      "workspacePath": "e.g., projects/my-analysis"
+      "workspacePath": "e.g., projects/my-analysis",
+      "remotePath": "e.g., /inspurfsms102/B2C_RD1/project/sample_xxx"
     },
     "hints": {
       "workspacePath": "Local directory for workflow files, results, and agent tools. Relative paths resolve from backend root. Supports absolute paths and ~. Auto-created if missing.",
-      "storageOverridePath": "Advanced override for external project storage. Leave empty to let Bioinfoflow manage the project root."
+      "storageOverridePath": "Advanced override for external project storage. Leave empty to let Bioinfoflow manage the project root.",
+      "remotePath": "Agent commands and file inspection run from this remote folder on the selected SSH host."
     },
     "prompts": {
       "renameProject": "Rename project",
@@ -2253,7 +2273,8 @@
   },
   "directoryBrowser": {
     "errors": {
-      "load": "Could not load directory"
+      "load": "Could not load directory",
+      "remoteConnectionRequired": "Select a remote host before browsing directories"
     },
     "empty": "No entries here"
   },
@@ -2487,6 +2508,7 @@
       "changes": "Changes",
       "filesChanged": "{count, plural, one {# file changed} other {# files changed}}",
       "worktree": "Worktree",
+      "remoteProject": "Remote project",
       "session": "Session",
       "pendingSession": "Session pending",
       "model": "Model",

@@ -271,7 +271,10 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
   const handleCreateProject = async (projectData: {
     name: string
     description: string
+    projectType?: "local" | "remote"
     storageOverridePath?: string
+    remoteConnectionId?: string
+    remoteRootPath?: string
   }) => {
     if (!projectData.name.trim()) {
       const message = tSidebar("errors.projectNameRequired")
@@ -280,14 +283,20 @@ export function useSidebarData(tSidebar: (key: string, values?: Record<string, s
     }
 
     try {
+      const isRemoteProject = projectData.projectType === "remote"
       const { data } = await apiRequest<Project>("/projects", {
         method: "POST",
         body: JSON.stringify({
           name: projectData.name.trim(),
           description: projectData.description.trim() || null,
-          ...(projectData.storageOverridePath?.trim()
-            ? { external_root_path: projectData.storageOverridePath.trim() }
-            : {}),
+          ...(isRemoteProject
+            ? {
+                remote_connection_id: projectData.remoteConnectionId,
+                remote_root_path: projectData.remoteRootPath?.trim(),
+              }
+            : projectData.storageOverridePath?.trim()
+              ? { external_root_path: projectData.storageOverridePath.trim() }
+              : {}),
         }),
       })
 

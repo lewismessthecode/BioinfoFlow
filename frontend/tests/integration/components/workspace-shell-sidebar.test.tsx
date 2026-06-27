@@ -113,6 +113,9 @@ vi.mock("@/components/bioinfoflow/create-project-dialog", () => ({
       name: string
       description: string
       storageOverridePath?: string
+      projectType?: "local" | "remote"
+      remoteConnectionId?: string
+      remoteRootPath?: string
     }) => Promise<void>
   }) => {
     const [name, setName] = React.useState("")

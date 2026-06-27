@@ -43,6 +43,20 @@ export type RemoteCommandResult = {
   timedOut: boolean
 }
 
+export type RemoteDirectoryEntry = {
+  name: string
+  path: string
+  type: "dir" | "file"
+  kind?: "directory" | "file" | "symlink" | "other"
+  size?: number | null
+}
+
+export type RemoteDirectoryList = {
+  path: string
+  entries: RemoteDirectoryEntry[]
+  truncated?: boolean
+}
+
 type RemoteConnectionListResponse =
   | RemoteConnection[]
   | {
@@ -74,6 +88,17 @@ export async function fetchRemoteConnections(): Promise<RemoteConnection[]> {
   }
 
   return (payload.connections ?? payload.data ?? []).map(normalizeRemoteConnection)
+}
+
+export async function browseRemoteConnectionDirectory(
+  connectionId: string,
+  path: string,
+): Promise<RemoteDirectoryList> {
+  const response = await apiRequest<RemoteDirectoryList>(
+    `${remoteConnectionsApiPath}/${connectionId}/directories`,
+    { params: { path } },
+  )
+  return response.data
 }
 
 export async function createRemoteConnection(

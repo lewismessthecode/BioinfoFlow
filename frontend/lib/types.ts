@@ -51,9 +51,11 @@ export type Project = {
   id: string
   name: string
   description?: string | null
-  storage_mode?: "managed" | "external"
+  storage_mode?: "managed" | "external" | "remote"
   project_root?: string
   external_root_path?: string | null
+  remote_connection_id?: string | null
+  remote_root_path?: string | null
   data_roots?: string[] | null
   is_default?: boolean
   created_at?: string
