@@ -1969,26 +1969,26 @@
   },
   "connections": {
     "title": "Connection Center",
-    "subtitle": "Save SSH host details and one Agent Skill note. Paths and usage notes belong in the skill text, not separate platform fields.",
+    "subtitle": "Manage SSH environments for remote execution, file inspection, and workflow runs.",
     "addNode": "Add connection",
-    "searchPlaceholder": "Search name, host, alias, or notes...",
+    "searchPlaceholder": "Search connections...",
     "list": {
       "title": "Connections",
-      "description": "Pick a connection to preview the SSH config and Agent instructions.",
+      "description": "Select an environment to view access details and Agent context.",
       "loading": "Loading connections...",
-      "error": "Could not load live SSH connections. Check the backend and try again.",
-      "empty": "No matching connections. Try another name, host, alias, or note."
+      "error": "Could not load SSH connections. Check the service and try again.",
+      "empty": "No connections yet. Add an SSH environment to begin.",
+      "noResults": "No matching connections. Try another name, host, alias, or note."
     },
     "detail": {
-      "currentContext": "Agent-ready config",
-      "aliasPrefix": "SSH alias:",
-      "secretsNote": "Only store an alias or path here. Do not paste passwords or private key contents.",
-      "skillGuidance": "Put paths, APIs, environment notes, and startup commands in the skill text."
+      "currentContext": "Agent context",
+      "aliasPrefix": "Alias:",
+      "skillGuidance": "Add paths, environment setup, and usage limits so the Agent can work on this host."
     },
     "sections": {
-      "connection": "Connection",
-      "ssh": "SSH config",
-      "agentSkill": "Agent Skill"
+      "connection": "Overview",
+      "ssh": "Access",
+      "agentSkill": "Agent context"
     },
     "fields": {
       "name": "Connection name",
@@ -1996,10 +1996,10 @@
       "status": "Status",
       "port": "Port",
       "username": "Username",
-      "auth": "Auth method",
+      "auth": "Authentication",
       "sshAlias": "SSH alias",
       "keyPath": "Private key path",
-      "skillInstructions": "Agent Skill instructions"
+      "skillInstructions": "Instructions"
     },
     "status": {
       "online": "Online",
@@ -2008,38 +2008,38 @@
       "unknown": "Not tested"
     },
     "auth": {
-      "ssh_config": "SSH config alias",
-      "key_file": "Key file",
+      "ssh_config": "SSH config",
+      "key_file": "Private key",
       "agent": "SSH agent"
     },
     "authHelp": {
-      "ssh_config": "Run through a Host entry in the Bioinfoflow backend user's ~/.ssh/config.",
-      "key_file": "Use host, user, port, and a private key path available to the backend.",
-      "agent": "Use keys already loaded in the backend user's ssh-agent."
+      "ssh_config": "Use an existing Host alias from your SSH config.",
+      "key_file": "Use a private key file path available on this machine.",
+      "agent": "Use identities already loaded in ssh-agent."
     },
     "empty": {
       "notSet": "Not set",
-      "skillInstructions": "No skill instructions yet"
+      "skillInstructions": "No instructions yet"
     },
     "actions": {
       "testConnection": "Test connection",
       "testing": "Testing...",
       "editConnection": "Edit connection",
-      "runProbe": "Run probe",
-      "runningProbe": "Running...",
-      "insertPreset": "Insert preset skill"
+      "runProbe": "Run check",
+      "runningProbe": "Running check...",
+      "insertPreset": "Insert preset"
     },
     "dialog": {
       "title": "Add SSH connection",
       "editTitle": "Edit SSH connection",
-      "description": "Save connection metadata only. Passwords and private key contents stay outside Bioinfoflow.",
+      "description": "Add the host details the Agent needs to connect. Keep credentials in your SSH configuration or local secure storage.",
       "add": "Add connection",
       "save": "Save changes",
       "saving": "Saving..."
     },
     "skillDrop": {
-      "title": "Drop a skill text file here",
-      "hint": "Plain text and Markdown notes are appended to the Agent Skill."
+      "title": "Import a context file",
+      "hint": "Plain text or Markdown notes are appended to the instructions."
     },
     "skillPresets": {
       "nextflowHpc": {
@@ -2056,31 +2056,31 @@
       }
     },
     "probe": {
-      "title": "Remote probe",
-      "description": "Streams one short SSH command through Bioinfoflow.",
-      "placeholder": "Run a probe to verify streamed remote output.",
+      "title": "Remote check",
+      "description": "Run a short command and stream the result.",
+      "placeholder": "Run a check to verify remote output.",
       "emptyOutput": "Command completed with no output.",
-      "failed": "Remote probe failed."
+      "failed": "Remote check failed."
     },
     "form": {
       "defaultUsername": "user",
-      "secretsNote": "Store only SSH aliases and file paths. Do not paste passwords or private key contents.",
-      "sshConfigNote": "The alias is resolved on the Bioinfoflow backend. Host, user, and port are saved as readable metadata only.",
-      "skillGuidance": "Put paths, APIs, environment notes, and startup commands in the skill text.",
+      "secretsNote": "Credentials stay with the selected SSH method.",
+      "sshConfigNote": "Use the same Host alias you use for this environment in SSH.",
+      "skillGuidance": "Add paths, environment setup, and usage limits so the Agent can work on this host.",
       "errors": {
         "invalidPort": "Port must be between 1 and 65535.",
-        "sshAliasRequired": "SSH alias is required for SSH config auth.",
-        "keyPathRequired": "Private key path is required for key file auth.",
-        "skillFileFailed": "Failed to import the skill file.",
-        "saveFailed": "Failed to save connection."
+        "sshAliasRequired": "Enter an SSH Host alias.",
+        "keyPathRequired": "Enter a private key path.",
+        "skillFileFailed": "Could not import the instructions file.",
+        "saveFailed": "Could not save the connection."
       },
       "placeholders": {
-        "name": "Simulation host sz01",
-        "host": "10.227.5.224 or login.example.internal",
+        "name": "Lab GPU node",
+        "host": "login.example.internal or 10.0.0.12",
         "username": "bioflow",
-        "sshAlias": "bioflow-sim-sz01",
-        "keyPath": "~/.ssh/bioflow_sim_ed25519",
-        "skillInstructions": "Tell the Agent where paths, outputs, APIs, environment setup, and important conventions live for this connection."
+        "sshAlias": "lab-gpu",
+        "keyPath": "~/.ssh/id_ed25519",
+        "skillInstructions": "Paths, environment setup, limits, and commands the Agent should know."
       }
     },
     "toasts": {
@@ -2088,7 +2088,7 @@
       "connectionUpdated": "Connection {name} updated",
       "testSucceeded": "{name} is reachable",
       "testFailed": "{name} test failed",
-      "skillImported": "Skill text imported"
+      "skillImported": "Instructions imported"
     }
   },
   "settings": {
