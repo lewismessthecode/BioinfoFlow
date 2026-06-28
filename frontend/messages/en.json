@@ -365,13 +365,14 @@
       "requiredRemaining": "{count} required item(s) left",
       "optionalWarnings": "{count} optional item(s)",
       "drawerTitle": "Setup checklist",
-      "drawerDescription": "See what is ready and where to finish the rest.",
+      "drawerDescription": "See what is ready and where to finish anything still missing.",
       "blockedBadge": "{count} blocker(s)",
       "progress": "{completed} of {total} required items ready",
       "blockers": "Required to start",
       "optional": "Optional",
       "completed": "Done",
       "refresh": "Refresh",
+      "refreshing": "Refreshing…",
       "completedLabel": "Completed: {label}",
       "status": {
         "pass": "Ready",
@@ -2023,14 +2024,15 @@
     },
     "emptyDetail": {
       "title": "Add a remote environment",
-      "description": "Add a connection to test access, run a quick check, and give the Agent host-specific instructions.",
+      "description": "Add a connection to test access, run a command check, and give the Agent host-specific instructions.",
+      "searchDescription": "Clear search to return to the full connection list.",
       "action": "Add first connection"
     },
     "actions": {
       "testConnection": "Test connection",
       "testing": "Testing…",
       "editConnection": "Edit connection",
-      "runProbe": "Quick check",
+      "runProbe": "Command check",
       "runningProbe": "Checking…",
       "insertPreset": "Insert preset"
     },
@@ -2061,11 +2063,11 @@
       }
     },
     "probe": {
-      "title": "Quick check",
-      "description": "Run a short command to confirm the remote output comes back.",
-      "placeholder": "Run a quick check and the remote output will appear here.",
+      "title": "Command check",
+      "description": "Run a short remote command to confirm output comes back.",
+      "placeholder": "Run a command check and the remote output will appear here.",
       "emptyOutput": "Command completed with no output.",
-      "failed": "Quick check failed."
+      "failed": "Command check failed."
     },
     "form": {
       "defaultUsername": "user",

@@ -365,13 +365,14 @@
       "requiredRemaining": "还差 {count} 个必需项",
       "optionalWarnings": "{count} 个可选项",
       "drawerTitle": "准备清单",
-      "drawerDescription": "查看哪些已经就绪，以及剩余项去哪里完成。",
+      "drawerDescription": "查看哪些已经就绪，以及剩余项还需要去哪里完成。",
       "blockedBadge": "{count} 个阻塞项",
       "progress": "{completed}/{total} 个必需项已就绪",
       "blockers": "开始前需完成",
       "optional": "可选项",
       "completed": "已完成",
       "refresh": "刷新",
+      "refreshing": "刷新中…",
       "completedLabel": "已完成：{label}",
       "status": {
         "pass": "已就绪",
@@ -2023,14 +2024,15 @@
     },
     "emptyDetail": {
       "title": "添加远程环境",
-      "description": "添加连接后，你可以测试连通性、执行快速检查，并补充这台主机的 Agent 使用说明。",
+      "description": "添加连接后，你可以测试连通性、执行命令检查，并补充这台主机的 Agent 使用说明。",
+      "searchDescription": "清除搜索后可回到完整连接列表。",
       "action": "添加第一个连接"
     },
     "actions": {
       "testConnection": "测试连接",
       "testing": "测试中…",
       "editConnection": "编辑连接",
-      "runProbe": "快速检查",
+      "runProbe": "命令检查",
       "runningProbe": "正在检查…",
       "insertPreset": "插入模板"
     },
@@ -2061,11 +2063,11 @@
       }
     },
     "probe": {
-      "title": "快速检查",
-      "description": "运行一条短命令，确认远程输出能正常返回。",
-      "placeholder": "运行快速检查后，远程输出会显示在这里。",
+      "title": "命令检查",
+      "description": "运行一条远程短命令，确认输出能正常返回。",
+      "placeholder": "运行命令检查后，远程输出会显示在这里。",
       "emptyOutput": "命令已完成，没有输出。",
-      "failed": "快速检查失败。"
+      "failed": "命令检查失败。"
     },
     "form": {
       "defaultUsername": "user",

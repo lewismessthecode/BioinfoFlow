@@ -4,7 +4,6 @@ import {
   type ChangeEvent,
   type DragEvent,
   type FormEvent,
-  type KeyboardEvent,
   type ReactNode,
   useEffect,
   useMemo,
@@ -202,7 +201,7 @@ export default function ConnectionsPage() {
   }, [connections, search])
 
   const selectedConnection =
-    connections.find((connection) => connection.id === selectedConnectionId) ?? connections[0]
+    filteredConnections.find((connection) => connection.id === selectedConnectionId) ?? filteredConnections[0]
 
   const resetFormState = () => {
     setForm(initialForm)
@@ -323,6 +322,7 @@ export default function ConnectionsPage() {
     setTestingConnectionId(connection.id)
     try {
       const result = await testRemoteConnection(connection.id)
+      if (testRequestRef.current !== requestId) return
       upsertConnection(result.connection, { select: false })
       if (result.status === "online") {
         toast.success(t("toasts.testSucceeded", { name: result.connection.name }))
@@ -330,6 +330,7 @@ export default function ConnectionsPage() {
         toast.error(result.error || t("toasts.testFailed", { name: result.connection.name }))
       }
     } catch (error) {
+      if (testRequestRef.current !== requestId) return
       const message = error instanceof Error ? error.message : t("toasts.testFailed", { name: connection.name })
       toast.error(message)
     } finally {
@@ -404,12 +405,6 @@ export default function ConnectionsPage() {
   const handleSkillFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     await importSkillFile(event.target.files?.[0])
     event.target.value = ""
-  }
-
-  const handleSkillDropKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Enter" && event.key !== " ") return
-    event.preventDefault()
-    skillFileInputRef.current?.click()
   }
 
   const selectedProbeOutput =
@@ -573,12 +568,10 @@ export default function ConnectionsPage() {
                     onChange={(value) => setForm((current) => ({ ...current, skill_instructions: value }))}
                     placeholder={t("form.placeholders.skillInstructions")}
                   />
-                  <div
-                    role="button"
-                    tabIndex={0}
+                  <button
+                    type="button"
                     aria-label={t("skillDrop.title")}
                     onClick={() => skillFileInputRef.current?.click()}
-                    onKeyDown={handleSkillDropKeyDown}
                     onDragEnter={(event) => {
                       event.preventDefault()
                       setSkillDragActive(true)
@@ -587,16 +580,16 @@ export default function ConnectionsPage() {
                     onDragLeave={() => setSkillDragActive(false)}
                     onDrop={handleSkillDrop}
                     className={cn(
-                      "flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-3 py-2 text-sm text-muted-foreground transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                      "flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-3 py-2 text-left text-sm text-muted-foreground transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                       skillDragActive ? "border-primary/60 bg-primary/10 text-foreground" : "border-border bg-muted/20",
                     )}
                   >
                     <Upload className="h-4 w-4" />
-                    <div>
-                      <p className="font-medium text-foreground">{t("skillDrop.title")}</p>
-                      <p className="text-xs">{t("skillDrop.hint")}</p>
-                    </div>
-                  </div>
+                    <span>
+                      <span className="block font-medium text-foreground">{t("skillDrop.title")}</span>
+                      <span className="block text-xs">{t("skillDrop.hint")}</span>
+                    </span>
+                  </button>
                   <input
                     ref={skillFileInputRef}
                     type="file"
@@ -674,7 +667,7 @@ export default function ConnectionsPage() {
                           key={connection.id}
                           type="button"
                           onClick={() => setSelectedConnectionId(connection.id)}
-                          aria-pressed={selected}
+                          aria-current={selected ? "true" : undefined}
                           className={cn(
                             "group rounded-2xl border px-3 py-3 text-left transition hover:border-border hover:bg-background/65",
                             selected
@@ -855,11 +848,19 @@ export default function ConnectionsPage() {
                   <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-border/60 bg-background/70 text-muted-foreground">
                     <TerminalSquare className="h-5 w-5" />
                   </div>
-                  <h2 className="mt-4 text-base font-semibold text-foreground">{t("emptyDetail.title")}</h2>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("emptyDetail.description")}</p>
-                  <Button type="button" className="mt-4 rounded-full" onClick={openCreateDialog}>
-                    <Plus className="h-4 w-4" />
-                    {t("emptyDetail.action")}
+                  <h2 className="mt-4 text-base font-semibold text-foreground">
+                    {connections.length === 0 ? t("emptyDetail.title") : t("list.noResults")}
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    {connections.length === 0 ? t("emptyDetail.description") : t("emptyDetail.searchDescription")}
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-4 rounded-full"
+                    onClick={connections.length === 0 ? openCreateDialog : () => setSearch("")}
+                  >
+                    {connections.length === 0 ? <Plus className="h-4 w-4" /> : null}
+                    {connections.length === 0 ? t("emptyDetail.action") : tCommon("clear")}
                   </Button>
                 </div>
               </section>
