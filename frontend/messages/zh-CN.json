@@ -1968,27 +1968,27 @@
     "customProject": "创建自定义项目"
   },
   "connections": {
-    "title": "连接中心",
-    "subtitle": "管理用于远程执行、文件查看和工作流运行的 SSH 环境。",
+    "title": "SSH 连接",
+    "subtitle": "管理用于远程执行、文件浏览和工作流运行的 SSH 主机。",
     "addNode": "添加连接",
     "searchPlaceholder": "搜索连接…",
     "list": {
       "title": "连接",
-      "description": "选择一个远程环境，查看访问方式和 Agent 上下文。",
+      "description": "选择一个主机，查看连接方式和 Agent 使用说明。",
       "loading": "正在加载连接…",
       "error": "无法加载 SSH 连接。请检查服务后重试。",
-      "empty": "还没有连接。添加一个 SSH 环境后即可开始。",
+      "empty": "还没有连接，先添加一个 SSH 环境即可开始。",
       "noResults": "没有匹配的连接。试试其他名称、主机、别名或备注。"
     },
     "detail": {
-      "currentContext": "Agent 上下文",
+      "currentContext": "Agent 使用说明",
       "aliasPrefix": "别名：",
-      "skillGuidance": "写下路径、环境初始化和使用限制，帮助 Agent 在这台主机上工作。"
+      "skillGuidance": "写下路径、环境初始化和使用限制，方便 Agent 在这台主机上工作。"
     },
     "sections": {
-      "connection": "概览",
+      "connection": "连接信息",
       "ssh": "访问方式",
-      "agentSkill": "Agent 上下文"
+      "agentSkill": "Agent 使用说明"
     },
     "fields": {
       "name": "连接名称",
@@ -1999,7 +1999,7 @@
       "auth": "认证方式",
       "sshAlias": "SSH 别名",
       "keyPath": "私钥路径",
-      "skillInstructions": "使用说明"
+      "skillInstructions": "Agent 使用说明"
     },
     "status": {
       "online": "在线",
@@ -2022,29 +2022,29 @@
       "skillInstructions": "暂未填写使用说明"
     },
     "emptyDetail": {
-      "title": "准备连接远程环境",
-      "description": "添加连接后，可以测试访问、运行检查，并为 Agent 提供这台主机的上下文。",
+      "title": "添加远程环境",
+      "description": "添加连接后，你可以测试连通性、执行快速检查，并补充这台主机的 Agent 使用说明。",
       "action": "添加第一个连接"
     },
     "actions": {
       "testConnection": "测试连接",
       "testing": "测试中…",
       "editConnection": "编辑连接",
-      "runProbe": "运行检查",
-      "runningProbe": "检查中…",
+      "runProbe": "快速检查",
+      "runningProbe": "正在检查…",
       "insertPreset": "插入模板"
     },
     "dialog": {
       "title": "添加 SSH 连接",
       "editTitle": "编辑 SSH 连接",
-      "description": "填写 Agent 连接远程环境所需的信息。敏感凭据请保存在 SSH 配置或本地安全位置。",
+      "description": "填写 Agent 需要的主机信息。敏感凭据请放在 SSH 配置或本地安全存储中。",
       "add": "添加连接",
       "save": "保存修改",
       "saving": "保存中…"
     },
     "skillDrop": {
       "title": "导入说明文件",
-      "hint": "纯文本或 Markdown 备注会追加到使用说明。"
+      "hint": "导入的纯文本或 Markdown 内容会追加到使用说明中。"
     },
     "skillPresets": {
       "nextflowHpc": {
@@ -2061,20 +2061,20 @@
       }
     },
     "probe": {
-      "title": "连接检查",
-      "description": "运行一条短命令，确认远程输出可以返回。",
-      "placeholder": "运行检查后，这里会显示远程输出。",
+      "title": "快速检查",
+      "description": "运行一条短命令，确认远程输出能正常返回。",
+      "placeholder": "运行快速检查后，远程输出会显示在这里。",
       "emptyOutput": "命令已完成，没有输出。",
-      "failed": "连接检查失败。"
+      "failed": "快速检查失败。"
     },
     "form": {
       "defaultUsername": "user",
-      "secretsNote": "凭据保留在所选 SSH 认证方式中。",
-      "sshConfigNote": "使用你在 SSH 配置中为该环境设置的 Host 别名。",
-      "skillGuidance": "写下路径、环境初始化和使用限制，帮助 Agent 在这台主机上工作。",
+      "secretsNote": "凭据仍由所选的 SSH 方式管理。",
+      "sshConfigNote": "填写你在 SSH 配置中为这个环境设置的 Host 别名。",
+      "skillGuidance": "写下路径、环境初始化和使用限制，方便 Agent 在这台主机上工作。",
       "errors": {
         "invalidPort": "端口必须在 1 到 65535 之间。",
-        "sshAliasRequired": "请填写 SSH Host 别名。",
+        "sshAliasRequired": "请填写 SSH 别名。",
         "keyPathRequired": "请填写私钥路径。",
         "skillFileFailed": "无法导入说明文件。",
         "saveFailed": "无法保存连接。"
@@ -2085,7 +2085,7 @@
         "username": "bioflow",
         "sshAlias": "lab-gpu",
         "keyPath": "~/.ssh/id_ed25519",
-        "skillInstructions": "例如：工作目录、环境初始化、队列限制和常用检查命令…"
+        "skillInstructions": "例如：工作目录、环境初始化、队列限制、常用检查命令……"
       }
     },
     "toasts": {
