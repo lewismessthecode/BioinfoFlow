@@ -68,7 +68,7 @@
     "workflows": "工作流",
     "runs": "运行记录",
     "images": "镜像管理",
-    "connections": "连接中心",
+    "connections": "SSH 连接",
     "scheduler": "调度器",
     "settings": "设置"
   },
@@ -359,13 +359,13 @@
     "dockerUnavailableDescription": "工作流执行需要 Docker。请启动 Docker 守护进程以运行流水线。",
     "readiness": {
       "title": "首次运行准备",
-      "description": "首次运行前请先完成必需项；可选项只有在工作流需要时再处理。当前可选项：{warnings} 项。",
+      "description": "完成必需项后即可开始；可选项按工作流需要再配置。",
       "trigger": "打开准备清单",
       "triggerSummary": "{completed}/{total} 已就绪",
       "requiredRemaining": "还差 {count} 个必需项",
       "optionalWarnings": "{count} 个可选项",
       "drawerTitle": "准备清单",
-      "drawerDescription": "查看哪些已经就绪，以及剩余项还需要去哪里完成。",
+      "drawerDescription": "按顺序完成准备项，已就绪的内容会自动淡出。",
       "blockedBadge": "{count} 个阻塞项",
       "progress": "{completed}/{total} 个必需项已就绪",
       "blockers": "开始前需完成",
@@ -415,12 +415,12 @@
           "label": "GPU",
           "action": "打开资源监控",
           "detail": {
-            "ready": "GPU 已可用于工作流运行。可见设备：{names}",
-            "visible": "后端可见 {count} 张 GPU：{names}。只有工作流需要时才需要配置 GPU。",
-            "runtimeHidden": "宿主机已具备 NVIDIA 容器运行时，但 GPU 还没有暴露给后端容器。GPU 机器上请启用 GPU compose override。{recommendation}",
-            "hostOnly": "宿主机已安装 NVIDIA 工具，但后端容器仍无法读取 GPU 设备。Bioinfoflow 只能检测已暴露给容器的 GPU。{recommendation}",
-            "error": "GPU 探测出现错误，但 CPU 工作流仍可正常运行。详情：{error}",
-            "cpuOnly": "后端当前看不到 GPU，CPU 工作流仍可正常运行。"
+            "ready": "GPU 可用于加速工作流：{names}",
+            "visible": "可使用 {count} 张 GPU：{names}。只有需要加速时才会用到。",
+            "runtimeHidden": "这台主机支持 GPU，但容器还未启用 GPU 访问。需要 GPU 工作流时再打开 GPU compose override。{recommendation}",
+            "hostOnly": "这台主机有 NVIDIA 工具，但容器暂时不可见 GPU。CPU 工作流可以先运行。{recommendation}",
+            "error": "暂时无法确认 GPU 状态。CPU 工作流可以先运行。详情：{error}",
+            "cpuOnly": "未启用 GPU。CPU 工作流可以直接运行。"
           }
         },
         "project": {
@@ -1969,7 +1969,7 @@
     "customProject": "创建自定义项目"
   },
   "connections": {
-    "title": "SSH 连接",
+      "title": "SSH 连接",
     "subtitle": "管理用于远程执行、文件浏览和工作流运行的 SSH 主机。",
     "addNode": "添加连接",
     "searchPlaceholder": "搜索连接…",
@@ -2032,7 +2032,7 @@
       "testConnection": "测试连接",
       "testing": "测试中…",
       "editConnection": "编辑连接",
-      "runProbe": "命令检查",
+      "runProbe": "运行检查",
       "runningProbe": "正在检查…",
       "insertPreset": "插入模板"
     },
