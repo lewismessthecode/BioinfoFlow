@@ -121,7 +121,7 @@ describe("ConnectionsPage", () => {
 
     expect(await screen.findByText("Could not load SSH connections. Check the service and try again.")).toBeInTheDocument()
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Quick check" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Command check" })).not.toBeInTheDocument()
   })
 
   it("saves new connections through the backend", async () => {
@@ -257,6 +257,25 @@ describe("ConnectionsPage", () => {
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Backup HPC" })).toBeInTheDocument())
     expect(screen.queryByRole("heading", { name: "Live HPC" })).not.toBeInTheDocument()
+  })
+
+  it("keeps the detail panel aligned with the filtered connection list", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, secondConnection] })
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    await user.type(screen.getByLabelText("Search connections…"), "backup")
+
+    expect(screen.getByRole("heading", { name: "Backup HPC" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Live HPC" })).not.toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText("Search connections…"))
+    await user.type(screen.getByLabelText("Search connections…"), "missing")
+
+    expect(screen.getAllByText("No matching connections. Try another name, host, alias, or note.")).not.toHaveLength(0)
+    expect(screen.queryByRole("heading", { name: "Backup HPC" })).not.toBeInTheDocument()
   })
 
   it("opens an existing connection for editing and saves the patch", async () => {
@@ -416,7 +435,7 @@ describe("ConnectionsPage", () => {
       render(<ConnectionsPage />)
 
       expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
-      await user.click(screen.getByRole("button", { name: "Quick check" }))
+      await user.click(screen.getByRole("button", { name: "Command check" }))
 
       expect(await screen.findByText("bioinfoflow-ok")).toBeInTheDocument()
       expect(buildWebSocketUrlMock).toHaveBeenCalledWith("/connections/live-connection-1/exec/ws")

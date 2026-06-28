@@ -328,6 +328,20 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
   if (!hasBlockingOpenChecks) return null;
 
   const requiredRemaining = counts.requiredTotal - counts.requiredCompleted;
+  const triggerSummary = tDashboard("readiness.triggerSummary", {
+    completed: counts.requiredCompleted,
+    total: counts.requiredTotal,
+  });
+  const requiredRemainingLabel = tDashboard("readiness.requiredRemaining", { count: requiredRemaining });
+  const optionalWarningsLabel = counts.optionalWarnings > 0
+    ? tDashboard("readiness.optionalWarnings", { count: counts.optionalWarnings })
+    : null;
+  const triggerAriaLabel = [
+    tDashboard("readiness.trigger"),
+    triggerSummary,
+    requiredRemainingLabel,
+    optionalWarningsLabel,
+  ].filter(Boolean).join(", ");
 
   const handleRefresh = async () => {
     if (!onRefresh) return;
@@ -353,7 +367,7 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
         <CardContent className="p-2">
           <button
             type="button"
-            aria-label={tDashboard("readiness.trigger")}
+            aria-label={triggerAriaLabel}
             className="group flex min-w-0 w-full items-center gap-3 rounded-[22px] px-3 py-3 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => setOpen(true)}
           >
@@ -366,21 +380,16 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
                   {tDashboard("readiness.title")}
                 </span>
                 <StatusBadge variant="warning">
-                  {tDashboard("readiness.triggerSummary", {
-                    completed: counts.requiredCompleted,
-                    total: counts.requiredTotal,
-                  })}
+                  {triggerSummary}
                 </StatusBadge>
-                {counts.optionalWarnings > 0 ? (
+                {optionalWarningsLabel ? (
                   <StatusBadge variant="neutral">
-                    {tDashboard("readiness.optionalWarnings", {
-                      count: counts.optionalWarnings,
-                    })}
+                    {optionalWarningsLabel}
                   </StatusBadge>
                 ) : null}
               </span>
               <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                {tDashboard("readiness.requiredRemaining", { count: requiredRemaining })}
+                {requiredRemainingLabel}
               </span>
             </span>
             <ArrowRight
@@ -447,9 +456,15 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
             {tDashboard("readiness.description", { warnings: counts.optionalWarnings })}
           </p>
           {onRefresh ? (
-            <Button size="sm" variant="outline" disabled={isRefreshing} onClick={() => void handleRefresh()}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isRefreshing}
+              aria-busy={isRefreshing}
+              onClick={() => void handleRefresh()}
+            >
               <RefreshCw data-icon="inline-start" aria-hidden="true" />
-              {tDashboard("readiness.refresh")}
+              {isRefreshing ? tDashboard("readiness.refreshing") : tDashboard("readiness.refresh")}
             </Button>
           ) : null}
         </div>
