@@ -30,7 +30,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -417,31 +417,31 @@ export default function ConnectionsPage() {
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:py-8">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:py-7">
+        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">{t("title")}</h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">{t("subtitle")}</p>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{t("subtitle")}</p>
           </div>
-          <Button className="h-10 w-fit rounded-full px-4 shadow-sm shadow-foreground/5" onClick={openCreateDialog}>
+          <Button className="h-9 w-fit rounded-full px-4 shadow-sm shadow-foreground/5" onClick={openCreateDialog}>
             <Plus className="h-4 w-4" />
             {t("addNode")}
           </Button>
         </div>
 
         <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-          <DialogContent className="max-h-[min(92vh,820px)] overflow-hidden rounded-[28px] border-border/60 bg-card/95 p-0 text-card-foreground shadow-2xl shadow-foreground/15 sm:max-w-5xl">
-            <form onSubmit={handleSubmit} noValidate className="flex max-h-[min(92vh,820px)] flex-col">
-              <DialogHeader className="border-b border-border/60 px-6 py-5">
+          <DialogContent className="max-h-[min(92vh,780px)] overflow-hidden rounded-[24px] border-border/60 bg-card/95 p-0 text-card-foreground shadow-2xl shadow-foreground/15 sm:max-w-3xl">
+            <form onSubmit={handleSubmit} noValidate className="flex max-h-[min(92vh,780px)] flex-col">
+              <DialogHeader className="border-b border-border/60 px-5 py-4">
                 <DialogTitle>
                   {dialogMode === "edit" ? t("dialog.editTitle") : t("dialog.title")}
                 </DialogTitle>
                 <DialogDescription>{t("dialog.description")}</DialogDescription>
               </DialogHeader>
 
-              <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 py-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.88fr)]">
-                <div className="grid content-start gap-4">
-                  <section className="grid gap-3 rounded-2xl border border-border/60 bg-background/55 p-4">
+              <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-5 py-4">
+                <div className="grid content-start gap-3">
+                  <section className="grid gap-3 rounded-[18px] border border-border/60 bg-background/55 p-3.5">
                     <FormSectionTitle title={t("sections.connection")} icon={<Server className="h-4 w-4" />} />
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label={t("fields.name")} htmlFor="connection-name">
@@ -507,7 +507,7 @@ export default function ConnectionsPage() {
                     ) : null}
                   </section>
 
-                  <section className="grid gap-3 rounded-2xl border border-border/60 bg-background/55 p-4">
+                  <section className="grid gap-3 rounded-[18px] border border-border/60 bg-background/55 p-3.5">
                     <FormSectionTitle title={t("sections.ssh")} icon={<KeyRound className="h-4 w-4" />} />
                     <div aria-label={t("fields.auth")} className="grid gap-2 sm:grid-cols-3">
                       {authMethods.map((method) => (
@@ -549,7 +549,7 @@ export default function ConnectionsPage() {
                     <FormSectionTitle title={t("sections.agentSkill")} icon={<BookOpenText className="h-4 w-4" />} />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="outline" size="sm" className="h-8">
+                        <Button type="button" variant="outline" size="sm" className="h-8 rounded-full">
                           <FileText className="h-4 w-4" />
                           {t("actions.insertPreset")}
                         </Button>
@@ -617,7 +617,7 @@ export default function ConnectionsPage() {
                   {formError}
                 </div>
               ) : null}
-              <DialogFooter className="border-t border-border/60 bg-muted/10 px-6 py-4">
+              <DialogFooter className="border-t border-border/60 bg-muted/10 px-5 py-3">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
                   {tCommon("cancel")}
                 </Button>
@@ -633,236 +633,239 @@ export default function ConnectionsPage() {
           </DialogContent>
         </Dialog>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(320px,0.38fr)_minmax(0,1fr)]">
-          <Card className="min-h-[calc(100vh-12rem)] overflow-hidden rounded-[28px] border-border/60 bg-card/85 py-0 shadow-sm shadow-foreground/5">
-            <CardHeader className="border-b border-border/60 px-5 py-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="text-base">{t("list.title")}</CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">{t("list.description")}</p>
+        <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
+          <CardContent className="grid p-0 lg:grid-cols-[360px_minmax(0,1fr)]">
+            <aside className="min-w-0 border-b border-border/60 bg-muted/10 lg:border-b-0 lg:border-r">
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">{t("list.title")}</h2>
+                    <p className="mt-1 text-sm leading-5 text-muted-foreground">{t("list.description")}</p>
+                  </div>
+                  <Server className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 </div>
-                <Server className="h-5 w-5 text-muted-foreground" />
+                <div className="relative mt-3">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    aria-label={t("searchPlaceholder")}
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder={t("searchPlaceholder")}
+                    className="h-9 rounded-full border-border/70 bg-background/80 pl-9"
+                  />
+                </div>
               </div>
-              <div className="relative mt-3">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  aria-label={t("searchPlaceholder")}
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={t("searchPlaceholder")}
-                  className="h-9 pl-9"
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-2.5 p-2.5">
-              {isLoadingConnections ? (
-                <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-                  {t("list.loading")}
-                </div>
-              ) : connectionsLoadError ? (
-                <div className="rounded-2xl border border-dashed border-amber-500/30 bg-amber-500/10 p-8 text-center text-sm text-amber-700 dark:text-amber-300">
-                  {t("list.error")}
-                </div>
-              ) : filteredConnections.length > 0 ? (
-                filteredConnections.map((connection) => {
-                  const selected = selectedConnection ? connection.id === selectedConnection.id : false
+              <div className="border-t border-border/60 p-2">
+                {isLoadingConnections ? (
+                  <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                    {t("list.loading")}
+                  </div>
+                ) : connectionsLoadError ? (
+                  <div className="rounded-2xl border border-dashed border-amber-500/30 bg-amber-500/10 p-6 text-center text-sm text-amber-700 dark:text-amber-300">
+                    {t("list.error")}
+                  </div>
+                ) : filteredConnections.length > 0 ? (
+                  <div className="grid gap-1.5">
+                    {filteredConnections.map((connection) => {
+                      const selected = selectedConnection ? connection.id === selectedConnection.id : false
 
-                  return (
-                    <button
-                      key={connection.id}
-                      type="button"
-                      onClick={() => setSelectedConnectionId(connection.id)}
-                      aria-pressed={selected}
-                      className={cn(
-                        "group rounded-2xl border p-3.5 text-left transition hover:border-border hover:bg-background/75",
-                        selected
-                          ? "border-foreground/15 bg-background shadow-sm shadow-foreground/5 ring-1 ring-foreground/5"
-                          : "border-transparent bg-transparent",
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background/80 text-muted-foreground group-hover:text-foreground">
-                          <Server className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-foreground">{connection.name}</p>
-                              <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
-                                {connection.username}@{connection.host}:{connection.port}
-                              </p>
+                      return (
+                        <button
+                          key={connection.id}
+                          type="button"
+                          onClick={() => setSelectedConnectionId(connection.id)}
+                          aria-pressed={selected}
+                          className={cn(
+                            "group rounded-2xl border px-3 py-3 text-left transition hover:border-border hover:bg-background/65",
+                            selected
+                              ? "border-border bg-background shadow-sm shadow-foreground/5 ring-1 ring-foreground/5"
+                              : "border-transparent bg-transparent",
+                          )}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background/80 text-muted-foreground group-hover:text-foreground">
+                              <Server className="h-4 w-4" />
                             </div>
-                            <span className="inline-flex items-center gap-2 pt-0.5 text-xs text-muted-foreground">
-                              <StatusDot status={connection.status} />
-                              {t(`status.${connection.status}`)}
-                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium text-foreground">{connection.name}</p>
+                                  <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                                    {connection.username}@{connection.host}:{connection.port}
+                                  </p>
+                                </div>
+                                <span className="inline-flex shrink-0 items-center gap-2 pt-0.5 text-xs text-muted-foreground">
+                                  <StatusDot status={connection.status} />
+                                  {t(`status.${connection.status}`)}
+                                </span>
+                              </div>
+                              {connection.ssh_alias ? (
+                                <p className="mt-2 truncate text-xs text-muted-foreground">
+                                  {t("detail.aliasPrefix")} {" "}
+                                  <span className="font-mono text-foreground">{connection.ssh_alias}</span>
+                                </p>
+                              ) : null}
+                            </div>
                           </div>
-                          {connection.ssh_alias ? (
-                            <p className="mt-2 truncate text-xs text-muted-foreground">
-                              {t("detail.aliasPrefix")}{" "}
-                              <span className="font-mono text-foreground">{connection.ssh_alias}</span>
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })
-              ) : (
-                <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm leading-6 text-muted-foreground">
-                  {connections.length === 0 ? t("list.empty") : t("list.noResults")}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm leading-6 text-muted-foreground">
+                    {connections.length === 0 ? t("list.empty") : t("list.noResults")}
+                  </div>
+                )}
+              </div>
+            </aside>
 
-          {selectedConnection ? (
-            <section>
-              <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
-                <CardContent className="p-0">
-                  <div className="border-b border-border/60 p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background/85 text-foreground">
-                          <Server className="h-5 w-5" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="truncate text-base font-semibold tracking-tight text-foreground">
-                              {selectedConnection.name}
-                            </h2>
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "rounded-full border px-2 py-0.5 text-xs",
-                                statusBorderClassNames[selectedConnection.status],
-                              )}
-                            >
-                              <StatusDot status={selectedConnection.status} className="h-2 w-2 shadow-none" />
-                              {t(`status.${selectedConnection.status}`)}
-                            </Badge>
-                          </div>
-                          <p className="mt-0.5 font-mono text-sm text-muted-foreground">
-                            {selectedConnection.username}@{selectedConnection.host}:{selectedConnection.port}
-                          </p>
-                        </div>
+            {selectedConnection ? (
+              <section className="min-w-0">
+                <div className="border-b border-border/60 p-5">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background/85 text-foreground">
+                        <Server className="h-5 w-5" />
                       </div>
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleTestConnection(selectedConnection)}
-                          disabled={testingConnectionId === selectedConnection.id}
-                        >
-                          <RefreshCw
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="truncate text-base font-semibold tracking-tight text-foreground">
+                            {selectedConnection.name}
+                          </h2>
+                          <Badge
+                            variant="outline"
                             className={cn(
-                              "h-4 w-4",
-                              testingConnectionId === selectedConnection.id && "animate-spin",
+                              "rounded-full border px-2 py-0.5 text-xs",
+                              statusBorderClassNames[selectedConnection.status],
                             )}
-                          />
-                          {testingConnectionId === selectedConnection.id
-                            ? t("actions.testing")
-                            : t("actions.testConnection")}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEditDialog(selectedConnection)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          {t("actions.editConnection")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => handleRunProbe(selectedConnection)}
-                          disabled={probeConnectionId === selectedConnection.id}
-                        >
-                          <Play className="h-4 w-4" />
-                          {probeConnectionId === selectedConnection.id ? t("actions.runningProbe") : t("actions.runProbe")}
-                        </Button>
+                          >
+                            <StatusDot status={selectedConnection.status} className="h-2 w-2 shadow-none" />
+                            {t(`status.${selectedConnection.status}`)}
+                          </Badge>
+                        </div>
+                        <p className="mt-0.5 font-mono text-sm text-muted-foreground">
+                          {selectedConnection.username}@{selectedConnection.host}:{selectedConnection.port}
+                        </p>
                       </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 xl:justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-full"
+                        onClick={() => handleTestConnection(selectedConnection)}
+                        disabled={testingConnectionId === selectedConnection.id}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            "h-4 w-4",
+                            testingConnectionId === selectedConnection.id && "animate-spin",
+                          )}
+                        />
+                        {testingConnectionId === selectedConnection.id
+                          ? t("actions.testing")
+                          : t("actions.testConnection")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 rounded-full"
+                        onClick={() => openEditDialog(selectedConnection)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                        {t("actions.editConnection")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 rounded-full"
+                        onClick={() => handleRunProbe(selectedConnection)}
+                        disabled={probeConnectionId === selectedConnection.id}
+                      >
+                        <Play className="h-4 w-4" />
+                        {probeConnectionId === selectedConnection.id ? t("actions.runningProbe") : t("actions.runProbe")}
+                      </Button>
                     </div>
                   </div>
+                </div>
 
-                  <div className="grid gap-4 p-5">
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <DetailSection title={t("sections.connection")}>
-                        <DetailGrid>
-                          <DetailItem label={t("fields.name")} value={selectedConnection.name} />
-                          <DetailItem label={t("fields.host")} value={selectedConnection.host} mono />
-                          <DetailItem label={t("fields.status")} value={t(`status.${selectedConnection.status}`)} />
-                        </DetailGrid>
-                        {selectedConnection.status_message ? (
-                          <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
-                            {selectedConnection.status_message}
-                          </div>
-                        ) : null}
-                      </DetailSection>
-
-                      <DetailSection title={t("sections.ssh")}>
-                        <DetailGrid>
-                          <DetailItem label={t("fields.port")} value={String(selectedConnection.port)} mono />
-                          <DetailItem label={t("fields.username")} value={selectedConnection.username} mono />
-                          <DetailItem label={t("fields.auth")} value={t(`auth.${selectedConnection.auth_method}`)} />
-                          {selectedConnection.auth_method === "ssh_config" ? (
-                            <DetailItem
-                              label={t("fields.sshAlias")}
-                              value={selectedConnection.ssh_alias || t("empty.notSet")}
-                              mono
-                            />
-                          ) : null}
-                          <DetailItem
-                            label={t("fields.keyPath")}
-                            value={selectedConnection.key_path || t("empty.notSet")}
-                            mono
-                          />
-                        </DetailGrid>
-                      </DetailSection>
-                    </div>
-
-                    <DetailSection title={t("sections.agentSkill")}>
-                      <p className="text-sm leading-6 text-muted-foreground">{t("detail.skillGuidance")}</p>
-                      <TextPanel
-                        title={t("fields.skillInstructions")}
-                        value={selectedConnection.skill_instructions}
-                        empty={t("empty.skillInstructions")}
-                      />
+                <div className="grid gap-3 p-4 sm:p-5">
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    <DetailSection title={t("sections.connection")}>
+                      <DetailGrid>
+                        <DetailItem label={t("fields.name")} value={selectedConnection.name} />
+                        <DetailItem label={t("fields.host")} value={selectedConnection.host} mono />
+                        <DetailItem label={t("fields.status")} value={t(`status.${selectedConnection.status}`)} />
+                      </DetailGrid>
+                      {selectedConnection.status_message ? (
+                        <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+                          {selectedConnection.status_message}
+                        </div>
+                      ) : null}
                     </DetailSection>
 
-                    {selectedProbeOutput || probeConnectionId === selectedConnection.id ? (
-                      <DetailSection title={t("probe.title")}>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <TerminalSquare className="h-4 w-4" />
-                          <span>{t("probe.description")}</span>
-                        </div>
-                        <pre className="min-h-12 whitespace-pre-wrap break-words rounded-xl bg-background/80 p-3 font-mono text-xs leading-5 text-foreground">
-                          {selectedProbeOutput || t("probe.placeholder")}
-                        </pre>
-                      </DetailSection>
-                    ) : null}
+                    <DetailSection title={t("sections.ssh")}>
+                      <DetailGrid>
+                        <DetailItem label={t("fields.port")} value={String(selectedConnection.port)} mono />
+                        <DetailItem label={t("fields.username")} value={selectedConnection.username} mono />
+                        <DetailItem label={t("fields.auth")} value={t(`auth.${selectedConnection.auth_method}`)} />
+                        {selectedConnection.auth_method === "ssh_config" ? (
+                          <DetailItem
+                            label={t("fields.sshAlias")}
+                            value={selectedConnection.ssh_alias || t("empty.notSet")}
+                            mono
+                          />
+                        ) : null}
+                        <DetailItem
+                          label={t("fields.keyPath")}
+                          value={selectedConnection.key_path || t("empty.notSet")}
+                          mono
+                        />
+                      </DetailGrid>
+                    </DetailSection>
                   </div>
-                </CardContent>
-              </Card>
-            </section>
-          ) : (
-            <Card className="flex min-h-[calc(100vh-12rem)] items-center justify-center rounded-[28px] border-border/60 bg-card/60 py-0 shadow-sm shadow-foreground/5">
-              <CardContent className="max-w-md p-8 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-border/60 bg-background/70 text-muted-foreground">
-                  <TerminalSquare className="h-5 w-5" />
+
+                  <DetailSection title={t("sections.agentSkill")}>
+                    <p className="text-sm leading-6 text-muted-foreground">{t("detail.skillGuidance")}</p>
+                    <TextPanel
+                      title={t("fields.skillInstructions")}
+                      value={selectedConnection.skill_instructions}
+                      empty={t("empty.skillInstructions")}
+                    />
+                  </DetailSection>
+
+                  {selectedProbeOutput || probeConnectionId === selectedConnection.id ? (
+                    <DetailSection title={t("probe.title")}>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <TerminalSquare className="h-4 w-4" />
+                        <span>{t("probe.description")}</span>
+                      </div>
+                      <pre className="min-h-12 whitespace-pre-wrap break-words rounded-xl bg-background/80 p-3 font-mono text-xs leading-5 text-foreground">
+                        {selectedProbeOutput || t("probe.placeholder")}
+                      </pre>
+                    </DetailSection>
+                  ) : null}
                 </div>
-                <h2 className="mt-5 text-base font-semibold text-foreground">{t("emptyDetail.title")}</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("emptyDetail.description")}</p>
-                <Button type="button" className="mt-5 rounded-full" onClick={openCreateDialog}>
-                  <Plus className="h-4 w-4" />
-                  {t("emptyDetail.action")}
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+              </section>
+            ) : (
+              <section className="flex min-h-[360px] items-center justify-center p-6">
+                <div className="max-w-md text-center">
+                  <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-border/60 bg-background/70 text-muted-foreground">
+                    <TerminalSquare className="h-5 w-5" />
+                  </div>
+                  <h2 className="mt-4 text-base font-semibold text-foreground">{t("emptyDetail.title")}</h2>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("emptyDetail.description")}</p>
+                  <Button type="button" className="mt-4 rounded-full" onClick={openCreateDialog}>
+                    <Plus className="h-4 w-4" />
+                    {t("emptyDetail.action")}
+                  </Button>
+                </div>
+              </section>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
@@ -917,7 +920,7 @@ function AuthMethodButton({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "min-h-[5.25rem] rounded-2xl border p-3 text-left transition hover:border-foreground/20 hover:bg-background/80",
+        "min-h-[4.5rem] rounded-[18px] border p-2.5 text-left transition hover:border-foreground/20 hover:bg-background/80",
         selected ? "border-foreground/25 bg-background shadow-sm shadow-foreground/5" : "border-border/60 bg-background/50",
       )}
     >
@@ -954,7 +957,7 @@ function TextFieldArea({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="min-h-32 resize-none border-border/60 bg-background/70 lg:min-h-44"
+        className="min-h-28 resize-none border-border/60 bg-background/70 lg:min-h-32"
       />
     </div>
   )
@@ -962,7 +965,7 @@ function TextFieldArea({
 
 function DetailSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="grid gap-3 rounded-2xl border border-border/40 bg-background/55 p-5">
+    <section className="grid gap-3 rounded-[20px] border border-border/40 bg-background/50 p-4">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       {children}
     </section>
@@ -970,23 +973,23 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
 }
 
 function DetailGrid({ children }: { children: ReactNode }) {
-  return <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">{children}</dl>
+  return <dl className="grid gap-x-5 gap-y-3 sm:grid-cols-2">{children}</dl>
 }
 
 function DetailItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0">
       <dt className="text-[0.7rem] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</dt>
-      <dd className={cn("mt-1.5 break-words text-sm font-medium text-foreground", mono && "font-mono")}>{value}</dd>
+      <dd className={cn("mt-1 break-words text-sm font-medium text-foreground", mono && "font-mono")}>{value}</dd>
     </div>
   )
 }
 
 function TextPanel({ title, value, empty }: { title: string; value: string; empty: string }) {
   return (
-    <div className="rounded-2xl border border-border/40 bg-background/70 p-4">
+    <div className="rounded-[18px] border border-border/40 bg-background/70 p-3.5">
       <p className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
-      <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">
+      <pre className="mt-2.5 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">
         {value || empty}
       </pre>
     </div>

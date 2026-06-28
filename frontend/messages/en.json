@@ -1968,27 +1968,27 @@
     "customProject": "Create a custom project"
   },
   "connections": {
-    "title": "Connection Center",
-    "subtitle": "Manage SSH environments for remote execution, file inspection, and workflow runs.",
+    "title": "SSH connections",
+    "subtitle": "Manage SSH hosts for remote work, file browsing, and workflow runs.",
     "addNode": "Add connection",
     "searchPlaceholder": "Search connections…",
     "list": {
       "title": "Connections",
-      "description": "Select an environment to view access details and Agent context.",
+      "description": "Select a host to review access details and Agent instructions.",
       "loading": "Loading connections…",
       "error": "Could not load SSH connections. Check the service and try again.",
-      "empty": "No connections yet. Add an SSH environment to begin.",
+      "empty": "No connections yet. Add an SSH environment to get started.",
       "noResults": "No matching connections. Try another name, host, alias, or note."
     },
     "detail": {
-      "currentContext": "Agent context",
+      "currentContext": "Agent instructions",
       "aliasPrefix": "Alias:",
-      "skillGuidance": "Add paths, environment setup, and usage limits so the Agent can work on this host."
+      "skillGuidance": "Add paths, setup steps, and limits the Agent should follow on this host."
     },
     "sections": {
-      "connection": "Overview",
+      "connection": "Connection",
       "ssh": "Access",
-      "agentSkill": "Agent context"
+      "agentSkill": "Agent instructions"
     },
     "fields": {
       "name": "Connection name",
@@ -1999,7 +1999,7 @@
       "auth": "Authentication",
       "sshAlias": "SSH alias",
       "keyPath": "Private key path",
-      "skillInstructions": "Instructions"
+      "skillInstructions": "Agent instructions"
     },
     "status": {
       "online": "Online",
@@ -2022,29 +2022,29 @@
       "skillInstructions": "No instructions yet"
     },
     "emptyDetail": {
-      "title": "Ready for a remote environment",
-      "description": "Add a connection to test access, run checks, and give the Agent the context it needs for this host.",
+      "title": "Add a remote environment",
+      "description": "Add a connection to test access, run a quick check, and give the Agent host-specific instructions.",
       "action": "Add first connection"
     },
     "actions": {
       "testConnection": "Test connection",
       "testing": "Testing…",
       "editConnection": "Edit connection",
-      "runProbe": "Run check",
-      "runningProbe": "Running check…",
+      "runProbe": "Quick check",
+      "runningProbe": "Checking…",
       "insertPreset": "Insert preset"
     },
     "dialog": {
       "title": "Add SSH connection",
       "editTitle": "Edit SSH connection",
-      "description": "Add the host details the Agent needs to connect. Keep credentials in your SSH configuration or local secure storage.",
+      "description": "Enter the host details the Agent needs. Keep sensitive credentials in SSH config or local secure storage.",
       "add": "Add connection",
       "save": "Save changes",
       "saving": "Saving…"
     },
     "skillDrop": {
-      "title": "Import a context file",
-      "hint": "Plain text or Markdown notes are appended to the instructions."
+      "title": "Import instructions file",
+      "hint": "Plain text or Markdown content will be appended to the instructions."
     },
     "skillPresets": {
       "nextflowHpc": {
@@ -2061,20 +2061,20 @@
       }
     },
     "probe": {
-      "title": "Remote check",
-      "description": "Run a short command and stream the result.",
-      "placeholder": "Run a check to verify remote output.",
+      "title": "Quick check",
+      "description": "Run a short command to confirm the remote output comes back.",
+      "placeholder": "Run a quick check and the remote output will appear here.",
       "emptyOutput": "Command completed with no output.",
-      "failed": "Remote check failed."
+      "failed": "Quick check failed."
     },
     "form": {
       "defaultUsername": "user",
-      "secretsNote": "Credentials stay with the selected SSH method.",
-      "sshConfigNote": "Use the same Host alias you use for this environment in SSH.",
-      "skillGuidance": "Add paths, environment setup, and usage limits so the Agent can work on this host.",
+      "secretsNote": "Credentials stay in the SSH method you choose.",
+      "sshConfigNote": "Use the Host alias defined for this environment in your SSH config.",
+      "skillGuidance": "Add paths, setup steps, and limits the Agent should follow on this host.",
       "errors": {
         "invalidPort": "Port must be between 1 and 65535.",
-        "sshAliasRequired": "Enter an SSH Host alias.",
+        "sshAliasRequired": "Enter an SSH alias.",
         "keyPathRequired": "Enter a private key path.",
         "skillFileFailed": "Could not import the instructions file.",
         "saveFailed": "Could not save the connection."
@@ -2085,7 +2085,7 @@
         "username": "bioflow",
         "sshAlias": "lab-gpu",
         "keyPath": "~/.ssh/id_ed25519",
-        "skillInstructions": "Paths, environment setup, limits, and commands the Agent should know…"
+        "skillInstructions": "For example: working directories, setup steps, queue limits, and common diagnostic commands…"
       }
     },
     "toasts": {
