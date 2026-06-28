@@ -979,7 +979,7 @@ function DetailGrid({ children }: { children: ReactNode }) {
 function DetailItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[0.7rem] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</dt>
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
       <dd className={cn("mt-1 break-words text-sm font-medium text-foreground", mono && "font-mono")}>{value}</dd>
     </div>
   )
@@ -988,7 +988,7 @@ function DetailItem({ label, value, mono = false }: { label: string; value: stri
 function TextPanel({ title, value, empty }: { title: string; value: string; empty: string }) {
   return (
     <div className="rounded-[18px] border border-border/40 bg-background/70 p-3.5">
-      <p className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
+      <p className="text-xs font-medium text-muted-foreground">{title}</p>
       <pre className="mt-2.5 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">
         {value || empty}
       </pre>
