@@ -121,7 +121,7 @@ describe("ConnectionsPage", () => {
 
     expect(await screen.findByText("Could not load SSH connections. Check the service and try again.")).toBeInTheDocument()
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Command check" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Run check" })).not.toBeInTheDocument()
   })
 
   it("saves new connections through the backend", async () => {
@@ -435,7 +435,7 @@ describe("ConnectionsPage", () => {
       render(<ConnectionsPage />)
 
       expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
-      await user.click(screen.getByRole("button", { name: "Command check" }))
+      await user.click(screen.getByRole("button", { name: "Run check" }))
 
       expect(await screen.findByText("bioinfoflow-ok")).toBeInTheDocument()
       expect(buildWebSocketUrlMock).toHaveBeenCalledWith("/connections/live-connection-1/exec/ws")

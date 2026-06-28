@@ -221,24 +221,26 @@ function SetupItem({
       aria-label={rowLabel}
       data-testid={`readiness-check-${check.id}`}
       className={cn(
-        "group rounded-2xl px-2.5 py-2.5 transition-colors",
+        "group rounded-2xl px-2.5 transition-colors",
         "hover:bg-muted/35",
+        isComplete ? "py-1.5 text-muted-foreground" : "py-2.5",
         check.status === "fail" && "bg-warning-muted/30",
         check.status === "warn" && "bg-warning-muted/20",
         isComplete && "text-muted-foreground",
       )}
     >
-      <div className="flex items-start gap-3">
+      <div className={cn("flex gap-3", isComplete ? "items-center" : "items-start")}>
         <span
           className={cn(
-            "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+            "flex shrink-0 items-center justify-center rounded-full border",
+            isComplete ? "size-4" : "mt-0.5 size-5",
             check.status === "pass" && "border-border bg-muted text-muted-foreground",
             check.status === "warn" && "border-warning-border bg-warning-muted text-warning",
             check.status === "fail" && "border-warning-border bg-warning-muted text-warning",
             check.status === "skip" && "border-border bg-muted text-muted-foreground",
           )}
         >
-          <Icon className="size-3.5" aria-hidden="true" />
+          <Icon className={cn(isComplete ? "size-3" : "size-3.5")} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -263,9 +265,11 @@ function SetupItem({
               </span>
             ) : null}
           </div>
-          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-            {description}
-          </p>
+          {!isComplete ? (
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+              {description}
+            </p>
+          ) : null}
         </div>
         {!isComplete && actionLabel && check.action?.kind === "dialog" ? (
           <Button size="sm" variant="ghost" className="h-8 shrink-0 rounded-full px-2.5 text-xs" onClick={onProjectAction}>
@@ -298,12 +302,12 @@ function ChecklistSection({
   if (checks.length === 0) return null;
 
   return (
-    <section className="flex flex-col gap-2">
+    <section className="flex flex-col gap-1.5">
       <h3 className="flex items-center justify-between px-1 text-xs font-medium text-muted-foreground">
         <span>{title}</span>
         <span>{checks.length}</span>
       </h3>
-      <ul className="divide-y divide-border/50 rounded-[22px] border border-border/60 bg-card/75 p-1 shadow-sm shadow-foreground/5">
+      <ul className="grid gap-1 rounded-[22px] bg-card/45 p-1">
         {checks.map((check) => (
           <SetupItem key={check.id} check={check} onProjectAction={onProjectAction} />
         ))}
@@ -419,14 +423,14 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
         </SheetHeader>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-background/95 p-4">
-          <div className="rounded-[22px] border border-border/60 bg-card/75 p-4 shadow-sm shadow-foreground/5">
+          <div className="px-1">
             <div className="flex items-baseline justify-between gap-3">
               <p className="text-sm font-medium text-foreground">
                 {tDashboard("readiness.progress", { completed: counts.requiredCompleted, total: counts.requiredTotal })}
               </p>
               <span className="text-xs font-medium text-muted-foreground">{counts.requiredProgress}%</span>
             </div>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-warning transition-[width] duration-300"
                 style={{ width: `${counts.requiredProgress}%` }}
@@ -453,7 +457,7 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
 
         <div className="flex items-center justify-between gap-3 border-t border-border/70 bg-background/96 p-4">
           <p className="text-xs leading-5 text-muted-foreground">
-            {tDashboard("readiness.description", { warnings: counts.optionalWarnings })}
+            {optionalWarningsLabel ?? tDashboard("readiness.requiredRemaining", { count: requiredRemaining })}
           </p>
           {onRefresh ? (
             <Button

@@ -201,7 +201,10 @@ export default function ConnectionsPage() {
   }, [connections, search])
 
   const selectedConnection =
-    filteredConnections.find((connection) => connection.id === selectedConnectionId) ?? filteredConnections[0]
+    filteredConnections.find((connection) => connection.id === selectedConnectionId) ??
+    filteredConnections[0] ??
+    connections.find((connection) => connection.id === selectedConnectionId) ??
+    connections[0]
 
   const resetFormState = () => {
     setForm(initialForm)
@@ -626,9 +629,10 @@ export default function ConnectionsPage() {
           </DialogContent>
         </Dialog>
 
-        <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
-          <CardContent className="grid p-0 lg:grid-cols-[360px_minmax(0,1fr)]">
-            <aside className="min-w-0 border-b border-border/60 bg-muted/10 lg:border-b-0 lg:border-r">
+        <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start">
+          <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
+            <CardContent className="p-0">
+              <aside className="min-w-0 bg-muted/10">
               <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -710,12 +714,16 @@ export default function ConnectionsPage() {
                   </div>
                 )}
               </div>
-            </aside>
+              </aside>
+            </CardContent>
+          </Card>
 
             {selectedConnection ? (
-              <section className="min-w-0">
+            <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
+              <CardContent className="p-0">
+                <section className="min-w-0">
                 <div className="border-b border-border/60 p-5">
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
                     <div className="flex min-w-0 items-start gap-3">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background/85 text-foreground">
                         <Server className="h-5 w-5" />
@@ -741,12 +749,12 @@ export default function ConnectionsPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2 xl:justify-end">
+                    <div className="flex w-fit flex-wrap gap-1 rounded-full border border-border/60 bg-muted/20 p-1 2xl:justify-end">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        className="h-8 rounded-full"
+                        className="h-8 rounded-full px-3"
                         onClick={() => handleTestConnection(selectedConnection)}
                         disabled={testingConnectionId === selectedConnection.id}
                       >
@@ -764,7 +772,7 @@ export default function ConnectionsPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-8 rounded-full"
+                        className="h-8 rounded-full px-3"
                         onClick={() => openEditDialog(selectedConnection)}
                       >
                         <Pencil className="h-4 w-4" />
@@ -772,8 +780,9 @@ export default function ConnectionsPage() {
                       </Button>
                       <Button
                         type="button"
+                        variant="ghost"
                         size="sm"
-                        className="h-8 rounded-full"
+                        className="h-8 rounded-full px-3"
                         onClick={() => handleRunProbe(selectedConnection)}
                         disabled={probeConnectionId === selectedConnection.id}
                       >
@@ -788,7 +797,6 @@ export default function ConnectionsPage() {
                   <div className="grid gap-3 xl:grid-cols-2">
                     <DetailSection title={t("sections.connection")}>
                       <DetailGrid>
-                        <DetailItem label={t("fields.name")} value={selectedConnection.name} />
                         <DetailItem label={t("fields.host")} value={selectedConnection.host} mono />
                         <DetailItem label={t("fields.status")} value={t(`status.${selectedConnection.status}`)} />
                       </DetailGrid>
@@ -841,9 +849,13 @@ export default function ConnectionsPage() {
                     </DetailSection>
                   ) : null}
                 </div>
-              </section>
+                </section>
+              </CardContent>
+            </Card>
             ) : (
-              <section className="flex min-h-[360px] items-center justify-center p-6">
+            <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
+              <CardContent className="p-0">
+                <section className="flex min-h-[360px] items-center justify-center p-6">
                 <div className="max-w-md text-center">
                   <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-border/60 bg-background/70 text-muted-foreground">
                     <TerminalSquare className="h-5 w-5" />
@@ -863,10 +875,11 @@ export default function ConnectionsPage() {
                     {connections.length === 0 ? t("emptyDetail.action") : tCommon("clear")}
                   </Button>
                 </div>
-              </section>
+                </section>
+              </CardContent>
+            </Card>
             )}
-          </CardContent>
-        </Card>
+        </div>
       </div>
     </div>
   )

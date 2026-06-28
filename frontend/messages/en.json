@@ -359,13 +359,13 @@
     "dockerUnavailableDescription": "Workflow execution requires Docker. Please start the Docker daemon to run pipelines.",
     "readiness": {
       "title": "First-run setup",
-      "description": "Finish the required setup before your first run. Optional items can wait unless a workflow needs them. Optional items: {warnings}.",
+      "description": "Complete the required items to start. Optional items can wait until a workflow needs them.",
       "trigger": "Open setup checklist",
       "triggerSummary": "{completed}/{total} ready",
       "requiredRemaining": "{count} required item(s) left",
       "optionalWarnings": "{count} optional item(s)",
       "drawerTitle": "Setup checklist",
-      "drawerDescription": "See what is ready and where to finish anything still missing.",
+      "drawerDescription": "Work through the remaining items. Completed checks fade back automatically.",
       "blockedBadge": "{count} blocker(s)",
       "progress": "{completed} of {total} required items ready",
       "blockers": "Required to start",
@@ -415,12 +415,12 @@
           "label": "GPU",
           "action": "Open resource monitor",
           "detail": {
-            "ready": "GPU is ready for workflow runs. Visible devices: {names}",
-            "visible": "The backend can see {count} GPU(s): {names}. GPU is only needed when a workflow requires it.",
-            "runtimeHidden": "The host has the NVIDIA container runtime, but GPUs are not exposed to the backend container yet. Enable the GPU compose override on GPU hosts. {recommendation}",
-            "hostOnly": "NVIDIA tools are installed on the host, but the backend container still cannot inspect GPU devices. Bioinfoflow only detects GPUs already exposed to the container. {recommendation}",
-            "error": "GPU detection returned an error, but CPU workflows still work. Details: {error}",
-            "cpuOnly": "No GPU is visible to the backend. CPU workflows still work."
+            "ready": "GPU is ready for accelerated workflows: {names}",
+            "visible": "{count} GPU(s) are available: {names}. They are used only when a workflow needs acceleration.",
+            "runtimeHidden": "This host supports GPU work, but the container does not have GPU access yet. Enable the GPU compose override when a workflow needs it. {recommendation}",
+            "hostOnly": "NVIDIA tools are available on the host, but the container cannot see GPUs yet. CPU workflows can run now. {recommendation}",
+            "error": "GPU status is unavailable for now. CPU workflows can run now. Details: {error}",
+            "cpuOnly": "GPU is not enabled. CPU workflows can run now."
           }
         },
         "project": {
@@ -2032,7 +2032,7 @@
       "testConnection": "Test connection",
       "testing": "Testing…",
       "editConnection": "Edit connection",
-      "runProbe": "Command check",
+      "runProbe": "Run check",
       "runningProbe": "Checking…",
       "insertPreset": "Insert preset"
     },

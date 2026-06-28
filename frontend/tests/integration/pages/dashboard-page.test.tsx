@@ -319,7 +319,7 @@ describe("DashboardPage", () => {
 
     const user = userEvent.setup()
     const trigger = await screen.findByRole("button", {
-      name: "dashboard.readiness.trigger",
+      name: /dashboard\.readiness\.trigger/,
     })
 
     expect(trigger).toHaveTextContent("dashboard.readiness.title")

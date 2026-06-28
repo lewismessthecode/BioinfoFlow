@@ -97,7 +97,7 @@ export type ReadinessStatus = {
   next_action: {
     label: string;
     href: string;
-  };
+  } | null;
   checks: ReadinessCheck[];
   summary?: Record<string, unknown>;
 };
