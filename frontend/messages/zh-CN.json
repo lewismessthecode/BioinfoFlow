@@ -359,25 +359,25 @@
     "dockerUnavailableDescription": "工作流执行需要 Docker。请启动 Docker 守护进程以运行流水线。",
     "readiness": {
       "title": "首次运行准备",
-      "description": "首次运行前必须完成必需设置。可选警告只有在工作流需要时再处理即可。可选警告：{warnings} 项。",
+      "description": "首次运行前请先完成必需项；可选项只有在工作流需要时再处理。当前可选项：{warnings} 项。",
       "trigger": "打开准备清单",
       "triggerSummary": "{completed}/{total} 已就绪",
-      "requiredRemaining": "还剩 {count} 个必需项",
-      "optionalWarnings": "{count} 个可选警告",
+      "requiredRemaining": "还差 {count} 个必需项",
+      "optionalWarnings": "{count} 个可选项",
       "drawerTitle": "准备清单",
-      "drawerDescription": "每一行都会说明哪些已经就绪，以及剩余设置要去哪里完成。",
+      "drawerDescription": "查看哪些已经就绪，以及剩余项去哪里完成。",
       "blockedBadge": "{count} 个阻塞项",
-      "progress": "{completed}/{total} 项已就绪",
-      "blockers": "首次运行前必须完成",
-      "optional": "可选检查",
-      "completed": "已就绪",
-      "refresh": "刷新状态",
+      "progress": "{completed}/{total} 个必需项已就绪",
+      "blockers": "开始前需完成",
+      "optional": "可选项",
+      "completed": "已完成",
+      "refresh": "刷新",
       "completedLabel": "已完成：{label}",
       "status": {
         "pass": "已就绪",
-        "fail": "待修复",
-        "warn": "警告",
-        "skip": "跳过"
+        "fail": "待设置",
+        "warn": "可选",
+        "skip": "已跳过"
       },
       "checks": {
         "backend": {
@@ -387,39 +387,39 @@
           }
         },
         "provider_key": {
-          "label": "AI Provider Key",
+          "label": "AI 服务商密钥",
           "action": "配置服务商",
           "detail": {
-            "pass": "至少已有一个 Provider Key 可用。",
-            "fail": "首次开始对话或运行前，请先配置任意一个受支持的 Provider Key。"
+            "pass": "已配置至少一个服务商密钥。",
+            "fail": "首次对话或运行前，请先配置一个受支持的服务商密钥。"
           }
         },
         "docker": {
           "label": "Docker",
-          "action": "打开镜像页",
+          "action": "打开镜像管理",
           "detail": {
             "pass": "后端可以正常访问 Docker。",
-            "fail": "后端当前无法访问 Docker。请先启动 Docker Desktop 或 Docker daemon，再刷新状态。"
+            "fail": "后端暂时连不上 Docker。启动 Docker Desktop 或 Docker 服务后再刷新。"
           }
         },
         "scheduler": {
           "label": "调度器",
           "action": "打开调度器",
           "detail": {
-            "pass": "持久化调度器已启动。",
-            "fail": "调度器当前不可用。请重启后端并检查调度器启动日志。"
+            "pass": "调度服务已启动。",
+            "fail": "调度服务不可用。请重启后端并检查启动日志。"
           }
         },
         "gpu": {
           "label": "GPU",
           "action": "打开资源监控",
           "detail": {
-            "ready": "GPU 加速当前已经可供工作流使用。可见设备：{names}",
-            "visible": "后端已经可以看到 {count} 张 GPU：{names}。在工作流明确需要前，GPU 仍然只是可选能力。",
-            "runtimeHidden": "宿主机已经具备 NVIDIA 容器运行时，但这套 Bioinfoflow 部署还没有把 GPU 设备显式暴露给 backend 容器。GPU 服务器上需要启用 GPU compose override。{recommendation}",
-            "hostOnly": "机器上已有 NVIDIA 工具链，但 backend 容器仍然无法读取 GPU 设备。Bioinfoflow 只会自动检测已经暴露进容器的 GPU，不会替你自动改运行时。{recommendation}",
+            "ready": "GPU 已可用于工作流运行。可见设备：{names}",
+            "visible": "后端可见 {count} 张 GPU：{names}。只有工作流需要时才需要配置 GPU。",
+            "runtimeHidden": "宿主机已具备 NVIDIA 容器运行时，但 GPU 还没有暴露给后端容器。GPU 机器上请启用 GPU compose override。{recommendation}",
+            "hostOnly": "宿主机已安装 NVIDIA 工具，但后端容器仍无法读取 GPU 设备。Bioinfoflow 只能检测已暴露给容器的 GPU。{recommendation}",
             "error": "GPU 探测出现错误，但 CPU 工作流仍可正常运行。详情：{error}",
-            "cpuOnly": "后端当前看不到 GPU。CPU 工作流依然完全可用，而且 GPU 本身是可选能力。"
+            "cpuOnly": "后端当前看不到 GPU，CPU 工作流仍可正常运行。"
           }
         },
         "project": {
@@ -427,23 +427,23 @@
           "action": "创建项目",
           "detail": {
             "pass": "当前已有 {count} 个项目。",
-            "fail": "请先创建至少一个项目，这样助手和运行记录才能绑定到真实工作区。"
+            "fail": "请先创建至少一个项目，让助手对话和运行记录都能关联到实际工作区。"
           }
         },
         "workflow_registry": {
-          "label": "工作流注册表",
+          "label": "可用工作流",
           "action": "打开工作流中心",
           "detail": {
-            "pass": "当前已有 {count} 个已注册工作流。",
-            "fail": "当前还没有已注册工作流。请先从工作流中心导入或注册一个。"
+            "pass": "当前有 {count} 个可用工作流。",
+            "fail": "当前还没有可用工作流。请先到工作流中心导入或注册一个。"
           }
         },
         "workflow_binding": {
-          "label": "项目工作流绑定",
+          "label": "项目已启用工作流",
           "action": "启用工作流",
           "detail": {
-            "pass": "当前已有 {count} 个项目工作流绑定。",
-            "fail": "当前还没有为项目启用任何工作流。首次运行前请先把工作流绑定到项目。"
+            "pass": "已有 {count} 个项目启用了工作流。",
+            "fail": "首次运行前，请先为至少一个项目启用工作流。"
           }
         }
       }
