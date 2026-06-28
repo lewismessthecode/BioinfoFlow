@@ -47,13 +47,6 @@ const statusIcon = {
   skip: CircleDashed,
 } as const;
 
-const statusVariant = {
-  pass: "neutral",
-  warn: "warning",
-  fail: "destructive",
-  skip: "neutral",
-} as const;
-
 function getCounts(checks: ReadinessCheck[]): ReadinessCounts {
   const requiredChecks = checks.filter((check) => check.severity === "blocking");
   const requiredTotal = requiredChecks.length;
@@ -218,18 +211,21 @@ function SetupItem({
   const actionLabel = actionLabelForCheck(tDashboard, check);
   const description = descriptionForCheck(tDashboard, check);
   const label = labelForCheck(tDashboard, check);
+  const statusText = tDashboard(`readiness.status.${check.status}`);
   const rowLabel = isComplete
     ? tDashboard("readiness.completedLabel", { label })
-    : `${label}: ${tDashboard(`readiness.status.${check.status}`)}`;
+    : `${label}: ${statusText}`;
 
   return (
     <li
       aria-label={rowLabel}
       data-testid={`readiness-check-${check.id}`}
       className={cn(
-        "rounded-xl border border-border/70 bg-card/70 px-3.5 py-3 transition-colors",
-        "hover:border-border hover:bg-card",
-        isComplete && "border-border/45 bg-muted/25 text-muted-foreground",
+        "group rounded-2xl px-2.5 py-2.5 transition-colors",
+        "hover:bg-muted/35",
+        check.status === "fail" && "bg-warning-muted/30",
+        check.status === "warn" && "bg-warning-muted/20",
+        isComplete && "text-muted-foreground",
       )}
     >
       <div className="flex items-start gap-3">
@@ -238,41 +234,47 @@ function SetupItem({
             "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
             check.status === "pass" && "border-border bg-muted text-muted-foreground",
             check.status === "warn" && "border-warning-border bg-warning-muted text-warning",
-            check.status === "fail" && "border-error-border bg-error-muted text-error",
+            check.status === "fail" && "border-warning-border bg-warning-muted text-warning",
             check.status === "skip" && "border-border bg-muted text-muted-foreground",
           )}
         >
           <Icon className="size-3.5" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <p
               className={cn(
-                "text-sm font-semibold text-foreground",
+                "text-sm font-medium text-foreground",
                 isComplete && "line-through text-muted-foreground decoration-muted-foreground/70",
               )}
             >
               {label}
             </p>
-            <StatusBadge
-              variant={statusVariant[check.status]}
-              className="px-2 py-0.5 text-[10px]"
-            >
-              {tDashboard(`readiness.status.${check.status}`)}
-            </StatusBadge>
+            {!isComplete ? (
+              <span
+                className={cn(
+                  "text-xs font-medium",
+                  check.status === "fail" && "text-warning",
+                  check.status === "warn" && "text-warning",
+                  check.status === "skip" && "text-muted-foreground",
+                )}
+              >
+                {statusText}
+              </span>
+            ) : null}
           </div>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
             {description}
           </p>
         </div>
         {!isComplete && actionLabel && check.action?.kind === "dialog" ? (
-          <Button size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={onProjectAction}>
+          <Button size="sm" variant="ghost" className="h-8 shrink-0 rounded-full px-2.5 text-xs" onClick={onProjectAction}>
             {actionLabel}
             <ArrowRight data-icon="inline-end" aria-hidden="true" />
           </Button>
         ) : null}
         {!isComplete && actionLabel && actionHref && check.id !== "project" ? (
-          <Button asChild size="sm" variant="ghost" className="h-8 shrink-0 px-2">
+          <Button asChild size="sm" variant="ghost" className="h-8 shrink-0 rounded-full px-2.5 text-xs">
             <Link href={actionHref}>
               {actionLabel}
               <ArrowRight data-icon="inline-end" aria-hidden="true" />
@@ -297,10 +299,11 @@ function ChecklistSection({
 
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-        {title}
+      <h3 className="flex items-center justify-between px-1 text-xs font-medium text-muted-foreground">
+        <span>{title}</span>
+        <span>{checks.length}</span>
       </h3>
-      <ul className="flex flex-col gap-2">
+      <ul className="divide-y divide-border/50 rounded-[22px] border border-border/60 bg-card/75 p-1 shadow-sm shadow-foreground/5">
         {checks.map((check) => (
           <SetupItem key={check.id} check={check} onProjectAction={onProjectAction} />
         ))}
@@ -317,12 +320,14 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
 
   if (!readiness) return null;
 
-  const hasOpenChecks = readiness.checks.some((check) => check.status !== "pass");
-  if (!hasOpenChecks && readiness.severity === "ready") return null;
-
   const counts = getCounts(readiness.checks);
   const groups = groupChecks(readiness.checks);
-  const tone = counts.blockers > 0 ? "warning" : "default";
+  const hasBlockingOpenChecks = readiness.checks.some(
+    (check) => check.status !== "pass" && check.severity === "blocking",
+  );
+  if (!hasBlockingOpenChecks) return null;
+
+  const requiredRemaining = counts.requiredTotal - counts.requiredCompleted;
 
   const handleRefresh = async () => {
     if (!onRefresh) return;
@@ -342,25 +347,25 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <CardRoot
-        variant={tone}
-        className="mb-5 overflow-hidden border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.88))] shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur dark:bg-[linear-gradient(180deg,rgba(17,24,39,0.96),rgba(15,23,42,0.92))]"
+        variant="warning"
+        className="mb-5 overflow-hidden border border-border/70 bg-card/85 shadow-sm shadow-foreground/5"
       >
-        <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardContent className="p-2">
           <button
             type="button"
             aria-label={tDashboard("readiness.trigger")}
-            className="group flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-2.5 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="group flex min-w-0 w-full items-center gap-3 rounded-[22px] px-3 py-3 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => setOpen(true)}
           >
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-warning-border/60 bg-warning-muted/70 text-warning shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-warning-border/70 bg-warning-muted text-warning">
               <Rocket className="size-4" aria-hidden="true" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="flex flex-wrap items-center gap-2.5">
+              <span className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-foreground">
                   {tDashboard("readiness.title")}
                 </span>
-                <StatusBadge variant={counts.blockers > 0 ? "warning" : "neutral"}>
+                <StatusBadge variant="warning">
                   {tDashboard("readiness.triggerSummary", {
                     completed: counts.requiredCompleted,
                     total: counts.requiredTotal,
@@ -375,9 +380,7 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
                 ) : null}
               </span>
               <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                {counts.blockers > 0
-                  ? tDashboard("readiness.requiredRemaining", { count: counts.blockers })
-                  : tDashboard("readiness.optionalWarnings", { count: counts.optionalWarnings })}
+                {tDashboard("readiness.requiredRemaining", { count: requiredRemaining })}
               </span>
             </span>
             <ArrowRight
@@ -390,11 +393,11 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
 
       <SheetContent
         side="right"
-        className="flex w-[min(560px,92vw)] flex-col gap-0 overflow-hidden border-l border-border/70 bg-background/98 shadow-[-24px_0_60px_rgba(15,23,42,0.12)] sm:max-w-none"
+        className="flex w-[min(520px,92vw)] flex-col gap-0 overflow-hidden border-l border-border/70 bg-background/98 shadow-[-24px_0_60px_rgba(15,23,42,0.12)] sm:max-w-none"
       >
         <SheetHeader className="border-b border-border/70 p-5 pr-12">
           <div className="flex items-center gap-3">
-            <span className="flex size-10 items-center justify-center rounded-2xl border border-border bg-muted text-muted-foreground">
+            <span className="flex size-10 items-center justify-center rounded-2xl border border-border bg-muted/70 text-muted-foreground">
               <ListChecks className="size-4" aria-hidden="true" />
             </span>
             <div className="min-w-0">
@@ -406,18 +409,17 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
           </div>
         </SheetHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto bg-background/95 p-5">
-          <div className="flex flex-col gap-2 rounded-[20px] border border-border/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,0.88))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] dark:bg-[linear-gradient(180deg,rgba(17,24,39,0.7),rgba(15,23,42,0.92))]">
-            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-              <span>{tDashboard("readiness.progress", { completed: counts.requiredCompleted, total: counts.requiredTotal })}</span>
-              <span>{counts.requiredProgress}%</span>
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-background/95 p-4">
+          <div className="rounded-[22px] border border-border/60 bg-card/75 p-4 shadow-sm shadow-foreground/5">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm font-medium text-foreground">
+                {tDashboard("readiness.progress", { completed: counts.requiredCompleted, total: counts.requiredTotal })}
+              </p>
+              <span className="text-xs font-medium text-muted-foreground">{counts.requiredProgress}%</span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted/85">
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className={cn(
-                  "h-full rounded-full transition-[width] duration-300",
-                  counts.blockers > 0 ? "bg-warning" : "bg-success",
-                )}
+                className="h-full rounded-full bg-warning transition-[width] duration-300"
                 style={{ width: `${counts.requiredProgress}%` }}
               />
             </div>

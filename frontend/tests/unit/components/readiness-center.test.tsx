@@ -19,23 +19,23 @@ vi.mock("next/link", () => ({
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, string | number>) => {
     const copy: Record<string, string> = {
-      "readiness.title": "First-run readiness",
-      "readiness.trigger": "Open readiness checklist",
+      "readiness.title": "First-run setup",
+      "readiness.trigger": "Open setup checklist",
       "readiness.triggerSummary": `${values?.completed ?? 0}/${values?.total ?? 0} ready`,
-      "readiness.requiredRemaining": `${values?.count ?? 0} required remaining`,
-      "readiness.optionalWarnings": `${values?.count ?? 0} optional warnings`,
-      "readiness.drawerTitle": "Readiness checklist",
-      "readiness.drawerDescription": "Complete each item before the first run.",
-      "readiness.progress": `${values?.completed ?? 0} of ${values?.total ?? 0} checks ready`,
-      "readiness.blockers": "Required before first run",
-      "readiness.optional": "Optional checks",
-      "readiness.completed": "Already ready",
-      "readiness.refresh": "Refresh status",
+      "readiness.requiredRemaining": `${values?.count ?? 0} required item(s) left`,
+      "readiness.optionalWarnings": `${values?.count ?? 0} optional item(s)`,
+      "readiness.drawerTitle": "Setup checklist",
+      "readiness.drawerDescription": "See what is ready and where to finish the rest.",
+      "readiness.progress": `${values?.completed ?? 0} of ${values?.total ?? 0} required items ready`,
+      "readiness.blockers": "Required to start",
+      "readiness.optional": "Optional",
+      "readiness.completed": "Done",
+      "readiness.refresh": "Refresh",
       "readiness.completedLabel": `Completed: ${values?.label ?? ""}`,
-      "readiness.status.pass": "Pass",
-      "readiness.status.fail": "Fix",
-      "readiness.status.warn": "Warn",
-      "readiness.status.skip": "Skip",
+      "readiness.status.pass": "Ready",
+      "readiness.status.fail": "Needs setup",
+      "readiness.status.warn": "Optional",
+      "readiness.status.skip": "Skipped",
       "readiness.checks.backend.label": "Backend API",
       "readiness.checks.backend.detail.pass": "Backend is responding",
       "readiness.checks.provider_key.label": "AI provider key",
@@ -62,13 +62,13 @@ vi.mock("next-intl", () => ({
       "readiness.checks.project.action": "Create a project",
       "readiness.checks.project.detail.pass": `${values?.count ?? 0} project(s) exist`,
       "readiness.checks.project.detail.fail": "No project exists yet",
-      "readiness.checks.workflow_registry.label": "Workflow registry",
+      "readiness.checks.workflow_registry.label": "Available workflows",
       "readiness.checks.workflow_registry.action": "Open workflow hub",
-      "readiness.checks.workflow_registry.detail.pass": `${values?.count ?? 0} workflow(s) registered`,
-      "readiness.checks.workflow_registry.detail.fail": "No workflows are registered yet",
-      "readiness.checks.workflow_binding.label": "Project workflow binding",
-      "readiness.checks.workflow_binding.action": "Enable a workflow",
-      "readiness.checks.workflow_binding.detail.pass": `${values?.count ?? 0} workflow binding(s) exist`,
+      "readiness.checks.workflow_registry.detail.pass": `${values?.count ?? 0} workflow(s) available`,
+      "readiness.checks.workflow_registry.detail.fail": "No workflows yet",
+      "readiness.checks.workflow_binding.label": "Workflow enabled for projects",
+      "readiness.checks.workflow_binding.action": "Enable workflow",
+      "readiness.checks.workflow_binding.detail.pass": `${values?.count ?? 0} project(s) already have a workflow enabled`,
       "readiness.checks.workflow_binding.detail.fail": "No workflow is enabled for a project yet",
     }
 
@@ -155,10 +155,86 @@ function blockedReadiness(): ReadinessStatus {
   }
 }
 
+function readyWithOptionalWarning(): ReadinessStatus {
+  return {
+    severity: "ready",
+    next_action: null,
+    checks: [
+      {
+        id: "backend",
+        status: "pass",
+        severity: "info",
+        facts: { available: true },
+      },
+      {
+        id: "provider_key",
+        status: "pass",
+        severity: "blocking",
+        facts: { configured: true },
+        action: { kind: "route", href: "/settings?section=providers" },
+      },
+      {
+        id: "docker",
+        status: "pass",
+        severity: "blocking",
+        facts: { available: true },
+        action: { kind: "route", href: "/images" },
+      },
+      {
+        id: "scheduler",
+        status: "pass",
+        severity: "blocking",
+        facts: { available: true },
+        action: { kind: "route", href: "/scheduler" },
+      },
+      {
+        id: "gpu",
+        status: "warn",
+        severity: "optional",
+        facts: {
+          docker_nvidia_runtime: true,
+          runtime_visible_to_backend: false,
+          gpu_count: 0,
+          gpu_names: [],
+        },
+        action: { kind: "route", href: "/scheduler" },
+      },
+      {
+        id: "project",
+        status: "pass",
+        severity: "blocking",
+        facts: { count: 2 },
+        action: { kind: "dialog", dialog: "create_project" },
+      },
+      {
+        id: "workflow_registry",
+        status: "pass",
+        severity: "blocking",
+        facts: { count: 5 },
+        action: { kind: "route", href: "/workflows?scope=hub" },
+      },
+      {
+        id: "workflow_binding",
+        status: "pass",
+        severity: "blocking",
+        facts: { count: 2 },
+        action: { kind: "route", href: "/workflows?scope=hub" },
+      },
+    ],
+    summary: {},
+  }
+}
+
 describe("ReadinessCenter", () => {
   beforeEach(() => {
     openCreateProjectDialogMock.mockReset()
     onRefreshMock.mockReset()
+  })
+
+  it("hides the dashboard card when required items are ready and only optional warnings remain", () => {
+    render(<ReadinessCenter readiness={readyWithOptionalWarning()} onRefresh={onRefreshMock} />)
+
+    expect(screen.queryByRole("button", { name: /open setup checklist/i })).not.toBeInTheDocument()
   })
 
   it("opens a right-side checklist that makes progress counts explainable", async () => {
@@ -166,12 +242,12 @@ describe("ReadinessCenter", () => {
 
     render(<ReadinessCenter readiness={blockedReadiness()} onRefresh={onRefreshMock} />)
 
-    expect(screen.getByRole("button", { name: /open readiness checklist/i })).toHaveTextContent("3/6 ready")
+    expect(screen.getByRole("button", { name: /open setup checklist/i })).toHaveTextContent("3/6 ready")
 
-    await user.click(screen.getByRole("button", { name: /open readiness checklist/i }))
+    await user.click(screen.getByRole("button", { name: /open setup checklist/i }))
 
-    expect(screen.getByRole("dialog", { name: "Readiness checklist" })).toBeInTheDocument()
-    expect(screen.getByText("3 of 6 checks ready")).toBeInTheDocument()
+    expect(screen.getByRole("dialog", { name: "Setup checklist" })).toBeInTheDocument()
+    expect(screen.getByText("3 of 6 required items ready")).toBeInTheDocument()
 
     for (const label of [
       "Backend API",
@@ -180,8 +256,8 @@ describe("ReadinessCenter", () => {
       "Scheduler",
       "GPU",
       "Project",
-      "Workflow registry",
-      "Project workflow binding",
+      "Available workflows",
+      "Workflow enabled for projects",
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
@@ -192,7 +268,7 @@ describe("ReadinessCenter", () => {
 
     render(<ReadinessCenter readiness={blockedReadiness()} onRefresh={onRefreshMock} />)
 
-    await user.click(screen.getByRole("button", { name: /open readiness checklist/i }))
+    await user.click(screen.getByRole("button", { name: /open setup checklist/i }))
 
     const backendRow = screen.getByTestId("readiness-check-backend")
     expect(backendRow).toHaveAttribute("aria-label", "Completed: Backend API")
@@ -205,10 +281,10 @@ describe("ReadinessCenter", () => {
 
     render(<ReadinessCenter readiness={blockedReadiness()} onRefresh={onRefreshMock} />)
 
-    await user.click(screen.getByRole("button", { name: /open readiness checklist/i }))
+    await user.click(screen.getByRole("button", { name: /open setup checklist/i }))
 
     expect(screen.getByRole("link", { name: /configure providers/i })).toHaveAttribute("href", "/settings?section=providers")
-    expect(screen.getByRole("link", { name: /enable a workflow/i })).toHaveAttribute("href", "/workflows?scope=hub")
+    expect(screen.getByRole("link", { name: /enable workflow/i })).toHaveAttribute("href", "/workflows?scope=hub")
     expect(screen.getByRole("link", { name: /open resource monitor/i })).toHaveAttribute("href", "/scheduler")
 
     await user.click(screen.getByRole("button", { name: /create a project/i }))
