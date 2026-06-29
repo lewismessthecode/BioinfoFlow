@@ -173,6 +173,7 @@ class WDLAdapter(EngineAdapter):
         workflow_path = str(config.get("workflow_path") or "")
         work_dir = _work_dir(config, workspace, run_id=run_id)
         work_dir.mkdir(parents=True, exist_ok=True)
+        _seed_resume_work_dir(config, workspace, target=work_dir)
         # Many production WDLs derive output/input file paths from String values such
         # as `outdir` or manifest rows. miniwdl rejects those paths by default unless
         # they appear as explicit File/Directory inputs, so we attach a per-run config
@@ -388,9 +389,6 @@ def _resolve_work_dir(workspace: str, value: str) -> Path:
 
 
 def _work_dir(config: dict, workspace: str, *, run_id: str) -> Path:
-    resume_work_dir = config.get("resume_work_dir")
-    if isinstance(resume_work_dir, str) and resume_work_dir.strip():
-        return _resolve_work_dir(workspace, resume_work_dir)
     configured = config.get("work_dir")
     if isinstance(configured, str) and configured.strip():
         return _resolve_work_dir(workspace, configured)
@@ -402,6 +400,19 @@ def _work_dir(config: dict, workspace: str, *, run_id: str) -> Path:
         / normalize_engine_dir("wdl")
         / "work"
     )
+
+
+def _seed_resume_work_dir(config: dict, workspace: str, *, target: Path) -> None:
+    resume_work_dir = config.get("resume_work_dir")
+    if not isinstance(resume_work_dir, str) or not resume_work_dir.strip():
+        return
+    source = _resolve_work_dir(workspace, resume_work_dir)
+    if source == target or not source.exists() or not source.is_dir():
+        return
+    try:
+        next(target.iterdir())
+    except StopIteration:
+        shutil.copytree(source, target, dirs_exist_ok=True)
 
 
 def _copy_outputs(work_dir: Path, workspace: Path, outdir: str | None) -> None:

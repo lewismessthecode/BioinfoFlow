@@ -140,4 +140,15 @@ Compose implements this as:
 
 The backend checks `BIOINFOFLOW_HOME_HOST` against `BIOINFOFLOW_HOME` at startup. If they differ, startup fails with a path contract error.
 
-This contract is what lets Nextflow, MiniWDL, backend code, and task containers share absolute paths without translation.
+This contract is what lets Nextflow, MiniWDL, backend code, and task containers
+share absolute paths without translation. For WDL task containers Bioinfoflow
+adds explicit identity bind mounts for:
+
+- the current project's `data/` directory, read-only;
+- the current run's `input/` directory, read-only;
+- the current run's `results/` directory, read-write;
+- shared `deliveries/`, `reference/`, and `database/` roots, read-only.
+
+Those run mounts are derived from the canonical
+`<project_root>/runs/<run_id>/engine/wdl/work/...` task directory shape, so the
+same rule applies to managed projects and external project roots.

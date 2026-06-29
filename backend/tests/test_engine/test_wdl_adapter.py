@@ -197,7 +197,7 @@ async def test_wdl_adapter_build_command_writes_inputs_and_options(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_wdl_adapter_build_command_reuses_resume_work_dir(tmp_path):
+async def test_wdl_adapter_build_command_keeps_current_work_dir_for_resume(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     adapter = WDLAdapter()
@@ -212,7 +212,7 @@ async def test_wdl_adapter_build_command_reuses_resume_work_dir(tmp_path):
     )
 
     work_dir = Path(command[command.index("--dir") + 1])
-    assert work_dir == workspace / "runs" / "shared-run" / "engine" / "wdl" / "work"
+    assert work_dir == workspace / "runs" / "run_wdl_123" / "engine" / "wdl" / "work"
 
 
 @pytest.mark.asyncio
@@ -266,13 +266,13 @@ async def test_wdl_adapter_post_complete_copies_outputs_to_outdir(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_wdl_adapter_post_complete_uses_resume_work_dir_when_present(tmp_path):
+async def test_wdl_adapter_post_complete_uses_current_work_dir_when_resuming(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     output_file = (
         workspace
         / "runs"
-        / "shared-run"
+        / "run_wdl_123"
         / "engine"
         / "wdl"
         / "work"

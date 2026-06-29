@@ -572,17 +572,16 @@ class RunScheduler:
             runtime["trace_path"] = str(trace_path.relative_to(workspace_path))
             runtime["work_dir"] = str(engine_work_dir.relative_to(workspace_path))
             if engine_value == WorkflowEngine.WDL.value:
+                runtime["wdl_work_dir"] = str(
+                    engine_work_dir.relative_to(workspace_path)
+                )
                 resume_work_dir = (
                     (run.config or {}).get("resume_work_dir")
                     if isinstance(run.config, dict)
                     else None
                 )
                 if isinstance(resume_work_dir, str) and resume_work_dir.strip():
-                    runtime["wdl_work_dir"] = resume_work_dir.strip()
-                else:
-                    runtime["wdl_work_dir"] = str(
-                        engine_work_dir.relative_to(workspace_path)
-                    )
+                    runtime["resume_source_work_dir"] = resume_work_dir.strip()
             base = dict(run.config) if isinstance(run.config, dict) else {}
             run.config = {**base, "runtime": runtime}
 

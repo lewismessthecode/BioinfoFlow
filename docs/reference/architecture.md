@@ -90,6 +90,12 @@ Docker Compose identity-mounts that path:
 
 This identity mount is the path contract for workflow execution. Backend,
 workflow runner, and task containers must see the same absolute paths.
+For WDL/MiniWDL task containers, Bioinfoflow binds only the platform roots a
+task should see: shared data roots read-only, the current project's `data/`
+read-only, the current run's `input/` read-only, and the current run's
+`results/` read-write. These are sibling mounts rather than a broad project-root
+mount, which keeps output writes isolated while still making manifest-referenced
+Project Data paths visible inside task containers.
 
 Workflow execution uses a thin run service facade plus dedicated submission, DAG, lifecycle, archive, and dispatch services. New business logic should go into focused services instead of growing the facade.
 
