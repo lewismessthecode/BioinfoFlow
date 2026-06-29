@@ -109,6 +109,15 @@ docker compose -f docker-compose.prod.yml up -d
 
 Published images are refreshed from `main` when backend or frontend code changes. The published frontend image is built for localhost; for a remote server, set the public URLs in `.env` and use the source-build command above.
 
+`IMAGE_REGISTRY` can point at any registry namespace that contains the
+Bioinfoflow backend/frontend images, including Harbor, for example
+`10.227.4.56:80/pipeline-dev`. Workflow container registries are configured in
+**Settings -> Container Registries**, where owners/admins can add Harbor, mark a
+global default, and store or reference credentials. Harbor is optional; workflow
+containers can still use Docker Hub, full image names, or tarball imports. See
+the [Docker Quick Start](docs/getting-started/docker.md#optional-container-registry)
+for registry and insecure-HTTP Harbor notes.
+
 ---
 
 ## Development

@@ -109,6 +109,8 @@ docker compose -f docker-compose.prod.yml up -d
 
 发布镜像会在 `main` 上的后端或前端代码变化后刷新。当前发布版前端镜像面向 localhost 构建；如果要部署到远程服务器，请先在 `.env` 里设置公网 URL，再使用上面的源码构建方式。
 
+`IMAGE_REGISTRY` 可以指向任意已保存 Bioinfoflow 后端/前端镜像的镜像仓库命名空间，例如 Harbor 的 `10.227.4.56:80/pipeline-dev`。工作流容器镜像仓库在 **Settings -> Container Registries** 中配置，owner/admin 可以添加 Harbor、设为全局默认，并选择保存凭据或引用环境变量。Harbor 不是必需项；工作流容器仍可使用 Docker Hub、完整镜像名或 tarball 导入。镜像仓库和 HTTP Harbor 的 insecure registry 配置说明见 [Docker Quick Start](docs/getting-started/docker.md#optional-container-registry)。
+
 ---
 
 ## 本地开发

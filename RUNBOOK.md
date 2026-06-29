@@ -182,6 +182,91 @@ The published frontend image is built with `NEXT_PUBLIC_API_BASE_URL=http://loca
 docker compose up -d --build
 ```
 
+### Optional container registry / Harbor
+
+Harbor is optional. Bioinfoflow still works with source builds, Docker Hub image
+names, full image names such as `ghcr.io/org/tool:tag` or `quay.io/org/tool:tag`,
+and image tarball imports from the Images page.
+
+Use `IMAGE_REGISTRY` only when you want `docker-compose.prod.yml` to pull the
+Bioinfoflow backend/frontend images from a registry namespace you operate. For
+example, after mirroring the two Bioinfoflow images into Harbor:
+
+```env
+IMAGE_REGISTRY=10.227.4.56:80/pipeline-dev
+IMAGE_TAG=latest
+```
+
+That makes Compose pull:
+
+- `10.227.4.56:80/pipeline-dev/bioinfoflow-backend:<tag>`
+- `10.227.4.56:80/pipeline-dev/bioinfoflow-frontend:<tag>`
+
+If Harbor is served over plain HTTP, configure Docker's insecure registries on
+the host or Docker Desktop before starting Bioinfoflow. This is outside
+Bioinfoflow configuration. For `IMAGE_REGISTRY`, use Docker's normal credential
+store or `docker login`; do not put app-image registry passwords in `.env`.
+
+```json
+{
+  "insecure-registries": ["10.227.4.56:80"]
+}
+```
+
+#### Workflow container registry settings
+
+Workflow container registries are configured in the app, not through
+`IMAGE_REGISTRY`. In team mode, owners and admins can open **Settings ->
+Container Registries** and add Harbor or another OCI registry:
+
+- **Endpoint**: `http://10.227.4.56:80`
+- **Namespace**: `pipeline-dev`
+- **HTTP**: enabled when the endpoint is plain HTTP
+- **Default**: enabled to make this the global workflow-image default
+- **Credentials**: `Stored credentials`, `Environment variables`, or
+  `No credentials`
+
+For stored credentials, enter the Harbor robot/user name such as `pipeline-dev`
+and its password/token. Bioinfoflow encrypts stored values and only shows hints
+after saving. For environment credentials, enter the env var names that the
+backend container can read, for example `BIO_REGISTRY_USER` and
+`BIO_REGISTRY_PASSWORD`. Use **No credentials** when the Docker environment is
+already authenticated or the registry is public. Use **Test** to confirm
+credentials are available.
+
+During workflow registration, the **Image Registry** selector is optional:
+
+- **Automatic** uses the global default registry for unqualified static workflow
+  images when one is configured. Explicit image hosts such as `quay.io/...` or
+  `10.227.4.56:80/...` are not rewritten.
+- Choosing a configured registry stores that workflow's registry choice and uses
+  it for registration-time prefetch.
+- If no registry is configured, Docker Hub/default Docker behavior remains in
+  place.
+
+In team mode, ordinary members cannot manage registries or explicitly select a
+registry ID. They can still register workflows; automatic prefetch may use the
+admin-configured global default as a shared platform capability.
+
+The data model includes a project-level registry override for future policy, but
+the current UI exposes a global default plus per-workflow selection.
+
+For WDL, Bioinfoflow records static task `docker`/`container` images when the
+workflow is registered and prefetches missing required images before MiniWDL
+starts. Dynamic container expressions are skipped and resolved at runtime. For
+Nextflow, Bioinfoflow enables Docker pull behavior when Docker is available, and
+Nextflow uses the process/container image names from the pipeline config. You can
+also write full Harbor image names directly in workflows:
+
+```text
+10.227.4.56:80/pipeline-dev/bwa:0.7.17
+```
+
+On the Images page, **Pull from registry** has its own optional registry
+selector. **Automatic** pulls the image name exactly as entered; choosing a
+configured registry rewrites unqualified names through that registry and supplies
+its credentials. **From Tarball** is unchanged and never uses registry settings.
+
 ## 3. Local Development
 
 ### Prerequisites
