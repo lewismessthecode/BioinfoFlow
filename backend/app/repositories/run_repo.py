@@ -13,6 +13,12 @@ from app.schemas.common import Pagination
 
 class RunRepository(BaseRepository[Run]):
     model = Run
+    active_statuses = [
+        RunStatus.PENDING.value,
+        RunStatus.QUEUED.value,
+        RunStatus.PREPARING.value,
+        RunStatus.RUNNING.value,
+    ]
 
     async def list(
         self,
@@ -43,6 +49,26 @@ class RunRepository(BaseRepository[Run]):
 
     async def get_by_run_id(self, run_id: str) -> Run | None:
         stmt = select(self.model).where(self.model.run_id == run_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def get_active_replay(
+        self,
+        *,
+        source_run_id: str,
+        replay_kind: str,
+        replay_idempotency_key: str,
+    ) -> Run | None:
+        stmt = (
+            select(self.model)
+            .where(
+                self.model.source_run_id == source_run_id,
+                self.model.replay_kind == replay_kind,
+                self.model.replay_idempotency_key == replay_idempotency_key,
+                self.model.status.in_(self.active_statuses),
+            )
+            .order_by(self.model.created_at.desc(), self.model.id.desc())
+        )
         result = await self.session.execute(stmt)
         return result.scalars().first()
 

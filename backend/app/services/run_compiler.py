@@ -170,8 +170,18 @@ class RunCompiler:
         extra_config: dict | None = None,
         audit_action: str | None = None,
         audit_details: dict | None = None,
+        source_run_id: str | None = None,
+        replay_kind: str | None = None,
+        replay_idempotency_key: str | None = None,
+        attempt_number: int = 1,
     ) -> Run:
         """Compile the envelope, persist the run, and queue it for dispatch."""
+        if payload.options and payload.options.resume_from_run_id:
+            raise CompileError(
+                RunErrorCode.INVALID_FORM_VALUES,
+                "options.resume_from_run_id is not supported on run creation",
+                hint="Use POST /runs/{run_id}/resume to resume a failed run.",
+            )
         validated = await self.validate(
             payload,
             user_id=user_id,
@@ -182,6 +192,10 @@ class RunCompiler:
             validated=validated,
             config_overrides=config_overrides,
             extra_config=extra_config,
+            source_run_id=source_run_id,
+            replay_kind=replay_kind,
+            replay_idempotency_key=replay_idempotency_key,
+            attempt_number=attempt_number,
         )
         return await self._persist(
             compiled,
@@ -243,6 +257,10 @@ class RunCompiler:
         validated: ValidatedRun,
         config_overrides: dict | None = None,
         extra_config: dict | None = None,
+        source_run_id: str | None = None,
+        replay_kind: str | None = None,
+        replay_idempotency_key: str | None = None,
+        attempt_number: int = 1,
     ) -> CompiledRun:
         project = validated.project
         workflow = validated.workflow
@@ -363,6 +381,10 @@ class RunCompiler:
             samples_count=samples_count,
             tasks_total=0,
             tasks_completed=0,
+            source_run_id=source_run_id,
+            replay_kind=replay_kind,
+            replay_idempotency_key=replay_idempotency_key,
+            attempt_number=max(1, int(attempt_number or 1)),
         )
         return CompiledRun(run=run, layout=layout, launch=launch)
 
@@ -394,6 +416,10 @@ class RunCompiler:
             samples_count=compiled.run.samples_count,
             tasks_total=0,
             tasks_completed=0,
+            source_run_id=compiled.run.source_run_id,
+            replay_kind=compiled.run.replay_kind,
+            replay_idempotency_key=compiled.run.replay_idempotency_key,
+            attempt_number=compiled.run.attempt_number,
         )
 
         workspace_path = project_home(

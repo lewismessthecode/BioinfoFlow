@@ -111,6 +111,38 @@ async def test_runs_create_accepts_retry_and_timeout_policy(
 
 
 @pytest.mark.asyncio
+async def test_runs_create_rejects_resume_from_run_id_option(
+    async_client, db_session, monkeypatch
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+
+    project = await create_project(db_session, name="Unsupported Resume Option Project")
+    workflow = await create_workflow(
+        db_session,
+        name=f"wf-{uuid4()}",
+        source=WorkflowSource.LOCAL,
+        engine=WorkflowEngine.NEXTFLOW,
+        version=str(uuid4()),
+    )
+    await bind_workflow(
+        db_session, project_id=str(project.id), workflow_id=str(workflow.id)
+    )
+
+    resp = await async_client.post(
+        "/api/v1/runs",
+        json={
+            "project_id": str(project.id),
+            "workflow_id": str(workflow.id),
+            "values": {"threads": 4},
+            "options": {"resume_from_run_id": "run_old"},
+        },
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_FORM_VALUES"
+
+
+@pytest.mark.asyncio
 async def test_runs_create_requires_bound_workflow_for_project(
     async_client, db_session, monkeypatch
 ):

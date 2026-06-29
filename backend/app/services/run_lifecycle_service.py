@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import glob
+import hashlib
+import json
 import re
 from collections import deque
 from copy import deepcopy
@@ -20,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.engine.registry import get_adapter
 from app.models.run import Run, RunStatus
@@ -205,6 +208,7 @@ class RunLifecycleService:
         run = await self._compile_replayed_run(
             original=original,
             workflow=workflow,
+            replay_kind="resume",
             values=None,
             params=None,
             inputs=None,
@@ -264,6 +268,7 @@ class RunLifecycleService:
         run = await self._compile_replayed_run(
             original=original,
             workflow=workflow,
+            replay_kind="retry",
             values=values,
             params=params,
             inputs=inputs,
@@ -736,6 +741,7 @@ class RunLifecycleService:
         *,
         original: Run,
         workflow,
+        replay_kind: str,
         values: dict | None,
         params: dict | None,
         inputs: dict | None,
@@ -754,27 +760,64 @@ class RunLifecycleService:
             inputs=inputs,
         )
         options = self._replay_options(self._config_helper(original.config))
+        options_payload = (
+            options.model_dump(mode="json", exclude_none=True) if options else {}
+        )
+        replay_key = _replay_idempotency_key(
+            source_run_id=original.run_id,
+            replay_kind=replay_kind,
+            values=replay_values,
+            options=options_payload,
+            config_overrides=config_overrides,
+            extra_config=extra_config,
+        )
+        existing = await self.repo.get_active_replay(
+            source_run_id=original.run_id,
+            replay_kind=replay_kind,
+            replay_idempotency_key=replay_key,
+        )
+        if existing is not None:
+            return existing
+
         payload = RunCreate.model_validate(
             {
                 "project_id": str(original.project_id),
                 "workflow_id": str(original.workflow_id),
                 "values": replay_values,
                 **(
-                    {"options": options.model_dump(mode="json", exclude_none=True)}
+                    {"options": options_payload}
                     if options is not None
                     else {}
                 ),
             }
         )
-        return await RunCompiler(self.session, dispatcher=self._dispatcher).create_run(
-            payload,
-            user_id=user_id,
-            workspace_id=workspace_id,
-            config_overrides=config_overrides,
-            extra_config=extra_config,
-            audit_action=audit_action,
-            audit_details=audit_details,
-        )
+        try:
+            return await RunCompiler(
+                self.session,
+                dispatcher=self._dispatcher,
+            ).create_run(
+                payload,
+                user_id=user_id,
+                workspace_id=workspace_id,
+                config_overrides=config_overrides,
+                extra_config=extra_config,
+                audit_action=audit_action,
+                audit_details=audit_details,
+                source_run_id=original.run_id,
+                replay_kind=replay_kind,
+                replay_idempotency_key=replay_key,
+                attempt_number=int(original.attempt_number or 1) + 1,
+            )
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.repo.get_active_replay(
+                source_run_id=original.run_id,
+                replay_kind=replay_kind,
+                replay_idempotency_key=replay_key,
+            )
+            if existing is not None:
+                return existing
+            raise
 
     def _replay_values(
         self,
@@ -948,3 +991,29 @@ def _expand_glob_braces(pattern: str) -> list[str]:
     for option in options:
         expanded.extend(_expand_glob_braces(f"{prefix}{option}{suffix}"))
     return expanded
+
+
+def _replay_idempotency_key(
+    *,
+    source_run_id: str,
+    replay_kind: str,
+    values: dict,
+    options: dict,
+    config_overrides: dict,
+    extra_config: dict | None,
+) -> str:
+    payload = {
+        "source_run_id": source_run_id,
+        "replay_kind": replay_kind,
+        "values": values,
+        "options": options,
+        "config_overrides": config_overrides,
+        "extra_config": extra_config or {},
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
