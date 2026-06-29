@@ -4,49 +4,16 @@ import {
   type ChangeEvent,
   type DragEvent,
   type FormEvent,
-  type ReactNode,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react"
-import {
-  BookOpenText,
-  CheckCircle2,
-  FileText,
-  KeyRound,
-  Pencil,
-  Play,
-  Plus,
-  RefreshCw,
-  Search,
-  Server,
-  TerminalSquare,
-  Upload,
-} from "lucide-react"
+import { Plus } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
   createRemoteConnection,
   fetchRemoteConnections,
@@ -54,55 +21,21 @@ import {
   testRemoteConnection,
   updateRemoteConnection,
   type RemoteConnection,
-  type RemoteConnectionAuthMethod,
   type RemoteConnectionCreateInput,
-  type RemoteConnectionStatus,
 } from "@/lib/demo-connections"
-import { cn } from "@/lib/utils"
 
-type ConnectionFormState = {
-  name: string
-  host: string
-  port: string
-  username: string
-  auth_method: RemoteConnectionAuthMethod
-  ssh_alias: string
-  key_path: string
-  skill_instructions: string
-}
+import { ConnectionDetail } from "./components/connection-detail"
+import {
+  ConnectionDialog,
+  initialConnectionForm,
+  type ConnectionFormState,
+  type DialogMode,
+  type FormErrorField,
+} from "./components/connection-dialog"
+import { ConnectionList } from "./components/connection-list"
 
-type DialogMode = "create" | "edit"
-type FormErrorField = "port" | "ssh_alias" | "key_path" | null
 type UpsertConnectionOptions = {
   select?: boolean
-}
-
-const initialForm: ConnectionFormState = {
-  name: "",
-  host: "",
-  port: "22",
-  username: "",
-  auth_method: "ssh_config",
-  ssh_alias: "",
-  key_path: "",
-  skill_instructions: "",
-}
-
-const authMethods: RemoteConnectionAuthMethod[] = ["ssh_config", "key_file", "agent"]
-const skillPresetKeys = ["nextflowHpc", "slurmDiagnostics", "readonlyInspection"] as const
-
-const statusDotClassNames: Record<RemoteConnectionStatus, string> = {
-  online: "bg-emerald-500 shadow-emerald-500/40",
-  offline: "bg-rose-500 shadow-rose-500/40",
-  error: "bg-amber-500 shadow-amber-500/40",
-  unknown: "bg-slate-400 shadow-slate-400/30",
-}
-
-const statusBorderClassNames: Record<RemoteConnectionStatus, string> = {
-  online: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  offline: "border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-  error: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  unknown: "border-slate-500/25 bg-slate-500/10 text-slate-700 dark:text-slate-300",
 }
 
 function parsePort(value: string): number | null {
@@ -123,25 +56,15 @@ function formFromConnection(connection: RemoteConnection): ConnectionFormState {
   }
 }
 
-function StatusDot({ status, className }: { status: RemoteConnectionStatus; className?: string }) {
-  return (
-    <span
-      className={cn("h-2.5 w-2.5 rounded-full shadow-[0_0_0_4px]", statusDotClassNames[status], className)}
-      aria-hidden="true"
-    />
-  )
-}
-
 export default function ConnectionsPage() {
   const t = useTranslations("connections")
-  const tCommon = useTranslations("common")
   const [connections, setConnections] = useState<RemoteConnection[]>([])
   const [selectedConnectionId, setSelectedConnectionId] = useState("")
   const [search, setSearch] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<DialogMode>("create")
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null)
-  const [form, setForm] = useState<ConnectionFormState>(initialForm)
+  const [form, setForm] = useState<ConnectionFormState>(initialConnectionForm)
   const [formError, setFormError] = useState<string | null>(null)
   const [formErrorField, setFormErrorField] = useState<FormErrorField>(null)
   const [skillDragActive, setSkillDragActive] = useState(false)
@@ -203,11 +126,10 @@ export default function ConnectionsPage() {
   const selectedConnection =
     filteredConnections.find((connection) => connection.id === selectedConnectionId) ??
     filteredConnections[0] ??
-    connections.find((connection) => connection.id === selectedConnectionId) ??
-    connections[0]
+    null
 
   const resetFormState = () => {
-    setForm(initialForm)
+    setForm(initialConnectionForm)
     setFormError(null)
     setFormErrorField(null)
     setEditingConnectionId(null)
@@ -427,585 +349,49 @@ export default function ConnectionsPage() {
           </Button>
         </div>
 
-        <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-          <DialogContent className="max-h-[min(92vh,780px)] overflow-hidden rounded-[24px] border-border/60 bg-card/95 p-0 text-card-foreground shadow-2xl shadow-foreground/15 sm:max-w-3xl">
-            <form onSubmit={handleSubmit} noValidate className="flex max-h-[min(92vh,780px)] flex-col">
-              <DialogHeader className="border-b border-border/60 px-5 py-4">
-                <DialogTitle>
-                  {dialogMode === "edit" ? t("dialog.editTitle") : t("dialog.title")}
-                </DialogTitle>
-                <DialogDescription>{t("dialog.description")}</DialogDescription>
-              </DialogHeader>
+        <ConnectionDialog
+          open={dialogOpen}
+          mode={dialogMode}
+          form={form}
+          formError={formError}
+          formErrorField={formErrorField}
+          skillDragActive={skillDragActive}
+          isSaving={isSaving}
+          skillFileInputRef={skillFileInputRef}
+          onOpenChange={handleDialogOpenChange}
+          onSubmit={handleSubmit}
+          onFormChange={setForm}
+          onSkillDragActiveChange={setSkillDragActive}
+          onSkillDrop={handleSkillDrop}
+          onSkillFileChange={handleSkillFileChange}
+          onAppendSkillText={appendSkillText}
+        />
 
-              <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-5 py-4">
-                <div className="grid content-start gap-3">
-                  <section className="grid gap-3 rounded-[18px] border border-border/60 bg-background/55 p-3.5">
-                    <FormSectionTitle title={t("sections.connection")} icon={<Server className="h-4 w-4" />} />
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label={t("fields.name")} htmlFor="connection-name">
-                        <Input
-                          id="connection-name"
-                          value={form.name}
-                          onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                          placeholder={t("form.placeholders.name")}
-                        />
-                      </Field>
-                      <Field label={t("fields.host")} htmlFor="connection-host">
-                        <Input
-                          id="connection-host"
-                          value={form.host}
-                          onChange={(event) => setForm((current) => ({ ...current, host: event.target.value }))}
-                          placeholder={t("form.placeholders.host")}
-                          required
-                        />
-                      </Field>
-                    </div>
-                    <div
-                      className={cn(
-                        "grid gap-3",
-                        form.auth_method === "ssh_config"
-                          ? "sm:grid-cols-[minmax(84px,0.55fr)_minmax(0,1fr)_minmax(0,1fr)]"
-                          : "sm:grid-cols-[minmax(84px,0.55fr)_minmax(0,1fr)]",
-                      )}
-                    >
-                      <Field label={t("fields.port")} htmlFor="connection-port">
-                        <Input
-                          id="connection-port"
-                          value={form.port}
-                          inputMode="numeric"
-                          onChange={(event) => setForm((current) => ({ ...current, port: event.target.value }))}
-                          aria-invalid={formErrorField === "port"}
-                          aria-describedby={formErrorField === "port" ? "connection-form-error" : undefined}
-                        />
-                      </Field>
-                      <Field label={t("fields.username")} htmlFor="connection-username">
-                        <Input
-                          id="connection-username"
-                          value={form.username}
-                          onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
-                          placeholder={t("form.placeholders.username")}
-                        />
-                      </Field>
-                      {form.auth_method === "ssh_config" ? (
-                        <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
-                          <Input
-                            id="connection-ssh-alias"
-                            value={form.ssh_alias}
-                            onChange={(event) => setForm((current) => ({ ...current, ssh_alias: event.target.value }))}
-                            placeholder={t("form.placeholders.sshAlias")}
-                            required
-                            aria-invalid={formErrorField === "ssh_alias"}
-                            aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
-                          />
-                        </Field>
-                      ) : null}
-                    </div>
-                    {form.auth_method === "ssh_config" ? (
-                      <p className="text-xs leading-5 text-muted-foreground">{t("form.sshConfigNote")}</p>
-                    ) : null}
-                  </section>
-
-                  <section className="grid gap-3 rounded-[18px] border border-border/60 bg-background/55 p-3.5">
-                    <FormSectionTitle title={t("sections.ssh")} icon={<KeyRound className="h-4 w-4" />} />
-                    <div aria-label={t("fields.auth")} className="grid gap-2 sm:grid-cols-3">
-                      {authMethods.map((method) => (
-                        <AuthMethodButton
-                          key={method}
-                          method={method}
-                          selected={form.auth_method === method}
-                          title={t(`auth.${method}`)}
-                          description={t(`authHelp.${method}`)}
-                          onSelect={() =>
-                            setForm((current) => ({
-                              ...current,
-                              auth_method: method,
-                              key_path: method === "key_file" ? current.key_path : "",
-                            }))
-                          }
-                        />
-                      ))}
-                    </div>
-                    {form.auth_method === "key_file" ? (
-                      <Field label={t("fields.keyPath")} htmlFor="connection-key-path">
-                        <Input
-                          id="connection-key-path"
-                          value={form.key_path}
-                          onChange={(event) => setForm((current) => ({ ...current, key_path: event.target.value }))}
-                          placeholder={t("form.placeholders.keyPath")}
-                          required
-                          aria-invalid={formErrorField === "key_path"}
-                          aria-describedby={formErrorField === "key_path" ? "connection-form-error" : undefined}
-                        />
-                      </Field>
-                    ) : null}
-                    <p className="text-xs leading-5 text-muted-foreground">{t("form.secretsNote")}</p>
-                  </section>
-                </div>
-
-                <section className="grid content-start gap-3 rounded-2xl border border-border/60 bg-background/55 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <FormSectionTitle title={t("sections.agentSkill")} icon={<BookOpenText className="h-4 w-4" />} />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="outline" size="sm" className="h-8 rounded-full">
-                          <FileText className="h-4 w-4" />
-                          {t("actions.insertPreset")}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-56">
-                        {skillPresetKeys.map((key) => (
-                          <DropdownMenuItem
-                            key={key}
-                            onSelect={() => appendSkillText(t(`skillPresets.${key}.text`))}
-                          >
-                            {t(`skillPresets.${key}.name`)}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  <TextFieldArea
-                    id="connection-skill-instructions"
-                    label={t("fields.skillInstructions")}
-                    value={form.skill_instructions}
-                    onChange={(value) => setForm((current) => ({ ...current, skill_instructions: value }))}
-                    placeholder={t("form.placeholders.skillInstructions")}
-                  />
-                  <button
-                    type="button"
-                    aria-label={t("skillDrop.title")}
-                    onClick={() => skillFileInputRef.current?.click()}
-                    onDragEnter={(event) => {
-                      event.preventDefault()
-                      setSkillDragActive(true)
-                    }}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDragLeave={() => setSkillDragActive(false)}
-                    onDrop={handleSkillDrop}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-3 py-2 text-left text-sm text-muted-foreground transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                      skillDragActive ? "border-primary/60 bg-primary/10 text-foreground" : "border-border bg-muted/20",
-                    )}
-                  >
-                    <Upload className="h-4 w-4" />
-                    <span>
-                      <span className="block font-medium text-foreground">{t("skillDrop.title")}</span>
-                      <span className="block text-xs">{t("skillDrop.hint")}</span>
-                    </span>
-                  </button>
-                  <input
-                    ref={skillFileInputRef}
-                    type="file"
-                    accept=".txt,.md,.markdown,text/plain,text/markdown"
-                    className="sr-only"
-                    onChange={handleSkillFileChange}
-                  />
-                </section>
-              </div>
-
-              {formError ? (
-                <div
-                  id="connection-form-error"
-                  role="alert"
-                  aria-live="polite"
-                  className="mx-5 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                >
-                  {formError}
-                </div>
-              ) : null}
-              <DialogFooter className="border-t border-border/60 bg-muted/10 px-5 py-3">
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
-                  {tCommon("cancel")}
-                </Button>
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving
-                    ? t("dialog.saving")
-                    : dialogMode === "edit"
-                      ? t("dialog.save")
-                      : t("dialog.add")}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start">
-          <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
-            <CardContent className="p-0">
-              <aside className="min-w-0 bg-muted/10">
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-semibold text-foreground">{t("list.title")}</h2>
-                    <p className="mt-1 text-sm leading-5 text-muted-foreground">{t("list.description")}</p>
-                  </div>
-                  <Server className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                </div>
-                <div className="relative mt-3">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    aria-label={t("searchPlaceholder")}
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder={t("searchPlaceholder")}
-                    className="h-9 rounded-full border-border/70 bg-background/80 pl-9"
-                  />
-                </div>
-              </div>
-              <div className="border-t border-border/60 p-2">
-                {isLoadingConnections ? (
-                  <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                    {t("list.loading")}
-                  </div>
-                ) : connectionsLoadError ? (
-                  <div className="rounded-2xl border border-dashed border-amber-500/30 bg-amber-500/10 p-6 text-center text-sm text-amber-700 dark:text-amber-300">
-                    {t("list.error")}
-                  </div>
-                ) : filteredConnections.length > 0 ? (
-                  <div className="grid gap-1.5">
-                    {filteredConnections.map((connection) => {
-                      const selected = selectedConnection ? connection.id === selectedConnection.id : false
-
-                      return (
-                        <button
-                          key={connection.id}
-                          type="button"
-                          onClick={() => setSelectedConnectionId(connection.id)}
-                          aria-current={selected ? "true" : undefined}
-                          className={cn(
-                            "group rounded-2xl border px-3 py-3 text-left transition hover:border-border hover:bg-background/65",
-                            selected
-                              ? "border-border bg-background shadow-sm shadow-foreground/5 ring-1 ring-foreground/5"
-                              : "border-transparent bg-transparent",
-                          )}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background/80 text-muted-foreground group-hover:text-foreground">
-                              <Server className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-foreground">{connection.name}</p>
-                                  <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
-                                    {connection.username}@{connection.host}:{connection.port}
-                                  </p>
-                                </div>
-                                <span className="inline-flex shrink-0 items-center gap-2 pt-0.5 text-xs text-muted-foreground">
-                                  <StatusDot status={connection.status} />
-                                  {t(`status.${connection.status}`)}
-                                </span>
-                              </div>
-                              {connection.ssh_alias ? (
-                                <p className="mt-2 truncate text-xs text-muted-foreground">
-                                  {t("detail.aliasPrefix")} {" "}
-                                  <span className="font-mono text-foreground">{connection.ssh_alias}</span>
-                                </p>
-                              ) : null}
-                            </div>
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm leading-6 text-muted-foreground">
-                    {connections.length === 0 ? t("list.empty") : t("list.noResults")}
-                  </div>
-                )}
-              </div>
-              </aside>
-            </CardContent>
-          </Card>
-
-            {selectedConnection ? (
-            <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
-              <CardContent className="p-0">
-                <section className="min-w-0">
-                <div className="border-b border-border/60 p-5">
-                  <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background/85 text-foreground">
-                        <Server className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="truncate text-base font-semibold tracking-tight text-foreground">
-                            {selectedConnection.name}
-                          </h2>
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "rounded-full border px-2 py-0.5 text-xs",
-                              statusBorderClassNames[selectedConnection.status],
-                            )}
-                          >
-                            <StatusDot status={selectedConnection.status} className="h-2 w-2 shadow-none" />
-                            {t(`status.${selectedConnection.status}`)}
-                          </Badge>
-                        </div>
-                        <p className="mt-0.5 font-mono text-sm text-muted-foreground">
-                          {selectedConnection.username}@{selectedConnection.host}:{selectedConnection.port}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex w-fit flex-wrap gap-1 rounded-full border border-border/60 bg-muted/20 p-1 2xl:justify-end">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 rounded-full px-3"
-                        onClick={() => handleTestConnection(selectedConnection)}
-                        disabled={testingConnectionId === selectedConnection.id}
-                      >
-                        <RefreshCw
-                          className={cn(
-                            "h-4 w-4",
-                            testingConnectionId === selectedConnection.id && "animate-spin",
-                          )}
-                        />
-                        {testingConnectionId === selectedConnection.id
-                          ? t("actions.testing")
-                          : t("actions.testConnection")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 rounded-full px-3"
-                        onClick={() => openEditDialog(selectedConnection)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                        {t("actions.editConnection")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 rounded-full px-3"
-                        onClick={() => handleRunProbe(selectedConnection)}
-                        disabled={probeConnectionId === selectedConnection.id}
-                      >
-                        <Play className="h-4 w-4" />
-                        {probeConnectionId === selectedConnection.id ? t("actions.runningProbe") : t("actions.runProbe")}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 p-4 sm:p-5">
-                  <div className="grid gap-3 xl:grid-cols-2">
-                    <DetailSection title={t("sections.connection")}>
-                      <DetailGrid>
-                        <DetailItem label={t("fields.host")} value={selectedConnection.host} mono />
-                        <DetailItem label={t("fields.status")} value={t(`status.${selectedConnection.status}`)} />
-                      </DetailGrid>
-                      {selectedConnection.status_message ? (
-                        <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
-                          {selectedConnection.status_message}
-                        </div>
-                      ) : null}
-                    </DetailSection>
-
-                    <DetailSection title={t("sections.ssh")}>
-                      <DetailGrid>
-                        <DetailItem label={t("fields.port")} value={String(selectedConnection.port)} mono />
-                        <DetailItem label={t("fields.username")} value={selectedConnection.username} mono />
-                        <DetailItem label={t("fields.auth")} value={t(`auth.${selectedConnection.auth_method}`)} />
-                        {selectedConnection.auth_method === "ssh_config" ? (
-                          <DetailItem
-                            label={t("fields.sshAlias")}
-                            value={selectedConnection.ssh_alias || t("empty.notSet")}
-                            mono
-                          />
-                        ) : null}
-                        <DetailItem
-                          label={t("fields.keyPath")}
-                          value={selectedConnection.key_path || t("empty.notSet")}
-                          mono
-                        />
-                      </DetailGrid>
-                    </DetailSection>
-                  </div>
-
-                  <DetailSection title={t("sections.agentSkill")}>
-                    <p className="text-sm leading-6 text-muted-foreground">{t("detail.skillGuidance")}</p>
-                    <TextPanel
-                      title={t("fields.skillInstructions")}
-                      value={selectedConnection.skill_instructions}
-                      empty={t("empty.skillInstructions")}
-                    />
-                  </DetailSection>
-
-                  {selectedProbeOutput || probeConnectionId === selectedConnection.id ? (
-                    <DetailSection title={t("probe.title")}>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <TerminalSquare className="h-4 w-4" />
-                        <span>{t("probe.description")}</span>
-                      </div>
-                      <pre className="min-h-12 whitespace-pre-wrap break-words rounded-xl bg-background/80 p-3 font-mono text-xs leading-5 text-foreground">
-                        {selectedProbeOutput || t("probe.placeholder")}
-                      </pre>
-                    </DetailSection>
-                  ) : null}
-                </div>
-                </section>
-              </CardContent>
-            </Card>
-            ) : (
-            <Card className="overflow-hidden rounded-[28px] border-border/60 bg-card/90 py-0 shadow-sm shadow-foreground/5">
-              <CardContent className="p-0">
-                <section className="flex min-h-[360px] items-center justify-center p-6">
-                <div className="max-w-md text-center">
-                  <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-border/60 bg-background/70 text-muted-foreground">
-                    <TerminalSquare className="h-5 w-5" />
-                  </div>
-                  <h2 className="mt-4 text-base font-semibold text-foreground">
-                    {connections.length === 0 ? t("emptyDetail.title") : t("list.noResults")}
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {connections.length === 0 ? t("emptyDetail.description") : t("emptyDetail.searchDescription")}
-                  </p>
-                  <Button
-                    type="button"
-                    className="mt-4 rounded-full"
-                    onClick={connections.length === 0 ? openCreateDialog : () => setSearch("")}
-                  >
-                    {connections.length === 0 ? <Plus className="h-4 w-4" /> : null}
-                    {connections.length === 0 ? t("emptyDetail.action") : tCommon("clear")}
-                  </Button>
-                </div>
-                </section>
-              </CardContent>
-            </Card>
-            )}
+        <div className="grid overflow-hidden rounded-[28px] border border-border/60 bg-card/90 shadow-sm shadow-foreground/5 lg:grid-cols-[340px_minmax(0,1fr)]">
+          <ConnectionList
+            connections={connections}
+            filteredConnections={filteredConnections}
+            selectedConnection={selectedConnection}
+            search={search}
+            isLoading={isLoadingConnections}
+            loadError={connectionsLoadError}
+            onSearchChange={setSearch}
+            onSelectConnection={setSelectedConnectionId}
+          />
+          <ConnectionDetail
+            connection={selectedConnection}
+            hasConnections={connections.length > 0}
+            testing={selectedConnection ? testingConnectionId === selectedConnection.id : false}
+            probing={selectedConnection ? probeConnectionId === selectedConnection.id : false}
+            probeOutput={selectedProbeOutput}
+            onCreate={openCreateDialog}
+            onClearSearch={() => setSearch("")}
+            onEdit={openEditDialog}
+            onTest={handleTestConnection}
+            onRunProbe={handleRunProbe}
+          />
         </div>
       </div>
-    </div>
-  )
-}
-
-function Field({
-  label,
-  htmlFor,
-  children,
-}: {
-  label: string
-  htmlFor: string
-  children: ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={htmlFor} className="text-xs font-medium text-muted-foreground">
-        {label}
-      </Label>
-      {children}
-    </div>
-  )
-}
-
-function FormSectionTitle({ title, icon }: { title: string; icon: ReactNode }) {
-  return (
-    <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-      <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground">
-        {icon}
-      </span>
-      {title}
-    </div>
-  )
-}
-
-function AuthMethodButton({
-  method,
-  selected,
-  title,
-  description,
-  onSelect,
-}: {
-  method: RemoteConnectionAuthMethod
-  selected: boolean
-  title: string
-  description: string
-  onSelect: () => void
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      onClick={onSelect}
-      className={cn(
-        "min-h-[4.5rem] rounded-[18px] border p-2.5 text-left transition hover:border-foreground/20 hover:bg-background/80",
-        selected ? "border-foreground/25 bg-background shadow-sm shadow-foreground/5" : "border-border/60 bg-background/50",
-      )}
-    >
-      <span className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-foreground">{title}</span>
-        {selected ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : null}
-      </span>
-      <span className="mt-1 block text-xs leading-4 text-muted-foreground">{description}</span>
-      <span className="sr-only">{method}</span>
-    </button>
-  )
-}
-
-function TextFieldArea({
-  id,
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  id: string
-  label: string
-  value: string
-  onChange: (value: string) => void
-  placeholder: string
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={id} className="text-xs font-medium text-muted-foreground">
-        {label}
-      </Label>
-      <Textarea
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="min-h-28 resize-none border-border/60 bg-background/70 lg:min-h-32"
-      />
-    </div>
-  )
-}
-
-function DetailSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="grid gap-3 rounded-[20px] border border-border/40 bg-background/50 p-4">
-      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      {children}
-    </section>
-  )
-}
-
-function DetailGrid({ children }: { children: ReactNode }) {
-  return <dl className="grid gap-x-5 gap-y-3 sm:grid-cols-2">{children}</dl>
-}
-
-function DetailItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className={cn("mt-1 break-words text-sm font-medium text-foreground", mono && "font-mono")}>{value}</dd>
-    </div>
-  )
-}
-
-function TextPanel({ title, value, empty }: { title: string; value: string; empty: string }) {
-  return (
-    <div className="rounded-[18px] border border-border/40 bg-background/70 p-3.5">
-      <p className="text-xs font-medium text-muted-foreground">{title}</p>
-      <pre className="mt-2.5 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">
-        {value || empty}
-      </pre>
     </div>
   )
 }

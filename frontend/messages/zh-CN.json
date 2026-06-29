@@ -1996,9 +1996,15 @@
       "noResults": "没有匹配的连接。试试其他名称、主机、别名或备注。"
     },
     "detail": {
+      "overview": "这是什么连接",
+      "health": "当前是否可用",
+      "access": "如何访问",
+      "agentUse": "Agent 会如何使用",
       "currentContext": "Agent 使用说明",
       "aliasPrefix": "别名：",
-      "skillGuidance": "写下路径、环境初始化和使用限制，方便 Agent 在这台主机上工作。"
+      "skillGuidance": "写下路径、环境初始化和使用限制，方便 Agent 在这台主机上工作。",
+      "notTested": "需要确认连通性时，可以先测试一次连接。",
+      "noInstructions": "暂未填写使用说明。建议补充工作目录、环境初始化、队列限制或 Agent 不应执行的命令。"
     },
     "sections": {
       "connection": "连接信息",
