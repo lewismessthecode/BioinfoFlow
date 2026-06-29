@@ -54,16 +54,16 @@ export default function DashboardPage() {
     try {
       const minLoadTime = new Promise((resolve) => setTimeout(resolve, 500));
 
-      const [[statsRes, healthRes, gpuRes, schedulerRes, readinessRes]] = await Promise.all([
-        Promise.all([
-          apiRequest<DashboardStats>("/stats"),
-          apiRequest<SystemHealth>("/system/health"),
-          apiRequest<GpuInfo>("/system/gpu"),
-          apiRequest<SchedulerStatus>("/scheduler/status").catch(() => null),
-          apiRequest<ReadinessStatus>("/system/readiness").catch(() => null),
-        ]),
-        minLoadTime,
+      const dashboardRequests = Promise.all([
+        apiRequest<DashboardStats>("/stats"),
+        apiRequest<SystemHealth>("/system/health"),
+        apiRequest<GpuInfo>("/system/gpu"),
+        apiRequest<SchedulerStatus>("/scheduler/status").catch(() => null),
+        apiRequest<ReadinessStatus>("/system/readiness").catch(() => null),
       ]);
+      const [
+        [statsRes, healthRes, gpuRes, schedulerRes, readinessRes],
+      ] = await Promise.all([dashboardRequests, minLoadTime]);
 
       setStats(statsRes.data);
       setHealth(healthRes.data);

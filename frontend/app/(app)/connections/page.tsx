@@ -39,8 +39,10 @@ type UpsertConnectionOptions = {
 }
 
 function parsePort(value: string): number | null {
-  const port = Number.parseInt(value, 10)
-  return Number.isFinite(port) && port >= 1 && port <= 65535 ? port : null
+  const normalized = value.trim()
+  if (!/^\d+$/.test(normalized)) return null
+  const port = Number(normalized)
+  return Number.isSafeInteger(port) && port >= 1 && port <= 65535 ? port : null
 }
 
 function formFromConnection(connection: RemoteConnection): ConnectionFormState {
@@ -159,8 +161,12 @@ export default function ConnectionsPage() {
 
   const buildPayload = (): RemoteConnectionCreateInput | null => {
     const host = form.host.trim()
+    if (!host) {
+      setFormError(t("form.errors.hostRequired"))
+      setFormErrorField("host")
+      return null
+    }
     const name = form.name.trim() || host
-    if (!host || !name) return null
 
     const port = parsePort(form.port)
     if (port === null) {

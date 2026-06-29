@@ -6,6 +6,7 @@ import { Check, ChevronDown, Server } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
+import { RemoteConnectionStatusDot } from "@/components/bioinfoflow/remote-connection-status"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +18,6 @@ import {
 import {
   fetchRemoteConnections,
   type RemoteConnection,
-  type RemoteConnectionStatus,
 } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
 
@@ -26,22 +26,6 @@ type ConnectedNodeSelectorProps = {
   compact?: boolean
   selectedConnectionId?: string
   onSelectedConnectionChange?: (connectionId: string) => void
-}
-
-const statusDotClassNames: Record<RemoteConnectionStatus, string> = {
-  online: "bg-emerald-500 shadow-emerald-500/40",
-  offline: "bg-rose-500 shadow-rose-500/40",
-  error: "bg-amber-500 shadow-amber-500/40",
-  unknown: "bg-slate-400 shadow-slate-400/30",
-}
-
-function StatusDot({ status }: { status: RemoteConnectionStatus }) {
-  return (
-    <span
-      className={cn("h-2.5 w-2.5 rounded-full shadow-[0_0_0_3px]", statusDotClassNames[status])}
-      aria-hidden="true"
-    />
-  )
 }
 
 export function ConnectedNodeSelector({
@@ -146,7 +130,7 @@ export function ConnectedNodeSelector({
           }
         >
           <Server className="h-3.5 w-3.5 shrink-0" />
-          {selectedConnection ? <StatusDot status={selectedConnection.status} /> : null}
+          {selectedConnection ? <RemoteConnectionStatusDot status={selectedConnection.status} className="shadow-[0_0_0_3px]" /> : null}
           <span className="min-w-0 truncate">
             {selectedConnection ? selectedConnection.name : t("placeholder")}
           </span>
@@ -173,7 +157,7 @@ export function ConnectedNodeSelector({
               className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm"
               onSelect={() => updateSelectedConnection(connection.id)}
             >
-              <StatusDot status={connection.status} />
+              <RemoteConnectionStatusDot status={connection.status} className="shadow-[0_0_0_3px]" />
               <span className="min-w-0 flex-1">
                 <span className="block font-medium text-foreground">{connection.name}</span>
                 <span className="mt-0.5 block truncate font-mono text-xs leading-5 text-muted-foreground">

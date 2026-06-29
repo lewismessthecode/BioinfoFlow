@@ -171,10 +171,26 @@ describe("ConnectionsPage", () => {
     await user.click(screen.getByRole("button", { name: "Add connection" }))
     await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
     await user.clear(screen.getByLabelText("Port"))
-    await user.type(screen.getByLabelText("Port"), "70000")
+    await user.type(screen.getByLabelText("Port"), "22abc")
     await user.click(screen.getByRole("button", { name: "Add connection" }))
 
     expect(await screen.findByText("Port must be between 1 and 65535.")).toBeInTheDocument()
+    expect(apiRequestMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("requires a host before saving a connection", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+
+    render(<ConnectionsPage />)
+
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    await user.type(screen.getByLabelText("Connection name"), "Live HPC")
+    await user.click(screen.getByRole("button", { name: "Add connection" }))
+
+    const error = await screen.findByRole("alert")
+    expect(error).toHaveTextContent("Enter a host or IP address.")
+    expect(screen.getByLabelText("Host or IP")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
   })
 

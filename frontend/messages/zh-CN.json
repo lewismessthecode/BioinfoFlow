@@ -2095,6 +2095,7 @@
       "sshConfigNote": "填写你在 SSH 配置中为这个环境设置的 Host 别名。",
       "skillGuidance": "写下路径、环境初始化和使用限制，方便 Agent 在这台主机上工作。",
       "errors": {
+        "hostRequired": "请填写主机或 IP 地址。",
         "invalidPort": "端口必须在 1 到 65535 之间。",
         "sshAliasRequired": "请填写 SSH 别名。",
         "keyPathRequired": "请填写私钥路径。",

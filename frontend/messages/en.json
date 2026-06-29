@@ -2095,6 +2095,7 @@
       "sshConfigNote": "Use the Host alias defined for this environment in your SSH config.",
       "skillGuidance": "Add paths, setup steps, and limits the Agent should follow on this host.",
       "errors": {
+        "hostRequired": "Enter a host or IP address.",
         "invalidPort": "Port must be between 1 and 65535.",
         "sshAliasRequired": "Enter an SSH alias.",
         "keyPathRequired": "Enter a private key path.",
