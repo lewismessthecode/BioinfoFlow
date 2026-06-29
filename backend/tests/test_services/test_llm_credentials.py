@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.config import settings
 from app.models.llm import LlmCredentialSource, LlmProviderCredential
 from app.services.llm.credentials import (
@@ -8,6 +10,7 @@ from app.services.llm.credentials import (
     generate_credential_fingerprint,
     to_credential_read_dict,
 )
+from app.utils.exceptions import AppError
 
 
 def test_local_development_credential_key_lives_under_state_root(tmp_path, monkeypatch):
@@ -22,6 +25,19 @@ def test_local_development_credential_key_lives_under_state_root(tmp_path, monke
     assert token
     assert (home / "state" / "credentials" / "fernet.key").exists()
     assert not (home / "credentials" / "fernet.key").exists()
+
+
+def test_team_mode_requires_configured_credential_key(monkeypatch):
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "")
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+
+    with pytest.raises(AppError) as exc_info:
+        encrypt_secret("sk-team-test")
+
+    assert exc_info.value.code == "CONFIGURATION_ERROR"
+    assert exc_info.value.status_code == 503
+    assert "BIOINFOFLOW_CREDENTIAL_KEY" in exc_info.value.message
 
 
 def test_env_credential_is_configured_and_available_only_when_env_exists(monkeypatch):

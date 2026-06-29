@@ -142,11 +142,26 @@ add Harbor like this:
 
 Stored credentials are encrypted and redacted after saving. Use the actual
 Harbor user or robot account name, for example `robot$pipeline-dev`, not the
-namespace alone. Environment credentials are env var names available to the
-backend container, such as `BIO_REGISTRY_USER` and `BIO_REGISTRY_PASSWORD`. Use
-**No credentials** when the Docker environment is already authenticated or the
-registry is public. Use **Test** after saving to confirm the backend can read the
-credentials.
+namespace alone. In `AUTH_MODE=team`, stored credentials require a stable
+`BIOINFOFLOW_CREDENTIAL_KEY` in `.env`:
+
+```env
+BIOINFOFLOW_CREDENTIAL_KEY=<paste the output of openssl rand -hex 32>
+```
+
+After adding or changing that value for Docker Compose, recreate the backend
+container so the new environment is loaded:
+
+```bash
+docker compose up -d --force-recreate backend
+```
+
+`docker compose restart backend` restarts the existing container and does not
+load newly added `.env` variables. Environment credentials are env var names
+available to the backend container, such as `BIO_REGISTRY_USER` and
+`BIO_REGISTRY_PASSWORD`. Use **No credentials** when the Docker environment is
+already authenticated or the registry is public. Use **Test** after saving to
+confirm the backend can read the credentials.
 
 During workflow registration, **Image Registry -> Automatic** uses the configured
 default for unqualified static workflow images when one exists. Explicit image
