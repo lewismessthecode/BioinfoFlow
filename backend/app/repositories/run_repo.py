@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from app.models.project import Project
 from app.models.run import Run, RunStatus
@@ -10,9 +10,17 @@ from app.scheduler.models import ScheduledTask
 from app.repositories.base import BaseRepository
 from app.schemas.common import Pagination
 
+RUN_ACTIVE_STATUSES = (
+    RunStatus.PENDING.value,
+    RunStatus.QUEUED.value,
+    RunStatus.PREPARING.value,
+    RunStatus.RUNNING.value,
+)
+
 
 class RunRepository(BaseRepository[Run]):
     model = Run
+
     async def list(
         self,
         *,
@@ -64,6 +72,13 @@ class RunRepository(BaseRepository[Run]):
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def has_replay_children(self, source_run_id: str) -> bool:
+        stmt = select(self.model.run_id).where(
+            self.model.source_run_id == source_run_id
+        )
+        result = await self.session.execute(stmt.limit(1))
+        return result.first() is not None
+
     async def list_by_statuses(
         self,
         statuses: list[str],
@@ -99,12 +114,26 @@ class RunRepository(BaseRepository[Run]):
         if not run:
             return None
         completed_at = datetime.now(timezone.utc)
-        run.status = RunStatus.FAILED.value
-        run.error_message = message
-        run.completed_at = completed_at
-        run.duration_seconds = _duration_seconds(run.started_at, completed_at)
+        duration_seconds = _duration_seconds(run.started_at, completed_at)
+        with self.session.no_autoflush:
+            result = await self.session.execute(
+                update(self.model)
+                .where(
+                    self.model.run_id == run_id,
+                    self.model.status.in_(RUN_ACTIVE_STATUSES),
+                )
+                .values(
+                    status=RunStatus.FAILED.value,
+                    error_message=message,
+                    completed_at=completed_at,
+                    duration_seconds=duration_seconds,
+                )
+            )
+        if result.rowcount != 1:
+            await self.session.rollback()
+            return None
         await self.session.commit()
-        return run
+        return await self.get_by_run_id(run_id)
 
     async def delete_scheduler_tasks(self, run_id: str) -> None:
         """Remove persistent scheduler rows for a run before deleting it."""

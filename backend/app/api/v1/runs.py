@@ -162,7 +162,9 @@ async def upload_run_document(
         path=f"{upload_id}/{filename}",
         filename=filename,
     )
-    return success_response(data.model_dump(mode="json"), request=request, status_code=201)
+    return success_response(
+        data.model_dump(mode="json"), request=request, status_code=201
+    )
 
 
 @router.get("/{run_id}")
@@ -369,12 +371,14 @@ async def resume_run(
             request=request,
             details={"hint": exc.hint} if exc.hint else None,
         )
+    reused = bool(getattr(run, "_reused_replay", False))
     data = {
         "run_id": run_id,
         "new_run_id": run.run_id,
         "status": getattr(run.status, "value", run.status),
-        "message": "Run resumed",
+        "message": "Run replay reused" if reused else "Run resumed",
         "resume_type": run.config.get("resume_type", "native"),
+        "reused": reused,
     }
     return success_response(data, request=request, status_code=202)
 
@@ -407,11 +411,13 @@ async def retry_run(
             request=request,
             details={"hint": exc.hint} if exc.hint else None,
         )
+    reused = bool(getattr(run, "_reused_replay", False))
     data = {
         "run_id": run_id,
         "new_run_id": run.run_id,
         "status": getattr(run.status, "value", run.status),
-        "message": "Run retried",
+        "message": "Run replay reused" if reused else "Run retried",
+        "reused": reused,
     }
     return success_response(data, request=request, status_code=202)
 

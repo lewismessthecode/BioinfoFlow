@@ -22,6 +22,35 @@
 - WDL task containers can see every platform path Bioinfoflow puts into WDL inputs or manifest rows, or compile rejects the run.
 - Public API fields must either work or be rejected; silently ignored fields are invalid.
 
+## Second-Round Adversarial Closure
+
+The follow-up review closed the remaining deferred hazards:
+
+- replay source lineage is restrictive rather than `ON DELETE SET NULL`;
+- replay persistence cleanup covers cancellation and failed unique inserts so no
+  non-runnable idempotency wedge or orphan run directory remains;
+- replay rows are flushed inside the final persistence transaction and are not
+  visible to duplicate replay requests until archive/config/state persistence
+  has succeeded;
+- deleting a source run with replay children is rejected before any output
+  cleanup side effects;
+- retry/resume responses explicitly report when an existing replay run is reused;
+- scheduler worker start, stale task recovery, orphan recovery, retry fallback,
+  and repository failure marking use conditional state updates instead of stale
+  ORM overwrites;
+- scheduler worker terminal handling now carries an execution lease
+  (`task_id`, `worker_id`, `attempt`, `dispatched_at`) so late events from an old
+  dispatch cannot complete, fail, or retry a newer attempt;
+- WDL output publication skips symlinks and rejects `outputs.json` paths outside
+  the current work/results boundary;
+- WDL publication and archive cleanup reject symlinked output roots and
+  symlinked run/result ancestors before copying or deleting;
+- archive cleanup only deletes canonical `runs/<run_id>/results`, while legacy
+  `outdir` fallback stays read-only compatibility;
+- WDL mount inference uses the nearest/rightmost run workdir shape; and
+- docs now distinguish the default `BIOINFOFLOW_HOME` platform root from
+  external project roots that still must satisfy the identity-mount contract.
+
 ## Phase 1: Plan And Schema Invariants
 
 **Files:**

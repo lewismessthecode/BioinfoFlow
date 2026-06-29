@@ -270,122 +270,126 @@ class RunCompiler:
 
         workspace_path = project_home(project)
         run_id, layout = _reserve_fresh_run_layout(project, engine=engine)
-        resolved_values = self._materialize_runtime_inputs(
-            validated.resolved_values,
-            workflow=workflow,
-            spec=spec,
-            layout=layout,
-            project=project,
-        )
-
-        # ── values → engine inputs ────────────────────────────────────────
-        params, inputs, samples_count = self._build_engine_inputs(
-            workflow=workflow,
-            engine=engine,
-            spec=spec,
-            resolved_values=resolved_values,
-            layout=layout,
-            workspace_path=workspace_path,
-            run_id=run_id,
-        )
-
-        # ── persist engine-native input documents ──────────────────────────
-        if engine == WorkflowEngine.WDL.value:
-            self._write_json(layout.engine_workspace.parent / "inputs.json", inputs)
-
-        # ── assemble run.config ────────────────────────────────────────────
-        options = payload.options
-        config_overrides = dict(config_overrides or {})
-        config = RunConfigHelper.build_v1(
-            params=params,
-            inputs=inputs,
-            config_overrides=config_overrides,
-            resolved_runspec=build_resolved_runspec(
-                workspace_path=workspace_path, params=params, inputs=inputs
-            ),
-            values=validated.submitted_values,
-            options=options.model_dump(mode="json", exclude_none=True)
-            if options
-            else None,
-            retry_policy=(
-                {"max_retries": options.max_retries}
-                if options and options.max_retries is not None
-                else None
-            ),
-            timeout_seconds=options.timeout_seconds if options else None,
-        )
-        if (
-            engine == WorkflowEngine.NEXTFLOW.value
-            and options
-            and _optional_text(options.profile)
-        ):
-            config["profile"] = str(options.profile).strip()
-        image_registry = await self._resolve_workflow_image_registry(
-            workflow,
-            project_id=str(payload.project_id),
-        )
-        if engine == WorkflowEngine.NEXTFLOW.value and image_registry is not None:
-            _set_config_override(
-                config,
-                "docker.registry",
-                image_registry.image_prefix,
+        try:
+            resolved_values = self._materialize_runtime_inputs(
+                validated.resolved_values,
+                workflow=workflow,
+                spec=spec,
+                layout=layout,
+                project=project,
             )
-        config = self._enrich_runtime(
-            config,
-            workflow=workflow,
-            workspace_path=workspace_path,
-            layout=layout,
-            run_id=run_id,
-            engine=engine,
-            image_registry=image_registry,
-        )
-        if extra_config:
-            config = _merge_config_patch(config, extra_config)
 
-        # ── build launch spec via adapter ──────────────────────────────────
-        # Run pre_submit + build_command here (not just at dispatch) so
-        # audit/launch.sh is a faithful snapshot. The scheduler re-runs both
-        # at dispatch to pick up anything environment-dependent (e.g. Docker
-        # availability) that shifted between compile and execute.
-        adapter = get_adapter(engine)
-        launch_config = deepcopy(config)
-        if engine == WorkflowEngine.WDL.value:
-            launch_runtime = dict(launch_config.get("runtime") or {})
-            launch_runtime["pull_required_images"] = False
-            launch_config["runtime"] = launch_runtime
-        prepared = await adapter.pre_submit(launch_config, str(workspace_path))
-        prepared.pop("__engine_logs__", None)
-        argv = await adapter.build_command(prepared, str(workspace_path))
-        launch = LaunchSpec(
-            argv=tuple(str(arg) for arg in argv),
-            env={},
-            cwd=workspace_path,
-            engine=engine,
-        )
+            # ── values → engine inputs ────────────────────────────────────────
+            params, inputs, samples_count = self._build_engine_inputs(
+                workflow=workflow,
+                engine=engine,
+                spec=spec,
+                resolved_values=resolved_values,
+                layout=layout,
+                workspace_path=workspace_path,
+                run_id=run_id,
+            )
 
-        config["launch"] = {
-            "argv": list(launch.argv),
-            "cwd": str(launch.cwd),
-            "engine": launch.engine,
-        }
+            # ── persist engine-native input documents ──────────────────────────
+            if engine == WorkflowEngine.WDL.value:
+                self._write_json(layout.engine_workspace.parent / "inputs.json", inputs)
 
-        # Create the Run row but don't queue yet — the caller (persist) wires
-        # the archive, audit log, and dispatch in the right order.
-        run = Run(
-            run_id=run_id,
-            project_id=str(payload.project_id),
-            workflow_id=str(payload.workflow_id),
-            status=RunStatus.PENDING.value,
-            config=config,
-            samples_count=samples_count,
-            tasks_total=0,
-            tasks_completed=0,
-            source_run_id=source_run_id,
-            replay_kind=replay_kind,
-            replay_idempotency_key=replay_idempotency_key,
-            attempt_number=max(1, int(attempt_number or 1)),
-        )
-        return CompiledRun(run=run, layout=layout, launch=launch)
+            # ── assemble run.config ────────────────────────────────────────────
+            options = payload.options
+            config_overrides = dict(config_overrides or {})
+            config = RunConfigHelper.build_v1(
+                params=params,
+                inputs=inputs,
+                config_overrides=config_overrides,
+                resolved_runspec=build_resolved_runspec(
+                    workspace_path=workspace_path, params=params, inputs=inputs
+                ),
+                values=validated.submitted_values,
+                options=options.model_dump(mode="json", exclude_none=True)
+                if options
+                else None,
+                retry_policy=(
+                    {"max_retries": options.max_retries}
+                    if options and options.max_retries is not None
+                    else None
+                ),
+                timeout_seconds=options.timeout_seconds if options else None,
+            )
+            if (
+                engine == WorkflowEngine.NEXTFLOW.value
+                and options
+                and _optional_text(options.profile)
+            ):
+                config["profile"] = str(options.profile).strip()
+            image_registry = await self._resolve_workflow_image_registry(
+                workflow,
+                project_id=str(payload.project_id),
+            )
+            if engine == WorkflowEngine.NEXTFLOW.value and image_registry is not None:
+                _set_config_override(
+                    config,
+                    "docker.registry",
+                    image_registry.image_prefix,
+                )
+            config = self._enrich_runtime(
+                config,
+                workflow=workflow,
+                workspace_path=workspace_path,
+                layout=layout,
+                run_id=run_id,
+                engine=engine,
+                image_registry=image_registry,
+            )
+            if extra_config:
+                config = _merge_config_patch(config, extra_config)
+
+            # ── build launch spec via adapter ──────────────────────────────────
+            # Run pre_submit + build_command here (not just at dispatch) so
+            # audit/launch.sh is a faithful snapshot. The scheduler re-runs both
+            # at dispatch to pick up anything environment-dependent (e.g. Docker
+            # availability) that shifted between compile and execute.
+            adapter = get_adapter(engine)
+            launch_config = deepcopy(config)
+            if engine == WorkflowEngine.WDL.value:
+                launch_runtime = dict(launch_config.get("runtime") or {})
+                launch_runtime["pull_required_images"] = False
+                launch_config["runtime"] = launch_runtime
+            prepared = await adapter.pre_submit(launch_config, str(workspace_path))
+            prepared.pop("__engine_logs__", None)
+            argv = await adapter.build_command(prepared, str(workspace_path))
+            launch = LaunchSpec(
+                argv=tuple(str(arg) for arg in argv),
+                env={},
+                cwd=workspace_path,
+                engine=engine,
+            )
+
+            config["launch"] = {
+                "argv": list(launch.argv),
+                "cwd": str(launch.cwd),
+                "engine": launch.engine,
+            }
+
+            # Create the Run row but don't queue yet — the caller (persist) wires
+            # the archive, audit log, and dispatch in the right order.
+            run = Run(
+                run_id=run_id,
+                project_id=str(payload.project_id),
+                workflow_id=str(payload.workflow_id),
+                status=RunStatus.PENDING.value,
+                config=config,
+                samples_count=samples_count,
+                tasks_total=0,
+                tasks_completed=0,
+                source_run_id=source_run_id,
+                replay_kind=replay_kind,
+                replay_idempotency_key=replay_idempotency_key,
+                attempt_number=max(1, int(attempt_number or 1)),
+            )
+            return CompiledRun(run=run, layout=layout, launch=launch)
+        except BaseException:
+            _cleanup_reserved_layout(layout)
+            raise
 
     # ── persist ────────────────────────────────────────────────────────────
 
@@ -399,28 +403,17 @@ class RunCompiler:
         audit_action: str | None = None,
         audit_details: dict | None = None,
     ) -> Run:
-        # write the launch script before the DB row so audit/launch.sh is
-        # durable even if the scheduler never picks the run up
-        compiled.layout.audit.mkdir(parents=True, exist_ok=True)
-        (compiled.layout.audit / "launch.sh").write_text(
-            compiled.launch.as_shell_script(), encoding="utf-8"
-        )
-
-        run = await self.run_repo.create(
-            run_id=compiled.run.run_id,
-            project_id=str(payload.project_id),
-            workflow_id=str(payload.workflow_id),
-            status=RunStatus.PENDING.value,
-            config=compiled.run.config,
-            samples_count=compiled.run.samples_count,
-            tasks_total=0,
-            tasks_completed=0,
-            source_run_id=compiled.run.source_run_id,
-            replay_kind=compiled.run.replay_kind,
-            replay_idempotency_key=compiled.run.replay_idempotency_key,
-            attempt_number=compiled.run.attempt_number,
-        )
+        run = compiled.run
+        committed = False
         try:
+            # write the launch script before the DB row so audit/launch.sh is
+            # durable even if the scheduler never picks the run up
+            compiled.layout.audit.mkdir(parents=True, exist_ok=True)
+            (compiled.layout.audit / "launch.sh").write_text(
+                compiled.launch.as_shell_script(), encoding="utf-8"
+            )
+            self.session.add(run)
+            await self.session.flush()
             workspace_path = project_home(
                 await self.project_repo.get(str(payload.project_id))
             )
@@ -430,7 +423,11 @@ class RunCompiler:
                 engine=compiled.launch.engine,
             )
 
-            run = await self.run_repo.update(run, status=RunStatus.QUEUED.value)
+            run.status = RunStatus.QUEUED.value
+            await self.session.flush()
+            await self.session.commit()
+            committed = True
+            await self.session.refresh(run)
             audit = AuditService(self.session)
             await audit.log(
                 action="run.created",
@@ -454,10 +451,17 @@ class RunCompiler:
                 )
             await publish_run_status(run, message="Run queued")
             self.dispatcher.dispatch(run.run_id, priority=priority)
-        except Exception:
+        except BaseException:
             await self.session.rollback()
-            await self.session.delete(run)
-            await self.session.commit()
+            try:
+                if not committed and run in self.session:
+                    await self.session.delete(run)
+                    await self.session.commit()
+            except Exception:
+                await self.session.rollback()
+            finally:
+                if not committed:
+                    _cleanup_reserved_layout(compiled.layout)
             raise
         return run
 
@@ -651,7 +655,13 @@ class RunCompiler:
 
         fields_by_id = {field.id: field for field in spec.fields}
         materialized: dict[str, Any] = {}
-        engine = str(getattr(getattr(workflow, "engine", ""), "value", getattr(workflow, "engine", "")))
+        engine = str(
+            getattr(
+                getattr(workflow, "engine", ""),
+                "value",
+                getattr(workflow, "engine", ""),
+            )
+        )
 
         for field_id, value in resolved_values.items():
             field = fields_by_id.get(field_id)
@@ -1160,6 +1170,14 @@ def _reserve_fresh_run_layout(project, *, engine: str) -> tuple[str, RunLayout]:
             continue
         return run_id, RunLayout.for_run(project, run_id, engine)
     raise RuntimeError("could not allocate a unique run directory")
+
+
+def _cleanup_reserved_layout(layout: RunLayout) -> None:
+    try:
+        if layout.home.exists() and not layout.home.is_symlink():
+            shutil.rmtree(layout.home)
+    except OSError:
+        pass
 
 
 def _optional_nextflow_revision(value: Any) -> str | None:

@@ -268,8 +268,17 @@ class RunArchiveService:
     # ------------------------------------------------------------------
 
     async def delete_outputs(self, run: Run) -> None:
+        project = await self._project_repo.get(run.project_id)
+        if not project:
+            return
+        workspace_root = project_home(project)
+        canonical_root = run_results_root(project, run.run_id)
         output_root = await self.resolve_output_path(run)
         if output_root is None or not output_root.exists():
+            return
+        if not _is_safe_output_root(canonical_root, workspace_root):
+            return
+        if not _same_resolved_path(output_root, canonical_root):
             return
         if output_root.is_file():
             output_root.unlink()
@@ -292,6 +301,8 @@ class RunArchiveService:
 
         if config_helper(run.config).version < 1:
             for outdir in _iter_outdir_candidates(run.config):
+                if not _is_safe_legacy_outdir(outdir):
+                    continue
                 try:
                     candidate = safe_workspace(workspace_root, outdir)
                 except PermissionError:
@@ -303,13 +314,13 @@ class RunArchiveService:
                 candidates.append(candidate)
 
         for candidate in candidates:
-            if candidate.is_symlink():
+            if not _is_safe_output_root(candidate, workspace_root):
                 continue
             if _path_has_outputs(candidate):
                 return candidate
 
         for candidate in candidates:
-            if candidate.is_symlink():
+            if not _is_safe_output_root(candidate, workspace_root):
                 continue
             if candidate.exists():
                 return candidate
@@ -334,6 +345,52 @@ def _iter_outdir_candidates(config: dict) -> list[str]:
             continue
         candidates.append(outdir.strip())
     return candidates
+
+
+def _is_safe_legacy_outdir(outdir: str) -> bool:
+    candidate = Path(outdir)
+    if candidate.is_absolute():
+        return False
+    parts = candidate.parts
+    if not parts:
+        return False
+    if parts in {(".",), ("",)}:
+        return False
+    if any(part in {"", ".", ".."} for part in parts):
+        return False
+    return parts[0] != "runs"
+
+
+def _is_safe_output_root(candidate: Path, workspace_root: Path) -> bool:
+    try:
+        workspace_resolved = workspace_root.resolve()
+        candidate_resolved = candidate.resolve(strict=False)
+    except (OSError, RuntimeError):
+        return False
+    if _has_symlink_component(candidate, workspace_resolved):
+        return False
+    return candidate_resolved.is_relative_to(workspace_resolved)
+
+
+def _has_symlink_component(path: Path, root: Path) -> bool:
+    try:
+        path_abs = path if path.is_absolute() else root / path
+        rel_path = path_abs.absolute().relative_to(root)
+    except ValueError:
+        return True
+    current = root
+    for part in rel_path.parts:
+        current = current / part
+        if current.exists() and current.is_symlink():
+            return True
+    return False
+
+
+def _same_resolved_path(left: Path, right: Path) -> bool:
+    try:
+        return left.resolve(strict=False) == right.resolve(strict=False)
+    except (OSError, RuntimeError):
+        return False
 
 
 def _resolve_output_file_path(
@@ -382,4 +439,8 @@ def _build_results_asset_uri(
     except ValueError:
         return None
     logical = str(rel_path)
-    return f"asset://results/{run_id}/{logical}" if logical else f"asset://results/{run_id}"
+    return (
+        f"asset://results/{run_id}/{logical}"
+        if logical
+        else f"asset://results/{run_id}"
+    )

@@ -68,12 +68,8 @@ async def test_persist_run_archive_redacts_secrets_and_uses_archived_documents(
     request_dir = run_dir / "input" / "request"
     params_payload = json.loads((request_dir / "params.json").read_text())
     inputs_payload = json.loads((request_dir / "inputs.json").read_text())
-    overrides_payload = json.loads(
-        (request_dir / "config_overrides.json").read_text()
-    )
-    manifest_payload = json.loads(
-        (run_dir / "audit" / "run.manifest.json").read_text()
-    )
+    overrides_payload = json.loads((request_dir / "config_overrides.json").read_text())
+    manifest_payload = json.loads((run_dir / "audit" / "run.manifest.json").read_text())
 
     assert not (run_dir / "input" / "params.json").exists()
     assert not (run_dir / "input" / "inputs.json").exists()
@@ -131,7 +127,10 @@ async def test_list_outputs_skips_symlinks_and_builds_result_asset_uris(
     assert "outside-link" not in by_name
     assert by_name["report.txt"]["uri"] == "asset://results/run_outputs/report.txt"
     assert by_name["nested"]["uri"] == "asset://results/run_outputs/nested"
-    assert by_name["metrics.json"]["uri"] == "asset://results/run_outputs/nested/metrics.json"
+    assert (
+        by_name["metrics.json"]["uri"]
+        == "asset://results/run_outputs/nested/metrics.json"
+    )
 
 
 @pytest.mark.asyncio
@@ -151,7 +150,9 @@ async def test_build_output_archive_returns_zip_with_expected_contents(
     results_root.mkdir(parents=True)
     (results_root / "summary.txt").write_text("hello", encoding="utf-8")
     (results_root / "nested").mkdir()
-    (results_root / "nested" / "metrics.tsv").write_text("sample\t1\n", encoding="utf-8")
+    (results_root / "nested" / "metrics.tsv").write_text(
+        "sample\t1\n", encoding="utf-8"
+    )
 
     service = RunArchiveService(ProjectRepository(db_session))
     archive_bytes, content_type = await service.build_output_archive(
@@ -263,9 +264,7 @@ async def test_symlinked_results_root_is_not_a_valid_output_boundary(
 
 
 @pytest.mark.asyncio
-async def test_delete_outputs_removes_existing_results_directory(
-    db_session, tmp_path
-):
+async def test_delete_outputs_removes_existing_results_directory(db_session, tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     project = await create_project(
@@ -283,3 +282,79 @@ async def test_delete_outputs_removes_existing_results_directory(
     await service.delete_outputs(run)
 
     assert not results_root.exists()
+
+
+@pytest.mark.asyncio
+async def test_legacy_outdir_dot_does_not_resolve_project_root(db_session, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "important.txt").write_text("keep", encoding="utf-8")
+    project = await create_project(
+        db_session,
+        name=f"Archive Legacy Dot {uuid4()}",
+        storage_mode="external",
+        external_root_path=str(workspace),
+    )
+    run = _run_stub(
+        project_id=str(project.id),
+        run_id="run_legacy_dot",
+        config={"config_schema_version": 0, "params": {"outdir": "."}},
+    )
+
+    service = RunArchiveService(ProjectRepository(db_session))
+
+    assert await service.resolve_output_path(run) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_outputs_refuses_legacy_outdir_fallback(db_session, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    legacy = workspace / "legacy-results"
+    legacy.mkdir()
+    (legacy / "summary.txt").write_text("keep", encoding="utf-8")
+    project = await create_project(
+        db_session,
+        name=f"Archive Legacy Delete {uuid4()}",
+        storage_mode="external",
+        external_root_path=str(workspace),
+    )
+    run = _run_stub(
+        project_id=str(project.id),
+        run_id="run_legacy_delete",
+        config={"config_schema_version": 0, "params": {"outdir": "legacy-results"}},
+    )
+
+    service = RunArchiveService(ProjectRepository(db_session))
+    assert await service.resolve_output_path(run) == legacy
+
+    await service.delete_outputs(run)
+
+    assert legacy.exists()
+    assert (legacy / "summary.txt").read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.asyncio
+async def test_delete_outputs_refuses_symlinked_run_directory(db_session, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project = await create_project(
+        db_session,
+        name=f"Archive Symlink Ancestor Delete {uuid4()}",
+        storage_mode="external",
+        external_root_path=str(workspace),
+    )
+    run = _run_stub(project_id=str(project.id), run_id="run_symlink_ancestor")
+    real_run = workspace / "real-run"
+    real_results = real_run / "results"
+    real_results.mkdir(parents=True)
+    (real_results / "summary.txt").write_text("keep", encoding="utf-8")
+    runs_root = workspace / "runs"
+    runs_root.mkdir(exist_ok=True)
+    (runs_root / run.run_id).symlink_to(real_run, target_is_directory=True)
+
+    service = RunArchiveService(ProjectRepository(db_session))
+    await service.delete_outputs(run)
+
+    assert real_results.exists()
+    assert (real_results / "summary.txt").read_text(encoding="utf-8") == "keep"

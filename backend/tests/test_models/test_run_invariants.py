@@ -187,6 +187,14 @@ async def test_replay_run_cannot_source_itself(db_session):
         await db_session.commit()
 
 
+def test_replay_source_foreign_key_preserves_lineage():
+    source_fk = next(
+        fk for fk in Run.__table__.foreign_keys if fk.parent.name == "source_run_id"
+    )
+
+    assert source_fk.ondelete not in {"SET NULL", "CASCADE"}
+
+
 @pytest.mark.asyncio
 async def test_replay_idempotency_is_database_constrained_after_terminal(db_session):
     project, workflow = await _seed_project_and_workflow(db_session)
