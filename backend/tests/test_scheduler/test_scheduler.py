@@ -4,6 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -288,6 +289,123 @@ async def test_scheduler_cancel_queued_run_updates_task_and_run(db_session):
 
     assert cancelled is True
     assert run.status == RunStatus.CANCELLED.value
+
+
+@pytest.mark.asyncio
+async def test_scheduler_complete_does_not_overwrite_cancelled_run(
+    db_session, monkeypatch
+):
+    async def noop_terminal_hook(run, **kwargs):
+        del run, kwargs
+        return {}
+
+    monkeypatch.setattr(
+        RunScheduler,
+        "_hooks",
+        lambda self, session: SimpleNamespace(on_run_terminal=noop_terminal_hook),
+    )
+    monkeypatch.setattr("app.scheduler.scheduler.publish_run_status", AsyncMock())
+    monkeypatch.setattr("app.scheduler.scheduler.publish_run_dag", AsyncMock())
+
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    scheduler = RunScheduler(
+        config=SchedulerConfig(poll_interval_seconds=0.01),
+        backend=FakeBackend(),
+        session_factory=session_factory,
+        queue=queue,
+    )
+    run = await _seed_run(db_session, status=RunStatus.RUNNING.value)
+    task = await queue.enqueue(run.run_id)
+    await queue.mark_dispatched(task.id, "worker-0")
+
+    async with session_factory() as worker_session:
+        stale_run = await worker_session.get(Run, run.id)
+        assert stale_run is not None
+
+        async with session_factory() as other_session:
+            fresh_run = await other_session.get(Run, run.id)
+            fresh_task = await other_session.get(TaskQueue.model, task.id)
+            assert fresh_run is not None
+            assert fresh_task is not None
+            fresh_run.status = RunStatus.CANCELLED.value
+            fresh_task.state = TaskState.CANCELLED.value
+            await other_session.commit()
+
+        await scheduler._complete_run(
+            worker_session,
+            stale_run,
+            task_id=task.id,
+            workspace_path=str(Path.cwd()),
+            engine=WorkflowEngine.NEXTFLOW.value,
+        )
+
+    await db_session.refresh(run)
+    refreshed_task = await queue.get(task.id)
+    assert run.status == RunStatus.CANCELLED.value
+    assert refreshed_task is not None
+    assert refreshed_task.state == TaskState.CANCELLED.value
+
+
+@pytest.mark.asyncio
+async def test_scheduler_retry_does_not_orphan_run_when_task_requeue_loses_race(
+    db_session,
+):
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    scheduler = RunScheduler(
+        config=SchedulerConfig(poll_interval_seconds=0.01),
+        backend=FakeBackend(),
+        session_factory=session_factory,
+        queue=queue,
+    )
+    run = await _seed_run(
+        db_session,
+        status=RunStatus.RUNNING.value,
+        config={
+            "params": {"outdir": "results"},
+            "policy": {"retry": {"max_retries": 1, "retry_on": ["137"]}},
+        },
+    )
+    task = await queue.enqueue(run.run_id, max_attempts=2)
+    await queue.mark_dispatched(task.id, "worker-0")
+
+    async with session_factory() as worker_session:
+        stale_run = await worker_session.get(Run, run.id)
+        stale_task = await worker_session.get(TaskQueue.model, task.id)
+        assert stale_run is not None
+        assert stale_task is not None
+
+        async with session_factory() as other_session:
+            fresh_run = await other_session.get(Run, run.id)
+            fresh_task = await other_session.get(TaskQueue.model, task.id)
+            assert fresh_run is not None
+            assert fresh_task is not None
+            fresh_run.status = RunStatus.CANCELLED.value
+            fresh_task.state = TaskState.CANCELLED.value
+            await other_session.commit()
+
+        scheduled = await scheduler._schedule_retry(
+            worker_session,
+            stale_run,
+            stale_task,
+            "Executor killed with exit 137",
+        )
+
+    await db_session.refresh(run)
+    refreshed_task = await queue.get(task.id)
+    assert scheduled is False
+    assert run.status == RunStatus.CANCELLED.value
+    assert refreshed_task is not None
+    assert refreshed_task.state == TaskState.CANCELLED.value
 
 
 @pytest.mark.asyncio

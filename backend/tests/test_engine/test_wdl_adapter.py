@@ -372,7 +372,14 @@ async def test_wdl_adapter_build_command_passes_paths_unchanged_under_identity_m
     # canonical paths verbatim, with no host/container translation.
     workspace = tmp_path / "projects" / "project-1"
     workflow_path = tmp_path / "state" / "workflows" / "demo.wdl"
-    manifest_path = workspace / "runs" / "run_wdl_123" / "submission" / "sequence.list"
+    manifest_path = (
+        workspace
+        / "runs"
+        / "run_wdl_123"
+        / "input"
+        / "attachments"
+        / "sequence.list"
+    )
 
     workspace.mkdir(parents=True)
     workflow_path.parent.mkdir(parents=True)

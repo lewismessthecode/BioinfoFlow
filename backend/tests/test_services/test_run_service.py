@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from uuid import uuid4
 
@@ -469,6 +470,9 @@ async def test_resume_run_supports_wdl_best_effort_and_validates_nextflow_token(
         tasks_total=0,
         tasks_completed=0,
     )
+    (workspace / "runs" / failed_wdl.run_id / "engine" / "wdl" / "work").mkdir(
+        parents=True
+    )
 
     resumed_wdl = await service.resume_run(failed_wdl.run_id)
     assert (
@@ -603,6 +607,116 @@ async def test_retry_run_is_idempotent_for_active_child(
 
 
 @pytest.mark.asyncio
+async def test_retry_run_is_idempotent_after_child_terminal(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace
+    )
+
+    dispatcher = NullDispatcher()
+    service = RunService(db_session, dispatcher=dispatcher)
+    source = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"threads": 4},
+        dispatcher=dispatcher,
+    )
+    source = await service.repo.update(
+        source,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_retry",
+    )
+
+    first = await service.retry_run(source.run_id)
+    first = await service.repo.update(first, status=RunStatus.COMPLETED.value)
+    second = await service.retry_run(source.run_id)
+
+    assert second.run_id == first.run_id
+    rows = (
+        await db_session.execute(
+            text(
+                "SELECT run_id FROM runs "
+                "WHERE source_run_id = :source_run_id AND replay_kind = 'retry'"
+            ),
+            {"source_run_id": source.run_id},
+        )
+    ).all()
+    assert rows == [(first.run_id,)]
+
+
+@pytest.mark.asyncio
+async def test_retry_persist_failure_does_not_leave_active_replay_wedge(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace
+    )
+
+    dispatcher = NullDispatcher()
+    service = RunService(db_session, dispatcher=dispatcher)
+    source = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"threads": 4},
+        dispatcher=dispatcher,
+    )
+    source = await service.repo.update(
+        source,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_retry",
+    )
+    source_run_id = source.run_id
+
+    original_persist_archive = run_compiler_module.RunArchiveService.persist_run_archive
+
+    async def fail_archive(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("archive write failed")
+
+    monkeypatch.setattr(
+        run_compiler_module.RunArchiveService,
+        "persist_run_archive",
+        fail_archive,
+    )
+
+    with pytest.raises(RuntimeError, match="archive write failed"):
+        await service.retry_run(source_run_id)
+
+    rows = (
+        await db_session.execute(
+            text(
+                "SELECT run_id, status FROM runs "
+                "WHERE source_run_id = :source_run_id AND replay_kind = 'retry'"
+            ),
+            {"source_run_id": source_run_id},
+        )
+    ).all()
+    assert rows == []
+
+    monkeypatch.setattr(
+        run_compiler_module.RunArchiveService,
+        "persist_run_archive",
+        original_persist_archive,
+    )
+    retry = await RunService(db_session, dispatcher=dispatcher).retry_run(source_run_id)
+    assert retry.source_run_id == source_run_id
+    assert retry.status == RunStatus.QUEUED.value
+
+
+@pytest.mark.asyncio
 async def test_resume_run_persists_lineage(db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
@@ -634,6 +748,39 @@ async def test_resume_run_persists_lineage(db_session, monkeypatch, tmp_path):
     assert resumed.replay_kind == "resume"
     assert resumed.replay_idempotency_key
     assert resumed.attempt_number == source.attempt_number + 1
+
+
+@pytest.mark.asyncio
+async def test_resume_wdl_fails_when_best_effort_work_dir_is_missing(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session,
+        external_root=workspace,
+        engine=WorkflowEngine.WDL,
+    )
+
+    service = RunService(db_session, dispatcher=NullDispatcher())
+    source = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+    )
+    work_dir = run_home(project, source.run_id) / "engine" / "wdl" / "work"
+    assert work_dir.exists()
+    shutil.rmtree(work_dir)
+    source = await service.repo.update(
+        source,
+        status=RunStatus.FAILED.value,
+    )
+
+    with pytest.raises(ValueError, match="resume work dir is unavailable"):
+        await service.resume_run(source.run_id)
 
 
 @pytest.mark.asyncio

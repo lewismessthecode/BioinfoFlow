@@ -4,7 +4,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.project import Project
@@ -151,3 +151,41 @@ async def test_queue_refuses_invalid_terminal_state_transitions(db_session):
     refreshed = await queue.get(task.id)
     assert refreshed is not None
     assert refreshed.state == TaskState.COMPLETED.value
+
+
+@pytest.mark.asyncio
+async def test_claim_next_is_guarded_by_database_state(db_session, monkeypatch):
+    runs = await _seed_runs(db_session, count=1)
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    task = await queue.enqueue(runs[0].run_id)
+
+    original_execute = AsyncSession.execute
+    selected = False
+
+    async def terminalize_after_candidate_select(self, statement, *args, **kwargs):
+        nonlocal selected
+        result = await original_execute(self, statement, *args, **kwargs)
+        if not selected and statement.is_select:
+            selected = True
+            async with session_factory() as other:
+                await other.execute(
+                    update(TaskQueue.model)
+                    .where(TaskQueue.model.id == task.id)
+                    .values(state=TaskState.CANCELLED.value)
+                )
+                await other.commit()
+        return result
+
+    monkeypatch.setattr(AsyncSession, "execute", terminalize_after_candidate_select)
+
+    claimed = await queue.claim_next("worker-race")
+
+    assert claimed is None
+    refreshed = await queue.get(task.id)
+    assert refreshed is not None
+    assert refreshed.state == TaskState.CANCELLED.value

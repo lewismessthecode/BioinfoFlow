@@ -196,6 +196,17 @@ class RunLifecycleService:
                 raise ValueError(
                     "run cannot be resumed: missing valid best-effort resume work dir"
                 )
+            project = await self.project_repo.get(original.project_id)
+            if not project:
+                raise FileNotFoundError("project not found")
+            source_work_dir = _resolve_work_dir_token(
+                project_home(project),
+                resume_token,
+            )
+            if not source_work_dir.exists() or not source_work_dir.is_dir():
+                raise ValueError(
+                    "run cannot be resumed: best-effort resume work dir is unavailable"
+                )
             resume_payload = {
                 "resume": True,
                 "resume_work_dir": resume_token,
@@ -773,7 +784,7 @@ class RunLifecycleService:
             config_overrides=config_overrides,
             extra_config=extra_config,
         )
-        existing = await self.repo.get_active_replay(
+        existing = await self.repo.get_replay_by_intent(
             source_run_id=original.run_id,
             replay_kind=replay_kind,
             replay_idempotency_key=replay_key,
@@ -812,7 +823,7 @@ class RunLifecycleService:
             )
         except IntegrityError:
             await self.session.rollback()
-            existing = await self.repo.get_active_replay(
+            existing = await self.repo.get_replay_by_intent(
                 source_run_id=original.run_id,
                 replay_kind=replay_kind,
                 replay_idempotency_key=replay_key,
@@ -1019,6 +1030,11 @@ def _replay_idempotency_key(
         default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _resolve_work_dir_token(workspace_path: Path, token: str) -> Path:
+    path = Path(token)
+    return path if path.is_absolute() else workspace_path / path
 
 
 def _duration_seconds(

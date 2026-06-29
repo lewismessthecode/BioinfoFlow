@@ -155,6 +155,11 @@ async def test_scheduler_requeues_failed_run_when_retry_policy_matches(
     run.current_task = "old_task"
     run.tasks_total = 8
     run.tasks_completed = 3
+    run.nextflow_run_name = "old-nextflow-run"
+    run.config = {
+        **run.config,
+        "runtime": {"pid": 4321, "engine": "nextflow", "work_dir": "runs/old/work"},
+    }
     await db_session.commit()
 
     await scheduler.start()
@@ -189,3 +194,9 @@ async def test_scheduler_requeues_failed_run_when_retry_policy_matches(
     assert run.current_task is None
     assert run.tasks_total == 0
     assert run.tasks_completed == 0
+    assert run.nextflow_run_name is None
+    assert "pid" not in run.config["runtime"]
+    assert "engine" not in run.config["runtime"]
+    assert run.config["runtime"]["work_dir"] == (
+        f"runs/{run.run_id}/engine/nextflow/work"
+    )

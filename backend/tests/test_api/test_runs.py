@@ -141,6 +141,19 @@ async def test_runs_create_rejects_resume_from_run_id_option(
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "INVALID_FORM_VALUES"
 
+    empty_resp = await async_client.post(
+        "/api/v1/runs",
+        json={
+            "project_id": str(project.id),
+            "workflow_id": str(workflow.id),
+            "values": {"threads": 4},
+            "options": {"resume_from_run_id": ""},
+        },
+    )
+
+    assert empty_resp.status_code == 422
+    assert empty_resp.json()["error"]["code"] == "INVALID_FORM_VALUES"
+
 
 @pytest.mark.asyncio
 async def test_runs_create_requires_bound_workflow_for_project(
