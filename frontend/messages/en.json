@@ -2134,6 +2134,7 @@
       "account": "Account",
       "appearance": "Appearance",
       "providers": "AI Providers",
+      "registries": "Container Registries",
       "members": "Members"
     },
     "appearance": {
@@ -2219,6 +2220,64 @@
       "refreshingModels": "Refreshing...",
       "modelsDiscovered": "{count} models found",
       "modelRefreshFailed": "Models could not be refreshed"
+    },
+    "registries": {
+      "title": "Container Registries",
+      "description": "Configure private registries used by image pulls and workflow registration.",
+      "loading": "Loading registries...",
+      "empty": "No container registries configured.",
+      "loadFailed": "Couldn't load container registries.",
+      "created": "Registry created.",
+      "saved": "Registry saved.",
+      "saveFailed": "Couldn't save registry.",
+      "deleted": "Registry deleted.",
+      "deleteFailed": "Couldn't delete registry.",
+      "deleteConfirm": "Delete {name}?",
+      "testOk": "Registry credentials are available.",
+      "testFailed": "Registry check failed.",
+      "defaultSaved": "Default registry updated.",
+      "defaultBadge": "Default",
+      "form": {
+        "createTitle": "Add registry",
+        "editTitle": "Edit registry",
+        "subtitle": "Use an HTTP(S) endpoint. Namespace is optional.",
+        "create": "Add registry",
+        "save": "Save registry",
+        "new": "New"
+      },
+      "fields": {
+        "name": "Name",
+        "endpoint": "Endpoint",
+        "namespace": "Namespace",
+        "default": "Default",
+        "insecure": "HTTP",
+        "credentials": "Credentials",
+        "envUsername": "Username env",
+        "envPassword": "Password env",
+        "username": "Username",
+        "password": "Password"
+      },
+      "placeholders": {
+        "name": "Company Harbor",
+        "username": "Robot account",
+        "password": "Password or token"
+      },
+      "credentials": {
+        "none": "No credentials",
+        "env": "Environment variables",
+        "stored": "Stored credentials"
+      },
+      "status": {
+        "untested": "Untested",
+        "ok": "OK",
+        "error": "Error"
+      },
+      "actions": {
+        "edit": "Edit",
+        "test": "Test",
+        "makeDefault": "Make default",
+        "delete": "Delete"
+      }
     },
     "members": {
       "title": "Members",

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
 import {
   Cpu,
+  Database,
   Loader2,
   Monitor,
   Moon,
@@ -15,6 +16,7 @@ import {
   Users,
 } from "lucide-react"
 import { Logo } from "@/components/bioinfoflow/logo"
+import { ContainerRegistriesPanel } from "@/components/bioinfoflow/settings/container-registries-panel"
 import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-panel"
 import { MembersPanel } from "@/components/bioinfoflow/settings/members-panel"
 import {
@@ -59,12 +61,18 @@ type SettingsPageClientProps = {
   }
 }
 
-type SettingsSection = "account" | "appearance" | "providers" | "members"
+type SettingsSection = "account" | "appearance" | "providers" | "registries" | "members"
 
-const NAV_ITEMS: { key: SettingsSection; icon: typeof User; requiresMembers?: boolean }[] = [
+const NAV_ITEMS: {
+  key: SettingsSection
+  icon: typeof User
+  requiresMembers?: boolean
+  requiresRegistryAdmin?: boolean
+}[] = [
   { key: "account", icon: User },
   { key: "appearance", icon: Palette },
   { key: "providers", icon: Cpu },
+  { key: "registries", icon: Database, requiresRegistryAdmin: true },
   { key: "members", icon: Users, requiresMembers: true },
 ]
 
@@ -364,13 +372,33 @@ export default function SettingsPageClient({
   const [activeSection, setActiveSection] = useState<SettingsSection>("account")
   const celebrationsEnabled = useCelebrationsEnabledPreference()
   const reducedMotion = useReducedMotionPreference()
+  const canManageRegistries =
+    !viewer.authEnabled ||
+    viewer.mode !== "team" ||
+    viewer.role === "owner" ||
+    viewer.role === "admin"
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("section")
-    if (section === "appearance" || section === "providers" || section === "members") {
+    if (section === "appearance" || section === "providers") {
       setActiveSection(section)
+    } else if (section === "registries" && canManageRegistries) {
+      setActiveSection("registries")
+    } else if (section === "members" && viewer.canManageMembers) {
+      setActiveSection("members")
+    } else {
+      setActiveSection("account")
     }
-  }, [])
+  }, [canManageRegistries, viewer.canManageMembers])
+
+  useEffect(() => {
+    const sectionIsHidden =
+      (activeSection === "registries" && !canManageRegistries) ||
+      (activeSection === "members" && !viewer.canManageMembers)
+    if (sectionIsHidden) {
+      setActiveSection("account")
+    }
+  }, [activeSection, canManageRegistries, viewer.canManageMembers])
 
   const handleChangePassword = async (
     event: React.FormEvent<HTMLFormElement>,
@@ -397,7 +425,9 @@ export default function SettingsPageClient({
   const modeLabel = t(`account.modes.${viewer.mode}`)
 
   const visibleNavItems = NAV_ITEMS.filter(
-    (item) => !item.requiresMembers || viewer.canManageMembers,
+    (item) =>
+      (!item.requiresMembers || viewer.canManageMembers) &&
+      (!item.requiresRegistryAdmin || canManageRegistries),
   )
   const lightTokens = appearancePresets[lightPreset].light
   const darkTokens = appearancePresets[darkPreset].dark
@@ -449,7 +479,9 @@ export default function SettingsPageClient({
         <div
           className={cn(
             "mx-auto w-full space-y-6 p-6",
-            activeSection === "appearance" || activeSection === "providers"
+            activeSection === "appearance" ||
+              activeSection === "providers" ||
+              activeSection === "registries"
               ? "max-w-5xl"
               : "max-w-2xl",
           )}
@@ -721,6 +753,11 @@ export default function SettingsPageClient({
 
               <LlmCatalogPanel />
             </>
+          )}
+
+          {/* ── Container Registries Section ───────────── */}
+          {activeSection === "registries" && canManageRegistries && (
+            <ContainerRegistriesPanel />
           )}
 
           {/* ── Members Section ────────────────────────── */}

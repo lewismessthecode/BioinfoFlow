@@ -2134,6 +2134,7 @@
       "account": "账户",
       "appearance": "外观",
       "providers": "AI 服务商",
+      "registries": "镜像仓库",
       "members": "成员管理"
     },
     "appearance": {
@@ -2219,6 +2220,64 @@
       "refreshingModels": "刷新中...",
       "modelsDiscovered": "已发现 {count} 个模型",
       "modelRefreshFailed": "模型刷新失败"
+    },
+    "registries": {
+      "title": "镜像仓库",
+      "description": "配置镜像拉取和工作流注册时可使用的私有镜像仓库。",
+      "loading": "正在加载镜像仓库...",
+      "empty": "尚未配置镜像仓库。",
+      "loadFailed": "无法加载镜像仓库。",
+      "created": "镜像仓库已创建。",
+      "saved": "镜像仓库已保存。",
+      "saveFailed": "无法保存镜像仓库。",
+      "deleted": "镜像仓库已删除。",
+      "deleteFailed": "无法删除镜像仓库。",
+      "deleteConfirm": "删除 {name}？",
+      "testOk": "镜像仓库凭据可用。",
+      "testFailed": "镜像仓库检查失败。",
+      "defaultSaved": "默认镜像仓库已更新。",
+      "defaultBadge": "默认",
+      "form": {
+        "createTitle": "添加镜像仓库",
+        "editTitle": "编辑镜像仓库",
+        "subtitle": "使用 HTTP(S) endpoint；namespace 可选。",
+        "create": "添加镜像仓库",
+        "save": "保存镜像仓库",
+        "new": "新建"
+      },
+      "fields": {
+        "name": "名称",
+        "endpoint": "Endpoint",
+        "namespace": "Namespace",
+        "default": "默认",
+        "insecure": "HTTP",
+        "credentials": "凭据",
+        "envUsername": "用户名环境变量",
+        "envPassword": "密码环境变量",
+        "username": "用户名",
+        "password": "密码"
+      },
+      "placeholders": {
+        "name": "公司 Harbor",
+        "username": "Robot 账号",
+        "password": "密码或 token"
+      },
+      "credentials": {
+        "none": "无需凭据",
+        "env": "环境变量",
+        "stored": "保存凭据"
+      },
+      "status": {
+        "untested": "未测试",
+        "ok": "正常",
+        "error": "错误"
+      },
+      "actions": {
+        "edit": "编辑",
+        "test": "测试",
+        "makeDefault": "设为默认",
+        "delete": "删除"
+      }
     },
     "members": {
       "title": "成员",
