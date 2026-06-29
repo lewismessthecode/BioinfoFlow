@@ -5,7 +5,11 @@ import {
   Loader2,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import type { ValidateWorkflowResponse } from "@/lib/types"
+import {
+  getContainerRegistryLabel,
+  getContainerRegistrySelectValue,
+} from "@/lib/registry-utils"
+import type { ContainerRegistryConfig, ValidateWorkflowResponse } from "@/lib/types"
 import { DagPanel } from "@/components/bioinfoflow/dag/dag-panel"
 import { ValidationErrorList } from "./register-sub-components"
 import type { EngineType, LocalImportMode, SourceType } from "./register-form-hook"
@@ -20,6 +24,8 @@ interface RegisterPreviewPanelProps {
   engine: EngineType
   sourceType: SourceType
   version: string
+  imageRegistries: ContainerRegistryConfig[]
+  selectedRegistry: string
   hasEditor: boolean
   isValidating: boolean
   validationResult: ValidateWorkflowResponse | null
@@ -36,6 +42,8 @@ export function RegisterPreviewPanel({
   engine,
   sourceType,
   version,
+  imageRegistries,
+  selectedRegistry,
   hasEditor,
   isValidating,
   validationResult,
@@ -50,6 +58,16 @@ export function RegisterPreviewPanel({
       : localFileName.replace(/\.(nf|wdl)$/i, "")
   const previewName = pipelineName.trim() || inferredLocalName || "\u2014"
   const previewEngine = engine === "wdl" ? "WDL" : "Nextflow"
+  const selectedRegistryConfig = imageRegistries.find(
+    (registry) => getContainerRegistrySelectValue(registry) === selectedRegistry,
+  )
+  const showImageRegistryPreview =
+    imageRegistries.length > 0 || selectedRegistry.trim().length > 0
+  const imageRegistryLabel = selectedRegistry
+    ? getContainerRegistryLabel(
+        selectedRegistryConfig ?? { name: selectedRegistry, registry: selectedRegistry },
+      )
+    : tWorkflows("registerDialog.registry.automatic")
 
   return (
     <aside className="relative rounded-2xl border border-border/60 bg-card/50 p-5 xl:sticky xl:top-0">
@@ -73,6 +91,12 @@ export function RegisterPreviewPanel({
             <span className="text-muted-foreground">{tWorkflows("source")}</span>
             <span className="font-medium text-foreground">{sourceType}</span>
           </div>
+          {showImageRegistryPreview ? (
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-muted-foreground">{tWorkflows("registerDialog.preview.imageRegistry")}</span>
+              <span className="truncate text-right font-medium text-foreground">{imageRegistryLabel}</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{tWorkflows("version")}</span>
             <span className="font-medium text-foreground/60">{version.trim() || tWorkflows("registerDialog.preview.latest")}</span>

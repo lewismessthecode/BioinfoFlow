@@ -11,7 +11,12 @@ import {
   resolveTeamRole,
 } from "@/lib/auth-config"
 import { formatSize } from "@/lib/format-utils"
-import type { DockerImage, ImageStatusMeta } from "@/lib/types"
+import {
+  getContainerRegistrySelectValue,
+  getContainerRegistryValue,
+  normalizeContainerRegistries,
+} from "@/lib/registry-utils"
+import type { ContainerRegistryConfig, DockerImage, ImageStatusMeta } from "@/lib/types"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import type { ViewMode } from "@/components/ui/view-toggle"
 
@@ -38,6 +43,9 @@ export function useImagesPage() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [importMethod, setImportMethod] = useState<"registry" | "tarball">("registry")
   const [imageName, setImageName] = useState("")
+  const [selectedRegistry, setSelectedRegistry] = useState("")
+  const [imageRegistries, setImageRegistries] = useState<ContainerRegistryConfig[]>([])
+  const [registriesLoaded, setRegistriesLoaded] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [tarballFile, setTarballFile] = useState<File | null>(null)
@@ -102,6 +110,20 @@ export function useImagesPage() {
   }, [dockerStatus, fetchImages])
 
   useEffect(() => () => clearRetryTimer(), [clearRetryTimer])
+
+  const loadImageRegistries = useCallback(async () => {
+    if (registriesLoaded) {
+      return
+    }
+    try {
+      const { data } = await apiRequest<ContainerRegistryConfig[]>("/container-registries")
+      setImageRegistries(normalizeContainerRegistries(data))
+    } catch {
+      setImageRegistries([])
+    } finally {
+      setRegistriesLoaded(true)
+    }
+  }, [registriesLoaded])
 
   const parseImageInput = (value: string) => {
     const trimmed = value.trim()
@@ -171,9 +193,30 @@ export function useImagesPage() {
       description: tImages("toasts.pullingDescription"),
     })
 
+    const selectedRegistryValue = selectedRegistry.trim()
+    const pullPayload: Record<string, unknown> = {
+      name,
+      tag,
+      project_id: activeProjectId || undefined,
+    }
+    const selectedRegistryConfig = selectedRegistryValue
+      ? imageRegistries.find(
+          (registry) => getContainerRegistrySelectValue(registry) === selectedRegistryValue,
+        )
+      : undefined
+    const selectedRegistryEndpoint = selectedRegistryConfig
+      ? getContainerRegistryValue(selectedRegistryConfig)
+      : ""
+    if (selectedRegistryConfig?.id) {
+      pullPayload.registry_id = selectedRegistryConfig.id
+    }
+    if (selectedRegistryEndpoint) {
+      pullPayload.registry = selectedRegistryEndpoint
+    }
+
     apiRequest<DockerImage>("/images/pull", {
       method: "POST",
-      body: JSON.stringify({ name, tag, project_id: activeProjectId || undefined }),
+      body: JSON.stringify(pullPayload),
     })
       .then(() => {
         toast.success(tImages("toasts.pullStartedTitle", { name: imageName }), {
@@ -189,8 +232,9 @@ export function useImagesPage() {
         setIsSubmitting(false)
         setUploadOpen(false)
         setImageName("")
+        setSelectedRegistry("")
       })
-  }, [activeProjectId, dockerStatus, fetchImages, imageName, importMethod, tarballFile, tImages])
+  }, [activeProjectId, dockerStatus, fetchImages, imageName, imageRegistries, importMethod, selectedRegistry, tarballFile, tImages])
 
   const handlePull = useCallback(async (image: DockerImage) => {
     if (dockerStatus === "unavailable") {
@@ -276,6 +320,7 @@ export function useImagesPage() {
     setUploadOpen(open)
     if (!open) {
       setImageName("")
+      setSelectedRegistry("")
       setImportMethod("registry")
       setTarballFile(null)
       setRecommendedOpen(false)
@@ -285,13 +330,16 @@ export function useImagesPage() {
   const openRegistryDialog = useCallback((value = "") => {
     setImportMethod("registry")
     setImageName(value)
+    setSelectedRegistry("")
     setRecommendedOpen(false)
     setUploadOpen(true)
-  }, [])
+    void loadImageRegistries()
+  }, [loadImageRegistries])
 
   const openTarballDialog = useCallback(() => {
     setImportMethod("tarball")
     setImageName("")
+    setSelectedRegistry("")
     setRecommendedOpen(false)
     setUploadOpen(true)
   }, [])
@@ -328,6 +376,9 @@ export function useImagesPage() {
     setImportMethod,
     imageName,
     setImageName,
+    selectedRegistry,
+    setSelectedRegistry,
+    imageRegistries: imageRegistries.filter((registry) => getContainerRegistryValue(registry)),
     isLoading,
     isSubmitting,
     tarballFile,

@@ -319,6 +319,20 @@ export type DockerImage = {
   updated_at?: string
 }
 
+export type ContainerRegistryConfig = {
+  id?: string | null
+  name?: string | null
+  endpoint?: string | null
+  registry?: string | null
+  host?: string | null
+  url?: string | null
+  namespace?: string | null
+  provider?: string | null
+  description?: string | null
+  is_default?: boolean | null
+  last_status?: "untested" | "ok" | "error" | string | null
+}
+
 export type EventEnvelope<T = unknown> = {
   id: string
   event: string

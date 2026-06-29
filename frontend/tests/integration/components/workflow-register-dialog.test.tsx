@@ -212,11 +212,14 @@ describe("WorkflowRegisterDialog", () => {
       screen.getByText("workflows.registerDialog.preview.dagPreviewEmpty")
     ).toBeInTheDocument()
     expect(
+      screen.queryByText("workflows.registerDialog.preview.imageRegistry")
+    ).not.toBeInTheDocument()
+    expect(
       screen.queryByText("workflows.registerDialog.preview.productionWdlTitle")
     ).not.toBeInTheDocument()
   })
 
-  it("renders workflow registration actions in a dedicated dialog footer", () => {
+  it("renders workflow registration actions in a dedicated dialog footer", async () => {
     renderAppPage(
       <WorkflowRegisterDialog
         open
@@ -230,6 +233,7 @@ describe("WorkflowRegisterDialog", () => {
     expect(footer).toHaveClass("justify-end")
     expect(footer).toContainElement(screen.getByRole("button", { name: "common.cancel" }))
     expect(footer).toContainElement(screen.getByRole("button", { name: "workflows.register" }))
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/container-registries"))
   })
 
   it("submits the inferred local WDL metadata when the user registers", async () => {
@@ -388,6 +392,81 @@ describe("WorkflowRegisterDialog", () => {
       expect.objectContaining({ id: "workflow-github-1", source: "github" })
     )
     expect(toastSuccessMock).toHaveBeenCalledWith("workflows.toasts.registered:nf-core/rnaseq")
+  })
+
+  it("lets the user choose a configured image registry for workflow registration", async () => {
+    const onRegistered = vi.fn()
+
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/container-registries") {
+        return {
+          data: [
+            {
+              id: "registry-harbor",
+              name: "Lab Harbor",
+              endpoint: "harbor.local:5000",
+              provider: "harbor",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      if (path === "/workflows" && options?.method === "POST") {
+        return {
+          data: {
+            id: "workflow-nfcore-1",
+            name: "rnaseq",
+            source: "nf-core",
+            engine: "nextflow",
+            version: "3.18.0",
+          },
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(
+      <WorkflowRegisterDialog
+        open
+        onOpenChange={() => {}}
+        onRegistered={onRegistered}
+      />
+    )
+
+    const registrySelect = await screen.findByLabelText(
+      "workflows.registerDialog.fields.imageRegistry"
+    )
+    expect(registrySelect).toHaveValue("")
+    expect(screen.getAllByText("workflows.registerDialog.registry.automatic").length).toBeGreaterThanOrEqual(1)
+
+    fireEvent.change(registrySelect, { target: { value: "registry-harbor" } })
+
+    expect(screen.getByText("workflows.registerDialog.preview.imageRegistry")).toBeInTheDocument()
+    expect(screen.getAllByText("Lab Harbor (harbor.local:5000)").length).toBeGreaterThanOrEqual(1)
+
+    fireEvent.change(screen.getByLabelText("workflows.registerDialog.fields.pipelineName"), {
+      target: { value: "nf-core/rnaseq" },
+    })
+    fireEvent.change(screen.getByLabelText("workflows.version"), {
+      target: { value: "3.18.0" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "workflows.register" }))
+
+    await waitFor(() => {
+      expect(latestWorkflowJsonPayload()).toEqual({
+        source: "nf-core",
+        engine: "nextflow",
+        name: "rnaseq",
+        version: "3.18.0",
+        container_registry_id: "registry-harbor",
+      })
+    })
+
+    expect(onRegistered).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "workflow-nfcore-1", name: "rnaseq" })
+    )
   })
 
   it("submits a selected local bundle as multipart data and lets the user choose the entrypoint", async () => {

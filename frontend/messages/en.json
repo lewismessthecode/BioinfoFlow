@@ -731,7 +731,12 @@
         "entrypointRelpath": "Entrypoint Relative Path",
         "entrypointSelect": "Entrypoint File",
         "workflowFile": "Workflow File (.nf or .wdl)",
+        "imageRegistry": "Image Registry",
         "description": "Description (optional)"
+      },
+      "registry": {
+        "automatic": "Automatic",
+        "hint": "Optional. Choose a configured registry for workflow images, or keep automatic to use image references as written."
       },
       "localModes": {
         "bundle": "Bundle directory",
@@ -791,6 +796,7 @@
         "bundleName": "Bundle: {name} ({count} files)",
         "bundlePath": "Bundle directory: {path}",
         "entrypointRelpath": "Entrypoint: {path}",
+        "imageRegistry": "Image registry",
         "runtimeAssets": "Runtime assets checked separately",
         "afterRegistration": "After registration",
         "latest": "latest",
@@ -1242,6 +1248,9 @@
         "tarball": "From Tarball"
       },
       "imageName": "Image Name",
+      "registry": "Registry",
+      "registryAutomatic": "Automatic",
+      "registryHint": "Leave automatic to use the image name as entered.",
       "tarball": "Tarball (.tar)",
       "selectedFile": "Selected: {name}",
       "submitting": "Pulling...",
