@@ -62,6 +62,12 @@ def can_manage_external_roots(role: str | None) -> bool:
     return role in ADMIN_ROLES
 
 
+def can_select_container_registry(role: str | None) -> bool:
+    if not settings.auth_is_team:
+        return True
+    return role in ADMIN_ROLES
+
+
 def can_perform_destructive_business_action(role: str | None) -> bool:
     if not settings.auth_is_team:
         return True

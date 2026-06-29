@@ -13,8 +13,11 @@ from app.services.image_service import (
     ImageDeleteConflictError,
     ImageService,
 )
-from app.utils.authorization import can_perform_destructive_business_action
-from app.utils.exceptions import AppError
+from app.utils.authorization import (
+    can_perform_destructive_business_action,
+    can_select_container_registry,
+)
+from app.utils.exceptions import AppError, PermissionDeniedError
 from app.utils.responses import error_response, success_response
 
 
@@ -79,6 +82,10 @@ async def pull_image(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if payload.registry_id and not can_select_container_registry(user.role):
+        raise PermissionDeniedError(
+            "Only workspace admins can select a configured registry"
+        )
     service = ImageService(db)
     try:
         image = await service.pull_image(

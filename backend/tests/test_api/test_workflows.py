@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.config import settings
 from app.path_layout import workflow_bundle_home
+from tests.support.auth import TEST_SESSION_COOKIE, create_better_auth_db
 
 
 @pytest.mark.asyncio
@@ -141,3 +143,62 @@ async def test_create_local_workflow_from_uploaded_bundle(async_client):
     assert (bundle_root / "rnaseq_quant.nf").exists()
     assert (bundle_root / "nextflow.config").exists()
     assert (bundle_root / "data" / "samplesheet.csv").exists()
+
+
+@pytest.mark.asyncio
+async def test_workflow_registry_id_requires_admin_in_team_mode(
+    async_client,
+    tmp_path,
+    monkeypatch,
+):
+    registry_resp = await async_client.post(
+        "/api/v1/container-registries",
+        json={
+            "name": "Harbor Bio",
+            "endpoint": "https://harbor.example.test",
+            "credential_source": "none",
+        },
+    )
+    assert registry_resp.status_code == 201
+    registry_id = registry_resp.json()["data"]["id"]
+
+    auth_db_path = tmp_path / "better-auth-member.db"
+    create_better_auth_db(auth_db_path)
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "better_auth_db_path", str(auth_db_path))
+    async_client.cookies.set("better-auth.session_token", TEST_SESSION_COOKIE)
+
+    create_resp = await async_client.post(
+        "/api/v1/workflows",
+        json={
+            "source": "local",
+            "engine": "nextflow",
+            "name": "private-flow",
+            "file_name": "main.nf",
+            "content": "nextflow.enable.dsl=2\nworkflow { }\n",
+            "container_registry_id": registry_id,
+        },
+    )
+    assert create_resp.status_code == 403
+    assert create_resp.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    bundle_resp = await async_client.post(
+        "/api/v1/workflows/local-bundle",
+        data={
+            "engine": "nextflow",
+            "name": "private-bundle",
+            "entrypoint_relpath": "main.nf",
+            "container_registry_id": registry_id,
+            "bundle_paths": '["main.nf"]',
+        },
+        files={
+            "bundle_files": (
+                "main.nf",
+                b"nextflow.enable.dsl=2\nworkflow { }\n",
+                "application/octet-stream",
+            ),
+        },
+    )
+    assert bundle_resp.status_code == 403
+    assert bundle_resp.json()["error"]["code"] == "PERMISSION_DENIED"

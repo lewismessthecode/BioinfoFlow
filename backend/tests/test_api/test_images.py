@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pytest
 
 from app.schemas.common import Pagination
+from app.config import settings
 from app.services import image_service
 from app.services.docker_service import DockerImageInfo
 from app.services.image_service import (
@@ -12,6 +13,7 @@ from app.services.image_service import (
     ImageDeleteConflictError,
 )
 from app.utils.exceptions import PermissionDeniedError
+from tests.support.auth import TEST_SESSION_COOKIE, create_better_auth_db
 
 
 @dataclass
@@ -139,6 +141,99 @@ async def test_images_pull_forwards_selected_registry_id(
     assert captured["tag"] == "0.7.17"
     assert captured["registry"] == "docker.io"
     assert captured["registry_id"] == registry_id
+
+
+@pytest.mark.asyncio
+async def test_images_pull_registry_id_requires_admin_in_team_mode(
+    async_client,
+    tmp_path,
+    monkeypatch,
+):
+    registry_resp = await async_client.post(
+        "/api/v1/container-registries",
+        json={
+            "name": "Harbor Bio",
+            "endpoint": "https://harbor.example.test",
+            "credential_source": "none",
+        },
+    )
+    assert registry_resp.status_code == 201
+    registry_id = registry_resp.json()["data"]["id"]
+
+    auth_db_path = tmp_path / "better-auth-member.db"
+    create_better_auth_db(auth_db_path)
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "better_auth_db_path", str(auth_db_path))
+    async_client.cookies.set("better-auth.session_token", TEST_SESSION_COOKIE)
+
+    async def fake_pull(self, **kwargs):
+        raise AssertionError("explicit registry pull should be rejected first")
+
+    monkeypatch.setattr(image_service.ImageService, "pull_image", fake_pull)
+
+    resp = await async_client.post(
+        "/api/v1/images/pull",
+        json={"name": "bwa", "tag": "0.7.17", "registry_id": registry_id},
+    )
+
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_images_load_tarball_ignores_default_registry(
+    async_client,
+    monkeypatch,
+):
+    registry_resp = await async_client.post(
+        "/api/v1/container-registries",
+        json={
+            "name": "Harbor Bio",
+            "endpoint": "https://harbor.example.test",
+            "is_default": True,
+            "credential_source": "none",
+        },
+    )
+    assert registry_resp.status_code == 201
+    captured: dict[str, object] = {}
+
+    async def fake_load(self, **kwargs):
+        captured.update(kwargs)
+        return [
+            type(
+                "LoadedImage",
+                (),
+                {
+                    "id": "00000000-0000-0000-0000-000000000001",
+                    "name": "loaded/tool",
+                    "tag": "latest",
+                    "full_name": "loaded/tool:latest",
+                    "registry": "docker.io",
+                    "status": "local",
+                    "description": None,
+                    "size_bytes": None,
+                    "pull_progress": None,
+                    "error_message": None,
+                    "labels": None,
+                    "env": None,
+                    "entrypoint": None,
+                    "created_at": "2026-06-29T00:00:00+00:00",
+                    "updated_at": "2026-06-29T00:00:00+00:00",
+                },
+            )()
+        ]
+
+    monkeypatch.setattr(image_service.ImageService, "load_image_tarball", fake_load)
+
+    resp = await async_client.post(
+        "/api/v1/images/load",
+        files={"file": ("image.tar", b"tarball", "application/x-tar")},
+    )
+
+    assert resp.status_code == 201
+    assert "registry_id" not in captured
+    assert captured["content"] == b"tarball"
 
 
 @pytest.mark.asyncio

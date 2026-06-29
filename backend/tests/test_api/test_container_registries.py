@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.config import settings
+from tests.support.auth import TEST_SESSION_COOKIE, create_better_auth_db
+
 
 @pytest.mark.asyncio
 async def test_container_registry_crud_redacts_stored_credentials(async_client):
@@ -139,3 +142,50 @@ async def test_container_registry_test_uses_env_credential_availability(
     assert refreshed["last_status"] == "ok"
     assert refreshed["last_error"] is None
     assert refreshed["last_checked_at"] == result["checked_at"]
+
+
+@pytest.mark.asyncio
+async def test_container_registry_configuration_requires_admin_in_team_mode(
+    async_client,
+    tmp_path,
+    monkeypatch,
+):
+    create_admin_resp = await async_client.post(
+        "/api/v1/container-registries",
+        json={
+            "name": "Shared Harbor",
+            "endpoint": "https://harbor.example.test",
+            "credential_source": "none",
+        },
+    )
+    assert create_admin_resp.status_code == 201
+    registry_id = create_admin_resp.json()["data"]["id"]
+
+    auth_db_path = tmp_path / "better-auth-member.db"
+    create_better_auth_db(auth_db_path)
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "better_auth_db_path", str(auth_db_path))
+
+    async_client.cookies.set("better-auth.session_token", TEST_SESSION_COOKIE)
+
+    requests = [
+        async_client.get("/api/v1/container-registries"),
+        async_client.get(f"/api/v1/container-registries/{registry_id}"),
+        async_client.post(
+            "/api/v1/container-registries",
+            json={
+                "name": "Member Registry",
+                "endpoint": "https://member.example.test",
+            },
+        ),
+        async_client.patch(
+            f"/api/v1/container-registries/{registry_id}",
+            json={"name": "Updated"},
+        ),
+        async_client.post(f"/api/v1/container-registries/{registry_id}/test"),
+        async_client.delete(f"/api/v1/container-registries/{registry_id}"),
+    ]
+    responses = [await request for request in requests]
+
+    assert [response.status_code for response in responses] == [403] * len(requests)
