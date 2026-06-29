@@ -11,7 +11,6 @@ from app.config import settings
 from app.path_layout import (
     database_root,
     deliveries_root,
-    projects_root,
     reference_root,
 )
 from app.services.docker_service import DockerService
@@ -66,22 +65,21 @@ def configured_run_mounts(
     `host_dir` is the miniwdl task working directory. We derive
     project_id and run_id from its position under `projects_root()`.
     """
-    task_dir = Path(host_dir)
-    try:
-        relative = task_dir.relative_to(projects_root())
-    except ValueError:
+    layout = _infer_run_layout_from_host_dir(Path(host_dir))
+    if layout is None:
         return ()
 
-    if len(relative.parts) < 3 or relative.parts[1] != "runs":
-        return ()
-
-    run_id = relative.parts[2]
-    run_root = projects_root() / relative.parts[0] / "runs" / run_id
-
+    project_root, run_root = layout
+    data_root = project_root / "data"
     input_root = run_root / "input"
     results_root = run_root / "results"
 
     return (
+        ContainerPathMapping(
+            container_root=data_root,
+            host_root=data_root,
+            read_only=True,
+        ),
         ContainerPathMapping(
             container_root=input_root,
             host_root=input_root,
@@ -93,6 +91,24 @@ def configured_run_mounts(
             read_only=False,
         ),
     )
+
+
+def _infer_run_layout_from_host_dir(task_dir: Path) -> tuple[Path, Path] | None:
+    parts = task_dir.parts
+    for index, part in enumerate(parts):
+        if part != "runs":
+            continue
+        if len(parts) <= index + 4:
+            continue
+        if parts[index + 2] != "engine" or parts[index + 4] != "work":
+            continue
+        project_parts = parts[:index]
+        if not project_parts:
+            return None
+        project_root = Path(*project_parts)
+        run_root = project_root / "runs" / parts[index + 1]
+        return project_root, run_root
+    return None
 
 
 # ---------------------------------------------------------------------------
