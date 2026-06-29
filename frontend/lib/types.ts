@@ -330,7 +330,15 @@ export type ContainerRegistryConfig = {
   provider?: string | null
   description?: string | null
   is_default?: boolean | null
+  insecure?: boolean | null
+  credential_source?: "none" | "env" | "stored" | string | null
+  env_username_var?: string | null
+  env_password_var?: string | null
+  username_hint?: string | null
+  password_hint?: string | null
   last_status?: "untested" | "ok" | "error" | string | null
+  last_error?: string | null
+  last_checked_at?: string | null
 }
 
 export type EventEnvelope<T = unknown> = {

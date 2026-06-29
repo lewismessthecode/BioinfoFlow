@@ -33,7 +33,20 @@ vi.mock("next-intl", () => ({
       "nav.account": "Account",
       "nav.appearance": "Appearance",
       "nav.providers": "AI Providers",
+      "nav.registries": "Container Registries",
       "nav.members": "Members",
+      "account.title": "Account details",
+      "account.description": "Manage your account.",
+      "account.email": "Email",
+      "account.role": "Role",
+      "account.mode": "Mode",
+      "account.notAvailable": "Not available",
+      "account.modes.personal": "Personal",
+      "account.modes.team": "Team",
+      "account.modes.dev": "Development",
+      "members.roles.owner": "Owner",
+      "members.roles.admin": "Admin",
+      "members.roles.member": "Member",
       "appearance.title": "Appearance",
       "appearance.description": "Tune app shell colors and mode.",
       "appearance.mode": "Mode",
@@ -83,6 +96,50 @@ vi.mock("next-intl", () => ({
       "providerCards.modelsRefreshed": "Models refreshed",
       "providerCards.modelRefreshFailed": "Models could not be refreshed",
       "providerCards.modelIdPlaceholder": "Model ID",
+      "registries.title": "Container Registries",
+      "registries.description": "Configure private registries",
+      "registries.loading": "Loading registries...",
+      "registries.empty": "No registries",
+      "registries.loadFailed": "Registry load failed",
+      "registries.created": "Registry created",
+      "registries.saved": "Registry saved",
+      "registries.saveFailed": "Registry save failed",
+      "registries.deleted": "Registry deleted",
+      "registries.deleteFailed": "Registry delete failed",
+      "registries.deleteConfirm": "Delete registry?",
+      "registries.testOk": "Registry OK",
+      "registries.testFailed": "Registry test failed",
+      "registries.defaultSaved": "Default saved",
+      "registries.defaultBadge": "Default",
+      "registries.form.createTitle": "Add registry",
+      "registries.form.editTitle": "Edit registry",
+      "registries.form.subtitle": "Use an endpoint",
+      "registries.form.create": "Add registry",
+      "registries.form.save": "Save registry",
+      "registries.form.new": "New",
+      "registries.fields.name": "Name",
+      "registries.fields.endpoint": "Endpoint",
+      "registries.fields.namespace": "Namespace",
+      "registries.fields.default": "Default",
+      "registries.fields.insecure": "HTTP",
+      "registries.fields.credentials": "Credentials",
+      "registries.fields.envUsername": "Username env",
+      "registries.fields.envPassword": "Password env",
+      "registries.fields.username": "Username",
+      "registries.fields.password": "Password",
+      "registries.placeholders.name": "Company Harbor",
+      "registries.placeholders.username": "Robot account",
+      "registries.placeholders.password": "Password or token",
+      "registries.credentials.none": "No credentials",
+      "registries.credentials.env": "Environment variables",
+      "registries.credentials.stored": "Stored credentials",
+      "registries.status.untested": "Untested",
+      "registries.status.ok": "OK",
+      "registries.status.error": "Error",
+      "registries.actions.edit": "Edit",
+      "registries.actions.test": "Test",
+      "registries.actions.makeDefault": "Make default",
+      "registries.actions.delete": "Delete",
     }
     return labels[key] ?? key
   },
@@ -365,6 +422,43 @@ describe("SettingsPage", () => {
           meta: undefined,
         }
       }
+      if (path === "/container-registries" && !options?.method) {
+        return {
+          data: [
+            {
+              id: "registry-harbor",
+              name: "Lab Harbor",
+              endpoint: "http://10.227.4.56:80",
+              namespace: "pipeline-dev",
+              insecure: true,
+              is_default: true,
+              credential_source: "stored",
+              username_hint: "pipe...-dev",
+              last_status: "untested",
+              created_at: "2026-06-29T00:00:00Z",
+              updated_at: "2026-06-29T00:00:00Z",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      if (path === "/container-registries" && options?.method === "POST") {
+        const body = JSON.parse(String(options.body)) as Record<string, unknown>
+        expect(body).toEqual({
+          name: "Company Harbor",
+          endpoint: "http://10.227.4.56:80",
+          namespace: "pipeline-dev",
+          insecure: true,
+          is_default: true,
+          credential_source: "stored",
+          username: "pipeline-dev",
+          password: "secret",
+        })
+        return {
+          data: { id: "registry-new", ...body },
+          meta: undefined,
+        }
+      }
       throw new Error(`Unexpected path: ${path}`)
     })
   })
@@ -386,6 +480,76 @@ describe("SettingsPage", () => {
 
     expect(await screen.findByRole("group", { name: "OpenAI Compatible" })).toBeInTheDocument()
     expect(screen.getByText("From .env")).toBeInTheDocument()
+  })
+
+  it("manages container registries from the settings page", async () => {
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          role: "owner",
+          mode: "team",
+          canManageMembers: true,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Container Registries" }))
+
+    expect(await screen.findAllByText("Container Registries")).toHaveLength(2)
+    expect(await screen.findByText("Lab Harbor")).toBeInTheDocument()
+    expect(screen.getByText("http://10.227.4.56:80/pipeline-dev")).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Company Harbor" },
+    })
+    fireEvent.change(screen.getByLabelText("Endpoint"), {
+      target: { value: "http://10.227.4.56:80" },
+    })
+    fireEvent.change(screen.getByLabelText("Namespace"), {
+      target: { value: "pipeline-dev" },
+    })
+    fireEvent.click(screen.getByLabelText("HTTP"))
+    fireEvent.click(screen.getByLabelText("Default"))
+    fireEvent.change(screen.getByLabelText("Credentials"), {
+      target: { value: "stored" },
+    })
+    fireEvent.change(await screen.findByLabelText("Username"), {
+      target: { value: "pipeline-dev" },
+    })
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "secret" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Add registry" }))
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "/container-registries",
+        expect.objectContaining({ method: "POST" }),
+      )
+    })
+  })
+
+  it("falls back from the registries section for team members", async () => {
+    window.history.replaceState(null, "", "/settings?section=registries")
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "member-1",
+          role: "member",
+          mode: "team",
+          canManageMembers: false,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    expect(await screen.findByText("Account details")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Container Registries" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Configure private registries")).not.toBeInTheDocument()
   })
 
   it("shows provider cards and creates a write-only provider credential", async () => {
@@ -414,8 +578,8 @@ describe("SettingsPage", () => {
     })
     fireEvent.click(within(openRouterCard).getByRole("button", { name: "Save" }))
 
-      await waitFor(() => {
-        expect(apiRequestMock).toHaveBeenCalledWith(
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith(
         "/llm/provider-setups",
         expect.objectContaining({
           method: "POST",
