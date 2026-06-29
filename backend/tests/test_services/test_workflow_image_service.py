@@ -136,7 +136,7 @@ async def test_prefetch_service_enqueues_resolved_static_image_pulls(
             "user_id": None,
             "workspace_id": None,
             "auth_config": {"identitytoken": "token"},
-            "registry_id": "registry-1",
+            "registry_id": None,
         },
         {
             "name": "biocontainers/fastqc",
@@ -199,6 +199,31 @@ async def test_prefetch_workflow_uses_workflow_selected_registry(
             "user_id": None,
             "workspace_id": None,
             "auth_config": {"username": "robot", "password": "secret"},
-            "registry_id": str(registry.id),
+            "registry_id": None,
         },
     ]
+
+
+def test_resolver_uses_matching_registry_credentials_for_explicit_host():
+    registry = WorkflowImageRegistry(
+        endpoint="https://harbor.example.test",
+        namespace="bio",
+        registry_id="registry-1",
+        auth_config={"username": "robot", "password": "secret"},
+    )
+
+    requirements = resolve_workflow_image_requirements(
+        _schema("harbor.example.test/bio/bwa:0.7.17"),
+        default_registry=registry,
+    )
+
+    assert len(requirements) == 1
+    requirement = requirements[0]
+    assert requirement.name == "bio/bwa"
+    assert requirement.tag == "0.7.17"
+    assert requirement.registry == "harbor.example.test"
+    assert requirement.full_name == "harbor.example.test/bio/bwa:0.7.17"
+    assert requirement.explicit_registry is True
+    assert requirement.rewrite_applied is False
+    assert requirement.registry_id == "registry-1"
+    assert requirement.auth_config == {"username": "robot", "password": "secret"}

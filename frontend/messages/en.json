@@ -1250,7 +1250,7 @@
       "imageName": "Image Name",
       "registry": "Registry",
       "registryAutomatic": "Automatic",
-      "registryHint": "Leave automatic to use the image name as entered.",
+      "registryHint": "Leave automatic to use the image name as entered; explicit image hosts are kept as written.",
       "tarball": "Tarball (.tar)",
       "selectedFile": "Selected: {name}",
       "submitting": "Pulling...",

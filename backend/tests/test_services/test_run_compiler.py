@@ -27,6 +27,7 @@ from app.services.run_compiler import (
     ValidatedRun,
     _render_csv,
 )
+from app.services.workflow_image_service import WorkflowImageRegistry
 
 
 @pytest.mark.unit
@@ -491,6 +492,220 @@ async def test_compile_wdl_launch_snapshot_does_not_pull_required_images(
     assert "pull_required_images" not in compiled.run.config["runtime"]
 
 
+@pytest.mark.asyncio
+async def test_compile_wdl_uses_resolved_registry_images_in_runtime_and_source(
+    monkeypatch, tmp_path
+):
+    class FakeWDLAdapter:
+        engine_name = "wdl"
+        display_name = "MiniWDL"
+        binary = "miniwdl"
+        supports_native_resume = False
+
+        def __init__(self):
+            self.pre_submit_config: dict | None = None
+
+        async def pre_submit(self, config: dict, workspace: str) -> dict:
+            self.pre_submit_config = config
+            return config
+
+        async def build_command(self, config: dict, workspace: str) -> list[str]:
+            return ["miniwdl", "run", config["workflow_path"]]
+
+    adapter = FakeWDLAdapter()
+    project_id = uuid4()
+    workflow_id = uuid4()
+    project_home = tmp_path / "project-home"
+    workflow_path = tmp_path / "workflow.wdl"
+    workflow_path.write_text(
+        'version 1.0\n'
+        'task align {\n'
+        '  command <<< echo hi >>>\n'
+        '  runtime { docker: "bwa:0.7.17" }\n'
+        '}\n'
+        'workflow wf { call align }\n',
+        encoding="utf-8",
+    )
+
+    compiler = _make_compiler(storage=SimpleNamespace(resolve_asset=AsyncMock()))
+    monkeypatch.setattr(run_compiler_module, "get_adapter", lambda engine: adapter)
+    monkeypatch.setattr(run_compiler_module, "generate_run_id", lambda: "run_wdl")
+    monkeypatch.setattr(
+        compiler,
+        "_resolve_workflow_image_registry",
+        AsyncMock(
+            return_value=WorkflowImageRegistry(
+                endpoint="https://harbor.example.test",
+                namespace="bio",
+                registry_id="registry-1",
+                auth_config={"username": "robot", "password": "secret"},
+            )
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        compiler,
+        "_materialize_runtime_inputs",
+        lambda resolved_values, **kwargs: resolved_values,
+    )
+    monkeypatch.setattr(
+        compiler,
+        "_build_engine_inputs",
+        lambda **kwargs: ({}, {}, 0),
+    )
+    monkeypatch.setattr(
+        run_compiler_module,
+        "workflow_entrypoint_path",
+        lambda workflow: workflow_path,
+    )
+
+    payload = RunCreate(project_id=project_id, workflow_id=workflow_id)
+    validated = ValidatedRun(
+        project=SimpleNamespace(
+            id=str(project_id),
+            storage_mode="external",
+            external_root_path=str(project_home),
+        ),
+        workflow=SimpleNamespace(
+            id=str(workflow_id),
+            name="wdl_registry_smoke",
+            engine="wdl",
+            source="local",
+            source_ref="local",
+            entrypoint_relpath="workflow.wdl",
+            schema_json={
+                "workflow_name": "wdl_registry_smoke",
+                "tasks": [{"name": "align", "container": "bwa:0.7.17"}],
+            },
+        ),
+        spec=FormSpec(fields=[]),
+        submitted_values={},
+        resolved_values={},
+    )
+
+    compiled = await compiler._compile(payload, validated=validated)
+
+    expected_image = "harbor.example.test/bio/bwa:0.7.17"
+    assert compiled.run.config["runtime"]["required_images"] == [
+        {
+            "full_name": expected_image,
+            "name": "bio/bwa",
+            "tag": "0.7.17",
+            "registry": "harbor.example.test",
+            "registry_id": "registry-1",
+        }
+    ]
+    assert "secret" not in str(compiled.run.config)
+    assert adapter.pre_submit_config is not None
+    assert adapter.pre_submit_config["runtime"]["required_images"] == [
+        {
+            "full_name": expected_image,
+            "name": "bio/bwa",
+            "tag": "0.7.17",
+            "registry": "harbor.example.test",
+            "registry_id": "registry-1",
+        }
+    ]
+    resolved_workflow_path = Path(compiled.run.config["workflow_path"])
+    assert compiled.run.config["runtime"]["resolved_workflow_path"] == str(
+        resolved_workflow_path
+    )
+    assert resolved_workflow_path != workflow_path
+    assert resolved_workflow_path.exists()
+    assert f'docker: "{expected_image}"' in resolved_workflow_path.read_text(
+        encoding="utf-8"
+    )
+    assert compiled.launch.argv == ("miniwdl", "run", str(resolved_workflow_path))
+
+
+@pytest.mark.asyncio
+async def test_compile_nextflow_sets_registry_override_for_unqualified_images(
+    monkeypatch, tmp_path
+):
+    class FakeNextflowAdapter:
+        engine_name = "nextflow"
+        display_name = "Nextflow"
+        binary = "nextflow"
+        supports_native_resume = True
+
+        def __init__(self):
+            self.pre_submit_config: dict | None = None
+
+        async def pre_submit(self, config: dict, workspace: str) -> dict:
+            self.pre_submit_config = config
+            return config
+
+        async def build_command(self, config: dict, workspace: str) -> list[str]:
+            return ["nextflow", "run", config["pipeline"]]
+
+    adapter = FakeNextflowAdapter()
+    project_id = uuid4()
+    workflow_id = uuid4()
+    project_home = tmp_path / "project-home"
+    compiler = _make_compiler(storage=SimpleNamespace(resolve_asset=AsyncMock()))
+    monkeypatch.setattr(run_compiler_module, "get_adapter", lambda engine: adapter)
+    monkeypatch.setattr(run_compiler_module, "generate_run_id", lambda: "run_nf")
+    monkeypatch.setattr(
+        compiler,
+        "_resolve_workflow_image_registry",
+        AsyncMock(
+            return_value=WorkflowImageRegistry(
+                endpoint="https://harbor.example.test",
+                namespace="bio",
+                registry_id="registry-1",
+                auth_config=None,
+            )
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        compiler,
+        "_materialize_runtime_inputs",
+        lambda resolved_values, **kwargs: resolved_values,
+    )
+    monkeypatch.setattr(
+        compiler,
+        "_build_engine_inputs",
+        lambda **kwargs: ({}, {}, 0),
+    )
+
+    payload = RunCreate(project_id=project_id, workflow_id=workflow_id)
+    validated = ValidatedRun(
+        project=SimpleNamespace(
+            id=str(project_id),
+            storage_mode="external",
+            external_root_path=str(project_home),
+        ),
+        workflow=SimpleNamespace(
+            id=str(workflow_id),
+            name="rnaseq",
+            engine="nextflow",
+            source="nf-core",
+            source_ref="nf-core/rnaseq",
+            version="3.18.0",
+            schema_json={"tasks": [{"name": "align", "container": "bwa:0.7.17"}]},
+        ),
+        spec=FormSpec(fields=[]),
+        submitted_values={},
+        resolved_values={},
+    )
+
+    compiled = await compiler._compile(payload, validated=validated)
+
+    assert adapter.pre_submit_config is not None
+    overrides = adapter.pre_submit_config["config_overrides"]
+    assert overrides["docker.registry"] == "harbor.example.test/bio"
+    assert adapter.pre_submit_config["request"]["config_overrides"][
+        "docker.registry"
+    ] == "harbor.example.test/bio"
+    assert compiled.run.config["config_overrides"]["docker.registry"] == (
+        "harbor.example.test/bio"
+    )
+    assert compiled.run.config["request"]["config_overrides"]["docker.registry"] == (
+        "harbor.example.test/bio"
+    )
+
+
 def _make_compiler(*, storage, project_repo=None) -> RunCompiler:
     compiler = RunCompiler.__new__(RunCompiler)
     compiler.session = SimpleNamespace()
@@ -498,6 +713,7 @@ def _make_compiler(*, storage, project_repo=None) -> RunCompiler:
     compiler.project_repo = project_repo or SimpleNamespace(
         get=AsyncMock(return_value=SimpleNamespace(id="p"))
     )
+    compiler._resolve_workflow_image_registry = AsyncMock(return_value=None)
     return compiler
 
 

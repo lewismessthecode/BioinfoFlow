@@ -439,6 +439,63 @@ async def test_image_service_pull_respects_explicit_registry_with_registry_id(
 
 
 @pytest.mark.asyncio
+async def test_image_service_pull_uses_auth_for_matching_explicit_registry(
+    db_session,
+    monkeypatch,
+):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    registry = await ContainerRegistryService(db_session).create_registry(
+        {
+            "name": "Harbor Bio",
+            "endpoint": "https://harbor.example.test",
+            "namespace": "bio",
+            "credential_source": "stored",
+            "username": "robot-user",
+            "password": "top-secret-value",
+            "updated_by": "user-1",
+        }
+    )
+    captured: dict[str, object] = {}
+
+    class FakeDockerService:
+        async def is_available(self) -> bool:
+            return True
+
+    def fake_submit(func, *args, **kwargs):
+        captured["func"] = func
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(image_service, "DockerService", FakeDockerService)
+    monkeypatch.setattr(image_service.background_tasks, "submit", fake_submit)
+
+    service = ImageService(db_session)
+
+    image = await service.pull_image(
+        name="harbor.example.test/bio/bwa",
+        tag="0.7.17",
+        registry_id=str(registry.id),
+    )
+
+    assert image.name == "bio/bwa"
+    assert image.tag == "0.7.17"
+    assert image.registry == "harbor.example.test"
+    assert image.full_name == "harbor.example.test/bio/bwa:0.7.17"
+    assert captured["args"] == (
+        image.id,
+        "bio/bwa",
+        "0.7.17",
+        "harbor.example.test",
+        None,
+    )
+    assert captured["kwargs"] == {
+        "auth_config": {"username": "robot-user", "password": "top-secret-value"},
+        "registry_id": str(registry.id),
+    }
+
+
+@pytest.mark.asyncio
 async def test_image_service_pull_rejects_project_context_from_other_workspace(
     db_session, monkeypatch
 ):

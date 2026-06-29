@@ -6,6 +6,7 @@ import os
 from typing import Any
 from urllib.parse import urlparse
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
@@ -22,7 +23,7 @@ from app.services.llm.credentials import (
     generate_credential_fingerprint,
     mask_secret,
 )
-from app.utils.exceptions import NotFoundError
+from app.utils.exceptions import ConflictError, NotFoundError
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,13 @@ class ContainerRegistryService:
         payload.update(_credential_payload(data, existing=None))
         if payload["is_default"]:
             await self.registry_repo.unset_default_except()
-        return await self.registry_repo.create(**payload)
+        try:
+            return await self.registry_repo.create(**payload)
+        except IntegrityError as exc:
+            await self.registry_repo.session.rollback()
+            raise ConflictError(
+                "Only one container registry can be the default"
+            ) from exc
 
     async def update_registry(
         self,
@@ -86,7 +93,13 @@ class ContainerRegistryService:
         updates = _registry_updates(data, registry)
         if updates.get("is_default") is True:
             await self.registry_repo.unset_default_except(str(registry.id))
-        return await self.registry_repo.update_all(registry, **updates)
+        try:
+            return await self.registry_repo.update_all(registry, **updates)
+        except IntegrityError as exc:
+            await self.registry_repo.session.rollback()
+            raise ConflictError(
+                "Only one container registry can be the default"
+            ) from exc
 
     async def delete_registry(self, registry_id: str) -> None:
         registry = await self.get_registry(registry_id)
@@ -152,12 +165,15 @@ class ContainerRegistryService:
             name_part
         )
         if explicit_registry:
+            registry_matches = detected_registry == normalize_registry(material.endpoint)
             return ContainerRegistryImageTarget(
                 name=image_name,
                 tag=resolved_tag,
                 registry=detected_registry,
-                auth_config=None,
-                registry_id=None,
+                auth_config=(
+                    _auth_config_from_material(material) if registry_matches else None
+                ),
+                registry_id=material.registry_id if registry_matches else None,
             )
 
         namespace = _normalize_namespace(material.namespace)

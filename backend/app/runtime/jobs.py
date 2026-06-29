@@ -16,6 +16,7 @@ from app.engine.backend import EngineEvent, EngineEventType
 from app.path_layout import workflow_entrypoint_path
 from app.runtime.events import publish_run_dag, publish_run_log, publish_run_status
 from app.services.dag_parser import DagParser
+from app.services.container_registry_service import ContainerRegistryService
 from app.services.trace_parser import TraceParser
 from app.utils.dag_builder import (
     build_dag_from_schema,
@@ -431,10 +432,10 @@ def _build_engine_config(
         if isinstance(work_dir, str) and work_dir.strip()
         else ""
     )
-    workflow_path = ""
-    if str(getattr(workflow.source, "value", workflow.source)) == "local":
+    workflow_path = _optional_runtime_path(runtime.get("resolved_workflow_path"))
+    if not workflow_path and str(getattr(workflow.source, "value", workflow.source)) == "local":
         workflow_path = str(workflow_entrypoint_path(workflow))
-    elif getattr(workflow, "source_ref", None):
+    elif not workflow_path and getattr(workflow, "source_ref", None):
         workflow_path = str(workflow.source_ref)
     config.update(
         {
@@ -457,6 +458,52 @@ def _build_engine_config(
         }
     )
     return config
+
+
+async def attach_required_image_auth(session: AsyncSession, config: dict) -> dict:
+    runtime = dict(config.get("runtime", {}) or {})
+    required_images = runtime.get("required_images")
+    if not isinstance(required_images, list):
+        return config
+
+    registry_service = ContainerRegistryService(session)
+    cache: dict[str, dict[str, str] | None] = {}
+    resolved_images: list[Any] = []
+    changed = False
+    for image in required_images:
+        if not isinstance(image, dict):
+            resolved_images.append(image)
+            continue
+        registry_id = image.get("registry_id")
+        if not isinstance(registry_id, str) or not registry_id.strip():
+            resolved_images.append(image)
+            continue
+        if registry_id not in cache:
+            material = await registry_service.resolve_auth_material(registry_id)
+            auth_config: dict[str, str] = {}
+            if material.username:
+                auth_config["username"] = material.username
+            if material.password:
+                auth_config["password"] = material.password
+            cache[registry_id] = auth_config or None
+        auth_config = cache[registry_id]
+        if auth_config is None:
+            resolved_images.append(image)
+            continue
+        resolved_images.append({**image, "auth_config": auth_config})
+        changed = True
+
+    if not changed:
+        return config
+    runtime["required_images"] = resolved_images
+    return {**config, "runtime": runtime}
+
+
+def _optional_runtime_path(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    return text
 
 
 async def _apply_runtime_patch(session, run, patch: dict | None) -> None:

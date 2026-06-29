@@ -469,6 +469,74 @@ describe("WorkflowRegisterDialog", () => {
     )
   })
 
+  it("keeps automatic workflow registration free of registry ids", async () => {
+    const onRegistered = vi.fn()
+
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/container-registries") {
+        return {
+          data: [
+            {
+              id: "registry-harbor",
+              name: "Lab Harbor",
+              endpoint: "harbor.local:5000",
+              provider: "harbor",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      if (path === "/workflows" && options?.method === "POST") {
+        return {
+          data: {
+            id: "workflow-nfcore-1",
+            name: "rnaseq",
+            source: "nf-core",
+            engine: "nextflow",
+            version: "3.18.0",
+          },
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(
+      <WorkflowRegisterDialog
+        open
+        onOpenChange={() => {}}
+        onRegistered={onRegistered}
+      />
+    )
+
+    const registrySelect = await screen.findByLabelText(
+      "workflows.registerDialog.fields.imageRegistry"
+    )
+    expect(registrySelect).toHaveValue("")
+
+    fireEvent.change(screen.getByLabelText("workflows.registerDialog.fields.pipelineName"), {
+      target: { value: "nf-core/rnaseq" },
+    })
+    fireEvent.change(screen.getByLabelText("workflows.version"), {
+      target: { value: "3.18.0" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "workflows.register" }))
+
+    await waitFor(() => {
+      expect(latestWorkflowJsonPayload()).toEqual({
+        source: "nf-core",
+        engine: "nextflow",
+        name: "rnaseq",
+        version: "3.18.0",
+      })
+    })
+
+    expect(onRegistered).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "workflow-nfcore-1", name: "rnaseq" })
+    )
+  })
+
   it("submits a selected local bundle as multipart data and lets the user choose the entrypoint", async () => {
     const onRegistered = vi.fn()
 

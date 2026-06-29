@@ -140,11 +140,13 @@ add Harbor like this:
 | Default | On, if this should be the global workflow-image default |
 | Credentials | Stored credentials, environment variables, or none |
 
-Stored credentials are encrypted and redacted after saving. Environment
-credentials are env var names available to the backend container, such as
-`BIO_REGISTRY_USER` and `BIO_REGISTRY_PASSWORD`. Use **No credentials** when the
-Docker environment is already authenticated or the registry is public. Use
-**Test** after saving to confirm the backend can read the credentials.
+Stored credentials are encrypted and redacted after saving. Use the actual
+Harbor user or robot account name, for example `robot$pipeline-dev`, not the
+namespace alone. Environment credentials are env var names available to the
+backend container, such as `BIO_REGISTRY_USER` and `BIO_REGISTRY_PASSWORD`. Use
+**No credentials** when the Docker environment is already authenticated or the
+registry is public. Use **Test** after saving to confirm the backend can read the
+credentials.
 
 During workflow registration, **Image Registry -> Automatic** uses the configured
 default for unqualified static workflow images when one exists. Explicit image
@@ -156,12 +158,19 @@ shared platform capability. Project-level registry override is reserved in the
 data model for future policy; the current UI exposes a global default and
 per-workflow selection.
 
+AgentCore follows the same rule: `images.pull` can pull full image names
+directly, automatic/default behavior remains available for unqualified names, and
+explicit `registry_id` use is limited to owners/admins in team mode.
+
 For WDL, static task `docker`/`container` references are captured during workflow
 registration and missing images are prefetched automatically before MiniWDL
-starts. Dynamic container expressions are skipped and resolved at runtime. For
-Nextflow, Docker pull is enabled when Docker is available, so Nextflow pulls the
-pipeline's configured process images. You can also use full Harbor image names in
-the workflow or pipeline config:
+starts. When a configured registry applies, run compilation uses a run-local WDL
+copy with those static container literals rewritten to the same resolved image
+names. Dynamic container expressions are skipped and resolved at runtime. For
+Nextflow, Docker pull is enabled when Docker is available, and Bioinfoflow
+injects the configured registry prefix as `docker.registry` for unqualified
+process images. You can also use full Harbor image names in the workflow or
+pipeline config:
 
 ```text
 10.227.4.56:80/pipeline-dev/bwa:0.7.17

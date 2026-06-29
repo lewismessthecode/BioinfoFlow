@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +30,17 @@ class WorkflowImageRegistry:
         namespace = str(self.namespace or "").strip().strip("/")
         return namespace or None
 
+    def matches_registry(self, registry: str) -> bool:
+        return self.normalized_endpoint == normalize_registry(registry)
+
+    @property
+    def image_prefix(self) -> str:
+        endpoint = self.normalized_endpoint
+        namespace = self.normalized_namespace
+        if namespace:
+            return f"{endpoint}/{namespace}"
+        return endpoint
+
 
 @dataclass(frozen=True)
 class WorkflowImageRequirement:
@@ -41,6 +53,17 @@ class WorkflowImageRequirement:
     rewrite_applied: bool
     registry_id: str | None = None
     auth_config: dict[str, Any] | None = None
+
+    def runtime_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "full_name": self.full_name,
+            "name": self.name,
+            "tag": self.tag,
+            "registry": self.registry,
+        }
+        if self.registry_id:
+            payload["registry_id"] = self.registry_id
+        return payload
 
 
 @dataclass(frozen=True)
@@ -106,7 +129,7 @@ class WorkflowImagePrefetchService:
                     user_id=None,
                     workspace_id=None,
                     auth_config=requirement.auth_config,
-                    registry_id=requirement.registry_id,
+                    registry_id=None,
                 )
             except DockerUnavailableError as exc:
                 failed.append(
@@ -166,6 +189,34 @@ def resolve_workflow_image_requirements(
     ]
 
 
+def resolved_workflow_container_images(
+    schema_json: dict | None,
+    *,
+    default_registry: WorkflowImageRegistry | None = None,
+) -> list[str]:
+    return [
+        requirement.full_name
+        for requirement in resolve_workflow_image_requirements(
+            schema_json,
+            default_registry=default_registry,
+        )
+    ]
+
+
+def runtime_workflow_container_images(
+    schema_json: dict | None,
+    *,
+    default_registry: WorkflowImageRegistry | None = None,
+) -> list[dict[str, Any]]:
+    return [
+        requirement.runtime_dict()
+        for requirement in resolve_workflow_image_requirements(
+            schema_json,
+            default_registry=default_registry,
+        )
+    ]
+
+
 def resolve_container_image_reference(
     reference: str,
     *,
@@ -186,6 +237,10 @@ def resolve_container_image_reference(
                 name = f"{namespace}/{name}"
             registry = default_endpoint
             rewrite_applied = True
+            auth_config = default_registry.auth_config
+            registry_id = default_registry.registry_id
+    elif explicit_registry and default_registry is not None:
+        if default_registry.matches_registry(registry):
             auth_config = default_registry.auth_config
             registry_id = default_registry.registry_id
 
@@ -230,7 +285,7 @@ def _is_dynamic_container_expression(image: str) -> bool:
     return "${" in image or "~{" in image or any(char.isspace() for char in image)
 
 
-def _registry_from_auth_material(
+def workflow_registry_from_auth_material(
     material: ContainerRegistryAuthMaterial,
 ) -> WorkflowImageRegistry:
     auth_config: dict[str, Any] = {}
@@ -244,3 +299,37 @@ def _registry_from_auth_material(
         registry_id=material.registry_id,
         auth_config=auth_config or None,
     )
+
+
+_WDL_CONTAINER_LITERAL_RE = re.compile(
+    r"(?P<prefix>\b(?:docker|container)\s*:\s*)"
+    r"(?P<quote>[\"'])"
+    r"(?P<image>[^\"']+)"
+    r"(?P=quote)"
+)
+
+
+def rewrite_wdl_static_container_literals(
+    content: str,
+    *,
+    default_registry: WorkflowImageRegistry | None,
+) -> str:
+    if default_registry is None:
+        return content
+
+    def replace(match: re.Match[str]) -> str:
+        image = match.group("image").strip()
+        if _is_dynamic_container_expression(image):
+            return match.group(0)
+        requirement = resolve_container_image_reference(
+            image,
+            default_registry=default_registry,
+        )
+        if requirement.full_name == image:
+            return match.group(0)
+        return f"{match.group('prefix')}{match.group('quote')}{requirement.full_name}{match.group('quote')}"
+
+    return _WDL_CONTAINER_LITERAL_RE.sub(replace, content)
+
+
+_registry_from_auth_material = workflow_registry_from_auth_material

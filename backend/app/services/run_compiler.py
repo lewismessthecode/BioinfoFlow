@@ -71,7 +71,14 @@ from app.services.run_dispatch import RunDispatcher, get_run_dispatcher
 from app.services.run_helpers import build_resolved_runspec, generate_run_id
 from app.services.storage_service import StorageService
 from app.services.workflow_form_spec import effective_workflow_form_spec
-from app.services.workflow_image_service import workflow_container_images
+from app.services.container_registry_service import ContainerRegistryService
+from app.services.workflow_image_service import (
+    WorkflowImageRegistry,
+    rewrite_wdl_static_container_literals,
+    runtime_workflow_container_images,
+    workflow_container_images,
+    workflow_registry_from_auth_material,
+)
 from app.utils.project_access import can_access_project
 
 
@@ -279,6 +286,16 @@ class RunCompiler:
             and _optional_text(options.profile)
         ):
             config["profile"] = str(options.profile).strip()
+        image_registry = await self._resolve_workflow_image_registry(
+            workflow,
+            project_id=str(payload.project_id),
+        )
+        if engine == WorkflowEngine.NEXTFLOW.value and image_registry is not None:
+            _set_config_override(
+                config,
+                "docker.registry",
+                image_registry.image_prefix,
+            )
         config = self._enrich_runtime(
             config,
             workflow=workflow,
@@ -286,6 +303,7 @@ class RunCompiler:
             layout=layout,
             run_id=run_id,
             engine=engine,
+            image_registry=image_registry,
         )
 
         # ── build launch spec via adapter ──────────────────────────────────
@@ -821,6 +839,7 @@ class RunCompiler:
         layout: RunLayout,
         run_id: str,
         engine: str,
+        image_registry: WorkflowImageRegistry | None = None,
     ) -> dict:
         """Add runtime paths the adapter needs at command-build time.
 
@@ -836,7 +855,8 @@ class RunCompiler:
         )
         runtime["work_dir"] = str(layout.engine_workspace.relative_to(workspace_path))
         required_images = _required_container_images(
-            getattr(workflow, "schema_json", None)
+            getattr(workflow, "schema_json", None),
+            image_registry=image_registry,
         )
         if required_images:
             runtime["required_images"] = required_images
@@ -855,6 +875,19 @@ class RunCompiler:
             workflow_path = str(workflow.source_ref)
 
         config = dict(config)
+        if (
+            engine == WorkflowEngine.WDL.value
+            and workflow_path
+            and image_registry is not None
+        ):
+            workflow_path = str(
+                _write_resolved_wdl_workflow(
+                    Path(workflow_path),
+                    layout=layout,
+                    image_registry=image_registry,
+                )
+            )
+            runtime["resolved_workflow_path"] = workflow_path
         source_value = str(getattr(workflow.source, "value", workflow.source))
         revision = _optional_nextflow_revision(getattr(workflow, "version", None))
         if (
@@ -873,6 +906,23 @@ class RunCompiler:
         config["outdir"] = RunConfigHelper(config).params.get("outdir") or "results"
         config["options"] = dict(config.get("options") or {})
         return config
+
+    async def _resolve_workflow_image_registry(
+        self,
+        workflow,
+        *,
+        project_id: str,
+    ) -> WorkflowImageRegistry | None:
+        registry_service = ContainerRegistryService(self.session)
+        registry_id = getattr(workflow, "container_registry_id", None)
+        if registry_id:
+            material = await registry_service.resolve_auth_material(str(registry_id))
+            return workflow_registry_from_auth_material(material)
+        registry = await registry_service.get_effective_registry(project_id=project_id)
+        if registry is None:
+            return None
+        material = await registry_service.resolve_auth_material(str(registry.id))
+        return workflow_registry_from_auth_material(material)
 
     @staticmethod
     def _write_json(path: Path, payload: dict) -> None:
@@ -1120,8 +1170,50 @@ def _merge_values_with_defaults(
     return merged
 
 
-def _required_container_images(schema_json: dict | None) -> list[str]:
+def _required_container_images(
+    schema_json: dict | None,
+    *,
+    image_registry: WorkflowImageRegistry | None = None,
+) -> list[Any]:
+    if image_registry is not None:
+        return runtime_workflow_container_images(
+            schema_json,
+            default_registry=image_registry,
+        )
     return workflow_container_images(schema_json)
+
+
+def _set_config_override(config: dict, key: str, value: Any) -> None:
+    overrides = dict(config.get("config_overrides") or {})
+    overrides.setdefault(key, value)
+    config["config_overrides"] = overrides
+
+    request = dict(config.get("request") or {})
+    request_overrides = dict(request.get("config_overrides") or {})
+    request_overrides.setdefault(key, value)
+    request["config_overrides"] = request_overrides
+    config["request"] = request
+
+
+def _write_resolved_wdl_workflow(
+    workflow_path: Path,
+    *,
+    layout: RunLayout,
+    image_registry: WorkflowImageRegistry,
+) -> Path:
+    if not workflow_path.is_file():
+        return workflow_path
+    content = workflow_path.read_text(encoding="utf-8")
+    resolved = rewrite_wdl_static_container_literals(
+        content,
+        default_registry=image_registry,
+    )
+    if resolved == content:
+        return workflow_path
+    target = layout.engine_workspace.parent / "workflow.resolved.wdl"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(resolved, encoding="utf-8")
+    return target
 
 
 def _is_absolute_or_home_path(value: str) -> bool:
