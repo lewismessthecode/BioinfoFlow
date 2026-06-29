@@ -62,8 +62,10 @@ def configured_run_mounts(
     failed to create `$outdir/Sample.info`, then died reading it back with
     the misleading "Main ERROR read sample list error".
 
-    `host_dir` is the miniwdl task working directory. We derive
-    project_id and run_id from its position under `projects_root()`.
+    `host_dir` is the miniwdl task working directory. We derive the
+    project root and run root from the canonical
+    `<project>/runs/<run_id>/engine/wdl/work/...` shape, which covers both
+    managed and external projects.
     """
     layout = _infer_run_layout_from_host_dir(Path(host_dir))
     if layout is None:

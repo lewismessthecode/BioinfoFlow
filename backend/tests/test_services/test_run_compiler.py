@@ -412,6 +412,52 @@ async def test_resolve_values_resolves_table_paths_within_allowed_roots(
     }
 
 
+def test_materialize_wdl_table_path_cells_into_current_run_input(tmp_path):
+    compiler = _make_compiler(storage=SimpleNamespace(resolve_asset=AsyncMock()))
+    project = SimpleNamespace(
+        id="p",
+        storage_mode="external",
+        external_root_path=str(tmp_path / "project"),
+    )
+    layout = RunLayout.for_run(project, "run_wdl_table_paths", "wdl")
+    upload_root = tmp_path / "project" / "state" / "run_uploads"
+    source = upload_root / "upload-1" / "reads.fq.gz"
+    source.parent.mkdir(parents=True)
+    source.write_text("FASTQ", encoding="utf-8")
+    spec = FormSpec(
+        fields=[
+            FormField(
+                id="sheet",
+                label="Sheet",
+                section="data",
+                kind="table",
+                columns=[
+                    ColumnSpec(name="sample", kind="string"),
+                    ColumnSpec(name="fastq_1", kind="path"),
+                ],
+            )
+        ]
+    )
+
+    materialized = compiler._materialize_runtime_inputs(
+        {
+            "sheet": {
+                "filename": "samples.csv",
+                "rows": [{"sample": "S1", "fastq_1": str(source)}],
+            }
+        },
+        workflow=SimpleNamespace(source="remote", engine="wdl"),
+        spec=spec,
+        layout=layout,
+        project=project,
+    )
+
+    copied = Path(materialized["sheet"]["rows"][0]["fastq_1"])
+    assert copied != source
+    assert copied.is_relative_to(layout.input.resolve())
+    assert copied.read_text(encoding="utf-8") == "FASTQ"
+
+
 @pytest.mark.asyncio
 async def test_compile_wdl_launch_snapshot_does_not_pull_required_images(
     monkeypatch, tmp_path

@@ -14,7 +14,7 @@
 
 - A run has one immutable public identity and one exclusive filesystem home.
 - A replayed run records queryable lineage: source run, replay kind, attempt number, and replay idempotency key.
-- Duplicate retry/resume requests for the same failed source and same replay intent must not enqueue duplicate active child work.
+- Duplicate retry/resume requests for the same failed source and same replay intent must resolve to the same child run, even if the child has already reached a terminal state.
 - A scheduler may have at most one active task (`queued` or `dispatched`) per run at the database level.
 - A scheduler retry starts a fresh attempt clock and clears stale per-attempt counters.
 - New-schema runs resolve outputs from `runs/<run_id>/results`; legacy configured outdir fallback is allowed only for legacy configs.
@@ -33,8 +33,8 @@
 - [ ] Add failing tests:
   - invalid `runs.status` insert fails;
   - duplicate active `scheduled_tasks` rows for one `run_id` fail;
-  - duplicate active replay rows with the same `(source_run_id, replay_kind, idempotency_key)` fail;
-  - terminal replay rows do not block a later retry with the same intent.
+  - duplicate replay rows with the same `(source_run_id, replay_kind, idempotency_key)` fail, regardless of terminal state;
+  - partial replay lineage rows and self-sourced replay rows fail.
 - [ ] Run:
   - `rtk uv run pytest tests/test_models/test_run_invariants.py -q`
   - Expected before implementation: failures from missing columns/constraints.
@@ -46,7 +46,8 @@
 - [ ] Add DB constraints and indexes:
   - allowed `runs.status`;
   - allowed nullable `runs.replay_kind`;
-  - partial unique active replay index on `(source_run_id, replay_kind, replay_idempotency_key)` for statuses `pending`, `queued`, `preparing`, `running`;
+  - partial unique replay index on `(source_run_id, replay_kind, replay_idempotency_key)` for non-null replay intent rows;
+  - all-or-none lineage constraints tying `source_run_id`, `replay_kind`, `replay_idempotency_key`, and `attempt_number` together;
   - partial unique active scheduler index on `scheduled_tasks(run_id)` for states `queued`, `dispatched`.
 - [ ] Run:
   - `rtk uv run pytest tests/test_models/test_run_invariants.py -q`
@@ -68,7 +69,7 @@
 - Test: `backend/tests/test_api/test_runs.py`
 
 - [ ] Add failing tests:
-  - two identical `retry_run()` calls against a failed run return the same active child;
+  - two identical `retry_run()` calls against a failed run return the same child, including after that child is terminal;
   - retry child stores `source_run_id`, `replay_kind="retry"`, `attempt_number=source.attempt_number+1`;
   - resume child stores `source_run_id`, `replay_kind="resume"`;
   - `POST /runs` with `options.resume_from_run_id` returns 422 until first-class create-time resume is implemented.
@@ -77,9 +78,10 @@
   - Expected before implementation: failures.
 - [ ] Implement deterministic replay idempotency:
   - compute a stable SHA-256 key from source run id, replay kind, replay values, replay options, config overrides, and resume payload;
-  - before compiling, return an existing active child with the same key;
+  - before compiling, return an existing child with the same key;
   - pass lineage fields into `RunCompiler.create_run`;
-  - after compile, catch active replay unique-index conflicts and return the existing active child.
+  - after compile, catch replay unique-index conflicts and return the existing child;
+  - if persistence fails before dispatch, remove the half-created child so idempotency cannot wedge on a non-runnable row.
 - [ ] Reject `RunOptions.resume_from_run_id` in create-run validation with a structured `CompileError`.
 - [ ] Run:
   - focused tests above;
@@ -103,10 +105,14 @@
   - concurrent enqueue creates one active task;
   - queue state helpers refuse illegal terminal-to-dispatched or terminal-to-queued transitions;
   - scheduler retry clears `started_at`, `last_heartbeat_at`, `current_task`, `tasks_total`, and `tasks_completed`;
+  - scheduler retry clears stale process identifiers and does not orphan a run if task requeue loses a race;
+  - terminal transitions cannot overwrite a newer terminal state;
+  - task claim is guarded by a database state predicate, not only a process-local lock;
   - repository/lifecycle terminal helpers compute `duration_seconds`.
 - [ ] Run focused tests and confirm red.
 - [ ] Implement enqueue conflict handling and transition guards.
 - [ ] Reset per-attempt run fields in `_schedule_retry()`.
+- [ ] Make terminal state updates and task claims conditional database updates.
 - [ ] Compute duration in repository/lifecycle terminal helpers.
 - [ ] Run:
   - `rtk uv run pytest tests/test_scheduler/test_queue.py tests/test_scheduler/test_retry.py tests/test_services/test_run_lifecycle_service.py -q`.
@@ -155,10 +161,13 @@
   - managed project WDL host dir mounts project `data` read-only, run `input` read-only, run `results` read-write;
   - external project WDL host dir derives the same mounts from the canonical `.../runs/<run_id>/engine/wdl/work` shape;
   - WDL best-effort resume keeps current run work dir as the miniwdl `--dir` so mount inference follows the new run.
+  - WDL best-effort resume fails clearly if the source work dir has been cleaned up.
+  - WDL table/manifest path cells under unmounted roots are materialized into the current run `input/` tree.
 - [ ] Run focused tests and confirm red.
 - [ ] Derive run mounts from the nearest `runs/<run_id>/engine/<engine>/work` ancestor instead of only `projects_root()`.
 - [ ] Add project data as a sibling read-only mount.
 - [ ] Preserve source resume work dir as explicit resume metadata without letting miniwdl task host dir become the source run.
+- [ ] Validate source resume work dir and materialize unmounted WDL path cells.
 - [ ] Update docs to match the corrected identity-mount contract.
 - [ ] Run:
   - `rtk uv run pytest tests/test_engine/test_miniwdl_mounts.py tests/test_engine/test_wdl_adapter.py -q`

@@ -17,14 +17,13 @@ branch_labels = None
 depends_on = None
 
 
-RUN_ACTIVE_STATUS_SQL = "('pending', 'queued', 'preparing', 'running')"
 RUN_STATUS_SQL = (
     "('pending', 'queued', 'preparing', 'running', "
     "'completed', 'failed', 'cancelled')"
 )
 TASK_ACTIVE_STATE_SQL = "('queued', 'dispatched')"
 
-RUN_ACTIVE_REPLAY_INDEX = "uq_runs_active_replay_intent"
+RUN_REPLAY_INDEX = "uq_runs_replay_intent"
 TASK_ACTIVE_RUN_INDEX = "uq_scheduled_tasks_active_run"
 
 
@@ -75,6 +74,24 @@ def upgrade() -> None:
                 "ck_runs_attempt_number_positive",
                 "attempt_number >= 1",
             )
+            batch.create_check_constraint(
+                "ck_runs_replay_lineage_complete",
+                "("
+                "source_run_id IS NULL "
+                "AND replay_kind IS NULL "
+                "AND replay_idempotency_key IS NULL "
+                "AND attempt_number = 1"
+                ") OR ("
+                "source_run_id IS NOT NULL "
+                "AND replay_kind IS NOT NULL "
+                "AND replay_idempotency_key IS NOT NULL "
+                "AND attempt_number > 1"
+                ")",
+            )
+            batch.create_check_constraint(
+                "ck_runs_source_not_self",
+                "source_run_id IS NULL OR source_run_id != run_id",
+            )
             batch.create_foreign_key(
                 "fk_runs_source_run_id_runs",
                 "runs",
@@ -82,23 +99,21 @@ def upgrade() -> None:
                 ["run_id"],
                 ondelete="SET NULL",
             )
-        if RUN_ACTIVE_REPLAY_INDEX not in _indexes("runs"):
+        if RUN_REPLAY_INDEX not in _indexes("runs"):
             op.create_index(
-                RUN_ACTIVE_REPLAY_INDEX,
+                RUN_REPLAY_INDEX,
                 "runs",
                 ["source_run_id", "replay_kind", "replay_idempotency_key"],
                 unique=True,
                 sqlite_where=sa.text(
                     "source_run_id IS NOT NULL "
                     "AND replay_kind IS NOT NULL "
-                    "AND replay_idempotency_key IS NOT NULL "
-                    f"AND status IN {RUN_ACTIVE_STATUS_SQL}"
+                    "AND replay_idempotency_key IS NOT NULL"
                 ),
                 postgresql_where=sa.text(
                     "source_run_id IS NOT NULL "
                     "AND replay_kind IS NOT NULL "
-                    "AND replay_idempotency_key IS NOT NULL "
-                    f"AND status IN {RUN_ACTIVE_STATUS_SQL}"
+                    "AND replay_idempotency_key IS NOT NULL"
                 ),
             )
 
@@ -122,11 +137,13 @@ def downgrade() -> None:
         op.drop_index(TASK_ACTIVE_RUN_INDEX, table_name="scheduled_tasks")
 
     if _table_exists("runs"):
-        if RUN_ACTIVE_REPLAY_INDEX in _indexes("runs"):
-            op.drop_index(RUN_ACTIVE_REPLAY_INDEX, table_name="runs")
+        if RUN_REPLAY_INDEX in _indexes("runs"):
+            op.drop_index(RUN_REPLAY_INDEX, table_name="runs")
         existing_columns = _columns("runs")
         with op.batch_alter_table("runs") as batch:
             batch.drop_constraint("fk_runs_source_run_id_runs", type_="foreignkey")
+            batch.drop_constraint("ck_runs_source_not_self", type_="check")
+            batch.drop_constraint("ck_runs_replay_lineage_complete", type_="check")
             batch.drop_constraint("ck_runs_attempt_number_positive", type_="check")
             batch.drop_constraint("ck_runs_replay_kind_valid", type_="check")
             batch.drop_constraint("ck_runs_status_valid", type_="check")
@@ -172,7 +189,11 @@ def _terminalize_duplicate_active_tasks() -> None:
                     id,
                     ROW_NUMBER() OVER (
                         PARTITION BY run_id
-                        ORDER BY updated_at DESC, created_at DESC, id DESC
+                        ORDER BY
+                            CASE WHEN state = 'dispatched' THEN 0 ELSE 1 END,
+                            updated_at DESC,
+                            created_at DESC,
+                            id DESC
                     ) AS row_number
                 FROM scheduled_tasks
                 WHERE state IN {TASK_ACTIVE_STATE_SQL}

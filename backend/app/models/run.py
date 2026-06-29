@@ -42,8 +42,26 @@ class Run(Base, UUIDMixin, TimestampMixin):
             name="ck_runs_replay_kind_valid",
         ),
         CheckConstraint("attempt_number >= 1", name="ck_runs_attempt_number_positive"),
+        CheckConstraint(
+            "("
+            "source_run_id IS NULL "
+            "AND replay_kind IS NULL "
+            "AND replay_idempotency_key IS NULL "
+            "AND attempt_number = 1"
+            ") OR ("
+            "source_run_id IS NOT NULL "
+            "AND replay_kind IS NOT NULL "
+            "AND replay_idempotency_key IS NOT NULL "
+            "AND attempt_number > 1"
+            ")",
+            name="ck_runs_replay_lineage_complete",
+        ),
+        CheckConstraint(
+            "source_run_id IS NULL OR source_run_id != run_id",
+            name="ck_runs_source_not_self",
+        ),
         Index(
-            "uq_runs_active_replay_intent",
+            "uq_runs_replay_intent",
             "source_run_id",
             "replay_kind",
             "replay_idempotency_key",
@@ -51,14 +69,12 @@ class Run(Base, UUIDMixin, TimestampMixin):
             sqlite_where=text(
                 "source_run_id IS NOT NULL "
                 "AND replay_kind IS NOT NULL "
-                "AND replay_idempotency_key IS NOT NULL "
-                "AND status IN ('pending', 'queued', 'preparing', 'running')"
+                "AND replay_idempotency_key IS NOT NULL"
             ),
             postgresql_where=text(
                 "source_run_id IS NOT NULL "
                 "AND replay_kind IS NOT NULL "
-                "AND replay_idempotency_key IS NOT NULL "
-                "AND status IN ('pending', 'queued', 'preparing', 'running')"
+                "AND replay_idempotency_key IS NOT NULL"
             ),
         ),
     )

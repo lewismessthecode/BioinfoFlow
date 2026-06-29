@@ -23,6 +23,7 @@ snapshot of what the scheduler will execute.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import os
@@ -176,7 +177,7 @@ class RunCompiler:
         attempt_number: int = 1,
     ) -> Run:
         """Compile the envelope, persist the run, and queue it for dispatch."""
-        if payload.options and payload.options.resume_from_run_id:
+        if payload.options and payload.options.resume_from_run_id is not None:
             raise CompileError(
                 RunErrorCode.INVALID_FORM_VALUES,
                 "options.resume_from_run_id is not supported on run creation",
@@ -419,40 +420,45 @@ class RunCompiler:
             replay_idempotency_key=compiled.run.replay_idempotency_key,
             attempt_number=compiled.run.attempt_number,
         )
+        try:
+            workspace_path = project_home(
+                await self.project_repo.get(str(payload.project_id))
+            )
+            await self.archive.persist_run_archive(
+                run=run,
+                workspace_path=workspace_path,
+                engine=compiled.launch.engine,
+            )
 
-        workspace_path = project_home(
-            await self.project_repo.get(str(payload.project_id))
-        )
-        await self.archive.persist_run_archive(
-            run=run,
-            workspace_path=workspace_path,
-            engine=compiled.launch.engine,
-        )
-
-        run = await self.run_repo.update(run, status=RunStatus.QUEUED.value)
-        audit = AuditService(self.session)
-        await audit.log(
-            action="run.created",
-            resource_type="run",
-            resource_id=run.run_id,
-            project_id=str(run.project_id),
-            actor="api",
-            details={
-                "status": RunStatus.QUEUED.value,
-                "engine": compiled.launch.engine,
-            },
-        )
-        if audit_action:
+            run = await self.run_repo.update(run, status=RunStatus.QUEUED.value)
+            audit = AuditService(self.session)
             await audit.log(
-                action=audit_action,
+                action="run.created",
                 resource_type="run",
                 resource_id=run.run_id,
                 project_id=str(run.project_id),
                 actor="api",
-                details=audit_details or {},
+                details={
+                    "status": RunStatus.QUEUED.value,
+                    "engine": compiled.launch.engine,
+                },
             )
-        await publish_run_status(run, message="Run queued")
-        self.dispatcher.dispatch(run.run_id, priority=priority)
+            if audit_action:
+                await audit.log(
+                    action=audit_action,
+                    resource_type="run",
+                    resource_id=run.run_id,
+                    project_id=str(run.project_id),
+                    actor="api",
+                    details=audit_details or {},
+                )
+            await publish_run_status(run, message="Run queued")
+            self.dispatcher.dispatch(run.run_id, priority=priority)
+        except Exception:
+            await self.session.rollback()
+            await self.session.delete(run)
+            await self.session.commit()
+            raise
         return run
 
     # ── helpers ────────────────────────────────────────────────────────────
@@ -645,6 +651,7 @@ class RunCompiler:
 
         fields_by_id = {field.id: field for field in spec.fields}
         materialized: dict[str, Any] = {}
+        engine = str(getattr(getattr(workflow, "engine", ""), "value", getattr(workflow, "engine", "")))
 
         for field_id, value in resolved_values.items():
             field = fields_by_id.get(field_id)
@@ -664,11 +671,18 @@ class RunCompiler:
                     materialized_row: dict[str, Any] = {}
                     for key, cell in row.items():
                         if key in path_columns:
-                            materialized_row[key] = self._copy_bundle_asset_to_run(
+                            staged = self._copy_bundle_asset_to_run(
                                 cell,
                                 bundle_root=bundle_root,
                                 layout=layout,
                             )
+                            if engine == WorkflowEngine.WDL.value:
+                                staged = self._materialize_unmounted_wdl_path(
+                                    staged,
+                                    project=project,
+                                    layout=layout,
+                                )
+                            materialized_row[key] = staged
                         else:
                             materialized_row[key] = deepcopy(cell)
                     rows.append(materialized_row)
@@ -758,6 +772,40 @@ class RunCompiler:
         else:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(candidate, destination)
+
+        upload_root = project_run_uploads_root(project).resolve()
+        if candidate.is_relative_to(upload_root):
+            self._cleanup_staged_run_upload(candidate, upload_root=upload_root)
+
+        return str(destination)
+
+    def _materialize_unmounted_wdl_path(
+        self,
+        value: Any,
+        *,
+        project,
+        layout: RunLayout,
+    ) -> Any:
+        if not isinstance(value, str) or not value.strip():
+            return value
+        candidate = Path(value).expanduser().resolve(strict=False)
+        if not candidate.exists() or candidate.is_dir():
+            return value
+        mounted_roots = (
+            project_data_root(project).resolve(),
+            deliveries_root().resolve(),
+            reference_root().resolve(),
+            database_root().resolve(),
+            layout.input.resolve(),
+            layout.results.resolve(),
+        )
+        if any(candidate.is_relative_to(root) for root in mounted_roots):
+            return str(candidate)
+
+        digest = hashlib.sha256(str(candidate).encode("utf-8")).hexdigest()[:16]
+        destination = layout.materialized / "paths" / digest / candidate.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(candidate, destination)
 
         upload_root = project_run_uploads_root(project).resolve()
         if candidate.is_relative_to(upload_root):

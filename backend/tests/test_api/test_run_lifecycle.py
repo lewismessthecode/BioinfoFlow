@@ -321,6 +321,7 @@ class TestRunLifecycle:
         )
         db_session.add(run)
         await db_session.commit()
+        (workspace / ".bioinfoflow" / "miniwdl" / run.run_id).mkdir(parents=True)
 
         resp = await async_client.post(f"/api/v1/runs/{run.run_id}/resume", json={})
 

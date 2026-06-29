@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import app.database as app_database
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -58,6 +58,13 @@ DEFAULT_STATE_COUNTS = {
     "failed": 0,
     "cancelled": 0,
 }
+
+RUN_ACTIVE_STATUSES = (
+    RunStatus.PENDING.value,
+    RunStatus.QUEUED.value,
+    RunStatus.PREPARING.value,
+    RunStatus.RUNNING.value,
+)
 
 
 class QueueFullError(RuntimeError):
@@ -196,19 +203,32 @@ class RunScheduler:
                 if not cancelled:
                     return False
 
+            completed_at = _now()
             run.status = RunStatus.CANCELLED.value
             if reason:
                 run.error_message = reason
-            run.completed_at = _now()
-            run.duration_seconds = _duration_seconds(run.started_at, run.completed_at)
+            run.completed_at = completed_at
+            run.duration_seconds = _duration_seconds(run.started_at, completed_at)
             if workspace_path_str:
                 await _finalize_dag_statuses(run, workspace_path=workspace_path_str)
-            await self._mark_task_terminal_in_session(
+            run_updated = await self._transition_run_terminal_in_session(
+                session,
+                run,
+                status=RunStatus.CANCELLED.value,
+                completed_at=completed_at,
+                error_message=run.error_message,
+            )
+            task_updated = await self._mark_task_terminal_in_session(
                 session,
                 task_id=task.id,
                 state=TaskState.CANCELLED.value,
+                completed_at=completed_at,
             )
+            if not run_updated or not task_updated:
+                await session.rollback()
+                return False
             await session.commit()
+            await session.refresh(run)
             if workspace_path_str and engine:
                 await self._hooks(session).on_run_terminal(
                     run,
@@ -681,16 +701,30 @@ class RunScheduler:
         workspace_path: str,
         engine: str,
     ) -> None:
+        completed_at = _now()
         run.status = RunStatus.COMPLETED.value
-        run.completed_at = _now()
-        run.duration_seconds = _duration_seconds(run.started_at, run.completed_at)
+        run.completed_at = completed_at
+        run.duration_seconds = _duration_seconds(run.started_at, completed_at)
+        run.error_message = None
         await _finalize_dag_statuses(run, workspace_path=workspace_path)
-        await self._mark_task_terminal_in_session(
+        run_updated = await self._transition_run_terminal_in_session(
+            session,
+            run,
+            status=RunStatus.COMPLETED.value,
+            completed_at=completed_at,
+            error_message=None,
+        )
+        task_updated = await self._mark_task_terminal_in_session(
             session,
             task_id=task_id,
             state=TaskState.COMPLETED.value,
+            completed_at=completed_at,
         )
+        if not run_updated or not task_updated:
+            await session.rollback()
+            return
         await session.commit()
+        await session.refresh(run)
         await self._hooks(session).on_run_terminal(
             run,
             status=RunStatus.COMPLETED.value,
@@ -710,19 +744,32 @@ class RunScheduler:
         workspace_path: str | None,
         engine: str | None,
     ) -> None:
+        completed_at = _now()
         run.status = RunStatus.FAILED.value
         run.error_message = message
-        run.completed_at = _now()
-        run.duration_seconds = _duration_seconds(run.started_at, run.completed_at)
+        run.completed_at = completed_at
+        run.duration_seconds = _duration_seconds(run.started_at, completed_at)
         if workspace_path:
             await _finalize_dag_statuses(run, workspace_path=workspace_path)
-        await self._mark_task_terminal_in_session(
+        run_updated = await self._transition_run_terminal_in_session(
+            session,
+            run,
+            status=RunStatus.FAILED.value,
+            completed_at=completed_at,
+            error_message=message,
+        )
+        task_updated = await self._mark_task_terminal_in_session(
             session,
             task_id=task_id,
             state=TaskState.FAILED.value,
             error=message,
+            completed_at=completed_at,
         )
+        if not run_updated or not task_updated:
+            await session.rollback()
+            return
         await session.commit()
+        await session.refresh(run)
         if workspace_path and engine:
             await self._hooks(session).on_run_terminal(
                 run,
@@ -798,6 +845,11 @@ class RunScheduler:
 
         delay = evaluator.next_delay(task, retry_policy=retry_policy)
         delay_until = _now() + timedelta(seconds=delay)
+        next_attempt = task.attempt + 1
+        if next_attempt > int(task.max_attempts or 1):
+            return False
+
+        config = _clear_retry_runtime_fields(run.config)
         run.status = RunStatus.QUEUED.value
         run.started_at = None
         run.completed_at = None
@@ -806,17 +858,60 @@ class RunScheduler:
         run.current_task = None
         run.tasks_total = 0
         run.tasks_completed = 0
+        run.nextflow_run_name = None
+        run.config = config
         run.error_message = error
+        run.error_json = None
+        with session.no_autoflush:
+            task_result = await session.execute(
+                update(ScheduledTask)
+                .where(
+                    ScheduledTask.id == task.id,
+                    ScheduledTask.state == TaskState.DISPATCHED.value,
+                    ScheduledTask.max_attempts >= next_attempt,
+                )
+                .values(
+                    state=TaskState.QUEUED.value,
+                    attempt=next_attempt,
+                    delay_until=delay_until,
+                    dispatched_at=None,
+                    completed_at=None,
+                    worker_id=None,
+                    error_message=error,
+                )
+            )
+            if task_result.rowcount != 1:
+                await session.rollback()
+                return False
+            run_result = await session.execute(
+                update(Run)
+                .where(
+                    Run.run_id == run.run_id,
+                    Run.status.in_(RUN_ACTIVE_STATUSES),
+                )
+                .values(
+                    status=RunStatus.QUEUED.value,
+                    started_at=None,
+                    completed_at=None,
+                    duration_seconds=None,
+                    last_heartbeat_at=None,
+                    current_task=None,
+                    tasks_total=0,
+                    tasks_completed=0,
+                    nextflow_run_name=None,
+                    config=config,
+                    error_message=error,
+                    error_json=None,
+                )
+            )
+            if run_result.rowcount != 1:
+                await session.rollback()
+                return False
         await session.commit()
-        await self._queue.re_enqueue(
-            task.id,
-            attempt=task.attempt + 1,
-            delay_until=delay_until,
-            error=error,
-        )
+        await session.refresh(run)
         await publish_run_status(
             run,
-            message=f"Run retry scheduled (attempt {task.attempt + 1}/{task.max_attempts})",
+            message=f"Run retry scheduled (attempt {next_attempt}/{task.max_attempts})",
         )
         return True
 
@@ -827,17 +922,56 @@ class RunScheduler:
         task_id: str | None,
         state: str,
         error: str | None = None,
-    ) -> None:
+        completed_at: datetime | None = None,
+    ) -> bool:
         if not task_id:
-            return
-        task = await session.get(ScheduledTask, task_id)
-        if task is None:
-            return
-        task.state = state
-        task.completed_at = _now()
-        task.delay_until = None
+            return True
+        values = {
+            "state": state,
+            "completed_at": completed_at or _now(),
+            "delay_until": None,
+        }
         if error is not None:
-            task.error_message = error
+            values["error_message"] = error
+        with session.no_autoflush:
+            result = await session.execute(
+                update(ScheduledTask)
+                .where(
+                    ScheduledTask.id == task_id,
+                    ScheduledTask.state.in_(
+                        [TaskState.QUEUED.value, TaskState.DISPATCHED.value]
+                    ),
+                )
+                .values(**values)
+            )
+        return result.rowcount == 1
+
+    async def _transition_run_terminal_in_session(
+        self,
+        session: AsyncSession,
+        run: Run,
+        *,
+        status: str,
+        completed_at: datetime,
+        error_message: str | None,
+    ) -> bool:
+        values = {
+            "status": status,
+            "completed_at": completed_at,
+            "duration_seconds": run.duration_seconds,
+            "error_message": error_message,
+            "config": run.config,
+        }
+        with session.no_autoflush:
+            result = await session.execute(
+                update(Run)
+                .where(
+                    Run.run_id == run.run_id,
+                    Run.status.in_(RUN_ACTIVE_STATUSES),
+                )
+                .values(**values)
+            )
+        return result.rowcount == 1
 
     def _hooks(self, session: AsyncSession) -> RunCompletionHooks:
         return RunCompletionHooks(session)
@@ -856,3 +990,24 @@ class RunScheduler:
         workspace_path = project_home(project)
         engine = getattr(workflow.engine, "value", workflow.engine)
         return workspace_path, str(engine)
+
+
+def _clear_retry_runtime_fields(config: dict | None) -> dict:
+    if not isinstance(config, dict):
+        return {}
+    cleaned = dict(config)
+    runtime = dict(cleaned.get("runtime") or {})
+    for key in (
+        "pid",
+        "process_id",
+        "engine_pid",
+        "container_id",
+        "backend_job_id",
+        "executor_id",
+        "run_name",
+        "nextflow_run_name",
+        "engine",
+    ):
+        runtime.pop(key, None)
+    cleaned["runtime"] = runtime
+    return cleaned

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -70,8 +70,10 @@ class TaskQueue:
             session.add(task)
             try:
                 await session.commit()
-            except IntegrityError:
+            except IntegrityError as exc:
                 await session.rollback()
+                if not _is_active_task_integrity_error(exc):
+                    raise
                 existing = await self._get_active_for_run(session, run_id)
                 if existing:
                     return existing
@@ -87,16 +89,7 @@ class TaskQueue:
     async def claim_next(self, worker_id: str) -> ScheduledTask | None:
         async with self._claim_lock:
             async with self._session_factory() as session:
-                task = await self._dequeue_in_session(session)
-                if not task:
-                    return None
-                task.state = TaskState.DISPATCHED.value
-                task.worker_id = worker_id
-                task.dispatched_at = _now()
-                task.delay_until = None
-                await session.commit()
-                await session.refresh(task)
-                return task
+                return await self._claim_next_in_session(session, worker_id=worker_id)
 
     async def claim_next_fitting(
         self, worker_id: str, available_slots: int
@@ -108,18 +101,11 @@ class TaskQueue:
         """
         async with self._claim_lock:
             async with self._session_factory() as session:
-                task = await self._dequeue_in_session(
-                    session, max_weight=available_slots
+                return await self._claim_next_in_session(
+                    session,
+                    worker_id=worker_id,
+                    max_weight=available_slots,
                 )
-                if not task:
-                    return None
-                task.state = TaskState.DISPATCHED.value
-                task.worker_id = worker_id
-                task.dispatched_at = _now()
-                task.delay_until = None
-                await session.commit()
-                await session.refresh(task)
-                return task
 
     async def get_dispatched_summaries(self) -> list[tuple[str, int]]:
         """Return (run_id, weight) for all DISPATCHED tasks."""
@@ -167,15 +153,27 @@ class TaskQueue:
         dispatched_at: datetime | None = None,
     ) -> ScheduledTask | None:
         async with self._session_factory() as session:
-            task = await session.get(ScheduledTask, task_id)
-            if not task:
+            now = dispatched_at or _now()
+            result = await session.execute(
+                update(ScheduledTask)
+                .where(
+                    ScheduledTask.id == task_id,
+                    ScheduledTask.state == TaskState.QUEUED.value,
+                )
+                .values(
+                    state=TaskState.DISPATCHED.value,
+                    worker_id=worker_id,
+                    dispatched_at=now,
+                    delay_until=None,
+                )
+            )
+            if result.rowcount != 1:
+                await session.rollback()
                 return None
-            if task.state != TaskState.QUEUED.value:
-                return None
-            task.state = TaskState.DISPATCHED.value
-            task.worker_id = worker_id
-            task.dispatched_at = dispatched_at or _now()
             await session.commit()
+            task = await session.get(ScheduledTask, task_id)
+            if task is None:
+                return None
             await session.refresh(task)
             return task
 
@@ -232,22 +230,32 @@ class TaskQueue:
         error: str | None = None,
     ) -> ScheduledTask | None:
         async with self._session_factory() as session:
-            task = await session.get(ScheduledTask, task_id)
-            if not task:
-                return None
-            if task.state != TaskState.DISPATCHED.value:
-                return None
-            if attempt > int(task.max_attempts or 1):
-                return None
-            task.state = TaskState.QUEUED.value
-            task.attempt = attempt
-            task.delay_until = delay_until
-            task.dispatched_at = None
-            task.completed_at = None
-            task.worker_id = None
+            values = {
+                "state": TaskState.QUEUED.value,
+                "attempt": attempt,
+                "delay_until": delay_until,
+                "dispatched_at": None,
+                "completed_at": None,
+                "worker_id": None,
+            }
             if error is not None:
-                task.error_message = error
+                values["error_message"] = error
+            result = await session.execute(
+                update(ScheduledTask)
+                .where(
+                    ScheduledTask.id == task_id,
+                    ScheduledTask.state == TaskState.DISPATCHED.value,
+                    ScheduledTask.max_attempts >= attempt,
+                )
+                .values(**values)
+            )
+            if result.rowcount != 1:
+                await session.rollback()
+                return None
             await session.commit()
+            task = await session.get(ScheduledTask, task_id)
+            if task is None:
+                return None
             await session.refresh(task)
             return task
 
@@ -289,6 +297,40 @@ class TaskQueue:
         result = await session.execute(stmt)
         return result.scalars().first()
 
+    async def _claim_next_in_session(
+        self,
+        session: AsyncSession,
+        *,
+        worker_id: str,
+        max_weight: int | None = None,
+    ) -> ScheduledTask | None:
+        while True:
+            task = await self._dequeue_in_session(session, max_weight=max_weight)
+            if not task:
+                return None
+            dispatched_at = _now()
+            result = await session.execute(
+                update(ScheduledTask)
+                .where(
+                    ScheduledTask.id == task.id,
+                    ScheduledTask.state == TaskState.QUEUED.value,
+                )
+                .values(
+                    state=TaskState.DISPATCHED.value,
+                    worker_id=worker_id,
+                    dispatched_at=dispatched_at,
+                    delay_until=None,
+                )
+            )
+            if result.rowcount == 1:
+                await session.commit()
+                claimed = await session.get(ScheduledTask, task.id)
+                if claimed is None:
+                    return None
+                await session.refresh(claimed)
+                return claimed
+            await session.rollback()
+
     async def _get_active_for_run(
         self,
         session: AsyncSession,
@@ -316,16 +358,40 @@ class TaskQueue:
         error: str | None = None,
         completed_at: datetime | None = None,
     ) -> ScheduledTask | None:
-        task = await session.get(ScheduledTask, task_id)
-        if not task:
-            return None
-        if task.state not in {TaskState.QUEUED.value, TaskState.DISPATCHED.value}:
-            return None
-        task.state = state
-        task.completed_at = completed_at or _now()
-        task.delay_until = None
+        values = {
+            "state": state,
+            "completed_at": completed_at or _now(),
+            "delay_until": None,
+        }
         if error is not None:
-            task.error_message = error
+            values["error_message"] = error
+        result = await session.execute(
+            update(ScheduledTask)
+            .where(
+                ScheduledTask.id == task_id,
+                ScheduledTask.state.in_(
+                    [TaskState.QUEUED.value, TaskState.DISPATCHED.value]
+                ),
+            )
+            .values(**values)
+        )
+        if result.rowcount != 1:
+            await session.rollback()
+            return None
         await session.commit()
+        task = await session.get(ScheduledTask, task_id)
+        if task is None:
+            return None
         await session.refresh(task)
         return task
+
+
+def _is_active_task_integrity_error(exc: IntegrityError) -> bool:
+    constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", "")
+    if constraint == "uq_scheduled_tasks_active_run":
+        return True
+    text = str(exc.orig).lower()
+    return (
+        "uq_scheduled_tasks_active_run" in text
+        or "unique constraint failed: scheduled_tasks.run_id" in text
+    )

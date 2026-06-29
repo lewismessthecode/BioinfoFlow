@@ -131,7 +131,64 @@ async def test_active_replay_idempotency_is_database_constrained(db_session):
 
 
 @pytest.mark.asyncio
-async def test_terminal_replay_does_not_block_later_same_intent(db_session):
+async def test_replay_lineage_fields_are_all_or_none(db_session):
+    project, workflow = await _seed_project_and_workflow(db_session)
+    source = _run(
+        run_id="run_source_for_partial_lineage",
+        project=project,
+        workflow=workflow,
+        status=RunStatus.FAILED.value,
+    )
+    partial = _run(
+        run_id="run_partial_lineage",
+        project=project,
+        workflow=workflow,
+        source_run_id=source.run_id,
+        attempt_number=2,
+    )
+    db_session.add_all([source, partial])
+
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_original_run_attempt_number_is_one(db_session):
+    project, workflow = await _seed_project_and_workflow(db_session)
+    db_session.add(
+        _run(
+            run_id="run_original_attempt_two",
+            project=project,
+            workflow=workflow,
+            attempt_number=2,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_replay_run_cannot_source_itself(db_session):
+    project, workflow = await _seed_project_and_workflow(db_session)
+    db_session.add(
+        _run(
+            run_id="run_self_source",
+            project=project,
+            workflow=workflow,
+            source_run_id="run_self_source",
+            replay_kind="retry",
+            replay_idempotency_key="self-source",
+            attempt_number=2,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_replay_idempotency_is_database_constrained_after_terminal(db_session):
     project, workflow = await _seed_project_and_workflow(db_session)
     source = _run(
         run_id="run_source_for_later_replay",
@@ -161,4 +218,5 @@ async def test_terminal_replay_does_not_block_later_same_intent(db_session):
     )
     db_session.add_all([source, first, second])
 
-    await db_session.commit()
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
