@@ -352,12 +352,23 @@ async def resume_run(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
-    run = await service.resume_run(
-        run_id,
-        config_overrides=payload.config_overrides if payload else None,
-        user_id=user.id,
-        workspace_id=user.workspace_id,
-    )
+    try:
+        run = await service.resume_run(
+            run_id,
+            config_overrides=payload.config_overrides if payload else None,
+            user_id=user.id,
+            workspace_id=user.workspace_id,
+        )
+    except WorkflowNotEnabledError:
+        return _workflow_not_enabled_response(request)
+    except CompileError as exc:
+        return error_response(
+            code=exc.code,
+            message=str(exc),
+            status_code=422,
+            request=request,
+            details={"hint": exc.hint} if exc.hint else None,
+        )
     data = {
         "run_id": run_id,
         "new_run_id": run.run_id,
@@ -378,12 +389,24 @@ async def retry_run(
     db: AsyncSession = Depends(get_db),
 ):
     service = RunService(db)
-    run = await service.retry_run(
-        run_id,
-        config_overrides=payload.config_overrides if payload else None,
-        user_id=user.id,
-        workspace_id=user.workspace_id,
-    )
+    try:
+        run = await service.retry_run(
+            run_id,
+            values=payload.values if payload else None,
+            config_overrides=payload.config_overrides if payload else None,
+            user_id=user.id,
+            workspace_id=user.workspace_id,
+        )
+    except WorkflowNotEnabledError:
+        return _workflow_not_enabled_response(request)
+    except CompileError as exc:
+        return error_response(
+            code=exc.code,
+            message=str(exc),
+            status_code=422,
+            request=request,
+            details={"hint": exc.hint} if exc.hint else None,
+        )
     data = {
         "run_id": run_id,
         "new_run_id": run.run_id,

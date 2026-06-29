@@ -166,6 +166,8 @@ class RunCompiler:
         user_id: str | None = None,
         workspace_id: str | None = None,
         priority: str = "normal",
+        config_overrides: dict | None = None,
+        extra_config: dict | None = None,
     ) -> Run:
         """Compile the envelope, persist the run, and queue it for dispatch."""
         validated = await self.validate(
@@ -173,7 +175,12 @@ class RunCompiler:
             user_id=user_id,
             workspace_id=workspace_id,
         )
-        compiled = await self._compile(payload, validated=validated)
+        compiled = await self._compile(
+            payload,
+            validated=validated,
+            config_overrides=config_overrides,
+            extra_config=extra_config,
+        )
         return await self._persist(
             compiled,
             payload,
@@ -230,6 +237,8 @@ class RunCompiler:
         payload: RunCreate,
         *,
         validated: ValidatedRun,
+        config_overrides: dict | None = None,
+        extra_config: dict | None = None,
     ) -> CompiledRun:
         project = validated.project
         workflow = validated.workflow
@@ -265,7 +274,7 @@ class RunCompiler:
 
         # ── assemble run.config ────────────────────────────────────────────
         options = payload.options
-        config_overrides = {}
+        config_overrides = dict(config_overrides or {})
         config = RunConfigHelper.build_v1(
             params=params,
             inputs=inputs,
@@ -273,6 +282,10 @@ class RunCompiler:
             resolved_runspec=build_resolved_runspec(
                 workspace_path=workspace_path, params=params, inputs=inputs
             ),
+            values=validated.submitted_values,
+            options=options.model_dump(mode="json", exclude_none=True)
+            if options
+            else None,
             retry_policy=(
                 {"max_retries": options.max_retries}
                 if options and options.max_retries is not None
@@ -305,6 +318,8 @@ class RunCompiler:
             engine=engine,
             image_registry=image_registry,
         )
+        if extra_config:
+            config = _merge_config_patch(config, extra_config)
 
         # ── build launch spec via adapter ──────────────────────────────────
         # Run pre_submit + build_command here (not just at dispatch) so
@@ -1193,6 +1208,20 @@ def _set_config_override(config: dict, key: str, value: Any) -> None:
     request_overrides.setdefault(key, value)
     request["config_overrides"] = request_overrides
     config["request"] = request
+
+
+def _merge_config_patch(config: dict, patch: dict) -> dict:
+    merged = dict(config)
+    for key, value in patch.items():
+        if (
+            isinstance(value, dict)
+            and isinstance(merged.get(key), dict)
+            and key in {"runtime", "policy", "ui"}
+        ):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = deepcopy(value)
+    return merged
 
 
 def _write_resolved_wdl_workflow(

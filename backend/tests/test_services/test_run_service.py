@@ -468,7 +468,7 @@ async def test_resume_run_supports_wdl_best_effort_and_validates_nextflow_token(
 
 
 @pytest.mark.asyncio
-async def test_retry_run_prefers_resolved_runspec_when_original_params_changed(
+async def test_retry_run_replays_submitted_values_when_original_params_changed(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)

@@ -154,7 +154,14 @@ class RunResumeRequest(BaseModel):
 class RunRetryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    values: dict | None = None
     config_overrides: dict | None = None
+
+    @model_validator(mode="after")
+    def _validate_values(self):
+        if self.values is not None and not isinstance(self.values, dict):
+            raise ValueError("values must be an object keyed by form field ids")
+        return self
 
 
 class RetryPolicyCreate(BaseModel):
