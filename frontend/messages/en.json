@@ -736,7 +736,7 @@
       },
       "registry": {
         "automatic": "Automatic",
-        "hint": "Optional. Choose a configured registry for workflow images, or keep automatic to use image references as written."
+        "hint": "Optional. Automatic uses the configured default when available; explicit image hosts are kept as written."
       },
       "localModes": {
         "bundle": "Bundle directory",
