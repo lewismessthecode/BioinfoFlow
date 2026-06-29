@@ -5,6 +5,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 import docker
 from docker.errors import APIError, ImageNotFound
@@ -138,11 +139,18 @@ class DockerService:
 
         return await asyncio.to_thread(_inspect)
 
-    async def pull_image(self, name: str, tag: str, registry: str) -> Any:
+    async def pull_image(
+        self,
+        name: str,
+        tag: str,
+        registry: str,
+        *,
+        auth_config: dict[str, Any] | None = None,
+    ) -> Any:
         if _use_playwright_fake_docker():
             yield {"progressDetail": {"current": 50, "total": 100}}
             await asyncio.sleep(0)
-            full_name = f"{name}:{tag}"
+            full_name = qualified_image_reference(name, tag, registry)
             _PLAYWRIGHT_FAKE_IMAGES[full_name] = _make_playwright_fake_image(
                 full_name, registry=registry
             )
@@ -150,7 +158,14 @@ class DockerService:
 
         def _pull():
             repository = _apply_registry(name, registry)
-            return self.client.api.pull(repository, tag=tag, stream=True, decode=True)
+            kwargs: dict[str, Any] = {
+                "tag": tag,
+                "stream": True,
+                "decode": True,
+            }
+            if auth_config is not None:
+                kwargs["auth_config"] = auth_config
+            return self.client.api.pull(repository, **kwargs)
 
         stream = await asyncio.to_thread(_pull)
         iterator = iter(stream)
@@ -261,8 +276,25 @@ def _split_registry(name: str) -> tuple[str, str]:
     return "docker.io", name
 
 
+def normalize_registry(registry: str | None) -> str:
+    value = str(registry or "").strip().rstrip("/")
+    if "://" in value:
+        parsed = urlparse(value)
+        if parsed.netloc:
+            value = parsed.netloc
+    return value
+
+
+def qualified_image_reference(name: str, tag: str, registry: str) -> str:
+    return f"{_apply_registry(name, registry)}:{tag or 'latest'}"
+
+
 def _apply_registry(name: str, registry: str) -> str:
+    registry = normalize_registry(registry)
     if not registry or registry == "docker.io":
+        return name
+    detected_registry, _normalized_name = _split_registry(name)
+    if detected_registry != "docker.io":
         return name
     if name.startswith(f"{registry}/"):
         return name

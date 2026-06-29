@@ -30,6 +30,7 @@ class WorkflowBase(BaseModel):
     bundle_kind: str | None = None
     version: str
     estimated_time: str | None = None
+    container_registry_id: UUID | None = None
     schema_json_data: dict | None = Field(
         default=None,
         validation_alias="schema_json",
@@ -51,6 +52,7 @@ class WorkflowCreate(BaseModel):
     content: str | None = None
     description: str | None = None
     estimated_time: str | None = None
+    container_registry_id: UUID | None = None
 
 
 class WorkflowUpdate(BaseModel):

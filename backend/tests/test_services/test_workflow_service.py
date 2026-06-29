@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -214,3 +215,98 @@ async def test_resolve_source_path_returns_local_entrypoint_and_rejects_remote(
         ValueError, match="source code is only available for local workflows"
     ):
         service.resolve_source_path(remote_workflow)
+
+
+@pytest.mark.asyncio
+async def test_create_remote_workflow_prefetches_schema_images_after_registration(
+    db_session,
+):
+    schema_json = {
+        "tasks": [
+            {"name": "align", "container": "ubuntu:22.04"},
+        ]
+    }
+    captured: list[tuple[str, dict | None]] = []
+
+    class FakeImagePrefetchService:
+        async def prefetch_workflow(self, workflow):
+            captured.append((str(workflow.id), workflow.schema_json))
+
+    service = WorkflowService(
+        db_session,
+        image_prefetch_service=FakeImagePrefetchService(),
+    )
+
+    with patch(
+        "app.services.workflow_service.SchemaExtractor.extract",
+        new_callable=AsyncMock,
+        return_value=schema_json,
+    ):
+        workflow = await service.create_workflow(
+            {
+                "source": "github",
+                "source_ref": "https://github.com/example/workflow",
+                "engine": "nextflow",
+                "name": f"prefetch-{uuid4()}",
+                "version": "main",
+            }
+        )
+
+    assert captured == [(str(workflow.id), schema_json)]
+
+
+@pytest.mark.asyncio
+async def test_create_workflow_persists_selected_registry_for_prefetch(db_session):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    registry = await ContainerRegistryService(db_session).create_registry(
+        {
+            "name": "Workflow registry",
+            "endpoint": "https://registry.example.test",
+            "namespace": "workflows",
+            "credential_source": "none",
+            "updated_by": "user-1",
+        }
+    )
+    schema_json = {
+        "tasks": [
+            {"name": "align", "container": "bwa:0.7.17"},
+        ]
+    }
+    captured: list[tuple[str, str | None, dict | None]] = []
+
+    class FakeImagePrefetchService:
+        async def prefetch_workflow(self, workflow):
+            captured.append(
+                (
+                    str(workflow.id),
+                    str(workflow.container_registry_id)
+                    if workflow.container_registry_id
+                    else None,
+                    workflow.schema_json,
+                )
+            )
+
+    service = WorkflowService(
+        db_session,
+        image_prefetch_service=FakeImagePrefetchService(),
+    )
+
+    with patch(
+        "app.services.workflow_service.SchemaExtractor.extract",
+        new_callable=AsyncMock,
+        return_value=schema_json,
+    ):
+        workflow = await service.create_workflow(
+            {
+                "source": "github",
+                "source_ref": "https://github.com/example/workflow",
+                "engine": "nextflow",
+                "name": f"registry-prefetch-{uuid4()}",
+                "version": "main",
+                "container_registry_id": str(registry.id),
+            }
+        )
+
+    assert str(workflow.container_registry_id) == str(registry.id)
+    assert captured == [(str(workflow.id), str(registry.id), schema_json)]

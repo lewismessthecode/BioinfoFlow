@@ -88,6 +88,7 @@ async def pull_image(
             project_id=str(payload.project_id) if payload.project_id else None,
             user_id=user.id,
             workspace_id=user.workspace_id,
+            registry_id=str(payload.registry_id) if payload.registry_id else None,
         )
     except DockerUnavailableError as exc:
         return error_response(
