@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_db, require_admin
 from app.api.error_handler import handle_api_errors
 from app.auth.session import AuthUser
 from app.schemas.container_registry import (
@@ -34,7 +34,7 @@ def _with_user_context(data: dict, user: AuthUser) -> dict:
 @handle_api_errors
 async def list_container_registries(
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     del user
@@ -54,7 +54,7 @@ async def list_container_registries(
 async def create_container_registry(
     payload: ContainerRegistryCreate,
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = ContainerRegistryService(db)
@@ -73,7 +73,7 @@ async def create_container_registry(
 async def get_container_registry(
     registry_id: str,
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     del user
@@ -91,7 +91,7 @@ async def update_container_registry(
     registry_id: str,
     payload: ContainerRegistryUpdate,
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     service = ContainerRegistryService(db)
@@ -110,7 +110,7 @@ async def update_container_registry(
 async def delete_container_registry(
     registry_id: str,
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     del user
@@ -124,7 +124,7 @@ async def delete_container_registry(
 async def test_container_registry(
     registry_id: str,
     request: Request,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     del user

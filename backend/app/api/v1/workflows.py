@@ -16,6 +16,8 @@ from app.services.workflow_form_spec import effective_workflow_form_spec
 from app.services.workflow_service import WorkflowService
 from app.services.workflow_validator import WorkflowValidator
 from app.utils.dag_builder import build_dag_from_schema
+from app.utils.authorization import can_select_container_registry
+from app.utils.exceptions import PermissionDeniedError
 from app.utils.logging import get_logger
 from app.utils.responses import error_response, success_response
 
@@ -146,6 +148,10 @@ async def create_workflow(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if payload.container_registry_id and not can_select_container_registry(user.role):
+        raise PermissionDeniedError(
+            "Only workspace admins can select a configured registry"
+        )
     if (
         payload.content
         and len(payload.content.encode("utf-8")) > MAX_WORKFLOW_CONTENT_BYTES
@@ -181,7 +187,10 @@ async def create_local_bundle_workflow(
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    del user
+    if container_registry_id and not can_select_container_registry(user.role):
+        raise PermissionDeniedError(
+            "Only workspace admins can select a configured registry"
+        )
 
     try:
         parsed_paths = json.loads(bundle_paths)
