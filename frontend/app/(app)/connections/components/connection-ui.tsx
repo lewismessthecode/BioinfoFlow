@@ -1,14 +1,8 @@
 import type { ReactNode } from "react"
 
+import { RemoteConnectionStatusDot } from "@/components/bioinfoflow/remote-connection-status"
 import type { RemoteConnectionStatus } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
-
-const statusDotClassNames: Record<RemoteConnectionStatus, string> = {
-  online: "bg-emerald-500 shadow-emerald-500/40",
-  offline: "bg-rose-500 shadow-rose-500/40",
-  error: "bg-amber-500 shadow-amber-500/40",
-  unknown: "bg-slate-400 shadow-slate-400/30",
-}
 
 export const statusBorderClassNames: Record<RemoteConnectionStatus, string> = {
   online: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -24,16 +18,7 @@ export function StatusDot({
   status: RemoteConnectionStatus
   className?: string
 }) {
-  return (
-    <span
-      className={cn(
-        "h-2.5 w-2.5 rounded-full shadow-[0_0_0_4px]",
-        statusDotClassNames[status],
-        className,
-      )}
-      aria-hidden="true"
-    />
-  )
+  return <RemoteConnectionStatusDot status={status} className={className} />
 }
 
 export function DetailSection({ title, children }: { title: string; children: ReactNode }) {

@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
+  ArrowRight,
   CheckCircle2,
   CircleAlert,
   Container,
@@ -16,6 +18,7 @@ import {
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import type { SystemHealth, GpuInfo, ReadinessCheck } from "./dashboard-types";
+import { gpuReadinessFactsFor } from "./readiness-helpers";
 
 type SystemStatusProps = {
   health: SystemHealth | null;
@@ -36,24 +39,6 @@ const readinessLabelKeys = {
   workflow_binding: "readiness.checks.workflow_binding.label",
 } as const;
 
-function readBoolean(value: unknown): boolean {
-  return value === true;
-}
-
-function readNumber(value: unknown): number {
-  return typeof value === "number" ? value : 0;
-}
-
-function readString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function readStringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
-    : [];
-}
-
 function labelForOptionalNote(tDashboard: DashboardTranslator, check: ReadinessCheck) {
   const key = readinessLabelKeys[check.id as keyof typeof readinessLabelKeys];
   return key ? tDashboard(key) : check.id;
@@ -63,27 +48,23 @@ function gpuOptionalNoteDescription(
   tDashboard: DashboardTranslator,
   check: ReadinessCheck,
 ) {
-  const facts = check.facts ?? {};
-  const gpuCount = readNumber(facts.gpu_count);
-  const names = readStringList(facts.gpu_names).join(", ");
-  const recommendation = readString(facts.recommendation);
-  const error = readString(facts.error);
+  const gpuFacts = gpuReadinessFactsFor(check);
 
-  if (readBoolean(facts.usable_for_gpu_workflows) || (readBoolean(facts.runtime_visible_to_backend) && gpuCount > 0)) {
-    return tDashboard("systemNotes.gpuVisible", { count: gpuCount, names });
+  if (gpuFacts.state === "ready" || gpuFacts.state === "visible") {
+    return tDashboard("systemNotes.gpuVisible", { count: gpuFacts.gpuCount, names: gpuFacts.names });
   }
-  if (readBoolean(facts.docker_nvidia_runtime)) {
-    return recommendation
-      ? tDashboard("systemNotes.gpuRuntimeHiddenWithRecommendation", { recommendation })
+  if (gpuFacts.state === "runtimeHidden") {
+    return gpuFacts.recommendation
+      ? tDashboard("systemNotes.gpuRuntimeHiddenWithRecommendation", { recommendation: gpuFacts.recommendation })
       : tDashboard("systemNotes.gpuRuntimeHidden");
   }
-  if (readBoolean(facts.nvidia_smi_found)) {
-    return recommendation
-      ? tDashboard("systemNotes.gpuHostOnlyWithRecommendation", { recommendation })
+  if (gpuFacts.state === "hostOnly") {
+    return gpuFacts.recommendation
+      ? tDashboard("systemNotes.gpuHostOnlyWithRecommendation", { recommendation: gpuFacts.recommendation })
       : tDashboard("systemNotes.gpuHostOnly");
   }
-  if (error && error !== "nvidia-smi not found") {
-    return tDashboard("systemNotes.gpuError", { error });
+  if (gpuFacts.state === "error") {
+    return tDashboard("systemNotes.gpuError", { error: gpuFacts.error });
   }
   return tDashboard("systemNotes.gpuCpuOnly");
 }
@@ -96,6 +77,18 @@ function descriptionForOptionalNote(
     return gpuOptionalNoteDescription(tDashboard, check);
   }
   return tDashboard("systemNotes.defaultDescription");
+}
+
+function actionHrefForOptionalNote(check: ReadinessCheck): string | null {
+  return check.action?.kind === "route" ? (check.action.href ?? null) : null;
+}
+
+function actionLabelForOptionalNote(
+  tDashboard: DashboardTranslator,
+  check: ReadinessCheck,
+): string | null {
+  if (!check.action || !(check.id in readinessLabelKeys)) return null;
+  return tDashboard(`readiness.checks.${check.id}.action`);
 }
 
 function hasNvidiaSignal(health: SystemHealth | null, gpuInfo: GpuInfo | null): boolean {
@@ -240,17 +233,31 @@ export function SystemStatus({ health, gpuInfo, optionalNotes = [] }: SystemStat
                 </div>
                 <p className="mt-1">{tDashboard("systemNotes.description")}</p>
                 <ul className="mt-2 grid gap-2">
-                  {optionalNotes.map((note) => (
-                    <li key={`${note.id}-${note.status}`} className="flex gap-2">
-                      <CircleAlert className="mt-1 size-3 shrink-0 text-warning" aria-hidden="true" />
-                      <span className="min-w-0">
-                        <span className="block font-medium text-foreground">
-                          {labelForOptionalNote(tDashboard, note)}
+                  {optionalNotes.map((note) => {
+                    const actionHref = actionHrefForOptionalNote(note);
+                    const actionLabel = actionLabelForOptionalNote(tDashboard, note);
+
+                    return (
+                      <li key={`${note.id}-${note.status}`} className="flex gap-2">
+                        <CircleAlert className="mt-1 size-3 shrink-0 text-warning" aria-hidden="true" />
+                        <span className="min-w-0">
+                          <span className="block font-medium text-foreground">
+                            {labelForOptionalNote(tDashboard, note)}
+                          </span>
+                          <span>{descriptionForOptionalNote(tDashboard, note)}</span>
+                          {actionHref && actionLabel ? (
+                            <Link
+                              href={actionHref}
+                              className="mt-1 inline-flex items-center gap-1 font-medium text-foreground transition hover:text-primary"
+                            >
+                              {actionLabel}
+                              <ArrowRight className="size-3" aria-hidden="true" />
+                            </Link>
+                          ) : null}
                         </span>
-                        <span>{descriptionForOptionalNote(tDashboard, note)}</span>
-                      </span>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             ) : null}

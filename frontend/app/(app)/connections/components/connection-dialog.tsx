@@ -45,7 +45,7 @@ export type ConnectionFormState = {
 }
 
 export type DialogMode = "create" | "edit"
-export type FormErrorField = "port" | "ssh_alias" | "key_path" | null
+export type FormErrorField = "host" | "port" | "ssh_alias" | "key_path" | null
 
 export const initialConnectionForm: ConnectionFormState = {
   name: "",
@@ -128,6 +128,8 @@ export function ConnectionDialog({
                       onChange={(event) => onFormChange((current) => ({ ...current, host: event.target.value }))}
                       placeholder={t("form.placeholders.host")}
                       required
+                      aria-invalid={formErrorField === "host"}
+                      aria-describedby={formErrorField === "host" ? "connection-form-error" : undefined}
                     />
                   </Field>
                 </div>

@@ -25,18 +25,16 @@ import {
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import type { ReadinessCheck, ReadinessStatus } from "./dashboard-types";
+import {
+  gpuReadinessFactsFor,
+  readBoolean,
+  readNumber,
+  summarizeReadinessChecks,
+} from "./readiness-helpers";
 
 type ReadinessCenterProps = {
   readiness: ReadinessStatus | null;
   onRefresh?: () => Promise<void> | void;
-};
-
-type ReadinessCounts = {
-  requiredTotal: number;
-  requiredCompleted: number;
-  blockers: number;
-  optionalWarnings: number;
-  requiredProgress: number;
 };
 
 const statusIcon = {
@@ -45,59 +43,6 @@ const statusIcon = {
   fail: CircleX,
   skip: CircleDashed,
 } as const;
-
-function getCounts(checks: ReadinessCheck[]): ReadinessCounts {
-  const requiredChecks = checks.filter((check) => check.severity === "blocking");
-  const requiredTotal = requiredChecks.length;
-  const requiredCompleted = requiredChecks.filter(
-    (check) => check.status === "pass",
-  ).length;
-  const blockers = checks.filter(
-    (check) => check.status === "fail" && check.severity === "blocking",
-  ).length;
-  const optionalWarnings = checks.filter(
-    (check) => check.status !== "pass" && check.severity !== "blocking",
-  ).length;
-
-  return {
-    requiredTotal,
-    requiredCompleted,
-    blockers,
-    optionalWarnings,
-    requiredProgress:
-      requiredTotal > 0 ? Math.round((requiredCompleted / requiredTotal) * 100) : 0,
-  };
-}
-
-function groupChecks(checks: ReadinessCheck[]) {
-  return {
-    required: checks.filter(
-      (check) => check.status !== "pass" && check.severity === "blocking",
-    ),
-    optional: checks.filter(
-      (check) => check.status !== "pass" && check.severity !== "blocking",
-    ),
-    completed: checks.filter((check) => check.status === "pass"),
-  };
-}
-
-function readBoolean(value: unknown): boolean {
-  return value === true;
-}
-
-function readNumber(value: unknown): number {
-  return typeof value === "number" ? value : 0;
-}
-
-function readString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function readStringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
-    : [];
-}
 
 function labelForCheck(
   tDashboard: ReturnType<typeof useTranslations>,
@@ -144,35 +89,32 @@ function descriptionForCheck(
           })
         : tDashboard("readiness.checks.workflow_binding.detail.fail");
     case "gpu": {
-      const gpuCount = readNumber(facts.gpu_count);
-      const names = readStringList(facts.gpu_names).join(", ");
-      const recommendation = readString(facts.recommendation);
-      const error = readString(facts.error);
+      const gpuFacts = gpuReadinessFactsFor(check);
 
-      if (readBoolean(facts.usable_for_gpu_workflows)) {
+      if (gpuFacts.state === "ready") {
         return tDashboard("readiness.checks.gpu.detail.ready", {
-          count: gpuCount,
-          names,
+          count: gpuFacts.gpuCount,
+          names: gpuFacts.names,
         });
       }
-      if (readBoolean(facts.runtime_visible_to_backend) && gpuCount > 0) {
+      if (gpuFacts.state === "visible") {
         return tDashboard("readiness.checks.gpu.detail.visible", {
-          count: gpuCount,
-          names,
+          count: gpuFacts.gpuCount,
+          names: gpuFacts.names,
         });
       }
-      if (readBoolean(facts.docker_nvidia_runtime)) {
+      if (gpuFacts.state === "runtimeHidden") {
         return tDashboard("readiness.checks.gpu.detail.runtimeHidden", {
-          recommendation,
+          recommendation: gpuFacts.recommendation,
         });
       }
-      if (readBoolean(facts.nvidia_smi_found)) {
+      if (gpuFacts.state === "hostOnly") {
         return tDashboard("readiness.checks.gpu.detail.hostOnly", {
-          recommendation,
+          recommendation: gpuFacts.recommendation,
         });
       }
-      if (error && error !== "nvidia-smi not found") {
-        return tDashboard("readiness.checks.gpu.detail.error", { error });
+      if (gpuFacts.state === "error") {
+        return tDashboard("readiness.checks.gpu.detail.error", { error: gpuFacts.error });
       }
       return tDashboard("readiness.checks.gpu.detail.cpuOnly");
     }
@@ -328,21 +270,18 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
 
   if (!readiness) return null;
 
-  const counts = getCounts(readiness.checks);
-  const groups = groupChecks(readiness.checks);
-  const hasBlockingOpenChecks = readiness.checks.some(
-    (check) => check.status !== "pass" && check.severity === "blocking",
-  );
-  if (!hasBlockingOpenChecks) return null;
+  const readinessSummary = summarizeReadinessChecks(readiness.checks);
+  const { groups } = readinessSummary;
+  if (!readinessSummary.hasBlockingOpenChecks) return null;
 
-  const requiredRemaining = counts.requiredTotal - counts.requiredCompleted;
+  const requiredRemaining = readinessSummary.requiredTotal - readinessSummary.requiredCompleted;
   const triggerSummary = tDashboard("readiness.triggerSummary", {
-    completed: counts.requiredCompleted,
-    total: counts.requiredTotal,
+    completed: readinessSummary.requiredCompleted,
+    total: readinessSummary.requiredTotal,
   });
   const requiredRemainingLabel = tDashboard("readiness.requiredRemaining", { count: requiredRemaining });
-  const optionalWarningsLabel = counts.optionalWarnings > 0
-    ? tDashboard("readiness.optionalWarnings", { count: counts.optionalWarnings })
+  const optionalWarningsLabel = readinessSummary.optionalWarnings > 0
+    ? tDashboard("readiness.optionalWarnings", { count: readinessSummary.optionalWarnings })
     : null;
   const triggerAriaLabel = [
     tDashboard("readiness.trigger"),
@@ -430,14 +369,14 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
           <div className="px-1">
             <div className="flex items-baseline justify-between gap-3">
               <p className="text-sm font-medium text-foreground">
-                {tDashboard("readiness.progress", { completed: counts.requiredCompleted, total: counts.requiredTotal })}
+                {tDashboard("readiness.progress", { completed: readinessSummary.requiredCompleted, total: readinessSummary.requiredTotal })}
               </p>
-              <span className="text-xs font-medium text-muted-foreground">{counts.requiredProgress}%</span>
+              <span className="text-xs font-medium text-muted-foreground">{readinessSummary.requiredProgress}%</span>
             </div>
             <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-warning transition-[width] duration-300"
-                style={{ width: `${counts.requiredProgress}%` }}
+                style={{ width: `${readinessSummary.requiredProgress}%` }}
               />
             </div>
           </div>
