@@ -381,9 +381,9 @@ export default function ConnectionsPage() {
     selectedConnection && probeOutputConnectionId === selectedConnection.id ? probeOutput : ""
 
   return (
-    <div className="h-full overflow-y-auto bg-[radial-gradient(circle_at_18%_12%,hsl(var(--primary)/0.10),transparent_30%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.24)_100%)]">
-      <div className="mx-auto grid max-w-7xl gap-5 px-4 py-7 sm:px-6 lg:py-9">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_18%_12%,hsl(var(--primary)/0.10),transparent_30%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.24)_100%)]">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[1500px] flex-col gap-4 px-4 py-5 sm:px-6 lg:py-6">
+        <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm shadow-foreground/5">
               <Server className="h-3.5 w-3.5" />
@@ -409,35 +409,39 @@ export default function ConnectionsPage() {
 
         <div
           className={cn(
-            "grid gap-5 lg:items-start",
-            dialogOpen ? "lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]" : "lg:grid-cols-[minmax(0,1fr)]",
+            "grid min-h-0 flex-1 overflow-hidden rounded-[32px] border border-border/60 bg-card/80 shadow-sm shadow-foreground/5 transition-[grid-template-columns] duration-300 ease-[cubic-bezier(.2,.8,.2,1)]",
+            dialogOpen
+              ? "lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]"
+              : "lg:grid-cols-[minmax(0,1fr)_0px]",
           )}
         >
-          <div className="grid min-w-0 gap-5">
-            <ConnectionList
-              connections={connections}
-              filteredConnections={filteredConnections}
-              selectedConnection={selectedConnection}
-              search={search}
-              statusFilter={statusFilter}
-              isLoading={isLoadingConnections}
-              loadError={connectionsLoadError}
-              testingConnectionId={testingConnectionId}
-              probeConnectionId={probeConnectionId}
-              onSearchChange={setSearch}
-              onStatusFilterChange={setStatusFilter}
-              onSelectConnection={setSelectedConnectionId}
-              onEdit={openEditDialog}
-              onTest={handleTestConnection}
-              onRunProbe={handleRunProbe}
-              onDelete={setDeleteTarget}
-            />
+          <div className="min-h-0 min-w-0 overflow-hidden">
+            <div className="flex h-full min-w-0 flex-col">
+              <ConnectionList
+                connections={connections}
+                filteredConnections={filteredConnections}
+                selectedConnection={selectedConnection}
+                search={search}
+                statusFilter={statusFilter}
+                isLoading={isLoadingConnections}
+                loadError={connectionsLoadError}
+                testingConnectionId={testingConnectionId}
+                probeConnectionId={probeConnectionId}
+                onSearchChange={setSearch}
+                onStatusFilterChange={setStatusFilter}
+                onSelectConnection={setSelectedConnectionId}
+                onEdit={openEditDialog}
+                onTest={handleTestConnection}
+                onRunProbe={handleRunProbe}
+                onDelete={setDeleteTarget}
+              />
 
-            <ConnectionDetail
-              connection={selectedConnection}
-              probing={selectedConnection ? probeConnectionId === selectedConnection.id : false}
-              probeOutput={selectedProbeOutput}
-            />
+              <ConnectionDetail
+                connection={selectedConnection}
+                probing={selectedConnection ? probeConnectionId === selectedConnection.id : false}
+                probeOutput={selectedProbeOutput}
+              />
+            </div>
           </div>
 
           <ConnectionDialog

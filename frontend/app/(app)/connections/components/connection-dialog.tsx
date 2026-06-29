@@ -84,10 +84,10 @@ export function ConnectionDialog({
     <aside
       role="complementary"
       aria-label={t("dialog.panelLabel")}
-      className="min-h-0 overflow-hidden rounded-[32px] border border-border/70 bg-card/95 shadow-lg shadow-foreground/10 lg:sticky lg:top-7 lg:max-h-[calc(100vh-3.5rem)]"
+      className="fixed inset-x-3 bottom-3 top-20 z-40 min-h-0 overflow-hidden rounded-[28px] border border-border/70 bg-card/95 shadow-2xl shadow-foreground/20 lg:static lg:inset-auto lg:z-auto lg:h-full lg:rounded-none lg:border-0 lg:border-l lg:border-border/60 lg:bg-background/70 lg:shadow-none"
     >
-      <form onSubmit={onSubmit} noValidate className="flex min-h-0 flex-col lg:max-h-[calc(100vh-3.5rem)]">
-        <div className="flex items-start justify-between gap-4 border-b border-border/60 bg-background/45 px-5 py-4">
+      <form onSubmit={onSubmit} noValidate className="flex h-full min-h-0 flex-col">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/60 bg-background/55 px-5 py-4">
           <div className="min-w-0">
             <h2 className="text-xl font-semibold tracking-tight text-foreground">
               {mode === "edit" ? t("dialog.editTitle") : t("dialog.title")}
@@ -106,7 +106,7 @@ export function ConnectionDialog({
           </Button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 [scrollbar-gutter:stable]">
           <div className="grid gap-4">
             <PanelSection title={t("sections.address")} icon={<Server className="h-4 w-4" />}>
               <div className="grid grid-cols-[56px_minmax(0,1fr)] gap-3">
@@ -252,13 +252,13 @@ export function ConnectionDialog({
             id="connection-form-error"
             role="alert"
             aria-live="polite"
-            className="mx-5 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            className="mx-5 shrink-0 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
             {formError}
           </div>
         ) : null}
 
-        <div className="flex justify-end gap-2 border-t border-border/60 bg-background/45 px-5 py-3">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border/60 bg-background/55 px-5 py-3">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             {tCommon("cancel")}
           </Button>
