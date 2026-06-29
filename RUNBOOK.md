@@ -65,7 +65,9 @@ variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
 `GROQ_API_KEY`, `OLLAMA_BASE_URL`, `VLLM_BASE_URL`, `VLLM_API_KEY`,
 `VLLM_MODEL`, `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, and
 `OPENAI_COMPATIBLE_MODEL` are optional bootstrap defaults for fresh/headless
-deployments. UI-saved configuration takes precedence.
+deployments. UI-saved configuration takes precedence. In `AUTH_MODE=team`,
+provider keys saved through the UI as stored credentials also require
+`BIOINFOFLOW_CREDENTIAL_KEY`; environment bootstrap keys do not.
 
 For localhost Docker, `BETTER_AUTH_SECRET` may stay empty. Bioinfoflow creates a persistent local secret under `BIOINFOFLOW_HOME/state/auth` on first startup. For shared or remote deployments, generate one with `openssl rand -base64 32` and set `BETTER_AUTH_SECRET` explicitly.
 
@@ -236,10 +238,15 @@ BIOINFOFLOW_CREDENTIAL_KEY=<paste the output of openssl rand -hex 32>
 ```
 
 After adding or changing that value for Docker Compose, recreate the backend
-container so the new environment is loaded:
+container with the same Compose file set you used to start Bioinfoflow so the
+new environment is loaded:
 
 ```bash
+# Default source-build stack:
 docker compose up -d --force-recreate backend
+
+# Production image stack:
+docker compose -f docker-compose.prod.yml up -d --force-recreate backend
 ```
 
 `docker compose restart backend` restarts the existing container and does not
