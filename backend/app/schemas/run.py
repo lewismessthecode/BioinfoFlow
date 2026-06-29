@@ -76,6 +76,9 @@ class RunBase(BaseModel):
     error: RunError | None = Field(default=None, validation_alias="error_json")
     last_heartbeat_at: datetime | None = None
     nextflow_run_name: str | None = None
+    source_run_id: str | None = None
+    replay_kind: Literal["retry", "resume"] | None = None
+    attempt_number: int = 1
 
 
 class RunRead(RunBase):
