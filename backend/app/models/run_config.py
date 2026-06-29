@@ -38,6 +38,16 @@ class RunConfigHelper:
         )
 
     @property
+    def values(self) -> dict:
+        request = _as_dict(self._config.get("request"))
+        return _as_dict(request.get("values"))
+
+    @property
+    def options(self) -> dict:
+        request = _as_dict(self._config.get("request"))
+        return _as_dict(request.get("options"))
+
+    @property
     def resolved_runspec(self) -> dict:
         resolved = _as_dict(self._config.get("resolved"))
         return _as_dict(resolved.get("runspec")) or _as_dict(
@@ -97,6 +107,8 @@ class RunConfigHelper:
         inputs: dict | None,
         config_overrides: dict | None,
         resolved_runspec: dict | None = None,
+        values: dict | None = None,
+        options: dict | None = None,
         retry_policy: dict | None = None,
         timeout_seconds: int | None = None,
     ) -> dict:
@@ -104,6 +116,8 @@ class RunConfigHelper:
         inputs_payload = _as_dict(inputs)
         overrides_payload = _as_dict(config_overrides)
         resolved_payload = _as_dict(resolved_runspec)
+        values_payload = _as_dict(values)
+        options_payload = _as_dict(options)
         policy_payload = {}
         retry_payload = _as_dict(retry_policy)
         if retry_payload:
@@ -117,6 +131,8 @@ class RunConfigHelper:
                 "params": params_payload,
                 "inputs": inputs_payload,
                 "config_overrides": overrides_payload,
+                "values": values_payload,
+                "options": options_payload,
             },
             "resolved": {
                 "runspec": resolved_payload,

@@ -14,8 +14,10 @@ import asyncio
 import glob
 import re
 from collections import deque
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +26,6 @@ from app.models.run import Run, RunStatus
 from app.models.run_config import RunConfigHelper
 from app.models.workflow import WorkflowSource
 from app.path_layout import (
-    ensure_run_layout,
     project_home,
     run_audit_root,
     workflow_entrypoint_path,
@@ -36,10 +37,13 @@ from app.repositories.project_workflow_binding_repo import (
 from app.repositories.run_repo import RunRepository
 from app.repositories.workflow_repo import WorkflowRepository
 from app.runtime.events import publish_run_status
+from app.schemas.form_spec import FormField, FormSpec
+from app.schemas.run import RunCreate, RunOptions
 from app.scheduler.cleanup import WorkDirCleaner
 from app.services.authorization_service import AuthorizationService
 from app.services.audit_service import AuditService
 from app.services.run_archive import RunArchiveService
+from app.services.run_compiler import RunCompiler
 from app.services.run_dispatch import (
     RunDispatcher,
     get_run_dispatcher,
@@ -62,8 +66,12 @@ from app.services.run_helpers import (
     sync_run_config_aliases,
 )
 from app.services.run_profile_service import RunProfileService
+from app.services.workflow_form_spec import effective_workflow_form_spec
 from app.utils.exceptions import PermissionDeniedError
 from app.utils.project_access import can_access_run_project
+
+
+_PLATFORM_MANAGED_DIR_NAMES = {"outdir", "output_dir", "publish_dir", "work_dir"}
 
 
 class RunLifecycleService:
@@ -193,49 +201,34 @@ class RunLifecycleService:
         else:
             raise ValueError("resume is not supported for this workflow")
 
-        config = self._copy_config(original.config)
-        cfg_helper = self._config_helper(config)
-        merged_overrides = {
-            **cfg_helper.config_overrides,
-            **(config_overrides or {}),
-        }
-        config = self._sync_run_config_aliases(
-            config,
-            params=cfg_helper.params,
-            inputs=cfg_helper.inputs,
-            config_overrides=merged_overrides,
-            resolved_runspec=cfg_helper.resolved_runspec,
+        config = self._config_helper(original.config)
+        run = await self._compile_replayed_run(
+            original=original,
+            workflow=workflow,
+            values=None,
+            params=None,
+            inputs=None,
+            config_overrides={
+                **config.config_overrides,
+                **(config_overrides or {}),
+            },
+            extra_config=resume_payload,
+            user_id=user_id,
+            workspace_id=workspace_id,
         )
 
-        new_config = {**config, **resume_payload}
-
-        run = await self.repo.create(
-            run_id=self._generate_run_id(),
-            project_id=original.project_id,
-            workflow_id=original.workflow_id,
-            status=RunStatus.PENDING.value,
-            config=new_config,
-            samples_count=original.samples_count,
-            tasks_total=0,
-            tasks_completed=0,
-        )
-        project = await self.project_repo.get(original.project_id)
-        if not project:
-            raise FileNotFoundError("project not found")
-        ensure_run_layout(project, run.run_id, engine=str(engine))
-        await self._persist_run_archive(
-            run=run, workspace_path=project_home(project), engine=str(engine)
-        )
-
-        return await self._finalize_new_run(
-            run,
+        await self._audit().log(
             action="run.resumed",
-            message="Run resumed",
+            resource_type="run",
+            resource_id=run.run_id,
+            project_id=str(run.project_id),
+            actor="api",
             details={
                 "source_run_id": original.run_id,
-                "resume_type": new_config.get("resume_type"),
+                "resume_type": run.config.get("resume_type"),
             },
         )
+        return run
 
     # ── retry ─────────────────────────────────────────────────────────────
 
@@ -243,6 +236,7 @@ class RunLifecycleService:
         self,
         run_id: str,
         *,
+        values: dict | None = None,
         params: dict | None = None,
         inputs: dict | None = None,
         config_overrides: dict | None = None,
@@ -270,63 +264,34 @@ class RunLifecycleService:
             if original.workflow_id
             else None
         )
-        workspace_path = project_home(project)
 
-        resolved_runspec = config.resolved_runspec
-        default_params = resolved_runspec.get("params") or config.params
-        default_inputs = resolved_runspec.get("inputs") or config.inputs
+        if workflow is None:
+            raise ValueError("workflow not found")
 
-        next_params = params if params is not None else default_params
-        next_inputs = inputs if inputs is not None else default_inputs
-        if workflow:
-            await self._preflight_run(
-                workflow=workflow,
-                workspace_path=workspace_path,
-                params=next_params,
-                inputs=next_inputs,
-            )
-
-        next_resolved_runspec = self._build_resolved_runspec(
-            workspace_path=workspace_path,
-            params=next_params,
-            inputs=next_inputs,
+        run = await self._compile_replayed_run(
+            original=original,
+            workflow=workflow,
+            values=values,
+            params=params,
+            inputs=inputs,
+            config_overrides={
+                **config.config_overrides,
+                **(config_overrides or {}),
+            },
+            extra_config=None,
+            user_id=user_id,
+            workspace_id=workspace_id,
         )
 
-        run = await self.repo.create(
-            run_id=self._generate_run_id(),
-            project_id=original.project_id,
-            workflow_id=original.workflow_id,
-            status=RunStatus.PENDING.value,
-            config=RunConfigHelper.build_v1(
-                params=next_params,
-                inputs=next_inputs,
-                config_overrides=config_overrides or config.config_overrides,
-                resolved_runspec=next_resolved_runspec,
-                retry_policy=config.retry_policy,
-                timeout_seconds=config.timeout_seconds,
-            ),
-            samples_count=original.samples_count,
-            tasks_total=0,
-            tasks_completed=0,
-        )
-        engine_value = (
-            str(getattr(workflow.engine, "value", workflow.engine))
-            if workflow
-            else "nextflow"
-        )
-        ensure_run_layout(project, run.run_id, engine=engine_value)
-        await self._persist_run_archive(
-            run=run,
-            workspace_path=workspace_path,
-            engine=engine_value,
-        )
-
-        return await self._finalize_new_run(
-            run,
+        await self._audit().log(
             action="run.retried",
-            message="Run retried",
+            resource_type="run",
+            resource_id=run.run_id,
+            project_id=str(run.project_id),
+            actor="api",
             details={"source_run_id": original.run_id},
         )
+        return run
 
     # ── cleanup ───────────────────────────────────────────────────────────
 
@@ -780,6 +745,95 @@ class RunLifecycleService:
         self._dispatcher.dispatch(run.run_id, priority=priority)
         return run
 
+    async def _compile_replayed_run(
+        self,
+        *,
+        original: Run,
+        workflow,
+        values: dict | None,
+        params: dict | None,
+        inputs: dict | None,
+        config_overrides: dict,
+        extra_config: dict | None,
+        user_id: str | None,
+        workspace_id: str | None,
+    ) -> Run:
+        replay_values = self._replay_values(
+            original=original,
+            workflow=workflow,
+            values=values,
+            params=params,
+            inputs=inputs,
+        )
+        options = self._replay_options(self._config_helper(original.config))
+        payload = RunCreate.model_validate(
+            {
+                "project_id": str(original.project_id),
+                "workflow_id": str(original.workflow_id),
+                "values": replay_values,
+                **(
+                    {"options": options.model_dump(mode="json", exclude_none=True)}
+                    if options is not None
+                    else {}
+                ),
+            }
+        )
+        return await RunCompiler(self.session, dispatcher=self._dispatcher).create_run(
+            payload,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            config_overrides=config_overrides,
+            extra_config=extra_config,
+        )
+
+    def _replay_values(
+        self,
+        *,
+        original: Run,
+        workflow,
+        values: dict | None,
+        params: dict | None,
+        inputs: dict | None,
+    ) -> dict:
+        if values is not None:
+            return deepcopy(values)
+
+        config = self._config_helper(original.config)
+        if params is not None or inputs is not None:
+            return _values_from_engine_payloads(
+                workflow=workflow,
+                params=params or {},
+                inputs=inputs or {},
+            )
+
+        stored_values = config.values
+        if stored_values:
+            return stored_values
+
+        return _values_from_engine_payloads(
+            workflow=workflow,
+            params=config.params,
+            inputs=config.inputs,
+        )
+
+    def _replay_options(self, config: RunConfigHelper) -> RunOptions | None:
+        payload = config.options
+        retry_policy = config.retry_policy
+        if "max_retries" not in payload and isinstance(
+            retry_policy.get("max_retries"), int
+        ):
+            payload["max_retries"] = retry_policy["max_retries"]
+        timeout_seconds = config.timeout_seconds
+        if "timeout_seconds" not in payload and timeout_seconds is not None:
+            payload["timeout_seconds"] = timeout_seconds
+        raw_config = config.to_dict()
+        profile = raw_config.get("profile")
+        if "profile" not in payload and isinstance(profile, str) and profile.strip():
+            payload["profile"] = profile.strip()
+        if not payload:
+            return None
+        return RunOptions.model_validate(payload)
+
     def _sync_run_config_aliases(
         self,
         config: dict,
@@ -796,6 +850,86 @@ class RunLifecycleService:
             config_overrides=config_overrides,
             resolved_runspec=resolved_runspec,
         )
+
+
+def _values_from_engine_payloads(
+    *,
+    workflow,
+    params: dict,
+    inputs: dict,
+) -> dict:
+    spec = effective_workflow_form_spec(workflow)
+    user_fields = [field for field in spec.fields if not field.platform_managed]
+    if not user_fields:
+        return _legacy_values_from_payloads(params=params, inputs=inputs)
+
+    values: dict[str, Any] = {}
+    for field in user_fields:
+        value = _value_for_field(field, params=params, inputs=inputs, spec=spec)
+        if value is not _MISSING:
+            values[field.id] = deepcopy(value)
+    return values
+
+
+def _legacy_values_from_payloads(*, params: dict, inputs: dict) -> dict:
+    values: dict[str, Any] = {}
+    for source in (inputs, params):
+        for key, value in source.items():
+            if _is_platform_managed_dir_key(key):
+                continue
+            values[str(key)] = deepcopy(value)
+    return values
+
+
+_MISSING = object()
+
+
+def _value_for_field(
+    field: FormField,
+    *,
+    params: dict,
+    inputs: dict,
+    spec: FormSpec,
+) -> Any:
+    for key in _field_payload_keys(field, spec):
+        if key in inputs:
+            return inputs[key]
+        if key in params:
+            return params[key]
+    return _MISSING
+
+
+def _field_payload_keys(field: FormField, spec: FormSpec) -> tuple[str, ...]:
+    keys = [field.id]
+    if field.engine_key:
+        keys.append(field.engine_key)
+    workflow_name = _workflow_name_from_spec(spec)
+    if workflow_name and "." not in field.id:
+        keys.append(f"{workflow_name}.{field.id}")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+    return tuple(deduped)
+
+
+def _workflow_name_from_spec(spec: FormSpec) -> str:
+    for field in spec.fields:
+        if not field.engine_key or "." not in field.engine_key:
+            continue
+        return field.engine_key.split(".", 1)[0]
+    return ""
+
+
+def _is_platform_managed_dir_key(key: object) -> bool:
+    text = str(key or "").strip().lower()
+    if not text:
+        return False
+    return text.split(".")[-1] in _PLATFORM_MANAGED_DIR_NAMES
 
 
 def _expand_glob_braces(pattern: str) -> list[str]:
