@@ -237,18 +237,16 @@ def ensure_run_layout(
     engine: str,
     external_root_path: str | None = None,
 ) -> None:
-    run_input_root(project, run_id, external_root_path=external_root_path).mkdir(
-        parents=True, exist_ok=True
+    run_home(project, run_id, external_root_path=external_root_path).mkdir(
+        parents=True,
+        exist_ok=False,
     )
+    run_input_root(project, run_id, external_root_path=external_root_path).mkdir()
     run_engine_workspace(
         project, run_id, engine, external_root_path=external_root_path
-    ).mkdir(parents=True, exist_ok=True)
-    run_results_root(project, run_id, external_root_path=external_root_path).mkdir(
-        parents=True, exist_ok=True
-    )
-    run_audit_root(project, run_id, external_root_path=external_root_path).mkdir(
-        parents=True, exist_ok=True
-    )
+    ).mkdir(parents=True)
+    run_results_root(project, run_id, external_root_path=external_root_path).mkdir()
+    run_audit_root(project, run_id, external_root_path=external_root_path).mkdir()
 
 
 def ensure_platform_layout() -> None:

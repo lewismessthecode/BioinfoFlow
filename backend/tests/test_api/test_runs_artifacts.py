@@ -241,3 +241,53 @@ async def test_run_outputs_fall_back_to_configured_outdir_when_default_results_r
             "type": "file",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_new_schema_run_outputs_do_not_fall_back_to_configured_outdir(
+    async_client, db_session, tmp_path
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project = Project(
+        name="Artifact No Fallback Project",
+        storage_mode="external",
+        external_root_path=str(workspace),
+        user_id="dev",
+    )
+    workflow = Workflow(
+        name=f"wf-{uuid4()}",
+        source=WorkflowSource.LOCAL,
+        engine=WorkflowEngine.WDL,
+        version=str(uuid4()),
+    )
+    db_session.add_all([project, workflow])
+    await db_session.commit()
+    await db_session.refresh(project)
+    await db_session.refresh(workflow)
+
+    legacy_output_dir = workspace / "legacy-results"
+    legacy_output_dir.mkdir(parents=True, exist_ok=True)
+    (legacy_output_dir / "summary.tsv").write_text("ok\n", encoding="utf-8")
+
+    run = Run(
+        run_id="run_results_no_fallback",
+        project_id=str(project.id),
+        workflow_id=str(workflow.id),
+        status=RunStatus.COMPLETED.value,
+        config={
+            "config_schema_version": 1,
+            "params": {"outdir": "legacy-results"},
+            "request": {"params": {"outdir": "legacy-results"}},
+        },
+        samples_count=0,
+        tasks_total=0,
+        tasks_completed=0,
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    outputs_resp = await async_client.get(f"/api/v1/runs/{run.run_id}/outputs")
+
+    assert outputs_resp.status_code == 404
+    assert outputs_resp.json()["error"]["code"] == "NOT_FOUND"

@@ -242,7 +242,14 @@ class RunArchiveService:
         root = project_home(project)
 
         if file_path:
-            target = safe_workspace(root, file_path)
+            output_root = await self.resolve_output_path(run)
+            if output_root is None:
+                raise FileNotFoundError("output path not found")
+            target = _resolve_output_file_path(
+                project_root=root,
+                output_root=output_root,
+                file_path=file_path,
+            )
         else:
             output_root = await self.resolve_output_path(run)
             if output_root is None:
@@ -283,16 +290,17 @@ class RunArchiveService:
         candidates: list[Path] = [default_root]
         seen = {str(default_root.resolve(strict=False))}
 
-        for outdir in _iter_outdir_candidates(run.config):
-            try:
-                candidate = safe_workspace(workspace_root, outdir)
-            except PermissionError:
-                continue
-            marker = str(candidate.resolve(strict=False))
-            if marker in seen:
-                continue
-            seen.add(marker)
-            candidates.append(candidate)
+        if config_helper(run.config).version < 1:
+            for outdir in _iter_outdir_candidates(run.config):
+                try:
+                    candidate = safe_workspace(workspace_root, outdir)
+                except PermissionError:
+                    continue
+                marker = str(candidate.resolve(strict=False))
+                if marker in seen:
+                    continue
+                seen.add(marker)
+                candidates.append(candidate)
 
         for candidate in candidates:
             if _path_has_outputs(candidate):
@@ -322,6 +330,25 @@ def _iter_outdir_candidates(config: dict) -> list[str]:
             continue
         candidates.append(outdir.strip())
     return candidates
+
+
+def _resolve_output_file_path(
+    *,
+    project_root: Path,
+    output_root: Path,
+    file_path: str,
+) -> Path:
+    output_root_resolved = output_root.resolve()
+    project_target = safe_workspace(project_root, file_path)
+    if project_target.exists():
+        if not project_target.resolve().is_relative_to(output_root_resolved):
+            raise PermissionError("output file path escapes output root")
+        return project_target
+
+    output_target = safe_workspace(output_root, file_path)
+    if not output_target.resolve(strict=False).is_relative_to(output_root_resolved):
+        raise PermissionError("output file path escapes output root")
+    return output_target
 
 
 def _path_has_outputs(path: Path) -> bool:

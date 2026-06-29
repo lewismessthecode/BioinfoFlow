@@ -34,7 +34,7 @@ _RESUME_RUN_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,99}$")
 
 
 def generate_run_id() -> str:
-    return f"run_{secrets.token_hex(3)}"
+    return f"run_{secrets.token_hex(16)}"
 
 
 def generate_mock_run_id(variant: str) -> str:
