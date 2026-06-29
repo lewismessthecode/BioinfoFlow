@@ -213,20 +213,13 @@ class RunLifecycleService:
                 **(config_overrides or {}),
             },
             extra_config=resume_payload,
+            audit_action="run.resumed",
+            audit_details={
+                "source_run_id": original.run_id,
+                "resume_type": resume_payload.get("resume_type"),
+            },
             user_id=user_id,
             workspace_id=workspace_id,
-        )
-
-        await self._audit().log(
-            action="run.resumed",
-            resource_type="run",
-            resource_id=run.run_id,
-            project_id=str(run.project_id),
-            actor="api",
-            details={
-                "source_run_id": original.run_id,
-                "resume_type": run.config.get("resume_type"),
-            },
         )
         return run
 
@@ -279,17 +272,10 @@ class RunLifecycleService:
                 **(config_overrides or {}),
             },
             extra_config=None,
+            audit_action="run.retried",
+            audit_details={"source_run_id": original.run_id},
             user_id=user_id,
             workspace_id=workspace_id,
-        )
-
-        await self._audit().log(
-            action="run.retried",
-            resource_type="run",
-            resource_id=run.run_id,
-            project_id=str(run.project_id),
-            actor="api",
-            details={"source_run_id": original.run_id},
         )
         return run
 
@@ -755,6 +741,8 @@ class RunLifecycleService:
         inputs: dict | None,
         config_overrides: dict,
         extra_config: dict | None,
+        audit_action: str | None,
+        audit_details: dict | None,
         user_id: str | None,
         workspace_id: str | None,
     ) -> Run:
@@ -784,6 +772,8 @@ class RunLifecycleService:
             workspace_id=workspace_id,
             config_overrides=config_overrides,
             extra_config=extra_config,
+            audit_action=audit_action,
+            audit_details=audit_details,
         )
 
     def _replay_values(
@@ -799,22 +789,26 @@ class RunLifecycleService:
             return deepcopy(values)
 
         config = self._config_helper(original.config)
-        if params is not None or inputs is not None:
-            return _values_from_engine_payloads(
-                workflow=workflow,
-                params=params or {},
-                inputs=inputs or {},
-            )
-
         stored_values = config.values
         if stored_values:
-            return stored_values
+            base_values = stored_values
+        else:
+            default_params, default_inputs = _default_engine_payloads(config)
+            base_values = _values_from_engine_payloads(
+                workflow=workflow,
+                params=default_params,
+                inputs=default_inputs,
+            )
 
-        return _values_from_engine_payloads(
+        if params is None and inputs is None:
+            return base_values
+
+        override_values = _values_from_engine_payloads(
             workflow=workflow,
-            params=config.params,
-            inputs=config.inputs,
+            params=params or {},
+            inputs=inputs or {},
         )
+        return {**base_values, **override_values}
 
     def _replay_options(self, config: RunConfigHelper) -> RunOptions | None:
         payload = config.options
@@ -869,6 +863,15 @@ def _values_from_engine_payloads(
         if value is not _MISSING:
             values[field.id] = deepcopy(value)
     return values
+
+
+def _default_engine_payloads(config: RunConfigHelper) -> tuple[dict, dict]:
+    resolved = config.resolved_runspec
+    resolved_params = resolved.get("params")
+    resolved_inputs = resolved.get("inputs")
+    params = resolved_params if isinstance(resolved_params, dict) else {}
+    inputs = resolved_inputs if isinstance(resolved_inputs, dict) else {}
+    return params or config.params, inputs or config.inputs
 
 
 def _legacy_values_from_payloads(*, params: dict, inputs: dict) -> dict:

@@ -168,6 +168,8 @@ class RunCompiler:
         priority: str = "normal",
         config_overrides: dict | None = None,
         extra_config: dict | None = None,
+        audit_action: str | None = None,
+        audit_details: dict | None = None,
     ) -> Run:
         """Compile the envelope, persist the run, and queue it for dispatch."""
         validated = await self.validate(
@@ -186,6 +188,8 @@ class RunCompiler:
             payload,
             user_id=user_id,
             priority=priority,
+            audit_action=audit_action,
+            audit_details=audit_details,
         )
 
     async def validate(
@@ -371,6 +375,8 @@ class RunCompiler:
         *,
         user_id: str | None,
         priority: str,
+        audit_action: str | None = None,
+        audit_details: dict | None = None,
     ) -> Run:
         # write the launch script before the DB row so audit/launch.sh is
         # durable even if the scheduler never picks the run up
@@ -400,7 +406,8 @@ class RunCompiler:
         )
 
         run = await self.run_repo.update(run, status=RunStatus.QUEUED.value)
-        await AuditService(self.session).log(
+        audit = AuditService(self.session)
+        await audit.log(
             action="run.created",
             resource_type="run",
             resource_id=run.run_id,
@@ -411,6 +418,15 @@ class RunCompiler:
                 "engine": compiled.launch.engine,
             },
         )
+        if audit_action:
+            await audit.log(
+                action=audit_action,
+                resource_type="run",
+                resource_id=run.run_id,
+                project_id=str(run.project_id),
+                actor="api",
+                details=audit_details or {},
+            )
         await publish_run_status(run, message="Run queued")
         self.dispatcher.dispatch(run.run_id, priority=priority)
         return run
@@ -1200,12 +1216,12 @@ def _required_container_images(
 
 def _set_config_override(config: dict, key: str, value: Any) -> None:
     overrides = dict(config.get("config_overrides") or {})
-    overrides.setdefault(key, value)
+    overrides[key] = value
     config["config_overrides"] = overrides
 
     request = dict(config.get("request") or {})
     request_overrides = dict(request.get("config_overrides") or {})
-    request_overrides.setdefault(key, value)
+    request_overrides[key] = value
     request["config_overrides"] = request_overrides
     config["request"] = request
 
