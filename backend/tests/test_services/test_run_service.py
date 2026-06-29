@@ -21,6 +21,7 @@ from app.path_layout import (
 )
 from app.schemas.run import RunCreate
 from app.services import run_compiler as run_compiler_module
+from app.services import run_lifecycle_service as run_lifecycle_module
 from app.services import run_service
 from app.services.run_compiler import RunCompiler
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -521,6 +522,173 @@ async def test_retry_run_replays_submitted_values_when_original_params_changed(
     assert retried.config["params"]["samplesheet"].endswith(
         "/data/samplesheet.csv"
     )
+
+
+@pytest.mark.asyncio
+async def test_retry_legacy_run_without_values_uses_resolved_runspec(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace
+    )
+    data_root = project_data_root(project)
+    (data_root / "samplesheet.csv").write_text(
+        "sample,fastq_1,fastq_2\n",
+        encoding="utf-8",
+    )
+    workflow.form_spec = {
+        "fields": [
+            {
+                "id": "samplesheet",
+                "label": "Samplesheet",
+                "section": "data",
+                "kind": "file",
+                "required": True,
+                "allow_roots": ["project_data"],
+            }
+        ]
+    }
+    await db_session.commit()
+    await db_session.refresh(workflow)
+
+    service = RunService(db_session)
+    run = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"samplesheet": "samplesheet.csv"},
+    )
+    legacy_config = {
+        **run.config,
+        "params": {"samplesheet": "missing.csv"},
+        "request": {
+            "params": {"samplesheet": "missing.csv"},
+            "inputs": {},
+            "config_overrides": {},
+        },
+    }
+    run = await service.repo.update(
+        run,
+        status=RunStatus.FAILED.value,
+        config=legacy_config,
+        nextflow_run_name="steady_hopper",
+    )
+
+    retried = await service.retry_run(run.run_id)
+
+    assert retried.config["params"]["samplesheet"].endswith(
+        "/data/samplesheet.csv"
+    )
+
+
+@pytest.mark.asyncio
+async def test_retry_run_legacy_params_override_preserves_original_inputs(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace, engine=WorkflowEngine.WDL
+    )
+    workflow.schema_json = {
+        "workflow_name": "demo",
+        "inputs": [
+            {
+                "name": "sample",
+                "type": "String",
+                "value_kind": "scalar",
+                "optional": False,
+            },
+            {
+                "name": "threads",
+                "type": "Int",
+                "value_kind": "scalar",
+                "optional": False,
+            },
+        ],
+    }
+    await db_session.commit()
+    await db_session.refresh(workflow)
+
+    dispatcher = NullDispatcher()
+    service = RunService(db_session, dispatcher=dispatcher)
+    run = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"sample": "S1", "threads": 4},
+        dispatcher=dispatcher,
+    )
+    run = await service.repo.update(
+        run,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_wdl",
+    )
+
+    retried = await service.retry_run(run.run_id, params={"demo.threads": 8})
+
+    assert retried.config["inputs"]["demo.sample"] == "S1"
+    assert retried.config["inputs"]["demo.threads"] == 8
+
+
+@pytest.mark.asyncio
+async def test_retry_logs_lineage_before_dispatch(db_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace
+    )
+
+    run = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+    )
+    service = RunService(db_session, dispatcher=NullDispatcher())
+    run = await service.repo.update(
+        run,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_nf",
+    )
+
+    events: list[str] = []
+
+    class RecordingAuditService:
+        def __init__(self, session):
+            del session
+
+        async def log(self, *, action, **kwargs):
+            del kwargs
+            events.append(action)
+
+    class RecordingDispatcher:
+        def dispatch(self, run_id: str, *, priority: str = "normal") -> None:
+            del priority
+            events.append(f"dispatch:{run_id}")
+
+    monkeypatch.setattr(run_compiler_module, "AuditService", RecordingAuditService)
+    monkeypatch.setattr(run_lifecycle_module, "AuditService", RecordingAuditService)
+
+    retried = await RunService(db_session, dispatcher=RecordingDispatcher()).retry_run(
+        run.run_id
+    )
+
+    assert events == [
+        "run.created",
+        "run.retried",
+        f"dispatch:{retried.run_id}",
+    ]
 
 
 @pytest.mark.asyncio

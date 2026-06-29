@@ -690,7 +690,11 @@ async def test_compile_nextflow_sets_registry_override_for_unqualified_images(
         resolved_values={},
     )
 
-    compiled = await compiler._compile(payload, validated=validated)
+    compiled = await compiler._compile(
+        payload,
+        validated=validated,
+        config_overrides={"docker.registry": "registry.invalid/old"},
+    )
 
     assert adapter.pre_submit_config is not None
     overrides = adapter.pre_submit_config["config_overrides"]
