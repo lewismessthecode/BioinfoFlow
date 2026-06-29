@@ -34,7 +34,9 @@ AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 
 Provider configuration is UI-first. Hosted providers only need an API key.
 Ollama, vLLM, OpenRouter, and generic OpenAI-compatible endpoints can also be
-configured from **Settings -> AI Providers**.
+configured from **Settings -> AI Providers**. In `AUTH_MODE=team`, provider keys
+saved through the UI as stored credentials also require
+`BIOINFOFLOW_CREDENTIAL_KEY`; environment bootstrap keys do not.
 
 For headless bootstrap, set environment defaults such as:
 
@@ -150,10 +152,15 @@ BIOINFOFLOW_CREDENTIAL_KEY=<paste the output of openssl rand -hex 32>
 ```
 
 After adding or changing that value for Docker Compose, recreate the backend
-container so the new environment is loaded:
+container with the same Compose file set you used to start Bioinfoflow so the
+new environment is loaded:
 
 ```bash
+# Default source-build stack:
 docker compose up -d --force-recreate backend
+
+# Production image stack:
+docker compose -f docker-compose.prod.yml up -d --force-recreate backend
 ```
 
 `docker compose restart backend` restarts the existing container and does not
