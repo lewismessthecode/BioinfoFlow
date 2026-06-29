@@ -3,7 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -21,6 +31,37 @@ class RunStatus(str, Enum):
 
 class Run(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'queued', 'preparing', 'running', "
+            "'completed', 'failed', 'cancelled')",
+            name="ck_runs_status_valid",
+        ),
+        CheckConstraint(
+            "replay_kind IS NULL OR replay_kind IN ('retry', 'resume')",
+            name="ck_runs_replay_kind_valid",
+        ),
+        CheckConstraint("attempt_number >= 1", name="ck_runs_attempt_number_positive"),
+        Index(
+            "uq_runs_active_replay_intent",
+            "source_run_id",
+            "replay_kind",
+            "replay_idempotency_key",
+            unique=True,
+            sqlite_where=text(
+                "source_run_id IS NOT NULL "
+                "AND replay_kind IS NOT NULL "
+                "AND replay_idempotency_key IS NOT NULL "
+                "AND status IN ('pending', 'queued', 'preparing', 'running')"
+            ),
+            postgresql_where=text(
+                "source_run_id IS NOT NULL "
+                "AND replay_kind IS NOT NULL "
+                "AND replay_idempotency_key IS NOT NULL "
+                "AND status IN ('pending', 'queued', 'preparing', 'running')"
+            ),
+        ),
+    )
 
     run_id: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     project_id: Mapped[str] = mapped_column(
@@ -45,6 +86,14 @@ class Run(Base, UUIDMixin, TimestampMixin):
     error_json: Mapped[dict | None] = mapped_column(JSON)
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     nextflow_run_name: Mapped[str | None] = mapped_column(String(100))
+    source_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("runs.run_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    replay_kind: Mapped[str | None] = mapped_column(String(20))
+    replay_idempotency_key: Mapped[str | None] = mapped_column(String(128))
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     project = relationship("Project", back_populates="runs")
     workflow = relationship("Workflow", back_populates="runs")
