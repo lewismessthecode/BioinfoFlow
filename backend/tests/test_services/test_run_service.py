@@ -13,7 +13,12 @@ from app.database import Base
 from app.models.project import Project
 from app.models.run import RunStatus
 from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
-from app.path_layout import project_data_root, project_home, run_home
+from app.path_layout import (
+    project_data_root,
+    project_home,
+    run_home,
+    run_results_root,
+)
 from app.schemas.run import RunCreate
 from app.services import run_compiler as run_compiler_module
 from app.services import run_service
@@ -516,3 +521,162 @@ async def test_retry_run_prefers_resolved_runspec_when_original_params_changed(
     assert retried.config["params"]["samplesheet"].endswith(
         "/data/samplesheet.csv"
     )
+
+
+@pytest.mark.asyncio
+async def test_retry_wdl_run_rewrites_outdir_to_new_run_results(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project = await create_project(
+        db_session,
+        name=f"WDL Retry Project {uuid4()}",
+        storage_mode="external",
+        external_root_path=str(workspace),
+    )
+    workflow = await create_workflow(
+        db_session,
+        name="demo",
+        engine=WorkflowEngine.WDL,
+        content=(
+            "version 1.0\n"
+            "workflow demo {\n"
+            "  input { String sample String outdir }\n"
+            "}\n"
+        ),
+        schema_json={
+            "workflow_name": "demo",
+            "inputs": [
+                {
+                    "name": "sample",
+                    "type": "String",
+                    "value_kind": "scalar",
+                    "optional": False,
+                },
+                {
+                    "name": "outdir",
+                    "type": "String",
+                    "value_kind": "directory",
+                    "is_internal": True,
+                    "optional": True,
+                },
+            ],
+        },
+    )
+    await bind_workflow(
+        db_session, project_id=str(project.id), workflow_id=str(workflow.id)
+    )
+
+    dispatcher = NullDispatcher()
+    service = RunService(db_session, dispatcher=dispatcher)
+    run = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"sample": "S1"},
+        dispatcher=dispatcher,
+    )
+    source_results = str(run_results_root(project, run.run_id).resolve())
+    run = await service.repo.update(
+        run,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_wdl",
+    )
+
+    retried = await service.retry_run(run.run_id)
+
+    retried_results = str(run_results_root(project, retried.run_id).resolve())
+    assert retried.run_id != run.run_id
+    assert retried.config["params"]["outdir"] == retried_results
+    assert retried.config["inputs"]["demo.outdir"] == retried_results
+    assert source_results not in json.dumps(retried.config, sort_keys=True)
+
+    engine_inputs_path = (
+        run_home(project, retried.run_id) / "engine" / "wdl" / "inputs.json"
+    )
+    assert engine_inputs_path.exists()
+    engine_inputs = json.loads(engine_inputs_path.read_text(encoding="utf-8"))
+    assert engine_inputs["demo.outdir"] == retried_results
+    assert source_results not in json.dumps(engine_inputs, sort_keys=True)
+
+
+@pytest.mark.asyncio
+async def test_retry_wdl_archive_manifest_uses_new_run_results(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project = await create_project(
+        db_session,
+        name=f"WDL Retry Archive Project {uuid4()}",
+        storage_mode="external",
+        external_root_path=str(workspace),
+    )
+    workflow = await create_workflow(
+        db_session,
+        name="demo",
+        engine=WorkflowEngine.WDL,
+        content=(
+            "version 1.0\n"
+            "workflow demo {\n"
+            "  input { String sample String outdir }\n"
+            "}\n"
+        ),
+        schema_json={
+            "workflow_name": "demo",
+            "inputs": [
+                {
+                    "name": "sample",
+                    "type": "String",
+                    "value_kind": "scalar",
+                    "optional": False,
+                },
+                {
+                    "name": "outdir",
+                    "type": "String",
+                    "value_kind": "directory",
+                    "is_internal": True,
+                    "optional": True,
+                },
+            ],
+        },
+    )
+    await bind_workflow(
+        db_session, project_id=str(project.id), workflow_id=str(workflow.id)
+    )
+
+    dispatcher = NullDispatcher()
+    service = RunService(db_session, dispatcher=dispatcher)
+    run = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"sample": "S1"},
+        dispatcher=dispatcher,
+    )
+    source_results = str(run_results_root(project, run.run_id).resolve())
+    run = await service.repo.update(
+        run,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_wdl",
+    )
+
+    retried = await service.retry_run(run.run_id)
+
+    retried_results = str(run_results_root(project, retried.run_id).resolve())
+    manifest_path = run_home(project, retried.run_id) / "audit" / "run.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["run_id"] == retried.run_id
+    assert manifest["documents"]["engine_inputs"] == (
+        f"runs/{retried.run_id}/engine/wdl/inputs.json"
+    )
+    assert manifest["resolved_inputs"]["params"]["outdir"] == retried_results
+    assert manifest["resolved_inputs"]["inputs"]["demo.outdir"] == retried_results
+    assert source_results not in json.dumps(manifest, sort_keys=True)
