@@ -303,10 +303,14 @@ class RunArchiveService:
                 candidates.append(candidate)
 
         for candidate in candidates:
+            if candidate.is_symlink():
+                continue
             if _path_has_outputs(candidate):
                 return candidate
 
         for candidate in candidates:
+            if candidate.is_symlink():
+                continue
             if candidate.exists():
                 return candidate
 
@@ -338,6 +342,8 @@ def _resolve_output_file_path(
     output_root: Path,
     file_path: str,
 ) -> Path:
+    if output_root.is_symlink():
+        raise PermissionError("output root cannot be a symlink")
     output_root_resolved = output_root.resolve()
     project_target = safe_workspace(project_root, file_path)
     if project_target.exists():
@@ -353,6 +359,8 @@ def _resolve_output_file_path(
 
 def _path_has_outputs(path: Path) -> bool:
     if not path.exists():
+        return False
+    if path.is_symlink():
         return False
     if path.is_file():
         return True

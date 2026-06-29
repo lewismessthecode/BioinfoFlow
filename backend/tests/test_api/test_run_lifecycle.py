@@ -312,7 +312,7 @@ class TestRunLifecycle:
                 "inputs": {},
                 "config_overrides": {},
                 "runtime": {
-                    "wdl_work_dir": ".bioinfoflow/miniwdl/run_failed_wdl_resume"
+                    "wdl_work_dir": "runs/run_failed_wdl_resume/engine/wdl/work"
                 },
             },
             samples_count=0,
@@ -321,7 +321,9 @@ class TestRunLifecycle:
         )
         db_session.add(run)
         await db_session.commit()
-        (workspace / ".bioinfoflow" / "miniwdl" / run.run_id).mkdir(parents=True)
+        (
+            workspace / "runs" / run.run_id / "engine" / "wdl" / "work"
+        ).mkdir(parents=True)
 
         resp = await async_client.post(f"/api/v1/runs/{run.run_id}/resume", json={})
 
