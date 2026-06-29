@@ -276,6 +276,9 @@ describe("ConnectionsPage", () => {
 
     expect(screen.getAllByText("No matching connections. Try another name, host, alias, or note.")).not.toHaveLength(0)
     expect(screen.queryByRole("heading", { name: "Backup HPC" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Test connection" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Edit connection" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Run check" })).not.toBeInTheDocument()
   })
 
   it("opens an existing connection for editing and saves the patch", async () => {

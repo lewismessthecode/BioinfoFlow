@@ -1996,9 +1996,15 @@
       "noResults": "No matching connections. Try another name, host, alias, or note."
     },
     "detail": {
+      "overview": "What this connection is",
+      "health": "Current availability",
+      "access": "How to access",
+      "agentUse": "How the Agent will use it",
       "currentContext": "Agent instructions",
       "aliasPrefix": "Alias:",
-      "skillGuidance": "Add paths, setup steps, and limits the Agent should follow on this host."
+      "skillGuidance": "Add paths, setup steps, and limits the Agent should follow on this host.",
+      "notTested": "Run a connection test when you are ready to verify access.",
+      "noInstructions": "No instructions yet. Add working directories, setup steps, queue limits, or commands the Agent should avoid."
     },
     "sections": {
       "connection": "Connection",
