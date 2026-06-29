@@ -784,6 +784,77 @@ async def test_resume_wdl_fails_when_best_effort_work_dir_is_missing(
 
 
 @pytest.mark.asyncio
+async def test_resume_wdl_rejects_work_dir_outside_source_run(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session,
+        external_root=workspace,
+        engine=WorkflowEngine.WDL,
+    )
+    hostile = tmp_path / "hostile-work"
+    hostile.mkdir()
+
+    service = RunService(db_session, dispatcher=NullDispatcher())
+    source = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+    )
+    source.config = {
+        **source.config,
+        "runtime": {"wdl_work_dir": str(hostile)},
+    }
+    source = await service.repo.update(
+        source,
+        status=RunStatus.FAILED.value,
+    )
+
+    with pytest.raises(ValueError, match="outside source run work dir"):
+        await service.resume_run(source.run_id)
+
+
+@pytest.mark.asyncio
+async def test_resume_wdl_rejects_symlinked_source_work_dir_contents(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "stale.txt").write_text("stale", encoding="utf-8")
+    project, workflow = await _create_external_project_and_workflow(
+        db_session,
+        external_root=workspace,
+        engine=WorkflowEngine.WDL,
+    )
+
+    service = RunService(db_session, dispatcher=NullDispatcher())
+    source = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+    )
+    work_dir = run_home(project, source.run_id) / "engine" / "wdl" / "work"
+    (work_dir / "outside-link").symlink_to(outside / "stale.txt")
+    source = await service.repo.update(
+        source,
+        status=RunStatus.FAILED.value,
+    )
+
+    with pytest.raises(ValueError, match="contains symlinks"):
+        await service.resume_run(source.run_id)
+
+
+@pytest.mark.asyncio
 async def test_retry_legacy_run_without_values_uses_resolved_runspec(
     db_session, monkeypatch, tmp_path
 ):

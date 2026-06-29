@@ -31,6 +31,7 @@ from app.models.workflow import WorkflowSource
 from app.path_layout import (
     project_home,
     run_audit_root,
+    run_engine_workspace,
     workflow_entrypoint_path,
 )
 from app.repositories.project_repo import ProjectRepository
@@ -199,14 +200,11 @@ class RunLifecycleService:
             project = await self.project_repo.get(original.project_id)
             if not project:
                 raise FileNotFoundError("project not found")
-            source_work_dir = _resolve_work_dir_token(
-                project_home(project),
-                resume_token,
+            _validate_best_effort_resume_work_dir(
+                project=project,
+                run_id=original.run_id,
+                token=resume_token,
             )
-            if not source_work_dir.exists() or not source_work_dir.is_dir():
-                raise ValueError(
-                    "run cannot be resumed: best-effort resume work dir is unavailable"
-                )
             resume_payload = {
                 "resume": True,
                 "resume_work_dir": resume_token,
@@ -1035,6 +1033,33 @@ def _replay_idempotency_key(
 def _resolve_work_dir_token(workspace_path: Path, token: str) -> Path:
     path = Path(token)
     return path if path.is_absolute() else workspace_path / path
+
+
+def _validate_best_effort_resume_work_dir(*, project, run_id: str, token: str) -> Path:
+    source = _resolve_work_dir_token(project_home(project), token)
+    if not source.exists() or not source.is_dir():
+        raise ValueError(
+            "run cannot be resumed: best-effort resume work dir is unavailable"
+        )
+
+    expected = run_engine_workspace(project, run_id, "wdl").resolve(strict=False)
+    source_resolved = source.resolve()
+    if source_resolved != expected:
+        raise ValueError(
+            "run cannot be resumed: best-effort resume work dir is outside source run work dir"
+        )
+    if source.is_symlink() or _contains_symlink(source):
+        raise ValueError(
+            "run cannot be resumed: best-effort resume work dir contains symlinks"
+        )
+    return source
+
+
+def _contains_symlink(path: Path) -> bool:
+    try:
+        return any(item.is_symlink() for item in path.rglob("*"))
+    except OSError:
+        return True
 
 
 def _duration_seconds(

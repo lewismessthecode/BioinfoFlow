@@ -232,6 +232,37 @@ async def test_build_output_archive_file_path_must_stay_under_output_root(
 
 
 @pytest.mark.asyncio
+async def test_symlinked_results_root_is_not_a_valid_output_boundary(
+    db_session, tmp_path
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project = await create_project(
+        db_session,
+        name=f"Archive Symlink Root Guard {uuid4()}",
+        storage_mode="external",
+        external_root_path=str(workspace),
+    )
+    run = _run_stub(project_id=str(project.id), run_id="run_symlink_results")
+    run_dir = workspace / "runs" / run.run_id
+    audit_log = run_dir / "audit" / "run.log"
+    audit_log.parent.mkdir(parents=True)
+    audit_log.write_text("secret execution details", encoding="utf-8")
+    results_root = run_results_root(project, run.run_id)
+    results_root.symlink_to(run_dir, target_is_directory=True)
+
+    service = RunArchiveService(ProjectRepository(db_session))
+
+    assert await service.resolve_output_path(run) is None
+    with pytest.raises(FileNotFoundError, match="output path not found"):
+        await service.build_output_archive(
+            run,
+            file_path=f"runs/{run.run_id}/results/audit/run.log",
+            archive_format="tar.gz",
+        )
+
+
+@pytest.mark.asyncio
 async def test_delete_outputs_removes_existing_results_directory(
     db_session, tmp_path
 ):

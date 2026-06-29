@@ -409,10 +409,22 @@ def _seed_resume_work_dir(config: dict, workspace: str, *, target: Path) -> None
     source = _resolve_work_dir(workspace, resume_work_dir)
     if source == target or not source.exists() or not source.is_dir():
         return
+    workspace_root = Path(workspace).resolve()
+    if not source.resolve().is_relative_to(workspace_root):
+        raise ValueError("resume work dir is outside workspace")
+    if source.is_symlink() or _contains_symlink(source):
+        raise ValueError("resume work dir contains symlinks")
     try:
         next(target.iterdir())
     except StopIteration:
         shutil.copytree(source, target, dirs_exist_ok=True)
+
+
+def _contains_symlink(path: Path) -> bool:
+    try:
+        return any(item.is_symlink() for item in path.rglob("*"))
+    except OSError:
+        return True
 
 
 def _copy_outputs(work_dir: Path, workspace: Path, outdir: str | None) -> None:

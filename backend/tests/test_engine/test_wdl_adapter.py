@@ -216,6 +216,25 @@ async def test_wdl_adapter_build_command_keeps_current_work_dir_for_resume(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_wdl_adapter_rejects_resume_work_dir_outside_workspace(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside-work"
+    outside.mkdir()
+    adapter = WDLAdapter()
+
+    with pytest.raises(ValueError, match="outside workspace"):
+        await adapter.build_command(
+            _wdl_config(
+                resume=True,
+                resume_type="best_effort",
+                resume_work_dir=str(outside),
+            ),
+            str(workspace),
+        )
+
+
+@pytest.mark.asyncio
 async def test_wdl_adapter_build_command_absolutizes_qualified_output_dirs(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
