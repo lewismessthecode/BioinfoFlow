@@ -39,4 +39,5 @@ class ImagePullRequest(BaseModel):
     name: str
     tag: str | None = None
     registry: str | None = None
+    registry_id: UUID | None = None
     project_id: UUID | None = None

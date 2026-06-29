@@ -19,6 +19,11 @@ class Project(Base, UUIDMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
+    container_registry_id: Mapped[str | None] = mapped_column(
+        ForeignKey("container_registries.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     remote_root_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     created_by_user_id: Mapped[str | None] = mapped_column(
@@ -35,6 +40,7 @@ class Project(Base, UUIDMixin, TimestampMixin):
     runs = relationship("Run", back_populates="project", cascade="all, delete")
     workspace = relationship("Workspace", back_populates="projects")
     remote_connection = relationship("RemoteConnection")
+    container_registry = relationship("ContainerRegistry", back_populates="projects")
 
     @property
     def project_root(self) -> str:

@@ -36,6 +36,11 @@ from app.models.remote_connection import (
     RemoteConnectionAuthMethod,
     RemoteConnectionStatus,
 )
+from app.models.container_registry import (
+    ContainerRegistry,
+    ContainerRegistryCredentialSource,
+    ContainerRegistryStatus,
+)
 from app.models.run import Run, RunStatus
 from app.models.run_config import RunConfigHelper
 from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
@@ -73,6 +78,9 @@ __all__ = [
     "RemoteConnection",
     "RemoteConnectionAuthMethod",
     "RemoteConnectionStatus",
+    "ContainerRegistry",
+    "ContainerRegistryCredentialSource",
+    "ContainerRegistryStatus",
     "Workflow",
     "WorkflowEngine",
     "WorkflowSource",

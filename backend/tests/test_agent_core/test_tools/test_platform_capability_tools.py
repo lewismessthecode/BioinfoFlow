@@ -381,6 +381,47 @@ async def test_platform_mutation_tools_wrap_services(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_images_pull_tool_accepts_registry_id(db_session, monkeypatch):
+    dispatcher, context = await _context(db_session)
+    captured: dict[str, object] = {}
+
+    async def fake_pull_image(self, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            id=uuid4(),
+            name=kwargs["name"],
+            tag=kwargs["tag"],
+            full_name=f"{kwargs['registry']}/{kwargs['name']}:{kwargs['tag']}",
+            registry=kwargs["registry"],
+            status="pulling",
+            size_bytes=None,
+            entrypoint=[],
+            env={},
+            labels={},
+        )
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.images.ImageService.pull_image",
+        fake_pull_image,
+    )
+
+    result = await dispatcher.dispatch(
+        tool_name="images.pull",
+        input={
+            "name": "bioinfoflow/bwa",
+            "tag": "v2.2.1",
+            "registry_id": "registry-1",
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "completed"
+    assert result.result["image"]["name"] == "bioinfoflow/bwa"
+    assert captured["registry_id"] == "registry-1"
+
+
+@pytest.mark.asyncio
 async def test_update_tools_reject_fields_outside_public_mutation_schemas(db_session, monkeypatch):
     dispatcher, context = await _context(db_session)
     project_id = str(uuid4())

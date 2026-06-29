@@ -22,16 +22,27 @@ from app.path_layout import (
 )
 from app.repositories.workflow_repo import WorkflowRepository
 from app.services.workflow_form_spec import reconcile_workflow_form_spec
+from app.services.workflow_image_service import WorkflowImagePrefetchService
 from app.services.workflow_validator import WorkflowValidator
+from app.utils.logging import get_logger
 from app.utils.repo_paths import allowed_local_path_roots, repo_root
 
 
 _SAFE_BUNDLE_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+logger = get_logger(__name__)
 
 
 class WorkflowService:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        image_prefetch_service: WorkflowImagePrefetchService | None = None,
+    ):
         self.repo = WorkflowRepository(session)
+        self.image_prefetch_service = image_prefetch_service or WorkflowImagePrefetchService(
+            session
+        )
 
     async def list_workflows(
         self,
@@ -55,6 +66,7 @@ class WorkflowService:
         version = payload.get("version")
         description = payload.get("description")
         estimated_time = payload.get("estimated_time")
+        container_registry_id = payload.get("container_registry_id")
         weight = payload.get("weight", 1)
 
         source_ref = payload.get("source_ref")
@@ -228,7 +240,7 @@ class WorkflowService:
             bundle_root=bundle_root,
         ).model_dump(mode="json")
 
-        return await self.repo.create(
+        workflow = await self.repo.create(
             id=workflow_id,
             name=name,
             description=description,
@@ -239,10 +251,15 @@ class WorkflowService:
             bundle_kind=bundle_kind,
             version=version,
             estimated_time=estimated_time,
+            container_registry_id=(
+                str(container_registry_id) if container_registry_id else None
+            ),
             schema_json=schema_json,
             form_spec=form_spec,
             weight=weight,
         )
+        await self._prefetch_workflow_images(workflow)
+        return workflow
 
     async def update_workflow(self, workflow, payload: dict[str, Any]):
         if "schema_json" in payload and payload["schema_json"] is not None:
@@ -280,6 +297,16 @@ class WorkflowService:
             workflow.entrypoint_relpath,
             escape_message="workflow entrypoint escapes bundle",
         )
+
+    async def _prefetch_workflow_images(self, workflow) -> None:
+        try:
+            await self.image_prefetch_service.prefetch_workflow(workflow)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "workflow.image_prefetch.failed",
+                workflow_id=str(getattr(workflow, "id", "")),
+                error=str(exc),
+            )
 
 
 def _normalize_enum(value: Any, enum_cls):

@@ -195,3 +195,34 @@ async def test_pull_image_stream_iteration_does_not_block_event_loop():
 
     assert received == events
     assert ticks >= 3
+
+
+@pytest.mark.asyncio
+async def test_pull_image_forwards_auth_config_to_docker_api():
+    service = _service_with_client(_FakeImages())
+    captured: dict[str, object] = {}
+
+    def fake_pull(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return iter([{"status": "done"}])
+
+    service._client.api.pull = fake_pull  # type: ignore[attr-defined]
+
+    received = []
+    async for event in service.pull_image(
+        "team/tool",
+        "1.0.0",
+        "registry.example.com",
+        auth_config={"username": "bioinfoflow", "password": "secret"},
+    ):
+        received.append(event)
+
+    assert received == [{"status": "done"}]
+    assert captured["args"] == ("registry.example.com/team/tool",)
+    assert captured["kwargs"] == {
+        "tag": "1.0.0",
+        "stream": True,
+        "decode": True,
+        "auth_config": {"username": "bioinfoflow", "password": "secret"},
+    }

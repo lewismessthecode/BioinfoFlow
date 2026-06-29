@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone, timedelta
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +12,13 @@ from app.repositories.project_repo import ProjectRepository
 from app.repositories.image_repo import ImageRepository
 from app.runtime.background_tasks import background_tasks
 from app.runtime.events import publish_image_progress
-from app.services.docker_service import DockerImageInfo, DockerService
+from app.services.container_registry_service import ContainerRegistryService
+from app.services.docker_service import (
+    DockerImageInfo,
+    DockerService,
+    normalize_registry,
+    qualified_image_reference,
+)
 from app.utils.authorization import can_access_project
 from app.utils.exceptions import PermissionDeniedError
 
@@ -110,6 +117,8 @@ class ImageService:
         project_id: str | None = None,
         user_id: str | None = None,
         workspace_id: str | None = None,
+        auth_config: dict[str, Any] | None = None,
+        registry_id: str | None = None,
     ):
         if not await self.docker.is_available():
             raise DockerUnavailableError("docker unavailable")
@@ -118,7 +127,19 @@ class ImageService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        full_name = f"{name}:{tag}"
+        if registry_id:
+            target = await ContainerRegistryService(self.session).resolve_image_target(
+                registry_id=registry_id,
+                name=name,
+                tag=tag,
+            )
+            name = target.name
+            tag = target.tag
+            registry = target.registry
+            auth_config = target.auth_config
+            registry_id = target.registry_id
+        registry = normalize_registry(registry) or "docker.io"
+        full_name = qualified_image_reference(name, tag, registry)
         existing = await self.repo.get_by_full_name(full_name)
         if existing:
             image = await self.repo.update(
@@ -138,8 +159,13 @@ class ImageService:
                 pull_progress=0,
             )
 
+        task_kwargs: dict[str, Any] = {}
+        if auth_config is not None:
+            task_kwargs["auth_config"] = auth_config
+        if registry_id is not None:
+            task_kwargs["registry_id"] = registry_id
         background_tasks.submit(
-            self._pull_task, image.id, name, tag, registry, project_id
+            self._pull_task, image.id, name, tag, registry, project_id, **task_kwargs
         )
         return image
 
@@ -294,11 +320,21 @@ class ImageService:
         tag: str,
         registry: str,
         project_id: str | None,
+        *,
+        auth_config: dict[str, Any] | None = None,
+        registry_id: str | None = None,
     ) -> None:
         async with async_session_maker() as session:
             repo = ImageRepository(session)
             await self._pull_task_with_repo(
-                repo, image_id, name, tag, registry, project_id
+                repo,
+                image_id,
+                name,
+                tag,
+                registry,
+                project_id,
+                auth_config=auth_config,
+                registry_id=registry_id,
             )
 
     async def _pull_task_with_repo(
@@ -309,10 +345,22 @@ class ImageService:
         tag: str,
         registry: str,
         project_id: str | None,
+        *,
+        auth_config: dict[str, Any] | None = None,
+        registry_id: str | None = None,
     ) -> None:
+        del registry_id
         progress = 0
         try:
-            async for event in self.docker.pull_image(name, tag, registry):
+            pull_kwargs: dict[str, Any] = {}
+            if auth_config is not None:
+                pull_kwargs["auth_config"] = auth_config
+            async for event in self.docker.pull_image(
+                name,
+                tag,
+                registry,
+                **pull_kwargs,
+            ):
                 progress_detail = event.get("progressDetail") or {}
                 total = progress_detail.get("total")
                 current = progress_detail.get("current")
@@ -362,7 +410,8 @@ class ImageService:
         image = await repo.get(image_id)
         if not image:
             return
-        info = await self.docker.inspect_image(f"{name}:{tag}")
+        full_name = qualified_image_reference(name, tag, registry)
+        info = await self.docker.inspect_image(full_name)
         payload = {"status": ImageStatus.LOCAL.value, "pull_progress": 100}
         if info:
             payload.update(

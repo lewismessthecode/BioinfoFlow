@@ -174,6 +174,7 @@ async def create_local_bundle_workflow(
     engine: str | None = Form(None),
     description: str | None = Form(None),
     estimated_time: str | None = Form(None),
+    container_registry_id: str | None = Form(None),
     entrypoint_relpath: str | None = Form(None),
     bundle_paths: str = Form(...),
     bundle_files: list[UploadFile] = File(...),
@@ -218,6 +219,7 @@ async def create_local_bundle_workflow(
             "engine": engine,
             "description": description,
             "estimated_time": estimated_time,
+            "container_registry_id": container_registry_id,
             "entrypoint_relpath": entrypoint_relpath,
             "bundle_files": uploaded_files,
         }

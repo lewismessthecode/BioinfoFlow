@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from sqlalchemy import JSON, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -36,8 +36,14 @@ class Workflow(Base, UUIDMixin, TimestampMixin):
     bundle_kind: Mapped[str | None] = mapped_column(String(50))
     version: Mapped[str] = mapped_column(String(50), nullable=False)
     estimated_time: Mapped[str | None] = mapped_column(String(100))
+    container_registry_id: Mapped[str | None] = mapped_column(
+        ForeignKey("container_registries.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     schema_json: Mapped[dict | None] = mapped_column(JSON)
     form_spec: Mapped[dict | None] = mapped_column(JSON)
     weight: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
     runs = relationship("Run", back_populates="workflow")
+    container_registry = relationship("ContainerRegistry")

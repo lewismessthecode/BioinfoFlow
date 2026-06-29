@@ -71,6 +71,7 @@ from app.services.run_dispatch import RunDispatcher, get_run_dispatcher
 from app.services.run_helpers import build_resolved_runspec, generate_run_id
 from app.services.storage_service import StorageService
 from app.services.workflow_form_spec import effective_workflow_form_spec
+from app.services.workflow_image_service import workflow_container_images
 from app.utils.project_access import can_access_project
 
 
@@ -1120,20 +1121,7 @@ def _merge_values_with_defaults(
 
 
 def _required_container_images(schema_json: dict | None) -> list[str]:
-    images: list[str] = []
-    seen: set[str] = set()
-    for task in list((schema_json or {}).get("tasks") or []):
-        container = task.get("container") if isinstance(task, dict) else None
-        if not isinstance(container, str):
-            continue
-        image = container.strip().strip("\"'")
-        if not image or image in seen:
-            continue
-        if any(token in image for token in ("~{", "${", " ", "\n", "\t")):
-            continue
-        seen.add(image)
-        images.append(image)
-    return images
+    return workflow_container_images(schema_json)
 
 
 def _is_absolute_or_home_path(value: str) -> bool:

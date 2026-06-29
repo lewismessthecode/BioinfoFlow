@@ -80,6 +80,68 @@ async def test_images_list_pull_delete(async_client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_images_pull_forwards_selected_registry_id(
+    async_client,
+    monkeypatch,
+):
+    registry_resp = await async_client.post(
+        "/api/v1/container-registries",
+        json={
+            "name": "Harbor Bio",
+            "endpoint": "https://harbor.example.test",
+            "namespace": "bio",
+            "credential_source": "stored",
+            "username": "robot-user",
+            "password": "top-secret-value",
+        },
+    )
+    assert registry_resp.status_code == 201
+    registry_id = registry_resp.json()["data"]["id"]
+    captured: dict[str, object] = {}
+
+    async def fake_pull(self, **kwargs):
+        captured.update(kwargs)
+        return type(
+            "PulledImage",
+            (),
+            {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "name": kwargs["name"],
+                "tag": kwargs["tag"],
+                "full_name": f"{kwargs['registry']}/{kwargs['name']}:{kwargs['tag']}",
+                "registry": kwargs["registry"],
+                "status": "pulling",
+                "description": None,
+                "size_bytes": None,
+                "pull_progress": 0,
+                "error_message": None,
+                "labels": None,
+                "env": None,
+                "entrypoint": None,
+                "created_at": "2026-06-29T00:00:00+00:00",
+                "updated_at": "2026-06-29T00:00:00+00:00",
+            },
+        )()
+
+    monkeypatch.setattr(image_service.ImageService, "pull_image", fake_pull)
+
+    pull_resp = await async_client.post(
+        "/api/v1/images/pull",
+        json={
+            "name": "bwa",
+            "tag": "0.7.17",
+            "registry_id": registry_id,
+        },
+    )
+
+    assert pull_resp.status_code == 202
+    assert captured["name"] == "bwa"
+    assert captured["tag"] == "0.7.17"
+    assert captured["registry"] == "docker.io"
+    assert captured["registry_id"] == registry_id
+
+
+@pytest.mark.asyncio
 async def test_images_list_reports_docker_status_metadata_and_force_sync(
     async_client, monkeypatch
 ):
