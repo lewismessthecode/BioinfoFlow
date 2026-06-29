@@ -18,8 +18,7 @@ depends_on = None
 
 
 RUN_STATUS_SQL = (
-    "('pending', 'queued', 'preparing', 'running', "
-    "'completed', 'failed', 'cancelled')"
+    "('pending', 'queued', 'preparing', 'running', 'completed', 'failed', 'cancelled')"
 )
 TASK_ACTIVE_STATE_SQL = "('queued', 'dispatched')"
 
@@ -97,7 +96,6 @@ def upgrade() -> None:
                 "runs",
                 ["source_run_id"],
                 ["run_id"],
-                ondelete="SET NULL",
             )
         if RUN_REPLAY_INDEX not in _indexes("runs"):
             op.create_index(

@@ -80,7 +80,9 @@ def test_configured_run_mounts_identity_data_input_and_results():
 
 
 def test_configured_run_mounts_supports_external_project_layout():
-    host_dir = "/lab/project-a/runs/run-ext/engine/wdl/work/20260417_042839_Demo/call-TASK"
+    host_dir = (
+        "/lab/project-a/runs/run-ext/engine/wdl/work/20260417_042839_Demo/call-TASK"
+    )
 
     mounts = configured_run_mounts(host_dir)
 
@@ -100,6 +102,47 @@ def test_configured_run_mounts_supports_external_project_layout():
             host_root=Path("/lab/project-a/runs/run-ext/results"),
             read_only=False,
         ),
+    )
+
+
+def test_configured_run_mounts_uses_rightmost_runs_segment():
+    host_dir = (
+        "/lab/project-a/runs/archive-copy/engine/wdl/work/imported/runs/run-real/"
+        "engine/wdl/work/20260417_042839_Demo/call-TASK"
+    )
+
+    mounts = configured_run_mounts(host_dir)
+
+    assert mounts[0] == ContainerPathMapping(
+        container_root=Path(
+            "/lab/project-a/runs/archive-copy/engine/wdl/work/imported/data"
+        ),
+        host_root=Path(
+            "/lab/project-a/runs/archive-copy/engine/wdl/work/imported/data"
+        ),
+        read_only=True,
+    )
+    assert mounts[1] == ContainerPathMapping(
+        container_root=Path(
+            "/lab/project-a/runs/archive-copy/engine/wdl/work/imported/"
+            "runs/run-real/input"
+        ),
+        host_root=Path(
+            "/lab/project-a/runs/archive-copy/engine/wdl/work/imported/"
+            "runs/run-real/input"
+        ),
+        read_only=True,
+    )
+    assert mounts[2] == ContainerPathMapping(
+        container_root=Path(
+            "/lab/project-a/runs/archive-copy/engine/wdl/work/imported/"
+            "runs/run-real/results"
+        ),
+        host_root=Path(
+            "/lab/project-a/runs/archive-copy/engine/wdl/work/imported/"
+            "runs/run-real/results"
+        ),
+        read_only=False,
     )
 
 

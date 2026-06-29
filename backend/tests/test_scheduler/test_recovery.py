@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -96,6 +97,257 @@ async def test_scheduler_recover_marks_stale_dispatched_tasks_failed(db_session)
     refreshed = result.scalars().one()
     assert refreshed.state == TaskState.FAILED.value
     assert refreshed.error_message.startswith("Run recovery:")
+
+
+@pytest.mark.asyncio
+async def test_scheduler_recover_skips_stale_task_snapshot_after_task_cancelled(
+    db_session, monkeypatch
+):
+    project = Project(
+        name=f"Recovery Race Project {uuid4()}",
+        storage_mode="managed",
+        external_root_path=None,
+        user_id="dev",
+    )
+    workflow = Workflow(
+        name=f"wf-{uuid4()}",
+        source=WorkflowSource.LOCAL,
+        engine=WorkflowEngine.NEXTFLOW,
+        version=str(uuid4()),
+    )
+    db_session.add_all([project, workflow])
+    await db_session.commit()
+    await db_session.refresh(project)
+    await db_session.refresh(workflow)
+
+    run = Run(
+        run_id=f"run_recovery_race_{uuid4().hex[:10]}",
+        project_id=str(project.id),
+        workflow_id=str(workflow.id),
+        status=RunStatus.RUNNING.value,
+        config={"params": {"outdir": "results"}},
+        started_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        samples_count=0,
+        tasks_total=0,
+        tasks_completed=0,
+    )
+    db_session.add(run)
+    await db_session.commit()
+    await db_session.refresh(run)
+
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    task = await queue.enqueue(run.run_id)
+    await queue.mark_dispatched(
+        task.id,
+        "worker-0",
+        dispatched_at=datetime.now(timezone.utc) - timedelta(hours=2),
+    )
+    stale_task_snapshot = SimpleNamespace(id=task.id, run_id=run.run_id)
+
+    run.status = RunStatus.CANCELLED.value
+    task_row = await db_session.get(queue.model, task.id)
+    assert task_row is not None
+    task_row.state = TaskState.CANCELLED.value
+    await db_session.commit()
+
+    async def stale_tasks(timeout_minutes):
+        del timeout_minutes
+        return [stale_task_snapshot]
+
+    monkeypatch.setattr(queue, "get_stale", stale_tasks)
+    scheduler = RunScheduler(
+        config=SchedulerConfig(stale_timeout_minutes=30, poll_interval_seconds=0.01),
+        backend=NoopBackend(),
+        session_factory=session_factory,
+        queue=queue,
+    )
+
+    recovered = await scheduler._recover_stale_tasks()
+    await db_session.refresh(run)
+    await db_session.refresh(task_row)
+
+    assert recovered == 0
+    assert run.status == RunStatus.CANCELLED.value
+    assert task_row.state == TaskState.CANCELLED.value
+
+
+@pytest.mark.asyncio
+async def test_scheduler_recover_skips_stale_task_snapshot_after_requeue(
+    db_session, monkeypatch
+):
+    project = Project(
+        name=f"Recovery Requeue Race Project {uuid4()}",
+        storage_mode="managed",
+        external_root_path=None,
+        user_id="dev",
+    )
+    workflow = Workflow(
+        name=f"wf-{uuid4()}",
+        source=WorkflowSource.LOCAL,
+        engine=WorkflowEngine.NEXTFLOW,
+        version=str(uuid4()),
+    )
+    db_session.add_all([project, workflow])
+    await db_session.commit()
+    await db_session.refresh(project)
+    await db_session.refresh(workflow)
+
+    run = Run(
+        run_id=f"run_recovery_requeue_{uuid4().hex[:10]}",
+        project_id=str(project.id),
+        workflow_id=str(workflow.id),
+        status=RunStatus.QUEUED.value,
+        config={"params": {"outdir": "results"}},
+        samples_count=0,
+        tasks_total=0,
+        tasks_completed=0,
+    )
+    db_session.add(run)
+    await db_session.commit()
+    await db_session.refresh(run)
+
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    task = await queue.enqueue(run.run_id, max_attempts=2)
+    dispatched_at = datetime.now(timezone.utc) - timedelta(hours=2)
+    dispatched = await queue.mark_dispatched(
+        task.id,
+        "worker-0",
+        dispatched_at=dispatched_at,
+    )
+    assert dispatched is not None
+    stale_task_snapshot = SimpleNamespace(
+        id=task.id,
+        run_id=run.run_id,
+        worker_id="worker-0",
+        attempt=1,
+        dispatched_at=dispatched_at,
+    )
+
+    requeued = await queue.re_enqueue(task.id, attempt=2)
+    assert requeued is not None
+
+    async def stale_tasks(timeout_minutes):
+        del timeout_minutes
+        return [stale_task_snapshot]
+
+    monkeypatch.setattr(queue, "get_stale", stale_tasks)
+    scheduler = RunScheduler(
+        config=SchedulerConfig(stale_timeout_minutes=30, poll_interval_seconds=0.01),
+        backend=NoopBackend(),
+        session_factory=session_factory,
+        queue=queue,
+    )
+
+    recovered = await scheduler._recover_stale_tasks()
+    await db_session.refresh(run)
+    refreshed_task = await queue.get(task.id)
+
+    assert recovered == 0
+    assert run.status == RunStatus.QUEUED.value
+    assert refreshed_task is not None
+    assert refreshed_task.state == TaskState.QUEUED.value
+    assert refreshed_task.attempt == 2
+
+
+@pytest.mark.asyncio
+async def test_scheduler_recover_skips_stale_snapshot_after_same_attempt_redispatch(
+    db_session, monkeypatch
+):
+    project = Project(
+        name=f"Recovery Redispatch Race Project {uuid4()}",
+        storage_mode="managed",
+        external_root_path=None,
+        user_id="dev",
+    )
+    workflow = Workflow(
+        name=f"wf-{uuid4()}",
+        source=WorkflowSource.LOCAL,
+        engine=WorkflowEngine.NEXTFLOW,
+        version=str(uuid4()),
+    )
+    db_session.add_all([project, workflow])
+    await db_session.commit()
+    await db_session.refresh(project)
+    await db_session.refresh(workflow)
+
+    run = Run(
+        run_id=f"run_recovery_redispatch_{uuid4().hex[:10]}",
+        project_id=str(project.id),
+        workflow_id=str(workflow.id),
+        status=RunStatus.RUNNING.value,
+        config={"params": {"outdir": "results"}},
+        started_at=datetime.now(timezone.utc),
+        samples_count=0,
+        tasks_total=0,
+        tasks_completed=0,
+    )
+    db_session.add(run)
+    await db_session.commit()
+    await db_session.refresh(run)
+
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    task = await queue.enqueue(run.run_id, max_attempts=1)
+    stale_dispatched_at = datetime.now(timezone.utc) - timedelta(hours=2)
+    dispatched = await queue.mark_dispatched(
+        task.id,
+        "worker-0",
+        dispatched_at=stale_dispatched_at,
+    )
+    assert dispatched is not None
+    stale_task_snapshot = SimpleNamespace(
+        id=task.id,
+        run_id=run.run_id,
+        worker_id="worker-0",
+        attempt=1,
+        dispatched_at=stale_dispatched_at,
+    )
+
+    fresh_dispatched_at = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        current = await session.get(queue.model, task.id)
+        assert current is not None
+        current.dispatched_at = fresh_dispatched_at
+        await session.commit()
+
+    async def stale_tasks(timeout_minutes):
+        del timeout_minutes
+        return [stale_task_snapshot]
+
+    monkeypatch.setattr(queue, "get_stale", stale_tasks)
+    scheduler = RunScheduler(
+        config=SchedulerConfig(stale_timeout_minutes=30, poll_interval_seconds=0.01),
+        backend=NoopBackend(),
+        session_factory=session_factory,
+        queue=queue,
+    )
+
+    recovered = await scheduler._recover_stale_tasks()
+    await db_session.refresh(run)
+    refreshed_task = await queue.get(task.id)
+
+    assert recovered == 0
+    assert run.status == RunStatus.RUNNING.value
+    assert refreshed_task is not None
+    assert refreshed_task.state == TaskState.DISPATCHED.value
+    assert refreshed_task.dispatched_at is not None
+    assert (
+        refreshed_task.dispatched_at.replace(tzinfo=timezone.utc) == fresh_dispatched_at
+    )
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -65,6 +66,15 @@ RUN_ACTIVE_STATUSES = (
     RunStatus.PREPARING.value,
     RunStatus.RUNNING.value,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionLease:
+    task_id: str
+    run_id: str
+    worker_id: str | None
+    attempt: int
+    dispatched_at: datetime | None
 
 
 class QueueFullError(RuntimeError):
@@ -293,24 +303,47 @@ class RunScheduler:
             return 0
 
         recovered = 0
+        stale_cutoff = _now() - timedelta(minutes=self.config.stale_timeout_minutes)
         for task in stale_tasks:
             async with self._session_factory() as session:
                 run = await RunRepository(session).get_by_run_id(task.run_id)
+                message = (
+                    "Run recovery: run missing"
+                    if not run
+                    else "Run recovery: marked stale after service restart"
+                )
+                completed_at = _now()
+                task_updated = await self._mark_stale_task_failed_in_session(
+                    session,
+                    task=task,
+                    error=message,
+                    completed_at=completed_at,
+                    stale_cutoff=stale_cutoff,
+                )
+                if not task_updated:
+                    await session.rollback()
+                    continue
                 if not run:
-                    await self._queue.mark_failed(task.id, "Run recovery: run missing")
+                    await session.commit()
                     recovered += 1
                     continue
 
-                run.status = RunStatus.FAILED.value
-                run.error_message = "Run recovery: marked stale after service restart"
-                run.completed_at = _now()
-                run.duration_seconds = _duration_seconds(
-                    run.started_at, run.completed_at
+                run.duration_seconds = _duration_seconds(run.started_at, completed_at)
+                run.error_message = message
+                run_updated = await self._transition_run_terminal_in_session(
+                    session,
+                    run,
+                    status=RunStatus.FAILED.value,
+                    completed_at=completed_at,
+                    error_message=message,
                 )
+                if not run_updated:
+                    await session.rollback()
+                    continue
                 await session.commit()
+                await session.refresh(run)
 
-            await self._queue.mark_failed(task.id, run.error_message)
-            await publish_run_status(run, message="Run recovery: marked stale")
+            await publish_run_status(run, message=message)
             recovered += 1
         return recovered
 
@@ -328,21 +361,23 @@ class RunScheduler:
         )
         try:
             async with self._session_factory() as session:
-                stmt = select(Run).where(
-                    Run.status.in_([RunStatus.QUEUED.value, RunStatus.RUNNING.value]),
-                    or_(
-                        and_(
-                            Run.started_at.is_not(None),
-                            Run.started_at <= stale_cutoff,
-                        ),
-                        and_(Run.started_at.is_(None), Run.created_at <= stale_cutoff),
-                        and_(
-                            Run.status == RunStatus.RUNNING.value,
-                            Run.last_heartbeat_at.is_not(None),
-                            Run.last_heartbeat_at <= heartbeat_cutoff,
-                        ),
+                stale_condition = or_(
+                    and_(
+                        Run.started_at.is_not(None),
+                        Run.started_at <= stale_cutoff,
+                    ),
+                    and_(Run.started_at.is_(None), Run.created_at <= stale_cutoff),
+                    and_(
+                        Run.status == RunStatus.RUNNING.value,
+                        Run.last_heartbeat_at.is_not(None),
+                        Run.last_heartbeat_at <= heartbeat_cutoff,
                     ),
                 )
+                stmt = select(Run).where(
+                    Run.status.in_([RunStatus.QUEUED.value, RunStatus.RUNNING.value]),
+                    stale_condition,
+                )
+                active_task_absent = None
                 if self._scheduled_tasks_available:
                     task_exists = exists(
                         select(ScheduledTask.id).where(
@@ -352,54 +387,76 @@ class RunScheduler:
                             ),
                         )
                     )
+                    active_task_absent = ~task_exists
                     stmt = stmt.where(~task_exists)
 
                 result = await session.execute(stmt)
                 stale_runs = result.scalars().all()
 
+                recovered_runs: list[Run] = []
                 for run in stale_runs:
-                    run.status = RunStatus.FAILED.value
                     heartbeat_stale = (
                         run.last_heartbeat_at is not None
                         and _ensure_utc(run.last_heartbeat_at) <= heartbeat_cutoff
                     )
                     if heartbeat_stale:
-                        run.error_message = (
-                            "Worker heartbeat lost; marking run as failed"
-                        )
-                        run.error_json = {
+                        error_message = "Worker heartbeat lost; marking run as failed"
+                        error_json = {
                             "stage": RunErrorStage.EXECUTION,
                             "code": RunErrorCode.WORKER_LOST,
-                            "message": run.error_message,
+                            "message": error_message,
                             "hint": "The worker handling this run stopped responding. "
                             "Retry to start a new run.",
                         }
                     else:
-                        run.error_message = (
+                        error_message = (
                             "Run recovery: marked stale after service restart"
                         )
-                        run.error_json = {
+                        error_json = {
                             "stage": RunErrorStage.EXECUTION,
                             "code": RunErrorCode.RUN_STALE,
-                            "message": run.error_message,
+                            "message": error_message,
                             "hint": "The scheduler restarted while this run was in flight.",
                         }
-                    run.completed_at = _now()
-                    run.duration_seconds = _duration_seconds(
-                        run.started_at, run.completed_at
-                    )
-                if stale_runs:
+                    completed_at = _now()
+                    duration_seconds = _duration_seconds(run.started_at, completed_at)
+                    with session.no_autoflush:
+                        update_conditions = [
+                            Run.run_id == run.run_id,
+                            Run.status.in_(RUN_ACTIVE_STATUSES),
+                            stale_condition,
+                        ]
+                        if active_task_absent is not None:
+                            update_conditions.append(active_task_absent)
+                        update_result = await session.execute(
+                            update(Run)
+                            .where(*update_conditions)
+                            .values(
+                                status=RunStatus.FAILED.value,
+                                error_message=error_message,
+                                error_json=error_json,
+                                completed_at=completed_at,
+                                duration_seconds=duration_seconds,
+                            )
+                        )
+                    if update_result.rowcount == 1:
+                        recovered_runs.append(run)
+                if recovered_runs:
                     await session.commit()
+                    for run in recovered_runs:
+                        await session.refresh(run)
+                else:
+                    await session.rollback()
         except OperationalError as exc:
             if "no such table: runs" not in str(exc).lower():
                 raise
             logger.info("scheduler.recovery.skipped_missing_runs_table")
             return 0
 
-        for run in stale_runs:
+        for run in recovered_runs:
             await publish_run_status(run, message=run.error_message or "Run failed")
 
-        return len(stale_runs)
+        return len(recovered_runs)
 
     async def get_status(self) -> dict[str, object]:
         state_counts = {
@@ -440,6 +497,59 @@ class RunScheduler:
 
     async def execute_run(self, run_id: str, *, worker_id: str = "legacy") -> None:
         await self._execute_run_id(run_id, worker_id=worker_id)
+
+    async def _start_run_in_session(
+        self,
+        session: AsyncSession,
+        run: Run,
+        *,
+        task_id: str | None,
+        worker_id: str,
+    ) -> tuple[bool, ExecutionLease | None]:
+        started_at = run.started_at or _now()
+        lease: ExecutionLease | None = None
+        with session.no_autoflush:
+            if task_id:
+                task_result = await session.execute(
+                    select(ScheduledTask).where(
+                        ScheduledTask.id == task_id,
+                        ScheduledTask.run_id == run.run_id,
+                        ScheduledTask.state == TaskState.DISPATCHED.value,
+                        ScheduledTask.worker_id == worker_id,
+                    )
+                )
+                task = task_result.scalars().first()
+                if task is None:
+                    await session.rollback()
+                    return False, None
+                lease = ExecutionLease(
+                    task_id=task.id,
+                    run_id=task.run_id,
+                    worker_id=task.worker_id,
+                    attempt=task.attempt,
+                    dispatched_at=task.dispatched_at,
+                )
+
+            result = await session.execute(
+                update(Run)
+                .where(
+                    Run.run_id == run.run_id,
+                    Run.status.in_([RunStatus.PENDING.value, RunStatus.QUEUED.value]),
+                )
+                .values(
+                    status=RunStatus.RUNNING.value,
+                    started_at=started_at,
+                    completed_at=None,
+                    duration_seconds=None,
+                    error_message=None,
+                )
+            )
+        if result.rowcount != 1:
+            await session.rollback()
+            return False, None
+        await session.commit()
+        await session.refresh(run)
+        return True, lease
 
     async def _worker(self, worker_index: int) -> None:
         worker_id = f"worker-{worker_index}"
@@ -523,12 +633,14 @@ class RunScheduler:
                     )
                 return
 
-            run.status = RunStatus.RUNNING.value
-            run.started_at = run.started_at or _now()
-            run.completed_at = None
-            run.duration_seconds = None
-            run.error_message = None
-            await session.commit()
+            started, lease = await self._start_run_in_session(
+                session,
+                run,
+                task_id=task_id,
+                worker_id=worker_id,
+            )
+            if not started:
+                return
             await publish_run_status(run, message="Run started")
 
             workflow = await session.get(Workflow, run.workflow_id)
@@ -538,6 +650,7 @@ class RunScheduler:
                     run,
                     "Workflow not found",
                     task_id=task_id,
+                    lease=lease,
                     workspace_path=None,
                     engine=None,
                 )
@@ -551,6 +664,7 @@ class RunScheduler:
                     run,
                     "Project not found",
                     task_id=task_id,
+                    lease=lease,
                     workspace_path=None,
                     engine=None,
                 )
@@ -568,6 +682,7 @@ class RunScheduler:
                     run,
                     "Unsupported workflow engine",
                     task_id=task_id,
+                    lease=lease,
                     workspace_path=str(workspace_path),
                     engine=str(engine_value),
                 )
@@ -619,6 +734,9 @@ class RunScheduler:
 
             try:
                 async for event in self._backend.submit(adapter, config, ws_path):
+                    if not await self._execution_lease_active(session, lease):
+                        await session.rollback()
+                        return
                     run.last_heartbeat_at = _now()
                     if event.type == EngineEventType.ERROR:
                         await _handle_engine_event(
@@ -633,6 +751,7 @@ class RunScheduler:
                             session,
                             run,
                             task_id=task_id,
+                            lease=lease,
                             error=run.error_message or event.message or "Run failed",
                             workspace_path=ws_path,
                             engine=eng,
@@ -643,6 +762,7 @@ class RunScheduler:
                             session,
                             run,
                             task_id=task_id,
+                            lease=lease,
                             workspace_path=ws_path,
                             engine=eng,
                         )
@@ -672,6 +792,7 @@ class RunScheduler:
                     session,
                     run,
                     task_id=task_id,
+                    lease=lease,
                     error=error_message,
                     workspace_path=ws_path,
                     engine=eng,
@@ -688,6 +809,7 @@ class RunScheduler:
                     session,
                     run,
                     task_id=task_id,
+                    lease=lease,
                     workspace_path=ws_path,
                     engine=eng,
                 )
@@ -698,6 +820,7 @@ class RunScheduler:
         run: Run,
         *,
         task_id: str | None,
+        lease: ExecutionLease | None = None,
         workspace_path: str,
         engine: str,
     ) -> None:
@@ -719,6 +842,7 @@ class RunScheduler:
             task_id=task_id,
             state=TaskState.COMPLETED.value,
             completed_at=completed_at,
+            lease=lease,
         )
         if not run_updated or not task_updated:
             await session.rollback()
@@ -741,6 +865,7 @@ class RunScheduler:
         message: str,
         *,
         task_id: str | None,
+        lease: ExecutionLease | None = None,
         workspace_path: str | None,
         engine: str | None,
     ) -> None:
@@ -764,6 +889,7 @@ class RunScheduler:
             state=TaskState.FAILED.value,
             error=message,
             completed_at=completed_at,
+            lease=lease,
         )
         if not run_updated or not task_updated:
             await session.rollback()
@@ -779,6 +905,22 @@ class RunScheduler:
             )
         await publish_run_status(run, message=message)
         await publish_run_dag(run)
+
+    async def _execution_lease_active(
+        self,
+        session: AsyncSession,
+        lease: ExecutionLease | None,
+    ) -> bool:
+        if lease is None:
+            return True
+        with session.no_autoflush:
+            task_id = await session.scalar(
+                select(ScheduledTask.id).where(
+                    ScheduledTask.id == lease.task_id,
+                    *_execution_lease_conditions(lease),
+                )
+            )
+        return task_id is not None
 
     async def handle_timeout(self, run_id: str, *, reason: str) -> bool:
         """Route a timed-out run through retry-aware failure handling.
@@ -812,21 +954,35 @@ class RunScheduler:
         run: Run,
         *,
         task_id: str | None,
+        lease: ExecutionLease | None = None,
         error: str,
         workspace_path: str | None,
         engine: str | None,
     ) -> None:
         if task_id:
             task = await self._queue.get(task_id)
-            if task is not None and await self._schedule_retry(
-                session, run, task, error
-            ):
-                return
+            if task is not None:
+                active_lease = lease or _lease_from_task(task)
+                if await self._schedule_retry(
+                    session, run, task, error, lease=active_lease
+                ):
+                    return
+                current_task = await self._queue.get(task_id)
+                current_run = await RunRepository(session).get_by_run_id(run.run_id)
+                if (
+                    current_task is None
+                    or current_task.state != TaskState.DISPATCHED.value
+                    or current_run is None
+                    or current_run.status not in RUN_ACTIVE_STATUSES
+                ):
+                    await session.rollback()
+                    return
         await self._fail_run(
             session,
             run,
             error,
             task_id=task_id,
+            lease=lease,
             workspace_path=workspace_path,
             engine=engine,
         )
@@ -837,6 +993,8 @@ class RunScheduler:
         run: Run,
         task: ScheduledTask,
         error: str,
+        *,
+        lease: ExecutionLease | None = None,
     ) -> bool:
         retry_policy = RunConfigHelper(run.config).retry_policy
         evaluator = RetryEvaluator()
@@ -863,11 +1021,17 @@ class RunScheduler:
         run.error_message = error
         run.error_json = None
         with session.no_autoflush:
+            task_conditions = [ScheduledTask.id == task.id]
+            if lease is not None:
+                task_conditions.extend(_execution_lease_conditions(lease))
+            else:
+                task_conditions.append(
+                    ScheduledTask.state == TaskState.DISPATCHED.value
+                )
             task_result = await session.execute(
                 update(ScheduledTask)
                 .where(
-                    ScheduledTask.id == task.id,
-                    ScheduledTask.state == TaskState.DISPATCHED.value,
+                    *task_conditions,
                     ScheduledTask.max_attempts >= next_attempt,
                 )
                 .values(
@@ -923,6 +1087,7 @@ class RunScheduler:
         state: str,
         error: str | None = None,
         completed_at: datetime | None = None,
+        lease: ExecutionLease | None = None,
     ) -> bool:
         if not task_id:
             return True
@@ -934,14 +1099,66 @@ class RunScheduler:
         if error is not None:
             values["error_message"] = error
         with session.no_autoflush:
+            conditions = [ScheduledTask.id == task_id]
+            if lease is not None:
+                conditions.extend(_execution_lease_conditions(lease))
+            else:
+                conditions.append(
+                    ScheduledTask.state.in_(
+                        [TaskState.QUEUED.value, TaskState.DISPATCHED.value]
+                    )
+                )
+            result = await session.execute(
+                update(ScheduledTask).where(*conditions).values(**values)
+            )
+        return result.rowcount == 1
+
+    async def _mark_stale_task_failed_in_session(
+        self,
+        session: AsyncSession,
+        *,
+        task: ScheduledTask,
+        error: str,
+        completed_at: datetime,
+        stale_cutoff: datetime,
+    ) -> bool:
+        values = {
+            "state": TaskState.FAILED.value,
+            "completed_at": completed_at,
+            "delay_until": None,
+            "error_message": error,
+        }
+        current = await session.get(ScheduledTask, task.id)
+        if current is None:
+            return False
+        snapshot_worker_id = getattr(task, "worker_id", None)
+        snapshot_attempt = int(getattr(task, "attempt", 1) or 1)
+        if (
+            current.run_id != task.run_id
+            or current.state != TaskState.DISPATCHED.value
+            or current.attempt != snapshot_attempt
+            or (
+                snapshot_worker_id is not None
+                and current.worker_id != snapshot_worker_id
+            )
+            or current.dispatched_at is None
+        ):
+            return False
+        dispatched_at = _ensure_utc(current.dispatched_at)
+        if dispatched_at > stale_cutoff:
+            return False
+        with session.no_autoflush:
             result = await session.execute(
                 update(ScheduledTask)
                 .where(
-                    ScheduledTask.id == task_id,
-                    ScheduledTask.state.in_(
-                        [TaskState.QUEUED.value, TaskState.DISPATCHED.value]
-                    ),
+                    ScheduledTask.id == current.id,
+                    ScheduledTask.run_id == current.run_id,
+                    ScheduledTask.state == TaskState.DISPATCHED.value,
+                    ScheduledTask.worker_id == current.worker_id,
+                    ScheduledTask.attempt == current.attempt,
+                    ScheduledTask.dispatched_at == current.dispatched_at,
                 )
+                .execution_options(synchronize_session=False)
                 .values(**values)
             )
         return result.rowcount == 1
@@ -990,6 +1207,28 @@ class RunScheduler:
         workspace_path = project_home(project)
         engine = getattr(workflow.engine, "value", workflow.engine)
         return workspace_path, str(engine)
+
+
+def _execution_lease_conditions(lease: ExecutionLease) -> list:
+    return [
+        ScheduledTask.run_id == lease.run_id,
+        ScheduledTask.state == TaskState.DISPATCHED.value,
+        ScheduledTask.worker_id == lease.worker_id,
+        ScheduledTask.attempt == lease.attempt,
+        ScheduledTask.dispatched_at == lease.dispatched_at,
+    ]
+
+
+def _lease_from_task(task: ScheduledTask) -> ExecutionLease | None:
+    if task.state != TaskState.DISPATCHED.value:
+        return None
+    return ExecutionLease(
+        task_id=task.id,
+        run_id=task.run_id,
+        worker_id=task.worker_id,
+        attempt=task.attempt,
+        dispatched_at=task.dispatched_at,
+    )
 
 
 def _clear_retry_runtime_fields(config: dict | None) -> dict:

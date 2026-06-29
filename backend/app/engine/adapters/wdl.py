@@ -440,24 +440,41 @@ def _copy_outputs(work_dir: Path, workspace: Path, outdir: str | None) -> None:
     the rw sibling mount `runs/{run_id}/results/` per the Path Contract.
     """
     workspace_resolved = workspace.resolve()
+    work_dir_resolved = work_dir.resolve()
     if outdir:
-        target = (workspace / outdir).resolve()
-        if not target.is_relative_to(workspace_resolved):
+        raw_target = Path(outdir)
+        target = raw_target if raw_target.is_absolute() else workspace / raw_target
+        target_resolved = target.resolve(strict=False)
+        if not target_resolved.is_relative_to(workspace_resolved):
             return
     else:
-        target = (workspace / "results").resolve()
+        target = workspace / "results"
+        target_resolved = target.resolve(strict=False)
         # `workspace` itself is the run's results-bearing dir, so target ==
         # workspace is acceptable here too; only reject paths that escape it.
-        if not target.is_relative_to(workspace_resolved):
+        if not target_resolved.is_relative_to(workspace_resolved):
             return
+    if _has_symlink_component(target, workspace_resolved):
+        return
 
     output_dir = work_dir / "out"
-    if output_dir.exists():
+    if output_dir.exists() and not output_dir.is_symlink():
+        try:
+            if not output_dir.resolve().is_relative_to(work_dir_resolved):
+                return
+        except (OSError, RuntimeError):
+            return
         if target.exists() and outdir:
             shutil.rmtree(target)
         target.mkdir(parents=True, exist_ok=True)
         for item in output_dir.rglob("*"):
-            if item.is_dir():
+            if item.is_symlink() or item.is_dir():
+                continue
+            try:
+                item_resolved = item.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if not item_resolved.is_relative_to(work_dir_resolved):
                 continue
             dest = target / item.relative_to(output_dir)
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -484,11 +501,19 @@ def _copy_outputs(work_dir: Path, workspace: Path, outdir: str | None) -> None:
     target.mkdir(parents=True, exist_ok=True)
     for value in raw_outputs.values():
         for src in _iter_file_paths(value):
+            src_path = Path(src)
+            if src_path.is_symlink():
+                continue
             try:
-                src_resolved = Path(src).resolve()
+                src_resolved = src_path.resolve()
             except (OSError, RuntimeError):
                 continue
             if not src_resolved.exists() or src_resolved.is_dir():
+                continue
+            if not (
+                src_resolved.is_relative_to(work_dir_resolved)
+                or src_resolved.is_relative_to(target_resolved)
+            ):
                 continue
             # When falling back from outputs.json the path layout inside the
             # work dir is miniwdl-internal (call-TASK/outputs/...) and not
@@ -497,6 +522,20 @@ def _copy_outputs(work_dir: Path, workspace: Path, outdir: str | None) -> None:
             dest = target / src_resolved.name
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_resolved, dest)
+
+
+def _has_symlink_component(path: Path, root: Path) -> bool:
+    try:
+        path_abs = path if path.is_absolute() else root / path
+        rel_path = path_abs.absolute().relative_to(root)
+    except ValueError:
+        return True
+    current = root
+    for part in rel_path.parts:
+        current = current / part
+        if current.exists() and current.is_symlink():
+            return True
+    return False
 
 
 def _iter_file_paths(value):

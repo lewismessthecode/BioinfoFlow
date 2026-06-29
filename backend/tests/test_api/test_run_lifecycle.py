@@ -31,7 +31,10 @@ async def _seed_project_and_workflow(
     bind: bool = True,
 ) -> tuple[Project, Workflow]:
     project = Project(
-        name=f"Project {uuid4()}", storage_mode="external", external_root_path=str(workspace), user_id="dev"
+        name=f"Project {uuid4()}",
+        storage_mode="external",
+        external_root_path=str(workspace),
+        user_id="dev",
     )
     workflow = Workflow(
         name=f"wf-{uuid4()}",
@@ -321,9 +324,9 @@ class TestRunLifecycle:
         )
         db_session.add(run)
         await db_session.commit()
-        (
-            workspace / "runs" / run.run_id / "engine" / "wdl" / "work"
-        ).mkdir(parents=True)
+        (workspace / "runs" / run.run_id / "engine" / "wdl" / "work").mkdir(
+            parents=True
+        )
 
         resp = await async_client.post(f"/api/v1/runs/{run.run_id}/resume", json={})
 
@@ -354,6 +357,41 @@ class TestRunLifecycle:
         assert data["run_id"] == original_run_id
         assert data["new_run_id"] != original_run_id
         assert data["status"] == RunStatus.QUEUED.value
+
+    @pytest.mark.asyncio
+    async def test_retry_reports_when_existing_replay_run_is_reused(
+        self, async_client, db_session, tmp_path
+    ):
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        project, workflow = await _seed_project_and_workflow(
+            db_session, workspace=workspace
+        )
+        create_resp = await async_client.post(
+            "/api/v1/runs",
+            json=_run_payload(project, workflow),
+        )
+        original_run_id = create_resp.json()["data"]["run_id"]
+        await _mark_run_failed(db_session, run_id=original_run_id)
+
+        first_resp = await async_client.post(
+            f"/api/v1/runs/{original_run_id}/retry", json={}
+        )
+        first_run_id = first_resp.json()["data"]["new_run_id"]
+        service = run_service.RunService(db_session)
+        first_run = await service.get_run(first_run_id)
+        assert first_run is not None
+        await service.repo.update(first_run, status=RunStatus.COMPLETED.value)
+
+        second_resp = await async_client.post(
+            f"/api/v1/runs/{original_run_id}/retry", json={}
+        )
+
+        assert second_resp.status_code == 202, second_resp.json()
+        data = second_resp.json()["data"]
+        assert data["new_run_id"] == first_run_id
+        assert data["reused"] is True
+        assert data["message"] == "Run replay reused"
 
     @pytest.mark.asyncio
     async def test_retry_requires_failed_status(

@@ -509,6 +509,11 @@ class RunLifecycleService:
             user_id=user_id,
             user_role=user_role,
         )
+        if await self.repo.has_replay_children(run.run_id):
+            raise ValueError(
+                "cannot delete a source run while replay runs still reference it; "
+                "delete replay runs first"
+            )
         if delete_outputs:
             await self._archive.delete_outputs(run)
         await self.repo.delete_scheduler_tasks(run.run_id)
@@ -788,6 +793,7 @@ class RunLifecycleService:
             replay_idempotency_key=replay_key,
         )
         if existing is not None:
+            setattr(existing, "_reused_replay", True)
             return existing
 
         payload = RunCreate.model_validate(
@@ -795,11 +801,7 @@ class RunLifecycleService:
                 "project_id": str(original.project_id),
                 "workflow_id": str(original.workflow_id),
                 "values": replay_values,
-                **(
-                    {"options": options_payload}
-                    if options is not None
-                    else {}
-                ),
+                **({"options": options_payload} if options is not None else {}),
             }
         )
         try:
@@ -827,6 +829,7 @@ class RunLifecycleService:
                 replay_idempotency_key=replay_key,
             )
             if existing is not None:
+                setattr(existing, "_reused_replay", True)
                 return existing
             raise
 
@@ -866,6 +869,7 @@ class RunLifecycleService:
 
     def _replay_options(self, config: RunConfigHelper) -> RunOptions | None:
         payload = config.options
+        payload.pop("resume_from_run_id", None)
         retry_policy = config.retry_policy
         if "max_retries" not in payload and isinstance(
             retry_policy.get("max_retries"), int

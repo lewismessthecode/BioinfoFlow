@@ -126,7 +126,7 @@ the configured external root.
 
 ## Identity-Mount Path Contract
 
-Docker execution relies on an identity mount:
+Docker execution relies on identity mounts:
 
 ```text
 host BIOINFOFLOW_HOME == container BIOINFOFLOW_HOME
@@ -141,8 +141,12 @@ Compose implements this as:
 The backend checks `BIOINFOFLOW_HOME_HOST` against `BIOINFOFLOW_HOME` at startup. If they differ, startup fails with a path contract error.
 
 This contract is what lets Nextflow, MiniWDL, backend code, and task containers
-share absolute paths without translation. For WDL task containers Bioinfoflow
-adds explicit identity bind mounts for:
+share absolute paths without translation. If a run uses an external project
+root outside `BIOINFOFLOW_HOME`, that external root must also be visible at the
+same absolute path to the backend, workflow runner, and task containers. The
+same rule applies to shared source roots that appear in engine inputs.
+
+For WDL task containers Bioinfoflow adds explicit identity bind mounts for:
 
 - the current project's `data/` directory, read-only;
 - the current run's `input/` directory, read-only;
@@ -152,3 +156,7 @@ adds explicit identity bind mounts for:
 Those run mounts are derived from the canonical
 `<project_root>/runs/<run_id>/engine/wdl/work/...` task directory shape, so the
 same rule applies to managed projects and external project roots.
+
+New runs own only their canonical `runs/<run_id>/` subtree. Output listing can
+read a legacy configured `outdir` for old configs, but cleanup only deletes the
+current run's canonical `runs/<run_id>/results` directory.

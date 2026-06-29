@@ -97,8 +97,8 @@ def configured_run_mounts(
 
 def _infer_run_layout_from_host_dir(task_dir: Path) -> tuple[Path, Path] | None:
     parts = task_dir.parts
-    for index, part in enumerate(parts):
-        if part != "runs":
+    for index in range(len(parts) - 1, -1, -1):
+        if parts[index] != "runs":
             continue
         if len(parts) <= index + 4:
             continue

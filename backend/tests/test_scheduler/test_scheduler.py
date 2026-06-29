@@ -19,6 +19,7 @@ from app.scheduler.config import SchedulerConfig
 from app.scheduler.models import TaskState
 from app.scheduler.queue import TaskQueue
 from app.scheduler.scheduler import (
+    ExecutionLease,
     QueueFullError,
     RunScheduler,
     SchedulerStorageUnavailableError,
@@ -406,6 +407,127 @@ async def test_scheduler_retry_does_not_orphan_run_when_task_requeue_loses_race(
     assert run.status == RunStatus.CANCELLED.value
     assert refreshed_task is not None
     assert refreshed_task.state == TaskState.CANCELLED.value
+
+
+@pytest.mark.asyncio
+async def test_scheduler_execute_does_not_start_cancelled_dispatched_task(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr("app.scheduler.scheduler.publish_run_status", AsyncMock())
+    monkeypatch.setattr("app.scheduler.scheduler.publish_run_dag", AsyncMock())
+
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    scheduler = RunScheduler(
+        config=SchedulerConfig(poll_interval_seconds=0.01),
+        backend=FakeBackend(),
+        session_factory=session_factory,
+        queue=queue,
+    )
+    run = await _seed_run(db_session, status=RunStatus.QUEUED.value)
+    task = await queue.enqueue(run.run_id)
+    await queue.mark_dispatched(task.id, "worker-0")
+    await queue.mark_cancelled(task.id)
+
+    await scheduler._execute_run_id(run.run_id, task_id=task.id, worker_id="worker-0")
+
+    await db_session.refresh(run)
+    refreshed_task = await queue.get(task.id)
+    assert run.status == RunStatus.QUEUED.value
+    assert refreshed_task is not None
+    assert refreshed_task.state == TaskState.CANCELLED.value
+
+
+@pytest.mark.asyncio
+async def test_scheduler_failure_handler_skips_when_task_disappeared(db_session):
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    scheduler = RunScheduler(
+        config=SchedulerConfig(poll_interval_seconds=0.01),
+        backend=FakeBackend(),
+        session_factory=session_factory,
+        queue=TaskQueue(session_factory=session_factory),
+    )
+    run = await _seed_run(db_session, status=RunStatus.RUNNING.value)
+
+    async with session_factory() as worker_session:
+        stale_run = await worker_session.get(Run, run.id)
+        assert stale_run is not None
+        await scheduler._handle_task_failure(
+            worker_session,
+            stale_run,
+            task_id=str(uuid4()),
+            error="late failure",
+            workspace_path=None,
+            engine=None,
+        )
+
+    await db_session.refresh(run)
+    assert run.status == RunStatus.RUNNING.value
+    assert run.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_scheduler_complete_requires_matching_execution_lease(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr("app.scheduler.scheduler.publish_run_status", AsyncMock())
+    monkeypatch.setattr("app.scheduler.scheduler.publish_run_dag", AsyncMock())
+
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    scheduler = RunScheduler(
+        config=SchedulerConfig(poll_interval_seconds=0.01),
+        backend=FakeBackend(),
+        session_factory=session_factory,
+        queue=queue,
+    )
+    run = await _seed_run(db_session, status=RunStatus.RUNNING.value)
+    task = await queue.enqueue(run.run_id, max_attempts=2)
+    first_dispatch = await queue.mark_dispatched(task.id, "worker-0")
+    assert first_dispatch is not None
+    stale_lease = ExecutionLease(
+        task_id=task.id,
+        run_id=run.run_id,
+        worker_id="worker-0",
+        attempt=first_dispatch.attempt,
+        dispatched_at=first_dispatch.dispatched_at,
+    )
+    requeued = await queue.re_enqueue(task.id, attempt=2)
+    assert requeued is not None
+    second_dispatch = await queue.mark_dispatched(task.id, "worker-1")
+    assert second_dispatch is not None
+
+    async with session_factory() as worker_session:
+        stale_run = await worker_session.get(Run, run.id)
+        assert stale_run is not None
+        await scheduler._complete_run(
+            worker_session,
+            stale_run,
+            task_id=task.id,
+            lease=stale_lease,
+            workspace_path=str(Path.cwd()),
+            engine=WorkflowEngine.NEXTFLOW.value,
+        )
+
+    await db_session.refresh(run)
+    refreshed_task = await queue.get(task.id)
+    assert run.status == RunStatus.RUNNING.value
+    assert refreshed_task is not None
+    assert refreshed_task.state == TaskState.DISPATCHED.value
+    assert refreshed_task.worker_id == "worker-1"
+    assert refreshed_task.attempt == 2
 
 
 @pytest.mark.asyncio

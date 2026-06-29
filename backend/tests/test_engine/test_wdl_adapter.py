@@ -353,6 +353,52 @@ async def test_wdl_adapter_post_complete_copies_outputs_when_outdir_missing(tmp_
 
 
 @pytest.mark.asyncio
+async def test_wdl_adapter_post_complete_does_not_follow_output_symlinks(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text("secret", encoding="utf-8")
+    output_dir = workspace / "runs" / "run_wdl_123" / "engine" / "wdl" / "work" / "out"
+    output_dir.mkdir(parents=True)
+    (output_dir / "secret.txt").symlink_to(outside)
+
+    adapter = WDLAdapter()
+    await adapter.post_complete(_wdl_config(), str(workspace), "completed")
+
+    assert not (workspace / "results" / "secret.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_wdl_adapter_post_complete_refuses_symlinked_output_root(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    audit_dir = workspace / "runs" / "run_wdl_123" / "audit"
+    audit_dir.mkdir(parents=True)
+    audit_log = audit_dir / "run.log"
+    audit_log.write_text("keep", encoding="utf-8")
+    (workspace / "results").symlink_to(audit_dir, target_is_directory=True)
+    output_file = (
+        workspace
+        / "runs"
+        / "run_wdl_123"
+        / "engine"
+        / "wdl"
+        / "work"
+        / "out"
+        / "report.txt"
+    )
+    output_file.parent.mkdir(parents=True)
+    output_file.write_text("ok", encoding="utf-8")
+
+    adapter = WDLAdapter()
+    await adapter.post_complete(_wdl_config(), str(workspace), "completed")
+
+    assert audit_log.exists()
+    assert audit_log.read_text(encoding="utf-8") == "keep"
+    assert not (audit_dir / "report.txt").exists()
+
+
+@pytest.mark.asyncio
 async def test_wdl_adapter_post_complete_falls_back_to_outputs_json(tmp_path):
     # If miniwdl's `out/` staging dir is missing (e.g. resume from a stale
     # work dir) we still have outputs.json with absolute paths into the
@@ -383,6 +429,31 @@ async def test_wdl_adapter_post_complete_falls_back_to_outputs_json(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_wdl_adapter_post_complete_rejects_outputs_json_outside_work_dir(
+    tmp_path,
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    work_dir = workspace / "runs" / "run_wdl_123" / "engine" / "wdl" / "work"
+    work_dir.mkdir(parents=True)
+    outside = tmp_path / "outside-report.txt"
+    outside.write_text("secret", encoding="utf-8")
+    (work_dir / "outputs.json").write_text(
+        json.dumps({"outputs": {"demo.report": str(outside)}}),
+        encoding="utf-8",
+    )
+
+    config = _wdl_config()
+    config["params"] = {}
+    config["request"]["params"] = {}
+
+    adapter = WDLAdapter()
+    await adapter.post_complete(config, str(workspace), "completed")
+
+    assert not (workspace / "results" / "outside-report.txt").exists()
+
+
+@pytest.mark.asyncio
 async def test_wdl_adapter_build_command_passes_paths_unchanged_under_identity_mount(
     tmp_path,
 ):
@@ -392,12 +463,7 @@ async def test_wdl_adapter_build_command_passes_paths_unchanged_under_identity_m
     workspace = tmp_path / "projects" / "project-1"
     workflow_path = tmp_path / "state" / "workflows" / "demo.wdl"
     manifest_path = (
-        workspace
-        / "runs"
-        / "run_wdl_123"
-        / "input"
-        / "attachments"
-        / "sequence.list"
+        workspace / "runs" / "run_wdl_123" / "input" / "attachments" / "sequence.list"
     )
 
     workspace.mkdir(parents=True)
@@ -601,7 +667,9 @@ async def test_wdl_adapter_pre_submit_can_skip_required_image_pull():
             return True
 
         async def inspect_image(self, full_name: str):
-            raise AssertionError(f"unexpected image inspect during launch compile: {full_name}")
+            raise AssertionError(
+                f"unexpected image inspect during launch compile: {full_name}"
+            )
 
         async def pull_image(self, name: str, tag: str, registry: str):
             for progress in ():

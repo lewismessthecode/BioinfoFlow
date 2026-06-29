@@ -80,7 +80,10 @@ Frontend local scripts load the repo-root `.env`; `frontend/.env.local` is the f
 
 ## Storage And Execution
 
-`BIOINFOFLOW_HOME` is the single platform root for state, project data, shared inputs, references, engine caches, and run outputs.
+`BIOINFOFLOW_HOME` is the default platform root for managed state, managed
+projects, shared inputs, references, and engine caches. Projects may also use
+external roots outside `BIOINFOFLOW_HOME`; those roots keep the same internal
+`data/` and `runs/` layout.
 
 Docker Compose identity-mounts that path:
 
@@ -89,13 +92,19 @@ Docker Compose identity-mounts that path:
 ```
 
 This identity mount is the path contract for workflow execution. Backend,
-workflow runner, and task containers must see the same absolute paths.
+workflow runner, and task containers must see the same absolute paths for every
+root Bioinfoflow puts into engine inputs: `BIOINFOFLOW_HOME`, shared source
+roots, and any external project root used by a run.
 For WDL/MiniWDL task containers, Bioinfoflow binds only the platform roots a
 task should see: shared data roots read-only, the current project's `data/`
 read-only, the current run's `input/` read-only, and the current run's
 `results/` read-write. These are sibling mounts rather than a broad project-root
 mount, which keeps output writes isolated while still making manifest-referenced
 Project Data paths visible inside task containers.
+
+Each run owns only its canonical `runs/<run_id>/` subtree. New-schema output
+resolution uses `runs/<run_id>/results`; legacy configured `outdir` fallback is
+read-only compatibility and is not used for destructive cleanup.
 
 Workflow execution uses a thin run service facade plus dedicated submission, DAG, lifecycle, archive, and dispatch services. New business logic should go into focused services instead of growing the facade.
 

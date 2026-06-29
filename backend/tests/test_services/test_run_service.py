@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 from pathlib import Path
@@ -99,7 +100,9 @@ async def _create_run_via_compiler(
 async def test_run_service_lifecycle(db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     # Tests should not require the host to have a real `nextflow` binary.
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -482,8 +485,7 @@ async def test_resume_run_supports_wdl_best_effort_and_validates_nextflow_token(
     assert resumed_wdl.config["resume"] is True
     assert resumed_wdl.config["resume_type"] == "best_effort"
     assert (
-        resumed_wdl.config["resume_work_dir"]
-        == "runs/run_wdl_resume/engine/wdl/work"
+        resumed_wdl.config["resume_work_dir"] == "runs/run_wdl_resume/engine/wdl/work"
     )
 
     failed_nf = await service.repo.create(
@@ -506,7 +508,9 @@ async def test_retry_run_replays_submitted_values_when_original_params_changed(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -552,9 +556,7 @@ async def test_retry_run_replays_submitted_values_when_original_params_changed(
     )
 
     retried = await service.retry_run(run.run_id)
-    assert retried.config["params"]["samplesheet"].endswith(
-        "/data/samplesheet.csv"
-    )
+    assert retried.config["params"]["samplesheet"].endswith("/data/samplesheet.csv")
 
 
 @pytest.mark.asyncio
@@ -562,7 +564,9 @@ async def test_retry_run_is_idempotent_for_active_child(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -611,7 +615,9 @@ async def test_retry_run_is_idempotent_after_child_terminal(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -656,7 +662,9 @@ async def test_retry_persist_failure_does_not_leave_active_replay_wedge(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -717,9 +725,225 @@ async def test_retry_persist_failure_does_not_leave_active_replay_wedge(
 
 
 @pytest.mark.asyncio
+async def test_retry_replay_row_is_not_visible_before_persist_succeeds(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace
+    )
+
+    dispatcher = NullDispatcher()
+    service = RunService(db_session, dispatcher=dispatcher)
+    source = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"threads": 4},
+        dispatcher=dispatcher,
+    )
+    source = await service.repo.update(
+        source,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_retry",
+    )
+    source_run_id = source.run_id
+    observed_visible_rows: list[tuple[str]] = []
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def fail_after_checking_visibility(*args, **kwargs):
+        del args, kwargs
+        async with session_factory() as observer:
+            observed_visible_rows.extend(
+                (
+                    await observer.execute(
+                        text(
+                            "SELECT run_id FROM runs "
+                            "WHERE source_run_id = :source_run_id "
+                            "AND replay_kind = 'retry'"
+                        ),
+                        {"source_run_id": source_run_id},
+                    )
+                ).all()
+            )
+        raise RuntimeError("archive write failed")
+
+    monkeypatch.setattr(
+        run_compiler_module.RunArchiveService,
+        "persist_run_archive",
+        fail_after_checking_visibility,
+    )
+
+    with pytest.raises(RuntimeError, match="archive write failed"):
+        await service.retry_run(source_run_id)
+
+    assert observed_visible_rows == []
+
+
+@pytest.mark.asyncio
+async def test_retry_persist_cancellation_cleans_replay_row_and_layout(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace
+    )
+
+    dispatcher = NullDispatcher()
+    service = RunService(db_session, dispatcher=dispatcher)
+    source = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"threads": 4},
+        dispatcher=dispatcher,
+    )
+    source = await service.repo.update(
+        source,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_retry",
+    )
+    source_run_id = source.run_id
+
+    async def cancel_archive(*args, **kwargs):
+        del args, kwargs
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(
+        run_compiler_module.RunArchiveService,
+        "persist_run_archive",
+        cancel_archive,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.retry_run(source_run_id)
+
+    rows = (
+        await db_session.execute(
+            text(
+                "SELECT run_id FROM runs "
+                "WHERE source_run_id = :source_run_id AND replay_kind = 'retry'"
+            ),
+            {"source_run_id": source_run_id},
+        )
+    ).all()
+    assert rows == []
+    assert sorted((workspace / "runs").glob("run_*")) == [
+        workspace / "runs" / source_run_id
+    ]
+
+
+@pytest.mark.asyncio
+async def test_retry_ignores_stored_resume_from_run_id_option(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace
+    )
+
+    dispatcher = NullDispatcher()
+    service = RunService(db_session, dispatcher=dispatcher)
+    source = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"threads": 4},
+        dispatcher=dispatcher,
+    )
+    config = dict(source.config)
+    config["options"] = {
+        **dict(config.get("options") or {}),
+        "resume_from_run_id": "legacy-source",
+    }
+    source = await service.repo.update_config(source, config)
+    source = await service.repo.update(
+        source,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_retry",
+    )
+
+    retry = await service.retry_run(source.run_id)
+
+    assert retry.status == RunStatus.QUEUED.value
+    assert retry.source_run_id == source.run_id
+    assert "resume_from_run_id" not in retry.config.get("options", {})
+
+
+@pytest.mark.asyncio
+async def test_delete_source_run_with_replay_child_refuses_before_output_delete(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace
+    )
+
+    dispatcher = NullDispatcher()
+    service = RunService(db_session, dispatcher=dispatcher)
+    source = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+        values={"threads": 4},
+        dispatcher=dispatcher,
+    )
+    source = await service.repo.update(
+        source,
+        status=RunStatus.FAILED.value,
+        nextflow_run_name="failed_retry",
+    )
+    retry = await service.retry_run(source.run_id)
+    assert retry.source_run_id == source.run_id
+    results_root = run_results_root(project, source.run_id)
+    results_root.mkdir(parents=True, exist_ok=True)
+    (results_root / "summary.txt").write_text("keep", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="replay runs"):
+        await service.delete_run(
+            source.run_id,
+            delete_outputs=True,
+            user_role="owner",
+        )
+
+    assert results_root.exists()
+    assert (results_root / "summary.txt").read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.asyncio
 async def test_resume_run_persists_lineage(db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -755,7 +979,9 @@ async def test_resume_wdl_fails_when_best_effort_work_dir_is_missing(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -788,7 +1014,9 @@ async def test_resume_wdl_rejects_work_dir_outside_source_run(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -824,7 +1052,9 @@ async def test_resume_wdl_rejects_symlinked_source_work_dir_contents(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -859,7 +1089,9 @@ async def test_retry_legacy_run_without_values_uses_resolved_runspec(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -911,9 +1143,7 @@ async def test_retry_legacy_run_without_values_uses_resolved_runspec(
 
     retried = await service.retry_run(run.run_id)
 
-    assert retried.config["params"]["samplesheet"].endswith(
-        "/data/samplesheet.csv"
-    )
+    assert retried.config["params"]["samplesheet"].endswith("/data/samplesheet.csv")
 
 
 @pytest.mark.asyncio
@@ -921,7 +1151,9 @@ async def test_retry_run_legacy_params_override_preserves_original_inputs(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -972,7 +1204,9 @@ async def test_retry_run_legacy_params_override_preserves_original_inputs(
 @pytest.mark.asyncio
 async def test_retry_logs_lineage_before_dispatch(db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -1026,7 +1260,9 @@ async def test_retry_wdl_run_rewrites_outdir_to_new_run_results(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -1041,10 +1277,7 @@ async def test_retry_wdl_run_rewrites_outdir_to_new_run_results(
         name="demo",
         engine=WorkflowEngine.WDL,
         content=(
-            "version 1.0\n"
-            "workflow demo {\n"
-            "  input { String sample String outdir }\n"
-            "}\n"
+            "version 1.0\nworkflow demo {\n  input { String sample String outdir }\n}\n"
         ),
         schema_json={
             "workflow_name": "demo",
@@ -1107,7 +1340,9 @@ async def test_retry_wdl_archive_manifest_uses_new_run_results(
     db_session, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
+    monkeypatch.setattr(
+        RunLifecycleService, "_binary_exists", lambda self, binary: True
+    )
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -1122,10 +1357,7 @@ async def test_retry_wdl_archive_manifest_uses_new_run_results(
         name="demo",
         engine=WorkflowEngine.WDL,
         content=(
-            "version 1.0\n"
-            "workflow demo {\n"
-            "  input { String sample String outdir }\n"
-            "}\n"
+            "version 1.0\nworkflow demo {\n  input { String sample String outdir }\n}\n"
         ),
         schema_json={
             "workflow_name": "demo",

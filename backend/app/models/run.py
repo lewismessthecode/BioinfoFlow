@@ -103,7 +103,7 @@ class Run(Base, UUIDMixin, TimestampMixin):
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     nextflow_run_name: Mapped[str | None] = mapped_column(String(100))
     source_run_id: Mapped[str | None] = mapped_column(
-        ForeignKey("runs.run_id", ondelete="SET NULL"),
+        ForeignKey("runs.run_id"),
         nullable=True,
         index=True,
     )
