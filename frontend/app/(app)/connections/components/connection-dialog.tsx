@@ -1,26 +1,15 @@
 "use client"
 
 import {
-  type ChangeEvent,
   type Dispatch,
-  type DragEvent,
   type FormEvent,
   type ReactNode,
-  type RefObject,
   type SetStateAction,
 } from "react"
-import { BookOpenText, CheckCircle2, FileText, KeyRound, Server, Upload } from "lucide-react"
+import { BookOpenText, CheckCircle2, FileText, KeyRound, Server, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,13 +41,13 @@ export const initialConnectionForm: ConnectionFormState = {
   host: "",
   port: "22",
   username: "",
-  auth_method: "ssh_config",
+  auth_method: "agent",
   ssh_alias: "",
   key_path: "",
   skill_instructions: "",
 }
 
-const authMethods: RemoteConnectionAuthMethod[] = ["ssh_config", "key_file", "agent"]
+const authMethods: RemoteConnectionAuthMethod[] = ["agent", "key_file", "ssh_config"]
 const skillPresetKeys = ["nextflowHpc", "slurmDiagnostics", "readonlyInspection"] as const
 
 type ConnectionDialogProps = {
@@ -67,15 +56,10 @@ type ConnectionDialogProps = {
   form: ConnectionFormState
   formError: string | null
   formErrorField: FormErrorField
-  skillDragActive: boolean
   isSaving: boolean
-  skillFileInputRef: RefObject<HTMLInputElement | null>
   onOpenChange: (open: boolean) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onFormChange: Dispatch<SetStateAction<ConnectionFormState>>
-  onSkillDragActiveChange: (active: boolean) => void
-  onSkillDrop: (event: DragEvent<HTMLDivElement>) => void
-  onSkillFileChange: (event: ChangeEvent<HTMLInputElement>) => void
   onAppendSkillText: (text: string) => void
 }
 
@@ -85,119 +69,134 @@ export function ConnectionDialog({
   form,
   formError,
   formErrorField,
-  skillDragActive,
   isSaving,
-  skillFileInputRef,
   onOpenChange,
   onSubmit,
   onFormChange,
-  onSkillDragActiveChange,
-  onSkillDrop,
-  onSkillFileChange,
   onAppendSkillText,
 }: ConnectionDialogProps) {
   const t = useTranslations("connections")
   const tCommon = useTranslations("common")
 
+  if (!open) return null
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(92vh,780px)] overflow-hidden rounded-[24px] border-border/60 bg-card/95 p-0 text-card-foreground shadow-2xl shadow-foreground/15 sm:max-w-3xl">
-        <form onSubmit={onSubmit} noValidate className="flex max-h-[min(92vh,780px)] flex-col">
-          <DialogHeader className="border-b border-border/60 px-5 py-4">
-            <DialogTitle>{mode === "edit" ? t("dialog.editTitle") : t("dialog.title")}</DialogTitle>
-            <DialogDescription>{t("dialog.description")}</DialogDescription>
-          </DialogHeader>
+    <aside
+      role="complementary"
+      aria-label={t("dialog.panelLabel")}
+      className="min-h-0 overflow-hidden rounded-[32px] border border-border/70 bg-card/95 shadow-lg shadow-foreground/10 lg:sticky lg:top-7 lg:max-h-[calc(100vh-3.5rem)]"
+    >
+      <form onSubmit={onSubmit} noValidate className="flex min-h-0 flex-col lg:max-h-[calc(100vh-3.5rem)]">
+        <div className="flex items-start justify-between gap-4 border-b border-border/60 bg-background/45 px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">
+              {mode === "edit" ? t("dialog.editTitle") : t("dialog.title")}
+            </h2>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 rounded-full"
+            onClick={() => onOpenChange(false)}
+            disabled={isSaving}
+            aria-label={tCommon("close")}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
 
-          <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-5 py-4">
-            <div className="grid content-start gap-3">
-              <section className="grid gap-3 rounded-[18px] border border-border/60 bg-background/55 p-3.5">
-                <FormSectionTitle title={t("sections.connection")} icon={<Server className="h-4 w-4" />} />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label={t("fields.name")} htmlFor="connection-name">
-                    <Input
-                      id="connection-name"
-                      value={form.name}
-                      onChange={(event) => onFormChange((current) => ({ ...current, name: event.target.value }))}
-                      placeholder={t("form.placeholders.name")}
-                    />
-                  </Field>
-                  <Field label={t("fields.host")} htmlFor="connection-host">
-                    <Input
-                      id="connection-host"
-                      value={form.host}
-                      onChange={(event) => onFormChange((current) => ({ ...current, host: event.target.value }))}
-                      placeholder={t("form.placeholders.host")}
-                      required
-                      aria-invalid={formErrorField === "host"}
-                      aria-describedby={formErrorField === "host" ? "connection-form-error" : undefined}
-                    />
-                  </Field>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="grid gap-4">
+            <PanelSection title={t("sections.address")} icon={<Server className="h-4 w-4" />}>
+              <div className="grid grid-cols-[56px_minmax(0,1fr)] gap-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-[20px] border border-border/70 bg-background/75 text-muted-foreground shadow-sm shadow-foreground/5">
+                  <Server className="h-6 w-6" />
                 </div>
-                <div
-                  className={cn(
-                    "grid gap-3",
-                    form.auth_method === "ssh_config"
-                      ? "sm:grid-cols-[minmax(84px,0.55fr)_minmax(0,1fr)_minmax(0,1fr)]"
-                      : "sm:grid-cols-[minmax(84px,0.55fr)_minmax(0,1fr)]",
-                  )}
-                >
-                  <Field label={t("fields.port")} htmlFor="connection-port">
-                    <Input
-                      id="connection-port"
-                      value={form.port}
-                      inputMode="numeric"
-                      onChange={(event) => onFormChange((current) => ({ ...current, port: event.target.value }))}
-                      aria-invalid={formErrorField === "port"}
-                      aria-describedby={formErrorField === "port" ? "connection-form-error" : undefined}
-                    />
-                  </Field>
-                  <Field label={t("fields.username")} htmlFor="connection-username">
-                    <Input
-                      id="connection-username"
-                      value={form.username}
-                      onChange={(event) => onFormChange((current) => ({ ...current, username: event.target.value }))}
-                      placeholder={t("form.placeholders.username")}
-                    />
-                  </Field>
-                  {form.auth_method === "ssh_config" ? (
-                    <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
-                      <Input
-                        id="connection-ssh-alias"
-                        value={form.ssh_alias}
-                        onChange={(event) => onFormChange((current) => ({ ...current, ssh_alias: event.target.value }))}
-                        placeholder={t("form.placeholders.sshAlias")}
-                        required
-                        aria-invalid={formErrorField === "ssh_alias"}
-                        aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
+                <Field label={t("fields.host")} htmlFor="connection-host">
+                  <Input
+                    id="connection-host"
+                    value={form.host}
+                    onChange={(event) => onFormChange((current) => ({ ...current, host: event.target.value }))}
+                    placeholder={t("form.placeholders.host")}
+                    required={form.auth_method !== "ssh_config"}
+                    aria-invalid={formErrorField === "host"}
+                    aria-describedby={formErrorField === "host" ? "connection-form-error" : undefined}
+                  />
+                </Field>
+              </div>
+            </PanelSection>
+
+            <PanelSection title={t("sections.general")}>
+              <Field label={t("fields.name")} htmlFor="connection-name">
+                <Input
+                  id="connection-name"
+                  value={form.name}
+                  onChange={(event) => onFormChange((current) => ({ ...current, name: event.target.value }))}
+                  placeholder={t("form.placeholders.name")}
+                />
+              </Field>
+            </PanelSection>
+
+            <PanelSection title={t("sections.sshPort")}>
+              <Field label={t("fields.port")} htmlFor="connection-port">
+                <Input
+                  id="connection-port"
+                  value={form.port}
+                  inputMode="numeric"
+                  onChange={(event) => onFormChange((current) => ({ ...current, port: event.target.value }))}
+                  aria-invalid={formErrorField === "port"}
+                  aria-describedby={formErrorField === "port" ? "connection-form-error" : undefined}
+                />
+              </Field>
+            </PanelSection>
+
+            <PanelSection title={t("sections.credentials")} icon={<KeyRound className="h-4 w-4" />}>
+              <div className="grid gap-3">
+                <Field label={t("fields.username")} htmlFor="connection-username">
+                  <Input
+                    id="connection-username"
+                    value={form.username}
+                    onChange={(event) => onFormChange((current) => ({ ...current, username: event.target.value }))}
+                    placeholder={t("form.placeholders.username")}
+                  />
+                </Field>
+
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">{t("fields.auth")}</Label>
+                  <div aria-label={t("fields.auth")} className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                    {authMethods.map((method) => (
+                      <AuthMethodButton
+                        key={method}
+                        selected={form.auth_method === method}
+                        title={t(`auth.${method}`)}
+                        onSelect={() =>
+                          onFormChange((current) => ({
+                            ...current,
+                            auth_method: method,
+                            ssh_alias: method === "ssh_config" ? current.ssh_alias : "",
+                            key_path: method === "key_file" ? current.key_path : "",
+                          }))
+                        }
                       />
-                    </Field>
-                  ) : null}
+                    ))}
+                  </div>
                 </div>
-                {form.auth_method === "ssh_config" ? (
-                  <p className="text-xs leading-5 text-muted-foreground">{t("form.sshConfigNote")}</p>
-                ) : null}
-              </section>
 
-              <section className="grid gap-3 rounded-[18px] border border-border/60 bg-background/55 p-3.5">
-                <FormSectionTitle title={t("sections.ssh")} icon={<KeyRound className="h-4 w-4" />} />
-                <div aria-label={t("fields.auth")} className="grid gap-2 sm:grid-cols-3">
-                  {authMethods.map((method) => (
-                    <AuthMethodButton
-                      key={method}
-                      method={method}
-                      selected={form.auth_method === method}
-                      title={t(`auth.${method}`)}
-                      description={t(`authHelp.${method}`)}
-                      onSelect={() =>
-                        onFormChange((current) => ({
-                          ...current,
-                          auth_method: method,
-                          key_path: method === "key_file" ? current.key_path : "",
-                        }))
-                      }
+                {form.auth_method === "ssh_config" ? (
+                  <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
+                    <Input
+                      id="connection-ssh-alias"
+                      value={form.ssh_alias}
+                      onChange={(event) => onFormChange((current) => ({ ...current, ssh_alias: event.target.value }))}
+                      placeholder={t("form.placeholders.sshAlias")}
+                      required
+                      aria-invalid={formErrorField === "ssh_alias"}
+                      aria-describedby={formErrorField === "ssh_alias" ? "connection-form-error" : undefined}
                     />
-                  ))}
-                </div>
+                  </Field>
+                ) : null}
+
                 {form.auth_method === "key_file" ? (
                   <Field label={t("fields.keyPath")} htmlFor="connection-key-path">
                     <Input
@@ -211,89 +210,81 @@ export function ConnectionDialog({
                     />
                   </Field>
                 ) : null}
-                <p className="text-xs leading-5 text-muted-foreground">{t("form.secretsNote")}</p>
-              </section>
-            </div>
-
-            <section className="grid content-start gap-3 rounded-2xl border border-border/60 bg-background/55 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <FormSectionTitle title={t("sections.agentSkill")} icon={<BookOpenText className="h-4 w-4" />} />
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="outline" size="sm" className="h-8 rounded-full">
-                      <FileText className="h-4 w-4" />
-                      {t("actions.insertPreset")}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    {skillPresetKeys.map((key) => (
-                      <DropdownMenuItem key={key} onSelect={() => onAppendSkillText(t(`skillPresets.${key}.text`))}>
-                        {t(`skillPresets.${key}.name`)}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
-              <TextFieldArea
-                id="connection-skill-instructions"
-                label={t("fields.skillInstructions")}
-                value={form.skill_instructions}
-                onChange={(value) => onFormChange((current) => ({ ...current, skill_instructions: value }))}
-                placeholder={t("form.placeholders.skillInstructions")}
-              />
-              <button
-                type="button"
-                aria-label={t("skillDrop.title")}
-                onClick={() => skillFileInputRef.current?.click()}
-                onDragEnter={(event) => {
-                  event.preventDefault()
-                  onSkillDragActiveChange(true)
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDragLeave={() => onSkillDragActiveChange(false)}
-                onDrop={onSkillDrop}
-                className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-3 py-2 text-left text-sm text-muted-foreground transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                  skillDragActive ? "border-primary/60 bg-primary/10 text-foreground" : "border-border bg-muted/20",
-                )}
-              >
-                <Upload className="h-4 w-4" />
-                <span>
-                  <span className="block font-medium text-foreground">{t("skillDrop.title")}</span>
-                  <span className="block text-xs">{t("skillDrop.hint")}</span>
-                </span>
-              </button>
-              <input
-                ref={skillFileInputRef}
-                type="file"
-                accept=".txt,.md,.markdown,text/plain,text/markdown"
-                className="sr-only"
-                onChange={onSkillFileChange}
-              />
-            </section>
-          </div>
+            </PanelSection>
 
-          {formError ? (
-            <div
-              id="connection-form-error"
-              role="alert"
-              aria-live="polite"
-              className="mx-5 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              {formError}
-            </div>
-          ) : null}
-          <DialogFooter className="border-t border-border/60 bg-muted/10 px-5 py-3">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
-              {tCommon("cancel")}
-            </Button>
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? t("dialog.saving") : mode === "edit" ? t("dialog.save") : t("dialog.add")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            <PanelSection title={t("sections.agentSkill")} icon={<BookOpenText className="h-4 w-4" />}>
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="connection-skill-instructions" className="text-xs font-medium text-muted-foreground">
+                    {t("fields.skillInstructions")}
+                  </Label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" variant="outline" size="sm" className="h-8 rounded-full px-3">
+                        <FileText className="h-4 w-4" />
+                        {t("actions.insertPreset")}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      {skillPresetKeys.map((key) => (
+                        <DropdownMenuItem key={key} onSelect={() => onAppendSkillText(t(`skillPresets.${key}.text`))}>
+                          {t(`skillPresets.${key}.name`)}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <Textarea
+                  id="connection-skill-instructions"
+                  value={form.skill_instructions}
+                  onChange={(event) => onFormChange((current) => ({ ...current, skill_instructions: event.target.value }))}
+                  placeholder={t("form.placeholders.skillInstructions")}
+                  className="min-h-36 resize-none border-border/60 bg-background/70"
+                />
+              </div>
+            </PanelSection>
+          </div>
+        </div>
+
+        {formError ? (
+          <div
+            id="connection-form-error"
+            role="alert"
+            aria-live="polite"
+            className="mx-5 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {formError}
+          </div>
+        ) : null}
+
+        <div className="flex justify-end gap-2 border-t border-border/60 bg-background/45 px-5 py-3">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
+            {tCommon("cancel")}
+          </Button>
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? t("dialog.saving") : mode === "edit" ? t("dialog.save") : t("dialog.add")}
+          </Button>
+        </div>
+      </form>
+    </aside>
+  )
+}
+
+function PanelSection({
+  title,
+  icon,
+  children,
+}: {
+  title: string
+  icon?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="grid gap-3 rounded-[22px] border border-border/60 bg-background/55 p-4">
+      <FormSectionTitle title={title} icon={icon} />
+      {children}
+    </section>
   )
 }
 
@@ -316,28 +307,26 @@ function Field({
   )
 }
 
-function FormSectionTitle({ title, icon }: { title: string; icon: ReactNode }) {
+function FormSectionTitle({ title, icon }: { title: string; icon?: ReactNode }) {
   return (
     <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-      <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground">
-        {icon}
-      </span>
+      {icon ? (
+        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground">
+          {icon}
+        </span>
+      ) : null}
       {title}
     </div>
   )
 }
 
 function AuthMethodButton({
-  method,
   selected,
   title,
-  description,
   onSelect,
 }: {
-  method: RemoteConnectionAuthMethod
   selected: boolean
   title: string
-  description: string
   onSelect: () => void
 }) {
   return (
@@ -346,45 +335,12 @@ function AuthMethodButton({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "min-h-[4.5rem] rounded-[18px] border p-2.5 text-left transition hover:border-foreground/20 hover:bg-background/80",
-        selected ? "border-foreground/25 bg-background shadow-sm shadow-foreground/5" : "border-border/60 bg-background/50",
+        "inline-flex min-h-10 items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-left text-sm font-medium transition hover:border-foreground/20 hover:bg-background/80",
+        selected ? "border-primary/35 bg-background text-foreground shadow-sm shadow-foreground/5 ring-4 ring-primary/10" : "border-border/60 bg-background/50 text-muted-foreground",
       )}
     >
-      <span className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-foreground">{title}</span>
-        {selected ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : null}
-      </span>
-      <span className="mt-1 block text-xs leading-4 text-muted-foreground">{description}</span>
-      <span className="sr-only">{method}</span>
+      <span>{title}</span>
+      {selected ? <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" /> : null}
     </button>
-  )
-}
-
-function TextFieldArea({
-  id,
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  id: string
-  label: string
-  value: string
-  onChange: (value: string) => void
-  placeholder: string
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={id} className="text-xs font-medium text-muted-foreground">
-        {label}
-      </Label>
-      <Textarea
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="min-h-28 resize-none border-border/60 bg-background/70 lg:min-h-32"
-      />
-    </div>
   )
 }

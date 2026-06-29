@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { toast } from "sonner"
 
 import ConnectionsPage from "@/app/(app)/connections/page"
-import { apiRequest, buildWebSocketUrl } from "@/lib/api"
+import { ApiError, apiRequest, buildWebSocketUrl } from "@/lib/api"
 import type { RemoteConnection } from "@/lib/demo-connections"
 import enMessages from "@/messages/en.json"
 
@@ -40,15 +41,45 @@ vi.mock("sonner", () => ({
   },
 }))
 
-vi.mock("@/lib/api", () => ({
-  apiRequest: vi.fn(),
-  buildWebSocketUrl: vi.fn(),
-  getApiErrorMessage: (error: unknown, fallback: string) =>
-    error instanceof Error ? error.message : fallback,
-}))
+vi.mock("@/lib/api", () => {
+  class ApiError extends Error {
+    status?: number
+
+    constructor(message: string, options?: { status?: number }) {
+      super(message)
+      this.name = "ApiError"
+      this.status = options?.status
+    }
+  }
+
+  return {
+    ApiError,
+    apiRequest: vi.fn(),
+    buildWebSocketUrl: vi.fn(),
+    getApiErrorMessage: (error: unknown, fallback: string) =>
+      error instanceof Error ? error.message : fallback,
+  }
+})
 
 const apiRequestMock = vi.mocked(apiRequest)
 const buildWebSocketUrlMock = vi.mocked(buildWebSocketUrl)
+const toastSuccessMock = vi.mocked(toast.success)
+const toastErrorMock = vi.mocked(toast.error)
+
+type TestUser = ReturnType<typeof userEvent.setup>
+
+async function openAddConnectionPanel(user: TestUser) {
+  await user.click(screen.getByRole("button", { name: "Add connection" }))
+  return screen.getByRole("complementary", { name: "Host configuration" })
+}
+
+function getConnectionPanel() {
+  return screen.getByRole("complementary", { name: "Host configuration" })
+}
+
+async function clickPanelButton(user: TestUser, name: string | RegExp) {
+  await user.click(within(getConnectionPanel()).getByRole("button", { name }))
+}
 
 const liveConnection: RemoteConnection = {
   id: "live-connection-1",
@@ -85,18 +116,29 @@ describe("ConnectionsPage", () => {
     buildWebSocketUrlMock.mockImplementation((path: string) => `ws://example.test${path}`)
   })
 
-  it("focuses the main flow on SSH config and Agent context", async () => {
+  it("opens a single-entry Termius-style host panel", async () => {
     const user = userEvent.setup()
 
     render(<ConnectionsPage />)
 
-    expect(screen.getByRole("heading", { name: "SSH connections" })).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    expect(screen.getByRole("heading", { name: "SSH hosts" })).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Add connection" })).toHaveLength(1)
+    expect(screen.queryByText(/quick open/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Runtime boundary/i)).not.toBeInTheDocument()
 
-    expect(screen.getByLabelText("SSH alias")).toBeInTheDocument()
-    expect(screen.queryByLabelText("Private key path")).not.toBeInTheDocument()
-    expect(screen.getAllByText("Agent instructions")[0]).toBeInTheDocument()
-    expect(screen.getByText("Import instructions file")).toBeInTheDocument()
+    const panel = await openAddConnectionPanel(user)
+    expect(within(panel).getByRole("heading", { name: "New host" })).toBeInTheDocument()
+    expect(within(panel).getByLabelText("Address")).toBeInTheDocument()
+    expect(within(panel).getByLabelText("Label")).toBeInTheDocument()
+    expect(within(panel).getByLabelText("SSH on port")).toBeInTheDocument()
+    expect(within(panel).getByLabelText("Username")).toBeInTheDocument()
+    expect(within(panel).getByText("Credentials")).toBeInTheDocument()
+    expect(within(panel).getByLabelText("Agent instructions")).toBeInTheDocument()
+
+    await user.click(within(panel).getByRole("button", { name: "SSH config Host" }))
+    expect(within(panel).getByLabelText("SSH config Host")).toBeInTheDocument()
+    expect(within(panel).queryByLabelText("Key file path")).not.toBeInTheDocument()
+    expect(within(panel).queryByText("Import instructions file")).not.toBeInTheDocument()
 
     expect(screen.queryByText("Tags")).not.toBeInTheDocument()
     expect(screen.queryByText("Accessible paths")).not.toBeInTheDocument()
@@ -110,9 +152,8 @@ describe("ConnectionsPage", () => {
 
     render(<ConnectionsPage />)
 
-    expect(
-      await screen.findByText("No connections yet. Add an SSH environment to get started."),
-    ).toBeInTheDocument()
+    expect(await screen.findByText("No connections yet.")).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Add connection" })).toHaveLength(1)
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
   })
 
@@ -127,22 +168,28 @@ describe("ConnectionsPage", () => {
   it("saves new connections through the backend", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [] })
-    apiRequestMock.mockResolvedValueOnce({ data: liveConnection })
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        ...liveConnection,
+        auth_method: "agent",
+        ssh_alias: null,
+      },
+    })
 
     render(<ConnectionsPage />)
 
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
-    await user.type(screen.getByLabelText("Connection name"), "Live HPC")
-    await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
-    await user.clear(screen.getByLabelText("Port"))
-    await user.type(screen.getByLabelText("Port"), "2222")
-    await user.type(screen.getByLabelText("Username"), "bioflow")
-    await user.type(screen.getByLabelText("SSH alias"), "live-hpc")
+    const drawer = await openAddConnectionPanel(user)
+    await user.type(within(drawer).getByLabelText("Label"), "Live HPC")
+    await user.type(within(drawer).getByLabelText("Address"), "login.live.example.org")
+    await user.clear(within(drawer).getByLabelText("SSH on port"))
+    await user.type(within(drawer).getByLabelText("SSH on port"), "2222")
+    await user.type(within(drawer).getByLabelText("Username"), "bioflow")
+    expect(within(drawer).queryByLabelText("SSH config Host")).not.toBeInTheDocument()
     await user.type(
-      screen.getByLabelText("Agent instructions"),
+      within(drawer).getByLabelText("Agent instructions"),
       "Use /data/live for analysis outputs.",
     )
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    await clickPanelButton(user, "Add host")
 
     await waitFor(() =>
       expect(apiRequestMock).toHaveBeenLastCalledWith("/connections", {
@@ -152,8 +199,8 @@ describe("ConnectionsPage", () => {
           host: "login.live.example.org",
           port: 2222,
           username: "bioflow",
-          auth_method: "ssh_config",
-          ssh_alias: "live-hpc",
+          auth_method: "agent",
+          ssh_alias: null,
           key_path: null,
           skill_instructions: "Use /data/live for analysis outputs.",
         }),
@@ -168,11 +215,11 @@ describe("ConnectionsPage", () => {
 
     render(<ConnectionsPage />)
 
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
-    await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
-    await user.clear(screen.getByLabelText("Port"))
-    await user.type(screen.getByLabelText("Port"), "22abc")
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    const drawer = await openAddConnectionPanel(user)
+    await user.type(within(drawer).getByLabelText("Address"), "login.live.example.org")
+    await user.clear(within(drawer).getByLabelText("SSH on port"))
+    await user.type(within(drawer).getByLabelText("SSH on port"), "22abc")
+    await clickPanelButton(user, "Add host")
 
     expect(await screen.findByText("Port must be between 1 and 65535.")).toBeInTheDocument()
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
@@ -184,30 +231,68 @@ describe("ConnectionsPage", () => {
 
     render(<ConnectionsPage />)
 
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
-    await user.type(screen.getByLabelText("Connection name"), "Live HPC")
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    const drawer = await openAddConnectionPanel(user)
+    await user.type(within(drawer).getByLabelText("Label"), "Live HPC")
+    await clickPanelButton(user, "Add host")
 
     const error = await screen.findByRole("alert")
-    expect(error).toHaveTextContent("Enter a host or IP address.")
-    expect(screen.getByLabelText("Host or IP")).toHaveAttribute("aria-invalid", "true")
+    expect(error).toHaveTextContent("Enter an address or hostname.")
+    expect(within(drawer).getByLabelText("Address")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
   })
 
-  it("requires an SSH alias before saving SSH config connections", async () => {
+  it("requires an SSH config Host before saving SSH config connections", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [] })
 
     render(<ConnectionsPage />)
 
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
-    await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    const drawer = await openAddConnectionPanel(user)
+    await user.click(within(drawer).getByRole("button", { name: "SSH config Host" }))
+    await user.type(within(drawer).getByLabelText("Address"), "login.live.example.org")
+    await clickPanelButton(user, "Add host")
 
     const error = await screen.findByRole("alert")
-    expect(error).toHaveTextContent("Enter an SSH alias.")
-    expect(screen.getByLabelText("SSH alias")).toHaveAttribute("aria-invalid", "true")
+    expect(error).toHaveTextContent("Enter an SSH config Host.")
+    expect(within(drawer).getByLabelText("SSH config Host")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("uses the SSH config Host as the saved host when Address is blank", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        ...liveConnection,
+        host: "live-hpc",
+        ssh_alias: "live-hpc",
+      },
+    })
+
+    render(<ConnectionsPage />)
+
+    const panel = await openAddConnectionPanel(user)
+    await user.click(within(panel).getByRole("button", { name: "SSH config Host" }))
+    await user.type(within(panel).getByLabelText("Label"), "Live HPC")
+    await user.type(within(panel).getByLabelText("Username"), "bioflow")
+    await user.type(within(panel).getByLabelText("SSH config Host"), "live-hpc")
+    await clickPanelButton(user, "Add host")
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "Live HPC",
+          host: "live-hpc",
+          port: 22,
+          username: "bioflow",
+          auth_method: "ssh_config",
+          ssh_alias: "live-hpc",
+          key_path: null,
+          skill_instructions: null,
+        }),
+      }),
+    )
   })
 
   it("tests the selected SSH connection and refreshes the visible status", async () => {
@@ -272,7 +357,8 @@ describe("ConnectionsPage", () => {
     })
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Backup HPC" })).toBeInTheDocument())
-    expect(screen.queryByRole("heading", { name: "Live HPC" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Backup HPC/ })).toHaveAttribute("aria-current", "true")
+    expect(screen.getByRole("button", { name: /Live HPC/ })).not.toHaveAttribute("aria-current")
   })
 
   it("keeps the detail panel aligned with the filtered connection list", async () => {
@@ -313,13 +399,14 @@ describe("ConnectionsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Edit connection" }))
-    expect(screen.getByRole("heading", { name: "Edit SSH connection" })).toBeInTheDocument()
+    const drawer = getConnectionPanel()
+    expect(within(drawer).getByRole("heading", { name: "Edit host" })).toBeInTheDocument()
 
-    await user.clear(screen.getByLabelText("Connection name"))
-    await user.type(screen.getByLabelText("Connection name"), "Live HPC Login")
-    await user.clear(screen.getByLabelText("Host or IP"))
-    await user.type(screen.getByLabelText("Host or IP"), "login2.live.example.org")
-    await user.click(screen.getByRole("button", { name: "Save changes" }))
+    await user.clear(within(drawer).getByLabelText("Label"))
+    await user.type(within(drawer).getByLabelText("Label"), "Live HPC Login")
+    await user.clear(within(drawer).getByLabelText("Address"))
+    await user.type(within(drawer).getByLabelText("Address"), "login2.live.example.org")
+    await clickPanelButton(user, "Save changes")
 
     await waitFor(() =>
       expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-1", {
@@ -339,23 +426,23 @@ describe("ConnectionsPage", () => {
     expect(await screen.findByRole("heading", { name: "Live HPC Login" })).toBeInTheDocument()
   })
 
-  it("requires a private key path for key file connections", async () => {
+  it("requires a key file path for key file connections", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [] })
 
     render(<ConnectionsPage />)
 
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
-    await user.type(screen.getByLabelText("Host or IP"), "login.live.example.org")
-    await user.click(screen.getByRole("button", { name: /Private key/ }))
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    const drawer = await openAddConnectionPanel(user)
+    await user.type(within(drawer).getByLabelText("Address"), "login.live.example.org")
+    await user.click(within(drawer).getByRole("button", { name: /Key file/ }))
+    await clickPanelButton(user, "Add host")
 
-    expect(await screen.findByText("Enter a private key path.")).toBeInTheDocument()
-    expect(screen.getByLabelText("Private key path")).toHaveAttribute("aria-invalid", "true")
+    expect(await screen.findByText("Enter a key file path.")).toBeInTheDocument()
+    expect(within(drawer).getByLabelText("Key file path")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
   })
 
-  it("does not send an SSH alias for key file connections", async () => {
+  it("does not send an SSH config Host for key file connections", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [] })
     apiRequestMock.mockResolvedValueOnce({
@@ -369,14 +456,14 @@ describe("ConnectionsPage", () => {
 
     render(<ConnectionsPage />)
 
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
-    await user.type(screen.getByLabelText("Connection name"), "Key HPC")
-    await user.type(screen.getByLabelText("Host or IP"), "login.key.example.org")
-    await user.type(screen.getByLabelText("Username"), "bioflow")
-    await user.click(screen.getByRole("button", { name: /Private key/ }))
-    await user.type(screen.getByLabelText("Private key path"), "~/.ssh/id_ed25519")
-    expect(screen.queryByLabelText("SSH alias")).not.toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
+    const drawer = await openAddConnectionPanel(user)
+    await user.type(within(drawer).getByLabelText("Label"), "Key HPC")
+    await user.type(within(drawer).getByLabelText("Address"), "login.key.example.org")
+    await user.type(within(drawer).getByLabelText("Username"), "bioflow")
+    await user.click(within(drawer).getByRole("button", { name: /Key file/ }))
+    await user.type(within(drawer).getByLabelText("Key file path"), "~/.ssh/id_ed25519")
+    expect(within(drawer).queryByLabelText("SSH config Host")).not.toBeInTheDocument()
+    await clickPanelButton(user, "Add host")
 
     await waitFor(() =>
       expect(apiRequestMock).toHaveBeenLastCalledWith("/connections", {
@@ -395,30 +482,63 @@ describe("ConnectionsPage", () => {
     )
   })
 
-  it("adds preset and dropped Agent instructions", async () => {
+  it("adds preset Agent instructions", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [] })
 
     render(<ConnectionsPage />)
 
-    await user.click(screen.getByRole("button", { name: "Add connection" }))
-    await user.click(screen.getByRole("button", { name: "Insert preset" }))
+    const drawer = await openAddConnectionPanel(user)
+    await user.click(within(drawer).getByRole("button", { name: "Insert preset" }))
     await user.click(await screen.findByRole("menuitem", { name: "Nextflow HPC" }))
-    expect(screen.getByLabelText("Agent instructions")).toHaveValue(
+    expect(within(drawer).getByLabelText("Agent instructions")).toHaveValue(
       "Load the site environment before diagnostics.\nRun module load nextflow when modules are available.\nCheck workflow outputs, .nextflow.log, and task directories under work/ before reruns.",
     )
+  })
 
-    const file = new File(["Outputs live under /scratch/project/results."], "skill.txt", {
-      type: "text/plain",
-    })
-    Object.defineProperty(file, "text", {
-      value: vi.fn().mockResolvedValue("Outputs live under /scratch/project/results."),
-    })
-    fireEvent.drop(screen.getByText("Import instructions file"), {
-      dataTransfer: { files: [file] },
-    })
+  it("deletes the selected connection and selects the next host", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection, secondConnection] })
+    apiRequestMock.mockResolvedValueOnce({ data: null })
 
-    expect(await screen.findByDisplayValue(/scratch\/project\/results/)).toBeInTheDocument()
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Delete connection" }))
+    const dialog = screen.getByRole("dialog")
+    expect(within(dialog).getByRole("heading", { name: "Delete Live HPC?" })).toBeInTheDocument()
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }))
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-1", {
+        method: "DELETE",
+      }),
+    )
+    expect(await screen.findByRole("heading", { name: "Backup HPC" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Live HPC" })).not.toBeInTheDocument()
+    expect(toastSuccessMock).toHaveBeenCalledWith("Connection Live HPC deleted")
+  })
+
+  it("keeps a connection visible when deletion conflicts with remote projects", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+    apiRequestMock.mockRejectedValueOnce(new ApiError("Remote connection is used", { status: 409 }))
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Delete connection" }))
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }))
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-1", {
+        method: "DELETE",
+      }),
+    )
+    expect(within(screen.getByRole("dialog")).getByRole("heading", { name: "Delete Live HPC?" })).toBeInTheDocument()
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      "Connection Live HPC is used by one or more remote projects and cannot be deleted.",
+    )
   })
 
   it("streams a remote probe command back into the detail panel", async () => {

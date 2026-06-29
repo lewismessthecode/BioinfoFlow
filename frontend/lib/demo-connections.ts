@@ -43,7 +43,7 @@ export type RemoteCommandResult = {
   timedOut: boolean
 }
 
-export type RemoteDirectoryEntry = {
+type RemoteDirectoryEntry = {
   name: string
   path: string
   type: "dir" | "file"
@@ -120,6 +120,12 @@ export async function updateRemoteConnection(
     body: JSON.stringify(input),
   })
   return normalizeRemoteConnection(response.data)
+}
+
+export async function deleteRemoteConnection(connectionId: string): Promise<void> {
+  await apiRequest<null>(`${remoteConnectionsApiPath}/${connectionId}`, {
+    method: "DELETE",
+  })
 }
 
 export async function testRemoteConnection(
