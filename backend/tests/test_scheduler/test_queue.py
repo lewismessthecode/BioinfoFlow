@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.project import Project
@@ -98,3 +100,54 @@ async def test_queue_cancel_marks_queued_task_cancelled(db_session):
     assert refreshed is not None
     assert refreshed.state == TaskState.CANCELLED.value
     assert refreshed.completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_enqueue_allows_only_one_active_task(db_session):
+    runs = await _seed_runs(db_session, count=1)
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    first_queue = TaskQueue(session_factory=session_factory)
+    second_queue = TaskQueue(session_factory=session_factory)
+
+    first, second = await asyncio.gather(
+        first_queue.enqueue(runs[0].run_id),
+        second_queue.enqueue(runs[0].run_id),
+    )
+
+    assert first.id == second.id
+    result = await db_session.execute(
+        select(TaskQueue.model).where(
+            TaskQueue.model.run_id == runs[0].run_id,
+            TaskQueue.model.state.in_(
+                [TaskState.QUEUED.value, TaskState.DISPATCHED.value]
+            ),
+        )
+    )
+    assert len(result.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_queue_refuses_invalid_terminal_state_transitions(db_session):
+    runs = await _seed_runs(db_session, count=1)
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    queue = TaskQueue(session_factory=session_factory)
+    task = await queue.enqueue(runs[0].run_id)
+    completed = await queue.mark_completed(task.id)
+    assert completed is not None
+
+    redispatched = await queue.mark_dispatched(task.id, "worker-after-terminal")
+    requeued = await queue.re_enqueue(task.id, attempt=2)
+
+    assert redispatched is None
+    assert requeued is None
+    refreshed = await queue.get(task.id)
+    assert refreshed is not None
+    assert refreshed.state == TaskState.COMPLETED.value

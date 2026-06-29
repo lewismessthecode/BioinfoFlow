@@ -106,9 +106,11 @@ class RunRepository(BaseRepository[Run]):
         run = await self.get_by_run_id(run_id)
         if not run:
             return None
+        completed_at = datetime.now(timezone.utc)
         run.status = RunStatus.FAILED.value
         run.error_message = message
-        run.completed_at = datetime.now(timezone.utc)
+        run.completed_at = completed_at
+        run.duration_seconds = _duration_seconds(run.started_at, completed_at)
         await self.session.commit()
         return run
 
@@ -132,3 +134,16 @@ class RunRepository(BaseRepository[Run]):
             await self.session.delete(run)
         await self.session.commit()
         return len(runs)
+
+
+def _duration_seconds(
+    started_at: datetime | None,
+    completed_at: datetime | None,
+) -> int | None:
+    if not started_at or not completed_at:
+        return None
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    if completed_at.tzinfo is None:
+        completed_at = completed_at.replace(tzinfo=timezone.utc)
+    return int((completed_at - started_at).total_seconds())

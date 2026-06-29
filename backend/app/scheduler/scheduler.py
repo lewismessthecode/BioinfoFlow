@@ -495,6 +495,13 @@ class RunScheduler:
                 if task_id:
                     await self._queue.mark_cancelled(task_id)
                 return
+            if run.status not in {RunStatus.PENDING.value, RunStatus.QUEUED.value}:
+                if task_id:
+                    await self._queue.mark_failed(
+                        task_id,
+                        f"Run is not executable from status {run.status}",
+                    )
+                return
 
             run.status = RunStatus.RUNNING.value
             run.started_at = run.started_at or _now()
@@ -793,8 +800,13 @@ class RunScheduler:
         delay = evaluator.next_delay(task, retry_policy=retry_policy)
         delay_until = _now() + timedelta(seconds=delay)
         run.status = RunStatus.QUEUED.value
+        run.started_at = None
         run.completed_at = None
         run.duration_seconds = None
+        run.last_heartbeat_at = None
+        run.current_task = None
+        run.tasks_total = 0
+        run.tasks_completed = 0
         run.error_message = error
         await session.commit()
         await self._queue.re_enqueue(

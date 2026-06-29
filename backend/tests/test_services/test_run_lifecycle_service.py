@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -209,3 +210,23 @@ async def test_delete_run_removes_scheduler_task_rows(db_session, tmp_path):
         select(ScheduledTask).where(ScheduledTask.run_id == run.run_id)
     )
     assert result.scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_mark_failed_computes_run_duration(db_session, tmp_path):
+    _, run = await _create_run(
+        db_session,
+        workspace=tmp_path / "workspace",
+        run_id="run_failed_duration",
+        status=RunStatus.RUNNING,
+    )
+    run.started_at = datetime.now(timezone.utc) - timedelta(seconds=45)
+    await db_session.commit()
+    service = RunLifecycleService(db_session, dispatcher=_NullDispatcher())
+
+    failed = await service.repo.mark_failed(run.run_id, "scheduler rejected run")
+
+    assert failed is not None
+    assert failed.completed_at is not None
+    assert failed.duration_seconds is not None
+    assert failed.duration_seconds >= 40

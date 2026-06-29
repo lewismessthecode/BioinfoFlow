@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -149,6 +149,13 @@ async def test_scheduler_requeues_failed_run_when_retry_policy_matches(
             },
         },
     )
+    stale_started_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    run.started_at = stale_started_at
+    run.last_heartbeat_at = stale_started_at
+    run.current_task = "old_task"
+    run.tasks_total = 8
+    run.tasks_completed = 3
+    await db_session.commit()
 
     await scheduler.start()
     try:
@@ -177,3 +184,8 @@ async def test_scheduler_requeues_failed_run_when_retry_policy_matches(
     assert delay_until > datetime.now(timezone.utc)
     assert retried.error_message == "Executor killed with exit 137"
     assert getattr(run.status, "value", run.status) == RunStatus.QUEUED.value
+    assert run.started_at is None
+    assert run.last_heartbeat_at is None
+    assert run.current_task is None
+    assert run.tasks_total == 0
+    assert run.tasks_completed == 0

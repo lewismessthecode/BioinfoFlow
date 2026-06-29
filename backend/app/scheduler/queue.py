@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.database as app_database
@@ -67,7 +68,14 @@ class TaskQueue:
                 weight=max(1, weight),
             )
             session.add(task)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                existing = await self._get_active_for_run(session, run_id)
+                if existing:
+                    return existing
+                raise
             await session.refresh(task)
             return task
 
@@ -162,6 +170,8 @@ class TaskQueue:
             task = await session.get(ScheduledTask, task_id)
             if not task:
                 return None
+            if task.state != TaskState.QUEUED.value:
+                return None
             task.state = TaskState.DISPATCHED.value
             task.worker_id = worker_id
             task.dispatched_at = dispatched_at or _now()
@@ -224,6 +234,10 @@ class TaskQueue:
         async with self._session_factory() as session:
             task = await session.get(ScheduledTask, task_id)
             if not task:
+                return None
+            if task.state != TaskState.DISPATCHED.value:
+                return None
+            if attempt > int(task.max_attempts or 1):
                 return None
             task.state = TaskState.QUEUED.value
             task.attempt = attempt
@@ -304,6 +318,8 @@ class TaskQueue:
     ) -> ScheduledTask | None:
         task = await session.get(ScheduledTask, task_id)
         if not task:
+            return None
+        if task.state not in {TaskState.QUEUED.value, TaskState.DISPATCHED.value}:
             return None
         task.state = state
         task.completed_at = completed_at or _now()
