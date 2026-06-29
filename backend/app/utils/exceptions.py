@@ -43,6 +43,11 @@ class ValidationError(AppError):
         super().__init__("VALIDATION_ERROR", message, 422, details)
 
 
+class ConfigurationError(AppError):
+    def __init__(self, message: str, details: Any | None = None) -> None:
+        super().__init__("CONFIGURATION_ERROR", message, 503, details)
+
+
 _HTTP_ERROR_CODES: dict[int, str] = {
     400: "BAD_REQUEST",
     401: "UNAUTHORIZED",

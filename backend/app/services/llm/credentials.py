@@ -12,6 +12,7 @@ from cryptography.fernet import Fernet
 
 from app.config import settings
 from app.models.llm import LlmCredentialSource, LlmProviderCredential
+from app.utils.exceptions import ConfigurationError
 
 
 @dataclass(frozen=True)
@@ -100,8 +101,11 @@ def _credential_key() -> bytes:
     if configured:
         return _normalize_key(configured)
     if settings.auth_is_team:
-        raise RuntimeError(
-            "BIOINFOFLOW_CREDENTIAL_KEY is required before storing provider secrets in team mode"
+        raise ConfigurationError(
+            "BIOINFOFLOW_CREDENTIAL_KEY must be set before storing encrypted "
+            "credentials in team mode. Set it to a stable random value and "
+            "recreate the backend process or container.",
+            details={"setting": "BIOINFOFLOW_CREDENTIAL_KEY"},
         )
     return _local_development_key()
 

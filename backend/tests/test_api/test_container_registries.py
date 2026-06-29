@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from app.config import settings
@@ -189,3 +191,44 @@ async def test_container_registry_configuration_requires_admin_in_team_mode(
     responses = [await request for request in requests]
 
     assert [response.status_code for response in responses] == [403] * len(requests)
+
+
+@pytest.mark.asyncio
+async def test_container_registry_stored_credentials_missing_key_returns_configuration_error(
+    async_client,
+    tmp_path,
+    monkeypatch,
+):
+    auth_db_path = tmp_path / "better-auth-admin.db"
+    create_better_auth_db(auth_db_path)
+    conn = sqlite3.connect(str(auth_db_path))
+    try:
+        conn.execute("ALTER TABLE user ADD COLUMN role TEXT")
+        conn.execute("UPDATE user SET role = 'admin'")
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "better_auth_db_path", str(auth_db_path))
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "")
+    async_client.cookies.set("better-auth.session_token", TEST_SESSION_COOKIE)
+
+    response = await async_client.post(
+        "/api/v1/container-registries",
+        json={
+            "name": "Harbor Bio",
+            "endpoint": "http://10.227.4.56:80",
+            "namespace": "pipeline-dev",
+            "insecure": True,
+            "credential_source": "stored",
+            "username": "pipeline-dev",
+            "password": "top-secret-value",
+        },
+    )
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "CONFIGURATION_ERROR"
+    assert "BIOINFOFLOW_CREDENTIAL_KEY" in error["message"]
