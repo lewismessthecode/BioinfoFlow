@@ -1,28 +1,38 @@
 "use client"
 
 import {
-  type ChangeEvent,
-  type DragEvent,
   type FormEvent,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react"
-import { Plus } from "lucide-react"
+import { Plus, Server } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ApiError } from "@/lib/api"
+import {
   createRemoteConnection,
+  deleteRemoteConnection,
   fetchRemoteConnections,
   runRemoteConnectionCommand,
   testRemoteConnection,
   updateRemoteConnection,
   type RemoteConnection,
+  type RemoteConnectionAuthMethod,
   type RemoteConnectionCreateInput,
 } from "@/lib/demo-connections"
+import { cn } from "@/lib/utils"
 
 import { ConnectionDetail } from "./components/connection-detail"
 import {
@@ -32,11 +42,13 @@ import {
   type DialogMode,
   type FormErrorField,
 } from "./components/connection-dialog"
-import { ConnectionList } from "./components/connection-list"
+import { ConnectionList, type ConnectionStatusFilter } from "./components/connection-list"
 
 type UpsertConnectionOptions = {
   select?: boolean
 }
+
+type Translate = (key: string, values?: Record<string, string | number>) => string
 
 function parsePort(value: string): number | null {
   const normalized = value.trim()
@@ -60,16 +72,17 @@ function formFromConnection(connection: RemoteConnection): ConnectionFormState {
 
 export default function ConnectionsPage() {
   const t = useTranslations("connections")
+  const tCommon = useTranslations("common")
   const [connections, setConnections] = useState<RemoteConnection[]>([])
   const [selectedConnectionId, setSelectedConnectionId] = useState("")
   const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState<ConnectionStatusFilter>("all")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<DialogMode>("create")
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null)
   const [form, setForm] = useState<ConnectionFormState>(initialConnectionForm)
   const [formError, setFormError] = useState<string | null>(null)
   const [formErrorField, setFormErrorField] = useState<FormErrorField>(null)
-  const [skillDragActive, setSkillDragActive] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoadingConnections, setIsLoadingConnections] = useState(true)
   const [connectionsLoadError, setConnectionsLoadError] = useState(false)
@@ -77,7 +90,8 @@ export default function ConnectionsPage() {
   const [probeConnectionId, setProbeConnectionId] = useState<string | null>(null)
   const [probeOutputConnectionId, setProbeOutputConnectionId] = useState("")
   const [probeOutput, setProbeOutput] = useState("")
-  const skillFileInputRef = useRef<HTMLInputElement>(null)
+  const [deleteTarget, setDeleteTarget] = useState<RemoteConnection | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const testRequestRef = useRef(0)
   const probeRequestRef = useRef(0)
 
@@ -112,18 +126,21 @@ export default function ConnectionsPage() {
 
   const filteredConnections = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (!query) return connections
 
-    return connections.filter((connection) =>
-      [
+    return connections.filter((connection) => {
+      const matchesStatus = statusFilter === "all" || connection.status === statusFilter
+      if (!matchesStatus) return false
+      if (!query) return true
+
+      return [
         connection.name,
         connection.host,
         connection.username,
         connection.ssh_alias,
         connection.skill_instructions,
-      ].some((value) => value.toLowerCase().includes(query)),
-    )
-  }, [connections, search])
+      ].some((value) => value.toLowerCase().includes(query))
+    })
+  }, [connections, search, statusFilter])
 
   const selectedConnection =
     filteredConnections.find((connection) => connection.id === selectedConnectionId) ??
@@ -136,7 +153,6 @@ export default function ConnectionsPage() {
     setFormErrorField(null)
     setEditingConnectionId(null)
     setDialogMode("create")
-    setSkillDragActive(false)
   }
 
   const handleDialogOpenChange = (open: boolean) => {
@@ -144,8 +160,12 @@ export default function ConnectionsPage() {
     if (!open) resetFormState()
   }
 
-  const openCreateDialog = () => {
+  const openCreateDialog = (authMethod: RemoteConnectionAuthMethod = "agent") => {
     resetFormState()
+    setForm({
+      ...initialConnectionForm,
+      auth_method: authMethod,
+    })
     setDialogMode("create")
     setDialogOpen(true)
   }
@@ -160,7 +180,14 @@ export default function ConnectionsPage() {
   }
 
   const buildPayload = (): RemoteConnectionCreateInput | null => {
-    const host = form.host.trim()
+    const sshAlias = form.ssh_alias.trim()
+    if (form.auth_method === "ssh_config" && !sshAlias) {
+      setFormError(t("form.errors.sshAliasRequired"))
+      setFormErrorField("ssh_alias")
+      return null
+    }
+
+    const host = form.host.trim() || (form.auth_method === "ssh_config" ? sshAlias : "")
     if (!host) {
       setFormError(t("form.errors.hostRequired"))
       setFormErrorField("host")
@@ -175,13 +202,7 @@ export default function ConnectionsPage() {
       return null
     }
 
-    const sshAlias = form.ssh_alias.trim()
     const keyPath = form.key_path.trim()
-    if (form.auth_method === "ssh_config" && !sshAlias) {
-      setFormError(t("form.errors.sshAliasRequired"))
-      setFormErrorField("ssh_alias")
-      return null
-    }
     if (form.auth_method === "key_file" && !keyPath) {
       setFormError(t("form.errors.keyPathRequired"))
       setFormErrorField("key_path")
@@ -306,6 +327,45 @@ export default function ConnectionsPage() {
     }
   }
 
+  const handleDeleteConnection = async () => {
+    if (!deleteTarget) return
+
+    setIsDeleting(true)
+    try {
+      await deleteRemoteConnection(deleteTarget.id)
+      removeConnectionLocally(deleteTarget.id)
+      toast.success(t("toasts.connectionDeleted", { name: deleteTarget.name }))
+      setDeleteTarget(null)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        removeConnectionLocally(deleteTarget.id)
+        toast.error(t("delete.notFound", { name: deleteTarget.name }))
+        setDeleteTarget(null)
+      } else if (error instanceof ApiError && error.status === 409) {
+        toast.error(t("delete.conflict", { name: deleteTarget.name }))
+      } else {
+        const message = error instanceof Error ? error.message : t("delete.failed", { name: deleteTarget.name })
+        toast.error(message)
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const removeConnectionLocally = (connectionId: string) => {
+    setConnections((current) => {
+      const nextConnections = current.filter((connection) => connection.id !== connectionId)
+      if (selectedConnectionId === connectionId) {
+        setSelectedConnectionId(nextConnections[0]?.id ?? "")
+      }
+      return nextConnections
+    })
+    if (probeOutputConnectionId === connectionId) {
+      setProbeOutputConnectionId("")
+      setProbeOutput("")
+    }
+  }
+
   const appendSkillText = (text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
@@ -317,87 +377,120 @@ export default function ConnectionsPage() {
     }))
   }
 
-  const importSkillFile = async (file?: File | null) => {
-    if (!file) return
-    try {
-      appendSkillText(await file.text())
-      toast.success(t("toasts.skillImported"))
-    } catch {
-      toast.error(t("form.errors.skillFileFailed"))
-    }
-  }
-
-  const handleSkillDrop = async (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    setSkillDragActive(false)
-    await importSkillFile(event.dataTransfer.files?.[0])
-  }
-
-  const handleSkillFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    await importSkillFile(event.target.files?.[0])
-    event.target.value = ""
-  }
-
   const selectedProbeOutput =
     selectedConnection && probeOutputConnectionId === selectedConnection.id ? probeOutput : ""
 
   return (
-    <div className="h-full overflow-y-auto bg-background">
-      <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:py-7">
-        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="h-full overflow-y-auto bg-[radial-gradient(circle_at_18%_12%,hsl(var(--primary)/0.10),transparent_30%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.24)_100%)]">
+      <div className="mx-auto grid max-w-7xl gap-5 px-4 py-7 sm:px-6 lg:py-9">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">{t("title")}</h1>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{t("subtitle")}</p>
+            <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm shadow-foreground/5">
+              <Server className="h-3.5 w-3.5" />
+              {t("eyebrow")}
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">{t("title")}</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t("subtitle")}</p>
           </div>
-          <Button className="h-9 w-fit rounded-full px-4 shadow-sm shadow-foreground/5" onClick={openCreateDialog}>
+          <Button className="h-11 w-fit rounded-2xl px-4 shadow-sm shadow-foreground/5" onClick={() => openCreateDialog()}>
             <Plus className="h-4 w-4" />
             {t("addNode")}
           </Button>
         </div>
 
-        <ConnectionDialog
-          open={dialogOpen}
-          mode={dialogMode}
-          form={form}
-          formError={formError}
-          formErrorField={formErrorField}
-          skillDragActive={skillDragActive}
-          isSaving={isSaving}
-          skillFileInputRef={skillFileInputRef}
-          onOpenChange={handleDialogOpenChange}
-          onSubmit={handleSubmit}
-          onFormChange={setForm}
-          onSkillDragActiveChange={setSkillDragActive}
-          onSkillDrop={handleSkillDrop}
-          onSkillFileChange={handleSkillFileChange}
-          onAppendSkillText={appendSkillText}
+        <ConnectionDeleteDialog
+          connection={deleteTarget}
+          deleting={isDeleting}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleDeleteConnection}
+          t={t}
+          tCommon={tCommon}
         />
 
-        <div className="grid overflow-hidden rounded-[28px] border border-border/60 bg-card/90 shadow-sm shadow-foreground/5 lg:grid-cols-[340px_minmax(0,1fr)]">
-          <ConnectionList
-            connections={connections}
-            filteredConnections={filteredConnections}
-            selectedConnection={selectedConnection}
-            search={search}
-            isLoading={isLoadingConnections}
-            loadError={connectionsLoadError}
-            onSearchChange={setSearch}
-            onSelectConnection={setSelectedConnectionId}
-          />
-          <ConnectionDetail
-            connection={selectedConnection}
-            hasConnections={connections.length > 0}
-            testing={selectedConnection ? testingConnectionId === selectedConnection.id : false}
-            probing={selectedConnection ? probeConnectionId === selectedConnection.id : false}
-            probeOutput={selectedProbeOutput}
-            onCreate={openCreateDialog}
-            onClearSearch={() => setSearch("")}
-            onEdit={openEditDialog}
-            onTest={handleTestConnection}
-            onRunProbe={handleRunProbe}
+        <div
+          className={cn(
+            "grid gap-5 lg:items-start",
+            dialogOpen ? "lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]" : "lg:grid-cols-[minmax(0,1fr)]",
+          )}
+        >
+          <div className="grid min-w-0 gap-5">
+            <ConnectionList
+              connections={connections}
+              filteredConnections={filteredConnections}
+              selectedConnection={selectedConnection}
+              search={search}
+              statusFilter={statusFilter}
+              isLoading={isLoadingConnections}
+              loadError={connectionsLoadError}
+              testingConnectionId={testingConnectionId}
+              probeConnectionId={probeConnectionId}
+              onSearchChange={setSearch}
+              onStatusFilterChange={setStatusFilter}
+              onSelectConnection={setSelectedConnectionId}
+              onEdit={openEditDialog}
+              onTest={handleTestConnection}
+              onRunProbe={handleRunProbe}
+              onDelete={setDeleteTarget}
+            />
+
+            <ConnectionDetail
+              connection={selectedConnection}
+              probing={selectedConnection ? probeConnectionId === selectedConnection.id : false}
+              probeOutput={selectedProbeOutput}
+            />
+          </div>
+
+          <ConnectionDialog
+            open={dialogOpen}
+            mode={dialogMode}
+            form={form}
+            formError={formError}
+            formErrorField={formErrorField}
+            isSaving={isSaving}
+            onOpenChange={handleDialogOpenChange}
+            onSubmit={handleSubmit}
+            onFormChange={setForm}
+            onAppendSkillText={appendSkillText}
           />
         </div>
       </div>
     </div>
+  )
+}
+
+function ConnectionDeleteDialog({
+  connection,
+  deleting,
+  onCancel,
+  onConfirm,
+  t,
+  tCommon,
+}: {
+  connection: RemoteConnection | null
+  deleting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+  t: Translate
+  tCommon: Translate
+}) {
+  return (
+    <Dialog open={!!connection} onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent className="rounded-[24px] sm:max-w-[430px]">
+        <DialogHeader>
+          <DialogTitle>{t("delete.title", { name: connection?.name ?? "" })}</DialogTitle>
+          <DialogDescription className="leading-6">
+            {t("delete.description")}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={deleting}>
+            {tCommon("cancel")}
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm} disabled={deleting}>
+            {deleting ? t("delete.deleting") : tCommon("delete")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

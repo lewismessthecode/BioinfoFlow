@@ -1992,43 +1992,46 @@
     "customProject": "Create a custom project"
   },
   "connections": {
-    "title": "SSH connections",
-    "subtitle": "Manage SSH hosts for remote work, file browsing, and workflow runs.",
+    "title": "SSH hosts",
+    "subtitle": "Manage saved SSH hosts for remote work and workflow runs.",
+    "eyebrow": "Remote hosts",
     "addNode": "Add connection",
     "searchPlaceholder": "Search connections…",
     "list": {
-      "title": "Connections",
-      "description": "Select a host to review access details and Agent instructions.",
       "loading": "Loading connections…",
       "error": "Could not load SSH connections. Check the service and try again.",
-      "empty": "No connections yet. Add an SSH environment to get started.",
+      "empty": "No connections yet.",
       "noResults": "No matching connections. Try another name, host, alias, or note."
     },
-    "detail": {
-      "overview": "What this connection is",
-      "health": "Current availability",
-      "access": "How to access",
-      "agentUse": "How the Agent will use it",
-      "currentContext": "Agent instructions",
-      "aliasPrefix": "Alias:",
-      "skillGuidance": "Add paths, setup steps, and limits the Agent should follow on this host.",
-      "notTested": "Run a connection test when you are ready to verify access.",
-      "noInstructions": "No instructions yet. Add working directories, setup steps, queue limits, or commands the Agent should avoid."
+    "summary": {
+      "total": "Total connections",
+      "online": "Reachable now",
+      "attention": "Need attention",
+      "runtimeManaged": "Default or config auth"
+    },
+    "filters": {
+      "label": "Connection filters",
+      "all": "All",
+      "online": "Online",
+      "error": "Errors",
+      "offline": "Offline",
+      "unknown": "Untested"
     },
     "sections": {
-      "connection": "Connection",
-      "ssh": "Access",
-      "agentSkill": "Agent instructions"
+      "address": "Address",
+      "general": "General",
+      "sshPort": "SSH on port",
+      "credentials": "Credentials",
+      "agentSkill": "Bioinfoflow"
     },
     "fields": {
-      "name": "Connection name",
-      "host": "Host or IP",
-      "status": "Status",
-      "port": "Port",
+      "name": "Label",
+      "host": "Address",
+      "port": "SSH on port",
       "username": "Username",
       "auth": "Authentication",
-      "sshAlias": "SSH alias",
-      "keyPath": "Private key path",
+      "sshAlias": "SSH config Host",
+      "keyPath": "Key file path",
       "skillInstructions": "Agent instructions"
     },
     "status": {
@@ -2038,24 +2041,9 @@
       "unknown": "Not tested"
     },
     "auth": {
-      "ssh_config": "SSH config",
-      "key_file": "Private key",
-      "agent": "SSH agent"
-    },
-    "authHelp": {
-      "ssh_config": "Use an existing Host alias from your SSH config.",
-      "key_file": "Use a private key file path available on this machine.",
-      "agent": "Use identities already loaded in ssh-agent."
-    },
-    "empty": {
-      "notSet": "Not set",
-      "skillInstructions": "No instructions yet"
-    },
-    "emptyDetail": {
-      "title": "Add a remote environment",
-      "description": "Add a connection to test access, run a command check, and give the Agent host-specific instructions.",
-      "searchDescription": "Clear search to return to the full connection list.",
-      "action": "Add first connection"
+      "ssh_config": "SSH config Host",
+      "key_file": "Key file",
+      "agent": "Default SSH"
     },
     "actions": {
       "testConnection": "Test connection",
@@ -2063,19 +2051,17 @@
       "editConnection": "Edit connection",
       "runProbe": "Run check",
       "runningProbe": "Checking…",
-      "insertPreset": "Insert preset"
+      "insertPreset": "Insert preset",
+      "deleteConnection": "Delete connection",
+      "clearFilters": "Clear filters"
     },
     "dialog": {
-      "title": "Add SSH connection",
-      "editTitle": "Edit SSH connection",
-      "description": "Enter the host details the Agent needs. Keep sensitive credentials in SSH config or local secure storage.",
-      "add": "Add connection",
+      "title": "New host",
+      "editTitle": "Edit host",
+      "panelLabel": "Host configuration",
+      "add": "Add host",
       "save": "Save changes",
       "saving": "Saving…"
-    },
-    "skillDrop": {
-      "title": "Import instructions file",
-      "hint": "Plain text or Markdown content will be appended to the instructions."
     },
     "skillPresets": {
       "nextflowHpc": {
@@ -2093,22 +2079,19 @@
     },
     "probe": {
       "title": "Command check",
-      "description": "Run a short remote command to confirm output comes back.",
+      "titleForConnection": "Command check for {name}",
+      "description": "Remote command output",
       "placeholder": "Run a command check and the remote output will appear here.",
       "emptyOutput": "Command completed with no output.",
       "failed": "Command check failed."
     },
     "form": {
       "defaultUsername": "user",
-      "secretsNote": "Credentials stay in the SSH method you choose.",
-      "sshConfigNote": "Use the Host alias defined for this environment in your SSH config.",
-      "skillGuidance": "Add paths, setup steps, and limits the Agent should follow on this host.",
       "errors": {
-        "hostRequired": "Enter a host or IP address.",
+        "hostRequired": "Enter an address or hostname.",
         "invalidPort": "Port must be between 1 and 65535.",
-        "sshAliasRequired": "Enter an SSH alias.",
-        "keyPathRequired": "Enter a private key path.",
-        "skillFileFailed": "Could not import the instructions file.",
+        "sshAliasRequired": "Enter an SSH config Host.",
+        "keyPathRequired": "Enter a key file path.",
         "saveFailed": "Could not save the connection."
       },
       "placeholders": {
@@ -2117,15 +2100,23 @@
         "username": "bioflow",
         "sshAlias": "lab-gpu",
         "keyPath": "~/.ssh/id_ed25519",
-        "skillInstructions": "For example: working directories, setup steps, queue limits, and common diagnostic commands…"
+        "skillInstructions": "Working directories, setup steps, queue limits, common diagnostics…"
       }
     },
     "toasts": {
       "connectionAdded": "Connection {name} added",
       "connectionUpdated": "Connection {name} updated",
+      "connectionDeleted": "Connection {name} deleted",
       "testSucceeded": "{name} is reachable",
-      "testFailed": "{name} test failed",
-      "skillImported": "Instructions imported"
+      "testFailed": "{name} test failed"
+    },
+    "delete": {
+      "title": "Delete {name}?",
+      "description": "The Agent will no longer be able to use this SSH host. This cannot be undone.",
+      "deleting": "Deleting…",
+      "notFound": "Connection {name} no longer exists, so it was removed locally.",
+      "conflict": "Connection {name} is used by one or more remote projects and cannot be deleted.",
+      "failed": "Could not delete connection {name}."
     }
   },
   "settings": {

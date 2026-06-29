@@ -1992,43 +1992,46 @@
     "customProject": "创建自定义项目"
   },
   "connections": {
-      "title": "SSH 连接",
-    "subtitle": "管理用于远程执行、文件浏览和工作流运行的 SSH 主机。",
+    "title": "SSH 主机",
+    "subtitle": "管理远程工作和工作流运行使用的 SSH 主机。",
+    "eyebrow": "远程主机",
     "addNode": "添加连接",
     "searchPlaceholder": "搜索连接…",
     "list": {
-      "title": "连接",
-      "description": "选择一个主机，查看连接方式和 Agent 使用说明。",
       "loading": "正在加载连接…",
       "error": "无法加载 SSH 连接。请检查服务后重试。",
-      "empty": "还没有连接，先添加一个 SSH 环境即可开始。",
+      "empty": "还没有连接。",
       "noResults": "没有匹配的连接。试试其他名称、主机、别名或备注。"
     },
-    "detail": {
-      "overview": "这是什么连接",
-      "health": "当前是否可用",
-      "access": "如何访问",
-      "agentUse": "Agent 会如何使用",
-      "currentContext": "Agent 使用说明",
-      "aliasPrefix": "别名：",
-      "skillGuidance": "写下路径、环境初始化和使用限制，方便 Agent 在这台主机上工作。",
-      "notTested": "需要确认连通性时，可以先测试一次连接。",
-      "noInstructions": "暂未填写使用说明。建议补充工作目录、环境初始化、队列限制或 Agent 不应执行的命令。"
+    "summary": {
+      "total": "总连接",
+      "online": "当前可用",
+      "attention": "需要处理",
+      "runtimeManaged": "默认或配置认证"
+    },
+    "filters": {
+      "label": "连接筛选",
+      "all": "全部",
+      "online": "在线",
+      "error": "异常",
+      "offline": "离线",
+      "unknown": "未测试"
     },
     "sections": {
-      "connection": "连接信息",
-      "ssh": "访问方式",
-      "agentSkill": "Agent 使用说明"
+      "address": "地址",
+      "general": "常规",
+      "sshPort": "SSH 端口",
+      "credentials": "凭据",
+      "agentSkill": "Bioinfoflow"
     },
     "fields": {
-      "name": "连接名称",
-      "host": "主机或 IP",
-      "status": "状态",
-      "port": "端口",
-      "username": "账号",
+      "name": "标签",
+      "host": "地址",
+      "port": "SSH 端口",
+      "username": "用户名",
       "auth": "认证方式",
-      "sshAlias": "SSH 别名",
-      "keyPath": "私钥路径",
+      "sshAlias": "SSH 配置 Host",
+      "keyPath": "密钥文件路径",
       "skillInstructions": "Agent 使用说明"
     },
     "status": {
@@ -2038,24 +2041,9 @@
       "unknown": "未测试"
     },
     "auth": {
-      "ssh_config": "SSH 配置",
-      "key_file": "私钥文件",
-      "agent": "SSH agent"
-    },
-    "authHelp": {
-      "ssh_config": "使用 SSH 配置中已有的 Host 别名。",
-      "key_file": "使用本机可访问的私钥文件路径。",
-      "agent": "使用 ssh-agent 中已经加载的身份。"
-    },
-    "empty": {
-      "notSet": "未设置",
-      "skillInstructions": "暂未填写使用说明"
-    },
-    "emptyDetail": {
-      "title": "添加远程环境",
-      "description": "添加连接后，你可以测试连通性、执行命令检查，并补充这台主机的 Agent 使用说明。",
-      "searchDescription": "清除搜索后可回到完整连接列表。",
-      "action": "添加第一个连接"
+      "ssh_config": "SSH 配置 Host",
+      "key_file": "密钥文件",
+      "agent": "默认 SSH"
     },
     "actions": {
       "testConnection": "测试连接",
@@ -2063,19 +2051,17 @@
       "editConnection": "编辑连接",
       "runProbe": "运行检查",
       "runningProbe": "正在检查…",
-      "insertPreset": "插入模板"
+      "insertPreset": "插入模板",
+      "deleteConnection": "删除连接",
+      "clearFilters": "清除筛选"
     },
     "dialog": {
-      "title": "添加 SSH 连接",
-      "editTitle": "编辑 SSH 连接",
-      "description": "填写 Agent 需要的主机信息。敏感凭据请放在 SSH 配置或本地安全存储中。",
-      "add": "添加连接",
+      "title": "新建主机",
+      "editTitle": "编辑主机",
+      "panelLabel": "主机配置",
+      "add": "添加主机",
       "save": "保存修改",
       "saving": "保存中…"
-    },
-    "skillDrop": {
-      "title": "导入说明文件",
-      "hint": "导入的纯文本或 Markdown 内容会追加到使用说明中。"
     },
     "skillPresets": {
       "nextflowHpc": {
@@ -2093,22 +2079,19 @@
     },
     "probe": {
       "title": "命令检查",
-      "description": "运行一条远程短命令，确认输出能正常返回。",
+      "titleForConnection": "{name} 的命令检查",
+      "description": "远程命令输出",
       "placeholder": "运行命令检查后，远程输出会显示在这里。",
       "emptyOutput": "命令已完成，没有输出。",
       "failed": "命令检查失败。"
     },
     "form": {
       "defaultUsername": "user",
-      "secretsNote": "凭据仍由所选的 SSH 方式管理。",
-      "sshConfigNote": "填写你在 SSH 配置中为这个环境设置的 Host 别名。",
-      "skillGuidance": "写下路径、环境初始化和使用限制，方便 Agent 在这台主机上工作。",
       "errors": {
-        "hostRequired": "请填写主机或 IP 地址。",
+        "hostRequired": "请填写地址或主机名。",
         "invalidPort": "端口必须在 1 到 65535 之间。",
-        "sshAliasRequired": "请填写 SSH 别名。",
-        "keyPathRequired": "请填写私钥路径。",
-        "skillFileFailed": "无法导入说明文件。",
+        "sshAliasRequired": "请填写 SSH 配置 Host。",
+        "keyPathRequired": "请填写密钥文件路径。",
         "saveFailed": "无法保存连接。"
       },
       "placeholders": {
@@ -2117,15 +2100,23 @@
         "username": "bioflow",
         "sshAlias": "lab-gpu",
         "keyPath": "~/.ssh/id_ed25519",
-        "skillInstructions": "例如：工作目录、环境初始化、队列限制、常用检查命令……"
+        "skillInstructions": "工作目录、环境初始化、队列限制、常用检查命令……"
       }
     },
     "toasts": {
       "connectionAdded": "已添加连接 {name}",
       "connectionUpdated": "已更新连接 {name}",
+      "connectionDeleted": "已删除连接 {name}",
       "testSucceeded": "{name} 可连接",
-      "testFailed": "{name} 测试失败",
-      "skillImported": "已导入使用说明"
+      "testFailed": "{name} 测试失败"
+    },
+    "delete": {
+      "title": "删除 {name}？",
+      "description": "删除后，Agent 将不能再使用这个 SSH 主机。这个操作不可撤销。",
+      "deleting": "正在删除…",
+      "notFound": "连接 {name} 已不存在，已从本地列表移除。",
+      "conflict": "连接 {name} 正被一个或多个远程项目使用，不能删除。",
+      "failed": "无法删除连接 {name}。"
     }
   },
   "settings": {
