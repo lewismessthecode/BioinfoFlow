@@ -23,12 +23,12 @@ export function ConnectionDetail({
   if (!connection || (!probeOutput && !probing)) return null
 
   return (
-    <section className="rounded-[28px] border border-border/60 bg-card/85 p-4 shadow-sm shadow-foreground/5 sm:p-5">
-      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-        <TerminalSquare className="h-4 w-4" />
+    <section className="shrink-0 border-t border-border/60 bg-card/70 p-3 sm:p-4">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <TerminalSquare className="h-3.5 w-3.5" />
         <span>{t("probe.description")}</span>
       </div>
-      <div className="mt-3">
+      <div className="mt-2">
         <TextPanel
           title={t("probe.titleForConnection", { name: connection.name })}
           value={probeOutput || t("probe.placeholder")}

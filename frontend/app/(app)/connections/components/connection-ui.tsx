@@ -20,9 +20,9 @@ export function StatusDot({
 
 export function TextPanel({ title, value, empty }: { title: string; value: string; empty: string }) {
   return (
-    <div className="rounded-[18px] border border-border/40 bg-background/70 p-3.5">
+    <div className="rounded-2xl border border-border/40 bg-background/70 p-3">
       <p className="text-xs font-medium text-muted-foreground">{title}</p>
-      <pre className="mt-2.5 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">
+      <pre className="mt-2 max-h-28 overflow-y-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-foreground [scrollbar-gutter:stable]">
         {value || empty}
       </pre>
     </div>
