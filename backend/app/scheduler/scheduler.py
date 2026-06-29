@@ -26,6 +26,7 @@ from app.runtime.jobs import (
     _finalize_dag_statuses,
     _handle_engine_event,
     _now,
+    attach_required_image_auth,
     initialize_run_dag,
 )
 from app.scheduler.config import SchedulerConfig
@@ -588,6 +589,7 @@ class RunScheduler:
                 dag_path=dag_path,
                 trace_path=trace_path,
             )
+            config = await attach_required_image_auth(session, config)
 
             try:
                 async for event in self._backend.submit(adapter, config, ws_path):

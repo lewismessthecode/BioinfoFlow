@@ -1250,7 +1250,7 @@
       "imageName": "镜像名称",
       "registry": "镜像仓库",
       "registryAutomatic": "自动",
-      "registryHint": "保持自动将按输入的镜像名称拉取。",
+      "registryHint": "保持自动将按输入的镜像名称拉取；带显式 host 的镜像引用会保持原样。",
       "tarball": "Tar 包（.tar）",
       "selectedFile": "已选择：{name}",
       "submitting": "拉取中...",

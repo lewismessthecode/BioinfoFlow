@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
+from app.models.container_registry import ContainerRegistry
 from app.models.project import Project
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -118,3 +120,31 @@ async def test_registry_service_resolves_project_override_before_global_default(
     fallback = await service.get_effective_registry(project_id=None)
     assert fallback is not None
     assert str(fallback.id) == str(default_registry.id)
+
+
+@pytest.mark.asyncio
+async def test_registry_default_is_enforced_by_database(db_session):
+    db_session.add_all(
+        [
+            ContainerRegistry(
+                name="Default one",
+                endpoint="https://one.example.test",
+                insecure=False,
+                is_default=True,
+                credential_source="none",
+                last_status="untested",
+            ),
+            ContainerRegistry(
+                name="Default two",
+                endpoint="https://two.example.test",
+                insecure=False,
+                is_default=True,
+                credential_source="none",
+                last_status="untested",
+            ),
+        ]
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()

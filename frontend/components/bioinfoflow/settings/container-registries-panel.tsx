@@ -31,6 +31,7 @@ type RegistryForm = {
   insecure: boolean
   is_default: boolean
   credential_source: CredentialSource
+  existing_credential_source: CredentialSource | null
   env_username_var: string
   env_password_var: string
   username: string
@@ -45,6 +46,7 @@ const EMPTY_FORM: RegistryForm = {
   insecure: false,
   is_default: false,
   credential_source: "none",
+  existing_credential_source: null,
   env_username_var: "",
   env_password_var: "",
   username: "",
@@ -74,7 +76,10 @@ export function ContainerRegistriesPanel() {
       form.env_username_var.trim().length > 0 &&
       form.env_password_var.trim().length > 0) ||
     (form.credential_source === "stored" &&
-      ((editing && !form.username.trim() && !form.password) ||
+      ((editing &&
+        form.existing_credential_source === "stored" &&
+        !form.username.trim() &&
+        !form.password) ||
         (form.username.trim().length > 0 && form.password.length > 0)))
   const canSave =
     form.name.trim().length > 0 &&
@@ -117,6 +122,7 @@ export function ContainerRegistriesPanel() {
   }
 
   const editRegistry = (registry: ContainerRegistryConfig) => {
+    const credentialSource = resolveCredentialSource(registry.credential_source)
     setForm({
       id: registry.id ?? null,
       name: registry.name ?? "",
@@ -124,7 +130,8 @@ export function ContainerRegistriesPanel() {
       namespace: registry.namespace ?? "",
       insecure: Boolean(registry.insecure),
       is_default: Boolean(registry.is_default),
-      credential_source: resolveCredentialSource(registry.credential_source),
+      credential_source: credentialSource,
+      existing_credential_source: credentialSource,
       env_username_var: registry.env_username_var ?? "",
       env_password_var: registry.env_password_var ?? "",
       username: "",

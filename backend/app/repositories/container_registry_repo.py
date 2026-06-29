@@ -33,4 +33,3 @@ class ContainerRegistryRepository(BaseRepository[ContainerRegistry]):
         if registry_id:
             stmt = stmt.where(self.model.id != registry_id)
         await self.session.execute(stmt.values(is_default=False))
-        await self.session.commit()

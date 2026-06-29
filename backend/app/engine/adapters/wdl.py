@@ -8,7 +8,9 @@ import re
 import shutil
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from app.config import settings
 from app.engine.adapter import EngineAdapter
@@ -78,6 +80,15 @@ _WDL_ERROR_LINE_RE = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class RequiredImage:
+    full_name: str
+    name: str
+    tag: str
+    registry: str
+    auth_config: dict[str, Any] | None = None
+
+
 class WDLAdapter(EngineAdapter):
     def __init__(self, *, miniwdl_bin: str | None = None) -> None:
         self._binary = _resolve_miniwdl_bin(miniwdl_bin or settings.miniwdl_bin)
@@ -122,17 +133,24 @@ class WDLAdapter(EngineAdapter):
 
         pulled_images: list[str] = []
         for image in required_images:
-            if await docker.inspect_image(image) is not None:
+            if await docker.inspect_image(image.full_name) is not None:
                 continue
-            name, tag, registry = _parse_image_reference(image)
             try:
-                async for _event in docker.pull_image(name, tag, registry):
+                pull_kwargs: dict[str, Any] = {}
+                if image.auth_config is not None:
+                    pull_kwargs["auth_config"] = image.auth_config
+                async for _event in docker.pull_image(
+                    image.name,
+                    image.tag,
+                    image.registry,
+                    **pull_kwargs,
+                ):
                     pass
             except Exception as exc:
                 raise ValueError(
-                    f"Failed to pull required WDL image {image}: {exc}"
+                    f"Failed to pull required WDL image {image.full_name}: {exc}"
                 ) from exc
-            pulled_images.append(image)
+            pulled_images.append(image.full_name)
 
         if pulled_images:
             logs = list(updated.get(_ENGINE_LOGS_KEY, []) or [])
@@ -487,7 +505,7 @@ def _resolve_miniwdl_bin(candidate: str) -> str:
     return fallback or str(path)
 
 
-def _required_images(config: dict) -> list[str]:
+def _required_images(config: dict) -> list[RequiredImage]:
     runtime = config.get("runtime")
     if not isinstance(runtime, dict):
         return []
@@ -495,17 +513,46 @@ def _required_images(config: dict) -> list[str]:
     if not isinstance(images, list):
         return []
 
-    required: list[str] = []
+    required: list[RequiredImage] = []
     seen: set[str] = set()
     for image in images:
-        if not isinstance(image, str):
+        required_image = _required_image_from_runtime_item(image)
+        if required_image is None or required_image.full_name in seen:
             continue
-        normalized = image.strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        required.append(normalized)
+        seen.add(required_image.full_name)
+        required.append(required_image)
     return required
+
+
+def _required_image_from_runtime_item(value: Any) -> RequiredImage | None:
+    if isinstance(value, str):
+        full_name = value.strip()
+        if not full_name:
+            return None
+        name, tag, registry = _parse_image_reference(full_name)
+        return RequiredImage(
+            full_name=full_name,
+            name=name,
+            tag=tag,
+            registry=registry,
+        )
+    if not isinstance(value, dict):
+        return None
+    full_name = str(value.get("full_name") or "").strip()
+    if not full_name:
+        return None
+    parsed_name, parsed_tag, parsed_registry = _parse_image_reference(full_name)
+    name = str(value.get("name") or parsed_name).strip() or parsed_name
+    tag = str(value.get("tag") or parsed_tag).strip() or parsed_tag
+    registry = str(value.get("registry") or parsed_registry).strip() or parsed_registry
+    auth_config = value.get("auth_config")
+    return RequiredImage(
+        full_name=full_name,
+        name=name,
+        tag=tag,
+        registry=registry,
+        auth_config=dict(auth_config) if isinstance(auth_config, dict) else None,
+    )
 
 
 def _parse_image_reference(full_name: str) -> tuple[str, str, str]:

@@ -532,6 +532,66 @@ describe("SettingsPage", () => {
     })
   })
 
+  it("requires stored credentials when switching an edited registry to stored credentials", async () => {
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/container-registries" && !options?.method) {
+        return {
+          data: [
+            {
+              id: "registry-none",
+              name: "Lab Harbor",
+              endpoint: "http://10.227.4.56:80",
+              namespace: "pipeline-dev",
+              insecure: true,
+              is_default: false,
+              credential_source: "none",
+              last_status: "untested",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      if (path === "/llm/configuration") {
+        return { data: { summary: {}, providers: [], models: [] }, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          role: "owner",
+          mode: "team",
+          canManageMembers: true,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Container Registries" }))
+
+    expect(await screen.findByText("Lab Harbor")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    fireEvent.change(screen.getByLabelText("Credentials"), {
+      target: { value: "stored" },
+    })
+
+    const saveButton = await screen.findByRole("button", { name: "Save registry" })
+    expect(saveButton).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "robot$pipeline-dev" },
+    })
+    expect(saveButton).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "secret" },
+    })
+    expect(saveButton).not.toBeDisabled()
+  })
+
   it("falls back from the registries section for team members", async () => {
     window.history.replaceState(null, "", "/settings?section=registries")
     render(

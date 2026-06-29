@@ -8,7 +8,7 @@ import pytest
 
 from app.config import settings
 from app.models.project import Project
-from app.models.workspace import Workspace
+from app.models.workspace import Workspace, WorkspaceMembership
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.tools import (
     AgentToolContext,
@@ -419,6 +419,52 @@ async def test_images_pull_tool_accepts_registry_id(db_session, monkeypatch):
     assert result.status == "completed"
     assert result.result["image"]["name"] == "bioinfoflow/bwa"
     assert captured["registry_id"] == "registry-1"
+
+
+@pytest.mark.asyncio
+async def test_images_pull_tool_rejects_registry_id_for_members(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    dispatcher, context = await _context(db_session)
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id=context.user_id,
+            role="member",
+        )
+    )
+    await db_session.commit()
+    called = False
+
+    async def fake_pull_image(self, **kwargs):
+        nonlocal called
+        called = True
+        return None
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.images.ImageService.pull_image",
+        fake_pull_image,
+    )
+
+    result = await dispatcher.dispatch(
+        tool_name="images.pull",
+        input={
+            "name": "bioinfoflow/bwa",
+            "tag": "v2.2.1",
+            "registry_id": "registry-1",
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert result.status == "failed"
+    assert result.error == {
+        "type": "PermissionDeniedError",
+        "message": "Only workspace admins can select a configured registry",
+    }
+    assert called is False
 
 
 @pytest.mark.asyncio

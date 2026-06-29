@@ -226,13 +226,13 @@ Container Registries** and add Harbor or another OCI registry:
 - **Credentials**: `Stored credentials`, `Environment variables`, or
   `No credentials`
 
-For stored credentials, enter the Harbor robot/user name such as `pipeline-dev`
-and its password/token. Bioinfoflow encrypts stored values and only shows hints
-after saving. For environment credentials, enter the env var names that the
-backend container can read, for example `BIO_REGISTRY_USER` and
-`BIO_REGISTRY_PASSWORD`. Use **No credentials** when the Docker environment is
-already authenticated or the registry is public. Use **Test** to confirm
-credentials are available.
+For stored credentials, enter the actual Harbor user or robot account name, for
+example `robot$pipeline-dev`, plus its password/token. Bioinfoflow encrypts
+stored values and only shows hints after saving. For environment credentials,
+enter the env var names that the backend container can read, for example
+`BIO_REGISTRY_USER` and `BIO_REGISTRY_PASSWORD`. Use **No credentials** when the
+Docker environment is already authenticated or the registry is public. Use
+**Test** to confirm credentials are available.
 
 During workflow registration, the **Image Registry** selector is optional:
 
@@ -248,15 +248,24 @@ In team mode, ordinary members cannot manage registries or explicitly select a
 registry ID. They can still register workflows; automatic prefetch may use the
 admin-configured global default as a shared platform capability.
 
+AgentCore image pulls use the same platform policy. The `images.pull` tool can
+pull a full image name directly, and automatic/default registry behavior remains
+available for unqualified names. Passing an explicit `registry_id` is treated
+like choosing a configured registry in the UI and is limited to owners/admins in
+team mode.
+
 The data model includes a project-level registry override for future policy, but
 the current UI exposes a global default plus per-workflow selection.
 
 For WDL, Bioinfoflow records static task `docker`/`container` images when the
 workflow is registered and prefetches missing required images before MiniWDL
-starts. Dynamic container expressions are skipped and resolved at runtime. For
-Nextflow, Bioinfoflow enables Docker pull behavior when Docker is available, and
-Nextflow uses the process/container image names from the pipeline config. You can
-also write full Harbor image names directly in workflows:
+starts. When a configured registry applies, run compilation also uses a
+run-local WDL copy with those static container literals rewritten to the same
+resolved image names, so prefetch and execution agree. Dynamic container
+expressions are skipped and resolved at runtime. For Nextflow, Bioinfoflow
+enables Docker pull behavior when Docker is available and injects the configured
+registry prefix as `docker.registry` for unqualified process images. You can also
+write full Harbor image names directly in workflows:
 
 ```text
 10.227.4.56:80/pipeline-dev/bwa:0.7.17

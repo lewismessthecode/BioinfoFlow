@@ -10,6 +10,7 @@ from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.authorization_service import AuthorizationService
 from app.services.image_service import ImageService
 from app.services.project_service import ProjectService
+from app.utils.authorization import can_select_container_registry
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
 
 
@@ -141,6 +142,15 @@ class PullImageTool:
     )
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+        if input.get("registry_id"):
+            role = await AuthorizationService(context.db).resolve_workspace_role(
+                workspace_id=context.workspace_id,
+                user_id=context.user_id,
+            )
+            if not can_select_container_registry(role):
+                raise PermissionDeniedError(
+                    "Only workspace admins can select a configured registry"
+                )
         service = ImageService(context.db)
         image = await service.pull_image(
             name=str(input["name"]),

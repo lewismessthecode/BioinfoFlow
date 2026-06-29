@@ -518,6 +518,57 @@ async def test_wdl_adapter_pre_submit_pulls_missing_required_images():
 
 
 @pytest.mark.asyncio
+async def test_wdl_adapter_pre_submit_uses_required_image_auth_config():
+    class FakeDockerService:
+        def __init__(self):
+            self.inspect_calls: list[str] = []
+            self.pull_calls: list[tuple[str, str, str, dict]] = []
+
+        async def is_available(self) -> bool:
+            return True
+
+        async def inspect_image(self, full_name: str):
+            self.inspect_calls.append(full_name)
+            return None
+
+        async def pull_image(self, name: str, tag: str, registry: str, **kwargs):
+            self.pull_calls.append((name, tag, registry, kwargs))
+            yield {"status": "done"}
+
+    adapter = WDLAdapter()
+    docker_service = FakeDockerService()
+
+    config = _wdl_config()
+    config["runtime"] = {
+        "required_images": [
+            {
+                "full_name": "harbor.example.test/bio/bwa:0.7.17",
+                "name": "bio/bwa",
+                "tag": "0.7.17",
+                "registry": "harbor.example.test",
+                "auth_config": {"username": "robot", "password": "secret"},
+            }
+        ],
+    }
+
+    with patch(
+        "app.engine.adapters.wdl.DockerService",
+        return_value=docker_service,
+    ):
+        await adapter.pre_submit(config, "/workspace")
+
+    assert docker_service.inspect_calls == ["harbor.example.test/bio/bwa:0.7.17"]
+    assert docker_service.pull_calls == [
+        (
+            "bio/bwa",
+            "0.7.17",
+            "harbor.example.test",
+            {"auth_config": {"username": "robot", "password": "secret"}},
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_wdl_adapter_pre_submit_can_skip_required_image_pull():
     class FakeDockerService:
         async def is_available(self) -> bool:

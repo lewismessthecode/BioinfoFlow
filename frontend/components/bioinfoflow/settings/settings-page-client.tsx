@@ -433,13 +433,13 @@ export default function SettingsPageClient({
   const darkTokens = appearancePresets[darkPreset].dark
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full min-w-0 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
       {/* ── Sub-sidebar ──────────────────────────────────── */}
-      <nav className="w-[200px] shrink-0 border-r border-border/60 bg-secondary/30 p-4">
+      <nav className="w-full shrink-0 border-b border-border/60 bg-secondary/30 p-4 md:w-[200px] md:border-b-0 md:border-r">
         <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
           {t("pageTitle")}
         </h2>
-        <ul className="space-y-0.5">
+        <ul className="grid grid-cols-2 gap-1 md:block md:space-y-0.5">
           {visibleNavItems.map((item) => {
             const Icon = item.icon
             return (
@@ -475,10 +475,10 @@ export default function SettingsPageClient({
       </nav>
 
       {/* ── Content area ─────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-w-0 flex-1 overflow-y-visible md:overflow-y-auto">
         <div
           className={cn(
-            "mx-auto w-full space-y-6 p-6",
+            "mx-auto w-full space-y-6 p-4 sm:p-6",
             activeSection === "appearance" ||
               activeSection === "providers" ||
               activeSection === "registries"

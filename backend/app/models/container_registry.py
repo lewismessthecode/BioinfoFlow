@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -42,6 +42,13 @@ class ContainerRegistry(Base, UUIDMixin, TimestampMixin):
         CheckConstraint(
             "last_status IN ('untested', 'ok', 'error')",
             name="ck_container_registries_last_status",
+        ),
+        Index(
+            "uq_container_registries_default_singleton",
+            "is_default",
+            unique=True,
+            sqlite_where=text("is_default = true"),
+            postgresql_where=text("is_default = true"),
         ),
     )
 
