@@ -186,6 +186,9 @@ async def test_build_output_archive_refuses_symlink_targets_outside_workspace(
         external_root_path=str(workspace),
     )
     run = _run_stub(project_id=str(project.id), run_id="run_guard")
+    results_root = run_results_root(project, run.run_id)
+    results_root.mkdir(parents=True)
+    (results_root / "summary.txt").write_text("ok", encoding="utf-8")
     (workspace / "exports").symlink_to(outside, target_is_directory=True)
 
     service = RunArchiveService(ProjectRepository(db_session))
@@ -194,6 +197,36 @@ async def test_build_output_archive_refuses_symlink_targets_outside_workspace(
         await service.build_output_archive(
             run,
             file_path="exports",
+            archive_format="tar.gz",
+        )
+
+
+@pytest.mark.asyncio
+async def test_build_output_archive_file_path_must_stay_under_output_root(
+    db_session, tmp_path
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project = await create_project(
+        db_session,
+        name=f"Archive Output Root Guard {uuid4()}",
+        storage_mode="external",
+        external_root_path=str(workspace),
+    )
+    run = _run_stub(project_id=str(project.id), run_id="run_output_guard")
+    results_root = run_results_root(project, run.run_id)
+    results_root.mkdir(parents=True)
+    (results_root / "summary.txt").write_text("ok", encoding="utf-8")
+    audit_log = workspace / "runs" / run.run_id / "audit" / "run.log"
+    audit_log.parent.mkdir(parents=True)
+    audit_log.write_text("secret execution details", encoding="utf-8")
+
+    service = RunArchiveService(ProjectRepository(db_session))
+
+    with pytest.raises(PermissionError, match="output root"):
+        await service.build_output_archive(
+            run,
+            file_path=f"runs/{run.run_id}/audit/run.log",
             archive_format="tar.gz",
         )
 

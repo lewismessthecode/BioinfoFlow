@@ -142,6 +142,35 @@ async def test_run_service_lifecycle(db_session, monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_create_run_does_not_adopt_existing_run_home(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project, workflow = await _create_external_project_and_workflow(
+        db_session, external_root=workspace
+    )
+    collision_home = run_home(project, "run_collision")
+    collision_home.mkdir(parents=True)
+    sentinel = collision_home / "sentinel.txt"
+    sentinel.write_text("owned by another run", encoding="utf-8")
+    ids = iter(["run_collision", "run_recovered"])
+    monkeypatch.setattr(run_compiler_module, "generate_run_id", lambda: next(ids))
+
+    created = await _create_run_via_compiler(
+        db_session,
+        project=project,
+        workflow=workflow,
+    )
+
+    assert created.run_id == "run_recovered"
+    assert sentinel.read_text(encoding="utf-8") == "owned by another run"
+    assert not (collision_home / "input").exists()
+
+
+@pytest.mark.asyncio
 async def test_create_run_persists_run_archive(db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 

@@ -267,10 +267,8 @@ class RunCompiler:
         spec = validated.spec
         engine = str(getattr(workflow.engine, "value", workflow.engine))
 
-        run_id = generate_run_id()
         workspace_path = project_home(project)
-        ensure_run_layout(project, run_id, engine=engine)
-        layout = RunLayout.for_run(project, run_id, engine)
+        run_id, layout = _reserve_fresh_run_layout(project, engine=engine)
         resolved_values = self._materialize_runtime_inputs(
             validated.resolved_values,
             workflow=workflow,
@@ -1103,6 +1101,17 @@ def _render_csv(rows: Sequence[Mapping[str, str]]) -> str:
     for row in rows:
         writer.writerow({column: str(row.get(column, "")) for column in columns})
     return buffer.getvalue()
+
+
+def _reserve_fresh_run_layout(project, *, engine: str) -> tuple[str, RunLayout]:
+    for _ in range(16):
+        run_id = generate_run_id()
+        try:
+            ensure_run_layout(project, run_id, engine=engine)
+        except FileExistsError:
+            continue
+        return run_id, RunLayout.for_run(project, run_id, engine)
+    raise RuntimeError("could not allocate a unique run directory")
 
 
 def _optional_nextflow_revision(value: Any) -> str | None:
