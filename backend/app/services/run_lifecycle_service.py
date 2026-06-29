@@ -17,7 +17,7 @@ import json
 import re
 from collections import deque
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -679,10 +679,12 @@ class RunLifecycleService:
         return resolve_resume_token(run)
 
     async def _mark_run_cancelled(self, run: Run) -> Run:
+        completed_at = self._now()
         run = await self.repo.update(
             run,
             status=RunStatus.CANCELLED.value,
-            completed_at=self._now(),
+            completed_at=completed_at,
+            duration_seconds=_duration_seconds(run.started_at, completed_at),
         )
         await self._audit().log(
             action="run.cancelled",
@@ -1017,3 +1019,16 @@ def _replay_idempotency_key(
         default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _duration_seconds(
+    started_at: datetime | None,
+    completed_at: datetime | None,
+) -> int | None:
+    if not started_at or not completed_at:
+        return None
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    if completed_at.tzinfo is None:
+        completed_at = completed_at.replace(tzinfo=timezone.utc)
+    return int((completed_at - started_at).total_seconds())
