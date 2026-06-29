@@ -346,6 +346,19 @@
       "nvidiaRuntimeVisible": "NVIDIA Runtime 可见",
       "detailsUnavailable": "后端暂时无法读取 GPU 详情"
     },
+    "systemNotes": {
+      "title": "可选提示",
+      "badge": "不影响准备完成",
+      "description": "这些提示不会阻塞 CPU 或本地工作流运行。",
+      "defaultDescription": "后续工作流需要时再补充即可。",
+      "gpuVisible": "当前可见 {count} 张 GPU：{names}。只有工作流需要加速时才会使用。",
+      "gpuRuntimeHidden": "这台主机支持 GPU 工作，但容器暂时不能使用 GPU。CPU 和本地工作流可以先运行。",
+      "gpuRuntimeHiddenWithRecommendation": "这台主机支持 GPU 工作，但容器暂时不能使用 GPU。CPU 和本地工作流可以先运行。{recommendation}",
+      "gpuHostOnly": "主机上有 NVIDIA 工具，但容器暂时看不到 GPU。CPU 和本地工作流可以先运行。",
+      "gpuHostOnlyWithRecommendation": "主机上有 NVIDIA 工具，但容器暂时看不到 GPU。CPU 和本地工作流可以先运行。{recommendation}",
+      "gpuError": "暂时无法确认 GPU 状态。CPU 和本地工作流可以先运行。详情：{error}",
+      "gpuCpuOnly": "未启用 GPU 加速。CPU 和本地工作流可以直接运行。"
+    },
     "narrativeEmpty": "还没有运行记录，去智能助手页面开始你的第一次分析吧！",
     "narrativeAllComplete": "已完成全部 {total} 次运行，一切顺利 ✅",
     "narrativeTotal": "共 {total} 次运行",
@@ -370,6 +383,7 @@
       "progress": "{completed}/{total} 个必需项已就绪",
       "blockers": "开始前需完成",
       "optional": "可选项",
+      "optionalDescription": "可选项不计入必需进度。",
       "completed": "已完成",
       "refresh": "刷新",
       "refreshing": "刷新中…",

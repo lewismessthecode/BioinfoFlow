@@ -15,6 +15,7 @@ import {
   type DashboardStats,
   type SystemHealth,
   type GpuInfo,
+  type ReadinessCheck,
   type ReadinessStatus,
 } from "./components/dashboard-types";
 import { DashboardSkeleton } from "./components/dashboard-skeleton";
@@ -99,6 +100,10 @@ export default function DashboardPage() {
     );
   }
 
+  const optionalReadinessNotes: ReadinessCheck[] = readiness?.checks.filter(
+    (check) => check.status !== "pass" && check.severity !== "blocking",
+  ) ?? [];
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-6 max-w-6xl mx-auto">
@@ -141,7 +146,11 @@ export default function DashboardPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, delay: 0.25 }}
         >
-          <SystemStatus health={health} gpuInfo={gpuInfo} />
+          <SystemStatus
+            health={health}
+            gpuInfo={gpuInfo}
+            optionalNotes={optionalReadinessNotes}
+          />
         </motion.div>
         {schedulerStatus && (
           <motion.div

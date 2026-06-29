@@ -332,11 +332,126 @@ describe("DashboardPage", () => {
     expect(screen.getByText("dashboard.readiness.blockers")).toBeInTheDocument()
     expect(screen.getByText("dashboard.readiness.optional")).toBeInTheDocument()
     expect(screen.getByText("dashboard.readiness.checks.provider_key.label")).toBeInTheDocument()
-    expect(screen.getByText("dashboard.readiness.checks.gpu.label")).toBeInTheDocument()
+    expect(screen.getAllByText("dashboard.readiness.checks.gpu.label").length).toBeGreaterThan(0)
     expect(
       screen.getAllByRole("link", {
         name: "dashboard.readiness.checks.provider_key.action",
       })[0],
     ).toHaveAttribute("href", "/settings?section=providers")
+  })
+
+  it("moves optional readiness warnings into system status after required setup is ready", async () => {
+    apiRequestMock.mockImplementation(async (path) => {
+      if (path === "/stats") {
+        return {
+          data: {
+            runs: {
+              total: 0,
+              running: 0,
+              completed: 0,
+              failed: 0,
+              queued: 0,
+              pending: 0,
+              cancelled: 0,
+            },
+            workflows: { total: 1 },
+            images: { total: 0, local: 0, remote: 0, pulling: 0 },
+            projects: { total: 1 },
+            recent_runs: [],
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/system/health") {
+        return {
+          data: {
+            status: "healthy",
+            docker: { available: true, nvidia_runtime: true },
+            gpu: { available: false, parabricks_compatible: false },
+            parabricks: { image_available: false, image_name: null },
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/system/gpu") {
+        return {
+          data: {
+            available: false,
+            docker_nvidia_runtime: true,
+            parabricks_compatible: false,
+            recommendation: "Enable GPU access only when an accelerated workflow needs it.",
+            gpus: [],
+          },
+          meta: undefined,
+        }
+      }
+      if (path === "/system/readiness") {
+        return {
+          data: {
+            severity: "ready",
+            next_action: null,
+            checks: [
+              {
+                id: "provider_key",
+                status: "pass",
+                severity: "blocking",
+                facts: { configured: true },
+              },
+              {
+                id: "docker",
+                status: "pass",
+                severity: "blocking",
+                facts: { available: true },
+              },
+              {
+                id: "scheduler",
+                status: "pass",
+                severity: "blocking",
+                facts: { available: true },
+              },
+              {
+                id: "project",
+                status: "pass",
+                severity: "blocking",
+                facts: { count: 1 },
+              },
+              {
+                id: "workflow_registry",
+                status: "pass",
+                severity: "blocking",
+                facts: { count: 1 },
+              },
+              {
+                id: "workflow_binding",
+                status: "pass",
+                severity: "blocking",
+                facts: { count: 1 },
+              },
+              {
+                id: "gpu",
+                status: "warn",
+                severity: "optional",
+                facts: {
+                  docker_nvidia_runtime: true,
+                  runtime_visible_to_backend: false,
+                  usable_for_gpu_workflows: false,
+                  recommendation: "Enable GPU access only when an accelerated workflow needs it.",
+                },
+              },
+            ],
+            summary: {},
+          },
+          meta: undefined,
+        }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<DashboardPage />)
+
+    expect(await screen.findByText("dashboard.systemNotes.title")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /dashboard\.readiness\.trigger/ })).not.toBeInTheDocument()
+    expect(screen.getAllByText("dashboard.readiness.checks.gpu.label").length).toBeGreaterThan(0)
+    expect(screen.getByText(/dashboard\.systemNotes\.gpuRuntimeHiddenWithRecommendation/)).toBeInTheDocument()
   })
 })
