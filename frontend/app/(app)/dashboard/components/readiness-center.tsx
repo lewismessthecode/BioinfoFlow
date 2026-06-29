@@ -10,7 +10,6 @@ import {
   CircleX,
   ListChecks,
   RefreshCw,
-  Rocket,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { CardContent, CardRoot } from "@/components/bioinfoflow/card";
@@ -224,8 +223,6 @@ function SetupItem({
         "group rounded-2xl px-2.5 transition-colors",
         "hover:bg-muted/35",
         isComplete ? "py-1.5 text-muted-foreground" : "py-2.5",
-        check.status === "fail" && "bg-warning-muted/30",
-        check.status === "warn" && "bg-warning-muted/20",
         isComplete && "text-muted-foreground",
       )}
     >
@@ -292,10 +289,12 @@ function SetupItem({
 
 function ChecklistSection({
   title,
+  description,
   checks,
   onProjectAction,
 }: {
   title: string;
+  description?: string;
   checks: ReadinessCheck[];
   onProjectAction: () => void;
 }) {
@@ -307,6 +306,11 @@ function ChecklistSection({
         <span>{title}</span>
         <span>{checks.length}</span>
       </h3>
+      {description ? (
+        <p className="px-1 text-xs leading-5 text-muted-foreground">
+          {description}
+        </p>
+      ) : null}
       <ul className="grid gap-1 rounded-[22px] bg-card/45 p-1">
         {checks.map((check) => (
           <SetupItem key={check.id} check={check} onProjectAction={onProjectAction} />
@@ -376,7 +380,7 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
             onClick={() => setOpen(true)}
           >
             <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-warning-border/70 bg-warning-muted text-warning">
-              <Rocket className="size-4" aria-hidden="true" />
+              <ListChecks className="size-4" aria-hidden="true" />
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-2">
@@ -445,6 +449,7 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
           />
           <ChecklistSection
             title={tDashboard("readiness.optional")}
+            description={tDashboard("readiness.optionalDescription")}
             checks={groups.optional}
             onProjectAction={handleProjectAction}
           />

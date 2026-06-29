@@ -346,6 +346,19 @@
       "nvidiaRuntimeVisible": "NVIDIA runtime visible",
       "detailsUnavailable": "GPU details unavailable to backend"
     },
+    "systemNotes": {
+      "title": "Optional notes",
+      "badge": "Doesn't block setup",
+      "description": "These notes do not block CPU or local workflows.",
+      "defaultDescription": "You can finish this later when a workflow needs it.",
+      "gpuVisible": "{count} GPU(s) are visible: {names}. Workflows use them only when requested.",
+      "gpuRuntimeHidden": "This host supports GPU work, but containers cannot use the GPU yet. CPU and local workflows can run now.",
+      "gpuRuntimeHiddenWithRecommendation": "This host supports GPU work, but containers cannot use the GPU yet. CPU and local workflows can run now. {recommendation}",
+      "gpuHostOnly": "NVIDIA tools are available on the host, but containers cannot see GPUs yet. CPU and local workflows can run now.",
+      "gpuHostOnlyWithRecommendation": "NVIDIA tools are available on the host, but containers cannot see GPUs yet. CPU and local workflows can run now. {recommendation}",
+      "gpuError": "GPU status is unavailable. CPU and local workflows can run now. Details: {error}",
+      "gpuCpuOnly": "GPU acceleration is not enabled. CPU and local workflows can run now."
+    },
     "narrativeEmpty": "No runs yet — head to the Agent to start your first analysis!",
     "narrativeAllComplete": "All {total} runs completed successfully",
     "narrativeTotal": "{total} total runs",
@@ -370,6 +383,7 @@
       "progress": "{completed} of {total} required items ready",
       "blockers": "Required to start",
       "optional": "Optional",
+      "optionalDescription": "Optional items are not counted in required progress.",
       "completed": "Done",
       "refresh": "Refresh",
       "refreshing": "Refreshing…",

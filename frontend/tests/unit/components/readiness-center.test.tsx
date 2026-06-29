@@ -29,6 +29,7 @@ vi.mock("next-intl", () => ({
       "readiness.progress": `${values?.completed ?? 0} of ${values?.total ?? 0} required items ready`,
       "readiness.blockers": "Required to start",
       "readiness.optional": "Optional",
+      "readiness.optionalDescription": "Optional items are not counted in required progress.",
       "readiness.completed": "Done",
       "readiness.refresh": "Refresh",
       "readiness.refreshing": "Refreshing…",

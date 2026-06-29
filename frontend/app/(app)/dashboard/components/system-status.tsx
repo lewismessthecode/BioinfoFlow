@@ -15,12 +15,88 @@ import {
 } from "@/components/bioinfoflow/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
-import type { SystemHealth, GpuInfo } from "./dashboard-types";
+import type { SystemHealth, GpuInfo, ReadinessCheck } from "./dashboard-types";
 
 type SystemStatusProps = {
   health: SystemHealth | null;
   gpuInfo: GpuInfo | null;
+  optionalNotes?: ReadinessCheck[];
 };
+
+type DashboardTranslator = ReturnType<typeof useTranslations>;
+
+const readinessLabelKeys = {
+  backend: "readiness.checks.backend.label",
+  provider_key: "readiness.checks.provider_key.label",
+  docker: "readiness.checks.docker.label",
+  scheduler: "readiness.checks.scheduler.label",
+  gpu: "readiness.checks.gpu.label",
+  project: "readiness.checks.project.label",
+  workflow_registry: "readiness.checks.workflow_registry.label",
+  workflow_binding: "readiness.checks.workflow_binding.label",
+} as const;
+
+function readBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+function readNumber(value: unknown): number {
+  return typeof value === "number" ? value : 0;
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function readStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+}
+
+function labelForOptionalNote(tDashboard: DashboardTranslator, check: ReadinessCheck) {
+  const key = readinessLabelKeys[check.id as keyof typeof readinessLabelKeys];
+  return key ? tDashboard(key) : check.id;
+}
+
+function gpuOptionalNoteDescription(
+  tDashboard: DashboardTranslator,
+  check: ReadinessCheck,
+) {
+  const facts = check.facts ?? {};
+  const gpuCount = readNumber(facts.gpu_count);
+  const names = readStringList(facts.gpu_names).join(", ");
+  const recommendation = readString(facts.recommendation);
+  const error = readString(facts.error);
+
+  if (readBoolean(facts.usable_for_gpu_workflows) || (readBoolean(facts.runtime_visible_to_backend) && gpuCount > 0)) {
+    return tDashboard("systemNotes.gpuVisible", { count: gpuCount, names });
+  }
+  if (readBoolean(facts.docker_nvidia_runtime)) {
+    return recommendation
+      ? tDashboard("systemNotes.gpuRuntimeHiddenWithRecommendation", { recommendation })
+      : tDashboard("systemNotes.gpuRuntimeHidden");
+  }
+  if (readBoolean(facts.nvidia_smi_found)) {
+    return recommendation
+      ? tDashboard("systemNotes.gpuHostOnlyWithRecommendation", { recommendation })
+      : tDashboard("systemNotes.gpuHostOnly");
+  }
+  if (error && error !== "nvidia-smi not found") {
+    return tDashboard("systemNotes.gpuError", { error });
+  }
+  return tDashboard("systemNotes.gpuCpuOnly");
+}
+
+function descriptionForOptionalNote(
+  tDashboard: DashboardTranslator,
+  check: ReadinessCheck,
+) {
+  if (check.id === "gpu") {
+    return gpuOptionalNoteDescription(tDashboard, check);
+  }
+  return tDashboard("systemNotes.defaultDescription");
+}
 
 function hasNvidiaSignal(health: SystemHealth | null, gpuInfo: GpuInfo | null): boolean {
   return Boolean(
@@ -37,12 +113,13 @@ function gpuSummaryVariant(health: SystemHealth | null, gpuInfo: GpuInfo | null)
   return "neutral";
 }
 
-export function SystemStatus({ health, gpuInfo }: SystemStatusProps) {
+export function SystemStatus({ health, gpuInfo, optionalNotes = [] }: SystemStatusProps) {
   const tDashboard = useTranslations("dashboard");
   const gpuRows = gpuInfo?.gpus ?? [];
   const nvidiaSignal = hasNvidiaSignal(health, gpuInfo);
   const showNoGpu = !gpuInfo?.available && gpuRows.length === 0 && !nvidiaSignal;
   const showRuntimeOnly = !gpuInfo?.available && gpuRows.length === 0 && nvidiaSignal;
+  const hasGpuOptionalNote = optionalNotes.some((note) => note.id === "gpu");
 
   return (
     <CardRoot className="mb-5 flex flex-1 flex-col">
@@ -145,10 +222,37 @@ export function SystemStatus({ health, gpuInfo }: SystemStatusProps) {
               </div>
             ) : null}
 
-            {gpuInfo?.recommendation ? (
+            {gpuInfo?.recommendation && !hasGpuOptionalNote ? (
               <p className="text-xs leading-5 text-muted-foreground">
                 {gpuInfo.recommendation}
               </p>
+            ) : null}
+
+            {optionalNotes.length > 0 ? (
+              <section className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-foreground">
+                    {tDashboard("systemNotes.title")}
+                  </p>
+                  <span className="text-muted-foreground">
+                    {tDashboard("systemNotes.badge")}
+                  </span>
+                </div>
+                <p className="mt-1">{tDashboard("systemNotes.description")}</p>
+                <ul className="mt-2 grid gap-2">
+                  {optionalNotes.map((note) => (
+                    <li key={`${note.id}-${note.status}`} className="flex gap-2">
+                      <CircleAlert className="mt-1 size-3 shrink-0 text-warning" aria-hidden="true" />
+                      <span className="min-w-0">
+                        <span className="block font-medium text-foreground">
+                          {labelForOptionalNote(tDashboard, note)}
+                        </span>
+                        <span>{descriptionForOptionalNote(tDashboard, note)}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ) : null}
           </div>
         </div>
