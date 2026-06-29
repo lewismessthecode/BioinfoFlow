@@ -1,6 +1,6 @@
 "use client"
 
-import { type ChangeEvent, useRef, useState } from "react"
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -14,7 +14,11 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
-import type { ValidateWorkflowResponse, Workflow } from "@/lib/types"
+import {
+  getContainerRegistrySelectValue,
+  normalizeContainerRegistries,
+} from "@/lib/registry-utils"
+import type { ContainerRegistryConfig, ValidateWorkflowResponse, Workflow } from "@/lib/types"
 import { scrollEditorToLine } from "./workflow-code-editor"
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror"
 
@@ -53,6 +57,8 @@ export function WorkflowRegisterDialog({
   const [validationResult, setValidationResult] = useState<ValidateWorkflowResponse | null>(null)
   const [isValidating, setIsValidating] = useState(false)
   const [currentStep, setCurrentStep] = useState<RegistrationStep | null>(null)
+  const [imageRegistries, setImageRegistries] = useState<ContainerRegistryConfig[]>([])
+  const [registriesLoaded, setRegistriesLoaded] = useState(false)
   const editorRef = useRef<ReactCodeMirrorRef>(null)
   const validateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -61,6 +67,26 @@ export function WorkflowRegisterDialog({
     editorContent !== null &&
     form.sourceType === "local" &&
     form.localImportMode === "single-file"
+
+  const loadImageRegistries = useCallback(async () => {
+    if (registriesLoaded) {
+      return
+    }
+    try {
+      const { data } = await apiRequest<ContainerRegistryConfig[]>("/container-registries")
+      setImageRegistries(normalizeContainerRegistries(data))
+    } catch {
+      setImageRegistries([])
+    } finally {
+      setRegistriesLoaded(true)
+    }
+  }, [registriesLoaded])
+
+  useEffect(() => {
+    if (open) {
+      void loadImageRegistries()
+    }
+  }, [loadImageRegistries, open])
 
   /* ── validation ──────────────────────────────────────── */
 
@@ -219,6 +245,12 @@ export function WorkflowRegisterDialog({
       const payload: Record<string, unknown> = { source: form.sourceType, engine: form.engine }
       if (form.version.trim()) payload.version = form.version.trim()
       if (form.description.trim()) payload.description = form.description.trim()
+      const selectedRegistryConfig = imageRegistries.find(
+        (registry) => getContainerRegistrySelectValue(registry) === form.selectedRegistry.trim(),
+      )
+      if (selectedRegistryConfig?.id) {
+        payload.container_registry_id = selectedRegistryConfig.id
+      }
 
       if (form.sourceType === "nf-core") {
         payload.name = form.pipelineName.trim().replace(/^nf-core\//i, "")
@@ -233,6 +265,7 @@ export function WorkflowRegisterDialog({
           if (form.pipelineName.trim()) formData.set("name", form.pipelineName.trim())
           if (form.version.trim()) formData.set("version", form.version.trim())
           if (form.description.trim()) formData.set("description", form.description.trim())
+          if (selectedRegistryConfig?.id) formData.set("container_registry_id", selectedRegistryConfig.id)
           formData.set(
             "bundle_paths",
             JSON.stringify(form.bundleFiles.map((entry) => entry.relpath)),
@@ -345,6 +378,8 @@ export function WorkflowRegisterDialog({
               pipelineName={form.pipelineName}
               version={form.version}
               description={form.description}
+              imageRegistries={imageRegistries}
+              selectedRegistry={form.selectedRegistry}
               localImportMode={form.localImportMode}
               localFileName={form.localFileName}
               bundleLabel={form.bundleLabel}
@@ -363,6 +398,7 @@ export function WorkflowRegisterDialog({
               onPipelineNameChange={form.setPipelineName}
               onVersionChange={form.setVersion}
               onDescriptionChange={form.setDescription}
+              onSelectedRegistryChange={form.setSelectedRegistry}
               onLocalImportModeChange={handleLocalImportModeChange}
               onLocalFileChange={handleLocalFileChangeGuarded}
               onBundleDirectoryChange={handleBundleDirectoryChange}
@@ -384,6 +420,8 @@ export function WorkflowRegisterDialog({
             engine={form.engine}
             sourceType={form.sourceType}
             version={form.version}
+            imageRegistries={imageRegistries}
+            selectedRegistry={form.selectedRegistry}
             hasEditor={hasEditor}
             isValidating={isValidating}
             validationResult={validationResult}

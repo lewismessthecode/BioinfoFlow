@@ -36,6 +36,9 @@ export default function ImagesPage() {
     setImportMethod,
     imageName,
     setImageName,
+    selectedRegistry,
+    setSelectedRegistry,
+    imageRegistries,
     isLoading,
     isSubmitting,
     tarballFile,
@@ -131,6 +134,9 @@ export default function ImagesPage() {
                 onImageNameChange={setImageName}
                 tarballFile={tarballFile}
                 onTarballFileChange={handleTarballFileChange}
+                registries={imageRegistries}
+                selectedRegistry={selectedRegistry}
+                onSelectedRegistryChange={setSelectedRegistry}
                 isSubmitting={isSubmitting}
                 onPull={handlePullImage}
               />
@@ -148,6 +154,9 @@ export default function ImagesPage() {
             onImageNameChange={setImageName}
             tarballFile={tarballFile}
             onTarballFileChange={handleTarballFileChange}
+            registries={imageRegistries}
+            selectedRegistry={selectedRegistry}
+            onSelectedRegistryChange={setSelectedRegistry}
             isSubmitting={isSubmitting}
             onPull={handlePullImage}
           />

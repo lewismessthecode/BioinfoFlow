@@ -173,6 +173,69 @@ describe("useImagesPage", () => {
     expect(toastSuccessMock).toHaveBeenCalled()
   })
 
+  it("uses a selected configured registry when pulling from the upload dialog", async () => {
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/images") {
+        return {
+          data: [],
+          meta: { status: imageStatus() },
+        }
+      }
+      if (path === "/container-registries") {
+        return {
+          data: [
+            {
+              id: "registry-harbor",
+              name: "Lab Harbor",
+              endpoint: "harbor.local:5000",
+              provider: "harbor",
+            },
+          ],
+          meta: undefined,
+        }
+      }
+      if (path === "/images/pull" && options?.method === "POST") {
+        return { data: makeImage({ status: "pulling" }), meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper()
+    const { result } = renderHook(() => useImagesPage(), { wrapper: Wrapper })
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    await act(async () => {
+      result.current.openRegistryDialog()
+    })
+
+    await waitFor(() => {
+      expect(result.current.imageRegistries).toHaveLength(1)
+    })
+
+    act(() => {
+      result.current.setSelectedRegistry("registry-harbor")
+      result.current.setImageName("team/tool:2.0.0")
+    })
+
+    await act(async () => {
+      result.current.handlePullImage()
+    })
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenCalledWith("/images/pull", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "team/tool",
+          tag: "2.0.0",
+          registry_id: "registry-harbor",
+          registry: "harbor.local:5000",
+          project_id: undefined,
+        }),
+      }),
+    )
+  })
+
   it("includes the active project id in tarball uploads", async () => {
     apiRequestMock.mockImplementation(async (path, options) => {
       if (path === "/images") {

@@ -13,6 +13,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  AUTOMATIC_REGISTRY_VALUE,
+  getContainerRegistryLabel,
+  getContainerRegistrySelectValue,
+} from "@/lib/registry-utils"
+import type { ContainerRegistryConfig } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 type ImportMethod = "registry" | "tarball"
@@ -26,6 +32,9 @@ interface ImageUploadDialogProps {
   onImageNameChange: (name: string) => void
   tarballFile: File | null
   onTarballFileChange: (event: ChangeEvent<HTMLInputElement>) => void
+  registries: ContainerRegistryConfig[]
+  selectedRegistry: string
+  onSelectedRegistryChange: (registry: string) => void
   isSubmitting: boolean
   onPull: () => void
 }
@@ -39,11 +48,15 @@ export function ImageUploadDialog({
   onImageNameChange,
   tarballFile,
   onTarballFileChange,
+  registries,
+  selectedRegistry,
+  onSelectedRegistryChange,
   isSubmitting,
   onPull,
 }: ImageUploadDialogProps) {
   const tImages = useTranslations("images")
   const tCommon = useTranslations("common")
+  const hasRegistryOptions = importMethod === "registry" && registries.length > 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -59,6 +72,7 @@ export function ImageUploadDialog({
               {(["registry", "tarball"] as const).map((method) => (
                 <button
                   key={method}
+                  type="button"
                   onClick={() => onImportMethodChange(method)}
                   className={cn(
                     "flex flex-col items-center gap-1 p-3 rounded-lg border text-sm transition-colors",
@@ -83,6 +97,35 @@ export function ImageUploadDialog({
                 value={imageName}
                 onChange={(e) => onImageNameChange(e.target.value)}
               />
+              {hasRegistryOptions ? (
+                <div className="space-y-2 pt-1">
+                  <Label htmlFor="image-registry">{tImages("uploadDialog.registry")}</Label>
+                  <select
+                    id="image-registry"
+                    value={selectedRegistry}
+                    onChange={(event) => onSelectedRegistryChange(event.target.value)}
+                    className={cn(
+                      "border-input h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow]",
+                      "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+                    )}
+                  >
+                    <option value={AUTOMATIC_REGISTRY_VALUE}>
+                      {tImages("uploadDialog.registryAutomatic")}
+                    </option>
+                    {registries.map((registry) => {
+                      const value = getContainerRegistrySelectValue(registry)
+                      return (
+                        <option key={registry.id ?? value} value={value}>
+                          {getContainerRegistryLabel(registry)}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    {tImages("uploadDialog.registryHint")}
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="space-y-2">

@@ -19,8 +19,13 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  AUTOMATIC_REGISTRY_VALUE,
+  getContainerRegistryLabel,
+  getContainerRegistrySelectValue,
+} from "@/lib/registry-utils"
 import { cn } from "@/lib/utils"
-import type { ValidateWorkflowResponse } from "@/lib/types"
+import type { ContainerRegistryConfig, ValidateWorkflowResponse } from "@/lib/types"
 import { WorkflowCodeEditor } from "./workflow-code-editor"
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror"
 import { ValidationBadge } from "./register-preview-panel"
@@ -66,6 +71,8 @@ interface RegisterFormFieldsProps {
   pipelineName: string
   version: string
   description: string
+  imageRegistries: ContainerRegistryConfig[]
+  selectedRegistry: string
   localImportMode: LocalImportMode
   localFileName: string
   bundleLabel: string
@@ -84,6 +91,7 @@ interface RegisterFormFieldsProps {
   onPipelineNameChange: (value: string) => void
   onVersionChange: (value: string) => void
   onDescriptionChange: (value: string) => void
+  onSelectedRegistryChange: (value: string) => void
   onLocalImportModeChange: (mode: LocalImportMode) => void
   onLocalFileChange: (event: ChangeEvent<HTMLInputElement>) => void
   onBundleDirectoryChange: (event: ChangeEvent<HTMLInputElement>) => void
@@ -98,6 +106,8 @@ export function RegisterFormFields({
   pipelineName,
   version,
   description,
+  imageRegistries,
+  selectedRegistry,
   localImportMode,
   localFileName,
   bundleLabel,
@@ -116,6 +126,7 @@ export function RegisterFormFields({
   onPipelineNameChange,
   onVersionChange,
   onDescriptionChange,
+  onSelectedRegistryChange,
   onLocalImportModeChange,
   onLocalFileChange,
   onBundleDirectoryChange,
@@ -215,6 +226,38 @@ export function RegisterFormFields({
           })}
         </div>
       </div>
+
+      {imageRegistries.length > 0 ? (
+        <div className="space-y-2">
+          <Label htmlFor="workflow-image-registry">
+            {tWorkflows("registerDialog.fields.imageRegistry")}
+          </Label>
+          <select
+            id="workflow-image-registry"
+            value={selectedRegistry}
+            onChange={(event) => onSelectedRegistryChange(event.target.value)}
+            className={cn(
+              "border-input h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow]",
+              "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+            )}
+          >
+            <option value={AUTOMATIC_REGISTRY_VALUE}>
+              {tWorkflows("registerDialog.registry.automatic")}
+            </option>
+            {imageRegistries.map((registry) => {
+              const value = getContainerRegistrySelectValue(registry)
+              return (
+                <option key={registry.id ?? value} value={value}>
+                  {getContainerRegistryLabel(registry)}
+                </option>
+              )
+            })}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            {tWorkflows("registerDialog.registry.hint")}
+          </p>
+        </div>
+      ) : null}
 
       {/* pipeline name + version */}
       <div className="grid gap-3 md:grid-cols-2">

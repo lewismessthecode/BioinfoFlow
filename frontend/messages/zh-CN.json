@@ -731,7 +731,12 @@
         "entrypointRelpath": "入口文件相对路径",
         "entrypointSelect": "入口文件",
         "workflowFile": "工作流文件（.nf 或 .wdl）",
+        "imageRegistry": "镜像仓库",
         "description": "描述（可选）"
+      },
+      "registry": {
+        "automatic": "自动",
+        "hint": "可选。为工作流镜像选择已配置的仓库，或保持自动以使用工作流中写明的镜像引用。"
       },
       "localModes": {
         "bundle": "Bundle 目录",
@@ -791,6 +796,7 @@
         "bundleName": "Bundle：{name}（{count} 个文件）",
         "bundlePath": "Bundle 目录：{path}",
         "entrypointRelpath": "入口文件：{path}",
+        "imageRegistry": "镜像仓库",
         "runtimeAssets": "运行资产需另行确认",
         "afterRegistration": "注册后",
         "latest": "最新",
@@ -1242,6 +1248,9 @@
         "tarball": "从 Tar 包"
       },
       "imageName": "镜像名称",
+      "registry": "镜像仓库",
+      "registryAutomatic": "自动",
+      "registryHint": "保持自动将按输入的镜像名称拉取。",
       "tarball": "Tar 包（.tar）",
       "selectedFile": "已选择：{name}",
       "submitting": "拉取中...",
@@ -1297,7 +1306,7 @@
       },
       "fields": {
         "name": "完整名称",
-        "registry": "Registry",
+        "registry": "镜像仓库",
         "tag": "标签",
         "size": "大小",
         "status": "状态",

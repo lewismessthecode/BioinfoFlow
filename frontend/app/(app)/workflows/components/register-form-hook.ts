@@ -18,6 +18,7 @@ export function useRegisterForm() {
   const [pipelineName, setPipelineName] = useState("")
   const [version, setVersion] = useState("")
   const [description, setDescription] = useState("")
+  const [selectedRegistry, setSelectedRegistry] = useState("")
   const [localImportMode, setLocalImportMode] = useState<LocalImportMode>("bundle")
   const [localFile, setLocalFile] = useState<File | null>(null)
   const [localFileName, setLocalFileName] = useState("")
@@ -32,6 +33,7 @@ export function useRegisterForm() {
     setPipelineName("")
     setVersion("")
     setDescription("")
+    setSelectedRegistry("")
     setLocalImportMode("bundle")
     setLocalFile(null)
     setLocalFileName("")
@@ -126,6 +128,8 @@ export function useRegisterForm() {
     setVersion,
     description,
     setDescription,
+    selectedRegistry,
+    setSelectedRegistry,
     localImportMode,
     setLocalImportMode,
     localFile,
