@@ -204,7 +204,6 @@ function AgentToolsPanel({
               ? t("toolsPanel.artifactCount", { count: artifactCount })
               : t("toolsPanel.noArtifacts")
           }
-          shortcut="⌃⇧G"
           Icon={FileSearch}
           onClick={onOpenPreview}
         />
@@ -217,14 +216,12 @@ function AgentToolsPanel({
         <ToolButton
           label={t("toolsPanel.browser")}
           description={t("toolsPanel.browserDescription")}
-          shortcut="⌘T"
           Icon={Globe}
           onClick={onOpenBrowser}
         />
         <ToolButton
           label={t("toolsPanel.files")}
           description={t("toolsPanel.filesDescription")}
-          shortcut="⌘P"
           Icon={FolderTree}
           onClick={onOpenFiles}
         />

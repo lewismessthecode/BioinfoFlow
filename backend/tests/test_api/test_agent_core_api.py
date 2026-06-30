@@ -1220,6 +1220,8 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
     data_root.mkdir()
     pdf_file = repo_root / "summary.pdf"
     pdf_file.write_bytes(b"%PDF-1.7\nbinary-\xff\n")
+    html_file = repo_root / 'report "qc"; v1.html'
+    html_file.write_text("<h1>QC</h1>", encoding="utf-8")
 
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
     monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
@@ -1242,6 +1244,17 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
     assert download_resp.headers["content-type"].startswith("application/pdf")
     assert "inline" in download_resp.headers["content-disposition"]
     assert download_resp.content.startswith(b"%PDF-1.7")
+
+    html_download_resp = await async_client.get(
+        "/api/v1/agent/fs/download",
+        params={"path": str(html_file), "inline": "true"},
+    )
+    assert html_download_resp.status_code == 200
+    assert html_download_resp.headers["content-type"].startswith("text/html")
+    content_disposition = html_download_resp.headers["content-disposition"]
+    assert content_disposition.startswith("attachment")
+    assert 'filename="report _qc__ v1.html"' in content_disposition
+    assert "filename*=UTF-8''report%20%22qc%22%3B%20v1.html" in content_disposition
 
 
 @pytest.mark.asyncio

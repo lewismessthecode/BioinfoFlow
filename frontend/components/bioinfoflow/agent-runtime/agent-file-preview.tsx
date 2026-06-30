@@ -14,6 +14,7 @@ import { useTranslations } from "next-intl"
 
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { buildAgentFsDownloadUrl, type AgentFsFile } from "@/lib/agent-runtime"
 import { formatSize } from "@/lib/format-utils"
 import { cn } from "@/lib/utils"
@@ -36,6 +37,10 @@ export function AgentFilePreview({
   const kind = filePreviewKind(file)
   const inlineUrl = buildAgentFsDownloadUrl(file.path, { inline: true })
   const downloadUrl = buildAgentFsDownloadUrl(file.path)
+  const openLabel = t("files.openDefault")
+  const downloadLabel = t("files.download")
+  const addLabel = t("files.addToContext")
+  const copyLabel = t("files.copyPath")
 
   return (
     <div
@@ -59,48 +64,78 @@ export function AgentFilePreview({
           </div>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 rounded-lg bg-card px-2"
-            asChild
-          >
-            <a href={downloadUrl} target="_blank" rel="noreferrer">
-              <ExternalLink className="h-3.5 w-3.5" />
-              <span className="hidden 2xl:inline">{t("files.openDefault")}</span>
-            </a>
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 rounded-lg bg-card px-2"
-            asChild
-          >
-            <a href={downloadUrl}>
-              <Download className="h-3.5 w-3.5" />
-              <span className="hidden 2xl:inline">{t("files.download")}</span>
-            </a>
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-8 rounded-lg bg-card px-2"
-            onClick={() => onAddToContext(file.path)}
-          >
-            <Paperclip className="h-3.5 w-3.5" />
-            <span className="hidden xl:inline">{t("files.addToContext")}</span>
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-8 rounded-lg bg-card px-2"
-            onClick={() => onCopyPath(file.path)}
-          >
-            <Copy className="h-3.5 w-3.5" />
-            <span className="hidden xl:inline">{t("files.copyPath")}</span>
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 rounded-lg bg-card px-2"
+                asChild
+              >
+                <a
+                  href={downloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={openLabel}
+                  title={openLabel}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span className="hidden 2xl:inline">{openLabel}</span>
+                </a>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{openLabel}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 rounded-lg bg-card px-2"
+                asChild
+              >
+                <a href={downloadUrl} aria-label={downloadLabel} title={downloadLabel}>
+                  <Download className="h-3.5 w-3.5" />
+                  <span className="hidden 2xl:inline">{downloadLabel}</span>
+                </a>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{downloadLabel}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 rounded-lg bg-card px-2"
+                onClick={() => onAddToContext(file.path)}
+                aria-label={addLabel}
+                title={addLabel}
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                <span className="hidden xl:inline">{addLabel}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{addLabel}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 rounded-lg bg-card px-2"
+                onClick={() => onCopyPath(file.path)}
+                aria-label={copyLabel}
+                title={copyLabel}
+              >
+                <Copy className="h-3.5 w-3.5" />
+                <span className="hidden xl:inline">{copyLabel}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{copyLabel}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
       <FilePreviewBody file={file} kind={kind} inlineUrl={inlineUrl} />

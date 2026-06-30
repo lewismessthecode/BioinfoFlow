@@ -229,8 +229,9 @@ describe("FilesTab", () => {
     })
     expect(screen.getByTestId("file-preview-pane").querySelector("iframe")).toHaveAttribute(
       "src",
-      `/agent/fs/download?path=${encodeURIComponent(pdfPath)}&inline=true`,
+      buildAgentFsDownloadUrl(pdfPath, { inline: true }),
     )
+    expect(buildAgentFsDownloadUrl).toHaveBeenCalledWith(pdfPath, { inline: true })
 
     fireEvent.click(screen.getByRole("button", { name: "metrics.csv" }))
     expect(await screen.findByRole("table")).toHaveTextContent("reads")
