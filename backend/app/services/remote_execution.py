@@ -6,6 +6,8 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+import asyncssh
+
 from app.utils.exceptions import BadRequestError
 
 
@@ -21,6 +23,9 @@ class RemoteConnectionConfig:
     port: int | None = None
     ssh_alias: str | None = None
     key_path: str | None = None
+    password: str | None = None
+    private_key: str | None = None
+    passphrase: str | None = None
     ssh_config_path: str | None = None
     status: str = "unknown"
     skill_summary: str | None = None
@@ -105,9 +110,11 @@ class SshRemoteExecutor:
         *,
         ssh_bin: str = "ssh",
         process_factory: ProcessFactory | None = None,
+        async_executor: AsyncSshRemoteExecutor | None = None,
     ) -> None:
         self.ssh_bin = ssh_bin
         self.process_factory = process_factory or asyncio.create_subprocess_exec
+        self.async_executor = async_executor or AsyncSshRemoteExecutor()
 
     def build_argv(
         self,
@@ -148,6 +155,13 @@ class SshRemoteExecutor:
             raise BadRequestError("timeout_seconds must be >= 1")
         if output_limit < 1:
             raise BadRequestError("output_limit must be >= 1")
+        if _uses_stored_credential(connection):
+            return await self.async_executor.run(
+                connection,
+                command,
+                timeout_seconds=timeout_seconds,
+                output_limit=output_limit,
+            )
 
         argv = self.build_argv(
             connection,
@@ -203,6 +217,16 @@ class SshRemoteExecutor:
             raise BadRequestError("timeout_seconds must be >= 1")
         if output_limit < 1:
             raise BadRequestError("output_limit must be >= 1")
+        if _uses_stored_credential(connection):
+            async for frame in self.async_executor.stream(
+                connection,
+                command,
+                timeout_seconds=timeout_seconds,
+                output_limit=output_limit,
+            ):
+                yield frame
+            return
+
         argv = self.build_argv(
             connection,
             command,
@@ -270,6 +294,111 @@ class SshRemoteExecutor:
             type="exit",
             exit_code=int(process.returncode if process.returncode is not None else -1),
             timed_out=timed_out,
+        )
+
+
+class AsyncSshRemoteExecutor:
+    def __init__(
+        self,
+        *,
+        connect_factory: Callable[..., Any] | None = None,
+    ) -> None:
+        self.connect_factory = connect_factory or asyncssh.connect
+
+    async def run(
+        self,
+        connection: RemoteConnectionConfig,
+        command: str,
+        *,
+        timeout_seconds: int,
+        output_limit: int,
+    ) -> RemoteCommandResult:
+        if not command.strip():
+            raise BadRequestError("remote command must be a non-empty string")
+        if timeout_seconds < 1:
+            raise BadRequestError("timeout_seconds must be >= 1")
+        if output_limit < 1:
+            raise BadRequestError("output_limit must be >= 1")
+
+        async with self._connect(connection, timeout_seconds) as client:
+            try:
+                result = await asyncio.wait_for(
+                    client.run(command, check=False),
+                    timeout=timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                return RemoteCommandResult(
+                    exit_code=-9,
+                    stdout="",
+                    stderr="",
+                    timed_out=True,
+                    truncated=False,
+                    stdout_truncated=False,
+                    stderr_truncated=False,
+                )
+
+        stdout, stdout_truncated = _limit_text(str(result.stdout or ""), output_limit)
+        stderr, stderr_truncated = _limit_text(str(result.stderr or ""), output_limit)
+        return RemoteCommandResult(
+            exit_code=int(result.exit_status if result.exit_status is not None else 0),
+            stdout=stdout,
+            stderr=stderr,
+            timed_out=False,
+            truncated=stdout_truncated or stderr_truncated,
+            stdout_truncated=stdout_truncated,
+            stderr_truncated=stderr_truncated,
+        )
+
+    async def stream(
+        self,
+        connection: RemoteConnectionConfig,
+        command: str,
+        *,
+        timeout_seconds: int,
+        output_limit: int,
+    ) -> AsyncIterator[RemoteOutputFrame]:
+        result = await self.run(
+            connection,
+            command,
+            timeout_seconds=timeout_seconds,
+            output_limit=output_limit,
+        )
+        if result.stdout:
+            yield RemoteOutputFrame(type="stdout", data=result.stdout)
+        if result.stderr:
+            yield RemoteOutputFrame(type="stderr", data=result.stderr)
+        if result.truncated:
+            yield RemoteOutputFrame(
+                type="truncated",
+                data=f"remote output truncated after {output_limit} bytes",
+            )
+        yield RemoteOutputFrame(
+            type="exit",
+            exit_code=result.exit_code,
+            timed_out=result.timed_out,
+        )
+
+    def _connect(
+        self,
+        connection: RemoteConnectionConfig,
+        timeout_seconds: int,
+    ):
+        client_keys = None
+        if connection.private_key:
+            client_keys = [
+                asyncssh.import_private_key(
+                    connection.private_key,
+                    passphrase=connection.passphrase,
+                )
+            ]
+        return self.connect_factory(
+            connection.host,
+            port=connection.port or 22,
+            username=connection.username,
+            password=connection.password,
+            client_keys=client_keys,
+            known_hosts=None,
+            login_timeout=timeout_seconds,
         )
 
 
@@ -342,6 +471,17 @@ class _StreamOutputBudget:
             self.remaining = 0
             self.truncated = True
             return kept, True
+
+
+def _limit_text(value: str, output_limit: int) -> tuple[str, bool]:
+    encoded = value.encode("utf-8")
+    if len(encoded) <= output_limit:
+        return value, False
+    return encoded[:output_limit].decode("utf-8", errors="replace"), True
+
+
+def _uses_stored_credential(connection: RemoteConnectionConfig) -> bool:
+    return bool(connection.password or connection.private_key)
 
 
 def _format_target(host: str, username: str | None) -> str:

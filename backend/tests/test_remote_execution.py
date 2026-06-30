@@ -4,7 +4,11 @@ import asyncio
 
 import pytest
 
-from app.services.remote_execution import RemoteConnectionConfig, SshRemoteExecutor
+from app.services.remote_execution import (
+    AsyncSshRemoteExecutor,
+    RemoteConnectionConfig,
+    SshRemoteExecutor,
+)
 
 
 class _FakeStream:
@@ -44,6 +48,30 @@ class _FakeProcess:
     def kill(self) -> None:
         self.killed = True
         self.returncode = -9
+
+
+class _FakeAsyncSshResult:
+    def __init__(self, *, stdout: str = "", stderr: str = "", exit_status: int = 0):
+        self.stdout = stdout
+        self.stderr = stderr
+        self.exit_status = exit_status
+
+
+class _FakeAsyncSshClient:
+    def __init__(self, result: _FakeAsyncSshResult):
+        self.result = result
+        self.commands: list[str] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return None
+
+    async def run(self, command: str, *, check: bool):
+        assert check is False
+        self.commands.append(command)
+        return self.result
 
 
 @pytest.mark.asyncio
@@ -88,6 +116,45 @@ async def test_ssh_executor_builds_open_ssh_argv_without_shell_string():
     ]
     assert captured["kwargs"]["stdout"] == asyncio.subprocess.PIPE
     assert captured["kwargs"]["stderr"] == asyncio.subprocess.PIPE
+    assert result.exit_code == 0
+    assert result.stdout == "ok\n"
+
+
+@pytest.mark.asyncio
+async def test_ssh_executor_uses_asyncssh_for_password_connections():
+    captured: dict[str, object] = {}
+    client = _FakeAsyncSshClient(_FakeAsyncSshResult(stdout="ok\n"))
+
+    def connect_factory(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return client
+
+    executor = SshRemoteExecutor(
+        async_executor=AsyncSshRemoteExecutor(connect_factory=connect_factory)
+    )
+    connection = RemoteConnectionConfig(
+        id="conn-1",
+        name="Cluster",
+        host="cluster.example.org",
+        username="alice",
+        port=2222,
+        password="secret",
+    )
+
+    result = await executor.run(
+        connection,
+        "hostname",
+        timeout_seconds=5,
+        output_limit=100,
+    )
+
+    assert captured["args"] == ("cluster.example.org",)
+    assert captured["kwargs"]["username"] == "alice"
+    assert captured["kwargs"]["password"] == "secret"
+    assert captured["kwargs"]["port"] == 2222
+    assert captured["kwargs"]["known_hosts"] is None
+    assert client.commands == ["hostname"]
     assert result.exit_code == 0
     assert result.stdout == "ok\n"
 

@@ -12,6 +12,7 @@ from app.models.remote_connection import RemoteConnectionAuthMethod
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.schemas.remote_connection import validate_remote_connection_auth_fields
+from app.services.llm.credentials import decrypt_secret, encrypt_secret
 from app.services.remote_execution import RemoteConnectionConfig, SshRemoteExecutor
 from app.utils.exceptions import ConflictError, ValidationError
 
@@ -24,6 +25,9 @@ REMOTE_CONNECTION_TARGET_FIELDS = frozenset(
         "auth_method",
         "ssh_alias",
         "key_path",
+        "encrypted_password",
+        "encrypted_private_key",
+        "encrypted_passphrase",
     }
 )
 
@@ -115,10 +119,13 @@ class RemoteConnectionService:
         *,
         workspace_id: str,
     ) -> RemoteConnection:
+        data = _credential_payload(data, existing=None)
         validate_remote_connection_auth_fields(
-            auth_method=data.get("auth_method", RemoteConnectionAuthMethod.SSH_CONFIG),
+            auth_method=data.get("auth_method", RemoteConnectionAuthMethod.PASSWORD),
             ssh_alias=data.get("ssh_alias"),
             key_path=data.get("key_path"),
+            password=data.get("encrypted_password"),
+            private_key=data.get("encrypted_private_key"),
         )
         try:
             return await self.repo.create(
@@ -137,10 +144,16 @@ class RemoteConnectionService:
         connection: RemoteConnection,
         data: dict,
     ) -> RemoteConnection:
+        data = _credential_payload(data, existing=connection)
         validate_remote_connection_auth_fields(
             auth_method=data.get("auth_method", connection.auth_method),
             ssh_alias=data.get("ssh_alias", connection.ssh_alias),
             key_path=data.get("key_path", connection.key_path),
+            password=data.get("encrypted_password", connection.encrypted_password),
+            private_key=data.get(
+                "encrypted_private_key",
+                connection.encrypted_private_key,
+            ),
         )
         if _changes_remote_target(connection, data):
             data = {
@@ -209,9 +222,67 @@ def remote_connection_config_from_model(
         port=connection.port,
         ssh_alias=ssh_alias,
         key_path=key_path,
+        password=(
+            decrypt_secret(connection.encrypted_password)
+            if connection.auth_method == RemoteConnectionAuthMethod.PASSWORD
+            else None
+        ),
+        private_key=(
+            decrypt_secret(connection.encrypted_private_key)
+            if connection.auth_method == RemoteConnectionAuthMethod.PRIVATE_KEY
+            else None
+        ),
+        passphrase=(
+            decrypt_secret(connection.encrypted_passphrase)
+            if connection.auth_method == RemoteConnectionAuthMethod.PRIVATE_KEY
+            else None
+        ),
         status=connection.last_status,
         skill_summary=connection.skill_instructions,
     )
+
+
+def _credential_payload(
+    data: dict,
+    *,
+    existing: RemoteConnection | None,
+) -> dict:
+    next_data = dict(data)
+    password = next_data.pop("password", None)
+    private_key = next_data.pop("private_key", None)
+    passphrase = next_data.pop("passphrase", None)
+    auth_method = next_data.get(
+        "auth_method",
+        existing.auth_method if existing is not None else RemoteConnectionAuthMethod.PASSWORD,
+    )
+
+    if auth_method == RemoteConnectionAuthMethod.PASSWORD:
+        if password is not None:
+            next_data["encrypted_password"] = encrypt_secret(password)
+        next_data["encrypted_private_key"] = None
+        next_data["encrypted_passphrase"] = None
+        next_data["ssh_alias"] = None
+        next_data["key_path"] = None
+    elif auth_method == RemoteConnectionAuthMethod.PRIVATE_KEY:
+        if private_key is not None:
+            next_data["encrypted_private_key"] = encrypt_secret(private_key)
+        if passphrase is not None:
+            next_data["encrypted_passphrase"] = (
+                encrypt_secret(passphrase) if passphrase else None
+            )
+        next_data["encrypted_password"] = None
+        next_data["ssh_alias"] = None
+        next_data["key_path"] = None
+    else:
+        next_data["encrypted_password"] = None
+        next_data["encrypted_private_key"] = None
+        next_data["encrypted_passphrase"] = None
+        if auth_method != RemoteConnectionAuthMethod.SSH_CONFIG:
+            next_data["ssh_alias"] = None
+        if auth_method != RemoteConnectionAuthMethod.KEY_FILE:
+            next_data["key_path"] = None
+
+    return next_data
 
 
 def _remote_test_error_message(exc: Exception) -> str:

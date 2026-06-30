@@ -188,23 +188,39 @@ async def test_remote_connection_crud_is_scoped_to_workspace(async_client, app):
 
 
 @pytest.mark.asyncio
-async def test_remote_connection_validation_rejects_secret_material(async_client):
-    invalid_auth = await async_client.post(
+async def test_remote_connection_accepts_and_redacts_password_auth(async_client):
+    create_resp = await async_client.post(
         "/api/v1/connections",
-        json=_connection_payload(auth_method="password"),
+        json=_connection_payload(
+            auth_method="password",
+            key_path=None,
+            password="super-secret",
+        ),
     )
-    assert invalid_auth.status_code == 422
-    assert invalid_auth.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert create_resp.status_code == 201
+    created = create_resp.json()["data"]
+    assert created["auth_method"] == "password"
+    assert "password" not in created
+    assert "encrypted_password" not in created
 
-    secret_payload = _connection_payload(
-        auth_method="agent",
-        key_path=None,
-        password="super-secret",
-        private_key="-----BEGIN OPENSSH PRIVATE KEY-----",
+
+@pytest.mark.asyncio
+async def test_remote_connection_accepts_and_redacts_private_key_auth(async_client):
+    create_resp = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(
+            auth_method="private_key",
+            key_path=None,
+            private_key="-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+            passphrase="optional-passphrase",
+        ),
     )
-    secret_resp = await async_client.post("/api/v1/connections", json=secret_payload)
-    assert secret_resp.status_code == 422
-    assert secret_resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert create_resp.status_code == 201
+    created = create_resp.json()["data"]
+    assert created["auth_method"] == "private_key"
+    assert "private_key" not in created
+    assert "passphrase" not in created
+    assert "encrypted_private_key" not in created
 
 
 @pytest.mark.asyncio
@@ -230,6 +246,18 @@ async def test_remote_connection_validation_enforces_auth_method_fields(async_cl
         ),
     )
     assert ssh_config_without_alias.status_code == 422
+
+    password_without_secret = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="password", key_path=None),
+    )
+    assert password_without_secret.status_code == 422
+
+    private_key_without_secret = await async_client.post(
+        "/api/v1/connections",
+        json=_connection_payload(auth_method="private_key", key_path=None),
+    )
+    assert private_key_without_secret.status_code == 422
 
 
 @pytest.mark.asyncio
