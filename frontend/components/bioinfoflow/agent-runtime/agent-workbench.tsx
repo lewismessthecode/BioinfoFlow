@@ -72,7 +72,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [optimisticTurn, setOptimisticTurn] = useState<AgentRuntimeTurn | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
-    const [sidecarOpen, setSidecarOpen] = useState(true)
+    const [sidecarOpen, setSidecarOpen] = useState(() => !isMobile)
     const [artifactState, setArtifactState] = useState<{
       sessionId: string
       artifacts: AgentRuntimeArtifact[]
@@ -154,8 +154,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     )
     // The side panel is now secondary detail. Approvals surface inline and above
     // the composer, so pending decisions no longer force the drawer open.
-    const sidecarVisible = sidecarOpen && !isMobile
-    const sidecarLabel = sidecarVisible
+    const desktopSidecarVisible = sidecarOpen && !isMobile
+    const mobileSidecarVisible = sidecarOpen && isMobile
+    const sidecarLabel = desktopSidecarVisible || mobileSidecarVisible
       ? t("sidecar.collapse")
       : t("sidecar.expand")
     const environmentLabel = environmentOpen
@@ -177,10 +178,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setHasSubmittedDraft(false)
           setOptimisticTurn(null)
           setEnvironmentOpen(false)
-          setSidecarOpen(true)
+          setSidecarOpen(!isMobile)
         },
       }),
-      [interrupt, setActiveSessionId],
+      [interrupt, isMobile, setActiveSessionId],
     )
 
     useEffect(() => {
@@ -253,13 +254,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     }, [])
 
     const toggleSidecar = useCallback(() => {
-      if (sidecarVisible) {
+      if (desktopSidecarVisible || mobileSidecarVisible) {
         closeSidecar()
         return
       }
       setEnvironmentOpen(false)
       setSidecarOpen(true)
-    }, [closeSidecar, sidecarVisible])
+    }, [closeSidecar, desktopSidecarVisible, mobileSidecarVisible])
 
     const toggleEnvironment = useCallback(() => {
       setEnvironmentOpen((current) => {
@@ -295,7 +296,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             onClick={toggleSidecar}
             aria-label={sidecarLabel}
           >
-            {sidecarVisible ? (
+            {desktopSidecarVisible || mobileSidecarVisible ? (
               <PanelRightClose className="h-4 w-4" />
             ) : (
               <PanelRightOpen className="h-4 w-4" />
@@ -310,7 +311,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       environmentOpen,
       setNavbarActions,
       sidecarLabel,
-      sidecarVisible,
+      desktopSidecarVisible,
+      mobileSidecarVisible,
       toggleEnvironment,
       toggleSidecar,
     ])
@@ -338,7 +340,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onRemoveContextAttachment={removeContextAttachment}
         selectedRemoteConnectionId={selectedRemoteConnectionId}
         onRemoteConnectionChange={handleRemoteConnectionChange}
-        compactControls={sidecarVisible}
+        compactControls={desktopSidecarVisible}
       />
     )
 
@@ -386,7 +388,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             </div>
           ) : null}
 
-          {environmentOpen && !sidecarVisible ? (
+          {environmentOpen && !desktopSidecarVisible ? (
             <div
               className="pointer-events-auto absolute right-3 top-3 z-20 w-[min(440px,calc(100%-1.5rem))] sm:right-5 sm:top-5"
               data-testid="agent-environment-floating-panel"
@@ -404,15 +406,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         <div
           className={cn(
             "hidden shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-out lg:flex",
-            sidecarVisible
+            desktopSidecarVisible
               ? "w-[clamp(360px,32vw,500px)] translate-x-0 opacity-100"
               : "w-0 translate-x-4 opacity-0",
           )}
-          aria-hidden={!sidecarVisible}
+          aria-hidden={!desktopSidecarVisible}
           data-testid="agent-sidecar-column"
         >
           <div className="flex h-full w-full shrink-0 items-stretch">
-            {sidecarVisible ? (
+            {desktopSidecarVisible ? (
                 <AgentTabbedPanel
                   projectId={projectId}
                   sessionId={state.session?.id}
@@ -423,6 +425,22 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             ) : null}
           </div>
         </div>
+
+        {mobileSidecarVisible ? (
+          <div
+            className="fixed inset-0 z-50 bg-background/80 p-3 backdrop-blur-sm lg:hidden"
+            data-testid="agent-mobile-sidecar-overlay"
+          >
+            <AgentTabbedPanel
+              projectId={projectId}
+              sessionId={state.session?.id}
+              events={state.events}
+              onClose={closeSidecar}
+              onAddContext={addContextAttachment}
+              className="flex h-full w-full flex-col rounded-xl border border-border/70 shadow-[0_18px_48px_rgba(60,64,67,0.12)]"
+            />
+          </div>
+        ) : null}
       </div>
     )
   },

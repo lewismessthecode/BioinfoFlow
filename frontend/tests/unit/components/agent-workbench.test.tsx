@@ -13,6 +13,7 @@ import { buildAgentRuntimeTimeline } from "@/lib/agent-runtime"
 
 const useAgentRuntimeMock = vi.fn()
 const useLlmSettingsMock = vi.fn()
+const useIsMobileMock = vi.fn(() => false)
 const setNavbarActionsMock = vi.fn()
 const apiRequestMock = vi.fn()
 
@@ -105,6 +106,10 @@ vi.mock("@/hooks/use-agent-runtime", () => ({
 
 vi.mock("@/hooks/use-llm-settings", () => ({
   useLlmSettings: () => useLlmSettingsMock(),
+}))
+
+vi.mock("@/hooks/use-media-query", () => ({
+  useIsMobile: () => useIsMobileMock(),
 }))
 
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
@@ -214,6 +219,8 @@ describe("AgentWorkbench", () => {
   beforeEach(() => {
     useAgentRuntimeMock.mockReset()
     useLlmSettingsMock.mockReset()
+    useIsMobileMock.mockReset()
+    useIsMobileMock.mockReturnValue(false)
     setNavbarActionsMock.mockReset()
     apiRequestMock.mockReset()
     apiRequestMock.mockImplementation((path: string) =>
@@ -308,8 +315,9 @@ describe("AgentWorkbench", () => {
     })
 
     expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
-    expect(screen.getByTestId("agent-sidecar-column")).toHaveClass(
-      "w-[clamp(360px,32vw,500px)]",
+    expect(screen.getByTestId("agent-sidecar-column")).toHaveAttribute(
+      "aria-hidden",
+      "false",
     )
     await waitFor(() => {
       expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
@@ -353,6 +361,35 @@ describe("AgentWorkbench", () => {
       "data-compact-controls",
       "true",
     )
+  })
+
+  it("opens the workspace panel as a mobile overlay", async () => {
+    useIsMobileMock.mockReturnValue(true)
+    setupRuntime({ session: baseSession })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    expect(screen.getByTestId("agent-sidecar-column")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    expect(screen.getByTestId("agent-mobile-sidecar-overlay")).toBeInTheDocument()
+    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Tools" })).toHaveAttribute(
+      "data-active",
+      "true",
+    )
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
+    })
   })
 
   it("moves the composer to the bottom after a turn exists", () => {

@@ -5,6 +5,7 @@ import json
 import mimetypes
 from pathlib import Path
 from typing import AsyncGenerator
+from urllib.parse import quote
 
 import aiofiles
 from fastapi import APIRouter, Depends, Query, Request
@@ -422,8 +423,10 @@ async def get_fs_file(
     if _is_sensitive_fs_path(target):
         raise PermissionDeniedError(f"File is not available through agent file browsing: {target}")
     size = _safe_size(target) or 0
-    raw = target.read_bytes()[:_FS_FILE_MAX_BYTES]
-    truncated = size > _FS_FILE_MAX_BYTES
+    async with aiofiles.open(target, "rb") as handle:
+        raw = await handle.read(_FS_FILE_MAX_BYTES + 1)
+    truncated = len(raw) > _FS_FILE_MAX_BYTES or size > _FS_FILE_MAX_BYTES
+    raw = raw[:_FS_FILE_MAX_BYTES]
     mime_type = _mime_type_for(target)
     binary = False
     try:
@@ -470,11 +473,12 @@ async def download_fs_file(
                     break
                 yield chunk
 
-    disposition = "inline" if inline else "attachment"
+    mime_type = _mime_type_for(target)
+    disposition = "inline" if inline and mime_type != "text/html" else "attachment"
     return StreamingResponse(
         file_iterator(),
-        media_type=_mime_type_for(target),
-        headers={"Content-Disposition": f'{disposition}; filename="{target.name}"'},
+        media_type=mime_type,
+        headers={"Content-Disposition": _content_disposition(disposition, target.name)},
     )
 
 
@@ -483,6 +487,19 @@ def _safe_size(path: Path) -> int | None:
         return path.stat().st_size
     except OSError:
         return None
+
+
+def _content_disposition(disposition: str, filename: str) -> str:
+    ascii_fallback = "".join(
+        char if 32 <= ord(char) < 127 and char not in {'"', "\\", ";"} else "_"
+        for char in filename
+    ).strip()
+    if not ascii_fallback:
+        ascii_fallback = "download"
+    return (
+        f'{disposition}; filename="{ascii_fallback}"; '
+        f"filename*=UTF-8''{quote(filename, safe='')}"
+    )
 
 
 def _is_sensitive_fs_path(path: Path) -> bool:
