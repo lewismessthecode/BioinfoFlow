@@ -70,7 +70,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [optimisticTurn, setOptimisticTurn] = useState<AgentRuntimeTurn | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
-    const [sidecarOpen, setSidecarOpen] = useState(false)
+    const [sidecarOpen, setSidecarOpen] = useState(true)
     const [artifactState, setArtifactState] = useState<{
       sessionId: string
       artifacts: AgentRuntimeArtifact[]
@@ -175,7 +175,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setHasSubmittedDraft(false)
           setOptimisticTurn(null)
           setEnvironmentOpen(false)
-          setSidecarOpen(false)
+          setSidecarOpen(true)
         },
       }),
       [interrupt, setActiveSessionId],
@@ -403,7 +403,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           className={cn(
             "hidden shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-out lg:flex",
             sidecarVisible
-              ? "w-1/2 translate-x-0 opacity-100"
+              ? "w-[clamp(360px,32vw,500px)] translate-x-0 opacity-100"
               : "w-0 translate-x-4 opacity-0",
           )}
           aria-hidden={!sidecarVisible}

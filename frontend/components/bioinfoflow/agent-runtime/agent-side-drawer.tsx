@@ -1,10 +1,22 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Eye, FolderTree, Globe, X } from "lucide-react"
+import Link from "next/link"
+import {
+  FileSearch,
+  FolderTree,
+  Globe,
+  ListChecks,
+  type LucideIcon,
+  Play,
+  SquareTerminal,
+  Workflow,
+  X,
+} from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
+import { useOptionalTerminalDock } from "@/components/bioinfoflow/terminal/terminal-dock-context"
 import {
   decisionScrollTargetId,
   listAgentRuntimeSessionArtifacts,
@@ -17,7 +29,7 @@ import { BrowserTab } from "./browser-tab"
 import { getPendingActions } from "./pending-actions"
 import { WorkspaceExplorerPanel } from "./workspace-explorer-panel"
 
-type AgentSideDrawerTab = "preview" | "files" | "browser"
+type AgentSideDrawerTab = "tools" | "preview" | "files" | "browser"
 
 type AgentSideDrawerProps = {
   projectId?: string | null
@@ -28,8 +40,9 @@ type AgentSideDrawerProps = {
   className?: string
 }
 
-const TABS: Array<{ key: AgentSideDrawerTab; labelKey: string; Icon: typeof Eye }> = [
-  { key: "preview", labelKey: "tabs.preview", Icon: Eye },
+const TABS: Array<{ key: AgentSideDrawerTab; labelKey: string; Icon: LucideIcon }> = [
+  { key: "tools", labelKey: "tabs.tools", Icon: ListChecks },
+  { key: "preview", labelKey: "tabs.preview", Icon: FileSearch },
   { key: "files", labelKey: "tabs.files", Icon: FolderTree },
   { key: "browser", labelKey: "tabs.browser", Icon: Globe },
 ]
@@ -43,8 +56,9 @@ export function AgentSideDrawer({
   className,
 }: AgentSideDrawerProps) {
   const t = useTranslations("agentRuntime")
-  const [activeTab, setActiveTab] = useState<AgentSideDrawerTab>("preview")
+  const [activeTab, setActiveTab] = useState<AgentSideDrawerTab>("tools")
   const [artifacts, setArtifacts] = useState<AgentRuntimeArtifact[]>([])
+  const terminalDock = useOptionalTerminalDock()
 
   const artifactEventCount = useMemo(
     () => events.filter((event) => event.type === "artifact.created").length,
@@ -82,13 +96,13 @@ export function AgentSideDrawer({
   return (
     <aside
       className={cn(
-        "pointer-events-auto hidden h-full w-[420px] overflow-hidden border-l border-border/70 bg-background lg:flex lg:flex-col",
-        "lg:w-[clamp(560px,50vw,900px)]",
+        "pointer-events-auto hidden h-full overflow-hidden border-l border-border/70 bg-background lg:flex lg:flex-col",
+        "lg:w-[clamp(360px,32vw,500px)]",
         className,
       )}
       data-testid="artifact-panel"
     >
-      <div className="flex h-12 items-center justify-between border-b border-border/60 px-2">
+      <div className="flex h-12 items-center justify-between border-b border-border/60 px-3">
         <div className="flex items-center gap-1">
           {TABS.map(({ key, labelKey, Icon }) => (
             <button
@@ -97,7 +111,7 @@ export function AgentSideDrawer({
               onClick={() => setActiveTab(key)}
               aria-label={t(labelKey)}
               className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
                 activeTab === key
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
@@ -112,7 +126,7 @@ export function AgentSideDrawer({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-8 w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
           onClick={onClose}
           aria-label={t("sidecar.close")}
         >
@@ -138,6 +152,15 @@ export function AgentSideDrawer({
           activeTab === "files" ? "overflow-hidden p-3" : "overflow-y-auto p-3",
         )}
       >
+        {activeTab === "tools" ? (
+          <AgentToolsPanel
+            artifactCount={visibleArtifacts.length}
+            onOpenPreview={() => setActiveTab("preview")}
+            onOpenFiles={() => setActiveTab("files")}
+            onOpenBrowser={() => setActiveTab("browser")}
+            onOpenTerminal={() => terminalDock?.toggleTerminal()}
+          />
+        ) : null}
         {activeTab === "preview" ? <ArtifactPreviewDrawer artifacts={visibleArtifacts} /> : null}
         {activeTab === "files" ? (
           <WorkspaceExplorerPanel projectId={projectId} onAddContext={onAddContext} />
@@ -145,5 +168,137 @@ export function AgentSideDrawer({
         {activeTab === "browser" ? <BrowserTab /> : null}
       </div>
     </aside>
+  )
+}
+
+function AgentToolsPanel({
+  artifactCount,
+  onOpenPreview,
+  onOpenFiles,
+  onOpenBrowser,
+  onOpenTerminal,
+}: {
+  artifactCount: number
+  onOpenPreview: () => void
+  onOpenFiles: () => void
+  onOpenBrowser: () => void
+  onOpenTerminal: () => void
+}) {
+  const t = useTranslations("agentRuntime")
+
+  return (
+    <div className="flex min-h-full flex-col justify-center gap-3 py-8" data-testid="agent-tools-panel">
+      <div className="mb-1 px-1">
+        <h2 className="text-sm font-semibold tracking-tight text-foreground">
+          {t("toolsPanel.title")}
+        </h2>
+        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+          {t("toolsPanel.description")}
+        </p>
+      </div>
+      <div className="grid gap-2">
+        <ToolButton
+          label={t("toolsPanel.review")}
+          description={
+            artifactCount > 0
+              ? t("toolsPanel.artifactCount", { count: artifactCount })
+              : t("toolsPanel.noArtifacts")
+          }
+          shortcut="⌃⇧G"
+          Icon={FileSearch}
+          onClick={onOpenPreview}
+        />
+        <ToolButton
+          label={t("toolsPanel.terminal")}
+          description={t("toolsPanel.terminalDescription")}
+          Icon={SquareTerminal}
+          onClick={onOpenTerminal}
+        />
+        <ToolButton
+          label={t("toolsPanel.browser")}
+          description={t("toolsPanel.browserDescription")}
+          shortcut="⌘T"
+          Icon={Globe}
+          onClick={onOpenBrowser}
+        />
+        <ToolButton
+          label={t("toolsPanel.files")}
+          description={t("toolsPanel.filesDescription")}
+          shortcut="⌘P"
+          Icon={FolderTree}
+          onClick={onOpenFiles}
+        />
+        <ToolLink
+          href="/workflows"
+          label={t("toolsPanel.workflows")}
+          description={t("toolsPanel.workflowsDescription")}
+          Icon={Workflow}
+        />
+        <ToolLink
+          href="/runs"
+          label={t("toolsPanel.runs")}
+          description={t("toolsPanel.runsDescription")}
+          Icon={Play}
+        />
+      </div>
+    </div>
+  )
+}
+
+function ToolButton({
+  label,
+  description,
+  shortcut,
+  Icon,
+  onClick,
+}: {
+  label: string
+  description: string
+  shortcut?: string
+  Icon: LucideIcon
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className="group flex min-h-12 w-full items-center gap-3 rounded-lg bg-muted/70 px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+      onClick={onClick}
+    >
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold text-foreground">{label}</span>
+        <span className="block truncate text-xs text-muted-foreground">{description}</span>
+      </span>
+      {shortcut ? (
+        <kbd className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
+          {shortcut}
+        </kbd>
+      ) : null}
+    </button>
+  )
+}
+
+function ToolLink({
+  href,
+  label,
+  description,
+  Icon,
+}: {
+  href: string
+  label: string
+  description: string
+  Icon: LucideIcon
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex min-h-12 w-full items-center gap-3 rounded-lg bg-muted/70 px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+    >
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold text-foreground">{label}</span>
+        <span className="block truncate text-xs text-muted-foreground">{description}</span>
+      </span>
+    </Link>
   )
 }
