@@ -217,6 +217,31 @@ describe("useAgentRuntime", () => {
     )
   })
 
+  it("preserves backend-provided remote metadata when no remote override is sent", async () => {
+    mocks.createAgentRuntimeSession.mockResolvedValue({
+      ...session,
+      metadata: { remote_connection_id: "project-default-connection" },
+    })
+    const { result } = renderHook(() =>
+      useAgentRuntime("remote-project-1", {
+        activeSessionId: "",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await act(async () => {
+      await result.current.send("hello")
+    })
+
+    expect(mocks.createAgentRuntimeSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "remote-project-1",
+        metadata: undefined,
+      }),
+    )
+    expect(mocks.updateAgentRuntimeSessionMetadata).not.toHaveBeenCalled()
+  })
+
   it("updates existing session metadata before sending with a new remote connection", async () => {
     const updatedSession = {
       ...session,

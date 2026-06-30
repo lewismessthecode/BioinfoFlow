@@ -560,7 +560,10 @@ describe("AgentWorkbench", () => {
     })
 
     expect(screen.getByTestId("agent-mobile-sidecar-overlay")).toBeInTheDocument()
-    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    const mobilePanel = screen.getByTestId("artifact-panel")
+    expect(mobilePanel).toBeInTheDocument()
+    expect(mobilePanel).toHaveClass("flex")
+    expect(mobilePanel).not.toHaveClass("hidden")
     expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute(
       "data-active",
       "true",
@@ -652,6 +655,23 @@ describe("AgentWorkbench", () => {
         }),
       ),
     )
+  })
+
+  it("does not send a null remote connection override before a session exists", async () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({
+      session: null,
+      send,
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Check the project host" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() => expect(send).toHaveBeenCalled())
+    expect(send.mock.calls[0][1]).not.toHaveProperty("remoteConnectionId")
   })
 
   it("resyncs the remote connection selection when the active session changes", async () => {

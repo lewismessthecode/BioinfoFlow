@@ -228,6 +228,7 @@ export function useAgentRuntime(
 
   const ensureSessionRemoteConnection = useCallback(
     async (session: AgentRuntimeSession, remoteConnectionId?: string | null) => {
+      if (remoteConnectionId === undefined) return session
       if (session.metadata?.remote_connection_id === remoteConnectionId) return session
       if (!remoteConnectionId && !session.metadata?.remote_connection_id) return session
       const metadata = { ...(session.metadata ?? {}) }
@@ -262,12 +263,15 @@ export function useAgentRuntime(
       if (!text) return null
       dispatch({ type: "loading" })
       try {
-        const metadata = options?.remoteConnectionId
-          ? { remote_connection_id: options.remoteConnectionId }
+        const remoteConnectionId = Object.hasOwn(options ?? {}, "remoteConnectionId")
+          ? options?.remoteConnectionId
+          : undefined
+        const metadata = remoteConnectionId
+          ? { remote_connection_id: remoteConnectionId }
           : undefined
         const session = await ensureSessionRemoteConnection(
           await ensureSessionWithMetadata(options?.modelSelection, metadata),
-          options?.remoteConnectionId,
+          remoteConnectionId,
         )
         const turn = await createAgentRuntimeTurn({
           sessionId: session.id,

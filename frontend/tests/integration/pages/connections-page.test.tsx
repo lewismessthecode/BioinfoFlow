@@ -218,6 +218,31 @@ describe("ConnectionsPage", () => {
     expect(card).not.toHaveTextContent(/Jun 25|10:11|18:11/)
   })
 
+  it("lets long SSH connection identities wrap instead of truncating them", async () => {
+    const longConnection = {
+      ...liveConnection,
+      name: "Very long simulation login node label for production sequencing cluster sz01",
+      username: "bioinformatics-production-user",
+      host: "extremely-long-login-node-name-for-production-sequencing-cluster.example.org",
+    }
+    apiRequestMock.mockResolvedValueOnce({ data: [longConnection] })
+
+    render(<ConnectionsPage />)
+
+    const card = await screen.findByRole("button", {
+      name: /^Very long simulation login node label/,
+    })
+    const title = within(card).getByRole("heading", { name: longConnection.name })
+    const identity = within(card).getByText(
+      `${longConnection.username}@${longConnection.host}`,
+    )
+
+    expect(title).toHaveClass("break-words")
+    expect(title).not.toHaveClass("truncate")
+    expect(identity).toHaveClass("break-all")
+    expect(identity).not.toHaveClass("truncate")
+  })
+
   it("saves new connections through the backend", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [] })

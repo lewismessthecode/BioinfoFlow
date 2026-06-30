@@ -245,7 +245,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       void send(text, {
         modelSelection: selectedModel,
         inputParts,
-        remoteConnectionId: selectedRemoteConnectionId || null,
+        ...(selectedRemoteConnectionId
+          ? { remoteConnectionId: selectedRemoteConnectionId }
+          : {}),
       }).then(() => {
         setOptimisticTurn((current) =>
           current?.id === nextOptimisticTurn.id ? null : current,
@@ -455,6 +457,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               onBrowserSrcChange={setBrowserSrc}
               onClose={closeSidecar}
               onAddContext={addContextAttachment}
+              variant="mobile"
               className="flex h-full w-full flex-col rounded-xl border border-border/70 shadow-[0_18px_48px_rgba(60,64,67,0.12)]"
             />
           </div>
