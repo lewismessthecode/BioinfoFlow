@@ -2551,10 +2551,10 @@
       "cancelled": "Cancelled"
     },
     "sidecar": {
-      "title": "Run",
-      "close": "Close run panel",
-      "collapse": "Collapse run panel",
-      "expand": "Open run panel",
+      "title": "Workspace",
+      "close": "Close workspace panel",
+      "collapse": "Collapse workspace panel",
+      "expand": "Open workspace panel",
       "files": "Files",
       "runs": "Runs",
       "tools": "Tools",
@@ -2593,10 +2593,28 @@
     },
     "tabs": {
       "environment": "Environment",
+      "tools": "Tools",
       "preview": "Preview",
       "progress": "Progress",
       "files": "Files",
       "browser": "Browser"
+    },
+    "toolsPanel": {
+      "title": "Workspace tools",
+      "description": "Open project files, review artifacts, or jump into runtime tools without leaving this conversation.",
+      "review": "Review",
+      "artifactCount": "{count, plural, one {# artifact} other {# artifacts}}",
+      "noArtifacts": "No artifacts yet",
+      "terminal": "Terminal",
+      "terminalDescription": "Open the project terminal",
+      "browser": "Browser",
+      "browserDescription": "Preview same-origin pages",
+      "files": "Files",
+      "filesDescription": "Browse and preview project files",
+      "workflows": "Workflows",
+      "workflowsDescription": "Register, inspect, and run workflows",
+      "runs": "Run history",
+      "runsDescription": "Inspect logs, outputs, and DAGs"
     },
     "environment": {
       "title": "Environment",

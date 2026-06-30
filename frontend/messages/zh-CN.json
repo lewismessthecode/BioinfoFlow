@@ -2551,10 +2551,10 @@
       "cancelled": "已取消"
     },
     "sidecar": {
-      "title": "运行",
-      "close": "关闭运行面板",
-      "collapse": "收起运行面板",
-      "expand": "打开运行面板",
+      "title": "工作区",
+      "close": "关闭工作区面板",
+      "collapse": "收起工作区面板",
+      "expand": "打开工作区面板",
       "files": "文件",
       "runs": "运行",
       "tools": "工具",
@@ -2593,10 +2593,28 @@
     },
     "tabs": {
       "environment": "环境",
+      "tools": "工具",
       "preview": "预览",
       "progress": "进度",
       "files": "打开文件",
       "browser": "浏览器"
+    },
+    "toolsPanel": {
+      "title": "工作区工具",
+      "description": "在当前对话中打开项目文件、审查产物，或进入运行工具。",
+      "review": "审查",
+      "artifactCount": "{count} 个产物",
+      "noArtifacts": "暂无产物",
+      "terminal": "终端",
+      "terminalDescription": "打开项目终端",
+      "browser": "浏览器",
+      "browserDescription": "预览同源页面",
+      "files": "文件",
+      "filesDescription": "浏览并预览项目文件",
+      "workflows": "工作流",
+      "workflowsDescription": "注册、检查并运行工作流",
+      "runs": "运行记录",
+      "runsDescription": "查看日志、输出和 DAG"
     },
     "environment": {
       "title": "环境信息",
