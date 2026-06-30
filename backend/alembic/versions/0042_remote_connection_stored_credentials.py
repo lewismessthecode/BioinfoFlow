@@ -22,7 +22,10 @@ LEGACY_AUTH_METHOD_SQL = "('ssh_config', 'key_file', 'agent')"
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("remote_connections") as batch:
+    with op.batch_alter_table(
+        "remote_connections",
+        reflect_kwargs={"resolve_fks": False},
+    ) as batch:
         batch.add_column(sa.Column("encrypted_password", sa.Text(), nullable=True))
         batch.add_column(sa.Column("encrypted_private_key", sa.Text(), nullable=True))
         batch.add_column(sa.Column("encrypted_passphrase", sa.Text(), nullable=True))
@@ -44,7 +47,10 @@ def downgrade() -> None:
         WHERE auth_method IN ('password', 'private_key')
         """
     )
-    with op.batch_alter_table("remote_connections") as batch:
+    with op.batch_alter_table(
+        "remote_connections",
+        reflect_kwargs={"resolve_fks": False},
+    ) as batch:
         batch.drop_constraint("ck_remote_connections_auth_method", type_="check")
         batch.create_check_constraint(
             "ck_remote_connections_auth_method",
