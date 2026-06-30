@@ -126,8 +126,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     return (
       <div
         className={cn(
-          "mx-auto flex w-full max-w-3xl flex-col gap-1.5 rounded-[30px] border border-border/70 bg-card p-2 shadow-xl shadow-foreground/5",
-          "focus-within:border-border focus-within:shadow-2xl focus-within:shadow-foreground/10",
+          "mx-auto flex w-full max-w-3xl flex-col gap-1.5 rounded-[28px] border border-border/70 bg-card p-2 shadow-[0_1px_2px_rgba(60,64,67,0.06),0_14px_34px_rgba(60,64,67,0.08)]",
+          "focus-within:border-border focus-within:shadow-[0_1px_2px_rgba(60,64,67,0.08),0_18px_40px_rgba(60,64,67,0.10)]",
           className,
         )}
         data-testid="agent-composer"

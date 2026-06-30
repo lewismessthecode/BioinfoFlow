@@ -37,10 +37,10 @@ vi.mock("next-intl", () => ({
       "approval.jumpToDecision": "Needs confirmation · Jump",
       "turnStatus.running": "Working",
       "turnStatus.completed": "Done",
-      "sidecar.title": "Run",
-      "sidecar.close": "Close run panel",
-      "sidecar.collapse": "Collapse run panel",
-      "sidecar.expand": "Open run panel",
+      "sidecar.title": "Workspace",
+      "sidecar.close": "Close workspace panel",
+      "sidecar.collapse": "Collapse workspace panel",
+      "sidecar.expand": "Open workspace panel",
       "sidecar.files": "Files",
       "sidecar.runs": "Runs",
       "sidecar.tools": "Tools",
@@ -51,6 +51,10 @@ vi.mock("next-intl", () => ({
       "sidecar.currentToolCalls": "Current tool calls",
       "sidecar.needsDecision": "Needs your decision",
       "sidecar.noActivity": "No activity yet",
+      "tabs.tools": "Tools",
+      "tabs.preview": "Preview",
+      "tabs.files": "Files",
+      "tabs.browser": "Browser",
       "environment.open": "Open environment",
       "environment.close": "Close environment",
       "environment.title": "Environment",
@@ -236,7 +240,10 @@ describe("AgentWorkbench", () => {
     )
     expect(screen.queryByText("Agent Harness")).not.toBeInTheDocument()
     expect(screen.queryByText("Start from the runtime")).not.toBeInTheDocument()
-    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId("artifact-panel")).getByRole("button", { name: "Tools" }),
+    ).toHaveAttribute("data-active", "true")
   })
 
   it("registers the runtime sidecar toggle with the navbar action group", () => {
@@ -246,7 +253,7 @@ describe("AgentWorkbench", () => {
     const lastCall = setNavbarActionsMock.mock.calls.at(-1)
     expect(lastCall?.[0]).toBeTruthy()
     expect(
-      screen.queryByRole("button", { name: "Open run panel" }),
+      screen.queryByRole("button", { name: "Open workspace panel" }),
     ).not.toBeInTheDocument()
   })
 
@@ -288,17 +295,22 @@ describe("AgentWorkbench", () => {
     setupRuntime({ session: baseSession })
     render(<AgentWorkbench projectId="project-1" />)
     const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
-    render(<>{navbarActions}</>)
+    const navbarRender = render(<>{navbarActions}</>)
 
     fireEvent.click(screen.getByRole("button", { name: "Open environment" }))
     expect(await screen.findByTestId("agent-environment-floating-panel")).toBeInTheDocument()
 
+    const updatedNavbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    navbarRender.rerender(<>{updatedNavbarActions}</>)
+
     act(() => {
-      fireEvent.click(screen.getByRole("button", { name: "Open run panel" }))
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
     })
 
     expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
-    expect(screen.getByTestId("agent-sidecar-column")).toHaveClass("w-1/2")
+    expect(screen.getByTestId("agent-sidecar-column")).toHaveClass(
+      "w-[clamp(360px,32vw,500px)]",
+    )
     await waitFor(() => {
       expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
     })
@@ -312,15 +324,28 @@ describe("AgentWorkbench", () => {
     setupRuntime({ session: baseSession })
     render(<AgentWorkbench projectId="project-1" />)
     const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
-    render(<>{navbarActions}</>)
+    const navbarRender = render(<>{navbarActions}</>)
+
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-compact-controls",
+      "true",
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Collapse workspace panel" }))
+      await Promise.resolve()
+    })
 
     expect(screen.getByTestId("agent-composer")).not.toHaveAttribute(
       "data-compact-controls",
       "true",
     )
 
+    const updatedNavbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    navbarRender.rerender(<>{updatedNavbarActions}</>)
+
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Open run panel" }))
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
       await Promise.resolve()
     })
 
@@ -505,16 +530,20 @@ describe("AgentWorkbench", () => {
 
     expect(screen.getByTestId("composer-approval-popover")).toBeInTheDocument()
     expect(screen.getByTestId("composer-decision-jump")).toBeInTheDocument()
-    expect(screen.getByText("Needs confirmation · Jump")).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId("composer-approval-popover")).getByText(
+        "Needs confirmation · Jump",
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByTestId("inline-approval-card")).toBeInTheDocument()
     expect(screen.queryByTestId("pending-decisions")).not.toBeInTheDocument()
-    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
     expect(screen.getByText("Needs your decision")).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1)
     expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(1)
   })
 
-  it("does not auto-open the panel merely because the agent is streaming", () => {
+  it("keeps the default workspace panel stable while the agent is streaming", () => {
     setupRuntime({
       turns: [{ ...baseTurn, status: "running", final_text: null }],
       events: [
@@ -529,7 +558,10 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId("artifact-panel")).getByRole("button", { name: "Tools" }),
+    ).toHaveAttribute("data-active", "true")
   })
 
   it("renders thinking and tool-call activity in the transcript", async () => {
@@ -619,7 +651,7 @@ describe("AgentWorkbench", () => {
 
     expect(screen.queryByTestId("composer-approval-popover")).not.toBeInTheDocument()
     expect(screen.getAllByText("Approved, resuming").length).toBeGreaterThan(0)
-    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
   })
 
   it("clears the approved approval once resume progress arrives", () => {

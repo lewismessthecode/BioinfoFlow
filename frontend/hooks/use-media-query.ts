@@ -5,12 +5,14 @@ import { useCallback, useEffect, useState } from "react"
 function useMediaQuery(query: string): boolean {
   const getMatches = useCallback(() => {
     if (typeof window === "undefined") return false
+    if (typeof window.matchMedia !== "function") return false
     return window.matchMedia(query).matches
   }, [query])
 
   const [matches, setMatches] = useState(getMatches)
 
   useEffect(() => {
+    if (typeof window.matchMedia !== "function") return
     const mql = window.matchMedia(query)
     const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
     mql.addEventListener("change", handler)
