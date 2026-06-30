@@ -6,7 +6,19 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react"
-import { BookOpenText, CheckCircle2, FileText, KeyRound, Server, X } from "lucide-react"
+import {
+  BookOpenText,
+  CheckCircle2,
+  FileText,
+  KeyRound,
+  MoreHorizontal,
+  Play,
+  RefreshCw,
+  Server,
+  TerminalSquare,
+  Trash2,
+  X,
+} from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -14,13 +26,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import type { RemoteConnectionAuthMethod } from "@/lib/demo-connections"
+import type { RemoteConnection, RemoteConnectionAuthMethod } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
+
+import { TextPanel } from "./connection-ui"
 
 export type ConnectionFormState = {
   name: string
@@ -53,6 +68,10 @@ const skillPresetKeys = ["nextflowHpc", "slurmDiagnostics", "readonlyInspection"
 type ConnectionDialogProps = {
   open: boolean
   mode: DialogMode
+  connection: RemoteConnection | null
+  testing: boolean
+  probing: boolean
+  probeOutput: string
   form: ConnectionFormState
   formError: string | null
   formErrorField: FormErrorField
@@ -61,11 +80,18 @@ type ConnectionDialogProps = {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onFormChange: Dispatch<SetStateAction<ConnectionFormState>>
   onAppendSkillText: (text: string) => void
+  onTest: (connection: RemoteConnection) => void
+  onRunProbe: (connection: RemoteConnection) => void
+  onDelete: (connection: RemoteConnection) => void
 }
 
 export function ConnectionDialog({
   open,
   mode,
+  connection,
+  testing,
+  probing,
+  probeOutput,
   form,
   formError,
   formErrorField,
@@ -74,6 +100,9 @@ export function ConnectionDialog({
   onSubmit,
   onFormChange,
   onAppendSkillText,
+  onTest,
+  onRunProbe,
+  onDelete,
 }: ConnectionDialogProps) {
   const t = useTranslations("connections")
   const tCommon = useTranslations("common")
@@ -84,47 +113,75 @@ export function ConnectionDialog({
     <aside
       role="complementary"
       aria-label={t("dialog.panelLabel")}
-      className="fixed inset-x-3 bottom-3 top-20 z-40 min-h-0 overflow-hidden rounded-[28px] border border-border/70 bg-card/95 shadow-2xl shadow-foreground/20 lg:static lg:inset-auto lg:z-auto lg:h-full lg:rounded-none lg:border-0 lg:border-l lg:border-border/60 lg:bg-background/70 lg:shadow-none"
+      className="absolute inset-y-0 right-0 z-30 flex min-h-0 w-full animate-in flex-col slide-in-from-right overflow-hidden border-l border-border/60 bg-background shadow-2xl shadow-foreground/10 duration-200 motion-reduce:animate-none sm:w-[min(100vw,420px)] lg:w-[360px] xl:w-[376px]"
     >
-      <form onSubmit={onSubmit} noValidate className="flex h-full min-h-0 flex-col">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/60 bg-background/55 px-5 py-4">
+      <form onSubmit={onSubmit} noValidate className="flex h-full min-h-0 w-full flex-col">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/60 bg-background/95 px-4 py-3">
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold tracking-tight text-foreground">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
               {mode === "edit" ? t("dialog.editTitle") : t("dialog.title")}
             </h2>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-full"
-            onClick={() => onOpenChange(false)}
-            disabled={isSaving}
-            aria-label={tCommon("close")}
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {mode === "edit" && connection ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-full"
+                    aria-label={tCommon("actions")}
+                    disabled={isSaving}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem disabled={testing} onSelect={() => onTest(connection)}>
+                    <RefreshCw className={cn("h-4 w-4", testing && "animate-spin")} />
+                    {testing ? t("actions.testing") : t("actions.testConnection")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={probing} onSelect={() => onRunProbe(connection)}>
+                    <Play className="h-4 w-4" />
+                    {probing ? t("actions.runningProbe") : t("actions.runProbe")}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onDelete(connection)}>
+                    <Trash2 className="h-4 w-4" />
+                    {t("actions.deleteConnection")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full"
+              onClick={() => onOpenChange(false)}
+              disabled={isSaving}
+              aria-label={tCommon("close")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 [scrollbar-gutter:stable]">
-          <div className="grid gap-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 [scrollbar-gutter:stable]">
+          <div className="grid gap-3">
             <PanelSection title={t("sections.address")} icon={<Server className="h-4 w-4" />}>
-              <div className="grid grid-cols-[56px_minmax(0,1fr)] gap-3">
-                <div className="flex h-14 w-14 items-center justify-center rounded-[20px] border border-border/70 bg-background/75 text-muted-foreground shadow-sm shadow-foreground/5">
-                  <Server className="h-6 w-6" />
-                </div>
-                <Field label={t("fields.host")} htmlFor="connection-host">
-                  <Input
-                    id="connection-host"
-                    value={form.host}
-                    onChange={(event) => onFormChange((current) => ({ ...current, host: event.target.value }))}
-                    placeholder={t("form.placeholders.host")}
-                    required={form.auth_method !== "ssh_config"}
-                    aria-invalid={formErrorField === "host"}
-                    aria-describedby={formErrorField === "host" ? "connection-form-error" : undefined}
-                  />
-                </Field>
-              </div>
+              <Field label={t("fields.host")} htmlFor="connection-host">
+                <Input
+                  id="connection-host"
+                  value={form.host}
+                  onChange={(event) => onFormChange((current) => ({ ...current, host: event.target.value }))}
+                  placeholder={t("form.placeholders.host")}
+                  required={form.auth_method !== "ssh_config"}
+                  aria-invalid={formErrorField === "host"}
+                  aria-describedby={formErrorField === "host" ? "connection-form-error" : undefined}
+                />
+              </Field>
             </PanelSection>
 
             <PanelSection title={t("sections.general")}>
@@ -164,7 +221,7 @@ export function ConnectionDialog({
 
                 <div className="grid gap-1.5">
                   <Label className="text-xs font-medium text-muted-foreground">{t("fields.auth")}</Label>
-                  <div aria-label={t("fields.auth")} className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                  <div aria-label={t("fields.auth")} className="grid gap-2">
                     {authMethods.map((method) => (
                       <AuthMethodButton
                         key={method}
@@ -240,10 +297,20 @@ export function ConnectionDialog({
                   value={form.skill_instructions}
                   onChange={(event) => onFormChange((current) => ({ ...current, skill_instructions: event.target.value }))}
                   placeholder={t("form.placeholders.skillInstructions")}
-                  className="min-h-36 resize-none border-border/60 bg-background/70"
+                  className="min-h-28 resize-none border-border/60 bg-background/70"
                 />
               </div>
             </PanelSection>
+
+            {mode === "edit" && connection && (probeOutput || probing) ? (
+              <PanelSection title={t("probe.description")} icon={<TerminalSquare className="h-4 w-4" />}>
+                <TextPanel
+                  title={t("probe.titleForConnection", { name: connection.name })}
+                  value={probeOutput || t("probe.placeholder")}
+                  empty={t("probe.placeholder")}
+                />
+              </PanelSection>
+            ) : null}
           </div>
         </div>
 
@@ -252,13 +319,13 @@ export function ConnectionDialog({
             id="connection-form-error"
             role="alert"
             aria-live="polite"
-            className="mx-5 shrink-0 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            className="mx-3 shrink-0 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
             {formError}
           </div>
         ) : null}
 
-        <div className="flex shrink-0 justify-end gap-2 border-t border-border/60 bg-background/55 px-5 py-3">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border/60 bg-background/95 px-4 py-3">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             {tCommon("cancel")}
           </Button>
@@ -281,7 +348,7 @@ function PanelSection({
   children: ReactNode
 }) {
   return (
-    <section className="grid gap-3 rounded-[22px] border border-border/60 bg-background/55 p-4">
+    <section className="grid gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
       <FormSectionTitle title={title} icon={icon} />
       {children}
     </section>
@@ -309,13 +376,13 @@ function Field({
 
 function FormSectionTitle({ title, icon }: { title: string; icon?: ReactNode }) {
   return (
-    <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+    <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
       {icon ? (
-        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-background/70 text-muted-foreground">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground">
           {icon}
         </span>
       ) : null}
-      {title}
+      <span className="truncate">{title}</span>
     </div>
   )
 }
@@ -335,8 +402,8 @@ function AuthMethodButton({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "inline-flex min-h-10 items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-left text-sm font-medium transition hover:border-foreground/20 hover:bg-background/80",
-        selected ? "border-primary/35 bg-background text-foreground shadow-sm shadow-foreground/5 ring-4 ring-primary/10" : "border-border/60 bg-background/50 text-muted-foreground",
+        "inline-flex min-h-10 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm font-medium transition-colors hover:border-foreground/20 hover:bg-muted/40",
+        selected ? "border-primary/45 bg-primary/[0.04] text-foreground ring-1 ring-primary/25" : "border-border/60 bg-background/50 text-muted-foreground",
       )}
     >
       <span>{title}</span>
