@@ -182,6 +182,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setOptimisticTurn(null)
           setEnvironmentOpen(false)
           setSidecarOpen(false)
+          setActiveSidecarTab("files")
+          setBrowserInput("")
+          setBrowserSrc("")
         },
       }),
       [interrupt, setActiveSessionId],

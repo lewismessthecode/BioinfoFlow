@@ -274,6 +274,18 @@ describe("resolveBrowserUrl", () => {
     )
   })
 
+  it("normalizes scheme-less local hosts as http URLs", () => {
+    expect(resolveBrowserUrl("localhost:8000", "https://bioinfoflow.example")).toBe(
+      "http://localhost:8000/",
+    )
+    expect(resolveBrowserUrl("127.0.0.1:8000/status", "https://bioinfoflow.example")).toBe(
+      "http://127.0.0.1:8000/status",
+    )
+    expect(resolveBrowserUrl("[::1]:8000/report", "https://bioinfoflow.example")).toBe(
+      "http://[::1]:8000/report",
+    )
+  })
+
   it("rejects empty and non-http URLs", () => {
     expect(resolveBrowserUrl("", "https://bioinfoflow.example")).toBe("")
     expect(resolveBrowserUrl("javascript:alert(1)", "https://bioinfoflow.example")).toBe("")

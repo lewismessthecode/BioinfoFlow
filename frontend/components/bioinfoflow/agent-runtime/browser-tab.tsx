@@ -23,7 +23,10 @@ export function resolveBrowserUrl(rawUrl: string, origin: string) {
 
 function parseBrowserUrl(rawUrl: string, origin: string) {
   const looksLikeHost = /^[\w-]+(\.[\w-]+)+(\/.*)?$/u.test(rawUrl)
+  const looksLikeLocalHost =
+    /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?([/?#].*)?$/iu.test(rawUrl)
   try {
+    if (looksLikeLocalHost) return new URL(`http://${rawUrl}`)
     if (looksLikeHost) return new URL(`https://${rawUrl}`)
     if (origin) return new URL(rawUrl, origin)
     return new URL(rawUrl)
