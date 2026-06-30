@@ -738,7 +738,7 @@ async def test_remote_read_file_guards_remote_project_symlink_escape(db_session)
     assert "remote path is outside the remote project" in command
 
 
-def test_remote_exec_nested_result_promotes_command_artifact():
+def test_remote_exec_nested_result_does_not_promote_command_artifact():
     descriptor = _artifact_descriptor(
         policy={"stdout": True, "stderr": True, "type": "remote_command"},
         tool_name="remote.exec",
@@ -756,12 +756,7 @@ def test_remote_exec_nested_result_promotes_command_artifact():
         },
     )
 
-    assert descriptor is not None
-    assert descriptor["type"] == "command"
-    assert descriptor["title"] == "hostname"
-    assert descriptor["summary"] == "exit code 0"
-    assert descriptor["payload"]["stdout"] == "login.cluster.example.org\n"
-    assert descriptor["payload"]["connection"]["id"] == "conn-1"
+    assert descriptor is None
 
 
 @pytest.mark.asyncio

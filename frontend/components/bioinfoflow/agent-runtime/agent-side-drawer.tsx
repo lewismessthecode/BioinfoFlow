@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { useOptionalTerminalDock } from "@/components/bioinfoflow/terminal/terminal-dock-context"
 import {
   decisionScrollTargetId,
+  deliverableArtifacts,
   listAgentRuntimeSessionArtifacts,
   type AgentRuntimeArtifact,
   type AgentRuntimeEvent,
@@ -80,7 +81,10 @@ export function AgentSideDrawer({
     }
   }, [sessionId, artifactEventCount])
 
-  const visibleArtifacts = sessionId ? artifacts : []
+  const visibleArtifacts = useMemo(
+    () => (sessionId ? deliverableArtifacts(artifacts) : []),
+    [artifacts, sessionId],
+  )
   const pendingDecision = useMemo(() => getPendingActions(events)[0] ?? null, [events])
   const pendingDecisionActionId = pendingDecision
     ? String(pendingDecision.payload.action_id || "")

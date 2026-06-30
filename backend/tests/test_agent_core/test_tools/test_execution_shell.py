@@ -169,7 +169,7 @@ async def test_bash_tool_rejects_cwd_outside_allowed_roots(db_session):
 
 
 @pytest.mark.asyncio
-async def test_bash_tool_resumes_after_approval_and_registers_output_artifact(db_session, monkeypatch):
+async def test_bash_tool_resumes_after_approval_without_registering_output_artifact(db_session, monkeypatch):
     dispatcher, context, workspace_root = await _shell_context(db_session)
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
 
@@ -203,10 +203,7 @@ async def test_bash_tool_resumes_after_approval_and_registers_output_artifact(db
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
-    assert len(artifacts) == 1
-    assert artifacts[0].type == "command"
-    assert str(artifacts[0].action_id) == pending.action_id
-    assert artifacts[0].payload["stdout"].strip() == "before-approval"
+    assert artifacts == []
 
     events = await AgentCoreService(db_session).list_events_for_turn(
         turn_id=context.turn_id,
@@ -216,7 +213,7 @@ async def test_bash_tool_resumes_after_approval_and_registers_output_artifact(db
     event_types = [event.type for event in events]
     assert "action.decision_recorded" in event_types
     assert "action.started" in event_types
-    assert "artifact.created" in event_types
+    assert "artifact.created" not in event_types
     assert "action.completed" in event_types
 
 
