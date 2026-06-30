@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import {
   decisionScrollTargetId,
+  deliverableArtifacts,
   listAgentRuntimeSessionArtifacts,
   type AgentRuntimeArtifact,
   type AgentRuntimeEvent,
@@ -39,16 +40,6 @@ const TABS: Array<{ key: AgentTabbedPanelTab; labelKey: string; Icon: LucideIcon
   { key: "preview", labelKey: "tabs.preview", Icon: FileSearch },
   { key: "browser", labelKey: "tabs.browser", Icon: Globe },
 ]
-
-const DELIVERABLE_ARTIFACT_TYPES = new Set([
-  "file",
-  "html",
-  "pdf",
-  "report",
-  "markdown",
-  "sheet",
-  "spreadsheet",
-])
 
 export function AgentTabbedPanel({
   projectId,
@@ -88,7 +79,7 @@ export function AgentTabbedPanel({
   }, [sessionId, artifactEventCount])
 
   const visibleArtifacts = useMemo(
-    () => (sessionId ? artifacts.filter(isDeliverableArtifact) : []),
+    () => (sessionId ? deliverableArtifacts(artifacts) : []),
     [artifacts, sessionId],
   )
   const pendingDecision = useMemo(() => getPendingActions(events)[0] ?? null, [events])
@@ -177,12 +168,4 @@ export function AgentTabbedPanel({
       </div>
     </aside>
   )
-}
-
-function isDeliverableArtifact(artifact: AgentRuntimeArtifact) {
-  if (artifact.type === "command" || artifact.type === "log_summary" || artifact.type === "todo_list") {
-    return false
-  }
-  if (artifact.file_path) return true
-  return DELIVERABLE_ARTIFACT_TYPES.has(artifact.type)
 }
