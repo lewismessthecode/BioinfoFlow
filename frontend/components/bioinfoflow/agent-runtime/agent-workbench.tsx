@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
+import { useIsMobile } from "@/hooks/use-media-query"
 import {
   buildAgentRuntimeTimeline,
   deriveTodoDisplayItems,
@@ -61,6 +62,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
   ) {
     const t = useTranslations("agentRuntime")
     const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const isMobile = useIsMobile()
     const [input, setInput] = useState("")
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
     const [remoteConnectionOverride, setRemoteConnectionOverride] = useState<{
@@ -152,7 +154,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     )
     // The side panel is now secondary detail. Approvals surface inline and above
     // the composer, so pending decisions no longer force the drawer open.
-    const sidecarVisible = sidecarOpen
+    const sidecarVisible = sidecarOpen && !isMobile
     const sidecarLabel = sidecarVisible
       ? t("sidecar.collapse")
       : t("sidecar.expand")
