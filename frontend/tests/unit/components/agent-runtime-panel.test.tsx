@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
 import { ArtifactPreviewDrawer } from "@/components/bioinfoflow/agent-runtime/artifact-preview-drawer"
 import { ArtifactViewer } from "@/components/bioinfoflow/agent-runtime/artifact-viewers"
+import { BrowserTab } from "@/components/bioinfoflow/agent-runtime/browser-tab"
 import { resolveSameOriginBrowserUrl } from "@/components/bioinfoflow/agent-runtime/browser-tab"
 import { PendingDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-decision-cards"
 import { ProgressTab } from "@/components/bioinfoflow/agent-runtime/progress-tab"
@@ -235,6 +236,17 @@ describe("AgentSideDrawer", () => {
       behavior: "smooth",
     })
     target.remove()
+  })
+})
+
+describe("BrowserTab", () => {
+  it("starts blank instead of loading the current Bioinfoflow route", () => {
+    render(<BrowserTab />)
+
+    const input = screen.getByPlaceholderText("browser.urlPlaceholder")
+    expect(input).toHaveValue("")
+    expect(screen.getByText("browser.empty")).toBeInTheDocument()
+    expect(screen.queryByTitle("browser.title")).not.toBeInTheDocument()
   })
 })
 

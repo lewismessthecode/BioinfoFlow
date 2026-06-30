@@ -56,6 +56,7 @@ vi.mock("next-intl", () => ({
       "tabs.preview": "Preview",
       "tabs.files": "Files",
       "tabs.browser": "Browser",
+      "browser.empty": "Enter a URL to preview a page.",
       "environment.open": "Open environment",
       "environment.close": "Close environment",
       "environment.title": "Environment",
@@ -223,9 +224,13 @@ describe("AgentWorkbench", () => {
     useIsMobileMock.mockReturnValue(false)
     setNavbarActionsMock.mockReset()
     apiRequestMock.mockReset()
-    apiRequestMock.mockImplementation((path: string) =>
-      path === "/connections" ? new Promise(() => {}) : Promise.resolve({ data: [] }),
-    )
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/connections") return new Promise(() => {})
+      if (path.startsWith("/agent/fs/tree")) {
+        return Promise.resolve({ path: "/workspace/project-1", entries: [] })
+      }
+      return Promise.resolve({ data: [] })
+    })
     useLlmSettingsMock.mockReturnValue({
       models: [],
       selectedModel: null,
@@ -247,10 +252,11 @@ describe("AgentWorkbench", () => {
     )
     expect(screen.queryByText("Agent Harness")).not.toBeInTheDocument()
     expect(screen.queryByText("Start from the runtime")).not.toBeInTheDocument()
-    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
-    expect(
-      within(screen.getByTestId("artifact-panel")).getByRole("button", { name: "Tools" }),
-    ).toHaveAttribute("data-active", "true")
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    expect(screen.getByTestId("agent-sidecar-column")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    )
   })
 
   it("registers the runtime sidecar toggle with the navbar action group", () => {
@@ -262,6 +268,131 @@ describe("AgentWorkbench", () => {
     expect(
       screen.queryByRole("button", { name: "Open workspace panel" }),
     ).not.toBeInTheDocument()
+  })
+
+  it("opens the desktop workspace drawer to project files on first user request", async () => {
+    setupRuntime({ session: baseSession })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    const drawer = screen.getByTestId("artifact-panel")
+    expect(drawer).toBeInTheDocument()
+    expect(within(drawer).getByRole("button", { name: "Files" })).toHaveAttribute(
+      "data-active",
+      "true",
+    )
+    expect(within(drawer).queryByRole("button", { name: "Tools" })).not.toBeInTheDocument()
+  })
+
+  it("does not reopen the right drawer when starting a new conversation", async () => {
+    const workbenchRef = { current: null as React.ElementRef<typeof AgentWorkbench> | null }
+    render(<AgentWorkbench ref={workbenchRef} projectId="project-1" />)
+
+    await act(async () => {
+      workbenchRef.current?.newConversation()
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    expect(screen.getByTestId("agent-sidecar-column")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    )
+  })
+
+  it("preserves the active workspace drawer panel after closing and reopening", async () => {
+    setupRuntime({ session: baseSession })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarRender = render(
+      <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
+    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
+      "data-active",
+      "true",
+    )
+
+    navbarRender.rerender(
+      <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Collapse workspace panel" }))
+      await Promise.resolve()
+    })
+
+    navbarRender.rerender(
+      <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
+      "data-active",
+      "true",
+    )
+    expect(screen.getByTestId("browser-tab")).toBeInTheDocument()
+  })
+
+  it("preserves the browser URL after closing and reopening the drawer", async () => {
+    setupRuntime({ session: baseSession })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarRender = render(
+      <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
+    const input = screen.getByPlaceholderText("browser.urlPlaceholder")
+    fireEvent.change(input, { target: { value: "/runs" } })
+    fireEvent.click(screen.getByRole("button", { name: "browser.go" }))
+    expect(screen.getByTitle("browser.title")).toHaveAttribute(
+      "src",
+      "http://localhost:3000/runs",
+    )
+
+    navbarRender.rerender(
+      <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Collapse workspace panel" }))
+      await Promise.resolve()
+    })
+
+    navbarRender.rerender(
+      <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    expect(screen.getByPlaceholderText("browser.urlPlaceholder")).toHaveValue(
+      "http://localhost:3000/runs",
+    )
+    expect(screen.getByTitle("browser.title")).toHaveAttribute(
+      "src",
+      "http://localhost:3000/runs",
+    )
   })
 
   it("opens environment information as a floating workbench panel", async () => {
@@ -336,15 +467,15 @@ describe("AgentWorkbench", () => {
 
     expect(screen.getByTestId("agent-composer")).toHaveAttribute(
       "data-compact-controls",
-      "true",
+      "false",
     )
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Collapse workspace panel" }))
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
       await Promise.resolve()
     })
 
-    expect(screen.getByTestId("agent-composer")).not.toHaveAttribute(
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
       "data-compact-controls",
       "true",
     )
@@ -353,11 +484,11 @@ describe("AgentWorkbench", () => {
     navbarRender.rerender(<>{updatedNavbarActions}</>)
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      fireEvent.click(screen.getByRole("button", { name: "Collapse workspace panel" }))
       await Promise.resolve()
     })
 
-    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+    expect(screen.getByTestId("agent-composer")).not.toHaveAttribute(
       "data-compact-controls",
       "true",
     )
@@ -383,7 +514,7 @@ describe("AgentWorkbench", () => {
 
     expect(screen.getByTestId("agent-mobile-sidecar-overlay")).toBeInTheDocument()
     expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Tools" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute(
       "data-active",
       "true",
     )
@@ -574,7 +705,7 @@ describe("AgentWorkbench", () => {
     ).toBeInTheDocument()
     expect(screen.getByTestId("inline-approval-card")).toBeInTheDocument()
     expect(screen.queryByTestId("pending-decisions")).not.toBeInTheDocument()
-    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
     expect(screen.getByText("Needs your decision")).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1)
     expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(1)
@@ -595,10 +726,7 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
-    expect(
-      within(screen.getByTestId("artifact-panel")).getByRole("button", { name: "Tools" }),
-    ).toHaveAttribute("data-active", "true")
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
   })
 
   it("renders thinking and tool-call activity in the transcript", async () => {
@@ -688,7 +816,7 @@ describe("AgentWorkbench", () => {
 
     expect(screen.queryByTestId("composer-approval-popover")).not.toBeInTheDocument()
     expect(screen.getAllByText("Approved, resuming").length).toBeGreaterThan(0)
-    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
   })
 
   it("clears the approved approval once resume progress arrives", () => {

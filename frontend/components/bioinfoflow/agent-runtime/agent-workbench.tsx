@@ -14,7 +14,7 @@ import { useTranslations } from "next-intl"
 
 import { AgentComposer } from "./agent-composer"
 import { AgentEnvironmentCard } from "./agent-environment-card"
-import { AgentTabbedPanel } from "./agent-tabbed-panel"
+import { AgentTabbedPanel, type AgentTabbedPanelTab } from "./agent-tabbed-panel"
 import { AgentTodoDock } from "./agent-todo-dock"
 import { AgentTranscript } from "./agent-transcript"
 import { ComposerApprovalPopover } from "./composer-approval-popover"
@@ -72,7 +72,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [optimisticTurn, setOptimisticTurn] = useState<AgentRuntimeTurn | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
-    const [sidecarOpen, setSidecarOpen] = useState(() => !isMobile)
+    const [sidecarOpen, setSidecarOpen] = useState(false)
+    const [activeSidecarTab, setActiveSidecarTab] = useState<AgentTabbedPanelTab>("files")
+    const [browserInput, setBrowserInput] = useState("")
+    const [browserSrc, setBrowserSrc] = useState("")
     const [artifactState, setArtifactState] = useState<{
       sessionId: string
       artifacts: AgentRuntimeArtifact[]
@@ -178,10 +181,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setHasSubmittedDraft(false)
           setOptimisticTurn(null)
           setEnvironmentOpen(false)
-          setSidecarOpen(!isMobile)
+          setSidecarOpen(false)
         },
       }),
-      [interrupt, isMobile, setActiveSessionId],
+      [interrupt, setActiveSessionId],
     )
 
     useEffect(() => {
@@ -419,6 +422,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                   projectId={projectId}
                   sessionId={state.session?.id}
                   events={state.events}
+                  activeTab={activeSidecarTab}
+                  onActiveTabChange={setActiveSidecarTab}
+                  browserInput={browserInput}
+                  browserSrc={browserSrc}
+                  onBrowserInputChange={setBrowserInput}
+                  onBrowserSrcChange={setBrowserSrc}
                   onClose={closeSidecar}
                   onAddContext={addContextAttachment}
               />
@@ -435,6 +444,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               projectId={projectId}
               sessionId={state.session?.id}
               events={state.events}
+              activeTab={activeSidecarTab}
+              onActiveTabChange={setActiveSidecarTab}
+              browserInput={browserInput}
+              browserSrc={browserSrc}
+              onBrowserInputChange={setBrowserInput}
+              onBrowserSrcChange={setBrowserSrc}
               onClose={closeSidecar}
               onAddContext={addContextAttachment}
               className="flex h-full w-full flex-col rounded-xl border border-border/70 shadow-[0_18px_48px_rgba(60,64,67,0.12)]"
