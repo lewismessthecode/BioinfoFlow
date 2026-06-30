@@ -17,11 +17,13 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 
 class RemoteConnectionAuthMethod:
+    PASSWORD = "password"
+    PRIVATE_KEY = "private_key"
     SSH_CONFIG = "ssh_config"
     KEY_FILE = "key_file"
     AGENT = "agent"
 
-    VALUES = (SSH_CONFIG, KEY_FILE, AGENT)
+    VALUES = (PASSWORD, PRIVATE_KEY, SSH_CONFIG, KEY_FILE, AGENT)
 
 
 class RemoteConnectionStatus:
@@ -46,7 +48,7 @@ class RemoteConnection(Base, UUIDMixin, TimestampMixin):
             name="ck_remote_connections_port_range",
         ),
         CheckConstraint(
-            "auth_method IN ('ssh_config', 'key_file', 'agent')",
+            "auth_method IN ('password', 'private_key', 'ssh_config', 'key_file', 'agent')",
             name="ck_remote_connections_auth_method",
         ),
         CheckConstraint(
@@ -67,10 +69,13 @@ class RemoteConnection(Base, UUIDMixin, TimestampMixin):
     auth_method: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        default=RemoteConnectionAuthMethod.SSH_CONFIG,
+        default=RemoteConnectionAuthMethod.PASSWORD,
     )
     ssh_alias: Mapped[str | None] = mapped_column(String(255), nullable=True)
     key_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    encrypted_password: Mapped[str | None] = mapped_column(Text, nullable=True)
+    encrypted_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    encrypted_passphrase: Mapped[str | None] = mapped_column(Text, nullable=True)
     skill_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_status: Mapped[str] = mapped_column(
         String(20),
