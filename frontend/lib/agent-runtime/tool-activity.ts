@@ -63,6 +63,7 @@ export function buildAgentRuntimeToolActivities(
       if (toolCallId) keyByCallId.set(toolCallId, key)
 
       const result = recordValue(event.payload.result)
+      const displayResult = normalizeActionDisplayResult(result)
       const error = recordValue(event.payload.error)
       const sources = sourcesFromActionResult(result, event)
       const resultErrorMessage = resultError(result)
@@ -74,8 +75,8 @@ export function buildAgentRuntimeToolActivities(
         name: stringValue(event.payload.name) || stringValue(event.payload.kind) || "action",
         status: resultErrorMessage ? "failed" : actionStatus(event),
         inputPreview: stringValue(event.payload.input_preview),
-        outputPreview: outputPreview(result),
-        exitCode: numberValue(result?.exit_code),
+        outputPreview: outputPreview(displayResult),
+        exitCode: numberValue(displayResult?.exit_code),
         durationMs: numberValue(event.payload.duration_ms),
         errorMessage:
           errorMessage(error) ?? stringValue(event.payload.error_message) ?? resultErrorMessage,
@@ -91,8 +92,8 @@ export function buildAgentRuntimeToolActivities(
       activity.name = stringValue(event.payload.name) || activity.name
       activity.status = resultErrorMessage ? "failed" : actionStatus(event)
       activity.inputPreview = stringValue(event.payload.input_preview) ?? activity.inputPreview
-      activity.outputPreview = outputPreview(result) ?? activity.outputPreview
-      activity.exitCode = numberValue(result?.exit_code) ?? activity.exitCode
+      activity.outputPreview = outputPreview(displayResult) ?? activity.outputPreview
+      activity.exitCode = numberValue(displayResult?.exit_code) ?? activity.exitCode
       activity.durationMs = numberValue(event.payload.duration_ms) ?? activity.durationMs
       activity.errorMessage =
         errorMessage(error) ??
@@ -223,6 +224,22 @@ function outputPreview(result: Record<string, unknown> | null | undefined) {
   const stderr = stringValue(result.stderr)
   const output = stringValue(result.output)
   return truncate(stdout || stderr || output || "", 500)
+}
+
+function normalizeActionDisplayResult(result: Record<string, unknown> | null) {
+  if (!result) return result
+  if (hasDisplayResultFields(result)) return result
+  const nestedResult = recordValue(result.result)
+  return nestedResult && hasDisplayResultFields(nestedResult) ? nestedResult : result
+}
+
+function hasDisplayResultFields(result: Record<string, unknown>) {
+  return (
+    stringValue(result.stdout) !== null ||
+    stringValue(result.stderr) !== null ||
+    stringValue(result.output) !== null ||
+    numberValue(result.exit_code) !== null
+  )
 }
 
 function errorMessage(error: Record<string, unknown> | null | undefined) {

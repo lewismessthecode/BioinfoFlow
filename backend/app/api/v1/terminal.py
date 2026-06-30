@@ -18,12 +18,17 @@ from app.schemas.terminal import (
 )
 from app.services.remote_connection_service import RemoteConnectionService
 from app.services.project_service import ProjectService
-from app.services.terminal_service import terminal_manager
+from app.services.terminal_service import (
+    TerminalNotInteractiveError,
+    terminal_manager,
+)
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
 from app.utils.responses import success_response
 
 
 router = APIRouter(prefix="/terminal", tags=["terminal"])
+
+TERMINAL_NOT_INTERACTIVE_MESSAGE = "Terminal target is not interactive yet."
 
 
 @router.post("/sessions")
@@ -148,15 +153,25 @@ async def terminal_socket(
             payload = await websocket.receive_json()
             event_type = payload.get("type")
             if event_type == "input":
-                await terminal_manager.send_input(
-                    session_id, str(payload.get("data", ""))
-                )
+                try:
+                    await terminal_manager.send_input(
+                        session_id, str(payload.get("data", ""))
+                    )
+                except TerminalNotInteractiveError:
+                    queue.put_nowait(
+                        {"type": "error", "message": TERMINAL_NOT_INTERACTIVE_MESSAGE}
+                    )
             elif event_type == "resize":
-                await terminal_manager.resize(
-                    session_id,
-                    cols=int(payload.get("cols", 80)),
-                    rows=int(payload.get("rows", 24)),
-                )
+                try:
+                    await terminal_manager.resize(
+                        session_id,
+                        cols=int(payload.get("cols", 80)),
+                        rows=int(payload.get("rows", 24)),
+                    )
+                except TerminalNotInteractiveError:
+                    queue.put_nowait(
+                        {"type": "error", "message": TERMINAL_NOT_INTERACTIVE_MESSAGE}
+                    )
             elif event_type == "chdir":
                 try:
                     await terminal_manager.change_directory(
@@ -169,6 +184,10 @@ async def terminal_socket(
                 except FileNotFoundError as exc:
                     queue.put_nowait(
                         {"type": "error", "message": f"Directory not found: {exc}"}
+                    )
+                except TerminalNotInteractiveError:
+                    queue.put_nowait(
+                        {"type": "error", "message": TERMINAL_NOT_INTERACTIVE_MESSAGE}
                     )
             elif event_type == "ping":
                 queue.put_nowait({"type": "pong"})

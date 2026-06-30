@@ -17,6 +17,10 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from app.path_layout import safe_join
 
 
+class TerminalNotInteractiveError(RuntimeError):
+    """Raised when a terminal session exists but has no interactive PTY."""
+
+
 @dataclass(slots=True)
 class TerminalSessionSnapshot:
     id: str
@@ -187,26 +191,20 @@ class TerminalSessionManager:
             session.last_touched = asyncio.get_running_loop().time()
 
     async def send_input(self, session_id: str, data: str) -> None:
-        session = await self._running_session(session_id)
         if not data:
             return
-        if session.master_fd is None:
-            raise KeyError(session_id)
+        session = await self._interactive_session(session_id)
         await asyncio.to_thread(os.write, session.master_fd, data.encode())
         session.last_touched = asyncio.get_running_loop().time()
 
     async def resize(self, session_id: str, *, cols: int, rows: int) -> None:
-        session = await self._running_session(session_id)
-        if session.master_fd is None:
-            raise KeyError(session_id)
+        session = await self._interactive_session(session_id)
         packed = struct.pack("HHHH", rows, cols, 0, 0)
         await asyncio.to_thread(self._set_window_size, session.master_fd, packed)
         session.last_touched = asyncio.get_running_loop().time()
 
     async def change_directory(self, session_id: str, relative_path: str) -> str:
-        session = await self._running_session(session_id)
-        if session.root_path is None:
-            raise KeyError(session_id)
+        session = await self._interactive_session(session_id)
         candidate = self._resolve_safe_directory(
             session.root_path, relative_path or "."
         )
@@ -372,6 +370,17 @@ class TerminalSessionManager:
             session = self._require_session(session_id)
             if session.status != "running":
                 raise KeyError(session_id)
+            return session
+
+    async def _interactive_session(self, session_id: str) -> _TerminalSession:
+        async with self._lock:
+            session = self._require_session(session_id)
+            if (
+                session.status != "running"
+                or session.master_fd is None
+                or session.root_path is None
+            ):
+                raise TerminalNotInteractiveError(session_id)
             return session
 
     def _require_session(self, session_id: str) -> _TerminalSession:

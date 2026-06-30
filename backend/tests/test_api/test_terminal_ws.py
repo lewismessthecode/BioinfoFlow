@@ -147,6 +147,79 @@ def test_terminal_websocket_streams_io_and_single_cwd_event(
         assert cwd_count == 1
 
 
+def test_unsupported_remote_terminal_websocket_stays_alive_for_client_actions(
+    terminal_test_client,
+):
+    client, _ = terminal_test_client
+    connection_resp = client.post(
+        "/api/v1/connections",
+        json={
+            "name": "Phoenix login",
+            "host": "login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+    )
+    assert connection_resp.status_code == 201
+    connection_id = connection_resp.json()["data"]["id"]
+
+    project_resp = client.post(
+        "/api/v1/projects",
+        json={
+            "name": "Phoenix terminal WS",
+            "remote_connection_id": connection_id,
+            "remote_root_path": "/data/phoenix",
+        },
+    )
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["data"]["id"]
+
+    created = client.post(
+        "/api/v1/terminal/sessions",
+        json={"project_id": project_id},
+    )
+    assert created.status_code == 201
+    session_id = created.json()["data"]["id"]
+
+    with client.websocket_connect(
+        f"/api/v1/terminal/sessions/{session_id}/ws"
+    ) as websocket:
+        ready = websocket.receive_json()
+        assert ready["type"] == "ready"
+        assert ready["session"]["status"] == "unsupported"
+
+        initial_cwd = websocket.receive_json()
+        assert initial_cwd == {"type": "cwd", "cwd": "/data/phoenix"}
+
+        initial_error = websocket.receive_json()
+        assert initial_error == {
+            "type": "error",
+            "message": "Remote interactive terminals are not supported yet.",
+        }
+
+        websocket.send_json({"type": "resize", "cols": 100, "rows": 30})
+        websocket.send_json({"type": "input", "data": "echo should-not-run\n"})
+        websocket.send_json({"type": "chdir", "path": "runs"})
+        websocket.send_json({"type": "ping"})
+
+        errors: list[str] = []
+        for _ in range(8):
+            message = websocket.receive_json()
+            if message["type"] == "pong":
+                break
+            if message["type"] == "error":
+                errors.append(message["message"])
+        else:
+            raise AssertionError("Timed out waiting for pong")
+
+        assert errors == [
+            "Terminal target is not interactive yet.",
+            "Terminal target is not interactive yet.",
+            "Terminal target is not interactive yet.",
+        ]
+
+
 def test_terminal_websocket_rejects_missing_session(terminal_test_client):
     client, _ = terminal_test_client
 

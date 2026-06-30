@@ -308,6 +308,53 @@ describe("AgentWorkbench", () => {
     )
   })
 
+  it("resets the workspace tab and browser preview when starting a new conversation", async () => {
+    setupRuntime({ session: baseSession })
+    const workbenchRef = { current: null as React.ElementRef<typeof AgentWorkbench> | null }
+    render(<AgentWorkbench ref={workbenchRef} projectId="project-1" />)
+    const navbarRender = render(
+      <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
+    const input = screen.getByPlaceholderText("browser.urlPlaceholder")
+    fireEvent.change(input, { target: { value: "/runs" } })
+    fireEvent.click(screen.getByRole("button", { name: "browser.go" }))
+    expect(screen.getByTitle("browser.title")).toHaveAttribute(
+      "src",
+      "http://localhost:3000/runs",
+    )
+
+    await act(async () => {
+      workbenchRef.current?.newConversation()
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    navbarRender.rerender(
+      <>{setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}</>,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute(
+      "data-active",
+      "true",
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
+    expect(screen.getByPlaceholderText("browser.urlPlaceholder")).toHaveValue("")
+    expect(screen.getByText("Enter a URL to preview a page.")).toBeInTheDocument()
+    expect(screen.queryByTitle("browser.title")).not.toBeInTheDocument()
+  })
+
   it("preserves the active workspace drawer panel after closing and reopening", async () => {
     setupRuntime({ session: baseSession })
     render(<AgentWorkbench projectId="project-1" />)
