@@ -4,8 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
 import { ArtifactPreviewDrawer } from "@/components/bioinfoflow/agent-runtime/artifact-preview-drawer"
 import { ArtifactViewer } from "@/components/bioinfoflow/agent-runtime/artifact-viewers"
-import { BrowserTab } from "@/components/bioinfoflow/agent-runtime/browser-tab"
-import { resolveSameOriginBrowserUrl } from "@/components/bioinfoflow/agent-runtime/browser-tab"
+import { BrowserTab, resolveBrowserUrl } from "@/components/bioinfoflow/agent-runtime/browser-tab"
 import { PendingDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-decision-cards"
 import { ProgressTab } from "@/components/bioinfoflow/agent-runtime/progress-tab"
 import type { AgentRuntimeArtifact, AgentRuntimeEvent } from "@/lib/agent-runtime"
@@ -250,26 +249,35 @@ describe("BrowserTab", () => {
   })
 })
 
-describe("resolveSameOriginBrowserUrl", () => {
-  it("rejects lookalike cross-origin iframe URLs", () => {
+describe("resolveBrowserUrl", () => {
+  it("allows external http and https URLs without falling back to the app route", () => {
     expect(
-      resolveSameOriginBrowserUrl(
+      resolveBrowserUrl(
         "https://bioinfoflow.example.evil.test/app",
         "https://bioinfoflow.example",
       ),
-    ).toBe("https://bioinfoflow.example/")
+    ).toBe("https://bioinfoflow.example.evil.test/app")
+    expect(resolveBrowserUrl("example.org/report", "https://bioinfoflow.example")).toBe(
+      "https://example.org/report",
+    )
   })
 
-  it("normalizes same-origin absolute and relative URLs", () => {
+  it("normalizes absolute and relative URLs", () => {
     expect(
-      resolveSameOriginBrowserUrl(
+      resolveBrowserUrl(
         "https://bioinfoflow.example/agent?tab=browser#panel",
         "https://bioinfoflow.example",
       ),
     ).toBe("https://bioinfoflow.example/agent?tab=browser#panel")
-    expect(resolveSameOriginBrowserUrl("/runs", "https://bioinfoflow.example")).toBe(
+    expect(resolveBrowserUrl("/runs", "https://bioinfoflow.example")).toBe(
       "https://bioinfoflow.example/runs",
     )
+  })
+
+  it("rejects empty and non-http URLs", () => {
+    expect(resolveBrowserUrl("", "https://bioinfoflow.example")).toBe("")
+    expect(resolveBrowserUrl("javascript:alert(1)", "https://bioinfoflow.example")).toBe("")
+    expect(resolveBrowserUrl("ftp://example.org/file", "https://bioinfoflow.example")).toBe("")
   })
 })
 
