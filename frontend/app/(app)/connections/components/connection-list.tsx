@@ -124,8 +124,8 @@ export function ConnectionList({
                     </div>
 
                     <div className="min-w-0">
-                      <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">{connection.name}</h2>
-                      <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                      <h2 className="break-words text-sm font-semibold tracking-tight text-foreground">{connection.name}</h2>
+                      <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
                         {connection.username}@{connection.host}
                       </p>
                     </div>

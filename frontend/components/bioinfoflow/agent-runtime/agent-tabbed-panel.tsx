@@ -32,6 +32,7 @@ type AgentTabbedPanelProps = {
   onBrowserSrcChange: (value: string) => void
   onClose: () => void
   onAddContext?: (path: string) => void
+  variant?: "desktop" | "mobile"
   className?: string
 }
 
@@ -53,6 +54,7 @@ export function AgentTabbedPanel({
   onBrowserSrcChange,
   onClose,
   onAddContext,
+  variant = "desktop",
   className,
 }: AgentTabbedPanelProps) {
   const t = useTranslations("agentRuntime")
@@ -97,8 +99,10 @@ export function AgentTabbedPanel({
   return (
     <aside
       className={cn(
-        "pointer-events-auto hidden h-full overflow-hidden border-l border-border/70 bg-background lg:flex lg:flex-col",
-        "lg:w-[clamp(360px,32vw,500px)]",
+        "pointer-events-auto h-full overflow-hidden border-l border-border/70 bg-background",
+        variant === "desktop"
+          ? "hidden lg:flex lg:w-[clamp(360px,32vw,500px)] lg:flex-col"
+          : "flex flex-col",
         className,
       )}
       data-testid="artifact-panel"
