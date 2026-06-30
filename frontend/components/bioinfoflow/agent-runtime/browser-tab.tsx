@@ -12,6 +12,8 @@ function currentOrigin() {
 
 export function resolveSameOriginBrowserUrl(rawUrl: string, origin: string) {
   if (!origin) return ""
+  const trimmedUrl = rawUrl.trim()
+  if (!trimmedUrl) return ""
   let base: URL
   try {
     base = new URL(origin)
@@ -22,7 +24,7 @@ export function resolveSameOriginBrowserUrl(rawUrl: string, origin: string) {
     return ""
   }
   try {
-    const parsed = new URL(rawUrl.trim() || base.href, base)
+    const parsed = new URL(trimmedUrl, base)
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return base.href
     }
@@ -35,16 +37,28 @@ export function resolveSameOriginBrowserUrl(rawUrl: string, origin: string) {
   }
 }
 
-export function BrowserTab() {
+type BrowserTabProps = {
+  input?: string
+  src?: string
+  onInputChange?: (value: string) => void
+  onSrcChange?: (value: string) => void
+}
+
+export function BrowserTab({
+  input: controlledInput,
+  src: controlledSrc,
+  onInputChange,
+  onSrcChange,
+}: BrowserTabProps = {}) {
   const t = useTranslations("agentRuntime")
   const [origin] = useState(currentOrigin)
-  const [input, setInput] = useState(() =>
-    resolveSameOriginBrowserUrl(currentOrigin(), currentOrigin()),
-  )
-  const [src, setSrc] = useState(() =>
-    resolveSameOriginBrowserUrl(currentOrigin(), currentOrigin()),
-  )
+  const [internalInput, setInternalInput] = useState("")
+  const [internalSrc, setInternalSrc] = useState("")
   const [reloadKey, setReloadKey] = useState(0)
+  const input = controlledInput ?? internalInput
+  const src = controlledSrc ?? internalSrc
+  const setInput = onInputChange ?? setInternalInput
+  const setSrc = onSrcChange ?? setInternalSrc
 
   const go = () => {
     const next = resolveSameOriginBrowserUrl(input, origin)
@@ -97,7 +111,11 @@ export function BrowserTab() {
             className="h-full w-full"
             sandbox="allow-same-origin allow-scripts allow-forms"
           />
-        ) : null}
+        ) : (
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+            {t("browser.empty")}
+          </div>
+        )}
       </div>
     </div>
   )

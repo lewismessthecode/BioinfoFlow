@@ -2679,6 +2679,7 @@
     "browser": {
       "title": "内嵌浏览器",
       "urlPlaceholder": "同源地址",
+      "empty": "输入地址以预览页面。",
       "go": "打开地址",
       "reload": "重新加载"
     },

@@ -2679,6 +2679,7 @@
     "browser": {
       "title": "Embedded browser",
       "urlPlaceholder": "Same-origin URL",
+      "empty": "Enter a URL to preview a page.",
       "go": "Open URL",
       "reload": "Reload"
     },
