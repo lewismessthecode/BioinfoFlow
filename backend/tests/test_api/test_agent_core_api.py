@@ -1213,6 +1213,38 @@ async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, mon
 
 
 @pytest.mark.asyncio
+async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    pdf_file = repo_root / "summary.pdf"
+    pdf_file.write_bytes(b"%PDF-1.7\nbinary-\xff\n")
+
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
+
+    metadata_resp = await async_client.get(
+        "/api/v1/agent/fs/file",
+        params={"path": str(pdf_file)},
+    )
+    assert metadata_resp.status_code == 200
+    data = metadata_resp.json()["data"]
+    assert data["binary"] is True
+    assert data["content"] == ""
+    assert data["mime_type"] == "application/pdf"
+
+    download_resp = await async_client.get(
+        "/api/v1/agent/fs/download",
+        params={"path": str(pdf_file), "inline": "true"},
+    )
+    assert download_resp.status_code == 200
+    assert download_resp.headers["content-type"].startswith("application/pdf")
+    assert "inline" in download_resp.headers["content-disposition"]
+    assert download_resp.content.startswith(b"%PDF-1.7")
+
+
+@pytest.mark.asyncio
 async def test_agent_toolsets_include_plan_mode(async_client):
     response = await async_client.get("/api/v1/agent/toolsets")
 

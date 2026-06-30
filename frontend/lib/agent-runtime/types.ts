@@ -392,4 +392,6 @@ export type AgentFsFile = {
   truncated: boolean
   size: number
   language?: string | null
+  mime_type?: string | null
+  binary?: boolean
 }

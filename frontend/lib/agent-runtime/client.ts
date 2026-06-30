@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api"
+import { apiRequest, buildApiUrl } from "@/lib/api"
 import type {
   AgentActionDecision,
   AgentAnswer,
@@ -156,6 +156,14 @@ export const getAgentFsFile = async (path: string) => {
   })
   return response.data
 }
+
+export const buildAgentFsDownloadUrl = (
+  path: string,
+  options?: { inline?: boolean },
+) => buildApiUrl("/agent/fs/download", {
+  path,
+  inline: options?.inline ? "true" : undefined,
+})
 
 export const getAgentRuntimeState = async (
   sessionId: string,
