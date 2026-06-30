@@ -2,7 +2,13 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { FilesTab } from "@/components/bioinfoflow/agent-runtime/files-tab"
-import { getAgentFsFile, getAgentFsTree, type AgentFsFile, type AgentFsTree } from "@/lib/agent-runtime"
+import {
+  buildAgentFsDownloadUrl,
+  getAgentFsFile,
+  getAgentFsTree,
+  type AgentFsFile,
+  type AgentFsTree,
+} from "@/lib/agent-runtime"
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, number>) => {
@@ -23,6 +29,11 @@ vi.mock("next-intl", () => ({
       "files.loading": "Loading...",
       "files.addToContext": "Add to context",
       "files.copyPath": "Copy path",
+      "files.download": "Download",
+      "files.openDefault": "Open",
+      "files.previewUnavailable": "Preview unavailable",
+      "files.previewUnsupported": "Preview unsupported",
+      "files.openDefaultDescription": "Open or download the file",
     }
     return labels[key] ?? key
   },
@@ -31,6 +42,9 @@ vi.mock("next-intl", () => ({
 vi.mock("@/lib/agent-runtime", () => ({
   getAgentFsTree: vi.fn(),
   getAgentFsFile: vi.fn(),
+  buildAgentFsDownloadUrl: vi.fn((path: string, options?: { inline?: boolean }) =>
+    `/agent/fs/download?path=${encodeURIComponent(path)}${options?.inline ? "&inline=true" : ""}`,
+  ),
 }))
 
 const rootPath = "/data/projects/project-1"
@@ -50,6 +64,7 @@ describe("FilesTab", () => {
   beforeEach(() => {
     vi.mocked(getAgentFsTree).mockReset()
     vi.mocked(getAgentFsFile).mockReset()
+    vi.mocked(buildAgentFsDownloadUrl).mockClear()
     vi.mocked(getAgentFsTree).mockImplementation(async (path) => {
       if (path === srcPath) {
         return {
@@ -131,6 +146,121 @@ describe("FilesTab", () => {
     })
     fireEvent.click(addButtons.at(-1)!)
     expect(onAddContext).toHaveBeenCalledWith(scriptPath)
+  })
+
+  it("renders markdown, html, pdf, and csv files with native preview affordances", async () => {
+    const markdownPath = `${rootPath}/report.md`
+    const htmlPath = `${rootPath}/report.html`
+    const pdfPath = `${rootPath}/summary.pdf`
+    const csvPath = `${rootPath}/metrics.csv`
+    vi.mocked(getAgentFsTree).mockResolvedValue({
+      path: rootPath,
+      entries: [
+        { name: "report.md", path: markdownPath, type: "file" },
+        { name: "report.html", path: htmlPath, type: "file" },
+        { name: "summary.pdf", path: pdfPath, type: "file" },
+        { name: "metrics.csv", path: csvPath, type: "file" },
+      ],
+    })
+    vi.mocked(getAgentFsFile).mockImplementation(async (path) => {
+      if (path === markdownPath) {
+        return {
+          path,
+          content: "# QC Report",
+          truncated: false,
+          size: 12,
+          language: "markdown",
+          mime_type: "text/markdown",
+        }
+      }
+      if (path === htmlPath) {
+        return {
+          path,
+          content: "<h1>Interactive report</h1>",
+          truncated: false,
+          size: 28,
+          language: "html",
+          mime_type: "text/html",
+        }
+      }
+      if (path === pdfPath) {
+        return {
+          path,
+          content: "",
+          truncated: false,
+          size: 2048,
+          language: "pdf",
+          mime_type: "application/pdf",
+          binary: true,
+        }
+      }
+      return {
+        path,
+        content: "sample,reads\nA,42",
+        truncated: false,
+        size: 17,
+        language: "csv",
+        mime_type: "text/csv",
+      }
+    })
+
+    render(<FilesTab projectId="project-1" />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "report.md" }))
+    expect(await screen.findByRole("heading", { name: "QC Report" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "report.html" }))
+    await waitFor(() => {
+      expect(screen.getByTestId("file-preview-pane").querySelector("iframe")).toHaveAttribute(
+        "title",
+        htmlPath,
+      )
+    })
+    const htmlFrame = screen.getByTestId("file-preview-pane").querySelector("iframe")
+    expect(htmlFrame).toHaveAttribute("sandbox", "")
+    expect(htmlFrame).toHaveAttribute("srcdoc", "<h1>Interactive report</h1>")
+
+    fireEvent.click(screen.getByRole("button", { name: "summary.pdf" }))
+    await waitFor(() => {
+      expect(screen.getByTestId("file-preview-pane").querySelector("iframe")).toHaveAttribute(
+        "title",
+        pdfPath,
+      )
+    })
+    expect(screen.getByTestId("file-preview-pane").querySelector("iframe")).toHaveAttribute(
+      "src",
+      `/agent/fs/download?path=${encodeURIComponent(pdfPath)}&inline=true`,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "metrics.csv" }))
+    expect(await screen.findByRole("table")).toHaveTextContent("reads")
+    expect(screen.getByRole("table")).toHaveTextContent("42")
+  })
+
+  it("offers a fallback for spreadsheet files without a text preview", async () => {
+    const spreadsheetPath = `${rootPath}/metrics.xlsx`
+    vi.mocked(getAgentFsTree).mockResolvedValue({
+      path: rootPath,
+      entries: [{ name: "metrics.xlsx", path: spreadsheetPath, type: "file" }],
+    })
+    vi.mocked(getAgentFsFile).mockResolvedValue({
+      path: spreadsheetPath,
+      content: "",
+      truncated: false,
+      size: 4096,
+      language: "spreadsheet",
+      mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      binary: true,
+    })
+
+    render(<FilesTab projectId="project-1" />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "metrics.xlsx" }))
+    expect(await screen.findByText("Preview unsupported")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /Open/ })).toHaveAttribute(
+      "href",
+      `/agent/fs/download?path=${encodeURIComponent(spreadsheetPath)}`,
+    )
   })
 
   it("keeps an empty preview pane beside the file tree before a file is selected", async () => {

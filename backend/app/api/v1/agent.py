@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 from pathlib import Path
 from typing import AsyncGenerator
 
+import aiofiles
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -413,7 +415,7 @@ async def get_fs_file(
     path: str = Query(...),
     user: AuthUser = Depends(get_current_user),
 ):
-    """Return the text contents of a file inside the allowed roots."""
+    """Return preview metadata and text contents when available."""
     target = FilesystemPolicy().require_allowed_path(
         path, must_exist=True, allow_directory=False
     )
@@ -422,10 +424,16 @@ async def get_fs_file(
     size = _safe_size(target) or 0
     raw = target.read_bytes()[:_FS_FILE_MAX_BYTES]
     truncated = size > _FS_FILE_MAX_BYTES
+    mime_type = _mime_type_for(target)
+    binary = False
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise BadRequestError("File is not valid UTF-8 text") from exc
+        if _is_previewable_binary(target, mime_type):
+            content = ""
+            binary = True
+        else:
+            raise BadRequestError("File is not valid UTF-8 text") from exc
     return success_response(
         {
             "path": str(target),
@@ -433,8 +441,40 @@ async def get_fs_file(
             "truncated": truncated,
             "size": size,
             "language": _language_for(target),
+            "mime_type": mime_type,
+            "binary": binary,
         },
         request=request,
+    )
+
+
+@router.get("/fs/download")
+async def download_fs_file(
+    request: Request,
+    path: str = Query(...),
+    inline: bool = Query(default=False),
+    user: AuthUser = Depends(get_current_user),
+):
+    """Stream a file inside the allowed roots for preview or download."""
+    target = FilesystemPolicy().require_allowed_path(
+        path, must_exist=True, allow_directory=False
+    )
+    if _is_sensitive_fs_path(target):
+        raise PermissionDeniedError(f"File is not available through agent file browsing: {target}")
+
+    async def file_iterator():
+        async with aiofiles.open(target, "rb") as handle:
+            while True:
+                chunk = await handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+
+    disposition = "inline" if inline else "attachment"
+    return StreamingResponse(
+        file_iterator(),
+        media_type=_mime_type_for(target),
+        headers={"Content-Disposition": f'{disposition}; filename="{target.name}"'},
     )
 
 
@@ -474,7 +514,26 @@ def _language_for(path: Path) -> str | None:
         ".sql": "sql",
         ".css": "css",
         ".html": "html",
+        ".htm": "html",
+        ".csv": "csv",
+        ".tsv": "tsv",
+        ".pdf": "pdf",
+        ".xlsx": "spreadsheet",
+        ".xls": "spreadsheet",
     }.get(path.suffix.lower())
+
+
+def _mime_type_for(path: Path) -> str:
+    guessed, _ = mimetypes.guess_type(path.name)
+    return guessed or "application/octet-stream"
+
+
+def _is_previewable_binary(path: Path, mime_type: str) -> bool:
+    suffix = path.suffix.lower()
+    return (
+        mime_type == "application/pdf"
+        or suffix in {".pdf", ".xlsx", ".xls"}
+    )
 
 
 @router.get("/toolsets")

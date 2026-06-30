@@ -2658,6 +2658,11 @@
       "loading": "加载中...",
       "addToContext": "添加到上下文",
       "copyPath": "复制路径",
+      "download": "下载",
+      "openDefault": "打开",
+      "previewUnavailable": "暂时无法预览这个文件。",
+      "previewUnsupported": "这个文件类型暂不支持原生预览。",
+      "openDefaultDescription": "可以打开或下载文件，并继续在默认应用中处理。",
       "removeAttachment": "移除 {label}",
       "truncated": "文件较大，已被截断。"
     },

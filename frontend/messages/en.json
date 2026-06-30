@@ -2658,6 +2658,11 @@
       "loading": "Loading...",
       "addToContext": "Add to context",
       "copyPath": "Copy path",
+      "download": "Download",
+      "openDefault": "Open",
+      "previewUnavailable": "Preview is not available for this file.",
+      "previewUnsupported": "Native preview is not available for this file type.",
+      "openDefaultDescription": "Open or download the file to continue in your default application.",
       "removeAttachment": "Remove {label}",
       "truncated": "File is large and was truncated."
     },
