@@ -2582,7 +2582,7 @@
     "artifacts": {
       "title": "Artifacts",
       "back": "Back to artifacts",
-      "empty": "No output artifacts yet. HTML, PDF, spreadsheet, and Markdown files will appear here.",
+      "empty": "No artifacts yet.",
       "copy": "Copy",
       "copied": "Copied",
       "download": "Download",
