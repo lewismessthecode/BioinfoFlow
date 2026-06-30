@@ -121,6 +121,9 @@ function createSession(): TerminalSession {
     shell: "/bin/sh",
     cwd: "/workspace/project-1",
     status: "running",
+    target_type: "local",
+    target_label: "local",
+    remote_connection_id: null,
   }
 }
 
@@ -270,10 +273,41 @@ describe("TerminalDock", () => {
 
     expect(await screen.findByText("title")).toBeInTheDocument()
     expect(screen.getByLabelText(/connected/i)).toBeInTheDocument()
+    expect(screen.getByText("local")).toBeInTheDocument()
     expect(screen.queryByText("sh • /workspace/project-1")).not.toBeInTheDocument()
-    expect(screen.getByTitle("sh • /workspace/project-1")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "newTerminal" })).toBeInTheDocument()
+    expect(screen.getByTitle("local • sh • /workspace/project-1")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "newTerminal" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "clearTerminal" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "reconnectTerminal" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "closeTerminal" })).toBeInTheDocument()
     expect(screen.queryByText("startingSession")).not.toBeInTheDocument()
+  })
+
+  it("labels remote terminal targets with the node name", async () => {
+    useTerminalSessionMock.mockReturnValue({
+      session: {
+        ...createSession(),
+        target_type: "remote",
+        target_label: "remote · Phoenix login",
+        remote_connection_id: "connection-1",
+        cwd: "/data/phoenix",
+        status: "unsupported",
+      },
+      connectionState: "error",
+      error: "Remote interactive terminals are not supported yet.",
+      sendInput: sendInputMock,
+      resize: resizeMock,
+      chdir: chdirMock,
+      reconnect: reconnectMock,
+    })
+
+    renderDock()
+
+    expect(await screen.findByText("remote · Phoenix login")).toBeInTheDocument()
+    expect(screen.getByTitle("remote · Phoenix login • sh • /data/phoenix")).toBeInTheDocument()
+    expect(
+      screen.getByText("Remote interactive terminals are not supported yet.")
+    ).toBeInTheDocument()
   })
 
   it("shows inline error message without overlaying the terminal body", async () => {

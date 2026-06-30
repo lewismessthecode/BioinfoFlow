@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
-import { Eraser, Plus, RotateCcw, TerminalSquare, X } from "lucide-react"
+import { TerminalSquare, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
@@ -112,7 +112,6 @@ export function TerminalDock() {
     sendInput,
     resize,
     chdir,
-    reconnect,
   } = useTerminalSession({
     projectId,
     enabled: shouldConnect,
@@ -281,20 +280,26 @@ export function TerminalDock() {
 
   if (!enabled || !projectId) return null
 
-  const sessionMeta = `${getShellLabel(session?.shell)} • ${session?.cwd ?? tTerminal("startingSession")}`
+  const targetLabel = session?.target_label ?? tTerminal("targets.local")
+  const sessionMeta = `${targetLabel} • ${getShellLabel(session?.shell)} • ${
+    session?.cwd ?? tTerminal("startingSession")
+  }`
   const connectionLabel = connectionState === "connected"
     ? ""
     : (CONNECTION_LABELS[connectionState] ?? connectionState)
 
   const header = (
-    <div className="flex items-end justify-between gap-2 border-b border-border/60 bg-background px-2 pt-2">
-      <div className="flex min-w-0 flex-1 items-end">
+    <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-background px-2 py-1.5">
+      <div className="flex min-w-0 flex-1 items-center">
         <div
-          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-t-md border border-border/60 border-b-transparent bg-background px-3 py-1.5 -mb-px"
+          className="inline-flex min-w-0 max-w-full items-center gap-2 px-2 py-1"
           title={sessionMeta}
         >
           <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="shrink-0 text-xs font-medium text-foreground">{tTerminal("title")}</span>
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
+            {targetLabel}
+          </span>
           <span
             className={cn(
               "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
@@ -313,39 +318,8 @@ export function TerminalDock() {
             </span>
           ) : null}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="mb-1.5 ml-1 h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-          onClick={() => {
-            outputBufferRef.current = []
-            terminalRef.current?.clear()
-            reconnect()
-          }}
-          aria-label={tTerminal("newTerminal")}
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
       </div>
-      <div className="flex items-center gap-0.5 pb-1.5">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-          onClick={() => terminalRef.current?.clear()}
-          aria-label={tAccessibility("clearTerminal")}
-        >
-          <Eraser className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-          onClick={reconnect}
-          aria-label={tAccessibility("reconnectTerminal")}
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-        </Button>
+      <div className="flex items-center gap-0.5">
         <Button
           variant="ghost"
           size="icon"

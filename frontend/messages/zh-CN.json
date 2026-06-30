@@ -2358,6 +2358,9 @@
     "title": "终端",
     "newTerminal": "新建终端",
     "startingSession": "正在启动终端...",
+    "targets": {
+      "local": "local"
+    },
     "connectionStates": {
       "idle": "空闲",
       "connecting": "连接中",

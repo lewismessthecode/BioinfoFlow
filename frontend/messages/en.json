@@ -2358,6 +2358,9 @@
     "title": "Terminal",
     "newTerminal": "New terminal",
     "startingSession": "Starting terminal...",
+    "targets": {
+      "local": "local"
+    },
     "connectionStates": {
       "idle": "Idle",
       "connecting": "Connecting",

@@ -16,6 +16,7 @@ from app.schemas.terminal import (
     TerminalSessionCreate,
     TerminalSessionRead,
 )
+from app.services.remote_connection_service import RemoteConnectionService
 from app.services.project_service import ProjectService
 from app.services.terminal_service import terminal_manager
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
@@ -47,10 +48,28 @@ async def create_terminal_session(
         )
         return success_response(data, request=request, status_code=200)
 
-    session = await terminal_manager.create_or_get(
-        project_id=str(project.id),
-        root_path=project_home(project),
-    )
+    if getattr(project, "storage_mode", None) == "remote":
+        remote_connection_id = getattr(project, "remote_connection_id", None)
+        remote_root_path = getattr(project, "remote_root_path", None)
+        if not remote_connection_id or not remote_root_path:
+            raise NotFoundError("Remote project target not found")
+        connection = await RemoteConnectionService(db).get_connection(
+            str(remote_connection_id),
+            workspace_id=user.workspace_id,
+        )
+        if connection is None:
+            raise NotFoundError("Remote connection not found")
+        session = await terminal_manager.create_or_get_unsupported_remote(
+            project_id=str(project.id),
+            remote_root_path=str(remote_root_path),
+            remote_connection_id=str(remote_connection_id),
+            target_label=f"remote · {connection.name}",
+        )
+    else:
+        session = await terminal_manager.create_or_get(
+            project_id=str(project.id),
+            root_path=project_home(project),
+        )
     data = TerminalSessionRead.model_validate(asdict(session)).model_dump(mode="json")
     return success_response(data, request=request, status_code=201)
 

@@ -35,6 +35,67 @@ async def test_terminal_session_api_reuses_existing_project_session(
 
 
 @pytest.mark.asyncio
+async def test_terminal_session_api_returns_local_target_metadata(
+    async_client, db_session
+):
+    project = await _create_project(
+        db_session,
+        name="Terminal Local Target Project",
+    )
+
+    response = await async_client.post(
+        "/api/v1/terminal/sessions", json={"project_id": str(project.id)}
+    )
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["target_type"] == "local"
+    assert data["target_label"] == "local"
+    assert data["remote_connection_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_terminal_session_api_returns_remote_target_without_local_fallback(
+    async_client,
+):
+    connection_resp = await async_client.post(
+        "/api/v1/connections",
+        json={
+            "name": "Phoenix login",
+            "host": "login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+    )
+    assert connection_resp.status_code == 201
+    connection_id = connection_resp.json()["data"]["id"]
+
+    project_resp = await async_client.post(
+        "/api/v1/projects",
+        json={
+            "name": "Phoenix terminal",
+            "remote_connection_id": connection_id,
+            "remote_root_path": "/data/phoenix",
+        },
+    )
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["data"]["id"]
+
+    response = await async_client.post(
+        "/api/v1/terminal/sessions", json={"project_id": project_id}
+    )
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["target_type"] == "remote"
+    assert data["target_label"] == "remote · Phoenix login"
+    assert data["remote_connection_id"] == connection_id
+    assert data["cwd"] == "/data/phoenix"
+    assert data["status"] == "unsupported"
+
+
+@pytest.mark.asyncio
 async def test_terminal_session_api_returns_not_found_for_unknown_project(async_client):
     response = await async_client.post(
         "/api/v1/terminal/sessions", json={"project_id": str(uuid4())}

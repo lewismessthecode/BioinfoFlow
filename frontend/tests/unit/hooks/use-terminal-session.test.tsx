@@ -88,6 +88,9 @@ describe("useTerminalSession", () => {
       shell: "/bin/zsh",
       cwd: "/workspace",
       status: "starting",
+      target_type: "local",
+      target_label: "local",
+      remote_connection_id: null,
     }
     const onMessage = vi.fn()
     apiRequestMock.mockResolvedValue({ data: initialSession })
