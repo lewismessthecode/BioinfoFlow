@@ -196,6 +196,28 @@ describe("ConnectionsPage", () => {
     expect(screen.queryByRole("button", { name: "Run check" })).not.toBeInTheDocument()
   })
 
+  it("keeps SSH connection cards focused on host identity and status", async () => {
+    apiRequestMock.mockResolvedValueOnce({
+      data: [
+        {
+          ...liveConnection,
+          status: "online",
+          last_checked_at: "2026-06-25T10:11:12Z",
+        },
+      ],
+    })
+
+    render(<ConnectionsPage />)
+
+    const card = await screen.findByRole("button", { name: /^Live HPC/ })
+    expect(card).toHaveTextContent("Live HPC")
+    expect(card).toHaveTextContent("bioflow@login.live.example.org")
+    expect(card).toHaveTextContent("Online")
+    expect(card).not.toHaveTextContent("SSH config Host")
+    expect(card).not.toHaveTextContent("live-hpc")
+    expect(card).not.toHaveTextContent(/Jun 25|10:11|18:11/)
+  })
+
   it("saves new connections through the backend", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [] })
