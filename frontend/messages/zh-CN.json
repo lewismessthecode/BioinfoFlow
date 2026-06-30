@@ -2621,7 +2621,7 @@
       "terminal": "终端",
       "terminalDescription": "打开项目终端",
       "browser": "浏览器",
-      "browserDescription": "预览同源页面",
+      "browserDescription": "打开空白浏览工作区",
       "files": "文件",
       "filesDescription": "浏览并预览项目文件",
       "workflows": "工作流",
@@ -2681,7 +2681,7 @@
     },
     "browser": {
       "title": "内嵌浏览器",
-      "urlPlaceholder": "同源地址",
+      "urlPlaceholder": "输入 URL",
       "empty": "输入地址以预览页面。",
       "go": "打开地址",
       "reload": "重新加载"

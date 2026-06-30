@@ -2621,7 +2621,7 @@
       "terminal": "Terminal",
       "terminalDescription": "Open the project terminal",
       "browser": "Browser",
-      "browserDescription": "Preview same-origin pages",
+      "browserDescription": "Open a blank browser workspace",
       "files": "Files",
       "filesDescription": "Browse and preview project files",
       "workflows": "Workflows",
@@ -2681,7 +2681,7 @@
     },
     "browser": {
       "title": "Embedded browser",
-      "urlPlaceholder": "Same-origin URL",
+      "urlPlaceholder": "Enter URL",
       "empty": "Enter a URL to preview a page.",
       "go": "Open URL",
       "reload": "Reload"

@@ -10,30 +10,25 @@ function currentOrigin() {
   return typeof window === "undefined" ? "" : window.location.origin
 }
 
-export function resolveSameOriginBrowserUrl(rawUrl: string, origin: string) {
-  if (!origin) return ""
+export function resolveBrowserUrl(rawUrl: string, origin: string) {
   const trimmedUrl = rawUrl.trim()
   if (!trimmedUrl) return ""
-  let base: URL
-  try {
-    base = new URL(origin)
-  } catch {
+
+  const parsed = parseBrowserUrl(trimmedUrl, origin)
+  if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) {
     return ""
   }
-  if (base.protocol !== "http:" && base.protocol !== "https:") {
-    return ""
-  }
+  return parsed.href
+}
+
+function parseBrowserUrl(rawUrl: string, origin: string) {
+  const looksLikeHost = /^[\w-]+(\.[\w-]+)+(\/.*)?$/u.test(rawUrl)
   try {
-    const parsed = new URL(trimmedUrl, base)
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return base.href
-    }
-    if (parsed.origin !== base.origin) {
-      return base.href
-    }
-    return parsed.href
+    if (looksLikeHost) return new URL(`https://${rawUrl}`)
+    if (origin) return new URL(rawUrl, origin)
+    return new URL(rawUrl)
   } catch {
-    return base.href
+    return null
   }
 }
 
@@ -61,10 +56,8 @@ export function BrowserTab({
   const setSrc = onSrcChange ?? setInternalSrc
 
   const go = () => {
-    const next = resolveSameOriginBrowserUrl(input, origin)
+    const next = resolveBrowserUrl(input, origin)
     if (!next) return
-    // Same-origin only: embedding a cross-origin app is blocked by
-    // X-Frame-Options, so we constrain the iframe to this deployment's origin.
     setSrc(next)
     setInput(next)
   }
