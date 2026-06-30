@@ -1,0 +1,939 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bioinfoflow agent direction mockups</title>
+  <style>
+    :root {
+      --page: #f4f4f5;
+      --frame: #fdfdff;
+      --sidebar: #f8f8fa;
+      --surface: #ffffff;
+      --surface-soft: #f4f5f7;
+      --active: #eeeeef;
+      --line: #e7e8ec;
+      --line-soft: #ececf0;
+      --text: #1f1f1f;
+      --muted: #6f737a;
+      --faint: #9aa0a6;
+      --blue-soft: #e1f3fe;
+      --blue-text: #1f6c9f;
+      --green-soft: #edf3ec;
+      --green-text: #346538;
+      --yellow-soft: #fbf3db;
+      --yellow-text: #956400;
+      --red-soft: #fdebec;
+      --red-text: #9f2f2d;
+      --shadow: 0 18px 48px rgb(60 64 67 / 0.08);
+      font-family: "DM Sans", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+    }
+
+    .board {
+      max-width: 1880px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .intro {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      font-weight: 650;
+    }
+
+    .intro p {
+      margin: 8px 0 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .legend {
+      display: flex;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .legend span {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 6px 9px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      min-width: 0;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 0 0 10px;
+      padding: 0 2px;
+    }
+
+    .panel-title h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+      letter-spacing: -0.01em;
+    }
+
+    .panel-title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .app-frame {
+      height: 650px;
+      overflow: hidden;
+      border: 1px solid #dfe1e7;
+      border-radius: 18px;
+      background: var(--frame);
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 178px minmax(360px, 1fr) 328px;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--line-soft);
+      background: var(--sidebar);
+      padding: 12px 8px;
+      min-width: 0;
+    }
+
+    .sidebar-header {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 8px;
+      margin-bottom: 8px;
+    }
+
+    .brand-mark {
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      border: 1px solid #2e3136;
+      background:
+        radial-gradient(circle at 32% 28%, #7dc9ef 0 18%, transparent 19%),
+        radial-gradient(circle at 68% 30%, #7dc9ef 0 18%, transparent 19%),
+        radial-gradient(circle at 35% 70%, #7dc9ef 0 18%, transparent 19%),
+        radial-gradient(circle at 72% 72%, #7dc9ef 0 18%, transparent 19%),
+        #f8fbff;
+      flex: 0 0 auto;
+    }
+
+    .brand {
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: -0.01em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .nav-group {
+      display: grid;
+      gap: 2px;
+      margin-bottom: 14px;
+    }
+
+    .nav-item,
+    .project-row,
+    .conversation-row,
+    .tool-row,
+    .suggestion {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 8px;
+    }
+
+    .nav-item {
+      height: 30px;
+      padding: 0 10px;
+      border-radius: 18px;
+      color: #3f4248;
+      font-size: 12px;
+      font-weight: 560;
+    }
+
+    .nav-item.active {
+      background: var(--active);
+      color: var(--text);
+      font-weight: 650;
+    }
+
+    .glyph {
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid currentColor;
+      border-radius: 5px;
+      opacity: 0.78;
+      flex: 0 0 auto;
+    }
+
+    .glyph.circle {
+      border-radius: 999px;
+    }
+
+    .glyph.triangle {
+      width: 0;
+      height: 0;
+      border: 0;
+      border-left: 11px solid currentColor;
+      border-top: 7px solid transparent;
+      border-bottom: 7px solid transparent;
+      border-radius: 0;
+      opacity: 0.72;
+    }
+
+    .section-label {
+      margin: 8px 10px 7px;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .project-row {
+      height: 32px;
+      padding: 0 9px;
+      border-radius: 18px;
+      background: var(--active);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .conversation-row {
+      min-height: 28px;
+      margin-left: 18px;
+      padding: 0 6px;
+      border-left: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-top: 1px solid var(--line-soft);
+      padding: 12px 8px 2px;
+    }
+
+    .avatar {
+      width: 25px;
+      height: 25px;
+      border-radius: 9px;
+      background: #202124;
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .footer-copy strong,
+    .footer-copy span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .footer-copy strong {
+      font-size: 12px;
+      line-height: 1.2;
+    }
+
+    .footer-copy span {
+      color: var(--muted);
+      font-size: 10px;
+      margin-top: 2px;
+    }
+
+    .main {
+      min-width: 0;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      background: var(--frame);
+    }
+
+    .topbar {
+      height: 41px;
+      border-bottom: 1px solid var(--line-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .crumb {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .icon-button {
+      width: 27px;
+      height: 27px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+    }
+
+    .icon-button.active {
+      background: var(--active);
+      color: var(--text);
+    }
+
+    .stage {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 32px;
+    }
+
+    .stage.agent-first {
+      justify-content: center;
+      padding-top: 52px;
+    }
+
+    .headline {
+      margin: 0 0 24px;
+      text-align: center;
+      font-size: 23px;
+      line-height: 1.15;
+      letter-spacing: -0.025em;
+      font-weight: 680;
+    }
+
+    .composer {
+      width: 100%;
+      max-width: 540px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 26px;
+      box-shadow: 0 2px 8px rgb(60 64 67 / 0.05), 0 18px 36px rgb(60 64 67 / 0.08);
+      padding: 12px;
+    }
+
+    .composer.agent {
+      max-width: 590px;
+      border-radius: 18px;
+      box-shadow: 0 1px 0 rgb(60 64 67 / 0.04), 0 14px 32px rgb(60 64 67 / 0.08);
+    }
+
+    .attachment-chip {
+      width: 70px;
+      height: 56px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fafafa;
+      margin-bottom: 8px;
+      position: relative;
+    }
+
+    .attachment-chip::after {
+      content: "";
+      position: absolute;
+      right: -7px;
+      top: -7px;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: #171717;
+    }
+
+    .textarea {
+      height: 50px;
+      color: var(--faint);
+      font-size: 13px;
+      padding: 4px 8px;
+    }
+
+    .composer-row {
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .plus {
+      width: 30px;
+      height: 30px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 22px;
+      line-height: 1;
+      display: grid;
+      place-items: center;
+    }
+
+    .pill {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      background: #fbfbfc;
+      color: #555b64;
+      border-radius: 999px;
+      padding: 0 10px;
+      font-size: 11px;
+      font-weight: 620;
+      white-space: nowrap;
+    }
+
+    .pill.square {
+      border-radius: 8px;
+    }
+
+    .pill.warn {
+      border-color: #f4d481;
+      background: var(--yellow-soft);
+      color: var(--yellow-text);
+    }
+
+    .pill.red {
+      border-color: #f4c6c9;
+      background: var(--red-soft);
+      color: var(--red-text);
+    }
+
+    .send {
+      margin-left: auto;
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 999px;
+      background: #1f1f1f;
+      color: #fff;
+      font-size: 14px;
+      display: grid;
+      place-items: center;
+    }
+
+    .context-bar {
+      width: 100%;
+      max-width: 540px;
+      margin-top: 0;
+      background: #f4f4f5;
+      border-radius: 0 0 18px 18px;
+      padding: 10px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+      box-shadow: inset 0 1px 0 rgb(0 0 0 / 0.02);
+    }
+
+    .context-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .suggestions {
+      width: 100%;
+      max-width: 540px;
+      margin-top: 22px;
+      display: grid;
+      gap: 0;
+    }
+
+    .suggestion {
+      height: 35px;
+      border-top: 1px solid var(--line-soft);
+      color: var(--muted);
+      font-size: 12px;
+      padding: 0 10px;
+    }
+
+    .suggestion:last-child {
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .right-panel {
+      border-left: 1px solid var(--line-soft);
+      background: #fbfbfc;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .right-tabs {
+      height: 42px;
+      border-bottom: 1px solid var(--line-soft);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+    }
+
+    .right-body {
+      padding: 14px 14px 18px;
+      overflow: hidden;
+    }
+
+    .empty-output {
+      border: 1.5px solid #f2b400;
+      border-radius: 9px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 10px 12px;
+    }
+
+    .right-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .right-heading strong {
+      font-size: 13px;
+      letter-spacing: -0.01em;
+    }
+
+    .right-heading span {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .status-card {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+
+    .status-card h3 {
+      margin: 0 0 7px;
+      font-size: 12px;
+    }
+
+    .status-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .mini-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .metric {
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      background: #fafafa;
+      padding: 8px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .tool-list {
+      display: grid;
+      gap: 7px;
+      margin-top: 8px;
+    }
+
+    .tool-row {
+      height: 37px;
+      justify-content: space-between;
+      border: 1px solid transparent;
+      background: var(--surface-soft);
+      border-radius: 8px;
+      padding: 0 10px;
+      color: #41454b;
+      font-size: 12px;
+      font-weight: 620;
+    }
+
+    .tool-row .left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .shortcut {
+      border: 1px solid var(--line);
+      background: #ededee;
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: 650;
+    }
+
+    .agent-sidebar {
+      padding-top: 16px;
+    }
+
+    .window-dots {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 22px;
+      padding: 0 6px;
+      margin-bottom: 12px;
+    }
+
+    .window-dots span {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #a7a7a9;
+    }
+
+    .agent-main {
+      border-right: 0;
+    }
+
+    .prompt-history {
+      width: 100%;
+      max-width: 590px;
+      margin-top: 22px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .prompt-history div {
+      height: 35px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-top: 1px solid var(--line-soft);
+      padding: 0 10px;
+    }
+
+    .prompt-history div:last-child {
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .agent-tool-panel {
+      justify-content: center;
+      background: var(--frame);
+      padding: 0 24px;
+    }
+
+    .agent-tool-panel .right-body {
+      padding: 0;
+    }
+
+    .agent-tool-panel .tool-row {
+      height: 40px;
+      background: #f3f3f4;
+      border-radius: 8px;
+      padding: 0 12px;
+    }
+
+    .small-note {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .callout {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 10px;
+      font-weight: 680;
+      background: var(--green-soft);
+      color: var(--green-text);
+    }
+
+    @media (max-width: 1200px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <section class="intro">
+      <div>
+        <h1>Bioinfoflow UI direction mockups</h1>
+        <p>两个方案都刻意沿用当前 Bioinfoflow 的浅色工作台、细边线、左侧项目树、圆角 composer 和右侧产物面板语言。差别只放在信息架构和首屏重心上。</p>
+      </div>
+      <div class="legend">
+        <span>当前风格延续</span>
+        <span>低动效</span>
+        <span>讨论稿</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <div class="panel-title">
+          <h2>1. 混合工作台</h2>
+          <p>Bioinfoflow 对象 + Codex 式输入焦点</p>
+        </div>
+        <div class="app-frame">
+          <aside class="sidebar">
+            <div class="sidebar-header">
+              <div class="brand-mark"></div>
+              <div class="brand">Bioinfoflow</div>
+            </div>
+            <div class="nav-group">
+              <div class="nav-item active"><span class="glyph"></span><span>新对话</span></div>
+              <div class="nav-item"><span class="glyph circle"></span><span>搜索</span></div>
+              <div class="nav-item"><span class="glyph"></span><span>仪表盘</span></div>
+              <div class="nav-item active"><span class="glyph"></span><span>智能助手</span></div>
+              <div class="nav-item"><span class="glyph"></span><span>工作流</span></div>
+              <div class="nav-item"><span class="glyph triangle"></span><span>运行记录</span></div>
+              <div class="nav-item"><span class="glyph"></span><span>镜像管理</span></div>
+              <div class="nav-item"><span class="glyph"></span><span>SSH 连接</span></div>
+              <div class="nav-item"><span class="glyph circle"></span><span>调度器</span></div>
+            </div>
+            <div class="section-label">工作区</div>
+            <div class="project-row"><span class="glyph"></span><span>test</span></div>
+            <div class="conversation-row">RNA-seq 质控诊断</div>
+            <div class="conversation-row">暂无对话</div>
+            <div class="nav-item" style="margin-top:8px;"><span style="font-size:18px;">+</span><span>新建项目</span></div>
+            <div class="sidebar-footer">
+              <div class="avatar">N</div>
+              <div class="footer-copy">
+                <strong>Admin</strong>
+                <span>所有者</span>
+              </div>
+            </div>
+          </aside>
+
+          <section class="main">
+            <div class="topbar">
+              <div class="crumb"><span class="glyph"></span><span>test</span></div>
+              <div class="top-actions">
+                <button class="icon-button">◎</button>
+                <button class="icon-button active">✣</button>
+                <button class="icon-button">☼</button>
+                <button class="icon-button">▣</button>
+              </div>
+            </div>
+            <div class="stage">
+              <h2 class="headline">今天想让 Bioinfoflow 帮你做什么？</h2>
+              <div class="composer">
+                <div class="textarea">给 Bioinfoflow 发送消息...</div>
+                <div class="composer-row">
+                  <button class="plus">+</button>
+                  <span class="pill">选择连接</span>
+                  <span class="pill square">受保护</span>
+                  <button class="send">↑</button>
+                </div>
+              </div>
+              <div class="context-bar">
+                <span class="context-item"><span class="glyph"></span>test</span>
+                <span class="context-item"><span class="glyph"></span>无工作流已选</span>
+                <span class="context-item"><span class="glyph circle"></span>本地环境</span>
+                <span class="context-item"><span class="glyph"></span>guarded auto</span>
+              </div>
+              <div class="suggestions">
+                <div class="suggestion"><span class="glyph circle"></span><span>分析最近失败的 run，并生成修复建议</span></div>
+                <div class="suggestion"><span class="glyph"></span><span>注册一个 Nextflow workflow，检查参数 schema</span></div>
+                <div class="suggestion"><span class="glyph"></span><span>检查当前 SSH 连接和 Docker 镜像可用性</span></div>
+              </div>
+            </div>
+          </section>
+
+          <aside class="right-panel">
+            <div class="right-tabs">
+              <button class="icon-button active">◎</button>
+              <button class="icon-button">▱</button>
+              <button class="icon-button">⌘</button>
+            </div>
+            <div class="right-body">
+              <div class="right-heading">
+                <strong>项目工作台</strong>
+                <span>test</span>
+              </div>
+              <div class="status-card">
+                <h3>运行状态</h3>
+                <p>当前没有运行中的任务。最近一次 run 已完成，可直接让 agent 审查日志。</p>
+                <div class="mini-metrics">
+                  <div class="metric"><strong>0</strong><span>运行中</span></div>
+                  <div class="metric"><strong>2</strong><span>工作流</span></div>
+                  <div class="metric"><strong>1</strong><span>连接</span></div>
+                </div>
+              </div>
+              <div class="status-card">
+                <h3>建议下一步</h3>
+                <p>把右侧默认空产物区换成工具和项目状态。产物出现后再切换为预览。</p>
+              </div>
+              <div class="tool-list">
+                <div class="tool-row"><span class="left"><span class="glyph"></span>文件</span><span class="shortcut">⌘P</span></div>
+                <div class="tool-row"><span class="left"><span class="glyph"></span>运行审查</span><span class="shortcut">⌘G</span></div>
+                <div class="tool-row"><span class="left"><span class="glyph"></span>终端</span><span class="shortcut">⌘J</span></div>
+              </div>
+              <p class="small-note">这个方向保留业务页面的一等地位，但首屏直接告诉用户可以做什么。</p>
+            </div>
+          </aside>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-title">
+          <h2>2. Agent 优先</h2>
+          <p>Bioinfoflow 作为生信版 Codex 工作面</p>
+        </div>
+        <div class="app-frame">
+          <aside class="sidebar agent-sidebar">
+            <div class="window-dots"><span></span><span></span><span></span></div>
+            <div class="nav-group">
+              <div class="nav-item"><span class="glyph"></span><span>新对话</span></div>
+              <div class="nav-item"><span class="glyph circle"></span><span>搜索</span></div>
+              <div class="nav-item"><span class="glyph circle"></span><span>已安排</span></div>
+              <div class="nav-item"><span class="glyph"></span><span>插件</span></div>
+            </div>
+            <div class="section-label">项目</div>
+            <div class="nav-group">
+              <div class="nav-item"><span class="glyph"></span><span>rnaseq-demo</span></div>
+              <div class="nav-item"><span class="glyph"></span><span>LewisLab</span></div>
+              <div class="nav-item active"><span class="glyph"></span><span>bioinfoflow</span></div>
+              <div class="nav-item"><span class="glyph"></span><span>test</span></div>
+            </div>
+            <div class="section-label">对话</div>
+            <div class="conversation-row" style="margin-left:0;border-left:0;">查找 Mac 发热原因 <span style="float:right;">5 天</span></div>
+            <div class="conversation-row" style="margin-left:0;border-left:0;">修复 WDL glob 路径</div>
+            <div class="sidebar-footer">
+              <div class="avatar" style="background:#f0e7ff;color:#6844a8;">设</div>
+              <div class="footer-copy">
+                <strong>设置</strong>
+                <span>账户</span>
+              </div>
+            </div>
+          </aside>
+
+          <section class="main agent-main">
+            <div class="topbar">
+              <div class="crumb"><span></span></div>
+              <div class="top-actions">
+                <button class="icon-button">⌗</button>
+                <button class="icon-button">▭</button>
+                <button class="icon-button active">◧</button>
+              </div>
+            </div>
+            <div class="stage agent-first">
+              <h2 class="headline">我们应该在 bioinfoflow 中构建什么？</h2>
+              <div class="composer agent">
+                <div class="attachment-chip"></div>
+                <div class="textarea">随心输入</div>
+                <div class="composer-row">
+                  <button class="plus">+</button>
+                  <span class="pill red">完全访问</span>
+                  <span style="margin-left:auto;color:var(--muted);font-size:12px;">5.5&nbsp;&nbsp;超高</span>
+                  <button class="send">↑</button>
+                </div>
+              </div>
+              <div class="context-bar" style="max-width:590px;">
+                <span class="context-item"><span class="glyph"></span>bioinfoflow</span>
+                <span class="context-item"><span class="glyph"></span>新工作树</span>
+                <span class="context-item"><span class="glyph circle"></span>无环境</span>
+                <span class="context-item"><span class="glyph"></span>main</span>
+              </div>
+              <div class="prompt-history">
+                <div><span class="glyph circle"></span><span>把失败 run 的生命周期修复移植过来</span></div>
+                <div><span class="glyph circle"></span><span>把 Phoenix CLI 调查变成远程主机 starter</span></div>
+                <div><span class="glyph circle"></span><span>将你常用的应用连接到 Bioinfoflow</span></div>
+              </div>
+            </div>
+          </section>
+
+          <aside class="right-panel agent-tool-panel">
+            <div class="right-body">
+              <div class="tool-list">
+                <div class="tool-row"><span class="left"><span class="glyph"></span>审查</span><span class="shortcut">⌃⇧G</span></div>
+                <div class="tool-row"><span class="left"><span class="glyph"></span>终端</span></div>
+                <div class="tool-row"><span class="left"><span class="glyph circle"></span>浏览器</span><span class="shortcut">⌘T</span></div>
+                <div class="tool-row"><span class="left"><span class="glyph"></span>文件</span><span class="shortcut">⌘P</span></div>
+                <div class="tool-row"><span class="left"><span class="glyph"></span>工作流</span></div>
+                <div class="tool-row"><span class="left"><span class="glyph triangle"></span>运行记录</span></div>
+              </div>
+              <p class="small-note">这个方向会弱化左侧业务导航，把工作流、run、镜像和 SSH 都折进 agent 工具面板。</p>
+              <div class="callout">更像 Codex</div>
+            </div>
+          </aside>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
