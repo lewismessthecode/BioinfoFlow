@@ -65,6 +65,9 @@ function formFromConnection(connection: RemoteConnection): ConnectionFormState {
     auth_method: connection.auth_method,
     ssh_alias: connection.ssh_alias,
     key_path: connection.key_path,
+    password: "",
+    private_key: "",
+    passphrase: "",
     skill_instructions: connection.skill_instructions,
   }
 }
@@ -155,7 +158,7 @@ export default function ConnectionsPage() {
     if (!open) resetFormState()
   }
 
-  const openCreateDialog = (authMethod: RemoteConnectionAuthMethod = "agent") => {
+  const openCreateDialog = (authMethod: RemoteConnectionAuthMethod = "password") => {
     resetFormState()
     setForm({
       ...initialConnectionForm,
@@ -204,6 +207,18 @@ export default function ConnectionsPage() {
       setFormErrorField("key_path")
       return null
     }
+    const password = form.password.trim()
+    if (form.auth_method === "password" && !password) {
+      setFormError(t("form.errors.passwordRequired"))
+      setFormErrorField("password")
+      return null
+    }
+    const privateKey = form.private_key.trim()
+    if (form.auth_method === "private_key" && !privateKey) {
+      setFormError(t("form.errors.privateKeyRequired"))
+      setFormErrorField("private_key")
+      return null
+    }
 
     setFormError(null)
     setFormErrorField(null)
@@ -215,6 +230,10 @@ export default function ConnectionsPage() {
       auth_method: form.auth_method,
       ssh_alias: form.auth_method === "ssh_config" ? sshAlias : null,
       key_path: form.auth_method === "key_file" ? keyPath : null,
+      password: form.auth_method === "password" ? password : null,
+      private_key: form.auth_method === "private_key" ? privateKey : null,
+      passphrase:
+        form.auth_method === "private_key" ? form.passphrase.trim() || null : null,
       skill_instructions: form.skill_instructions.trim() || null,
     }
   }

@@ -9,10 +9,10 @@ import type { RemoteConnection } from "@/lib/demo-connections"
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
     const labels: Record<string, string> = {
-      placeholder: "Choose connection",
+      placeholder: "Choose Host Skill",
       selectedAria: "Selected remote connection",
-      menuTitle: "Remote connections",
-      manage: "Manage connections",
+      menuTitle: "Host Skills",
+      manage: "Manage Host Skills",
       "status.online": "Online",
       "status.offline": "Offline",
       "status.error": "Connection error",
@@ -66,7 +66,7 @@ describe("ConnectedNodeSelector", () => {
     )
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    expect(screen.getByRole("button", { name: "Choose connection" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Choose Host Skill" })).toBeInTheDocument()
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
@@ -82,7 +82,7 @@ describe("ConnectedNodeSelector", () => {
     )
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    expect(screen.getByRole("button", { name: "Choose connection" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Choose Host Skill" })).toBeInTheDocument()
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
@@ -107,7 +107,7 @@ describe("ConnectedNodeSelector", () => {
     render(<ConnectedNodeSelector />)
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    await user.click(screen.getByRole("button", { name: "Choose connection" }))
+    await user.click(screen.getByRole("button", { name: "Choose Host Skill" }))
 
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
     expect(screen.queryByText("Test host sz03")).not.toBeInTheDocument()

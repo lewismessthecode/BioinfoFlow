@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  type ChangeEvent,
   type Dispatch,
   type FormEvent,
   type ReactNode,
@@ -45,24 +46,38 @@ export type ConnectionFormState = {
   auth_method: RemoteConnectionAuthMethod
   ssh_alias: string
   key_path: string
+  password: string
+  private_key: string
+  passphrase: string
   skill_instructions: string
 }
 
 export type DialogMode = "create" | "edit"
-export type FormErrorField = "host" | "port" | "ssh_alias" | "key_path" | null
+export type FormErrorField =
+  | "host"
+  | "port"
+  | "ssh_alias"
+  | "key_path"
+  | "password"
+  | "private_key"
+  | null
 
 export const initialConnectionForm: ConnectionFormState = {
   name: "",
   host: "",
   port: "22",
   username: "",
-  auth_method: "agent",
+  auth_method: "password",
   ssh_alias: "",
   key_path: "",
+  password: "",
+  private_key: "",
+  passphrase: "",
   skill_instructions: "",
 }
 
-const authMethods: RemoteConnectionAuthMethod[] = ["agent", "key_file", "ssh_config"]
+const primaryAuthMethods: RemoteConnectionAuthMethod[] = ["password", "private_key"]
+const advancedAuthMethods: RemoteConnectionAuthMethod[] = ["agent", "key_file", "ssh_config"]
 const skillPresetKeys = ["nextflowHpc", "slurmDiagnostics", "readonlyInspection"] as const
 
 type ConnectionDialogProps = {
@@ -106,6 +121,30 @@ export function ConnectionDialog({
 }: ConnectionDialogProps) {
   const t = useTranslations("connections")
   const tCommon = useTranslations("common")
+
+  const handlePrivateKeyFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const value = typeof reader.result === "string" ? reader.result : ""
+      onFormChange((current) => ({ ...current, private_key: value }))
+    }
+    reader.readAsText(file)
+    event.target.value = ""
+  }
+
+  const selectAuthMethod = (method: RemoteConnectionAuthMethod) => {
+    onFormChange((current) => ({
+      ...current,
+      auth_method: method,
+      ssh_alias: method === "ssh_config" ? current.ssh_alias : "",
+      key_path: method === "key_file" ? current.key_path : "",
+      password: method === "password" ? current.password : "",
+      private_key: method === "private_key" ? current.private_key : "",
+      passphrase: method === "private_key" ? current.passphrase : "",
+    }))
+  }
 
   if (!open) return null
 
@@ -222,23 +261,82 @@ export function ConnectionDialog({
                 <div className="grid gap-1.5">
                   <Label className="text-xs font-medium text-muted-foreground">{t("fields.auth")}</Label>
                   <div aria-label={t("fields.auth")} className="grid gap-2">
-                    {authMethods.map((method) => (
+                    {primaryAuthMethods.map((method) => (
                       <AuthMethodButton
                         key={method}
                         selected={form.auth_method === method}
                         title={t(`auth.${method}`)}
-                        onSelect={() =>
-                          onFormChange((current) => ({
-                            ...current,
-                            auth_method: method,
-                            ssh_alias: method === "ssh_config" ? current.ssh_alias : "",
-                            key_path: method === "key_file" ? current.key_path : "",
-                          }))
-                        }
+                        description={t(`authDescriptions.${method}`)}
+                        onSelect={() => selectAuthMethod(method)}
                       />
                     ))}
                   </div>
                 </div>
+
+                {form.auth_method === "password" ? (
+                  <Field label={t("fields.password")} htmlFor="connection-password">
+                    <Input
+                      id="connection-password"
+                      type="password"
+                      value={form.password}
+                      onChange={(event) => onFormChange((current) => ({ ...current, password: event.target.value }))}
+                      placeholder={t("form.placeholders.password")}
+                      required
+                      aria-invalid={formErrorField === "password"}
+                      aria-describedby={formErrorField === "password" ? "connection-form-error" : undefined}
+                    />
+                  </Field>
+                ) : null}
+
+                {form.auth_method === "private_key" ? (
+                  <div className="grid gap-3">
+                    <Field label={t("fields.privateKey")} htmlFor="connection-private-key">
+                      <Textarea
+                        id="connection-private-key"
+                        value={form.private_key}
+                        onChange={(event) => onFormChange((current) => ({ ...current, private_key: event.target.value }))}
+                        placeholder={t("form.placeholders.privateKey")}
+                        className="min-h-32 resize-y font-mono text-xs"
+                        required
+                        aria-invalid={formErrorField === "private_key"}
+                        aria-describedby={formErrorField === "private_key" ? "connection-form-error" : undefined}
+                      />
+                    </Field>
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-border/60 px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40">
+                        <FileText className="h-4 w-4" />
+                        {t("actions.uploadPrivateKey")}
+                        <input type="file" className="sr-only" onChange={handlePrivateKeyFile} />
+                      </label>
+                      <Field label={t("fields.passphrase")} htmlFor="connection-passphrase">
+                        <Input
+                          id="connection-passphrase"
+                          type="password"
+                          value={form.passphrase}
+                          onChange={(event) => onFormChange((current) => ({ ...current, passphrase: event.target.value }))}
+                          placeholder={t("form.placeholders.passphrase")}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                ) : null}
+
+                <details className="group grid gap-3 border-t border-border/60 pt-3">
+                  <summary className="cursor-pointer list-none text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+                    {t("sections.advancedSsh")}
+                  </summary>
+                  <div className="grid gap-2 pt-2">
+                    {advancedAuthMethods.map((method) => (
+                      <AuthMethodButton
+                        key={method}
+                        selected={form.auth_method === method}
+                        title={t(`auth.${method}`)}
+                        description={t(`authDescriptions.${method}`)}
+                        onSelect={() => selectAuthMethod(method)}
+                      />
+                    ))}
+                  </div>
+                </details>
 
                 {form.auth_method === "ssh_config" ? (
                   <Field label={t("fields.sshAlias")} htmlFor="connection-ssh-alias">
@@ -348,7 +446,7 @@ function PanelSection({
   children: ReactNode
 }) {
   return (
-    <section className="grid gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
+    <section className="grid gap-3 border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
       <FormSectionTitle title={title} icon={icon} />
       {children}
     </section>
@@ -378,7 +476,7 @@ function FormSectionTitle({ title, icon }: { title: string; icon?: ReactNode }) 
   return (
     <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
       {icon ? (
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/50 text-muted-foreground">
           {icon}
         </span>
       ) : null}
@@ -390,10 +488,12 @@ function FormSectionTitle({ title, icon }: { title: string; icon?: ReactNode }) 
 function AuthMethodButton({
   selected,
   title,
+  description,
   onSelect,
 }: {
   selected: boolean
   title: string
+  description?: string
   onSelect: () => void
 }) {
   return (
@@ -402,11 +502,18 @@ function AuthMethodButton({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "inline-flex min-h-10 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm font-medium transition-colors hover:border-foreground/20 hover:bg-muted/40",
-        selected ? "border-primary/45 bg-primary/[0.04] text-foreground ring-1 ring-primary/25" : "border-border/60 bg-background/50 text-muted-foreground",
+        "inline-flex min-h-10 items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:border-foreground/20 hover:bg-muted/30",
+        selected ? "border-foreground/40 bg-muted/40 text-foreground" : "border-border/60 bg-transparent text-muted-foreground",
       )}
     >
-      <span>{title}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{title}</span>
+        {description ? (
+          <span className="mt-0.5 block text-xs font-normal leading-4 text-muted-foreground">
+            {description}
+          </span>
+        ) : null}
+      </span>
       {selected ? <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" /> : null}
     </button>
   )

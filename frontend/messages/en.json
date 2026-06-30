@@ -2007,7 +2007,7 @@
       "total": "Total connections",
       "online": "Reachable now",
       "attention": "Need attention",
-      "runtimeManaged": "Default or config auth"
+      "runtimeManaged": "Advanced SSH auth"
     },
     "filters": {
       "label": "Connection filters",
@@ -2022,17 +2022,21 @@
       "general": "General",
       "sshPort": "SSH on port",
       "credentials": "Credentials",
-      "agentSkill": "Bioinfoflow"
+      "agentSkill": "Host Skill",
+      "advancedSsh": "Advanced SSH settings"
     },
     "fields": {
       "name": "Label",
       "host": "Address",
       "port": "SSH on port",
       "username": "Username",
+      "password": "Password",
+      "privateKey": "Private key",
+      "passphrase": "Passphrase",
       "auth": "Authentication",
       "sshAlias": "SSH config Host",
-      "keyPath": "Key file path",
-      "skillInstructions": "Agent instructions"
+      "keyPath": "Backend key file path",
+      "skillInstructions": "Host Skill"
     },
     "status": {
       "online": "Online",
@@ -2041,9 +2045,18 @@
       "unknown": "Not tested"
     },
     "auth": {
+      "password": "Password",
+      "private_key": "Private key",
       "ssh_config": "SSH config Host",
-      "key_file": "Key file",
-      "agent": "Default SSH"
+      "key_file": "Backend key file",
+      "agent": "Backend ssh-agent"
+    },
+    "authDescriptions": {
+      "password": "Enter the SSH password Bioinfoflow should use from the backend.",
+      "private_key": "Paste or upload a private key. Bioinfoflow stores it encrypted.",
+      "ssh_config": "Use a Host alias from the backend container's SSH config.",
+      "key_file": "Use a private-key path that exists inside the backend container.",
+      "agent": "Use SSH_AUTH_SOCK from the backend container environment."
     },
     "actions": {
       "testConnection": "Test connection",
@@ -2052,6 +2065,7 @@
       "runProbe": "Run check",
       "runningProbe": "Checking…",
       "insertPreset": "Insert preset",
+      "uploadPrivateKey": "Upload key",
       "deleteConnection": "Delete connection",
       "clearFilters": "Clear filters"
     },
@@ -2090,17 +2104,22 @@
       "errors": {
         "hostRequired": "Enter an address or hostname.",
         "invalidPort": "Port must be between 1 and 65535.",
+        "passwordRequired": "Enter the SSH password.",
+        "privateKeyRequired": "Paste or upload a private key.",
         "sshAliasRequired": "Enter an SSH config Host.",
-        "keyPathRequired": "Enter a key file path.",
+        "keyPathRequired": "Enter a backend-visible key file path.",
         "saveFailed": "Could not save the connection."
       },
       "placeholders": {
         "name": "Lab GPU node",
         "host": "login.example.internal or 10.0.0.12",
         "username": "bioflow",
+        "password": "SSH password",
+        "privateKey": "Paste an OpenSSH private key here",
+        "passphrase": "Optional",
         "sshAlias": "lab-gpu",
-        "keyPath": "~/.ssh/id_ed25519",
-        "skillInstructions": "Working directories, setup steps, queue limits, common diagnostics…"
+        "keyPath": "/home/bioflow/.ssh/id_ed25519 inside backend",
+        "skillInstructions": "Remote roots, business CLIs, service URLs, safe commands, debug habits…"
       }
     },
     "toasts": {
@@ -2112,7 +2131,7 @@
     },
     "delete": {
       "title": "Delete {name}?",
-      "description": "The Agent will no longer be able to use this SSH host. This cannot be undone.",
+      "description": "The agent will no longer be able to use this SSH host. This cannot be undone.",
       "deleting": "Deleting…",
       "notFound": "Connection {name} no longer exists, so it was removed locally.",
       "conflict": "Connection {name} is used by one or more remote projects and cannot be deleted.",
@@ -2521,10 +2540,10 @@
       "comingSoon": "Coming soon"
     },
     "connectedNode": {
-      "placeholder": "Choose connection",
+      "placeholder": "Choose Host Skill",
       "selectedAria": "Conversation connection {name} at {host}, {status}",
-      "menuTitle": "Remote connections",
-      "manage": "Manage connections",
+      "menuTitle": "Host Skills",
+      "manage": "Manage Host Skills",
       "status": {
         "online": "Online",
         "offline": "Offline",
