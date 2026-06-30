@@ -1,6 +1,6 @@
 "use client"
 
-import { Clock3, Pencil, Search, Server } from "lucide-react"
+import { Pencil, Search, Server } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -99,7 +99,7 @@ export function ConnectionList({
         ) : loadError ? (
           <CommandState title={t("list.error")} tone="warning" />
         ) : filteredConnections.length > 0 ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3">
             {filteredConnections.map((connection) => {
               const selected = selectedConnection ? connection.id === selectedConnection.id : false
 
@@ -107,9 +107,9 @@ export function ConnectionList({
                 <article
                   key={connection.id}
                   className={cn(
-                    "group relative min-h-[96px] rounded-2xl border bg-background px-3 py-3 transition-colors hover:bg-muted/35",
+                    "group relative min-h-[108px] rounded-2xl border bg-background px-4 py-3.5 transition-colors hover:bg-muted/35",
                     selected
-                      ? "border-primary/50 bg-primary/[0.04] ring-1 ring-primary/25"
+                      ? "border-primary/30 bg-primary/[0.025] ring-1 ring-primary/15"
                       : "border-border/60",
                   )}
                 >
@@ -117,43 +117,22 @@ export function ConnectionList({
                     type="button"
                     onClick={() => onSelectConnection(connection.id)}
                     aria-current={selected ? "true" : undefined}
-                    className="grid h-full w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="grid h-full w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3.5 pr-11 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
-                    <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background text-foreground", selected && "border-primary/30 bg-primary/10 text-primary")}>
+                    <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background text-foreground", selected && "border-primary/25 bg-primary/5 text-primary")}>
                       <Server className="h-4 w-4" />
                     </div>
 
                     <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">{connection.name}</h2>
-                        <StatusDot status={connection.status} className="h-1.5 w-1.5 shrink-0 shadow-none sm:hidden" />
-                      </div>
-                      <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
-                        {connection.username}@{connection.host}:{connection.port}
+                      <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">{connection.name}</h2>
+                      <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                        {connection.username}@{connection.host}
                       </p>
-                      <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] leading-none text-muted-foreground">
-                        <span className="truncate">{t(`auth.${connection.auth_method}`)}</span>
-                        {connection.ssh_alias ? (
-                          <>
-                            <span className="text-border">/</span>
-                            <span className="truncate font-mono">{connection.ssh_alias}</span>
-                          </>
-                        ) : null}
-                        {connection.last_checked_at ? (
-                          <>
-                            <span className="text-border">/</span>
-                            <span className="inline-flex shrink-0 items-center gap-1">
-                              <Clock3 className="h-3 w-3" />
-                              {formatCheckedAt(connection.last_checked_at)}
-                            </span>
-                          </>
-                        ) : null}
-                      </div>
                     </div>
 
                     <span
                       className={cn(
-                        "hidden h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium transition-opacity group-hover:opacity-0 group-focus-within:opacity-0 sm:inline-flex",
+                        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium",
                         statusBorderClassNames[connection.status],
                       )}
                     >
@@ -239,15 +218,4 @@ function CommandState({
       ) : null}
     </div>
   )
-}
-
-function formatCheckedAt(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
 }
