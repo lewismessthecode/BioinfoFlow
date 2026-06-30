@@ -86,7 +86,8 @@ def _artifact_descriptor(
             "payload": result,
         }
 
-    # Command / log output (bash and other stdout-producing tools).
+    # Command / log output stays in action results and timeline activity, not
+    # review artifacts. Artifacts are reserved for user-facing deliverables.
     command_result = result
     if isinstance(result.get("result"), dict):
         command_result = result["result"]
@@ -95,12 +96,7 @@ def _artifact_descriptor(
         or policy.get("stdout")
         or policy.get("stderr")
     ) and any(key in command_result for key in ("stdout", "stderr", "exit_code")):
-        return {
-            "type": "command",
-            "title": str(result.get("command") or result.get("path") or f"{tool_name} output"),
-            "summary": f"exit code {command_result.get('exit_code', '?')}",
-            "payload": {**result, **command_result},
-        }
+        return None
     return None
 
 

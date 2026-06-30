@@ -4,14 +4,17 @@ import { useMemo, useState } from "react"
 import { ChevronLeft } from "lucide-react"
 import { useTranslations } from "next-intl"
 
-import type { AgentRuntimeArtifact } from "@/lib/agent-runtime"
+import {
+  deliverableArtifacts,
+  type AgentRuntimeArtifact,
+} from "@/lib/agent-runtime"
 import { ArtifactIcon, ArtifactViewer, artifactTypeLabel } from "./artifact-viewers"
 
 export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeArtifact[] }) {
   const t = useTranslations("agentRuntime")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const previewArtifacts = useMemo(
-    () => artifacts.filter(isPreviewArtifact),
+    () => deliverableArtifacts(artifacts),
     [artifacts],
   )
   const selected =
@@ -63,26 +66,4 @@ export function ArtifactPreviewDrawer({ artifacts }: { artifacts: AgentRuntimeAr
       ))}
     </div>
   )
-}
-
-const HIDDEN_ARTIFACT_TYPES = new Set(["todo_list"])
-const TOOL_LOG_ARTIFACT_TYPES = new Set(["command", "log_summary"])
-const PREVIEW_ARTIFACT_TYPES = new Set([
-  "file",
-  "html",
-  "pdf",
-  "report",
-  "markdown",
-  "sheet",
-  "spreadsheet",
-])
-
-function isPreviewArtifact(artifact: AgentRuntimeArtifact) {
-  if (HIDDEN_ARTIFACT_TYPES.has(artifact.type) || isToolLogArtifact(artifact)) return false
-  if (artifact.file_path) return true
-  return PREVIEW_ARTIFACT_TYPES.has(artifact.type)
-}
-
-function isToolLogArtifact(artifact: AgentRuntimeArtifact) {
-  return TOOL_LOG_ARTIFACT_TYPES.has(artifact.type)
 }
