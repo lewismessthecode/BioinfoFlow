@@ -2,7 +2,12 @@ import { apiRequest, buildWebSocketUrl } from "@/lib/api"
 
 export type RemoteConnectionStatus = "online" | "offline" | "error" | "unknown"
 
-export type RemoteConnectionAuthMethod = "ssh_config" | "key_file" | "agent"
+export type RemoteConnectionAuthMethod =
+  | "password"
+  | "private_key"
+  | "ssh_config"
+  | "key_file"
+  | "agent"
 
 export type RemoteConnection = {
   id: string
@@ -74,6 +79,9 @@ export type RemoteConnectionCreateInput = {
   auth_method: RemoteConnectionAuthMethod
   ssh_alias?: string | null
   key_path?: string | null
+  password?: string | null
+  private_key?: string | null
+  passphrase?: string | null
   skill_instructions?: string | null
 }
 

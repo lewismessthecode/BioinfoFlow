@@ -2007,7 +2007,7 @@
       "total": "总连接",
       "online": "当前可用",
       "attention": "需要处理",
-      "runtimeManaged": "默认或配置认证"
+      "runtimeManaged": "高级 SSH 认证"
     },
     "filters": {
       "label": "连接筛选",
@@ -2022,17 +2022,21 @@
       "general": "常规",
       "sshPort": "SSH 端口",
       "credentials": "凭据",
-      "agentSkill": "Bioinfoflow"
+      "agentSkill": "Host Skill",
+      "advancedSsh": "高级 SSH 设置"
     },
     "fields": {
       "name": "标签",
       "host": "地址",
       "port": "SSH 端口",
       "username": "用户名",
+      "password": "密码",
+      "privateKey": "私钥",
+      "passphrase": "Passphrase",
       "auth": "认证方式",
       "sshAlias": "SSH 配置 Host",
-      "keyPath": "密钥文件路径",
-      "skillInstructions": "Agent 使用说明"
+      "keyPath": "后端密钥文件路径",
+      "skillInstructions": "Host Skill"
     },
     "status": {
       "online": "在线",
@@ -2041,9 +2045,18 @@
       "unknown": "未测试"
     },
     "auth": {
+      "password": "密码",
+      "private_key": "私钥",
       "ssh_config": "SSH 配置 Host",
-      "key_file": "密钥文件",
-      "agent": "默认 SSH"
+      "key_file": "后端密钥文件",
+      "agent": "后端 ssh-agent"
+    },
+    "authDescriptions": {
+      "password": "输入 Bioinfoflow backend 用来登录 SSH 的密码。",
+      "private_key": "粘贴或上传私钥，Bioinfoflow 会加密保存。",
+      "ssh_config": "使用 backend 容器内 SSH config 里的 Host 别名。",
+      "key_file": "使用 backend 容器内可见的私钥路径。",
+      "agent": "使用 backend 容器环境里的 SSH_AUTH_SOCK。"
     },
     "actions": {
       "testConnection": "测试连接",
@@ -2052,6 +2065,7 @@
       "runProbe": "运行检查",
       "runningProbe": "正在检查…",
       "insertPreset": "插入模板",
+      "uploadPrivateKey": "上传私钥",
       "deleteConnection": "删除连接",
       "clearFilters": "清除筛选"
     },
@@ -2090,17 +2104,22 @@
       "errors": {
         "hostRequired": "请填写地址或主机名。",
         "invalidPort": "端口必须在 1 到 65535 之间。",
+        "passwordRequired": "请填写 SSH 密码。",
+        "privateKeyRequired": "请粘贴或上传私钥。",
         "sshAliasRequired": "请填写 SSH 配置 Host。",
-        "keyPathRequired": "请填写密钥文件路径。",
+        "keyPathRequired": "请填写 backend 可见的密钥文件路径。",
         "saveFailed": "无法保存连接。"
       },
       "placeholders": {
         "name": "实验室 GPU 节点",
         "host": "login.example.internal 或 10.0.0.12",
         "username": "bioflow",
+        "password": "SSH 密码",
+        "privateKey": "在这里粘贴 OpenSSH 私钥",
+        "passphrase": "可选",
         "sshAlias": "lab-gpu",
-        "keyPath": "~/.ssh/id_ed25519",
-        "skillInstructions": "工作目录、环境初始化、队列限制、常用检查命令……"
+        "keyPath": "/home/bioflow/.ssh/id_ed25519，位于 backend 内",
+        "skillInstructions": "远端目录、业务 CLI、服务地址、安全命令、debug 习惯……"
       }
     },
     "toasts": {
@@ -2521,10 +2540,10 @@
       "comingSoon": "即将支持"
     },
     "connectedNode": {
-      "placeholder": "选择连接",
+      "placeholder": "选择 Host Skill",
       "selectedAria": "当前对话连接 {name}（{host}），{status}",
-      "menuTitle": "远程连接",
-      "manage": "管理连接",
+      "menuTitle": "Host Skills",
+      "manage": "管理 Host Skills",
       "status": {
         "online": "在线",
         "offline": "离线",

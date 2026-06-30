@@ -163,11 +163,16 @@ API routes live under:
 
 Authentication methods:
 
+- `password`: use an encrypted stored SSH password
+- `private_key`: use an encrypted stored OpenSSH private key and optional
+  passphrase
 - `ssh_config`: pass the saved alias as the exact SSH target
 - `key_file`: run SSH with a backend-visible key path
 - `agent`: use the backend user's `ssh-agent`
 
-The backend executes the system `ssh` binary with argv-based subprocess calls,
+Stored password and private-key methods use an in-process SSH transport so users
+do not need backend-visible `~/.ssh/...` paths. Advanced backend SSH methods
+continue to execute the system `ssh` binary with argv-based subprocess calls,
 `BatchMode=yes`, connect timeouts, and bounded stdout/stderr. The Connections
 page supports CRUD, testing, and a streamed WebSocket probe.
 

@@ -52,10 +52,11 @@ That keeps the same absolute path visible on the host and inside containers.
 - `MINIWDL_BIN` for WDL execution
 - one provider credential for agent use, configured in **Settings -> AI Providers** or bootstrapped with env vars such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `VLLM_BASE_URL` + `VLLM_MODEL`
 
-For Remote Connections, SSH access is evaluated from the backend environment.
-If you use SSH config aliases, key files, or `ssh-agent`, make sure the backend
-host or backend container can see the relevant `~/.ssh/config`, key path, or
-`SSH_AUTH_SOCK`.
+For Remote Connections, password and pasted-private-key auth are stored
+encrypted by Bioinfoflow and used by the backend directly. If you use advanced
+SSH config aliases, backend key file paths, or `ssh-agent`, SSH access is
+evaluated from the backend environment. Make sure the backend host or backend
+container can see the relevant `~/.ssh/config`, key path, or `SSH_AUTH_SOCK`.
 
 ## Scheduler Defaults
 

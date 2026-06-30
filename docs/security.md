@@ -53,10 +53,11 @@ container, not from the browser.
 
 Security expectations:
 
-- store SSH aliases and key paths only; never paste passwords or private key
-  contents into Bioinfoflow
+- store SSH passwords and pasted private keys only through the Remote
+  Connections credential fields; Bioinfoflow encrypts them and redacts them from
+  API reads
 - make key files and `SSH_AUTH_SOCK` available only to the backend environment
-  that needs them
+  that needs them when using advanced backend SSH methods
 - use SSH config aliases for `HostName`, `User`, `Port`, `IdentityFile`, and
   `ProxyJump` when possible
 - treat `remote.exec` as an elevated agent action; it runs a remote shell command

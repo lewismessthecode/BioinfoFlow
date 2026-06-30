@@ -81,6 +81,10 @@ async function clickPanelButton(user: TestUser, name: string | RegExp) {
   await user.click(within(getConnectionPanel()).getByRole("button", { name }))
 }
 
+async function openAdvancedSsh(user: TestUser) {
+  await user.click(within(getConnectionPanel()).getByText("Advanced SSH settings"))
+}
+
 async function openEditConnectionPanel(user: TestUser, connectionName = "Live HPC") {
   await user.click(screen.getByRole("button", { name: `Edit connection: ${connectionName}` }))
   return getConnectionPanel()
@@ -144,13 +148,14 @@ describe("ConnectionsPage", () => {
     expect(within(panel).getByLabelText("SSH on port")).toBeInTheDocument()
     expect(within(panel).getByLabelText("Username")).toBeInTheDocument()
     expect(within(panel).getByText("Credentials")).toBeInTheDocument()
-    expect(within(panel).getByLabelText("Agent instructions")).toBeInTheDocument()
+    expect(within(panel).getByLabelText("Host Skill")).toBeInTheDocument()
     expect(within(panel).getByRole("button", { name: "Cancel" })).toBeInTheDocument()
     expect(within(panel).getByRole("button", { name: "Add host" })).toBeInTheDocument()
 
-    await user.click(within(panel).getByRole("button", { name: "SSH config Host" }))
+    await openAdvancedSsh(user)
+    await user.click(within(panel).getByRole("button", { name: /SSH config Host/ }))
     expect(within(panel).getByLabelText("SSH config Host")).toBeInTheDocument()
-    expect(within(panel).queryByLabelText("Key file path")).not.toBeInTheDocument()
+    expect(within(panel).queryByLabelText("Backend key file path")).not.toBeInTheDocument()
     expect(within(panel).queryByText("Import instructions file")).not.toBeInTheDocument()
 
     expect(screen.queryByText("Tags")).not.toBeInTheDocument()
@@ -184,7 +189,7 @@ describe("ConnectionsPage", () => {
     apiRequestMock.mockResolvedValueOnce({
       data: {
         ...liveConnection,
-        auth_method: "agent",
+        auth_method: "password",
         ssh_alias: null,
       },
     })
@@ -197,9 +202,10 @@ describe("ConnectionsPage", () => {
     await user.clear(within(drawer).getByLabelText("SSH on port"))
     await user.type(within(drawer).getByLabelText("SSH on port"), "2222")
     await user.type(within(drawer).getByLabelText("Username"), "bioflow")
+    await user.type(within(drawer).getByLabelText("Password"), "secret-password")
     expect(within(drawer).queryByLabelText("SSH config Host")).not.toBeInTheDocument()
     await user.type(
-      within(drawer).getByLabelText("Agent instructions"),
+      within(drawer).getByLabelText("Host Skill"),
       "Use /data/live for analysis outputs.",
     )
     await clickPanelButton(user, "Add host")
@@ -212,9 +218,12 @@ describe("ConnectionsPage", () => {
           host: "login.live.example.org",
           port: 2222,
           username: "bioflow",
-          auth_method: "agent",
+          auth_method: "password",
           ssh_alias: null,
           key_path: null,
+          password: "secret-password",
+          private_key: null,
+          passphrase: null,
           skill_instructions: "Use /data/live for analysis outputs.",
         }),
       }),
@@ -261,7 +270,8 @@ describe("ConnectionsPage", () => {
     render(<ConnectionsPage />)
 
     const drawer = await openAddConnectionPanel(user)
-    await user.click(within(drawer).getByRole("button", { name: "SSH config Host" }))
+    await openAdvancedSsh(user)
+    await user.click(within(drawer).getByRole("button", { name: /SSH config Host/ }))
     await user.type(within(drawer).getByLabelText("Address"), "login.live.example.org")
     await clickPanelButton(user, "Add host")
 
@@ -285,7 +295,8 @@ describe("ConnectionsPage", () => {
     render(<ConnectionsPage />)
 
     const panel = await openAddConnectionPanel(user)
-    await user.click(within(panel).getByRole("button", { name: "SSH config Host" }))
+    await openAdvancedSsh(user)
+    await user.click(within(panel).getByRole("button", { name: /SSH config Host/ }))
     await user.type(within(panel).getByLabelText("Label"), "Live HPC")
     await user.type(within(panel).getByLabelText("Username"), "bioflow")
     await user.type(within(panel).getByLabelText("SSH config Host"), "live-hpc")
@@ -302,6 +313,9 @@ describe("ConnectionsPage", () => {
           auth_method: "ssh_config",
           ssh_alias: "live-hpc",
           key_path: null,
+          password: null,
+          private_key: null,
+          passphrase: null,
           skill_instructions: null,
         }),
       }),
@@ -433,6 +447,9 @@ describe("ConnectionsPage", () => {
           auth_method: "ssh_config",
           ssh_alias: "live-hpc",
           key_path: null,
+          password: null,
+          private_key: null,
+          passphrase: null,
           skill_instructions: "Use /data/live for analysis outputs.",
         }),
       }),
@@ -448,11 +465,12 @@ describe("ConnectionsPage", () => {
 
     const drawer = await openAddConnectionPanel(user)
     await user.type(within(drawer).getByLabelText("Address"), "login.live.example.org")
-    await user.click(within(drawer).getByRole("button", { name: /Key file/ }))
+    await openAdvancedSsh(user)
+    await user.click(within(drawer).getByRole("button", { name: /Backend key file/ }))
     await clickPanelButton(user, "Add host")
 
-    expect(await screen.findByText("Enter a key file path.")).toBeInTheDocument()
-    expect(within(drawer).getByLabelText("Key file path")).toHaveAttribute("aria-invalid", "true")
+    expect(await screen.findByText("Enter a backend-visible key file path.")).toBeInTheDocument()
+    expect(within(drawer).getByLabelText("Backend key file path")).toHaveAttribute("aria-invalid", "true")
     expect(apiRequestMock).toHaveBeenCalledTimes(1)
   })
 
@@ -474,8 +492,9 @@ describe("ConnectionsPage", () => {
     await user.type(within(drawer).getByLabelText("Label"), "Key HPC")
     await user.type(within(drawer).getByLabelText("Address"), "login.key.example.org")
     await user.type(within(drawer).getByLabelText("Username"), "bioflow")
-    await user.click(within(drawer).getByRole("button", { name: /Key file/ }))
-    await user.type(within(drawer).getByLabelText("Key file path"), "~/.ssh/id_ed25519")
+    await openAdvancedSsh(user)
+    await user.click(within(drawer).getByRole("button", { name: /Backend key file/ }))
+    await user.type(within(drawer).getByLabelText("Backend key file path"), "~/.ssh/id_ed25519")
     expect(within(drawer).queryByLabelText("SSH config Host")).not.toBeInTheDocument()
     await clickPanelButton(user, "Add host")
 
@@ -490,13 +509,16 @@ describe("ConnectionsPage", () => {
           auth_method: "key_file",
           ssh_alias: null,
           key_path: "~/.ssh/id_ed25519",
+          password: null,
+          private_key: null,
+          passphrase: null,
           skill_instructions: null,
         }),
       }),
     )
   })
 
-  it("adds preset Agent instructions", async () => {
+  it("adds preset Host Skill", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [] })
 
@@ -505,7 +527,7 @@ describe("ConnectionsPage", () => {
     const drawer = await openAddConnectionPanel(user)
     await user.click(within(drawer).getByRole("button", { name: "Insert preset" }))
     await user.click(await screen.findByRole("menuitem", { name: "Nextflow HPC" }))
-    expect(within(drawer).getByLabelText("Agent instructions")).toHaveValue(
+    expect(within(drawer).getByLabelText("Host Skill")).toHaveValue(
       "Load the site environment before diagnostics.\nRun module load nextflow when modules are available.\nCheck workflow outputs, .nextflow.log, and task directories under work/ before reruns.",
     )
   })
