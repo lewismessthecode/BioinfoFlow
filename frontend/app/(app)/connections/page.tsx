@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react"
-import { Plus, Server } from "lucide-react"
+import { Plus } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
@@ -34,7 +34,6 @@ import {
 } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
 
-import { ConnectionDetail } from "./components/connection-detail"
 import {
   ConnectionDialog,
   initialConnectionForm,
@@ -104,9 +103,7 @@ export default function ConnectionsPage() {
         setConnections(remoteConnections)
         setConnectionsLoadError(false)
         setSelectedConnectionId((current) =>
-          remoteConnections.some((connection) => connection.id === current)
-            ? current
-            : remoteConnections[0]?.id ?? "",
+          remoteConnections.some((connection) => connection.id === current) ? current : "",
         )
       })
       .catch(() => {
@@ -143,9 +140,7 @@ export default function ConnectionsPage() {
   }, [connections, search, statusFilter])
 
   const selectedConnection =
-    filteredConnections.find((connection) => connection.id === selectedConnectionId) ??
-    filteredConnections[0] ??
-    null
+    filteredConnections.find((connection) => connection.id === selectedConnectionId) ?? null
 
   const resetFormState = () => {
     setForm(initialConnectionForm)
@@ -171,6 +166,7 @@ export default function ConnectionsPage() {
   }
 
   const openEditDialog = (connection: RemoteConnection) => {
+    setSelectedConnectionId(connection.id)
     setForm(formFromConnection(connection))
     setFormError(null)
     setFormErrorField(null)
@@ -330,15 +326,24 @@ export default function ConnectionsPage() {
   const handleDeleteConnection = async () => {
     if (!deleteTarget) return
 
+    const deletingConnectionId = deleteTarget.id
     setIsDeleting(true)
     try {
-      await deleteRemoteConnection(deleteTarget.id)
-      removeConnectionLocally(deleteTarget.id)
+      await deleteRemoteConnection(deletingConnectionId)
+      removeConnectionLocally(deletingConnectionId)
+      if (editingConnectionId === deletingConnectionId) {
+        setDialogOpen(false)
+        resetFormState()
+      }
       toast.success(t("toasts.connectionDeleted", { name: deleteTarget.name }))
       setDeleteTarget(null)
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
-        removeConnectionLocally(deleteTarget.id)
+        removeConnectionLocally(deletingConnectionId)
+        if (editingConnectionId === deletingConnectionId) {
+          setDialogOpen(false)
+          resetFormState()
+        }
         toast.error(t("delete.notFound", { name: deleteTarget.name }))
         setDeleteTarget(null)
       } else if (error instanceof ApiError && error.status === 409) {
@@ -377,87 +382,80 @@ export default function ConnectionsPage() {
     }))
   }
 
-  const selectedProbeOutput =
-    selectedConnection && probeOutputConnectionId === selectedConnection.id ? probeOutput : ""
+  const editingConnection = editingConnectionId
+    ? connections.find((connection) => connection.id === editingConnectionId) ?? null
+    : null
+  const editingProbeOutput =
+    editingConnection && probeOutputConnectionId === editingConnection.id ? probeOutput : ""
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_18%_12%,hsl(var(--primary)/0.10),transparent_30%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.24)_100%)]">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-[1500px] flex-col gap-4 px-4 py-5 sm:px-6 lg:py-6">
-        <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm shadow-foreground/5">
-              <Server className="h-3.5 w-3.5" />
-              {t("eyebrow")}
-            </p>
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">{t("title")}</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t("subtitle")}</p>
-          </div>
-          <Button className="h-11 w-fit rounded-2xl px-4 shadow-sm shadow-foreground/5" onClick={() => openCreateDialog()}>
-            <Plus className="h-4 w-4" />
-            {t("addNode")}
-          </Button>
-        </div>
-
-        <ConnectionDeleteDialog
-          connection={deleteTarget}
-          deleting={isDeleting}
-          onCancel={() => setDeleteTarget(null)}
-          onConfirm={handleDeleteConnection}
-          t={t}
-          tCommon={tCommon}
-        />
-
-        <div
-          className={cn(
-            "grid min-h-0 flex-1 overflow-hidden rounded-[32px] border border-border/60 bg-card/80 shadow-sm shadow-foreground/5 transition-[grid-template-columns] duration-300 ease-[cubic-bezier(.2,.8,.2,1)]",
-            dialogOpen
-              ? "lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]"
-              : "lg:grid-cols-[minmax(0,1fr)_0px]",
-          )}
-        >
-          <div className="min-h-0 min-w-0 overflow-hidden">
-            <div className="flex h-full min-w-0 flex-col">
-              <ConnectionList
-                connections={connections}
-                filteredConnections={filteredConnections}
-                selectedConnection={selectedConnection}
-                search={search}
-                statusFilter={statusFilter}
-                isLoading={isLoadingConnections}
-                loadError={connectionsLoadError}
-                testingConnectionId={testingConnectionId}
-                probeConnectionId={probeConnectionId}
-                onSearchChange={setSearch}
-                onStatusFilterChange={setStatusFilter}
-                onSelectConnection={setSelectedConnectionId}
-                onEdit={openEditDialog}
-                onTest={handleTestConnection}
-                onRunProbe={handleRunProbe}
-                onDelete={setDeleteTarget}
-              />
-
-              <ConnectionDetail
-                connection={selectedConnection}
-                probing={selectedConnection ? probeConnectionId === selectedConnection.id : false}
-                probeOutput={selectedProbeOutput}
-              />
+    <div className="relative h-full overflow-hidden bg-background">
+      <div
+        className={cn(
+          "h-full overflow-y-auto transition-[padding] duration-200 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none",
+          dialogOpen && "lg:pr-[380px] xl:pr-[396px]",
+        )}
+      >
+        <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col p-4 sm:p-6">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">{t("subtitle")}</p>
             </div>
+            {!dialogOpen ? (
+              <Button onClick={() => openCreateDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                {t("addNode")}
+              </Button>
+            ) : null}
           </div>
 
-          <ConnectionDialog
-            open={dialogOpen}
-            mode={dialogMode}
-            form={form}
-            formError={formError}
-            formErrorField={formErrorField}
-            isSaving={isSaving}
-            onOpenChange={handleDialogOpenChange}
-            onSubmit={handleSubmit}
-            onFormChange={setForm}
-            onAppendSkillText={appendSkillText}
+          <ConnectionDeleteDialog
+            connection={deleteTarget}
+            deleting={isDeleting}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={handleDeleteConnection}
+            t={t}
+            tCommon={tCommon}
           />
+
+          <div className="grid min-h-[calc(100dvh-9rem)] gap-5">
+            <ConnectionList
+              connections={connections}
+              filteredConnections={filteredConnections}
+              selectedConnection={selectedConnection}
+              search={search}
+              statusFilter={statusFilter}
+              isLoading={isLoadingConnections}
+              loadError={connectionsLoadError}
+              onSearchChange={setSearch}
+              onStatusFilterChange={setStatusFilter}
+              onSelectConnection={setSelectedConnectionId}
+              onEdit={openEditDialog}
+            />
+          </div>
         </div>
       </div>
+
+      <ConnectionDialog
+        open={dialogOpen}
+        mode={dialogMode}
+        connection={dialogMode === "edit" ? editingConnection : null}
+        testing={editingConnection ? testingConnectionId === editingConnection.id : false}
+        probing={editingConnection ? probeConnectionId === editingConnection.id : false}
+        probeOutput={editingProbeOutput}
+        form={form}
+        formError={formError}
+        formErrorField={formErrorField}
+        isSaving={isSaving}
+        onOpenChange={handleDialogOpenChange}
+        onSubmit={handleSubmit}
+        onFormChange={setForm}
+        onAppendSkillText={appendSkillText}
+        onTest={handleTestConnection}
+        onRunProbe={handleRunProbe}
+        onDelete={setDeleteTarget}
+      />
     </div>
   )
 }

@@ -81,6 +81,16 @@ async function clickPanelButton(user: TestUser, name: string | RegExp) {
   await user.click(within(getConnectionPanel()).getByRole("button", { name }))
 }
 
+async function openEditConnectionPanel(user: TestUser, connectionName = "Live HPC") {
+  await user.click(screen.getByRole("button", { name: `Edit connection: ${connectionName}` }))
+  return getConnectionPanel()
+}
+
+async function clickConnectionAction(user: TestUser, name: string | RegExp) {
+  await user.click(within(getConnectionPanel()).getByRole("button", { name: "Actions" }))
+  await user.click(await screen.findByRole("menuitem", { name }))
+}
+
 const liveConnection: RemoteConnection = {
   id: "live-connection-1",
   name: "Live HPC",
@@ -127,6 +137,7 @@ describe("ConnectionsPage", () => {
     expect(screen.queryByText(/Runtime boundary/i)).not.toBeInTheDocument()
 
     const panel = await openAddConnectionPanel(user)
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     expect(within(panel).getByRole("heading", { name: "New host" })).toBeInTheDocument()
     expect(within(panel).getByLabelText("Address")).toBeInTheDocument()
     expect(within(panel).getByLabelText("Label")).toBeInTheDocument()
@@ -134,6 +145,8 @@ describe("ConnectionsPage", () => {
     expect(within(panel).getByLabelText("Username")).toBeInTheDocument()
     expect(within(panel).getByText("Credentials")).toBeInTheDocument()
     expect(within(panel).getByLabelText("Agent instructions")).toBeInTheDocument()
+    expect(within(panel).getByRole("button", { name: "Cancel" })).toBeInTheDocument()
+    expect(within(panel).getByRole("button", { name: "Add host" })).toBeInTheDocument()
 
     await user.click(within(panel).getByRole("button", { name: "SSH config Host" }))
     expect(within(panel).getByLabelText("SSH config Host")).toBeInTheDocument()
@@ -315,7 +328,8 @@ describe("ConnectionsPage", () => {
     render(<ConnectionsPage />)
 
     expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Test connection" }))
+    await openEditConnectionPanel(user)
+    await clickConnectionAction(user, "Test connection")
 
     await waitFor(() =>
       expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-1/test", {
@@ -339,8 +353,9 @@ describe("ConnectionsPage", () => {
     render(<ConnectionsPage />)
 
     expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Test connection" }))
-    await user.click(screen.getByRole("button", { name: /Backup HPC/ }))
+    await openEditConnectionPanel(user)
+    await clickConnectionAction(user, "Test connection")
+    await user.click(screen.getByRole("button", { name: /^Backup HPC/ }))
 
     resolveTest({
       data: {
@@ -357,8 +372,8 @@ describe("ConnectionsPage", () => {
     })
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Backup HPC" })).toBeInTheDocument())
-    expect(screen.getByRole("button", { name: /Backup HPC/ })).toHaveAttribute("aria-current", "true")
-    expect(screen.getByRole("button", { name: /Live HPC/ })).not.toHaveAttribute("aria-current")
+    expect(screen.getByRole("button", { name: /^Backup HPC/ })).toHaveAttribute("aria-current", "true")
+    expect(screen.getByRole("button", { name: /^Live HPC/ })).not.toHaveAttribute("aria-current")
   })
 
   it("keeps the detail panel aligned with the filtered connection list", async () => {
@@ -398,8 +413,7 @@ describe("ConnectionsPage", () => {
     render(<ConnectionsPage />)
 
     expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Edit connection" }))
-    const drawer = getConnectionPanel()
+    const drawer = await openEditConnectionPanel(user)
     expect(within(drawer).getByRole("heading", { name: "Edit host" })).toBeInTheDocument()
 
     await user.clear(within(drawer).getByLabelText("Label"))
@@ -504,7 +518,8 @@ describe("ConnectionsPage", () => {
     render(<ConnectionsPage />)
 
     expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Delete connection" }))
+    await openEditConnectionPanel(user)
+    await clickConnectionAction(user, "Delete connection")
     const dialog = screen.getByRole("dialog")
     expect(within(dialog).getByRole("heading", { name: "Delete Live HPC?" })).toBeInTheDocument()
     await user.click(within(dialog).getByRole("button", { name: "Delete" }))
@@ -527,7 +542,8 @@ describe("ConnectionsPage", () => {
     render(<ConnectionsPage />)
 
     expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Delete connection" }))
+    await openEditConnectionPanel(user)
+    await clickConnectionAction(user, "Delete connection")
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }))
 
     await waitFor(() =>
@@ -541,7 +557,7 @@ describe("ConnectionsPage", () => {
     )
   })
 
-  it("streams a remote probe command back into the detail panel", async () => {
+  it("streams a remote probe command back into the edit drawer", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
 
@@ -574,7 +590,8 @@ describe("ConnectionsPage", () => {
       render(<ConnectionsPage />)
 
       expect(await screen.findByRole("heading", { name: "Live HPC" })).toBeInTheDocument()
-      await user.click(screen.getByRole("button", { name: "Run check" }))
+      await openEditConnectionPanel(user)
+      await clickConnectionAction(user, "Run check")
 
       expect(await screen.findByText("bioinfoflow-ok")).toBeInTheDocument()
       expect(buildWebSocketUrlMock).toHaveBeenCalledWith("/connections/live-connection-1/exec/ws")
