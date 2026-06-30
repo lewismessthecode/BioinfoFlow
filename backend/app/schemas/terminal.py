@@ -13,6 +13,9 @@ class TerminalSessionRead(BaseModel):
     shell: str
     cwd: str
     status: str
+    target_type: str
+    target_label: str
+    remote_connection_id: str | None = None
 
 
 class TerminalSessionCloseResponse(BaseModel):

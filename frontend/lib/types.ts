@@ -36,6 +36,9 @@ export type TerminalSession = {
   shell: string
   cwd: string
   status: string
+  target_type: "local" | "remote"
+  target_label: string
+  remote_connection_id?: string | null
 }
 
 

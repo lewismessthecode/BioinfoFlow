@@ -24,6 +24,9 @@ class TerminalSessionSnapshot:
     shell: str
     cwd: str
     status: str
+    target_type: str = "local"
+    target_label: str = "local"
+    remote_connection_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -31,11 +34,15 @@ class _TerminalSession:
     id: str
     project_id: str
     shell: str
-    root_path: Path
+    root_path: Path | None
     cwd: str
-    master_fd: int
-    process: subprocess.Popen[bytes]
+    master_fd: int | None
+    process: subprocess.Popen[bytes] | None
+    target_type: str = "local"
+    target_label: str = "local"
+    remote_connection_id: str | None = None
     status: str = "running"
+    unsupported_message: str | None = None
     exit_code: int | None = None
     subscribers: set[asyncio.Queue[dict]] = field(default_factory=set)
     output_backlog: list[str] = field(default_factory=list)
@@ -70,7 +77,7 @@ class TerminalSessionManager:
             if not session:
                 self._project_index.pop(project_id, None)
                 return None
-            if session.status != "running":
+            if not self._is_live_session(session):
                 self._evict_session_locked(session)
                 return None
             return self._snapshot(session)
@@ -80,7 +87,7 @@ class TerminalSessionManager:
             session = self._sessions_by_id.get(session_id)
             if not session:
                 return None
-            if session.status != "running":
+            if not self._is_live_session(session):
                 self._evict_session_locked(session)
                 return None
             return self._snapshot(session)
@@ -116,6 +123,45 @@ class TerminalSessionManager:
             self._ensure_cleanup_task()
             return self._snapshot(session)
 
+    async def create_or_get_unsupported_remote(
+        self,
+        *,
+        project_id: str,
+        remote_root_path: str,
+        remote_connection_id: str,
+        target_label: str,
+        shell: str | None = None,
+        message: str = "Remote interactive terminals are not supported yet.",
+    ) -> TerminalSessionSnapshot:
+        async with self._lock:
+            existing_id = self._project_index.get(project_id)
+            existing = self._sessions_by_id.get(existing_id) if existing_id else None
+            if existing and self._is_live_session(existing):
+                existing.last_touched = asyncio.get_running_loop().time()
+                return self._snapshot(existing)
+            if existing:
+                self._evict_session_locked(existing)
+
+            session = _TerminalSession(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                shell=shell or self._default_shell,
+                root_path=None,
+                cwd=remote_root_path,
+                master_fd=None,
+                process=None,
+                target_type="remote",
+                target_label=target_label,
+                remote_connection_id=remote_connection_id,
+                status="unsupported",
+                unsupported_message=message,
+            )
+            session.last_touched = asyncio.get_running_loop().time()
+            self._sessions_by_id[session.id] = session
+            self._project_index[project_id] = session.id
+            self._ensure_cleanup_task()
+            return self._snapshot(session)
+
     async def attach(self, session_id: str) -> asyncio.Queue[dict]:
         async with self._lock:
             session = self._require_session(session_id)
@@ -126,6 +172,8 @@ class TerminalSessionManager:
                 {"type": "ready", "session": asdict(self._snapshot(session))}
             )
             queue.put_nowait({"type": "cwd", "cwd": session.cwd})
+            if session.unsupported_message:
+                queue.put_nowait({"type": "error", "message": session.unsupported_message})
             for chunk in session.output_backlog:
                 queue.put_nowait({"type": "output", "data": chunk})
             return queue
@@ -142,17 +190,23 @@ class TerminalSessionManager:
         session = await self._running_session(session_id)
         if not data:
             return
+        if session.master_fd is None:
+            raise KeyError(session_id)
         await asyncio.to_thread(os.write, session.master_fd, data.encode())
         session.last_touched = asyncio.get_running_loop().time()
 
     async def resize(self, session_id: str, *, cols: int, rows: int) -> None:
         session = await self._running_session(session_id)
+        if session.master_fd is None:
+            raise KeyError(session_id)
         packed = struct.pack("HHHH", rows, cols, 0, 0)
         await asyncio.to_thread(self._set_window_size, session.master_fd, packed)
         session.last_touched = asyncio.get_running_loop().time()
 
     async def change_directory(self, session_id: str, relative_path: str) -> str:
         session = await self._running_session(session_id)
+        if session.root_path is None:
+            raise KeyError(session_id)
         candidate = self._resolve_safe_directory(
             session.root_path, relative_path or "."
         )
@@ -278,6 +332,8 @@ class TerminalSessionManager:
         return Path(os.getenv("TMPDIR", "/tmp")).resolve() / "bioinfoflow-terminal"
 
     async def _read_output(self, session: _TerminalSession) -> None:
+        if session.master_fd is None or session.process is None:
+            return
         try:
             while True:
                 chunk = await asyncio.to_thread(os.read, session.master_fd, 4096)
@@ -308,7 +364,8 @@ class TerminalSessionManager:
                 async with self._lock:
                     self._evict_session_locked(session)
                 with contextlib.suppress(OSError):
-                    os.close(session.master_fd)
+                    if session.master_fd is not None:
+                        os.close(session.master_fd)
 
     async def _running_session(self, session_id: str) -> _TerminalSession:
         async with self._lock:
@@ -336,6 +393,8 @@ class TerminalSessionManager:
                     session.subscribers.discard(queue)
 
     async def _terminate_session(self, session: _TerminalSession) -> None:
+        if session.process is None:
+            return
         with contextlib.suppress(ProcessLookupError):
             os.killpg(os.getpgid(session.process.pid), signal.SIGTERM)
         with contextlib.suppress(subprocess.TimeoutExpired):
@@ -344,7 +403,8 @@ class TerminalSessionManager:
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(os.getpgid(session.process.pid), signal.SIGKILL)
         with contextlib.suppress(OSError):
-            os.close(session.master_fd)
+            if session.master_fd is not None:
+                os.close(session.master_fd)
         if session.reader_task:
             session.reader_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -394,7 +454,13 @@ class TerminalSessionManager:
             shell=session.shell,
             cwd=session.cwd,
             status=session.status,
+            target_type=session.target_type,
+            target_label=session.target_label,
+            remote_connection_id=session.remote_connection_id,
         )
+
+    def _is_live_session(self, session: _TerminalSession) -> bool:
+        return session.status in {"running", "unsupported"}
 
     def _evict_session_locked(self, session: _TerminalSession) -> None:
         current_id = self._project_index.get(session.project_id)
