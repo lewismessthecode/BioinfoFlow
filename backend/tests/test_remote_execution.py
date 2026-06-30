@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 
+import asyncssh
 import pytest
 
 from app.services.remote_execution import (
     AsyncSshRemoteExecutor,
     RemoteConnectionConfig,
     SshRemoteExecutor,
+    _TofuHostKeyClient,
 )
 
 
@@ -68,10 +70,26 @@ class _FakeAsyncSshClient:
     async def __aexit__(self, *_exc):
         return None
 
-    async def run(self, command: str, *, check: bool):
-        assert check is False
+    async def create_process(self, command: str, *, encoding=None):
+        assert encoding is None
         self.commands.append(command)
-        return self.result
+        return _FakeAsyncSshProcess(self.result)
+
+
+class _FakeAsyncSshProcess:
+    def __init__(self, result: _FakeAsyncSshResult):
+        self.stdout = _FakeStream([result.stdout.encode()])
+        self.stderr = _FakeStream([result.stderr.encode()])
+        self.exit_status = result.exit_status
+        self.killed = False
+
+    async def wait(self):
+        await asyncio.sleep(0)
+        return self.exit_status
+
+    def kill(self) -> None:
+        self.killed = True
+        self.exit_status = -9
 
 
 @pytest.mark.asyncio
@@ -153,10 +171,53 @@ async def test_ssh_executor_uses_asyncssh_for_password_connections():
     assert captured["kwargs"]["username"] == "alice"
     assert captured["kwargs"]["password"] == "secret"
     assert captured["kwargs"]["port"] == 2222
-    assert captured["kwargs"]["known_hosts"] is None
+    assert captured["kwargs"]["known_hosts"] is not None
+    assert captured["kwargs"]["server_host_key_algs"] == "default"
+    assert captured["kwargs"]["client_factory"] is not None
     assert client.commands == ["hostname"]
     assert result.exit_code == 0
     assert result.stdout == "ok\n"
+
+
+def test_asyncssh_tofu_host_key_client_pins_first_key(tmp_path):
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    known_hosts_path = tmp_path / "ssh_known_hosts.json"
+    client = _TofuHostKeyClient(
+        host="cluster.example.org",
+        port=2222,
+        known_hosts_path=known_hosts_path,
+    )
+
+    assert client.validate_host_public_key("cluster.example.org", "", 2222, key) is True
+
+    second_client = _TofuHostKeyClient(
+        host="cluster.example.org",
+        port=2222,
+        known_hosts_path=known_hosts_path,
+    )
+    assert (
+        second_client.validate_host_public_key("cluster.example.org", "", 2222, key)
+        is True
+    )
+
+
+def test_asyncssh_tofu_host_key_client_rejects_changed_key(tmp_path):
+    first_key = asyncssh.generate_private_key("ssh-ed25519")
+    second_key = asyncssh.generate_private_key("ssh-ed25519")
+    known_hosts_path = tmp_path / "ssh_known_hosts.json"
+    client = _TofuHostKeyClient(
+        host="cluster.example.org",
+        port=2222,
+        known_hosts_path=known_hosts_path,
+    )
+
+    assert client.validate_host_public_key("cluster.example.org", "", 2222, first_key)
+    assert not client.validate_host_public_key(
+        "cluster.example.org",
+        "",
+        2222,
+        second_key,
+    )
 
 
 @pytest.mark.asyncio

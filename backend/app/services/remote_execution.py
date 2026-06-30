@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 import asyncssh
 
+from app.config import settings
 from app.utils.exceptions import BadRequestError
 
 
@@ -302,8 +306,10 @@ class AsyncSshRemoteExecutor:
         self,
         *,
         connect_factory: Callable[..., Any] | None = None,
+        known_hosts_path: Path | None = None,
     ) -> None:
         self.connect_factory = connect_factory or asyncssh.connect
+        self.known_hosts_path = known_hosts_path or _default_known_hosts_path()
 
     async def run(
         self,
@@ -320,33 +326,37 @@ class AsyncSshRemoteExecutor:
         if output_limit < 1:
             raise BadRequestError("output_limit must be >= 1")
 
-        async with self._connect(connection, timeout_seconds) as client:
-            try:
-                result = await asyncio.wait_for(
-                    client.run(command, check=False),
-                    timeout=timeout_seconds,
-                )
-            except asyncio.TimeoutError:
-                return RemoteCommandResult(
-                    exit_code=-9,
-                    stdout="",
-                    stderr="",
-                    timed_out=True,
-                    truncated=False,
-                    stdout_truncated=False,
-                    stderr_truncated=False,
-                )
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+        exit_code = -9
+        timed_out = False
+        truncated = False
+        async for frame in self.stream(
+            connection,
+            command,
+            timeout_seconds=timeout_seconds,
+            output_limit=output_limit,
+        ):
+            if frame.type == "stdout" and frame.data:
+                stdout_parts.append(frame.data)
+            elif frame.type == "stderr" and frame.data:
+                stderr_parts.append(frame.data)
+            elif frame.type == "truncated":
+                truncated = True
+            elif frame.type == "exit":
+                exit_code = int(frame.exit_code if frame.exit_code is not None else -9)
+                timed_out = frame.timed_out
 
-        stdout, stdout_truncated = _limit_text(str(result.stdout or ""), output_limit)
-        stderr, stderr_truncated = _limit_text(str(result.stderr or ""), output_limit)
+        stdout = "".join(stdout_parts)
+        stderr = "".join(stderr_parts)
         return RemoteCommandResult(
-            exit_code=int(result.exit_status if result.exit_status is not None else 0),
+            exit_code=exit_code,
             stdout=stdout,
             stderr=stderr,
-            timed_out=False,
-            truncated=stdout_truncated or stderr_truncated,
-            stdout_truncated=stdout_truncated,
-            stderr_truncated=stderr_truncated,
+            timed_out=timed_out,
+            truncated=truncated,
+            stdout_truncated=truncated,
+            stderr_truncated=truncated,
         )
 
     async def stream(
@@ -357,25 +367,76 @@ class AsyncSshRemoteExecutor:
         timeout_seconds: int,
         output_limit: int,
     ) -> AsyncIterator[RemoteOutputFrame]:
-        result = await self.run(
-            connection,
-            command,
-            timeout_seconds=timeout_seconds,
-            output_limit=output_limit,
-        )
-        if result.stdout:
-            yield RemoteOutputFrame(type="stdout", data=result.stdout)
-        if result.stderr:
-            yield RemoteOutputFrame(type="stderr", data=result.stderr)
-        if result.truncated:
-            yield RemoteOutputFrame(
-                type="truncated",
-                data=f"remote output truncated after {output_limit} bytes",
+        if not command.strip():
+            raise BadRequestError("remote command must be a non-empty string")
+        if timeout_seconds < 1:
+            raise BadRequestError("timeout_seconds must be >= 1")
+        if output_limit < 1:
+            raise BadRequestError("output_limit must be >= 1")
+
+        queue: asyncio.Queue[RemoteOutputFrame] = asyncio.Queue()
+        output_budget = _StreamOutputBudget(output_limit)
+        process = None
+        wait_task: asyncio.Task[Any] | None = None
+        stdout_task: asyncio.Task[Any] | None = None
+        stderr_task: asyncio.Task[Any] | None = None
+        timed_out = False
+        completed = False
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+
+        async with self._connect(connection, timeout_seconds) as client:
+            process = await client.create_process(command, encoding=None)
+            stdout_task = asyncio.create_task(
+                _pump_stream(process.stdout, "stdout", queue, output_budget)
             )
+            stderr_task = asyncio.create_task(
+                _pump_stream(process.stderr, "stderr", queue, output_budget)
+            )
+            wait_task = asyncio.create_task(process.wait())
+
+            try:
+                while True:
+                    if (
+                        not wait_task.done()
+                        and asyncio.get_running_loop().time() >= deadline
+                    ):
+                        timed_out = True
+                        _terminate_asyncssh_process(process)
+                        await wait_task
+                    if (
+                        wait_task.done()
+                        and stdout_task.done()
+                        and stderr_task.done()
+                        and queue.empty()
+                    ):
+                        completed = True
+                        break
+                    try:
+                        frame = await asyncio.wait_for(queue.get(), timeout=0.1)
+                    except asyncio.TimeoutError:
+                        continue
+                    if frame.type == "truncated" and not wait_task.done():
+                        _terminate_asyncssh_process(process)
+                        await wait_task
+                    yield frame
+            finally:
+                if not completed and wait_task is not None and not wait_task.done():
+                    _terminate_asyncssh_process(process)
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await wait_task
+                for task in (stdout_task, stderr_task):
+                    if task is None:
+                        continue
+                    if not task.done():
+                        task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+
+        exit_code = _asyncssh_exit_code(process)
         yield RemoteOutputFrame(
             type="exit",
-            exit_code=result.exit_code,
-            timed_out=result.timed_out,
+            exit_code=exit_code,
+            timed_out=timed_out,
         )
 
     def _connect(
@@ -391,15 +452,95 @@ class AsyncSshRemoteExecutor:
                     passphrase=connection.passphrase,
                 )
             ]
+        client_factory = lambda: _TofuHostKeyClient(  # noqa: E731
+            host=connection.host,
+            port=connection.port or 22,
+            known_hosts_path=self.known_hosts_path,
+        )
         return self.connect_factory(
             connection.host,
             port=connection.port or 22,
             username=connection.username,
             password=connection.password,
             client_keys=client_keys,
-            known_hosts=None,
+            client_factory=client_factory,
+            known_hosts=asyncssh.import_known_hosts(""),
+            server_host_key_algs="default",
             login_timeout=timeout_seconds,
         )
+
+
+class _TofuHostKeyClient(asyncssh.SSHClient):
+    """Trust the first seen host key, then require it to remain stable."""
+
+    def __init__(self, *, host: str, port: int, known_hosts_path: Path) -> None:
+        self.host = host
+        self.port = port
+        self.known_hosts_path = known_hosts_path
+
+    def validate_host_public_key(
+        self,
+        host: str,
+        addr: str,
+        port: int,
+        key: asyncssh.SSHKey,
+    ) -> bool:
+        del addr
+        record_key = f"{host or self.host}:{port or self.port}"
+        public_key = key.export_public_key("openssh").decode("utf-8").strip()
+        records = _load_tofu_known_hosts(self.known_hosts_path)
+        existing = records.get(record_key)
+        if existing is None:
+            records[record_key] = public_key
+            _save_tofu_known_hosts(self.known_hosts_path, records)
+            return True
+        return existing == public_key
+
+
+def _default_known_hosts_path() -> Path:
+    configured = os.getenv("BIOINFOFLOW_SSH_KNOWN_HOSTS")
+    if configured:
+        return Path(configured).expanduser()
+    return Path(settings.bioinfoflow_home) / "state" / "ssh_known_hosts.json"
+
+
+def _load_tofu_known_hosts(path: Path) -> dict[str, str]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(host): str(public_key)
+        for host, public_key in data.items()
+        if isinstance(host, str) and isinstance(public_key, str)
+    }
+
+
+def _save_tofu_known_hosts(path: Path, records: dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.tmp")
+    with temp_path.open("w", encoding="utf-8") as handle:
+        json.dump(records, handle, sort_keys=True)
+        handle.write("\n")
+    temp_path.replace(path)
+
+
+def _terminate_asyncssh_process(process: Any) -> None:
+    with contextlib.suppress(Exception):
+        process.kill()
+
+
+def _asyncssh_exit_code(process: Any) -> int:
+    for attr in ("exit_status", "returncode"):
+        value = getattr(process, attr, None)
+        if value is not None:
+            return int(value)
+    return -9
 
 
 async def _read_limited(stream: Any, output_limit: int) -> tuple[str, bool]:

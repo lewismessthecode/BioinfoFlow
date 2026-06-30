@@ -109,8 +109,10 @@ docker compose up -d --build
 
 Check the backend environment, not the browser machine:
 
-- `ssh` is installed
-- the SSH config alias resolves for the backend user
-- key paths are visible inside the backend container
-- `SSH_AUTH_SOCK` is mounted and set when using SSH agent auth
-- the target host accepts non-interactive `BatchMode=yes` SSH commands
+- password or pasted private key auth uses the backend's built-in SSH client and
+  encrypted stored credentials
+- Advanced SSH config aliases require `~/.ssh/config` for the backend user
+- Advanced backend key paths must be visible inside the backend container
+- Advanced backend ssh-agent auth requires `SSH_AUTH_SOCK` to be mounted and set
+- Advanced backend SSH methods require system `ssh` and a target host that
+  accepts non-interactive `BatchMode=yes` SSH commands

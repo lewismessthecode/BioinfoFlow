@@ -121,6 +121,19 @@ const secondConnection: RemoteConnection = {
   skill_instructions: "Use /backup/live for read-only checks.",
 }
 
+const passwordConnection: RemoteConnection = {
+  id: "live-connection-password",
+  name: "Password HPC",
+  host: "password.live.example.org",
+  port: 22,
+  username: "bioflow",
+  auth_method: "password",
+  ssh_alias: "",
+  key_path: "",
+  status: "unknown",
+  skill_instructions: "Use /password/live for checks.",
+}
+
 describe("ConnectionsPage", () => {
   beforeEach(() => {
     apiRequestMock.mockReset()
@@ -455,6 +468,59 @@ describe("ConnectionsPage", () => {
       }),
     )
     expect(await screen.findByRole("heading", { name: "Live HPC Login" })).toBeInTheDocument()
+  })
+
+  it("saves edits to stored password hosts without re-entering the secret", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [passwordConnection] })
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        ...passwordConnection,
+        skill_instructions: "Use /password/live for analysis checks.",
+      },
+    })
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Password HPC" })).toBeInTheDocument()
+    const drawer = await openEditConnectionPanel(user, "Password HPC")
+    await user.clear(within(drawer).getByLabelText("Host Skill"))
+    await user.type(within(drawer).getByLabelText("Host Skill"), "Use /password/live for analysis checks.")
+    await clickPanelButton(user, "Save changes")
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenLastCalledWith("/connections/live-connection-password", {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: "Password HPC",
+          host: "password.live.example.org",
+          port: 22,
+          username: "bioflow",
+          auth_method: "password",
+          ssh_alias: null,
+          key_path: null,
+          password: null,
+          private_key: null,
+          passphrase: null,
+          skill_instructions: "Use /password/live for analysis checks.",
+        }),
+      }),
+    )
+  })
+
+  it("opens the advanced SSH section when editing backend ssh-agent hosts", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [secondConnection] })
+
+    render(<ConnectionsPage />)
+
+    expect(await screen.findByRole("heading", { name: "Backup HPC" })).toBeInTheDocument()
+    const drawer = await openEditConnectionPanel(user, "Backup HPC")
+
+    expect(within(drawer).getByRole("button", { name: /Backend ssh-agent/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
   })
 
   it("requires a key file path for key file connections", async () => {

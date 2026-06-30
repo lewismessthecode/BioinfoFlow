@@ -39,7 +39,7 @@ class RemoteConnectionBase(BaseModel):
             return value.strip()
         return value
 
-    @field_validator("ssh_alias", "key_path", "password", "private_key", "passphrase", mode="before")
+    @field_validator("ssh_alias", "key_path", mode="before")
     @classmethod
     def _strip_optional_string(cls, value: str | None) -> str | None:
         if value is None:
@@ -47,6 +47,15 @@ class RemoteConnectionBase(BaseModel):
         if isinstance(value, str):
             stripped = value.strip()
             return stripped or None
+        return value
+
+    @field_validator("password", "private_key", "passphrase", mode="before")
+    @classmethod
+    def _normalize_optional_secret(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str) and value == "":
+            return None
         return value
 
     @model_validator(mode="after")
@@ -89,7 +98,7 @@ class RemoteConnectionUpdate(BaseModel):
             return value.strip()
         return value
 
-    @field_validator("ssh_alias", "key_path", "password", "private_key", "passphrase", mode="before")
+    @field_validator("ssh_alias", "key_path", mode="before")
     @classmethod
     def _strip_optional_string(cls, value: str | None) -> str | None:
         if value is None:
@@ -97,6 +106,15 @@ class RemoteConnectionUpdate(BaseModel):
         if isinstance(value, str):
             stripped = value.strip()
             return stripped or None
+        return value
+
+    @field_validator("password", "private_key", "passphrase", mode="before")
+    @classmethod
+    def _normalize_optional_secret(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str) and value == "":
+            return None
         return value
 
 
