@@ -181,7 +181,13 @@ If a test fails, check the backend environment first:
 - The backend host or container can resolve the SSH alias or hostname.
 - Password/private-key credentials are present and were saved after the selected
   auth method was chosen.
-- `~/.ssh/config` exists for the backend user when using an SSH config alias.
-- Key file paths are visible from the backend process.
-- `SSH_AUTH_SOCK` is set and mounted when using SSH agent auth.
-- The remote server accepts non-interactive `BatchMode=yes` SSH commands.
+- For password or pasted private key auth, the backend stores the encrypted
+  credential and uses its built-in SSH client. No browser or host-machine
+  `~/.ssh/...` path is involved.
+- For Advanced SSH config aliases, `~/.ssh/config` must exist for the backend
+  user or inside the backend container.
+- For Advanced backend key file paths, the key path must be visible from the
+  backend process.
+- For Advanced backend ssh-agent auth, `SSH_AUTH_SOCK` must be set and mounted.
+- Advanced backend SSH methods use system `ssh` and require the target host to
+  accept non-interactive `BatchMode=yes` SSH commands.

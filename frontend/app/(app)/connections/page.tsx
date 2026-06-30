@@ -207,14 +207,27 @@ export default function ConnectionsPage() {
       setFormErrorField("key_path")
       return null
     }
-    const password = form.password.trim()
-    if (form.auth_method === "password" && !password) {
+    const editingConnection = editingConnectionId
+      ? connections.find((connection) => connection.id === editingConnectionId)
+      : null
+    const preservesStoredPassword =
+      dialogMode === "edit" &&
+      editingConnection?.auth_method === "password" &&
+      form.auth_method === "password" &&
+      form.password === ""
+    const preservesStoredPrivateKey =
+      dialogMode === "edit" &&
+      editingConnection?.auth_method === "private_key" &&
+      form.auth_method === "private_key" &&
+      form.private_key === ""
+    const password = form.password
+    if (form.auth_method === "password" && !password && !preservesStoredPassword) {
       setFormError(t("form.errors.passwordRequired"))
       setFormErrorField("password")
       return null
     }
-    const privateKey = form.private_key.trim()
-    if (form.auth_method === "private_key" && !privateKey) {
+    const privateKey = form.private_key
+    if (form.auth_method === "private_key" && !privateKey && !preservesStoredPrivateKey) {
       setFormError(t("form.errors.privateKeyRequired"))
       setFormErrorField("private_key")
       return null
@@ -230,10 +243,13 @@ export default function ConnectionsPage() {
       auth_method: form.auth_method,
       ssh_alias: form.auth_method === "ssh_config" ? sshAlias : null,
       key_path: form.auth_method === "key_file" ? keyPath : null,
-      password: form.auth_method === "password" ? password : null,
-      private_key: form.auth_method === "private_key" ? privateKey : null,
+      password: form.auth_method === "password" && !preservesStoredPassword ? password : null,
+      private_key:
+        form.auth_method === "private_key" && !preservesStoredPrivateKey ? privateKey : null,
       passphrase:
-        form.auth_method === "private_key" ? form.passphrase.trim() || null : null,
+        form.auth_method === "private_key" && !preservesStoredPrivateKey
+          ? form.passphrase || null
+          : null,
       skill_instructions: form.skill_instructions.trim() || null,
     }
   }

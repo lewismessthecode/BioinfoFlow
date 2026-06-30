@@ -121,6 +121,7 @@ export function ConnectionDialog({
 }: ConnectionDialogProps) {
   const t = useTranslations("connections")
   const tCommon = useTranslations("common")
+  const usesAdvancedAuth = advancedAuthMethods.includes(form.auth_method)
 
   const handlePrivateKeyFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -321,7 +322,10 @@ export function ConnectionDialog({
                   </div>
                 ) : null}
 
-                <details className="group grid gap-3 border-t border-border/60 pt-3">
+                <details
+                  open={usesAdvancedAuth ? true : undefined}
+                  className="group grid gap-3 border-t border-border/60 pt-3"
+                >
                   <summary className="cursor-pointer list-none text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
                     {t("sections.advancedSsh")}
                   </summary>

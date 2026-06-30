@@ -73,16 +73,21 @@ run.
 Remote Connections live under the `/api/v1/connections` API and the
 `frontend/app/(app)/connections/` route.
 
-They are workspace-scoped SSH profiles with one of three authentication methods:
+They are workspace-scoped SSH profiles with five authentication methods:
 
+- password
+- pasted private key
 - SSH config alias
-- key file path
+- backend key file path
 - backend SSH agent
 
-Bioinfoflow stores aliases and file paths, not passwords or private key
-contents. The backend runs the system `ssh` binary with `BatchMode=yes`,
-timeouts, and bounded output. The UI can test a connection and stream a short
-probe command over WebSocket.
+For the simple Termius-style path, Bioinfoflow stores encrypted passwords or
+private key contents and uses an in-process SSH client with bounded output. Host
+keys are trusted on first use by the backend and must remain stable on later
+connections. Advanced backend SSH methods store aliases or file paths instead
+and run the system `ssh` binary with `BatchMode=yes`, timeouts, and bounded
+output. The UI can test a connection and stream a short probe command over
+WebSocket.
 
 When a user selects a connection in the Agent composer, AgentCore can expose
 read-only remote file and directory inspection tools plus an approval-gated
