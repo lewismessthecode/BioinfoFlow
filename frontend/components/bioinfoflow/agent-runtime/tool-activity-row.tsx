@@ -33,12 +33,12 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
 
   return (
     <div
-      className="grid gap-1 text-xs text-muted-foreground"
+      className="grid gap-1 py-0.5 text-xs text-muted-foreground"
       data-testid="agent-tool-activity-row"
     >
       <div className="flex min-w-0 items-center gap-1.5">
         <ActivityStatusIcon status={activity.status} />
-        <span className="min-w-0 truncate rounded-md bg-muted/45 px-1.5 py-0.5 font-mono text-[11px] text-foreground/65">
+        <span className="min-w-0 truncate rounded-md border border-border/50 bg-background px-1.5 py-0.5 font-mono text-[11px] text-foreground/65">
           {activity.name}
         </span>
         {activity.summary || activity.inputPreview ? (
@@ -169,11 +169,11 @@ function Detail({ label, value, pre = false }: { label: string; value: string; p
         {label}
       </div>
       {pre ? (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/75">
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border/50 bg-background px-2 py-1.5 text-[11px] leading-5 text-foreground/75">
           {value}
         </pre>
       ) : (
-        <div className="break-words rounded-md bg-muted/25 px-2 py-1.5 text-[11px] leading-5 text-foreground/75">
+        <div className="break-words rounded-md border border-border/50 bg-background px-2 py-1.5 text-[11px] leading-5 text-foreground/75">
           {value}
         </div>
       )}

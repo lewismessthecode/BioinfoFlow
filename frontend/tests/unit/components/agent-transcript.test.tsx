@@ -14,6 +14,7 @@ vi.mock("next-intl", () => ({
       pendingResponse: "Working on it...",
       recentActivityWindow: "Showing recent activity",
       thinking: "Thinking",
+      "statusLine.thinking": "Thinking...",
       approve: "Approve",
       reject: "Reject",
       "sidecar.needsDecision": "Needs your decision",
@@ -753,7 +754,7 @@ describe("AgentTranscript", () => {
     expect(screen.getAllByText("The workflow file is present.")).toHaveLength(1)
   })
 
-  it("keeps thinking content expanded when tool calls arrive later", () => {
+  it("keeps completed thinking content available behind a disclosure", () => {
     renderTranscript({
       events: [
         event("event-thinking", 1, "assistant.thinking.summary", {
@@ -772,10 +773,31 @@ describe("AgentTranscript", () => {
     })
 
     const thinkingPanel = screen.getByText("Thinking").closest("details")
-    expect(thinkingPanel).toHaveAttribute("open")
+    expect(thinkingPanel).not.toHaveAttribute("open")
+    fireEvent.click(screen.getByText("Thinking"))
     expect(
       screen.getByText("I need to inspect the workflow files before answering."),
     ).toBeVisible()
+  })
+
+  it("renders streaming thinking as a lightweight status line", () => {
+    renderTranscript({
+      turn: { ...baseTurn, status: "running", final_text: null },
+      events: [
+        event("event-text", 1, "assistant.text.delta", {
+          message_id: "message-1",
+          delta: "I am checking the server state.",
+        }),
+        event("event-thinking", 2, "assistant.thinking.delta", {
+          message_id: "message-1",
+          delta: "Comparing the local checkout.",
+        }),
+      ],
+    })
+
+    expect(screen.getByText("I am checking the server state.")).toBeInTheDocument()
+    expect(screen.getByText("Thinking...")).toBeInTheDocument()
+    expect(screen.queryByText("Comparing the local checkout.")).not.toBeInTheDocument()
   })
 
   it("keeps assistant text visible and shows a separate failed turn banner", () => {

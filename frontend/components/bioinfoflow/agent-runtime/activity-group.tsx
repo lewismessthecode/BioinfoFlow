@@ -33,11 +33,14 @@ export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
     expansion.key === expansionKey ? expansion.expanded : defaultExpanded
 
   return (
-    <div className="my-0 text-muted-foreground" data-testid="agent-activity-group">
+    <div
+      className="my-0 rounded-lg border border-border/50 bg-muted/[0.12] px-2 py-1.5 text-muted-foreground shadow-none"
+      data-testid="agent-activity-group"
+    >
       <button
         type="button"
         className={cn(
-          "flex min-h-6 w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/25",
+          "flex min-h-7 w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/25",
           group.status !== "completed" && "text-foreground/70",
           "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
         )}
@@ -67,7 +70,7 @@ export function ActivityGroup({ group }: { group: AgentRuntimeActivityGroup }) {
       </button>
 
       {expanded ? (
-        <div id={detailsId} className="ml-4 mt-1 grid gap-1 border-l border-border/50 pl-3">
+        <div id={detailsId} className="ml-3 mt-1.5 grid gap-1 border-l border-border/50 pl-3">
           {group.activities.map((activity) => (
             <ToolActivityRow key={activity.id} activity={activity} />
           ))}
