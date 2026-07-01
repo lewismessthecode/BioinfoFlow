@@ -14,7 +14,7 @@ vi.mock("next-intl", () => ({
       pendingResponse: "Working on it...",
       recentActivityWindow: "Showing recent activity",
       thinking: "Thinking",
-      "statusLine.thinking": "Thinking...",
+      "statusLine.thinking": "Thinking…",
       approve: "Approve",
       reject: "Reject",
       "sidecar.needsDecision": "Needs your decision",
@@ -640,6 +640,10 @@ describe("AgentTranscript", () => {
     expect(screen.getByText("Verified 1 check")).toBeInTheDocument()
     expect(screen.getByText("bash")).toBeInTheDocument()
     expect(screen.getByText("Read 1 sources")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Read 1 sources/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    )
     expect(screen.queryByText("glob")).not.toBeInTheDocument()
   })
 
@@ -796,7 +800,7 @@ describe("AgentTranscript", () => {
     })
 
     expect(screen.getByText("I am checking the server state.")).toBeInTheDocument()
-    expect(screen.getByText("Thinking...")).toBeInTheDocument()
+    expect(screen.getByRole("status")).toHaveTextContent("Thinking…")
     expect(screen.queryByText("Comparing the local checkout.")).not.toBeInTheDocument()
   })
 

@@ -753,6 +753,58 @@ describe("agentRuntimeReducer", () => {
     ])
   })
 
+  it("keeps prior source footers on streaming text blocks with multiple deltas", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("running"), final_text: null }],
+        events: [
+          {
+            ...event("event-search", 1),
+            type: "action.completed",
+            payload: {
+              action_id: "action-search",
+              name: "web.search",
+              result: {
+                query: "GitLab phoenix-cli",
+                results: [
+                  {
+                    title: "Phoenix CLI",
+                    url: "https://gitlab.genomics.cn/phoenix/phoenix-cli",
+                    snippet: "Phoenix CLI repository.",
+                  },
+                ],
+              },
+            },
+          },
+          {
+            ...event("event-text-1", 2),
+            type: "assistant.text.delta",
+            payload: {
+              message_id: "message-1",
+              delta: "GitLab requires a signed-in session,",
+            },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.delta",
+            payload: {
+              message_id: "message-1",
+              delta: " so I will try another route.",
+            },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks[0]?.text).toBe(
+      "GitLab requires a signed-in session, so I will try another route.",
+    )
+    expect(loaded.timeline[0].assistant.textBlocks[0]?.sources).toHaveLength(1)
+    expect(loaded.timeline[0].assistant.textBlocks[0]?.footerSources).toHaveLength(1)
+  })
+
   it("uses terminal final text when replayed deltas are already covered by the snapshot", () => {
     const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",
