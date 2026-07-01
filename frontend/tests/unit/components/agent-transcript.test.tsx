@@ -285,6 +285,28 @@ describe("AgentTranscript", () => {
     expect(text.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it("keeps blocked waiting turns on precise status labels", () => {
+    const { rerender } = renderTranscript({
+      turn: { ...baseTurn, status: "waiting_approval", final_text: null },
+      events: [],
+    })
+
+    expect(screen.getByText("Needs approval")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Working..." })).not.toBeInTheDocument()
+
+    rerender(
+      <AgentTranscript
+        timeline={buildAgentRuntimeTimeline(
+          [{ ...baseTurn, status: "waiting_user", final_text: null }],
+          [],
+        )}
+      />,
+    )
+
+    expect(screen.getByText("Waiting for you")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Working..." })).not.toBeInTheDocument()
+  })
+
   it("shows copy and retry actions after completed assistant output", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     const clipboard = { writeText }

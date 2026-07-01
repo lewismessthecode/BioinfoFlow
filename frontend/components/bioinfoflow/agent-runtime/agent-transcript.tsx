@@ -288,16 +288,18 @@ function TextSwap({ text }: { text: string }) {
   useEffect(() => {
     if (text === displayText) return
     let timeout: number | undefined
+    let enterFrame: number | undefined
     const frame = window.requestAnimationFrame(() => {
       setPhase("exit")
       timeout = window.setTimeout(() => {
         setDisplayText(text)
         setPhase("enter-start")
-        window.requestAnimationFrame(() => setPhase("idle"))
+        enterFrame = window.requestAnimationFrame(() => setPhase("idle"))
       }, TEXT_SWAP_DURATION_MS)
     })
     return () => {
       window.cancelAnimationFrame(frame)
+      if (enterFrame !== undefined) window.cancelAnimationFrame(enterFrame)
       if (timeout !== undefined) window.clearTimeout(timeout)
     }
   }, [displayText, text])
@@ -376,6 +378,13 @@ function liveTurnStatusLabel(
   t: (key: string) => string,
   entry: AgentRuntimeTimelineEntry,
 ) {
+  if (
+    entry.turn.status === "waiting_user" ||
+    entry.turn.status === "waiting_approval"
+  ) {
+    return null
+  }
+
   const hasStreamingThinking = entry.segments.some(
     (segment) => segment.kind === "assistant_thinking" && segment.status === "streaming",
   )
@@ -393,9 +402,7 @@ function liveTurnStatusLabel(
 
   if (
     entry.turn.status === "queued" ||
-    entry.turn.status === "running" ||
-    entry.turn.status === "waiting_user" ||
-    entry.turn.status === "waiting_approval"
+    entry.turn.status === "running"
   ) {
     return t("statusLine.running")
   }
