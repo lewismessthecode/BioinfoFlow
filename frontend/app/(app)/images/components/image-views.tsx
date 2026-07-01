@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils"
 import { formatSize } from "@/lib/format-utils"
 import type { DockerImage, ImageStatus } from "@/lib/types"
 
-export type ImageRepositoryGroup = {
+type ImageRepositoryGroup = {
   key: string
   label: string
   registry: string
@@ -131,7 +131,7 @@ function ImageActionsMenu({
           <Download className="h-4 w-4 mr-2" />
           {tImages("actions.copyPullCommand")}
         </DropdownMenuItem>
-        {onDeleteLocal ? (
+        {onDeleteLocal && image.status === "local" ? (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive" onClick={() => onDeleteLocal(image)}>
@@ -246,7 +246,12 @@ function ImageRepositoryCard({
         titleWrapper={(children) => (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="cursor-default">{children}</div>
+              <div
+                className="cursor-default rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                tabIndex={0}
+              >
+                {children}
+              </div>
             </TooltipTrigger>
             <TooltipContent side="right" className="max-w-xs">
               <div className="space-y-1">
@@ -260,15 +265,15 @@ function ImageRepositoryCard({
           <div className="flex shrink-0 items-center gap-1">
             {canSelect ? (
               <label
-                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                aria-label={tImages(isSelected ? "selection.unselectImage" : "selection.selectImage", {
-                  name: image.name,
-                  tag: image.tag,
-                })}
+                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded border-border accent-foreground"
+                  aria-label={tImages(isSelected ? "selection.unselectImage" : "selection.selectImage", {
+                    name: image.name,
+                    tag: image.tag,
+                  })}
                   checked={isSelected}
                   onChange={() => onToggleSelection?.(image)}
                 />
@@ -282,7 +287,7 @@ function ImageRepositoryCard({
               onCopyName={onCopyName}
               onCopyPullCommand={onCopyPullCommand}
               onDeleteLocal={onDeleteLocal}
-              triggerClassName="h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 shrink-0"
+              triggerClassName="h-7 w-7 shrink-0 opacity-100"
               ariaLabel={tImages("actions.versionActions", { tag: image.tag })}
             />
           </div>
@@ -363,7 +368,7 @@ function ImageRepositoryCard({
   )
 }
 
-export function buildImageRepositoryGroups(images: DockerImage[]): ImageRepositoryGroup[] {
+function buildImageRepositoryGroups(images: DockerImage[]): ImageRepositoryGroup[] {
   const groups = new Map<string, DockerImage[]>()
   for (const image of images) {
     const key = getRepositoryKey(image)

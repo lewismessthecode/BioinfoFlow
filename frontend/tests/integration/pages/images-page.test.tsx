@@ -518,6 +518,51 @@ describe("ImagesPage", () => {
     })
   })
 
+  it("closes image details after batch deleting the open local image", async () => {
+    const batchDeleteActions: Array<() => Promise<void>> = []
+    const localImage = makeImage({
+      id: "img-local",
+      name: "demo/local",
+      full_name: "ghcr.io/demo/local:1.0.0",
+      status: "local",
+    })
+
+    toastWarningMock.mockImplementation((_message, options) => {
+      if (options?.action?.onClick) {
+        batchDeleteActions.push(options.action.onClick)
+      }
+    })
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/images") {
+        return {
+          data: [localImage],
+          meta: { status: statusMeta() },
+        }
+      }
+      if (path === "/images/img-local" && options?.method === "DELETE") {
+        return { data: null, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<ImagesPage />)
+
+    expect(await screen.findByText("demo/local")).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId("image-card-view-details"))
+    expect(screen.getAllByText("ghcr.io/demo/local:1.0.0").length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole("button", { name: "images.actions.select" }))
+    fireEvent.click(screen.getByLabelText("images.selection.selectImage:demo/local:1.0.0"))
+    fireEvent.click(screen.getByRole("button", { name: "images.actions.deleteSelectedLocal" }))
+    await act(async () => {
+      await batchDeleteActions[0]()
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText("ghcr.io/demo/local:1.0.0")).not.toBeInTheDocument()
+    })
+  })
+
   it("auto-retries when docker is unavailable and the list is empty", async () => {
     vi.useFakeTimers()
     apiRequestMock.mockResolvedValue({

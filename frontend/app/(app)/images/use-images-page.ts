@@ -290,6 +290,10 @@ export function useImagesPage() {
       toast.error(tImages("errors.deleteForbidden"))
       return
     }
+    if (image.status !== "local") {
+      toast.error(tImages("errors.deleteFailed"))
+      return
+    }
     toast.warning(tImages("toasts.deleteConfirmTitle", { name: image.name }), {
       description: tImages("toasts.deleteConfirmDescription", { size: formatSize(image.size_bytes) }),
       action: {
@@ -437,6 +441,7 @@ export function useImagesPage() {
 
           if (removedIds.size > 0) {
             setImages((prev) => prev.filter((image) => !removedIds.has(image.id)))
+            setDetailsImage((current) => current && removedIds.has(current.id) ? null : current)
             setSelectedImageIds((prev) => {
               const next = new Set(prev)
               for (const id of removedIds) {
