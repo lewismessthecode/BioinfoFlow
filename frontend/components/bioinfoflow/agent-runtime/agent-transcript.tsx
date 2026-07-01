@@ -156,12 +156,8 @@ function TranscriptSegment({
     case "assistant_thinking":
       if (segment.status === "streaming") {
         return (
-          <div
-            className="flex min-h-7 items-center gap-2 text-sm text-muted-foreground"
-            role="status"
-            aria-live="polite"
-          >
-            <CircleDashed className="h-3.5 w-3.5 text-muted-foreground/70 motion-safe:animate-spin" />
+          <div className="flex min-h-7 items-center gap-2 text-sm text-muted-foreground">
+            <CircleDashed className="h-3.5 w-3.5 animate-spin text-muted-foreground/70" />
             <span>{t("statusLine.thinking")}</span>
           </div>
         )
