@@ -285,6 +285,37 @@ describe("AgentTranscript", () => {
     expect(text.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it("does not render a divider after the final transcript entry", () => {
+    const secondTurn = {
+      ...baseTurn,
+      id: "turn-2",
+      input_text: "Summarize the second run.",
+    }
+    render(
+      <AgentTranscript
+        timeline={buildAgentRuntimeTimeline(
+          [baseTurn, secondTurn],
+          [
+            event("event-first", 1, "assistant.text.completed", {
+              message_id: "message-1",
+              content: "First answer",
+            }),
+            {
+              ...event("event-second", 2, "assistant.text.completed", {
+                message_id: "message-2",
+                content: "Second answer",
+              }),
+              turn_id: "turn-2",
+            },
+          ],
+        )}
+      />,
+    )
+
+    expect(screen.getByText("First answer").closest("article")).toHaveClass("border-b")
+    expect(screen.getByText("Second answer").closest("article")).not.toHaveClass("border-b")
+  })
+
   it("keeps blocked waiting turns on precise status labels", () => {
     const { rerender } = renderTranscript({
       turn: { ...baseTurn, status: "waiting_approval", final_text: null },
