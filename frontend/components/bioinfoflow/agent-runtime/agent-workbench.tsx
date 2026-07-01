@@ -109,8 +109,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
     const disabled = !workspaceEnabled
     const visibleOptimisticTurn =
-      optimisticTurn &&
-      !state.turns.some((turn) => turn.input_text === optimisticTurn.input_text)
+      optimisticTurn && !state.turns.some((turn) => turn.id === optimisticTurn.id)
         ? optimisticTurn
         : null
     const transcriptTimeline = useMemo(
@@ -227,35 +226,68 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       [sessionId],
     )
 
+    const submitTurn = useCallback(
+      (
+        text: string,
+        inputParts: AgentRuntimeInputPart[],
+        modelSelection = selectedModel,
+      ) => {
+        const trimmedText = text.trim()
+        if (!trimmedText) return
+        setHasSubmittedDraft(true)
+        const nextOptimisticTurn = createOptimisticTurn({
+          text: trimmedText,
+          inputParts,
+          sessionId: activeSessionId || state.session?.id || "pending-session",
+          projectId,
+        })
+        setOptimisticTurn(nextOptimisticTurn)
+        void send(trimmedText, {
+          modelSelection,
+          inputParts,
+          ...(selectedRemoteConnectionId || state.session
+            ? { remoteConnectionId: selectedRemoteConnectionId }
+            : {}),
+        }).then(() => {
+          setOptimisticTurn((current) =>
+            current?.id === nextOptimisticTurn.id ? null : current,
+          )
+        })
+      },
+      [
+        activeSessionId,
+        projectId,
+        selectedModel,
+        selectedRemoteConnectionId,
+        send,
+        state.session,
+      ],
+    )
+
     const submit = () => {
       const text = input.trim()
       if (!text) return
-      setHasSubmittedDraft(true)
       const inputParts: AgentRuntimeInputPart[] = [
         { type: "text", text },
         ...contextAttachments,
       ]
-      const nextOptimisticTurn = createOptimisticTurn({
-        text,
-        inputParts,
-        sessionId: activeSessionId || state.session?.id || "pending-session",
-        projectId,
-      })
-      setOptimisticTurn(nextOptimisticTurn)
-      void send(text, {
-        modelSelection: selectedModel,
-        inputParts,
-        ...(selectedRemoteConnectionId || state.session
-          ? { remoteConnectionId: selectedRemoteConnectionId }
-          : {}),
-      }).then(() => {
-        setOptimisticTurn((current) =>
-          current?.id === nextOptimisticTurn.id ? null : current,
-        )
-      })
+      submitTurn(text, inputParts, selectedModel)
       setInput("")
       setContextAttachments([])
     }
+
+    const retryTurn = useCallback(
+      (turn: AgentRuntimeTurn) => {
+        const text = turn.input_text.trim()
+        if (!text) return
+        const inputParts =
+          turn.input_parts && turn.input_parts.length
+            ? turn.input_parts
+            : [{ type: "text" as const, text }]
+        submitTurn(text, inputParts, turn.model_selection ?? null)
+      },
+      [submitTurn],
+    )
 
     const closeSidecar = useCallback(() => {
       setSidecarOpen(false)
@@ -364,6 +396,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               <AgentTranscript
                 timeline={transcriptTimeline}
                 onDecision={decideAction}
+                onRetryTurn={retryTurn}
                 eventWindowLimited={eventWindowLimited}
               />
               <div
