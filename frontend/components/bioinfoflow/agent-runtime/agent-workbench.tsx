@@ -245,7 +245,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       void send(text, {
         modelSelection: selectedModel,
         inputParts,
-        ...(state.session
+        ...(selectedRemoteConnectionId || state.session
           ? { remoteConnectionId: selectedRemoteConnectionId }
           : {}),
       }).then(() => {
