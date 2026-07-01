@@ -2452,7 +2452,12 @@
     "thinking": "思考过程",
     "toolCalls": "工具调用",
     "statusLine": {
-      "thinking": "正在思考..."
+      "thinking": "正在思考...",
+      "running": "处理中..."
+    },
+    "responseActions": {
+      "copy": "复制回复",
+      "retry": "重新生成"
     },
     "activity": {
       "groups": {

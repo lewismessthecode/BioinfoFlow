@@ -27,6 +27,9 @@ vi.mock("next-intl", () => ({
       stop: "Stop response",
       pendingResponse: "Working on it...",
       thinking: "Thinking",
+      "statusLine.running": "Working...",
+      "responseActions.copy": "Copy response",
+      "responseActions.retry": "Retry response",
       showThinking: "Show thinking",
       hideThinking: "Hide thinking",
       toolCalls: "Tool calls",
@@ -597,6 +600,52 @@ describe("AgentWorkbench", () => {
       "data-placement",
       "bottom",
     )
+  })
+
+  it("retries a completed turn through the existing send path and shows a duplicate optimistic turn", async () => {
+    const send = vi.fn(() => new Promise(() => {}))
+    setupRuntime({
+      turns: [
+        {
+          ...baseTurn,
+          input_parts: [
+            { type: "text", text: "Analyze these FASTQ files." },
+            {
+              kind: "file_ref",
+              path: "/workspace/reads.fastq.gz",
+              label: "reads.fastq.gz",
+              includeContent: true,
+            },
+          ],
+          model_selection: { provider: "openai", model: "gpt-5.4" },
+        },
+      ],
+      send,
+    })
+
+    render(<AgentWorkbench projectId="project-1" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Analyze these FASTQ files.",
+        expect.objectContaining({
+          inputParts: [
+            { type: "text", text: "Analyze these FASTQ files." },
+            {
+              kind: "file_ref",
+              path: "/workspace/reads.fastq.gz",
+              label: "reads.fastq.gz",
+              includeContent: true,
+            },
+          ],
+          modelSelection: { provider: "openai", model: "gpt-5.4" },
+        }),
+      ),
+    )
+    expect(screen.getAllByText("Analyze these FASTQ files.")).toHaveLength(2)
+    expect(screen.getByText("Working on it...")).toBeInTheDocument()
   })
 
   it("keeps an active loading session in the conversation layout", () => {

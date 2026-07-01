@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { AgentTranscript } from "@/components/bioinfoflow/agent-runtime/agent-transcript"
@@ -15,6 +15,9 @@ vi.mock("next-intl", () => ({
       recentActivityWindow: "Showing recent activity",
       thinking: "Thinking",
       "statusLine.thinking": "Thinking...",
+      "statusLine.running": "Working...",
+      "responseActions.copy": "Copy response",
+      "responseActions.retry": "Retry response",
       approve: "Approve",
       reject: "Reject",
       "sidecar.needsDecision": "Needs your decision",
@@ -146,19 +149,25 @@ function renderTranscript({
   turn = baseTurn,
   events = [],
   onDecision,
+  onRetryTurn,
   eventWindowLimited = false,
 }: {
   turn?: AgentRuntimeTurn
   events?: AgentRuntimeEvent[]
   onDecision?: Parameters<typeof AgentTranscript>[0]["onDecision"]
+  onRetryTurn?: (turn: AgentRuntimeTurn) => void
   eventWindowLimited?: boolean
 } = {}) {
+  const props = {
+    timeline: buildAgentRuntimeTimeline([turn], events),
+    onDecision,
+    onRetryTurn,
+    eventWindowLimited,
+  } as Parameters<typeof AgentTranscript>[0] & {
+    onRetryTurn?: (turn: AgentRuntimeTurn) => void
+  }
   return render(
-    <AgentTranscript
-      timeline={buildAgentRuntimeTimeline([turn], events)}
-      onDecision={onDecision}
-      eventWindowLimited={eventWindowLimited}
-    />,
+    <AgentTranscript {...props} />,
   )
 }
 
@@ -255,9 +264,67 @@ describe("AgentTranscript", () => {
       ],
     })
 
-    expect(screen.getByText("Working")).toBeInTheDocument()
+    expect(screen.getByRole("status", { name: "Working..." })).toBeInTheDocument()
     expect(screen.queryByText("Queued")).not.toBeInTheDocument()
     expect(screen.getByText("Streaming answer")).toBeInTheDocument()
+  })
+
+  it("renders the live streaming status after the current assistant text", () => {
+    renderTranscript({
+      turn: { ...baseTurn, status: "running", final_text: null },
+      events: [
+        event("event-text", 1, "assistant.text.delta", {
+          message_id: "message-1",
+          delta: "Long streaming answer",
+        }),
+      ],
+    })
+
+    const text = screen.getByText("Long streaming answer")
+    const status = screen.getByRole("status", { name: "Working..." })
+    expect(text.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("shows copy and retry actions after completed assistant output", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const clipboard = { writeText }
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: clipboard,
+    })
+    const onRetryTurn = vi.fn()
+    renderTranscript({
+      events: [
+        event("event-text", 1, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "The files look ready.",
+        }),
+      ],
+      onRetryTurn,
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy response" }))
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("The files look ready.")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry response" }))
+    expect(onRetryTurn).toHaveBeenCalledWith(baseTurn)
+  })
+
+  it("does not show completed response actions while the turn is running", () => {
+    renderTranscript({
+      turn: { ...baseTurn, status: "running", final_text: null },
+      events: [
+        event("event-text", 1, "assistant.text.delta", {
+          message_id: "message-1",
+          delta: "Still streaming",
+        }),
+      ],
+    })
+
+    expect(screen.queryByRole("button", { name: "Copy response" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Retry response" })).not.toBeInTheDocument()
   })
 
   it("renders tool activity as collapsed narrative groups by default", () => {

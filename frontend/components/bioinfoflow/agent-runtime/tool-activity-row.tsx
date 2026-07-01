@@ -36,7 +36,7 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
       className="grid gap-1 text-xs text-muted-foreground"
       data-testid="agent-tool-activity-row"
     >
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="group/row flex min-w-0 items-center gap-1.5">
         <ActivityStatusIcon status={activity.status} />
         <span className="min-w-0 truncate rounded-md bg-muted/45 px-1.5 py-0.5 font-mono text-[11px] text-foreground/65">
           {activity.name}
@@ -54,7 +54,10 @@ export function ToolActivityRow({ activity }: { activity: AgentRuntimeToolActivi
         {hasDetails ? (
           <button
             type="button"
-            className="ml-auto inline-flex shrink-0 items-center rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              "ml-auto inline-flex shrink-0 items-center rounded-md p-0.5 text-muted-foreground opacity-0 transition-[background-color,color,opacity] hover:bg-muted/50 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+              expanded && "opacity-100",
+            )}
             onClick={() => setExpanded((current) => !current)}
             aria-expanded={expanded}
             aria-controls={detailsId}

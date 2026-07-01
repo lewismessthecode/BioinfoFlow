@@ -2452,7 +2452,12 @@
     "thinking": "Thinking",
     "toolCalls": "Tool calls",
     "statusLine": {
-      "thinking": "Thinking..."
+      "thinking": "Thinking...",
+      "running": "Working..."
+    },
+    "responseActions": {
+      "copy": "Copy response",
+      "retry": "Retry response"
     },
     "activity": {
       "groups": {
