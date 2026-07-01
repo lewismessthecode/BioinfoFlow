@@ -163,7 +163,6 @@ function buildTextBlocks(
     block.footerSources = footerSourcesForTextBlock({
       text: block.text,
       sources: fullSources,
-      currentFooterSources: block.footerSources,
       displayedSourceKeys,
     })
     if (!existing) {
@@ -276,12 +275,10 @@ function snapshotTailTextBlock(
 function footerSourcesForTextBlock({
   text,
   sources,
-  currentFooterSources,
   displayedSourceKeys,
 }: {
   text: string
   sources: AgentRuntimeSource[]
-  currentFooterSources: AgentRuntimeSource[]
   displayedSourceKeys: Set<string>
 }) {
   const sourceByAlias = new Map(
@@ -294,10 +291,9 @@ function footerSourcesForTextBlock({
   const citedSources = citationIdsFromText(text)
     .map((citationId) => sourceByAlias.get(citationId))
     .filter((source): source is AgentRuntimeSource => Boolean(source))
-  const currentFooterKeys = new Set(currentFooterSources.map(sourceDisplayKey))
   const introducedSources = sources.filter((source) => {
     const key = sourceDisplayKey(source)
-    return !displayedSourceKeys.has(key) || currentFooterKeys.has(key)
+    return !displayedSourceKeys.has(key)
   })
   const footerSources = mergeSources(introducedSources, citedSources)
   for (const source of footerSources) {
