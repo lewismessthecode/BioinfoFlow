@@ -2452,7 +2452,7 @@
     "thinking": "Thinking",
     "toolCalls": "Tool calls",
     "statusLine": {
-      "thinking": "Thinking..."
+      "thinking": "Thinking…"
     },
     "activity": {
       "groups": {

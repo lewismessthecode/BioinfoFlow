@@ -2452,7 +2452,7 @@
     "thinking": "思考过程",
     "toolCalls": "工具调用",
     "statusLine": {
-      "thinking": "正在思考..."
+      "thinking": "正在思考…"
     },
     "activity": {
       "groups": {
