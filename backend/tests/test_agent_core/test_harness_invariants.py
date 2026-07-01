@@ -103,14 +103,14 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
     assert session.project_id is None
     assert session.runtime_mode == "api"
-    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v5"
+    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v6"
     assert session.toolset_policy["name"] == "execution"
 
 
-def test_v5_system_prompt_teaches_platform_tool_operating_loop():
+def test_v6_system_prompt_teaches_platform_tool_operating_loop():
     snapshot = default_system_prompt_snapshot()
 
-    assert snapshot.id == "bioinfoflow-agent-v5"
+    assert snapshot.id == "bioinfoflow-agent-v6"
     assert "Prefer Bioinfoflow platform tools over shell" in snapshot.content
     assert "Before submitting a run" in snapshot.content
     assert "After submitting a run" in snapshot.content
@@ -118,9 +118,18 @@ def test_v5_system_prompt_teaches_platform_tool_operating_loop():
     assert "Every tool input must be a JSON object" in snapshot.content
 
 
-def test_old_prompt_snapshot_resolves_to_live_v5_prompt():
+def test_v6_system_prompt_teaches_fenced_code_block_formatting():
+    snapshot = default_system_prompt_snapshot()
+
+    assert "Response formatting:" in snapshot.content
+    assert "fenced Markdown code block" in snapshot.content
+    assert "commands, logs, directory trees, scripts, JSON, YAML" in snapshot.content
+    assert "language tag such as `text`, `bash`, `json`, `yaml`, or `python`" in snapshot.content
+
+
+def test_old_prompt_snapshot_resolves_to_live_v6_prompt():
     resolved = resolve_system_prompt_prefix(
-        {"id": "bioinfoflow-agent-v4", "content": "old prompt"}
+        {"id": "bioinfoflow-agent-v5", "content": "old prompt"}
     )
 
     assert resolved == default_system_prompt_snapshot().content

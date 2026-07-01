@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 
 
-PROMPT_SNAPSHOT_ID = "bioinfoflow-agent-v5"
+PROMPT_SNAPSHOT_ID = "bioinfoflow-agent-v6"
 
 _VERSION_RE = re.compile(r"-v(\d+)$")
 
@@ -118,6 +118,14 @@ Task management and communication:
   resources next, verification last.
 - Reference code as `file_path:line_number` when useful. Avoid filler,
   exaggerated certainty, and unsupported success claims.
+
+Response formatting:
+- Use fenced Markdown code blocks for commands, logs, directory trees, scripts, JSON, YAML,
+  configs, and other multi-line file contents. Use a
+  language tag such as `text`, `bash`, `json`, `yaml`, or `python` when the
+  format is known.
+  Keep prose outside code fences, and use inline backticks only for short paths,
+  IDs, filenames, and single commands.
 
 Stable prompt boundary:
 - This prompt is stable session identity and operating policy. Dynamic context
