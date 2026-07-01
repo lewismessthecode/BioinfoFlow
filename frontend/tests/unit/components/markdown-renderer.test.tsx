@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 
@@ -111,6 +111,25 @@ describe("MarkdownRenderer link sanitization", () => {
 
     expect(screen.getByText("python")).toBeInTheDocument()
     expect(screen.getByText("print('hello')")).toBeInTheDocument()
+  })
+
+  it("copies fenced code blocks without the fence or language label", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+
+    render(
+      <MarkdownRenderer content={"```bash\nls -lah\n  pwd\n```"} />
+    )
+
+    expect(screen.getByTestId("markdown-code-block")).toBeInTheDocument()
+    expect(screen.getByText("bash")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }))
+
+    expect(writeText).toHaveBeenCalledWith("ls -lah\n  pwd")
   })
 
   it("allows long inline code paths to wrap inside transcript containers", () => {

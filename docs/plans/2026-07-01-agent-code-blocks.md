@@ -14,7 +14,7 @@
 
 **Files:**
 - Modify: `frontend/components/bioinfoflow/markdown-renderer.tsx`
-- Test: `frontend/tests/components/markdown-renderer.test.tsx`
+- Test: `frontend/tests/unit/components/markdown-renderer.test.tsx`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -29,7 +29,7 @@ Add tests that render fenced Markdown and assert:
 Run from `frontend/`:
 
 ```bash
-rtk bun run test -- tests/components/markdown-renderer.test.tsx
+rtk bun run test tests/unit/components/markdown-renderer.test.tsx
 ```
 
 Expected: FAIL because either the test file is new or the copy button behavior is missing.
@@ -43,7 +43,7 @@ Update `CodeBlock` in `frontend/components/bioinfoflow/markdown-renderer.tsx` to
 Run from `frontend/`:
 
 ```bash
-rtk bun run test -- tests/components/markdown-renderer.test.tsx
+rtk bun run test tests/unit/components/markdown-renderer.test.tsx
 ```
 
 Expected: PASS.
@@ -52,7 +52,7 @@ Expected: PASS.
 
 **Files:**
 - Modify: `backend/app/services/agent_core/context/system_prompt.py`
-- Test: `backend/tests/test_agent_core/test_system_prompt.py`
+- Test: `backend/tests/test_agent_core/test_harness_invariants.py`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -63,7 +63,7 @@ Add assertions that the default system prompt tells the agent to use fenced Mark
 Run from `backend/`:
 
 ```bash
-rtk uv run pytest tests/test_agent_core/test_system_prompt.py
+rtk uv run pytest tests/test_agent_core/test_harness_invariants.py
 ```
 
 Expected: FAIL because the new formatting guidance is not present yet.
@@ -77,7 +77,7 @@ Add a short "Response formatting" section to `_SYSTEM_PROMPT` in `backend/app/se
 Run from `backend/`:
 
 ```bash
-rtk uv run pytest tests/test_agent_core/test_system_prompt.py
+rtk uv run pytest tests/test_agent_core/test_harness_invariants.py
 ```
 
 Expected: PASS.
@@ -101,8 +101,8 @@ rtk bun run test
 Run from `backend/`:
 
 ```bash
-rtk uv run pytest tests/test_agent_core/test_system_prompt.py
-rtk uv run ruff check app/services/agent_core/context/system_prompt.py tests/test_agent_core/test_system_prompt.py
+rtk uv run pytest tests/test_agent_core/test_harness_invariants.py
+rtk uv run ruff check app/services/agent_core/context/system_prompt.py tests/test_agent_core/test_harness_invariants.py
 ```
 
 - [ ] **Step 3: Review**

@@ -1,8 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { Copy } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 interface MarkdownRendererProps {
@@ -40,6 +42,9 @@ function CodeBlock({
 }) {
   const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null)
   const cacheKey = useMemo(() => `${language}::${code}`, [code, language])
+  const copyCode = useCallback(() => {
+    void navigator.clipboard?.writeText(code)
+  }, [code])
 
   useEffect(() => {
     let cancelled = false
@@ -97,6 +102,20 @@ function CodeBlock({
         <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           {language}
         </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Copy code"
+              title="Copy code"
+              onClick={copyCode}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Copy code</TooltipContent>
+        </Tooltip>
       </div>
       {highlightedHtml ? (
         <div
