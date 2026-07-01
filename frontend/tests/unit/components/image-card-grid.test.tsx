@@ -128,6 +128,48 @@ describe("ImageCardsGrid", () => {
     expect(onDeleteLocal).toHaveBeenCalledWith(oneOne)
   })
 
+  it("clears the selected visible version when switching a selected multi-version card", () => {
+    const onToggleSelection = vi.fn()
+    const oneZero = {
+      ...image,
+      id: "img-1",
+      tag: "1.0",
+      full_name: "minibwa:1.0",
+      name: "minibwa",
+      status: "local" as const,
+    }
+    const oneOne = {
+      ...image,
+      id: "img-2",
+      tag: "1.1",
+      full_name: "minibwa:1.1",
+      name: "minibwa",
+      status: "local" as const,
+    }
+
+    render(
+      <ImageCardsGrid
+        images={[oneZero, oneOne]}
+        tImages={(key, values) => values ? `${key}:${Object.values(values).join(":")}` : key}
+        tCommon={(key) => key}
+        onPull={vi.fn()}
+        onViewDetails={vi.fn()}
+        onCopyName={vi.fn()}
+        onCopyPullCommand={vi.fn()}
+        onDeleteLocal={vi.fn()}
+        selectionMode
+        selectedImageIds={new Set(["img-1"])}
+        onToggleSelection={onToggleSelection}
+      />,
+    )
+
+    fireEvent.change(screen.getByRole("combobox", { name: "table.version" }), {
+      target: { value: "img-2" },
+    })
+
+    expect(onToggleSelection).toHaveBeenCalledWith(oneZero)
+  })
+
   it("renders local status as a neutral metadata pill while keeping the quieter package glyph", () => {
     const { container } = render(
       <ImageCardsGrid

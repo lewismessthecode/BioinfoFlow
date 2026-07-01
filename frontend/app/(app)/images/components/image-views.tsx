@@ -228,6 +228,12 @@ function ImageRepositoryCard({
   const hasMultipleVersions = group.images.length > 1
   const isSelected = selectedImageIds?.has(image.id) ?? false
   const canSelect = selectionMode && image.status === "local" && Boolean(onToggleSelection)
+  const handleVersionChange = (nextImageId: string) => {
+    if (isSelected && nextImageId !== image.id) {
+      onToggleSelection?.(image)
+    }
+    setSelectedImageId(nextImageId)
+  }
 
   return (
     <article className="flex h-full flex-col">
@@ -236,7 +242,7 @@ function ImageRepositoryCard({
         icon={Package2}
         iconVariant="artifact"
         titleAs="h2"
-        titleClassName="line-clamp-2"
+        titleClassName="line-clamp-2 break-all"
         titleWrapper={(children) => (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -244,7 +250,7 @@ function ImageRepositoryCard({
             </TooltipTrigger>
             <TooltipContent side="right" className="max-w-xs">
               <div className="space-y-1">
-                <p className="font-mono text-xs">{image.full_name}</p>
+                <p className="break-all font-mono text-xs">{image.full_name}</p>
                 {image.description && <p>{image.description}</p>}
               </div>
             </TooltipContent>
@@ -253,16 +259,20 @@ function ImageRepositoryCard({
         menu={
           <div className="flex shrink-0 items-center gap-1">
             {canSelect ? (
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-border accent-foreground"
+              <label
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 aria-label={tImages(isSelected ? "selection.unselectImage" : "selection.selectImage", {
                   name: image.name,
                   tag: image.tag,
                 })}
-                checked={isSelected}
-                onChange={() => onToggleSelection?.(image)}
-              />
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-border accent-foreground"
+                  checked={isSelected}
+                  onChange={() => onToggleSelection?.(image)}
+                />
+              </label>
             ) : null}
             <ImageActionsMenu
               image={image}
@@ -324,7 +334,7 @@ function ImageRepositoryCard({
 
           <div className="mt-3 flex items-center gap-2">
             {hasMultipleVersions ? (
-              <Select value={image.id} onValueChange={setSelectedImageId}>
+              <Select value={image.id} onValueChange={handleVersionChange}>
                 <SelectTrigger
                   className="h-8 min-w-0 flex-1 rounded-full bg-background text-xs"
                   aria-label={tImages("table.version")}

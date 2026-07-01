@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useDeferredValue, useEffect, useRef, useState, type ChangeEvent } from "react"
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import { ApiError, apiRequest, getApiErrorMessage } from "@/lib/api"
@@ -27,6 +27,8 @@ const recommendedImages = [
   "biocontainers/bwa",
   "ubuntu",
 ] as const
+
+const getImageSizeBytes = (image: DockerImage) => image.size_bytes ?? 0
 
 export function useImagesPage() {
   const tImages = useTranslations("images")
@@ -296,6 +298,15 @@ export function useImagesPage() {
           try {
             await apiRequest(`/images/${image.id}`, { method: "DELETE" })
             setImages((prev) => prev.filter((item) => item.id !== image.id))
+            setSelectedImageIds((prev) => {
+              if (!prev.has(image.id)) {
+                return prev
+              }
+              const next = new Set(prev)
+              next.delete(image.id)
+              return next
+            })
+            setDetailsImage((current) => current?.id === image.id ? null : current)
             toast.success(tImages("toasts.removedTitle", { name: image.name }), {
               description: tImages("toasts.removedDescription"),
             })
@@ -374,7 +385,7 @@ export function useImagesPage() {
     fetchImages({ forceSync: true })
   }, [fetchImages])
 
-  const filteredImages = images.filter((img) => {
+  const filteredImages = useMemo(() => images.filter((img) => {
     const query = deferredSearch.toLowerCase()
     const nameMatch = img.name.toLowerCase().includes(query)
     const tagMatch = img.tag.toLowerCase().includes(query)
@@ -382,14 +393,18 @@ export function useImagesPage() {
     const registryMatch = img.registry.toLowerCase().includes(query)
     const descriptionMatch = img.description?.toLowerCase().includes(query) ?? false
     return nameMatch || tagMatch || fullNameMatch || registryMatch || descriptionMatch
-  })
+  }), [deferredSearch, images])
 
   const isDockerUnavailable = dockerStatus === "unavailable"
   const hasImages = filteredImages.length > 0
   const isEmpty = filteredImages.length === 0
   const hasSelectableImages = filteredImages.some((image) => image.status === "local")
-  const selectedImages = images.filter((image) => selectedImageIds.has(image.id) && image.status === "local")
-  const selectedImagesSize = selectedImages.reduce((total, image) => total + image.size_bytes, 0)
+  const selectedImages = useMemo(() => (
+    view === "cards"
+      ? filteredImages.filter((image) => selectedImageIds.has(image.id) && image.status === "local")
+      : []
+  ), [filteredImages, selectedImageIds, view])
+  const selectedImagesSize = selectedImages.reduce((total, image) => total + getImageSizeBytes(image), 0)
 
   const handleBatchDeleteLocal = useCallback(() => {
     if (!canDeleteImages) {
@@ -401,7 +416,7 @@ export function useImagesPage() {
     }
 
     const selectedAtConfirm = selectedImages
-    const totalSize = selectedAtConfirm.reduce((total, image) => total + image.size_bytes, 0)
+    const totalSize = selectedAtConfirm.reduce((total, image) => total + getImageSizeBytes(image), 0)
     toast.warning(tImages("toasts.batchDeleteConfirmTitle", { count: selectedAtConfirm.length }), {
       description: tImages("toasts.batchDeleteConfirmDescription", { size: formatSize(totalSize) }),
       action: {
