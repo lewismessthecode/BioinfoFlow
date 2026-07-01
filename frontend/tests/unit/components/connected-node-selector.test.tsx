@@ -81,6 +81,7 @@ describe("ConnectedNodeSelector", () => {
   it("shows a pending remote target for a restored backend id before live connections load", async () => {
     const onSelectedConnectionChange = vi.fn()
     apiRequestMock.mockReturnValueOnce(new Promise(() => {}))
+    const user = userEvent.setup()
 
     render(
       <ConnectedNodeSelector
@@ -95,6 +96,15 @@ describe("ConnectedNodeSelector", () => {
         name: /Current execution target: Remote at 11111111-1111-1111-1111-111111111111/,
       }),
     ).toHaveTextContent("Remote")
+    await user.click(
+      screen.getByRole("button", {
+        name: /Current execution target: Remote at 11111111-1111-1111-1111-111111111111/,
+      }),
+    )
+    expect(screen.getByRole("menuitemradio", { name: /Local/ }))
+      .toHaveAttribute("aria-checked", "false")
+    expect(screen.getByRole("menuitemradio", { name: /Remote/ }))
+      .toHaveAttribute("aria-checked", "true")
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
