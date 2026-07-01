@@ -867,6 +867,11 @@ describe("AgentTranscript", () => {
 
     const thinkingPanel = screen.getByText("Thinking").closest("details")
     expect(thinkingPanel).not.toHaveAttribute("open")
+    expect(thinkingPanel).not.toHaveClass("border")
+    expect(thinkingPanel).not.toHaveClass("bg-background")
+    const thinkingSummary = screen.getByText("Thinking").closest("summary")
+    const disclosureIcon = thinkingSummary?.querySelector("svg:last-child")
+    expect(disclosureIcon).toHaveClass("opacity-0")
     fireEvent.click(screen.getByText("Thinking"))
     expect(
       screen.getByText("I need to inspect the workflow files before answering."),

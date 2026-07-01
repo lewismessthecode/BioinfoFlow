@@ -182,15 +182,13 @@ function TranscriptSegment({
         return null
       }
       return (
-        <details
-          className="group rounded-lg border border-border/60 bg-background px-3 py-2 shadow-none"
-        >
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground">
-            <Brain className="h-4 w-4 text-muted-foreground/75" />
+        <details className="group text-muted-foreground">
+          <summary className="group/summary flex min-h-6 cursor-pointer list-none items-center gap-2 rounded-md px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted/25 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
+            <Brain className="h-3.5 w-3.5 text-muted-foreground/75" />
             <span>{t("thinking")}</span>
-            <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            <ChevronDown className="ml-auto h-3.5 w-3.5 text-muted-foreground/70 opacity-0 transition-[opacity,transform] group-open:rotate-180 group-hover/summary:opacity-100 group-focus-visible/summary:opacity-100" />
           </summary>
-          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
+          <p className="ml-5 mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground/80">
             {segment.thinkingBlock.content}
           </p>
         </details>
