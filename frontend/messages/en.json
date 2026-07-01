@@ -1299,6 +1299,8 @@
     "details": {
       "title": "Image Details",
       "description": "Inspect the image metadata currently known to Bioinfoflow.",
+      "pullCommand": "Pull command",
+      "copyCommand": "Copy command",
       "sections": {
         "labels": "Labels",
         "environment": "Environment",

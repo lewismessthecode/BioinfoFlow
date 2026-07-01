@@ -11,6 +11,7 @@ import {
   resolveTeamRole,
 } from "@/lib/auth-config"
 import { formatSize } from "@/lib/format-utils"
+import { getDockerImageReference, getDockerPullCommand } from "@/lib/docker-image-utils"
 import {
   getContainerRegistrySelectValue,
   getContainerRegistryValue,
@@ -264,7 +265,7 @@ export function useImagesPage() {
   }, [])
 
   const handleCopyName = useCallback((image: DockerImage) => {
-    const fullName = image.full_name || `${image.name}:${image.tag}`
+    const fullName = getDockerImageReference(image)
     navigator.clipboard.writeText(fullName)
     toast.success(tCommon("copiedToClipboard"), {
       description: fullName,
@@ -272,13 +273,10 @@ export function useImagesPage() {
   }, [tCommon])
 
   const handleCopyPullCommand = useCallback((image: DockerImage) => {
-    const repository =
-      image.registry && image.registry !== "docker.io"
-        ? `${image.registry}/${image.name}:${image.tag}`
-        : `${image.name}:${image.tag}`
-    navigator.clipboard.writeText(`docker pull ${repository}`)
+    const command = getDockerPullCommand(image)
+    navigator.clipboard.writeText(command)
     toast.success(tCommon("copiedToClipboard"), {
-      description: `docker pull ${repository}`,
+      description: command,
     })
   }, [tCommon])
 

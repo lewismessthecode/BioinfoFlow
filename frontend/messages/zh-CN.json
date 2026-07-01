@@ -1299,6 +1299,8 @@
     "details": {
       "title": "镜像详情",
       "description": "查看 Bioinfoflow 当前掌握的镜像元数据。",
+      "pullCommand": "拉取命令",
+      "copyCommand": "复制命令",
       "sections": {
         "labels": "Labels",
         "environment": "环境变量",

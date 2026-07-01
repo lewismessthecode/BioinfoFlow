@@ -1,8 +1,11 @@
 import {
+  Copy,
   Download,
   RefreshCcw,
   Sparkles,
   FileArchive,
+  Package2,
+  Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -15,6 +18,7 @@ import {
 } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { formatSize } from "@/lib/format-utils"
+import { getDockerImageReference, getDockerPullCommand } from "@/lib/docker-image-utils"
 import type { DockerImage } from "@/lib/types"
 import { statusLabelKeys } from "./image-views"
 
@@ -104,12 +108,23 @@ export function UnavailableImagesEmptyState({
 export function ImageDetailsSheet({
   image,
   tImages,
+  onPull,
+  onCopyName,
+  onCopyPullCommand,
+  onDeleteLocal,
   onOpenChange,
 }: {
   image: DockerImage | null
   tImages: (key: string, values?: Record<string, unknown>) => string
+  onPull: (image: DockerImage) => void
+  onCopyName: (image: DockerImage) => void
+  onCopyPullCommand: (image: DockerImage) => void
+  onDeleteLocal?: ((image: DockerImage) => void) | undefined
   onOpenChange: (open: boolean) => void
 }) {
+  const imageReference = image ? getDockerImageReference(image) : ""
+  const pullCommand = image ? getDockerPullCommand(image) : ""
+
   return (
     <Sheet open={Boolean(image)} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
@@ -120,8 +135,85 @@ export function ImageDetailsSheet({
 
         {image && (
           <div className="mt-6 space-y-5">
-            <dl className="grid gap-4 rounded-2xl border border-border/70 bg-muted/20 p-4 sm:grid-cols-2">
-              <DetailField label={tImages("details.fields.name")} value={image.full_name} fullWidth />
+            <section className="rounded-xl border border-border/70 bg-background p-4">
+              <div className="flex items-start gap-3">
+                <div className="quiet-card-icon-shell quiet-card-icon-shell--artifact shrink-0">
+                  <Package2 className="quiet-card-icon-glyph h-4 w-4" strokeWidth={1.8} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="break-all font-mono text-sm font-semibold text-foreground">{imageReference}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>{tImages(statusLabelKeys[image.status])}</span>
+                    <span aria-hidden="true">/</span>
+                    <span>{formatSize(image.size_bytes)}</span>
+                    <span aria-hidden="true">/</span>
+                    <span className="font-mono">{image.tag}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="image-details-copy-name"
+                  onClick={() => onCopyName(image)}
+                >
+                  <Copy className="mr-1.5 h-3.5 w-3.5" />
+                  {tImages("actions.copyName")}
+                </Button>
+                <Button
+                  type="button"
+                  variant={image.status === "local" ? "outline" : "default"}
+                  size="sm"
+                  data-testid="image-details-pull"
+                  disabled={image.status === "pulling"}
+                  onClick={() => onPull(image)}
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  {image.status === "pulling"
+                    ? tImages("actions.pulling")
+                    : image.status === "local"
+                      ? tImages("actions.repull")
+                      : tImages("actions.pull")}
+                </Button>
+              </div>
+              {onDeleteLocal && image.status === "local" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 w-full justify-start text-destructive hover:text-destructive"
+                  onClick={() => onDeleteLocal(image)}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  {tImages("actions.deleteLocal")}
+                </Button>
+              ) : null}
+            </section>
+
+            <section className="rounded-xl border border-border/70 bg-muted/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-foreground">{tImages("details.pullCommand")}</h3>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="image-details-copy-pull-command"
+                  onClick={() => onCopyPullCommand(image)}
+                >
+                  <Copy className="mr-1.5 h-3.5 w-3.5" />
+                  {tImages("details.copyCommand")}
+                </Button>
+              </div>
+              <p className="mt-3 break-all rounded-lg border border-border/70 bg-background px-3 py-2 font-mono text-xs text-foreground">
+                {pullCommand}
+              </p>
+            </section>
+
+            <dl className="grid gap-4 rounded-xl border border-border/70 bg-muted/20 p-4 sm:grid-cols-2">
+              <DetailField label={tImages("details.fields.name")} value={imageReference} fullWidth />
               <DetailField label={tImages("details.fields.registry")} value={image.registry} />
               <DetailField label={tImages("details.fields.tag")} value={image.tag} />
               <DetailField label={tImages("details.fields.size")} value={formatSize(image.size_bytes)} />
