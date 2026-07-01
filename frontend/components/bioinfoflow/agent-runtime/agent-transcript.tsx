@@ -378,10 +378,7 @@ function liveTurnStatusLabel(
   t: (key: string) => string,
   entry: AgentRuntimeTimelineEntry,
 ) {
-  if (
-    entry.turn.status === "waiting_user" ||
-    entry.turn.status === "waiting_approval"
-  ) {
+  if (entry.turn.status !== "queued" && entry.turn.status !== "running") {
     return null
   }
 
