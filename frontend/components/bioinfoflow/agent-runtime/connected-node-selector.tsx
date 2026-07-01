@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { Check, ChevronDown, Server } from "lucide-react"
+import { Check, ChevronDown, Monitor, Server } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -34,11 +34,12 @@ export function ConnectedNodeSelector({
   selectedConnectionId,
   onSelectedConnectionChange,
 }: ConnectedNodeSelectorProps) {
-  const t = useTranslations("agentRuntime.connectedNode")
+  const t = useTranslations("agentRuntime.runtimeLocation")
   const isControlled = selectedConnectionId !== undefined
   const [internalSelectedConnectionId, setInternalSelectedConnectionId] = useState("")
   const [connections, setConnections] = useState<RemoteConnection[]>([])
   const [hasLoadedRemoteConnections, setHasLoadedRemoteConnections] = useState(false)
+  const [remoteConnectionsLoadFailed, setRemoteConnectionsLoadFailed] = useState(false)
   const requestedSelectedConnectionId = selectedConnectionId ?? internalSelectedConnectionId
   const currentSelectedConnectionId = connections.some(
     (connection) => connection.id === requestedSelectedConnectionId,
@@ -68,6 +69,7 @@ export function ConnectedNodeSelector({
         if (disposed) return
         setConnections(remoteConnections)
         setHasLoadedRemoteConnections(true)
+        setRemoteConnectionsLoadFailed(false)
         const currentSelected = selectedConnectionIdRef.current
         const hasCurrentSelected = remoteConnections.some(
           (connection) => connection.id === currentSelected,
@@ -81,6 +83,7 @@ export function ConnectedNodeSelector({
         if (disposed) return
         setConnections([])
         setHasLoadedRemoteConnections(true)
+        setRemoteConnectionsLoadFailed(true)
       })
 
     return () => {
@@ -92,10 +95,13 @@ export function ConnectedNodeSelector({
     [connections, currentSelectedConnectionId],
   )
   const selectedStatus = selectedConnection ? t(`status.${selectedConnection.status}`) : ""
+  const hasRemoteLoadFailed =
+    hasLoadedRemoteConnections && remoteConnectionsLoadFailed && connections.length === 0
 
   useEffect(() => {
     if (
       hasLoadedRemoteConnections &&
+      !remoteConnectionsLoadFailed &&
       requestedSelectedConnectionId &&
       !currentSelectedConnectionId
     ) {
@@ -105,6 +111,7 @@ export function ConnectedNodeSelector({
     currentSelectedConnectionId,
     hasLoadedRemoteConnections,
     onSelectedConnectionChange,
+    remoteConnectionsLoadFailed,
     requestedSelectedConnectionId,
   ])
 
@@ -121,18 +128,22 @@ export function ConnectedNodeSelector({
           disabled={disabled}
           aria-label={
             selectedConnection
-              ? t("selectedAria", {
+              ? t("selectedRemoteAria", {
                   host: selectedConnection.host,
                   name: selectedConnection.name,
                   status: selectedStatus,
                 })
-              : t("placeholder")
+              : t("selectedLocalAria")
           }
         >
-          <Server className="h-3.5 w-3.5 shrink-0" />
+          {selectedConnection ? (
+            <Server className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <Monitor className="h-3.5 w-3.5 shrink-0" />
+          )}
           {selectedConnection ? <RemoteConnectionStatusDot status={selectedConnection.status} className="shadow-[0_0_0_3px]" /> : null}
           <span className="min-w-0 truncate">
-            {selectedConnection ? selectedConnection.name : t("placeholder")}
+            {selectedConnection ? selectedConnection.name : t("local.label")}
           </span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
         </Button>
@@ -146,6 +157,27 @@ export function ConnectedNodeSelector({
         <DropdownMenuLabel className="px-2.5 py-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
           {t("menuTitle")}
         </DropdownMenuLabel>
+        <DropdownMenuItem
+          className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm"
+          onSelect={() => updateSelectedConnection("")}
+        >
+          <Monitor className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium text-foreground">{t("local.label")}</span>
+            <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+              {t("local.description")}
+            </span>
+          </span>
+          {!currentSelectedConnectionId ? (
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          ) : null}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {connections.length ? (
+          <DropdownMenuLabel className="px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            {t("remote.label")}
+          </DropdownMenuLabel>
+        ) : null}
         {connections.map((connection) => {
           const selected = connection.id === currentSelectedConnectionId
           const sshTarget = `${connection.username}@${connection.host}:${connection.port}`
@@ -168,6 +200,23 @@ export function ConnectedNodeSelector({
             </DropdownMenuItem>
           )
         })}
+        {hasRemoteLoadFailed ? (
+          <DropdownMenuItem
+            disabled
+            className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm text-muted-foreground"
+          >
+            <Server className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{t("loadFailed")}</span>
+          </DropdownMenuItem>
+        ) : !connections.length ? (
+          <DropdownMenuItem
+            disabled
+            className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm text-muted-foreground"
+          >
+            <Server className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{t("emptyRemoteHosts")}</span>
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild className="rounded-xl px-2.5 py-2 text-sm">
           <Link href="/connections">
