@@ -25,6 +25,7 @@ vi.mock("next-intl", () => ({
       "files.clearSearch": "Clear search",
       "files.collapseAll": "Collapse all",
       "files.closePreview": "Close preview",
+      "files.resizeTree": "Resize file tree",
       "files.loadedOnly": `${values?.count ?? 0} loaded items`,
       "files.loading": "Loading...",
       "files.addToContext": "Add to context",
@@ -65,6 +66,7 @@ describe("FilesTab", () => {
     vi.mocked(getAgentFsTree).mockReset()
     vi.mocked(getAgentFsFile).mockReset()
     vi.mocked(buildAgentFsDownloadUrl).mockClear()
+    window.localStorage.removeItem("agent-files-tree-width")
     vi.mocked(getAgentFsTree).mockImplementation(async (path) => {
       if (path === srcPath) {
         return {
@@ -137,7 +139,10 @@ describe("FilesTab", () => {
     expect(screen.getByTestId("file-tree-pane")).toContainElement(
       screen.getByTestId("agent-workspace-tree"),
     )
-    expect(screen.getByTestId("file-tree-pane").className).toContain("overflow-x-hidden")
+    expect(screen.getByRole("separator", { name: "Resize file tree" })).toHaveAttribute(
+      "aria-valuenow",
+      "320",
+    )
     expect(screen.getByText("src")).toBeInTheDocument()
     expect(within(screen.getByTestId("file-tree-pane")).getByText("main.nf")).toBeInTheDocument()
 
@@ -275,6 +280,37 @@ describe("FilesTab", () => {
     expect(screen.getByTestId("file-tree-pane")).toContainElement(
       screen.getByTestId("agent-workspace-tree"),
     )
+  })
+
+  it("resizes the file tree with keyboard and pointer controls", async () => {
+    render(<FilesTab projectId="project-1" />)
+
+    expect(await screen.findByText("workflow.wdl")).toBeInTheDocument()
+    const split = screen.getByTestId("files-tab-split")
+    vi.spyOn(split, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      right: 900,
+      top: 0,
+      bottom: 600,
+      width: 900,
+      height: 600,
+      toJSON: () => ({}),
+    })
+    const resizer = screen.getByRole("separator", { name: "Resize file tree" })
+
+    fireEvent.keyDown(resizer, { key: "ArrowLeft" })
+    expect(resizer).toHaveAttribute("aria-valuenow", "344")
+
+    fireEvent.pointerDown(resizer, { clientX: 520 })
+    fireEvent.pointerMove(window, { clientX: 500 })
+    fireEvent.pointerUp(window)
+
+    await waitFor(() => {
+      expect(resizer).toHaveAttribute("aria-valuenow", "400")
+    })
+    expect(window.localStorage.getItem("agent-files-tree-width")).toBe("400")
   })
 
   it("filters only loaded nodes and reveals collapsed matching descendants", async () => {

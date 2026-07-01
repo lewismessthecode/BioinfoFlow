@@ -2676,6 +2676,7 @@
       "clearSearch": "清空搜索",
       "collapseAll": "全部收起",
       "closePreview": "关闭预览",
+      "resizeTree": "调整文件树宽度",
       "selectPreview": "选择文件进行预览",
       "loadedOnly": "正在搜索 {count} 个已加载项目",
       "loading": "加载中...",
