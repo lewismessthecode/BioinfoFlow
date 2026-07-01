@@ -23,10 +23,10 @@ type FilesTabProps = {
 
 const ROOT_LOADING_KEY = "__root__"
 const TREE_WIDTH_STORAGE_KEY = "agent-files-tree-width"
-const DEFAULT_TREE_WIDTH = 320
-const MIN_TREE_WIDTH = 260
-const MAX_TREE_WIDTH = 520
-const MIN_PREVIEW_WIDTH = 320
+const DEFAULT_TREE_WIDTH = 280
+const MIN_TREE_WIDTH = 240
+const MAX_TREE_WIDTH = 400
+const MIN_PREVIEW_WIDTH = 360
 const RESIZER_WIDTH = 8
 
 export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
