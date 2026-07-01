@@ -16,6 +16,12 @@ const useLlmSettingsMock = vi.fn()
 const useIsMobileMock = vi.fn(() => false)
 const setNavbarActionsMock = vi.fn()
 const apiRequestMock = vi.fn()
+let workspaceProjectsMock: Array<{
+  id: string
+  name: string
+  storage_mode?: "managed" | "external" | "remote"
+  remote_connection_id?: string | null
+}> = []
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, string>) => {
@@ -132,6 +138,7 @@ vi.mock("@/hooks/use-media-query", () => ({
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
   useOptionalWorkspaceShell: () => ({
     setNavbarActions: setNavbarActionsMock,
+    projects: workspaceProjectsMock,
   }),
 }))
 
@@ -239,6 +246,7 @@ describe("AgentWorkbench", () => {
     useIsMobileMock.mockReset()
     useIsMobileMock.mockReturnValue(false)
     setNavbarActionsMock.mockReset()
+    workspaceProjectsMock = []
     apiRequestMock.mockReset()
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/connections") return new Promise(() => {})
@@ -778,6 +786,62 @@ describe("AgentWorkbench", () => {
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith(
         "Check the remote host first",
+        expect.objectContaining({ remoteConnectionId: "connection-test-231" }),
+      ),
+    )
+  })
+
+  it("defaults a remote project draft conversation to the project connection", async () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    workspaceProjectsMock = [
+      {
+        id: "project-remote",
+        name: "Simulation debug",
+        storage_mode: "remote",
+        remote_connection_id: "connection-test-231",
+      },
+    ]
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/connections") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "connection-test-231",
+              name: "Test host sz03",
+              host: "10.227.5.231",
+              port: 22,
+              username: "bioflow",
+              auth_method: "ssh_config",
+              ssh_alias: "bioflow-test-sz03",
+              key_path: "",
+              status: "online",
+              skill_instructions: "Use /data/test.",
+            },
+          ],
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    setupRuntime({
+      session: null,
+      send,
+    })
+
+    render(<AgentWorkbench projectId="project-remote" />)
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Current execution target: Test host sz03 at 10.227.5.231, Online",
+      }),
+    ).toBeInTheDocument()
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Use this remote project" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Use this remote project",
         expect.objectContaining({ remoteConnectionId: "connection-test-231" }),
       ),
     )

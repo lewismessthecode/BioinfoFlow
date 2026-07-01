@@ -102,10 +102,20 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const agentMode = mode ?? "execution"
     const sessionId = state.session?.id ?? ""
     const sessionRemoteConnectionId = getSessionRemoteConnectionId(state.session?.metadata)
-    const selectedRemoteConnectionId =
+    const projectRemoteConnectionId = useMemo(() => {
+      if (!projectId) return ""
+      const project = workspaceShell?.projects.find((item) => item.id === projectId)
+      if (project?.storage_mode !== "remote") return ""
+      return typeof project.remote_connection_id === "string"
+        ? project.remote_connection_id
+        : ""
+    }, [projectId, workspaceShell?.projects])
+    const hasRemoteConnectionOverride =
       remoteConnectionOverride?.sessionId === sessionId
+    const selectedRemoteConnectionId =
+      hasRemoteConnectionOverride
         ? remoteConnectionOverride.value
-        : sessionRemoteConnectionId
+        : sessionRemoteConnectionId || (state.session ? "" : projectRemoteConnectionId)
 
     const disabled = !workspaceEnabled
     const visibleOptimisticTurn =
@@ -245,7 +255,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         void send(trimmedText, {
           modelSelection,
           inputParts,
-          ...(selectedRemoteConnectionId || state.session
+          ...(hasRemoteConnectionOverride || selectedRemoteConnectionId || state.session
             ? { remoteConnectionId: selectedRemoteConnectionId }
             : {}),
         }).then(() => {
@@ -256,6 +266,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       },
       [
         activeSessionId,
+        hasRemoteConnectionOverride,
         projectId,
         selectedModel,
         selectedRemoteConnectionId,
