@@ -89,7 +89,7 @@ export function SourceCitation({
       <button
         ref={buttonRef}
         type="button"
-        className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-primary/25 bg-primary/8 px-1.5 text-[11px] font-semibold leading-none text-primary shadow-none transition-colors hover:border-primary/45 hover:bg-primary/12 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-border/70 bg-muted/30 px-1.5 text-[11px] font-semibold leading-none text-foreground/75 shadow-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={t("sources.citationLabel", {
           index: index + 1,
           title: source.title,
@@ -129,7 +129,7 @@ export function SourceEvidenceFooter({
     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       <button
         type="button"
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/70 bg-background px-2.5 font-medium text-foreground/82 shadow-sm transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/70 bg-background px-2.5 font-medium text-foreground/82 shadow-none transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={t("sources.openWithCount", { count: sources.length })}
         onClick={onOpen}
       >
@@ -140,7 +140,7 @@ export function SourceEvidenceFooter({
         {sources.slice(0, 5).map((source) => (
           <span
             key={source.id}
-            className="inline-flex h-7 min-w-0 max-w-36 items-center gap-1 rounded-md border border-border/50 bg-muted/25 px-2 text-muted-foreground"
+            className="inline-flex h-7 min-w-0 max-w-36 items-center gap-1 rounded-md border border-border/50 bg-background px-2 text-muted-foreground"
             title={source.url}
           >
             <SourceIcon sourceType={source.sourceType} className="h-3.5 w-3.5 shrink-0" />
@@ -235,7 +235,7 @@ function SourcePreview({
     <span
       id={id}
       className={cn(
-        "block rounded-lg border border-border/70 bg-popover p-3 text-left text-popover-foreground shadow-lg",
+        "block rounded-lg border border-border/70 bg-popover p-3 text-left text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,0.05)]",
         className,
       )}
       style={style}
@@ -305,11 +305,11 @@ function SourceDrawerLink({
   )
 
   const className = cn(
-    "grid gap-1 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-sm shadow-sm transition-colors",
+    "grid gap-1 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-sm shadow-none transition-colors",
     href
       ? "hover:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       : "cursor-default",
-    highlighted && "border-primary/45 bg-primary/5",
+    highlighted && "border-border bg-muted/45",
   )
 
   if (!href) {

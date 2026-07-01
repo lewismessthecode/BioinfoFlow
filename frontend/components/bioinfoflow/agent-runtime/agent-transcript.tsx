@@ -63,26 +63,29 @@ export function AgentTranscript({
   return (
     <div
       ref={scrollRef}
-      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-36 pt-8 sm:px-6"
+      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-32 pt-6 sm:px-8"
       data-testid="agent-transcript-scroll"
       onScroll={updateBottomState}
     >
-      <div className="mx-auto grid w-full min-w-0 max-w-3xl gap-8">
+      <div className="mx-auto grid w-full min-w-0 max-w-4xl gap-10">
         {eventWindowLimited ? (
           <div className="justify-self-start rounded-full border border-border/60 bg-muted/35 px-3 py-1 text-xs text-muted-foreground">
             {t("recentActivityWindow")}
           </div>
         ) : null}
         {timeline.map((entry) => (
-          <article key={entry.turn.id} className="grid min-w-0 gap-4">
+          <article
+            key={entry.turn.id}
+            className="grid min-w-0 gap-3 border-b border-border/45 pb-8 last:border-b-0"
+          >
             <div className="flex justify-end">
-              <div className="max-w-[82%] rounded-[22px] bg-muted px-4 py-3 text-[15px] leading-6 text-foreground">
+              <div className="max-w-[76%] rounded-lg border border-border/60 bg-muted/35 px-3.5 py-2.5 text-[15px] leading-6 text-foreground shadow-none">
                 {entry.turn.input_text}
               </div>
             </div>
             <div className="flex justify-start">
-              <div className="w-full min-w-0 max-w-[88%] px-1">
-                <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="w-full min-w-0 max-w-[min(100%,46rem)] px-0">
+                <div className="mb-2.5 flex items-center gap-2 text-xs text-muted-foreground">
                   <TurnStatusIcon status={entry.turn.status} />
                   <span>{turnStatusLabel(t, entry.turn.status)}</span>
                 </div>
@@ -151,10 +154,17 @@ function TranscriptSegment({
     case "assistant_text":
       return <SourceBackedTextSegment segment={segment} onOpenSources={onOpenSources} />
     case "assistant_thinking":
+      if (segment.status === "streaming") {
+        return (
+          <div className="flex min-h-7 items-center gap-2 text-sm text-muted-foreground">
+            <CircleDashed className="h-3.5 w-3.5 animate-spin text-muted-foreground/70" />
+            <span>{t("statusLine.thinking")}</span>
+          </div>
+        )
+      }
       return (
         <details
-          className="group rounded-lg border border-border/45 bg-muted/[0.14] px-3 py-2"
-          open
+          className="group rounded-lg border border-border/60 bg-background px-3 py-2 shadow-none"
         >
           <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground">
             <Brain className="h-4 w-4 text-muted-foreground/75" />
@@ -260,10 +270,10 @@ function turnStatusLabel(
 
 function TurnStatusIcon({ status }: { status: AgentRuntimeTurn["status"] }) {
   if (status === "completed") {
-    return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+    return <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground/70" />
   }
   if (status === "failed" || status === "cancelled") {
-    return <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+    return <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground/75" />
   }
   return <CircleDashed className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
 }

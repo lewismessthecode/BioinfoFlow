@@ -126,8 +126,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     return (
       <div
         className={cn(
-          "mx-auto flex w-full max-w-3xl flex-col gap-1.5 rounded-[28px] border border-border/70 bg-card p-2 shadow-[0_1px_2px_rgba(60,64,67,0.06),0_14px_34px_rgba(60,64,67,0.08)]",
-          "focus-within:border-border focus-within:shadow-[0_1px_2px_rgba(60,64,67,0.08),0_18px_40px_rgba(60,64,67,0.10)]",
+          "mx-auto flex w-full max-w-3xl flex-col gap-1.5 rounded-xl border border-border/70 bg-card p-2 shadow-[0_6px_24px_rgba(0,0,0,0.04)]",
+          "focus-within:border-border focus-within:shadow-[0_8px_28px_rgba(0,0,0,0.05)]",
           className,
         )}
         data-testid="agent-composer"
@@ -169,7 +169,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                className="h-10 w-10 shrink-0 rounded-lg text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                 disabled={disabled}
                 aria-label={t("attach")}
               >
@@ -180,12 +180,12 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               align="start"
               side="top"
               sideOffset={10}
-              className="w-56 rounded-2xl border-border/70 bg-popover p-1.5 shadow-2xl shadow-foreground/10"
+              className="w-56 rounded-xl border-border/70 bg-popover p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.06)]"
             >
               {attachMenuItems.map(({ key, Icon }) => (
                 <DropdownMenuItem
                   key={key}
-                  className="rounded-xl px-2.5 py-2 text-sm"
+                  className="rounded-lg px-2.5 py-2 text-sm"
                   onSelect={() => toast.info(t("attachMenu.comingSoon"))}
                 >
                   <Icon className="h-4 w-4" />
@@ -212,7 +212,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                     type="button"
                     variant="ghost"
                     className={cn(
-                      "hidden h-9 min-w-9 shrink items-center gap-1.5 rounded-full text-xs font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground sm:inline-flex",
+                      "hidden h-9 min-w-9 shrink items-center gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground sm:inline-flex",
                       compactControls
                         ? "max-w-9 px-2"
                         : "max-w-[11rem] px-2.5",
@@ -230,12 +230,12 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                   align="end"
                   side="top"
                   sideOffset={10}
-                  className="w-72 rounded-2xl border-border/70 bg-popover p-1.5 shadow-2xl shadow-foreground/10"
+                  className="w-72 rounded-xl border-border/70 bg-popover p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.06)]"
                 >
                   {permissionOptions.map(({ mode, Icon }) => (
                     <DropdownMenuItem
                       key={mode}
-                      className="items-start gap-2 rounded-xl px-2.5 py-2 text-sm"
+                      className="items-start gap-2 rounded-lg px-2.5 py-2 text-sm"
                       onSelect={() => onPermissionModeChange(mode)}
                     >
                       <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -255,7 +255,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             {onModeChange ? (
               <div
                 className={cn(
-                  "hidden h-9 shrink-0 items-center rounded-full border border-border/70 bg-card p-0.5",
+                  "hidden h-9 shrink-0 items-center rounded-lg border border-border/70 bg-card p-0.5",
                   !compactControls && "sm:flex",
                 )}
                 role="group"
@@ -269,7 +269,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                     aria-pressed={mode === value}
                     onClick={() => onModeChange(value)}
                     className={cn(
-                      "h-8 rounded-full px-2.5 text-xs font-medium transition-colors",
+                      "h-8 rounded-md px-2.5 text-xs font-medium transition-colors",
                       mode === value
                         ? "bg-muted text-foreground"
                         : "text-muted-foreground hover:text-foreground",
@@ -295,7 +295,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-10 w-10 shrink-0 rounded-full border-border/70 bg-card"
+                className="h-10 w-10 shrink-0 rounded-lg border-border/70 bg-card"
                 onClick={onStop}
                 aria-label={t("stop")}
               >
@@ -305,7 +305,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               <Button
                 type="button"
                 size="icon"
-                className="h-10 w-10 shrink-0 rounded-full"
+                className="h-10 w-10 shrink-0 rounded-lg"
                 onClick={onSubmit}
                 disabled={!canSubmit}
                 aria-label={t("send")}

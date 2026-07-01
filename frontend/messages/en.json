@@ -2451,6 +2451,9 @@
     "recentActivityWindow": "Showing recent activity",
     "thinking": "Thinking",
     "toolCalls": "Tool calls",
+    "statusLine": {
+      "thinking": "Thinking..."
+    },
     "activity": {
       "groups": {
         "search": "Searched web",

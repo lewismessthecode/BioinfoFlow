@@ -2451,6 +2451,9 @@
     "recentActivityWindow": "显示最近活动",
     "thinking": "思考过程",
     "toolCalls": "工具调用",
+    "statusLine": {
+      "thinking": "正在思考..."
+    },
     "activity": {
       "groups": {
         "search": "已搜索网页",

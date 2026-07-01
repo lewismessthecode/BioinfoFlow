@@ -13,7 +13,9 @@ export class AgentPage {
   }
 
   get emptyStateHeading(): Locator {
-    return this.page.getByRole("heading", { name: "Start your first analysis" })
+    return this.page.getByRole("heading", {
+      name: "What should Bioinfoflow help you do today?",
+    })
   }
 
   get selectProjectHeading(): Locator {
@@ -31,7 +33,7 @@ export class AgentPage {
   async expectLoaded() {
     await expect(
       this.page.getByRole("heading", {
-        name: /Start your first analysis|Select a project to start/,
+        name: /What should Bioinfoflow help you do today\?|Select a project to start/,
       }),
     ).toBeVisible()
   }
