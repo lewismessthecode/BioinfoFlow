@@ -145,7 +145,7 @@ describe("ImagesPage", () => {
     tag: String(overrides.tag ?? "1.0.0"),
     full_name: String(overrides.full_name ?? "ghcr.io/demo/tool:1.0.0"),
     description: String(overrides.description ?? "demo image"),
-    size_bytes: Number(overrides.size_bytes ?? 1024),
+    size_bytes: overrides.size_bytes === undefined ? 1024 : overrides.size_bytes,
     status: String(overrides.status ?? "remote"),
     registry: String(overrides.registry ?? "ghcr.io"),
     pull_progress: overrides.pull_progress ?? null,
@@ -428,6 +428,94 @@ describe("ImagesPage", () => {
       expect(screen.queryByText("demo/local")).not.toBeInTheDocument()
     })
     expect(screen.getByText("demo/remote")).toBeInTheDocument()
+  })
+
+  it("does not batch delete a selected image after search hides it", async () => {
+    const localImage = makeImage({
+      id: "img-local",
+      name: "demo/local",
+      full_name: "ghcr.io/demo/local:1.0.0",
+      status: "local",
+      size_bytes: null,
+    })
+    const remoteImage = makeImage({
+      id: "img-remote",
+      name: "demo/remote",
+      full_name: "ghcr.io/demo/remote:1.0.0",
+      status: "remote",
+    })
+
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/images") {
+        return {
+          data: [localImage, remoteImage],
+          meta: { status: statusMeta() },
+        }
+      }
+      if (path === "/images/img-local" && options?.method === "DELETE") {
+        throw new Error("Hidden image should not be deleted")
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<ImagesPage />)
+
+    expect(await screen.findByText("demo/local")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "images.actions.select" }))
+    fireEvent.click(screen.getByLabelText("images.selection.selectImage:demo/local:1.0.0"))
+    expect(screen.getByText("images.selection.selectedCount:1")).toBeInTheDocument()
+    expect(screen.getByText(/images\.selection\.selectedSize:0/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole("textbox", { name: "common.search images.title" }), {
+      target: { value: "remote" },
+    })
+
+    expect(screen.queryByText("demo/local")).not.toBeInTheDocument()
+    expect(screen.getByText("images.selection.selectedCount:0")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "images.actions.deleteSelectedLocal" })).toBeDisabled()
+  })
+
+  it("closes image details after deleting the local image from the sheet", async () => {
+    const deleteActions: Array<() => Promise<void>> = []
+    const localImage = makeImage({
+      id: "img-local",
+      name: "demo/local",
+      full_name: "ghcr.io/demo/local:1.0.0",
+      status: "local",
+    })
+
+    toastWarningMock.mockImplementation((_message, options) => {
+      if (options?.action?.onClick) {
+        deleteActions.push(options.action.onClick)
+      }
+    })
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/images") {
+        return {
+          data: [localImage],
+          meta: { status: statusMeta() },
+        }
+      }
+      if (path === "/images/img-local" && options?.method === "DELETE") {
+        return { data: null, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<ImagesPage />)
+
+    expect(await screen.findByText("demo/local")).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId("image-card-view-details"))
+    expect(screen.getAllByText("ghcr.io/demo/local:1.0.0").length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getAllByRole("button", { name: "images.actions.deleteLocal" })[0])
+    await act(async () => {
+      await deleteActions[0]()
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText("ghcr.io/demo/local:1.0.0")).not.toBeInTheDocument()
+    })
   })
 
   it("auto-retries when docker is unavailable and the list is empty", async () => {
