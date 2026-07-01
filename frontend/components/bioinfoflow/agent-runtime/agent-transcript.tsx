@@ -21,6 +21,7 @@ import type {
   AgentRuntimeTranscriptSegment,
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
+import { cn } from "@/lib/utils"
 import { ActivityGroup } from "./activity-group"
 import {
   SourceCitation,
@@ -85,14 +86,18 @@ export function AgentTranscript({
             {t("recentActivityWindow")}
           </div>
         ) : null}
-        {timeline.map((entry) => {
+        {timeline.map((entry, index) => {
           const liveStatusLabel = liveTurnStatusLabel(t, entry)
           const responseText = entry.assistant.text.trim()
           const showResponseActions = entry.turn.status === "completed" && responseText.length > 0
+          const isLastEntry = index === timeline.length - 1
           return (
             <article
               key={entry.turn.id}
-              className="grid min-w-0 gap-3 border-b border-border/45 pb-8 last:border-b-0"
+              className={cn(
+                "grid min-w-0 gap-3 pb-8",
+                !isLastEntry && "border-b border-border/45",
+              )}
             >
               <div className="flex justify-end">
                 <div className="max-w-[76%] rounded-lg border border-border/60 bg-muted/35 px-3.5 py-2.5 text-[15px] leading-6 text-foreground shadow-none">
