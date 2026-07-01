@@ -27,6 +27,7 @@ const DEFAULT_TREE_WIDTH = 320
 const MIN_TREE_WIDTH = 260
 const MAX_TREE_WIDTH = 520
 const MIN_PREVIEW_WIDTH = 320
+const RESIZER_WIDTH = 8
 
 export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   const t = useTranslations("agentRuntime")
@@ -188,9 +189,20 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
     const storedValue = window.localStorage.getItem(TREE_WIDTH_STORAGE_KEY)
     if (storedValue) {
       const stored = Number(storedValue)
-      if (Number.isFinite(stored)) setTreeWidth(clampTreeWidth(stored))
+      if (Number.isFinite(stored)) {
+        setTreeWidth(clampTreeWidth(stored, maxTreeWidthForSplit(splitRef.current)))
+      }
     }
     treeWidthStorageReady.current = true
+  }, [])
+
+  useEffect(() => {
+    const clampToAvailableSpace = () => {
+      setTreeWidth((current) => clampTreeWidth(current, maxTreeWidthForSplit(splitRef.current)))
+    }
+    clampToAvailableSpace()
+    window.addEventListener("resize", clampToAvailableSpace)
+    return () => window.removeEventListener("resize", clampToAvailableSpace)
   }, [])
 
   useEffect(() => {
@@ -202,11 +214,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
     const split = splitRef.current
     if (!split) return
     const rect = split.getBoundingClientRect()
-    const availableMax = Math.max(
-      MIN_TREE_WIDTH,
-      Math.min(MAX_TREE_WIDTH, rect.width - MIN_PREVIEW_WIDTH),
-    )
-    setTreeWidth(clampTreeWidth(rect.right - clientX, availableMax))
+    setTreeWidth(clampTreeWidth(rect.right - clientX, maxTreeWidthForSplit(split)))
   }, [])
 
   const beginResize = useCallback(
@@ -227,7 +235,11 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   )
 
   const nudgeTreeWidth = useCallback((delta: number) => {
-    setTreeWidth((current) => clampTreeWidth(current + delta))
+    setTreeWidth((current) => clampTreeWidth(current + delta, maxTreeWidthForSplit(splitRef.current)))
+  }, [])
+
+  const setMaxTreeWidth = useCallback(() => {
+    setTreeWidth(clampTreeWidth(MAX_TREE_WIDTH, maxTreeWidthForSplit(splitRef.current)))
   }, [])
 
   return (
@@ -307,7 +319,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
             }
             if (event.key === "End") {
               event.preventDefault()
-              setTreeWidth(MAX_TREE_WIDTH)
+              setMaxTreeWidth()
             }
           }}
         >
@@ -377,6 +389,16 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
 
 function clampTreeWidth(width: number, max = MAX_TREE_WIDTH) {
   return Math.min(Math.max(width, MIN_TREE_WIDTH), max)
+}
+
+function maxTreeWidthForSplit(split: HTMLDivElement | null) {
+  if (!split) return MAX_TREE_WIDTH
+  const width = split.getBoundingClientRect().width
+  if (width <= 0) return MAX_TREE_WIDTH
+  return Math.max(
+    MIN_TREE_WIDTH,
+    Math.min(MAX_TREE_WIDTH, width - MIN_PREVIEW_WIDTH - RESIZER_WIDTH),
+  )
 }
 
 function omitKey<T>(record: Record<string, T>, key: string) {

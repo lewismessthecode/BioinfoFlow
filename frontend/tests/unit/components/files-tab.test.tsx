@@ -313,6 +313,36 @@ describe("FilesTab", () => {
     expect(window.localStorage.getItem("agent-files-tree-width")).toBe("400")
   })
 
+  it("clamps keyboard and stored tree widths to preserve preview space", async () => {
+    window.localStorage.setItem("agent-files-tree-width", "520")
+    render(<FilesTab projectId="project-1" />)
+
+    expect(await screen.findByText("workflow.wdl")).toBeInTheDocument()
+    const split = screen.getByTestId("files-tab-split")
+    vi.spyOn(split, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      right: 680,
+      top: 0,
+      bottom: 600,
+      width: 680,
+      height: 600,
+      toJSON: () => ({}),
+    })
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"))
+    })
+
+    const resizer = screen.getByRole("separator", { name: "Resize file tree" })
+    await waitFor(() => {
+      expect(resizer).toHaveAttribute("aria-valuenow", "352")
+    })
+
+    fireEvent.keyDown(resizer, { key: "End" })
+    expect(resizer).toHaveAttribute("aria-valuenow", "352")
+  })
+
   it("filters only loaded nodes and reveals collapsed matching descendants", async () => {
     render(<FilesTab projectId="project-1" />)
 

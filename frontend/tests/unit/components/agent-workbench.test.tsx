@@ -76,6 +76,19 @@ vi.mock("next-intl", () => ({
       "attachMenu.runPreflight": "Run preflight",
       "attachMenu.diagnoseRun": "Diagnose run",
       "attachMenu.comingSoon": "Coming soon",
+      menuTitle: "Runtime location",
+      manage: "Manage SSH hosts",
+      "local.label": "Local workspace",
+      "local.description": "Run in this Bioinfoflow workspace",
+      "remote.label": "Remote SSH hosts",
+      emptyRemoteHosts: "No remote hosts configured.",
+      loadFailed: "Could not load remote hosts.",
+      "status.online": "Online",
+      "status.offline": "Offline",
+      "status.error": "Connection error",
+      "status.unknown": "Not tested",
+      selectedLocalAria: "Runtime location: local workspace",
+      selectedRemoteAria: "Selected remote connection",
       auto: "Auto",
       configure: "Configure providers",
       noProviders: "No model available",
@@ -672,6 +685,54 @@ describe("AgentWorkbench", () => {
 
     await waitFor(() => expect(send).toHaveBeenCalled())
     expect(send.mock.calls[0][1]).not.toHaveProperty("remoteConnectionId")
+  })
+
+  it("sends an empty remote connection override when switching a remote session back to local", async () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/connections") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "connection-test-231",
+              name: "Test host sz03",
+              host: "10.227.5.231",
+              port: 22,
+              username: "bioflow",
+              auth_method: "ssh_config",
+              ssh_alias: "bioflow-test-sz03",
+              key_path: "",
+              status: "online",
+              skill_instructions: "Use /data/test.",
+            },
+          ],
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    setupRuntime({
+      session: {
+        ...baseSession,
+        metadata: { remote_connection_id: "connection-test-231" },
+      },
+      send,
+    })
+
+    render(<AgentWorkbench />)
+
+    fireEvent.pointerDown(await screen.findByRole("button", { name: "Selected remote connection" }))
+    fireEvent.click(await screen.findByText("Local workspace"))
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Run locally now" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Run locally now",
+        expect.objectContaining({ remoteConnectionId: "" }),
+      ),
+    )
   })
 
   it("resyncs the remote connection selection when the active session changes", async () => {
