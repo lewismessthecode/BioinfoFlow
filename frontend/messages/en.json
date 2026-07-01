@@ -2543,17 +2543,17 @@
       "comingSoon": "Coming soon"
     },
     "runtimeLocation": {
-      "placeholder": "Runtime location",
-      "selectedLocalAria": "Runtime location: local workspace",
-      "selectedRemoteAria": "Runtime location: {name} at {host}, {status}",
-      "menuTitle": "Runtime location",
+      "placeholder": "Local / Remote",
+      "selectedLocalAria": "Current execution target: local",
+      "selectedRemoteAria": "Current execution target: {name} at {host}, {status}",
+      "menuTitle": "Local / Remote",
       "manage": "Manage SSH hosts",
       "local": {
-        "label": "Local workspace",
+        "label": "Local",
         "description": "Run in this Bioinfoflow workspace"
       },
       "remote": {
-        "label": "Remote SSH hosts"
+        "label": "Remote"
       },
       "emptyRemoteHosts": "No remote hosts configured.",
       "loadFailed": "Could not load remote hosts.",

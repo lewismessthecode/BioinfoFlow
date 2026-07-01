@@ -18,7 +18,7 @@ const setNavbarActionsMock = vi.fn()
 const apiRequestMock = vi.fn()
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) => {
+  useTranslations: () => (key: string, values?: Record<string, string>) => {
     const labels: Record<string, string> = {
       welcomeTitle: "What should Bioinfoflow help you do today?",
       composerPlaceholder: "Message Bioinfoflow...",
@@ -76,19 +76,19 @@ vi.mock("next-intl", () => ({
       "attachMenu.runPreflight": "Run preflight",
       "attachMenu.diagnoseRun": "Diagnose run",
       "attachMenu.comingSoon": "Coming soon",
-      menuTitle: "Runtime location",
+      menuTitle: "Local / Remote",
       manage: "Manage SSH hosts",
-      "local.label": "Local workspace",
+      "local.label": "Local",
       "local.description": "Run in this Bioinfoflow workspace",
-      "remote.label": "Remote SSH hosts",
+      "remote.label": "Remote",
       emptyRemoteHosts: "No remote hosts configured.",
       loadFailed: "Could not load remote hosts.",
       "status.online": "Online",
       "status.offline": "Offline",
       "status.error": "Connection error",
       "status.unknown": "Not tested",
-      selectedLocalAria: "Runtime location: local workspace",
-      selectedRemoteAria: "Selected remote connection",
+      selectedLocalAria: "Current execution target: local",
+      selectedRemoteAria: `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
       auto: "Auto",
       configure: "Configure providers",
       noProviders: "No model available",
@@ -720,8 +720,12 @@ describe("AgentWorkbench", () => {
 
     render(<AgentWorkbench />)
 
-    fireEvent.pointerDown(await screen.findByRole("button", { name: "Selected remote connection" }))
-    fireEvent.click(await screen.findByText("Local workspace"))
+    fireEvent.pointerDown(
+      await screen.findByRole("button", {
+        name: "Current execution target: Test host sz03 at 10.227.5.231, Online",
+      }),
+    )
+    fireEvent.click(screen.getAllByText("Local").at(-1)!)
 
     const input = screen.getByPlaceholderText("Message Bioinfoflow...")
     fireEvent.change(input, { target: { value: "Run locally now" } })

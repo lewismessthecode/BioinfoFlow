@@ -7,16 +7,16 @@ import { apiRequest } from "@/lib/api"
 import type { RemoteConnection } from "@/lib/demo-connections"
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) => {
+  useTranslations: () => (key: string, values?: Record<string, string>) => {
     const labels: Record<string, string> = {
-      placeholder: "Runtime location",
-      selectedLocalAria: "Runtime location: local workspace",
-      selectedRemoteAria: "Selected remote connection",
-      menuTitle: "Runtime location",
+      placeholder: "Local / Remote",
+      selectedLocalAria: "Current execution target: local",
+      selectedRemoteAria: `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
+      menuTitle: "Local / Remote",
       manage: "Manage SSH hosts",
-      "local.label": "Local workspace",
+      "local.label": "Local",
       "local.description": "Run in this Bioinfoflow workspace",
-      "remote.label": "Remote SSH hosts",
+      "remote.label": "Remote",
       emptyRemoteHosts: "No remote hosts configured.",
       loadFailed: "Could not load remote hosts.",
       "status.online": "Online",
@@ -73,8 +73,8 @@ describe("ConnectedNodeSelector", () => {
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
     expect(
-      screen.getByRole("button", { name: "Runtime location: local workspace" }),
-    ).toHaveTextContent("Local workspace")
+      screen.getByRole("button", { name: "Current execution target: local" }),
+    ).toHaveTextContent("Local")
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
@@ -91,8 +91,8 @@ describe("ConnectedNodeSelector", () => {
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
     expect(
-      screen.getByRole("button", { name: "Runtime location: local workspace" }),
-    ).toHaveTextContent("Local workspace")
+      screen.getByRole("button", { name: "Current execution target: local" }),
+    ).toHaveTextContent("Local")
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
@@ -110,7 +110,7 @@ describe("ConnectedNodeSelector", () => {
     await waitFor(() => expect(onSelectedConnectionChange).toHaveBeenCalledWith(""))
   })
 
-  it("selects the local workspace from the runtime location menu", async () => {
+  it("selects local from the local/remote menu", async () => {
     const user = userEvent.setup()
     const onSelectedConnectionChange = vi.fn()
     apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
@@ -122,10 +122,58 @@ describe("ConnectedNodeSelector", () => {
       />,
     )
 
-    await user.click(await screen.findByRole("button", { name: "Selected remote connection" }))
-    await user.click(screen.getByText("Local workspace"))
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Current execution target: Live HPC at login.live.example.org, Online",
+      }),
+    )
+    await user.click(screen.getAllByText("Local").at(-1)!)
 
     expect(onSelectedConnectionChange).toHaveBeenCalledWith("")
+  })
+
+  it("falls back to the remote host when a connection has no display name", async () => {
+    const unnamedConnection: RemoteConnection = {
+      ...liveConnection,
+      id: "connection-host-only",
+      name: " ",
+      host: "10.227.5.224",
+    }
+    apiRequestMock.mockResolvedValueOnce({ data: [unnamedConnection] })
+
+    render(<ConnectedNodeSelector selectedConnectionId="connection-host-only" />)
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Current execution target: 10.227.5.224 at 10.227.5.224, Online",
+      }),
+    )
+      .toHaveTextContent("10.227.5.224")
+  })
+
+  it("shows an empty remote-host state while keeping local selectable", async () => {
+    const user = userEvent.setup()
+    const onSelectedConnectionChange = vi.fn()
+    apiRequestMock.mockResolvedValueOnce({ data: [] })
+
+    render(<ConnectedNodeSelector onSelectedConnectionChange={onSelectedConnectionChange} />)
+
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
+    await user.click(screen.getByRole("button", { name: "Current execution target: local" }))
+
+    expect(screen.getByText("No remote hosts configured.")).toBeInTheDocument()
+    await user.click(screen.getAllByText("Local").at(-1)!)
+    expect(onSelectedConnectionChange).toHaveBeenCalledWith("")
+  })
+
+  it("disables the local/remote trigger when the composer is disabled", async () => {
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    render(<ConnectedNodeSelector disabled />)
+
+    expect(screen.getByRole("button", { name: "Current execution target: local" }))
+      .toBeDisabled()
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
   })
 
   it("does not expose demo connections when the live connection request fails", async () => {
@@ -135,7 +183,7 @@ describe("ConnectedNodeSelector", () => {
     render(<ConnectedNodeSelector />)
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    await user.click(screen.getByRole("button", { name: "Runtime location: local workspace" }))
+    await user.click(screen.getByRole("button", { name: "Current execution target: local" }))
 
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
     expect(screen.queryByText("Test host sz03")).not.toBeInTheDocument()
