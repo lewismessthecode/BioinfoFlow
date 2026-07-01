@@ -97,7 +97,7 @@ describe("ImageCardsGrid", () => {
     const onCopyPullCommand = vi.fn()
     const onDeleteLocal = vi.fn()
     const oneZero = { ...image, id: "img-1", tag: "1.0", full_name: "minibwa:1.0", name: "minibwa" }
-    const oneOne = { ...image, id: "img-2", tag: "1.1", full_name: "minibwa:1.1", name: "minibwa", status: "remote" as const }
+    const oneOne = { ...image, id: "img-2", tag: "1.1", full_name: "minibwa:1.1", name: "minibwa", status: "local" as const }
 
     render(
       <ImageCardsGrid
@@ -115,7 +115,7 @@ describe("ImageCardsGrid", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "table.version" }), {
       target: { value: "img-2" },
     })
-    fireEvent.click(screen.getByRole("button", { name: /actions.pull/i }))
+    fireEvent.click(screen.getByRole("button", { name: /actions.repull/i }))
     fireEvent.click(screen.getAllByRole("button", { name: "actions.viewDetails" })[0])
     fireEvent.click(screen.getByRole("button", { name: /actions.copyName/i }))
     fireEvent.click(screen.getByRole("button", { name: /actions.copyPullCommand/i }))
@@ -126,6 +126,32 @@ describe("ImageCardsGrid", () => {
     expect(onCopyName).toHaveBeenCalledWith(oneOne)
     expect(onCopyPullCommand).toHaveBeenCalledWith(oneOne)
     expect(onDeleteLocal).toHaveBeenCalledWith(oneOne)
+  })
+
+  it("hides local delete actions for remote versions", () => {
+    const remoteImage = {
+      ...image,
+      id: "img-remote",
+      tag: "latest",
+      full_name: "minibwa:latest",
+      name: "minibwa",
+      status: "remote" as const,
+    }
+
+    render(
+      <ImageCardsGrid
+        images={[remoteImage]}
+        tImages={(key) => key}
+        tCommon={(key) => key}
+        onPull={vi.fn()}
+        onViewDetails={vi.fn()}
+        onCopyName={vi.fn()}
+        onCopyPullCommand={vi.fn()}
+        onDeleteLocal={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole("button", { name: "actions.deleteLocal" })).not.toBeInTheDocument()
   })
 
   it("clears the selected visible version when switching a selected multi-version card", () => {

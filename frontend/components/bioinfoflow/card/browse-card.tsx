@@ -64,7 +64,7 @@ export function BrowseCard({
     <Card
       data-slot="browse-card"
       className={cn(
-        "group relative overflow-hidden border-border/60 bg-card/84 hover:shadow-sm hover:border-border/90 transition-all duration-200 h-full flex flex-col",
+        "group relative overflow-hidden border-border/60 bg-card/84 hover:shadow-sm hover:border-border/90 transition-[background-color,border-color,box-shadow] duration-200 h-full flex flex-col",
         className,
       )}
     >

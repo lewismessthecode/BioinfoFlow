@@ -127,7 +127,7 @@ export function ImageDetailsSheet({
 
   return (
     <Sheet open={Boolean(image)} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
+      <SheetContent className="w-full overflow-y-auto overscroll-contain sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>{tImages("details.title")}</SheetTitle>
           <SheetDescription>{tImages("details.description")}</SheetDescription>
