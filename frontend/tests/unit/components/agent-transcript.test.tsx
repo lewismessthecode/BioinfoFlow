@@ -925,6 +925,39 @@ describe("AgentTranscript", () => {
     expect(screen.getAllByText("2 results").length).toBeGreaterThan(0)
   })
 
+  it("shows a repeated prior source footer only once when later text does not cite it", () => {
+    renderTranscript({
+      events: [
+        event("event-search", 1, "action.completed", {
+          action_id: "action-search",
+          name: "web.search",
+          result: {
+            query: "GitLab phoenix-cli",
+            results: [
+              {
+                title: "Phoenix CLI",
+                url: "https://gitlab.genomics.cn/phoenix/phoenix-cli",
+                snippet: "Phoenix CLI repository.",
+              },
+            ],
+          },
+        }),
+        event("event-text-1", 2, "assistant.text.completed", {
+          message_id: "message-1",
+          content: "GitLab requires a signed-in session, so I will try another route.",
+        }),
+        event("event-text-2", 3, "assistant.text.completed", {
+          message_id: "message-2",
+          content: "The next step is to inspect the server checkout directly.",
+        }),
+      ],
+    })
+
+    expect(screen.getAllByRole("button", { name: "Open 1 sources" })).toHaveLength(1)
+    expect(screen.getByText("GitLab requires a signed-in session, so I will try another route.")).toBeInTheDocument()
+    expect(screen.getByText("The next step is to inspect the server checkout directly.")).toBeInTheDocument()
+  })
+
   it("groups real backend search results by the action input preview", () => {
     renderTranscript({
       events: [
