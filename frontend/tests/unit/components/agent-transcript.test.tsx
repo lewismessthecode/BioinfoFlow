@@ -307,6 +307,22 @@ describe("AgentTranscript", () => {
     expect(screen.queryByRole("status", { name: "Working..." })).not.toBeInTheDocument()
   })
 
+  it("does not show live status for completed turns with stale streaming events", () => {
+    renderTranscript({
+      turn: { ...baseTurn, status: "completed", final_text: null },
+      events: [
+        event("event-text", 1, "assistant.text.delta", {
+          message_id: "message-1",
+          delta: "The final answer is already visible.",
+        }),
+      ],
+    })
+
+    expect(screen.getByText("The final answer is already visible.")).toBeInTheDocument()
+    expect(screen.getByTestId("assistant-response-actions")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Working..." })).not.toBeInTheDocument()
+  })
+
   it("shows copy and retry actions after completed assistant output", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     const clipboard = { writeText }
