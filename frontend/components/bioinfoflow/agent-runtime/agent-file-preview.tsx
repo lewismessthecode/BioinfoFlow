@@ -164,7 +164,7 @@ function FilePreviewBody({
       <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-3">
         <MarkdownRenderer
           content={file.content || t("files.previewUnavailable")}
-          className="rounded-lg border border-border/65 bg-card px-4 py-3 text-sm"
+          className="mx-auto w-full max-w-3xl px-1 py-2 text-sm"
         />
       </div>
     )
@@ -216,10 +216,26 @@ function FilePreviewBody({
     )
   }
 
+  return <CodePreview content={file.content || t("files.previewUnavailable")} />
+}
+
+function CodePreview({ content }: { content: string }) {
+  const lines = content.split(/\r?\n/)
   return (
-    <pre className="min-h-0 min-w-0 flex-1 overflow-auto bg-muted/20 p-3 text-xs leading-5 text-foreground">
-      <code>{file.content || t("files.previewUnavailable")}</code>
-    </pre>
+    <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-muted/20">
+      <pre className="min-w-max p-3 font-mono text-xs leading-5 text-foreground tabular-nums">
+        <code>
+          {lines.map((line, index) => (
+            <span key={index} className="table-row">
+              <span className="sticky left-0 table-cell select-none border-r border-border/50 bg-muted/95 pr-3 text-right text-muted-foreground">
+                {index + 1}
+              </span>
+              <span className="table-cell whitespace-pre pl-3">{line || " "}</span>
+            </span>
+          ))}
+        </code>
+      </pre>
+    </div>
   )
 }
 
@@ -228,11 +244,11 @@ function DelimitedTable({ rows }: { rows: string[][] }) {
   return (
     <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-3">
       <div className="overflow-auto rounded-lg border border-border/65 bg-card">
-        <table className="w-full border-collapse text-left text-sm">
+        <table className="min-w-max w-full border-collapse text-left text-sm">
           <thead className="sticky top-0 bg-muted/85 text-xs font-medium text-muted-foreground">
             <tr>
               {header.map((cell, index) => (
-                <th key={`${cell}-${index}`} className="border-b border-border/65 px-3 py-2">
+                <th key={`${cell}-${index}`} className="whitespace-nowrap border-b border-border/65 px-3 py-2">
                   <span className="inline-flex items-center gap-1.5">
                     {index === 0 ? <Table className="h-3.5 w-3.5" /> : null}
                     {cell || "—"}
@@ -245,7 +261,7 @@ function DelimitedTable({ rows }: { rows: string[][] }) {
             {body.map((row, rowIndex) => (
               <tr key={rowIndex} className="border-b border-border/45 last:border-b-0">
                 {header.map((_, cellIndex) => (
-                  <td key={cellIndex} className="px-3 py-2 align-top text-foreground">
+                  <td key={cellIndex} className="whitespace-nowrap px-3 py-2 align-top text-foreground">
                     {row[cellIndex] || ""}
                   </td>
                 ))}

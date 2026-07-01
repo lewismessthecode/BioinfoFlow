@@ -245,7 +245,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       void send(text, {
         modelSelection: selectedModel,
         inputParts,
-        ...(selectedRemoteConnectionId
+        ...(state.session
           ? { remoteConnectionId: selectedRemoteConnectionId }
           : {}),
       }).then(() => {
@@ -415,7 +415,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           className={cn(
             "hidden shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-out lg:flex",
             desktopSidecarVisible
-              ? "w-[clamp(360px,32vw,500px)] translate-x-0 opacity-100"
+              ? cn(
+                  "translate-x-0 opacity-100",
+                  activeSidecarTab === "files"
+                    ? "w-[clamp(680px,58vw,960px)]"
+                    : "w-[clamp(360px,32vw,500px)]",
+                )
               : "w-0 translate-x-4 opacity-0",
           )}
           aria-hidden={!desktopSidecarVisible}

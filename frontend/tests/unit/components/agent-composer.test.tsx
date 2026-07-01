@@ -9,7 +9,7 @@ vi.mock("@/lib/api", () => ({
 }))
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) => {
+  useTranslations: () => (key: string, values?: Record<string, string>) => {
     const labels: Record<string, string> = {
       composerPlaceholder: "Message Bioinfoflow...",
       attach: "Attach or add context",
@@ -36,15 +36,34 @@ vi.mock("next-intl", () => ({
       configure: "Configure providers",
       noProviders: "No model available",
       searchModels: "Search models...",
-      "connectedNode.placeholder": "Remote connection",
-      "connectedNode.menuTitle": "Host Skills",
-      "connectedNode.manage": "Manage Host Skills",
-      "connectedNode.status.online": "Online",
-      "connectedNode.status.offline": "Offline",
-      "connectedNode.status.error": "Connection error",
-      "connectedNode.status.unknown": "Not tested",
-      "connectedNode.selectedAria": "Selected remote connection",
-      selectedAria: "Selected remote connection",
+      "runtimeLocation.placeholder": "Local / Remote",
+      "runtimeLocation.menuTitle": "Local / Remote",
+      "runtimeLocation.manage": "Manage SSH hosts",
+      "runtimeLocation.local.label": "Local",
+      "runtimeLocation.local.description": "Run in this Bioinfoflow workspace",
+      "runtimeLocation.remote.label": "Remote",
+      "runtimeLocation.emptyRemoteHosts": "No remote hosts configured.",
+      "runtimeLocation.loadFailed": "Could not load remote hosts.",
+      "runtimeLocation.status.online": "Online",
+      "runtimeLocation.status.offline": "Offline",
+      "runtimeLocation.status.error": "Connection error",
+      "runtimeLocation.status.unknown": "Not tested",
+      "runtimeLocation.selectedLocalAria": "Current execution target: local",
+      "runtimeLocation.selectedRemoteAria": `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
+      placeholder: "Local / Remote",
+      menuTitle: "Local / Remote",
+      manage: "Manage SSH hosts",
+      "local.label": "Local",
+      "local.description": "Run in this Bioinfoflow workspace",
+      "remote.label": "Remote",
+      emptyRemoteHosts: "No remote hosts configured.",
+      loadFailed: "Could not load remote hosts.",
+      "status.online": "Online",
+      "status.offline": "Offline",
+      "status.error": "Connection error",
+      "status.unknown": "Not tested",
+      selectedLocalAria: "Current execution target: local",
+      selectedRemoteAria: `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
     }
     return labels[key] ?? key
   },
@@ -274,7 +293,11 @@ describe("AgentComposer", () => {
       />,
     )
 
-    fireEvent.pointerDown(await screen.findByRole("button", { name: "Selected remote connection" }))
+    fireEvent.pointerDown(
+      await screen.findByRole("button", {
+        name: "Current execution target: Simulation host sz01 at 10.227.5.224, Online",
+      }),
+    )
     fireEvent.click(await screen.findByText("Test host sz03"))
 
     expect(onRemoteConnectionChange).toHaveBeenCalledWith("connection-test-231")
