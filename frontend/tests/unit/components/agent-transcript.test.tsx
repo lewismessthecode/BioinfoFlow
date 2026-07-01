@@ -608,6 +608,8 @@ describe("AgentTranscript", () => {
     expect(summary).not.toHaveClass("border")
     expect(screen.queryByTestId("inline-approval-card")).not.toBeInTheDocument()
     expect(screen.getByText("runs.submit")).toBeInTheDocument()
+    expect(summary.querySelector("pre")).not.toHaveClass("bg-muted/25")
+    expect(summary.querySelector("pre")).not.toHaveClass("rounded-md")
   })
 
   it("does not render cancelled waiting decisions as pending approvals", () => {

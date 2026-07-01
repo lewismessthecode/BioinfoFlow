@@ -55,7 +55,7 @@ export function InlineApprovalCard({
             {decision.name ?? decision.actionId}
           </div>
           {decision.inputPreview ? (
-            <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/25 px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground/75">
+            <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-foreground/60">
               {decision.inputPreview}
             </pre>
           ) : null}
