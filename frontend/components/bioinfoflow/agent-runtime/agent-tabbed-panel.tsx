@@ -101,7 +101,7 @@ export function AgentTabbedPanel({
       className={cn(
         "pointer-events-auto h-full overflow-hidden border-l border-border/70 bg-background",
         variant === "desktop"
-          ? "hidden lg:flex lg:w-[clamp(360px,32vw,500px)] lg:flex-col"
+          ? "hidden lg:flex lg:w-full lg:flex-col"
           : "flex flex-col",
         className,
       )}

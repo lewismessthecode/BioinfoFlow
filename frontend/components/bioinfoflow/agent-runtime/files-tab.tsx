@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react"
 import { RefreshCw } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -21,6 +22,11 @@ type FilesTabProps = {
 }
 
 const ROOT_LOADING_KEY = "__root__"
+const TREE_WIDTH_STORAGE_KEY = "agent-files-tree-width"
+const DEFAULT_TREE_WIDTH = 320
+const MIN_TREE_WIDTH = 260
+const MAX_TREE_WIDTH = 520
+const MIN_PREVIEW_WIDTH = 320
 
 export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   const t = useTranslations("agentRuntime")
@@ -33,6 +39,9 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   const [selectedFile, setSelectedFile] = useState<AgentFsFile | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [filter, setFilter] = useState("")
+  const [treeWidth, setTreeWidth] = useState(DEFAULT_TREE_WIDTH)
+  const splitRef = useRef<HTMLDivElement | null>(null)
+  const treeWidthStorageReady = useRef(false)
   const fileRequestId = useRef(0)
   const fileRequestByPath = useRef<Record<string, number>>({})
   const treeRequestId = useRef(0)
@@ -171,6 +180,55 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
     () => rootEntries.length + Object.values(childrenByPath).reduce((sum, entries) => sum + entries.length, 0),
     [childrenByPath, rootEntries],
   )
+  const splitStyle = {
+    "--files-split-columns": `minmax(0,1fr) 8px minmax(${MIN_TREE_WIDTH}px, ${treeWidth}px)`,
+  } as CSSProperties
+
+  useEffect(() => {
+    const storedValue = window.localStorage.getItem(TREE_WIDTH_STORAGE_KEY)
+    if (storedValue) {
+      const stored = Number(storedValue)
+      if (Number.isFinite(stored)) setTreeWidth(clampTreeWidth(stored))
+    }
+    treeWidthStorageReady.current = true
+  }, [])
+
+  useEffect(() => {
+    if (!treeWidthStorageReady.current) return
+    window.localStorage.setItem(TREE_WIDTH_STORAGE_KEY, String(treeWidth))
+  }, [treeWidth])
+
+  const updateTreeWidthFromPointer = useCallback((clientX: number) => {
+    const split = splitRef.current
+    if (!split) return
+    const rect = split.getBoundingClientRect()
+    const availableMax = Math.max(
+      MIN_TREE_WIDTH,
+      Math.min(MAX_TREE_WIDTH, rect.width - MIN_PREVIEW_WIDTH),
+    )
+    setTreeWidth(clampTreeWidth(rect.right - clientX, availableMax))
+  }, [])
+
+  const beginResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      updateTreeWidthFromPointer(event.clientX)
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        updateTreeWidthFromPointer(moveEvent.clientX)
+      }
+      const stopResize = () => {
+        window.removeEventListener("pointermove", handlePointerMove)
+        window.removeEventListener("pointerup", stopResize)
+      }
+      window.addEventListener("pointermove", handlePointerMove)
+      window.addEventListener("pointerup", stopResize, { once: true })
+    },
+    [updateTreeWidthFromPointer],
+  )
+
+  const nudgeTreeWidth = useCallback((delta: number) => {
+    setTreeWidth((current) => clampTreeWidth(current + delta))
+  }, [])
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-3" data-testid="files-tab">
@@ -197,11 +255,13 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
 
       {rootError ? <p className="text-sm text-destructive">{rootError}</p> : null}
       <div
-        className="grid min-h-0 min-w-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(280px,36%)]"
+        ref={splitRef}
+        className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-hidden rounded-xl border border-border/65 bg-background lg:grid-cols-[var(--files-split-columns)] lg:gap-0"
+        style={splitStyle}
         data-testid="files-tab-split"
       >
         <section
-          className="min-h-[240px] min-w-0 overflow-hidden rounded-xl border border-border/65 bg-card/50 lg:min-h-0"
+          className="min-h-[240px] min-w-0 overflow-hidden bg-background lg:min-h-0"
           data-testid="file-preview-pane"
         >
           {selectedFile ? (
@@ -221,8 +281,40 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
             </div>
           )}
         </section>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t("files.resizeTree")}
+          aria-valuemin={MIN_TREE_WIDTH}
+          aria-valuemax={MAX_TREE_WIDTH}
+          aria-valuenow={treeWidth}
+          tabIndex={0}
+          className="group hidden cursor-col-resize items-stretch justify-center bg-border/40 outline-none transition-colors hover:bg-border/70 focus-visible:bg-ring/45 lg:flex"
+          data-testid="files-split-resizer"
+          onPointerDown={beginResize}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault()
+              nudgeTreeWidth(24)
+            }
+            if (event.key === "ArrowRight") {
+              event.preventDefault()
+              nudgeTreeWidth(-24)
+            }
+            if (event.key === "Home") {
+              event.preventDefault()
+              setTreeWidth(MIN_TREE_WIDTH)
+            }
+            if (event.key === "End") {
+              event.preventDefault()
+              setTreeWidth(MAX_TREE_WIDTH)
+            }
+          }}
+        >
+          <span className="my-3 block w-px rounded-full bg-border group-hover:bg-foreground/30" />
+        </div>
         <section
-          className="min-h-[260px] min-w-0 overflow-x-hidden rounded-xl border border-border/65 bg-background p-2 lg:min-h-0"
+          className="min-h-[260px] min-w-0 overflow-hidden border-t border-border/60 bg-muted/20 p-2 lg:min-h-0 lg:border-l lg:border-t-0"
           data-testid="file-tree-pane"
         >
           <AgentWorkspaceTree
@@ -281,6 +373,10 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   function isCurrentFilePathRequest(path: string, requestId: number) {
     return fileRequestByPath.current[path] === requestId
   }
+}
+
+function clampTreeWidth(width: number, max = MAX_TREE_WIDTH) {
+  return Math.min(Math.max(width, MIN_TREE_WIDTH), max)
 }
 
 function omitKey<T>(record: Record<string, T>, key: string) {
