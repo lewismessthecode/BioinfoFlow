@@ -687,6 +687,53 @@ describe("AgentWorkbench", () => {
     expect(send.mock.calls[0][1]).not.toHaveProperty("remoteConnectionId")
   })
 
+  it("keeps a draft remote selection when sending the first message", async () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/connections") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "connection-test-231",
+              name: "Test host sz03",
+              host: "10.227.5.231",
+              port: 22,
+              username: "bioflow",
+              auth_method: "ssh_config",
+              ssh_alias: "bioflow-test-sz03",
+              key_path: "",
+              status: "online",
+              skill_instructions: "Use /data/test.",
+            },
+          ],
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    setupRuntime({
+      session: null,
+      send,
+    })
+
+    render(<AgentWorkbench />)
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Current execution target: local" }),
+    )
+    fireEvent.click(await screen.findByText("Test host sz03"))
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Check the remote host first" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Check the remote host first",
+        expect.objectContaining({ remoteConnectionId: "connection-test-231" }),
+      ),
+    )
+  })
+
   it("sends an empty remote connection override when switching a remote session back to local", async () => {
     const send = vi.fn().mockResolvedValue(undefined)
     apiRequestMock.mockImplementation((path: string) => {
