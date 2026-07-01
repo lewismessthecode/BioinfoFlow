@@ -13,7 +13,6 @@ import {
   Copy,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
@@ -31,6 +30,7 @@ import {
 } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table"
+import { BrowseCard } from "@/components/bioinfoflow/card/browse-card"
 import { cn } from "@/lib/utils"
 import { formatSize } from "@/lib/format-utils"
 import type { DockerImage, ImageStatus } from "@/lib/types"
@@ -168,7 +168,7 @@ export function ImageCardsGrid({
   const groups = buildImageRepositoryGroups(images)
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {groups.map((group) => (
         <ImageRepositoryCard
           key={group.key}
@@ -213,46 +213,83 @@ function ImageRepositoryCard({
   const hasMultipleVersions = group.images.length > 1
 
   return (
-    <Card className="group relative overflow-hidden border-border/60 bg-card/84 hover:shadow-sm hover:border-border/90 transition-all duration-200 h-full flex flex-col">
-      <article className="flex h-full flex-col">
-        <CardContent className="p-4 flex-1 flex flex-col">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex min-w-0 w-full cursor-default items-center gap-2.5">
-                    <div className="quiet-card-icon-shell quiet-card-icon-shell--artifact shrink-0">
-                      <Package2 className="quiet-card-icon-glyph h-4 w-4" strokeWidth={1.8} />
-                    </div>
-                    <h2 className="min-w-0 truncate text-sm font-semibold text-foreground leading-tight">{group.label}</h2>
-                  </div>
-                </TooltipTrigger>
-                {image.description && (
-                  <TooltipContent side="right" className="max-w-xs">
-                    {image.description}
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </div>
-            <ImageActionsMenu
-              image={image}
-              tImages={tImages}
-              tCommon={tCommon}
-              onViewDetails={onViewDetails}
-              onCopyName={onCopyName}
-              onCopyPullCommand={onCopyPullCommand}
-              onDeleteLocal={onDeleteLocal}
-              triggerClassName="h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 shrink-0"
-              ariaLabel={tImages("actions.versionActions", { tag: image.tag })}
-            />
-          </div>
-
-          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+    <article className="flex h-full flex-col">
+      <BrowseCard
+        title={group.label}
+        icon={Package2}
+        iconVariant="artifact"
+        titleAs="h2"
+        titleClassName="line-clamp-2"
+        titleWrapper={(children) => (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="cursor-default">{children}</div>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-xs">
+              <div className="space-y-1">
+                <p className="font-mono text-xs">{image.full_name}</p>
+                {image.description && <p>{image.description}</p>}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        menu={
+          <ImageActionsMenu
+            image={image}
+            tImages={tImages}
+            tCommon={tCommon}
+            onViewDetails={onViewDetails}
+            onCopyName={onCopyName}
+            onCopyPullCommand={onCopyPullCommand}
+            onDeleteLocal={onDeleteLocal}
+            triggerClassName="h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 shrink-0"
+            ariaLabel={tImages("actions.versionActions", { tag: image.tag })}
+          />
+        }
+        metadata={
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="metadata-pill text-xs-tight font-mono">
               {image.registry || "local"}
             </Badge>
             <ImageStatusBadge image={image} tImages={tImages} />
           </div>
+        }
+        footerMeta={
+          <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
+            <HardDrive className="h-3 w-3" />
+            {formatSize(image.size_bytes)}
+          </div>
+        }
+        actions={
+          <>
+            <Button
+              className="w-full min-w-0"
+              size="sm"
+              variant={image.status === "local" ? "outline" : "default"}
+              disabled={image.status === "pulling"}
+              onClick={() => onPull(image)}
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+              <span className="truncate">
+                {image.status === "pulling"
+                  ? tImages("actions.pulling")
+                  : image.status === "local"
+                    ? tImages("actions.repull")
+                    : tImages("actions.pull")}
+              </span>
+            </Button>
+            <Button
+              className="w-full min-w-0"
+              size="sm"
+              variant="outline"
+              data-testid="image-card-view-details"
+              onClick={() => onViewDetails(image)}
+            >
+              <span className="truncate">{tImages("actions.viewDetails")}</span>
+            </Button>
+          </>
+        }
+      >
 
           <div className="mt-3 flex items-center gap-2">
             {hasMultipleVersions ? (
@@ -280,42 +317,8 @@ function ImageRepositoryCard({
               {tImages("card.versionCount", { count: group.images.length })}
             </Badge>
           </div>
-
-          <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
-            <HardDrive className="h-3 w-3" />
-            {formatSize(image.size_bytes)}
-          </div>
-
-          <div className="mt-auto pt-3 grid grid-cols-2 gap-2">
-            <Button
-              className="w-full min-w-0"
-              size="sm"
-              variant={image.status === "local" ? "outline" : "default"}
-              disabled={image.status === "pulling"}
-              onClick={() => onPull(image)}
-            >
-              <Download className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-              <span className="truncate">
-                {image.status === "pulling"
-                  ? tImages("actions.pulling")
-                  : image.status === "local"
-                    ? tImages("actions.repull")
-                    : tImages("actions.pull")}
-              </span>
-            </Button>
-            <Button
-              className="w-full min-w-0"
-              size="sm"
-              variant="outline"
-              data-testid="image-card-view-details"
-              onClick={() => onViewDetails(image)}
-            >
-              <span className="truncate">{tImages("actions.viewDetails")}</span>
-            </Button>
-          </div>
-        </CardContent>
-      </article>
-    </Card>
+      </BrowseCard>
+    </article>
   )
 }
 
