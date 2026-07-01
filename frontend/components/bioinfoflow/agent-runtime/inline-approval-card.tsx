@@ -32,6 +32,38 @@ export function InlineApprovalCard({
 
   const isPlanApproval = decision.interaction?.kind === "plan_approval"
 
+  if (!isPending && !isPlanApproval) {
+    return (
+      <div
+        id={decision.scrollTargetId}
+        className="grid gap-1.5 text-xs text-muted-foreground"
+        data-testid="inline-approval-summary"
+      >
+        <div className="flex min-h-6 items-center gap-2">
+          <DecisionStateIcon state={decision.state} className="h-3.5 w-3.5" />
+          <span className="min-w-0 flex-1 truncate">
+            {t(`approval.state.${decision.state}`)}
+          </span>
+          {decision.riskLevel ? (
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/75">
+              {decision.riskLevel}
+            </span>
+          ) : null}
+        </div>
+        <div className="grid gap-1 pl-5">
+          <div className="font-mono text-foreground/65">
+            {decision.name ?? decision.actionId}
+          </div>
+          {decision.inputPreview ? (
+            <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/25 px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground/75">
+              {decision.inputPreview}
+            </pre>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       id={decision.scrollTargetId}
@@ -124,11 +156,17 @@ function InlineAskUserCard({
   )
 }
 
-function DecisionStateIcon({ state }: { state: AgentRuntimeDecisionView["state"] }) {
-  const className = "h-4 w-4 text-muted-foreground"
-  if (state === "rejected") return <XCircle className={className} />
+function DecisionStateIcon({
+  state,
+  className = "h-4 w-4",
+}: {
+  state: AgentRuntimeDecisionView["state"]
+  className?: string
+}) {
+  const iconClassName = `${className} text-muted-foreground`
+  if (state === "rejected") return <XCircle className={iconClassName} />
   if (state === "failed" || state === "cancelled") {
-    return <AlertTriangle className={className} />
+    return <AlertTriangle className={iconClassName} />
   }
-  return <CheckCircle2 className={className} />
+  return <CheckCircle2 className={iconClassName} />
 }
