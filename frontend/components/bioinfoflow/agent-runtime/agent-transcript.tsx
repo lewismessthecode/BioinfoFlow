@@ -190,6 +190,7 @@ function SourceBackedTextSegment({
   onOpenSources?: (sources: AgentRuntimeSource[], highlightedSourceId?: string | null) => void
 }) {
   const sources = segment.textBlock.sources
+  const footerSources = segment.textBlock.footerSources
   const sourceById = new Map(
     sources.flatMap((source) =>
       [source.id, source.citationId, ...(source.citationAliases ?? [])]
@@ -223,8 +224,8 @@ function SourceBackedTextSegment({
         }}
       />
       <SourceEvidenceFooter
-        sources={sources}
-        onOpen={() => onOpenSources?.(sources)}
+        sources={footerSources}
+        onOpen={() => onOpenSources?.(footerSources)}
       />
     </div>
   )

@@ -698,6 +698,61 @@ describe("agentRuntimeReducer", () => {
     ])
   })
 
+  it("keeps repeated prior sources out of later text footers", () => {
+    const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: session(),
+        turns: [{ ...turn("completed"), final_text: null }],
+        events: [
+          {
+            ...event("event-search", 1),
+            type: "action.completed",
+            payload: {
+              action_id: "action-search",
+              name: "web.search",
+              result: {
+                query: "GitLab phoenix-cli",
+                results: [
+                  {
+                    title: "Phoenix CLI",
+                    url: "https://gitlab.genomics.cn/phoenix/phoenix-cli",
+                    snippet: "Phoenix CLI repository.",
+                  },
+                ],
+              },
+            },
+          },
+          {
+            ...event("event-text-1", 2),
+            type: "assistant.text.completed",
+            payload: {
+              message_id: "message-1",
+              content: "GitLab requires a signed-in session, so I will try another route.",
+            },
+          },
+          {
+            ...event("event-text-2", 3),
+            type: "assistant.text.completed",
+            payload: {
+              message_id: "message-2",
+              content: "The next step is to inspect the server checkout directly.",
+            },
+          },
+        ],
+      },
+    })
+
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.sources.length)).toEqual([
+      1,
+      1,
+    ])
+    expect(loaded.timeline[0].assistant.textBlocks.map((block) => block.footerSources.length)).toEqual([
+      1,
+      0,
+    ])
+  })
+
   it("uses terminal final text when replayed deltas are already covered by the snapshot", () => {
     const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",

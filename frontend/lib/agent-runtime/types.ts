@@ -113,6 +113,7 @@ export type AgentRuntimeTextBlock = {
   status: AgentRuntimeTextBlockStatus
   source: AgentRuntimeTextBlockSource
   sources: AgentRuntimeSource[]
+  footerSources: AgentRuntimeSource[]
 }
 
 export type AgentRuntimeSourceType =

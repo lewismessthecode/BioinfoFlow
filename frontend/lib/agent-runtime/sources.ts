@@ -145,6 +145,10 @@ export function sanitizeSourceHref(url: string | null | undefined) {
   }
 }
 
+export function sourceDisplayKey(source: AgentRuntimeSource) {
+  return sourceKey(source)
+}
+
 function mergeSource(
   existing: AgentRuntimeSource,
   next: AgentRuntimeSource,

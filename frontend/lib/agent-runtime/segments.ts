@@ -3,6 +3,7 @@ import { buildAgentRuntimeToolActivities } from "./tool-activity"
 import {
   mergeSources,
   parseSourcePayloads,
+  sourceDisplayKey,
   sourcesFromActionResult,
 } from "./sources"
 import type {
@@ -82,6 +83,7 @@ function buildTextBlocks(
   const activeKeyByMessage = new Map<string, string>()
   const interruptedMessages = new Set<string>()
   let priorSources: AgentRuntimeSource[] = []
+  const displayedSourceKeys = new Set<string>()
   let syntheticKey: string | null = null
   let previousWasText = false
 
@@ -135,6 +137,7 @@ function buildTextBlocks(
       status: "streaming" as AgentRuntimeTextBlockStatus,
       source: "events" as const,
       sources: [],
+      footerSources: [],
       sawCumulative: false,
     }
     const cumulative = firstStringPayload(event.payload, ["content", "text"])
@@ -155,7 +158,13 @@ function buildTextBlocks(
       event,
       priorSources.length,
     )
-    block.sources = mergeSources(block.sources, mergeSources(priorSources, eventSources))
+    const fullSources = mergeSources(block.sources, mergeSources(priorSources, eventSources))
+    block.sources = fullSources
+    block.footerSources = footerSourcesForTextBlock({
+      text: block.text,
+      sources: fullSources,
+      displayedSourceKeys,
+    })
     if (!existing) {
       byKey.set(key, block)
       blocks.push(block)
@@ -212,6 +221,7 @@ function finalizeTextBlocks(
         status: block.status,
         source: block.source,
         sources: block.sources,
+        footerSources: block.footerSources,
       }
       if (turn.status === "failed") return { ...textBlock, status: "failed" as const }
       if (turn.status === "cancelled") return { ...textBlock, status: "cancelled" as const }
@@ -237,6 +247,7 @@ function snapshotTextBlock(
     status: textStatusFromTurn(turn),
     source: "snapshot",
     sources: [],
+    footerSources: [],
   }
 }
 
@@ -257,7 +268,42 @@ function snapshotTailTextBlock(
     status: textStatusFromTurn(turn),
     source: "snapshot+events",
     sources: [],
+    footerSources: [],
   }
+}
+
+function footerSourcesForTextBlock({
+  text,
+  sources,
+  displayedSourceKeys,
+}: {
+  text: string
+  sources: AgentRuntimeSource[]
+  displayedSourceKeys: Set<string>
+}) {
+  const sourceByAlias = new Map(
+    sources.flatMap((source) =>
+      [source.id, source.citationId, ...(source.citationAliases ?? [])]
+        .filter((key): key is string => Boolean(key))
+        .map((key) => [key, source] as const),
+    ),
+  )
+  const citedSources = citationIdsFromText(text)
+    .map((citationId) => sourceByAlias.get(citationId))
+    .filter((source): source is AgentRuntimeSource => Boolean(source))
+  const introducedSources = sources.filter((source) => {
+    const key = sourceDisplayKey(source)
+    return !displayedSourceKeys.has(key)
+  })
+  const footerSources = mergeSources(introducedSources, citedSources)
+  for (const source of footerSources) {
+    displayedSourceKeys.add(sourceDisplayKey(source))
+  }
+  return footerSources
+}
+
+function citationIdsFromText(text: string) {
+  return [...text.matchAll(/\]\(source:([^)]+)\)/g)].map((match) => match[1] ?? "")
 }
 
 function buildThinkingBlocks(
