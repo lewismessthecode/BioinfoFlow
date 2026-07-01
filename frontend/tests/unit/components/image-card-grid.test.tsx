@@ -168,7 +168,28 @@ describe("ImageCardsGrid", () => {
 
     const title = screen.getByRole("heading", { name: longName })
     expect(title.className).toContain("min-w-0")
+    expect(title.className).toContain("line-clamp-2")
     expect(title.closest(".min-w-0.flex-1")).not.toBeNull()
     expect(screen.getByRole("button", { name: "actions.versionActions" }).className).toContain("shrink-0")
+  })
+
+  it("uses a browsing-first three-column card grid on desktop", () => {
+    const { container } = render(
+      <ImageCardsGrid
+        images={[image]}
+        tImages={(key) => key}
+        tCommon={(key) => key}
+        onPull={vi.fn()}
+        onViewDetails={vi.fn()}
+        onCopyName={vi.fn()}
+        onCopyPullCommand={vi.fn()}
+        onDeleteLocal={vi.fn()}
+      />,
+    )
+
+    const grid = container.firstElementChild
+
+    expect(grid?.className).toContain("xl:grid-cols-3")
+    expect(grid?.className).not.toContain("xl:grid-cols-4")
   })
 })
