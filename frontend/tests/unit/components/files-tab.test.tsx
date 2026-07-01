@@ -141,7 +141,7 @@ describe("FilesTab", () => {
     )
     expect(screen.getByRole("separator", { name: "Resize file tree" })).toHaveAttribute(
       "aria-valuenow",
-      "320",
+      "280",
     )
     expect(screen.getByText("src")).toBeInTheDocument()
     expect(within(screen.getByTestId("file-tree-pane")).getByText("main.nf")).toBeInTheDocument()
@@ -301,7 +301,7 @@ describe("FilesTab", () => {
     const resizer = screen.getByRole("separator", { name: "Resize file tree" })
 
     fireEvent.keyDown(resizer, { key: "ArrowLeft" })
-    expect(resizer).toHaveAttribute("aria-valuenow", "344")
+    expect(resizer).toHaveAttribute("aria-valuenow", "304")
 
     fireEvent.pointerDown(resizer, { clientX: 520 })
     fireEvent.pointerMove(window, { clientX: 500 })
@@ -336,11 +336,11 @@ describe("FilesTab", () => {
 
     const resizer = screen.getByRole("separator", { name: "Resize file tree" })
     await waitFor(() => {
-      expect(resizer).toHaveAttribute("aria-valuenow", "352")
+      expect(resizer).toHaveAttribute("aria-valuenow", "312")
     })
 
     fireEvent.keyDown(resizer, { key: "End" })
-    expect(resizer).toHaveAttribute("aria-valuenow", "352")
+    expect(resizer).toHaveAttribute("aria-valuenow", "312")
   })
 
   it("filters only loaded nodes and reveals collapsed matching descendants", async () => {

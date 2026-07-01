@@ -418,7 +418,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               ? cn(
                   "translate-x-0 opacity-100",
                   activeSidecarTab === "files"
-                    ? "w-[clamp(680px,58vw,960px)]"
+                    ? "w-[clamp(600px,50vw,860px)]"
                     : "w-[clamp(360px,32vw,500px)]",
                 )
               : "w-0 translate-x-4 opacity-0",
