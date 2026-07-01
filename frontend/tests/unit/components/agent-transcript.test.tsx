@@ -586,6 +586,30 @@ describe("AgentTranscript", () => {
     expect(onDecision).toHaveBeenCalledWith("action-1", "approve")
   })
 
+  it("renders completed approvals as lightweight transcript rows", () => {
+    renderTranscript({
+      events: [
+        event("event-approval", 1, "action.waiting_decision", {
+          action_id: "action-1",
+          name: "runs.submit",
+          risk_level: "act_low",
+          input_preview: "Submit wf-rnaseq-quant-mini with paired FASTQ inputs.",
+        }),
+        event("event-completed", 2, "action.completed", {
+          action_id: "action-1",
+          name: "runs.submit",
+          result: { status: "submitted" },
+        }),
+      ],
+    })
+
+    const summary = screen.getByTestId("inline-approval-summary")
+    expect(summary).toBeInTheDocument()
+    expect(summary).not.toHaveClass("border")
+    expect(screen.queryByTestId("inline-approval-card")).not.toBeInTheDocument()
+    expect(screen.getByText("runs.submit")).toBeInTheDocument()
+  })
+
   it("does not render cancelled waiting decisions as pending approvals", () => {
     renderTranscript({
       events: [
