@@ -2542,11 +2542,21 @@
       "diagnoseRun": "Diagnose run",
       "comingSoon": "Coming soon"
     },
-    "connectedNode": {
-      "placeholder": "Choose Host Skill",
-      "selectedAria": "Conversation connection {name} at {host}, {status}",
-      "menuTitle": "Host Skills",
-      "manage": "Manage Host Skills",
+    "runtimeLocation": {
+      "placeholder": "Runtime location",
+      "selectedLocalAria": "Runtime location: local workspace",
+      "selectedRemoteAria": "Runtime location: {name} at {host}, {status}",
+      "menuTitle": "Runtime location",
+      "manage": "Manage SSH hosts",
+      "local": {
+        "label": "Local workspace",
+        "description": "Run in this Bioinfoflow workspace"
+      },
+      "remote": {
+        "label": "Remote SSH hosts"
+      },
+      "emptyRemoteHosts": "No remote hosts configured.",
+      "loadFailed": "Could not load remote hosts.",
       "status": {
         "online": "Online",
         "offline": "Offline",

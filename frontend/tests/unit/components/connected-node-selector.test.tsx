@@ -9,10 +9,16 @@ import type { RemoteConnection } from "@/lib/demo-connections"
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
     const labels: Record<string, string> = {
-      placeholder: "Choose Host Skill",
-      selectedAria: "Selected remote connection",
-      menuTitle: "Host Skills",
-      manage: "Manage Host Skills",
+      placeholder: "Runtime location",
+      selectedLocalAria: "Runtime location: local workspace",
+      selectedRemoteAria: "Selected remote connection",
+      menuTitle: "Runtime location",
+      manage: "Manage SSH hosts",
+      "local.label": "Local workspace",
+      "local.description": "Run in this Bioinfoflow workspace",
+      "remote.label": "Remote SSH hosts",
+      emptyRemoteHosts: "No remote hosts configured.",
+      loadFailed: "Could not load remote hosts.",
       "status.online": "Online",
       "status.offline": "Offline",
       "status.error": "Connection error",
@@ -66,7 +72,9 @@ describe("ConnectedNodeSelector", () => {
     )
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    expect(screen.getByRole("button", { name: "Choose Host Skill" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Runtime location: local workspace" }),
+    ).toHaveTextContent("Local workspace")
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
@@ -82,7 +90,9 @@ describe("ConnectedNodeSelector", () => {
     )
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    expect(screen.getByRole("button", { name: "Choose Host Skill" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Runtime location: local workspace" }),
+    ).toHaveTextContent("Local workspace")
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
@@ -100,6 +110,24 @@ describe("ConnectedNodeSelector", () => {
     await waitFor(() => expect(onSelectedConnectionChange).toHaveBeenCalledWith(""))
   })
 
+  it("selects the local workspace from the runtime location menu", async () => {
+    const user = userEvent.setup()
+    const onSelectedConnectionChange = vi.fn()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    render(
+      <ConnectedNodeSelector
+        selectedConnectionId="connection-live-1"
+        onSelectedConnectionChange={onSelectedConnectionChange}
+      />,
+    )
+
+    await user.click(await screen.findByRole("button", { name: "Selected remote connection" }))
+    await user.click(screen.getByText("Local workspace"))
+
+    expect(onSelectedConnectionChange).toHaveBeenCalledWith("")
+  })
+
   it("does not expose demo connections when the live connection request fails", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockRejectedValueOnce(new Error("backend unavailable"))
@@ -107,9 +135,10 @@ describe("ConnectedNodeSelector", () => {
     render(<ConnectedNodeSelector />)
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
-    await user.click(screen.getByRole("button", { name: "Choose Host Skill" }))
+    await user.click(screen.getByRole("button", { name: "Runtime location: local workspace" }))
 
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
     expect(screen.queryByText("Test host sz03")).not.toBeInTheDocument()
+    expect(screen.getByText("Could not load remote hosts.")).toBeInTheDocument()
   })
 })
