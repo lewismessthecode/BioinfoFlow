@@ -94,10 +94,14 @@ export function ConnectedNodeSelector({
     () => connections.find((connection) => connection.id === currentSelectedConnectionId) ?? null,
     [connections, currentSelectedConnectionId],
   )
+  const hasPendingSelectedConnection = Boolean(
+    requestedSelectedConnectionId && !selectedConnection,
+  )
   const selectedStatus = selectedConnection ? t(`status.${selectedConnection.status}`) : ""
   const selectedConnectionLabel = selectedConnection
     ? connectionDisplayName(selectedConnection)
     : ""
+  const pendingSelectedStatus = remoteConnectionsLoadFailed ? t("loadFailed") : ""
   const hasRemoteLoadFailed =
     hasLoadedRemoteConnections && remoteConnectionsLoadFailed && connections.length === 0
 
@@ -136,17 +140,27 @@ export function ConnectedNodeSelector({
                   name: selectedConnectionLabel,
                   status: selectedStatus,
                 })
+              : hasPendingSelectedConnection
+                ? t("selectedRemoteAria", {
+                    host: requestedSelectedConnectionId,
+                    name: t("remote.label"),
+                    status: pendingSelectedStatus,
+                  })
               : t("selectedLocalAria")
           }
         >
-          {selectedConnection ? (
+          {selectedConnection || hasPendingSelectedConnection ? (
             <Server className="h-3.5 w-3.5 shrink-0" />
           ) : (
             <Monitor className="h-3.5 w-3.5 shrink-0" />
           )}
           {selectedConnection ? <RemoteConnectionStatusDot status={selectedConnection.status} className="shadow-[0_0_0_3px]" /> : null}
           <span className="min-w-0 truncate">
-            {selectedConnection ? selectedConnectionLabel : t("local.label")}
+            {selectedConnection
+              ? selectedConnectionLabel
+              : hasPendingSelectedConnection
+                ? t("remote.label")
+                : t("local.label")}
           </span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
         </Button>

@@ -78,7 +78,7 @@ describe("ConnectedNodeSelector", () => {
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
-  it("does not clear a restored backend id before live connections load", async () => {
+  it("shows a pending remote target for a restored backend id before live connections load", async () => {
     const onSelectedConnectionChange = vi.fn()
     apiRequestMock.mockReturnValueOnce(new Promise(() => {}))
 
@@ -91,8 +91,30 @@ describe("ConnectedNodeSelector", () => {
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
     expect(
-      screen.getByRole("button", { name: "Current execution target: local" }),
-    ).toHaveTextContent("Local")
+      screen.getByRole("button", {
+        name: /Current execution target: Remote at 11111111-1111-1111-1111-111111111111/,
+      }),
+    ).toHaveTextContent("Remote")
+    expect(onSelectedConnectionChange).not.toHaveBeenCalled()
+  })
+
+  it("keeps a selected remote target visible when live connections fail to load", async () => {
+    const onSelectedConnectionChange = vi.fn()
+    apiRequestMock.mockRejectedValueOnce(new Error("backend unavailable"))
+
+    render(
+      <ConnectedNodeSelector
+        selectedConnectionId="11111111-1111-1111-1111-111111111111"
+        onSelectedConnectionChange={onSelectedConnectionChange}
+      />,
+    )
+
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
+    expect(
+      screen.getByRole("button", {
+        name: "Current execution target: Remote at 11111111-1111-1111-1111-111111111111, Could not load remote hosts.",
+      }),
+    ).toHaveTextContent("Remote")
     expect(onSelectedConnectionChange).not.toHaveBeenCalled()
   })
 
