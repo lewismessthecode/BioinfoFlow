@@ -1223,6 +1223,9 @@
       "copyName": "复制镜像名",
       "copyPullCommand": "复制 docker pull 命令",
       "deleteLocal": "删除本地副本",
+      "select": "选择",
+      "cancelSelection": "取消选择",
+      "deleteSelectedLocal": "删除本地副本",
       "repull": "重新拉取",
       "pulling": "拉取中...",
       "pull": "拉取",
@@ -1231,6 +1234,12 @@
     },
     "card": {
       "versionCount": "{count} 个版本"
+    },
+    "selection": {
+      "selectedCount": "已选择 {count} 个镜像",
+      "selectedSize": "已选大小：{size}",
+      "selectImage": "选择 {name}:{tag}",
+      "unselectImage": "取消选择 {name}:{tag}"
     },
     "table": {
       "image": "镜像",
@@ -1281,7 +1290,12 @@
       "deleteConfirmTitle": "删除 {name} 的本地副本？",
       "deleteConfirmDescription": "将释放 {size} 的磁盘空间",
       "removedTitle": "{name} 已移除",
-      "removedDescription": "本地副本已删除"
+      "removedDescription": "本地副本已删除",
+      "batchDeleteConfirmTitle": "删除 {count} 个本地副本？",
+      "batchDeleteConfirmDescription": "将释放 {size} 的磁盘空间。",
+      "batchRemovedTitle": "已删除 {count} 个本地副本",
+      "batchPartialRemovedTitle": "已删除 {removed} 个，{failed} 个未删除",
+      "batchRemovedDescription": "本地副本已删除"
     },
     "empty": {
       "availableTitle": "还没有可用镜像",
