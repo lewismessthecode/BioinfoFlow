@@ -1223,6 +1223,9 @@
       "copyName": "Copy Image Name",
       "copyPullCommand": "Copy docker pull command",
       "deleteLocal": "Delete Local Copy",
+      "select": "Select",
+      "cancelSelection": "Cancel selection",
+      "deleteSelectedLocal": "Delete local copies",
       "repull": "Re-pull",
       "pulling": "Pulling...",
       "pull": "Pull",
@@ -1231,6 +1234,12 @@
     },
     "card": {
       "versionCount": "{count, plural, one {# version} other {# versions}}"
+    },
+    "selection": {
+      "selectedCount": "{count, plural, one {# image selected} other {# images selected}}",
+      "selectedSize": "Selected size: {size}",
+      "selectImage": "Select {name}:{tag}",
+      "unselectImage": "Unselect {name}:{tag}"
     },
     "table": {
       "image": "Image",
@@ -1281,7 +1290,12 @@
       "deleteConfirmTitle": "Delete local copy of {name}?",
       "deleteConfirmDescription": "This will free {size} of disk space",
       "removedTitle": "{name} removed",
-      "removedDescription": "Local copy deleted"
+      "removedDescription": "Local copy deleted",
+      "batchDeleteConfirmTitle": "Delete {count, plural, one {# local copy} other {# local copies}}?",
+      "batchDeleteConfirmDescription": "This will free {size} of disk space.",
+      "batchRemovedTitle": "{count, plural, one {# local copy removed} other {# local copies removed}}",
+      "batchPartialRemovedTitle": "{removed} removed, {failed} not removed",
+      "batchRemovedDescription": "Local copies deleted"
     },
     "empty": {
       "availableTitle": "No images are ready yet",

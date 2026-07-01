@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import ImagesPage from "@/app/(app)/images/page"
@@ -370,6 +370,64 @@ describe("ImagesPage", () => {
     await waitFor(() => {
       expect(toastErrorMock).toHaveBeenCalledWith("image in use")
     })
+  })
+
+  it("batch deletes selected local images from browsing cards", async () => {
+    const batchDeleteActions: Array<() => Promise<void>> = []
+    const localImage = makeImage({
+      id: "img-local",
+      name: "demo/local",
+      full_name: "ghcr.io/demo/local:1.0.0",
+      status: "local",
+      size_bytes: 2048,
+    })
+    const remoteImage = makeImage({
+      id: "img-remote",
+      name: "demo/remote",
+      full_name: "ghcr.io/demo/remote:1.0.0",
+      status: "remote",
+    })
+
+    toastWarningMock.mockImplementation((_message, options) => {
+      if (options?.action?.onClick) {
+        batchDeleteActions.push(options.action.onClick)
+      }
+    })
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/images") {
+        return {
+          data: [localImage, remoteImage],
+          meta: { status: statusMeta() },
+        }
+      }
+      if (path === "/images/img-local" && options?.method === "DELETE") {
+        return { data: null, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    renderAppPage(<ImagesPage />)
+
+    expect(await screen.findByText("demo/local")).toBeInTheDocument()
+    expect(screen.queryByLabelText("images.selection.selectImage:demo/local:1.0.0")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "images.actions.select" }))
+    fireEvent.click(screen.getByLabelText("images.selection.selectImage:demo/local:1.0.0"))
+
+    expect(screen.queryByLabelText("images.selection.selectImage:demo/remote:1.0.0")).not.toBeInTheDocument()
+    expect(screen.getByText("images.selection.selectedCount:1")).toBeInTheDocument()
+    expect(screen.getByText(/images\.selection\.selectedSize:2/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "images.actions.deleteSelectedLocal" }))
+    await act(async () => {
+      await batchDeleteActions[0]()
+    })
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/images/img-local", { method: "DELETE" })
+      expect(screen.queryByText("demo/local")).not.toBeInTheDocument()
+    })
+    expect(screen.getByText("demo/remote")).toBeInTheDocument()
   })
 
   it("auto-retries when docker is unavailable and the list is empty", async () => {

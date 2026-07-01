@@ -55,6 +55,9 @@ export function useImagesPage() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
   const [detailsImage, setDetailsImage] = useState<DockerImage | null>(null)
   const [recommendedOpen, setRecommendedOpen] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(() => new Set())
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false)
   const deferredSearch = useDeferredValue(search)
   const retryTimerRef = useRef<number | null>(null)
 
@@ -310,6 +313,31 @@ export function useImagesPage() {
     })
   }, [canDeleteImages, tCommon, tImages])
 
+  const handleStartSelection = useCallback(() => {
+    setSelectionMode(true)
+  }, [])
+
+  const handleCancelSelection = useCallback(() => {
+    setSelectionMode(false)
+    setSelectedImageIds(new Set())
+  }, [])
+
+  const handleToggleSelection = useCallback((image: DockerImage) => {
+    if (image.status !== "local") {
+      return
+    }
+    setSelectionMode(true)
+    setSelectedImageIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(image.id)) {
+        next.delete(image.id)
+      } else {
+        next.add(image.id)
+      }
+      return next
+    })
+  }, [])
+
   const handleTarballFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     setTarballFile(event.target.files?.[0] ?? null)
   }, [])
@@ -359,6 +387,68 @@ export function useImagesPage() {
   const isDockerUnavailable = dockerStatus === "unavailable"
   const hasImages = filteredImages.length > 0
   const isEmpty = filteredImages.length === 0
+  const hasSelectableImages = filteredImages.some((image) => image.status === "local")
+  const selectedImages = images.filter((image) => selectedImageIds.has(image.id) && image.status === "local")
+  const selectedImagesSize = selectedImages.reduce((total, image) => total + image.size_bytes, 0)
+
+  const handleBatchDeleteLocal = useCallback(() => {
+    if (!canDeleteImages) {
+      toast.error(tImages("errors.deleteForbidden"))
+      return
+    }
+    if (selectedImages.length === 0) {
+      return
+    }
+
+    const selectedAtConfirm = selectedImages
+    const totalSize = selectedAtConfirm.reduce((total, image) => total + image.size_bytes, 0)
+    toast.warning(tImages("toasts.batchDeleteConfirmTitle", { count: selectedAtConfirm.length }), {
+      description: tImages("toasts.batchDeleteConfirmDescription", { size: formatSize(totalSize) }),
+      action: {
+        label: tCommon("confirm"),
+        onClick: async () => {
+          setIsBatchDeleting(true)
+          const removedIds = new Set<string>()
+          let failedCount = 0
+
+          for (const image of selectedAtConfirm) {
+            try {
+              await apiRequest(`/images/${image.id}`, { method: "DELETE" })
+              removedIds.add(image.id)
+            } catch {
+              failedCount += 1
+            }
+          }
+
+          if (removedIds.size > 0) {
+            setImages((prev) => prev.filter((image) => !removedIds.has(image.id)))
+            setSelectedImageIds((prev) => {
+              const next = new Set(prev)
+              for (const id of removedIds) {
+                next.delete(id)
+              }
+              return next
+            })
+          }
+
+          if (failedCount === 0) {
+            setSelectionMode(false)
+            toast.success(tImages("toasts.batchRemovedTitle", { count: removedIds.size }), {
+              description: tImages("toasts.batchRemovedDescription"),
+            })
+          } else if (removedIds.size > 0) {
+            toast.error(tImages("toasts.batchPartialRemovedTitle", {
+              removed: removedIds.size,
+              failed: failedCount,
+            }))
+          } else {
+            toast.error(tImages("errors.deleteFailed"))
+          }
+          setIsBatchDeleting(false)
+        },
+      },
+    })
+  }, [canDeleteImages, selectedImages, tCommon, tImages])
 
   return {
     tImages,
@@ -391,6 +481,16 @@ export function useImagesPage() {
     isDockerUnavailable,
     hasImages,
     isEmpty,
+    selectionMode,
+    selectedImageIds,
+    selectedImages,
+    selectedImagesSize,
+    isBatchDeleting,
+    hasSelectableImages,
+    handleStartSelection,
+    handleCancelSelection,
+    handleToggleSelection,
+    handleBatchDeleteLocal,
     openRegistryDialog,
     openTarballDialog,
     handleRefresh,

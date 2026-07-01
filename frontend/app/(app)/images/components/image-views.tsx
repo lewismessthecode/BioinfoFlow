@@ -155,6 +155,9 @@ export function ImageCardsGrid({
   onCopyName,
   onCopyPullCommand,
   onDeleteLocal,
+  selectionMode = false,
+  selectedImageIds,
+  onToggleSelection,
 }: {
   images: DockerImage[]
   tImages: ImageTranslator
@@ -164,6 +167,9 @@ export function ImageCardsGrid({
   onCopyName: (image: DockerImage) => void
   onCopyPullCommand: (image: DockerImage) => void
   onDeleteLocal?: ((image: DockerImage) => void) | undefined
+  selectionMode?: boolean
+  selectedImageIds?: ReadonlySet<string>
+  onToggleSelection?: (image: DockerImage) => void
 }) {
   const groups = buildImageRepositoryGroups(images)
 
@@ -180,6 +186,9 @@ export function ImageCardsGrid({
           onCopyName={onCopyName}
           onCopyPullCommand={onCopyPullCommand}
           onDeleteLocal={onDeleteLocal}
+          selectionMode={selectionMode}
+          selectedImageIds={selectedImageIds}
+          onToggleSelection={onToggleSelection}
         />
       ))}
     </div>
@@ -195,6 +204,9 @@ function ImageRepositoryCard({
   onCopyName,
   onCopyPullCommand,
   onDeleteLocal,
+  selectionMode,
+  selectedImageIds,
+  onToggleSelection,
 }: {
   group: ImageRepositoryGroup
   tImages: ImageTranslator
@@ -204,6 +216,9 @@ function ImageRepositoryCard({
   onCopyName: (image: DockerImage) => void
   onCopyPullCommand: (image: DockerImage) => void
   onDeleteLocal?: ((image: DockerImage) => void) | undefined
+  selectionMode: boolean
+  selectedImageIds?: ReadonlySet<string>
+  onToggleSelection?: (image: DockerImage) => void
 }) {
   const [selectedImageId, setSelectedImageId] = useState(group.primaryImage.id)
   const image = useMemo(
@@ -211,6 +226,8 @@ function ImageRepositoryCard({
     [group.images, group.primaryImage, selectedImageId],
   )
   const hasMultipleVersions = group.images.length > 1
+  const isSelected = selectedImageIds?.has(image.id) ?? false
+  const canSelect = selectionMode && image.status === "local" && Boolean(onToggleSelection)
 
   return (
     <article className="flex h-full flex-col">
@@ -234,17 +251,31 @@ function ImageRepositoryCard({
           </Tooltip>
         )}
         menu={
-          <ImageActionsMenu
-            image={image}
-            tImages={tImages}
-            tCommon={tCommon}
-            onViewDetails={onViewDetails}
-            onCopyName={onCopyName}
-            onCopyPullCommand={onCopyPullCommand}
-            onDeleteLocal={onDeleteLocal}
-            triggerClassName="h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 shrink-0"
-            ariaLabel={tImages("actions.versionActions", { tag: image.tag })}
-          />
+          <div className="flex shrink-0 items-center gap-1">
+            {canSelect ? (
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-border accent-foreground"
+                aria-label={tImages(isSelected ? "selection.unselectImage" : "selection.selectImage", {
+                  name: image.name,
+                  tag: image.tag,
+                })}
+                checked={isSelected}
+                onChange={() => onToggleSelection?.(image)}
+              />
+            ) : null}
+            <ImageActionsMenu
+              image={image}
+              tImages={tImages}
+              tCommon={tCommon}
+              onViewDetails={onViewDetails}
+              onCopyName={onCopyName}
+              onCopyPullCommand={onCopyPullCommand}
+              onDeleteLocal={onDeleteLocal}
+              triggerClassName="h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 shrink-0"
+              ariaLabel={tImages("actions.versionActions", { tag: image.tag })}
+            />
+          </div>
         }
         metadata={
           <div className="mt-3 flex flex-wrap items-center gap-2">
