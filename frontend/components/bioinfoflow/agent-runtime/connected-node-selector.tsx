@@ -95,6 +95,9 @@ export function ConnectedNodeSelector({
     [connections, currentSelectedConnectionId],
   )
   const selectedStatus = selectedConnection ? t(`status.${selectedConnection.status}`) : ""
+  const selectedConnectionLabel = selectedConnection
+    ? connectionDisplayName(selectedConnection)
+    : ""
   const hasRemoteLoadFailed =
     hasLoadedRemoteConnections && remoteConnectionsLoadFailed && connections.length === 0
 
@@ -130,7 +133,7 @@ export function ConnectedNodeSelector({
             selectedConnection
               ? t("selectedRemoteAria", {
                   host: selectedConnection.host,
-                  name: selectedConnection.name,
+                  name: selectedConnectionLabel,
                   status: selectedStatus,
                 })
               : t("selectedLocalAria")
@@ -143,7 +146,7 @@ export function ConnectedNodeSelector({
           )}
           {selectedConnection ? <RemoteConnectionStatusDot status={selectedConnection.status} className="shadow-[0_0_0_3px]" /> : null}
           <span className="min-w-0 truncate">
-            {selectedConnection ? selectedConnection.name : t("local.label")}
+            {selectedConnection ? selectedConnectionLabel : t("local.label")}
           </span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
         </Button>
@@ -180,6 +183,7 @@ export function ConnectedNodeSelector({
         ) : null}
         {connections.map((connection) => {
           const selected = connection.id === currentSelectedConnectionId
+          const connectionLabel = connectionDisplayName(connection)
           const sshTarget = `${connection.username}@${connection.host}:${connection.port}`
           const summary = [sshTarget, connection.ssh_alias].filter(Boolean).join(" · ")
 
@@ -191,7 +195,7 @@ export function ConnectedNodeSelector({
             >
               <RemoteConnectionStatusDot status={connection.status} className="shadow-[0_0_0_3px]" />
               <span className="min-w-0 flex-1">
-                <span className="block font-medium text-foreground">{connection.name}</span>
+                <span className="block font-medium text-foreground">{connectionLabel}</span>
                 <span className="mt-0.5 block truncate font-mono text-xs leading-5 text-muted-foreground">
                   {summary}
                 </span>
@@ -227,4 +231,8 @@ export function ConnectedNodeSelector({
       </DropdownMenuContent>
     </DropdownMenu>
   )
+}
+
+function connectionDisplayName(connection: RemoteConnection) {
+  return connection.name.trim() || connection.host
 }
