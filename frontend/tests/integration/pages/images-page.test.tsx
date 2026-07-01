@@ -237,21 +237,54 @@ describe("ImagesPage", () => {
     expect(screen.getByRole("button", { name: "images.upload" })).toBeDisabled()
   })
 
-  it("opens the details sheet instead of a toast", async () => {
-    apiRequestMock.mockResolvedValue({
-      data: [makeImage({ status: "failed", error_message: "pull exploded" })],
-      meta: { status: statusMeta() },
+  it("opens the details sheet with copy and pull actions instead of a toast", async () => {
+    const failedImage = makeImage({
+      name: "demo/tool",
+      full_name: "ghcr.io/demo/tool:1.0.0",
+      status: "failed",
+      error_message: "pull exploded",
+    })
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/images") {
+        return {
+          data: [failedImage],
+          meta: { status: statusMeta() },
+        }
+      }
+      if (path === "/images/pull" && options?.method === "POST") {
+        return { data: { ...failedImage, status: "pulling" }, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
     })
 
     renderAppPage(<ImagesPage />)
 
-    expect(await screen.findByText("ghcr.io/demo/tool")).toBeInTheDocument()
+    expect(await screen.findByText("demo/tool")).toBeInTheDocument()
     fireEvent.click(screen.getByTestId("image-card-view-details"))
 
     expect(screen.getByText("images.details.title")).toBeInTheDocument()
-    expect(screen.getByText("ghcr.io/demo/tool:1.0.0")).toBeInTheDocument()
+    expect(screen.getAllByText("ghcr.io/demo/tool:1.0.0").length).toBeGreaterThan(0)
+    expect(screen.getByText("docker pull ghcr.io/demo/tool:1.0.0")).toBeInTheDocument()
     expect(screen.getByText("pull exploded")).toBeInTheDocument()
     expect(toastInfoMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId("image-details-copy-name"))
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith("ghcr.io/demo/tool:1.0.0")
+
+    fireEvent.click(screen.getByTestId("image-details-copy-pull-command"))
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith("docker pull ghcr.io/demo/tool:1.0.0")
+
+    fireEvent.click(screen.getByTestId("image-details-pull"))
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/images/pull", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "demo/tool",
+          tag: "1.0.0",
+          project_id: undefined,
+        }),
+      })
+    })
   })
 
   it("fills the upload dialog from the recommended images panel", async () => {

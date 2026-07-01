@@ -207,6 +207,10 @@ export default function ImagesPage() {
         <ImageDetailsSheet
           image={detailsImage}
           tImages={tImages}
+          onPull={handlePull}
+          onCopyName={handleCopyName}
+          onCopyPullCommand={handleCopyPullCommand}
+          onDeleteLocal={canDeleteImages ? handleDeleteLocal : undefined}
           onOpenChange={(open) => {
             if (!open) {
               setDetailsImage(null)
