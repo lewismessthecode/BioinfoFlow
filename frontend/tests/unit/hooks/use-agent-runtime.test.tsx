@@ -11,6 +11,7 @@ import type {
 const mocks = vi.hoisted(() => ({
   createAgentRuntimeSession: vi.fn(),
   createAgentRuntimeTurn: vi.fn(),
+  interruptAgentRuntimeTurn: vi.fn(),
   subscribeAgentRuntimeEvents: vi.fn(),
   getAgentRuntimeState: vi.fn(),
   listAgentRuntimeSessions: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock("@/lib/agent-runtime", async (importOriginal) => {
     createAgentRuntimeTurn: mocks.createAgentRuntimeTurn,
     decideAgentRuntimeAction: vi.fn(),
     getAgentRuntimeState: mocks.getAgentRuntimeState,
-    interruptAgentRuntimeTurn: vi.fn(),
+    interruptAgentRuntimeTurn: mocks.interruptAgentRuntimeTurn,
     listAgentRuntimeSessions: mocks.listAgentRuntimeSessions,
     subscribeAgentRuntimeEvents: mocks.subscribeAgentRuntimeEvents,
     updateAgentRuntimeSessionMetadata: mocks.updateAgentRuntimeSessionMetadata,
@@ -99,6 +100,10 @@ describe("useAgentRuntime", () => {
     })
     mocks.updateAgentRuntimeSessionMetadata.mockResolvedValue(session)
     mocks.updateAgentRuntimeSessionPermissionMode.mockResolvedValue(session)
+    mocks.interruptAgentRuntimeTurn.mockResolvedValue({
+      ...turn,
+      status: "cancelled",
+    })
   })
 
   it("does not recreate the SSE subscription for each received event", async () => {
@@ -554,5 +559,27 @@ describe("useAgentRuntime", () => {
     expect(window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode")).toBe(
       "bypass",
     )
+  })
+
+  it("interrupts paused turns waiting for approval", async () => {
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session,
+      turns: [{ ...turn, status: "waiting_approval" }],
+      events: [],
+    })
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.state.turns[0]?.status).toBe("waiting_approval"))
+
+    await act(async () => {
+      await result.current.interrupt()
+    })
+
+    expect(mocks.interruptAgentRuntimeTurn).toHaveBeenCalledWith("turn-1")
   })
 })

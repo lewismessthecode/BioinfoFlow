@@ -39,6 +39,13 @@ import {
 } from "@/lib/agent-runtime/turn-policy"
 import { cn } from "@/lib/utils"
 
+const ACTIVE_TURN_STATUSES = new Set<AgentRuntimeTurn["status"]>([
+  "queued",
+  "running",
+  "waiting_user",
+  "waiting_approval",
+])
+
 export type AgentWorkbenchHandle = {
   focusInput: () => void
   stop: () => void
@@ -74,14 +81,17 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       value: string
     } | null>(null)
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
-    const [optimisticTurn, setOptimisticTurn] = useState<AgentRuntimeTurn | null>(null)
+    const [optimisticTurns, setOptimisticTurns] = useState<AgentRuntimeTurn[]>([])
+    const [inFlightOptimisticTurnIds, setInFlightOptimisticTurnIds] = useState<
+      string[]
+    >([])
     const [turnPolicy] = useState<AgentTurnPolicy>(readAgentTurnPolicy)
-    const [queuedSubmission, setQueuedSubmission] = useState<{
+    const [queuedSubmissions, setQueuedSubmissions] = useState<Array<{
       text: string
       inputParts: AgentRuntimeInputPart[]
       modelSelection: typeof selectedModel
       optimisticTurn: AgentRuntimeTurn
-    } | null>(null)
+    }>>([])
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
     const [activeSidecarTab, setActiveSidecarTab] = useState<AgentTabbedPanelTab>("files")
@@ -129,28 +139,29 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         : sessionRemoteConnectionId || (state.session ? "" : projectRemoteConnectionId)
 
     const disabled = !workspaceEnabled
-    const visibleOptimisticTurn =
-      optimisticTurn && !state.turns.some((turn) => turn.id === optimisticTurn.id)
-        ? optimisticTurn
-        : null
+    const visibleOptimisticTurns = optimisticTurns.filter(
+      (optimisticTurn) =>
+        !state.turns.some((turn) => turn.id === optimisticTurn.id),
+    )
     const transcriptTimeline = useMemo(
       () =>
-        visibleOptimisticTurn
+        visibleOptimisticTurns.length
           ? buildAgentRuntimeTimeline(
-              [...state.turns, visibleOptimisticTurn],
+              [...state.turns, ...visibleOptimisticTurns],
               state.events,
             )
           : state.timeline,
-      [state.events, state.timeline, state.turns, visibleOptimisticTurn],
+      [state.events, state.timeline, state.turns, visibleOptimisticTurns],
     )
-    const hasTurns = state.turns.length > 0 || Boolean(visibleOptimisticTurn)
+    const hasTurns = state.turns.length > 0 || visibleOptimisticTurns.length > 0
     const hasSelectedSession = Boolean(activeSessionId || state.session?.id)
     const hasConversation = hasTurns || hasSubmittedDraft || hasSelectedSession
     const isRunning = state.status === "running"
     const hasActiveTurn =
       isRunning ||
-      state.turns.some(
-        (turn) => turn.status === "queued" || turn.status === "running",
+      state.turns.some((turn) => ACTIVE_TURN_STATUSES.has(turn.status)) ||
+      visibleOptimisticTurns.some((turn) =>
+        inFlightOptimisticTurnIds.includes(turn.id),
       )
     const artifactEventCount = useMemo(
       () => state.events.filter((event) => event.type === "artifact.created").length,
@@ -204,7 +215,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setContextAttachments([])
           setRemoteConnectionOverride(null)
           setHasSubmittedDraft(false)
-          setOptimisticTurn(null)
+          setOptimisticTurns([])
+          setInFlightOptimisticTurnIds([])
+          setQueuedSubmissions([])
           setEnvironmentOpen(false)
           setSidecarOpen(false)
           setActiveSidecarTab("files")
@@ -270,7 +283,16 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             sessionId: activeSessionId || state.session?.id || "pending-session",
             projectId,
           })
-        setOptimisticTurn(nextOptimisticTurn)
+        setOptimisticTurns((current) => {
+          if (current.some((turn) => turn.id === nextOptimisticTurn.id)) {
+            return current
+          }
+          return [...current, nextOptimisticTurn]
+        })
+        setInFlightOptimisticTurnIds((current) => {
+          if (current.includes(nextOptimisticTurn.id)) return current
+          return [...current, nextOptimisticTurn.id]
+        })
         void send(trimmedText, {
           modelSelection,
           inputParts,
@@ -278,8 +300,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             ? { remoteConnectionId: selectedRemoteConnectionId }
             : {}),
         }).then(() => {
-          setOptimisticTurn((current) =>
-            current?.id === nextOptimisticTurn.id ? null : current,
+          setOptimisticTurns((current) =>
+            current.filter((turn) => turn.id !== nextOptimisticTurn.id),
+          )
+          setInFlightOptimisticTurnIds((current) =>
+            current.filter((id) => id !== nextOptimisticTurn.id),
           )
         })
       },
@@ -315,13 +340,16 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             projectId,
           })
           setHasSubmittedDraft(true)
-          setOptimisticTurn(nextOptimisticTurn)
-          setQueuedSubmission({
-            text: trimmedText,
-            inputParts,
-            modelSelection,
-            optimisticTurn: nextOptimisticTurn,
-          })
+          setOptimisticTurns((current) => [...current, nextOptimisticTurn])
+          setQueuedSubmissions((current) => [
+            ...current,
+            {
+              text: trimmedText,
+              inputParts,
+              modelSelection,
+              optimisticTurn: nextOptimisticTurn,
+            },
+          ])
           return
         }
 
@@ -343,14 +371,16 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     )
 
     useEffect(() => {
-      if (!queuedSubmission || hasActiveTurn) return
-      const next = queuedSubmission
+      if (!queuedSubmissions.length || hasActiveTurn) return
+      const next = queuedSubmissions[0]
       const timer = window.setTimeout(() => {
-        setQueuedSubmission((current) => (current === next ? null : current))
+        setQueuedSubmissions((current) =>
+          current[0] === next ? current.slice(1) : current,
+        )
         sendTurn(next.text, next.inputParts, next.modelSelection, next.optimisticTurn)
       }, 0)
       return () => window.clearTimeout(timer)
-    }, [hasActiveTurn, queuedSubmission, sendTurn])
+    }, [hasActiveTurn, queuedSubmissions, sendTurn])
 
     const submit = () => {
       const text = input.trim()

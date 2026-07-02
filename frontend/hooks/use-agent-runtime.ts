@@ -39,6 +39,12 @@ type AgentRuntimeStreamSignal = {
 
 const DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode"
 const DEFAULT_PERMISSION_MODE: AgentPermissionMode = "guarded_auto"
+const INTERRUPTIBLE_TURN_STATUSES = new Set([
+  "queued",
+  "running",
+  "waiting_user",
+  "waiting_approval",
+])
 
 export function useAgentRuntime(
   projectId?: string | null,
@@ -296,7 +302,7 @@ export function useAgentRuntime(
   const interrupt = useCallback(async () => {
     const running = [...state.turns]
       .reverse()
-      .find((turn) => turn.status === "queued" || turn.status === "running")
+      .find((turn) => INTERRUPTIBLE_TURN_STATUSES.has(turn.status))
     if (!running) return null
     const turn = await interruptAgentRuntimeTurn(running.id)
     dispatch({ type: "turn.upsert", turn })
