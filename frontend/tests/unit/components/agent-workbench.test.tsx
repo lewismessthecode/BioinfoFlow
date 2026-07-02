@@ -10,6 +10,7 @@ import type {
   AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 import { buildAgentRuntimeTimeline } from "@/lib/agent-runtime"
+import { writeAgentTurnPolicy } from "@/lib/agent-runtime/turn-policy"
 
 const useAgentRuntimeMock = vi.fn()
 const useLlmSettingsMock = vi.fn()
@@ -46,6 +47,7 @@ vi.mock("next-intl", () => ({
       "approval.state.approved": "Approved, resuming",
       "approval.jumpToDecision": "Needs confirmation · Jump",
       "turnStatus.running": "Working",
+      "turnStatus.queued": "Queued",
       "turnStatus.completed": "Done",
       "sidecar.title": "Workspace",
       "sidecar.close": "Close workspace panel",
@@ -262,6 +264,7 @@ describe("AgentWorkbench", () => {
       setSelectedModel: vi.fn(),
     })
     setupRuntime()
+    window.localStorage.clear()
   })
 
   it("renders the new chat welcome with a centered composer", () => {
@@ -699,6 +702,96 @@ describe("AgentWorkbench", () => {
     )
     expect(screen.getByText("Plan RNA-seq QC")).toBeInTheDocument()
     expect(screen.getByText("Working on it...")).toBeInTheDocument()
+  })
+
+  it("interrupts the active turn before sending when the turn policy is interrupt", async () => {
+    writeAgentTurnPolicy("interrupt")
+    const calls: string[] = []
+    const send = vi.fn(async () => {
+      calls.push("send")
+      return undefined
+    })
+    const interrupt = vi.fn(async () => {
+      calls.push("interrupt")
+      return null
+    })
+    useAgentRuntimeMock.mockReturnValue({
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt,
+      decideAction: vi.fn(),
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Switch to Deaf_20" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() => expect(interrupt).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith("Switch to Deaf_20", expect.any(Object)),
+    )
+    expect(calls).toEqual(["interrupt", "send"])
+  })
+
+  it("queues a submitted draft until the active turn finishes when the turn policy is queue", async () => {
+    writeAgentTurnPolicy("queue")
+    const send = vi.fn().mockResolvedValue(undefined)
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running" as const,
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const view = render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Run Deaf_20 next" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(send).not.toHaveBeenCalled()
+    expect(input).toHaveValue("")
+    expect(screen.getByText("Run Deaf_20 next")).toBeInTheDocument()
+    expect(screen.getByText("Queued")).toBeInTheDocument()
+
+    runtime.state = {
+      ...runtime.state,
+      turns: [{ ...baseTurn, id: "running-turn", status: "completed" }],
+      timeline: buildAgentRuntimeTimeline(
+        [{ ...baseTurn, id: "running-turn", status: "completed" }],
+        [],
+      ),
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench />)
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith("Run Deaf_20 next", expect.any(Object)),
+    )
   })
 
   it("hydrates the remote connection selection from session metadata before sending", async () => {

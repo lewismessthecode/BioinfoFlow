@@ -402,10 +402,8 @@ function liveTurnStatusLabel(
   )
   if (hasStreamingText) return t("statusLine.running")
 
-  if (
-    entry.turn.status === "queued" ||
-    entry.turn.status === "running"
-  ) {
+  if (entry.turn.status === "queued") return t("turnStatus.queued")
+  if (entry.turn.status === "running") {
     return t("statusLine.running")
   }
   return null
