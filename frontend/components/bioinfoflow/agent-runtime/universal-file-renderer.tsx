@@ -15,6 +15,7 @@ import { useTranslations } from "next-intl"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { cn } from "@/lib/utils"
 import {
+  TEXT_PREVIEW_SIZE_LIMIT_BYTES,
   WORKBOOK_SIZE_LIMIT_BYTES,
   columnLabel,
   delimiterForPath,
@@ -49,9 +50,12 @@ type WorkbookSheet = {
 }
 
 type WorkbookState =
-  | { status: "idle" | "loading" }
-  | { status: "ready"; sheets: WorkbookSheet[] }
-  | { status: "error"; message: string }
+  | { requestKey: string; status: "ready"; sheets: WorkbookSheet[] }
+  | { requestKey: string; status: "error"; message: string }
+
+type TextLoadState =
+  | { requestKey: string; status: "ready"; content: string | null; error: null }
+  | { requestKey: string; status: "error"; content: null; error: string }
 
 export function UniversalFileRenderer({
   file,
@@ -70,6 +74,76 @@ export function UniversalFileRenderer({
   })
   const displayName = file.title || file.path.split("/").pop() || file.path
   const inlineUrl = file.inlineUrl || file.resourceUrl || null
+  const textFetchFailedMessage = t("renderer.textFetchFailed")
+  const textTooLargeMessage = t("renderer.textTooLarge")
+  const shouldFetchText =
+    !file.content &&
+    Boolean(inlineUrl) &&
+    (kind === "markdown" ||
+      kind === "json" ||
+      kind === "text")
+  const textRequestKey = shouldFetchText ? `${kind}:${inlineUrl}` : ""
+  const [textLoadState, setTextLoadState] = useState<TextLoadState>({
+    requestKey: "",
+    status: "ready",
+    content: null,
+    error: null,
+  })
+
+  useEffect(() => {
+    if (!shouldFetchText || !inlineUrl) return
+    let cancelled = false
+    async function loadTextPreview() {
+      try {
+        const response = await fetch(inlineUrl, { credentials: "include" })
+        if (!response.ok) throw new Error(textFetchFailedMessage)
+        const content = await readResponseTextWithLimit(
+          response,
+          TEXT_PREVIEW_SIZE_LIMIT_BYTES,
+          textTooLargeMessage,
+        )
+        if (!cancelled) {
+          setTextLoadState({
+            requestKey: textRequestKey,
+            status: "ready",
+            content,
+            error: null,
+          })
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setTextLoadState({
+            requestKey: textRequestKey,
+            status: "error",
+            content: null,
+            error: err instanceof Error ? err.message : textFetchFailedMessage,
+          })
+        }
+      }
+    }
+    void loadTextPreview()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    inlineUrl,
+    shouldFetchText,
+    textFetchFailedMessage,
+    textRequestKey,
+    textTooLargeMessage,
+  ])
+
+  const textStateMatchesRequest = textLoadState.requestKey === textRequestKey
+  const textLoading = shouldFetchText && !textStateMatchesRequest
+  const textError =
+    shouldFetchText && textStateMatchesRequest && textLoadState.status === "error"
+      ? textLoadState.error
+      : null
+  const previewContent =
+    file.content ??
+    (shouldFetchText && textStateMatchesRequest && textLoadState.status === "ready"
+      ? textLoadState.content ?? ""
+      : "")
 
   return (
     <div
@@ -78,12 +152,28 @@ export function UniversalFileRenderer({
       data-testid="universal-file-renderer"
     >
       {kind === "markdown" ? (
-        <div className="h-full overflow-auto bg-[#fbfbfa] p-4">
-          <MarkdownRenderer
-            content={file.content || t("renderer.previewUnavailable")}
-            className="mx-auto w-full max-w-3xl px-1 py-2 text-sm leading-6"
+        textLoading ? (
+          <RendererState
+            kind="loading"
+            icon={<Loader2 className="h-8 w-8 animate-spin" />}
+            title={t("renderer.textLoading")}
+            description={t("renderer.textLoadingDescription")}
           />
-        </div>
+        ) : textError ? (
+          <RendererState
+            kind="error"
+            icon={<AlertCircle className="h-8 w-8" />}
+            title={t("renderer.textFetchFailed")}
+            description={textError}
+          />
+        ) : (
+          <div className="h-full overflow-auto bg-muted/20 p-4">
+            <MarkdownRenderer
+              content={previewContent || t("renderer.previewUnavailable")}
+              className="mx-auto w-full max-w-3xl px-1 py-2 text-sm leading-6"
+            />
+          </div>
+        )
       ) : null}
 
       {kind === "html" ? (
@@ -110,7 +200,7 @@ export function UniversalFileRenderer({
           <iframe
             title={displayName}
             src={inlineUrl}
-            className="h-full min-h-0 w-full border-0 bg-[#f7f6f3]"
+            className="h-full min-h-0 w-full border-0 bg-muted/30"
           />
         ) : (
           <RendererState
@@ -124,7 +214,7 @@ export function UniversalFileRenderer({
 
       {kind === "image" ? (
         inlineUrl ? (
-          <div className="flex h-full min-h-0 items-center justify-center overflow-auto bg-[#fbfbfa] p-4">
+          <div className="flex h-full min-h-0 items-center justify-center overflow-auto bg-muted/20 p-4">
             {/* Agent artifacts can be local API URLs, so Next Image optimization is not applicable. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -146,11 +236,43 @@ export function UniversalFileRenderer({
       {kind === "spreadsheet" ? <SpreadsheetPreview file={file} /> : null}
 
       {kind === "json" ? (
-        <CodePreview content={formatJsonContent(file.content)} iconKind={kind} />
+        textLoading ? (
+          <RendererState
+            kind="loading"
+            icon={<Loader2 className="h-8 w-8 animate-spin" />}
+            title={t("renderer.textLoading")}
+            description={t("renderer.textLoadingDescription")}
+          />
+        ) : textError ? (
+          <RendererState
+            kind="error"
+            icon={<AlertCircle className="h-8 w-8" />}
+            title={t("renderer.textFetchFailed")}
+            description={textError}
+          />
+        ) : (
+          <CodePreview content={formatJsonContent(previewContent)} iconKind={kind} />
+        )
       ) : null}
 
       {kind === "text" ? (
-        <CodePreview content={file.content || t("renderer.previewUnavailable")} iconKind={kind} />
+        textLoading ? (
+          <RendererState
+            kind="loading"
+            icon={<Loader2 className="h-8 w-8 animate-spin" />}
+            title={t("renderer.textLoading")}
+            description={t("renderer.textLoadingDescription")}
+          />
+        ) : textError ? (
+          <RendererState
+            kind="error"
+            icon={<AlertCircle className="h-8 w-8" />}
+            title={t("renderer.textFetchFailed")}
+            description={textError}
+          />
+        ) : (
+          <CodePreview content={previewContent || t("renderer.previewUnavailable")} iconKind={kind} />
+        )
       ) : null}
 
       {kind === "unsupported" ? (
@@ -190,6 +312,19 @@ function SpreadsheetPreview({ file }: { file: UniversalFileResource }) {
     )
   }
 
+  if (
+    !file.content &&
+    file.inlineUrl &&
+    isDelimitedPath(file.path, file.language, file.mimeType)
+  ) {
+    return (
+      <DelimitedUrlSpreadsheetPreview
+        file={file}
+        sourceUrl={file.inlineUrl}
+      />
+    )
+  }
+
   if (isWorkbookPath(file.path)) {
     return <WorkbookPreview file={file} />
   }
@@ -204,10 +339,103 @@ function SpreadsheetPreview({ file }: { file: UniversalFileResource }) {
   )
 }
 
+function DelimitedUrlSpreadsheetPreview({
+  file,
+  sourceUrl,
+}: {
+  file: UniversalFileResource
+  sourceUrl: string
+}) {
+  const t = useTranslations("agentRuntime")
+  const textFetchFailedMessage = t("renderer.textFetchFailed")
+  const textTooLargeMessage = t("renderer.textTooLarge")
+  const [state, setState] = useState<TextLoadState>({
+    requestKey: "",
+    status: "ready",
+    content: null,
+    error: null,
+  })
+  const requestKey = `${file.path}:${sourceUrl}`
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadRows() {
+      try {
+        const response = await fetch(sourceUrl, { credentials: "include" })
+        if (!response.ok) throw new Error(textFetchFailedMessage)
+        const content = await readResponseTextWithLimit(
+          response,
+          TEXT_PREVIEW_SIZE_LIMIT_BYTES,
+          textTooLargeMessage,
+        )
+        if (!cancelled) {
+          setState({ requestKey, status: "ready", content, error: null })
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setState({
+            requestKey,
+            status: "error",
+            content: null,
+            error: err instanceof Error ? err.message : textFetchFailedMessage,
+          })
+        }
+      }
+    }
+    void loadRows()
+    return () => {
+      cancelled = true
+    }
+  }, [requestKey, sourceUrl, textFetchFailedMessage, textTooLargeMessage])
+
+  if (state.requestKey !== requestKey) {
+    return (
+      <RendererState
+        kind="loading"
+        icon={<Loader2 className="h-8 w-8 animate-spin" />}
+        title={t("renderer.textLoading")}
+        description={t("renderer.textLoadingDescription")}
+      />
+    )
+  }
+  if (state.status === "error") {
+    return (
+      <RendererState
+        kind="error"
+        icon={<AlertCircle className="h-8 w-8" />}
+        title={t("renderer.textFetchFailed")}
+        description={state.error}
+      />
+    )
+  }
+
+  const rows = parseDelimitedRows(
+    state.content ?? "",
+    delimiterForPath(file.path, file.mimeType),
+  )
+  return rows.length ? (
+    <SpreadsheetWorkbookView
+      sheets={[{ name: t("renderer.defaultSheetName"), rows }]}
+    />
+  ) : (
+    <RendererState
+      kind="empty"
+      icon={<FileSpreadsheet className="h-8 w-8" />}
+      title={t("renderer.previewUnavailable")}
+      description={t("renderer.noRenderableSource")}
+    />
+  )
+}
+
 function WorkbookPreview({ file }: { file: UniversalFileResource }) {
   const t = useTranslations("agentRuntime")
-  const [state, setState] = useState<WorkbookState>({ status: "idle" })
   const sourceUrl = file.inlineUrl || file.resourceUrl || file.downloadUrl || null
+  const requestKey = `${file.path}:${sourceUrl ?? ""}:${file.size ?? ""}`
+  const [state, setState] = useState<WorkbookState>({
+    requestKey: "",
+    status: "ready",
+    sheets: [],
+  })
   const emptyMessage = t("renderer.workbookEmpty")
   const failedMessage = t("renderer.workbookFailed")
   const fetchFailedMessage = t("renderer.workbookFetchFailed")
@@ -215,28 +443,27 @@ function WorkbookPreview({ file }: { file: UniversalFileResource }) {
   const tooLargeMessage = t("renderer.workbookTooLarge")
 
   useEffect(() => {
-    if (!sourceUrl) {
-      setState({ status: "error", message: noSourceMessage })
-      return
-    }
-
-    if (typeof file.size === "number" && file.size > WORKBOOK_SIZE_LIMIT_BYTES) {
-      setState({
-        status: "error",
-        message: tooLargeMessage,
-      })
-      return
-    }
+    if (!sourceUrl) return
+    if (typeof file.size === "number" && file.size > WORKBOOK_SIZE_LIMIT_BYTES) return
 
     const controller = new AbortController()
-    setState({ status: "loading" })
+    let cancelled = false
 
     async function loadWorkbook() {
       try {
-        const response = await fetch(sourceUrl, { signal: controller.signal })
+        const response = await fetch(sourceUrl, {
+          credentials: "include",
+          signal: controller.signal,
+        })
         if (!response.ok) throw new Error(fetchFailedMessage)
-        const buffer = await response.arrayBuffer()
-        const XLSX = await import("xlsx")
+        const buffer = await readResponseArrayBufferWithLimit(
+          response,
+          WORKBOOK_SIZE_LIMIT_BYTES,
+          tooLargeMessage,
+        )
+        if (cancelled) return
+        const XLSX = await import("@e965/xlsx")
+        if (cancelled) return
         const workbook = XLSX.read(buffer, { type: "array", cellDates: true })
         const sheets = workbook.SheetNames.map((name) => {
           const sheet = workbook.Sheets[name]
@@ -253,10 +480,11 @@ function WorkbookPreview({ file }: { file: UniversalFileResource }) {
         }).filter((sheet) => sheet.rows.length > 0)
 
         if (!sheets.length) throw new Error(emptyMessage)
-        setState({ status: "ready", sheets })
+        if (!cancelled) setState({ requestKey, status: "ready", sheets })
       } catch (err) {
-        if (controller.signal.aborted) return
+        if (controller.signal.aborted || cancelled) return
         setState({
+          requestKey,
           status: "error",
           message: err instanceof Error ? err.message : failedMessage,
         })
@@ -264,17 +492,51 @@ function WorkbookPreview({ file }: { file: UniversalFileResource }) {
     }
 
     void loadWorkbook()
-    return () => controller.abort()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }, [
     emptyMessage,
     failedMessage,
     fetchFailedMessage,
     file.size,
-    noSourceMessage,
+    requestKey,
     sourceUrl,
     tooLargeMessage,
   ])
 
+  if (!sourceUrl) {
+    return (
+      <RendererState
+        kind="error"
+        icon={<AlertCircle className="h-8 w-8" />}
+        title={t("renderer.workbookFailed")}
+        description={noSourceMessage}
+      />
+    )
+  }
+  if (typeof file.size === "number" && file.size > WORKBOOK_SIZE_LIMIT_BYTES) {
+    return (
+      <RendererState
+        kind="error"
+        icon={<AlertCircle className="h-8 w-8" />}
+        title={t("renderer.workbookFailed")}
+        description={tooLargeMessage}
+      />
+    )
+  }
+
+  if (state.requestKey !== requestKey) {
+    return (
+      <RendererState
+        kind="loading"
+        icon={<Loader2 className="h-8 w-8 animate-spin" />}
+        title={t("renderer.workbookLoading")}
+        description={t("renderer.workbookLoadingDescription")}
+      />
+    )
+  }
   if (state.status === "ready") return <SpreadsheetWorkbookView sheets={state.sheets} />
   if (state.status === "error") {
     return (
@@ -286,14 +548,7 @@ function WorkbookPreview({ file }: { file: UniversalFileResource }) {
       />
     )
   }
-  return (
-    <RendererState
-      kind="loading"
-      icon={<Loader2 className="h-8 w-8 animate-spin" />}
-      title={t("renderer.workbookLoading")}
-      description={t("renderer.workbookLoadingDescription")}
-    />
-  )
+  return null
 }
 
 function SpreadsheetWorkbookView({ sheets }: { sheets: WorkbookSheet[] }) {
@@ -316,12 +571,12 @@ function SpreadsheetWorkbookView({ sheets }: { sheets: WorkbookSheet[] }) {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-rows-[1fr_auto] bg-[#fbfbfa]">
+    <div className="grid h-full min-h-0 grid-rows-[1fr_auto] bg-muted/20">
       <div className="min-h-0 overflow-auto">
         <table className="min-w-max border-separate border-spacing-0 text-left text-sm tabular-nums">
-          <thead className="sticky top-0 z-20 bg-[#f7f6f3] text-[11px] font-medium text-muted-foreground">
+          <thead className="sticky top-0 z-20 bg-muted text-[11px] font-medium text-muted-foreground">
             <tr>
-              <th className="sticky left-0 z-30 h-8 w-12 border-b border-r border-border/70 bg-[#f7f6f3]" />
+              <th className="sticky left-0 z-30 h-8 w-12 border-b border-r border-border/70 bg-muted" />
               {Array.from({ length: columnCount }).map((_, index) => (
                 <th
                   key={index}
@@ -335,7 +590,7 @@ function SpreadsheetWorkbookView({ sheets }: { sheets: WorkbookSheet[] }) {
           <tbody>
             {rows.map((row, rowIndex) => (
               <tr key={rowIndex}>
-                <th className="sticky left-0 z-10 h-8 w-12 border-b border-r border-border/70 bg-[#f7f6f3] text-center text-[11px] font-medium text-muted-foreground">
+                <th className="sticky left-0 z-10 h-8 w-12 border-b border-r border-border/70 bg-muted text-center text-[11px] font-medium text-muted-foreground">
                   {rowIndex + 1}
                 </th>
                 {Array.from({ length: columnCount }).map((_, cellIndex) => (
@@ -343,7 +598,7 @@ function SpreadsheetWorkbookView({ sheets }: { sheets: WorkbookSheet[] }) {
                     key={cellIndex}
                     className={cn(
                       "h-8 min-w-[8rem] max-w-[20rem] border-b border-r border-border/55 bg-background px-3 align-middle text-foreground",
-                      rowIndex === 0 && "bg-[#fbfbfa] font-medium",
+                      rowIndex === 0 && "bg-muted/20 font-medium",
                     )}
                   >
                     <span className="block truncate" title={row[cellIndex] ?? ""}>
@@ -356,7 +611,7 @@ function SpreadsheetWorkbookView({ sheets }: { sheets: WorkbookSheet[] }) {
           </tbody>
         </table>
       </div>
-      <div className="flex min-h-11 items-center gap-1 overflow-x-auto border-t border-border/70 bg-[#f7f6f3] px-3 py-2">
+      <div className="flex min-h-11 items-center gap-1 overflow-x-auto border-t border-border/70 bg-muted px-3 py-2">
         {sheets.map((sheet, index) => (
           <button
             key={`${sheet.name}-${index}`}
@@ -389,12 +644,12 @@ function CodePreview({
 }) {
   const lines = content.split(/\r?\n/)
   return (
-    <div className="h-full min-h-0 overflow-auto bg-[#fbfbfa]">
+    <div className="h-full min-h-0 overflow-auto bg-muted/20">
       <pre className="min-w-max p-3 font-mono text-xs leading-5 text-foreground tabular-nums">
         <code>
           {lines.map((line, index) => (
             <span key={index} className="table-row">
-              <span className="sticky left-0 table-cell select-none border-r border-border/60 bg-[#f7f6f3] pr-3 text-right text-muted-foreground">
+              <span className="sticky left-0 table-cell select-none border-r border-border/60 bg-muted pr-3 text-right text-muted-foreground">
                 {index + 1}
               </span>
               <span className="table-cell whitespace-pre pl-3">
@@ -421,8 +676,11 @@ function RendererState({
 }) {
   return (
     <div
-      className="flex h-full min-h-[220px] min-w-0 items-center justify-center bg-[#fbfbfa] p-6 text-center"
+      className="flex h-full min-h-[220px] min-w-0 items-center justify-center bg-muted/20 p-6 text-center"
       data-renderer-state={kind}
+      role={kind === "loading" ? "status" : undefined}
+      aria-live={kind === "loading" ? "polite" : undefined}
+      aria-label={kind === "loading" ? title : undefined}
     >
       <div className="max-w-sm">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground">
@@ -442,4 +700,53 @@ function formatJsonContent(content?: string | null) {
   } catch {
     return content
   }
+}
+
+async function readResponseTextWithLimit(
+  response: Response,
+  limitBytes: number,
+  tooLargeMessage: string,
+) {
+  const buffer = await readResponseArrayBufferWithLimit(response, limitBytes, tooLargeMessage)
+  return new TextDecoder().decode(buffer)
+}
+
+async function readResponseArrayBufferWithLimit(
+  response: Response,
+  limitBytes: number,
+  tooLargeMessage: string,
+) {
+  const contentLength = response.headers?.get("content-length")
+  if (contentLength && Number(contentLength) > limitBytes) {
+    throw new Error(tooLargeMessage)
+  }
+
+  if (!response.body) {
+    const buffer = await response.arrayBuffer()
+    if (buffer.byteLength > limitBytes) throw new Error(tooLargeMessage)
+    return buffer
+  }
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    total += value.byteLength
+    if (total > limitBytes) {
+      await reader.cancel()
+      throw new Error(tooLargeMessage)
+    }
+    chunks.push(value)
+  }
+
+  const combined = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    combined.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return combined.buffer
 }

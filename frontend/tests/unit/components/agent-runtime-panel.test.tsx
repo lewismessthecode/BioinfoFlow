@@ -1,13 +1,24 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
+import { AgentTabbedPanel } from "@/components/bioinfoflow/agent-runtime/agent-tabbed-panel"
 import { ArtifactPreviewDrawer } from "@/components/bioinfoflow/agent-runtime/artifact-preview-drawer"
 import { ArtifactViewer } from "@/components/bioinfoflow/agent-runtime/artifact-viewers"
 import { BrowserTab, resolveBrowserUrl } from "@/components/bioinfoflow/agent-runtime/browser-tab"
 import { PendingDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-decision-cards"
 import { ProgressTab } from "@/components/bioinfoflow/agent-runtime/progress-tab"
 import type { AgentRuntimeArtifact, AgentRuntimeEvent } from "@/lib/agent-runtime"
+
+const listAgentRuntimeSessionArtifactsMock = vi.hoisted(() => vi.fn())
+
+vi.mock("@/lib/agent-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/agent-runtime")>()
+  return {
+    ...actual,
+    listAgentRuntimeSessionArtifacts: listAgentRuntimeSessionArtifactsMock,
+  }
+})
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -46,6 +57,11 @@ function artifact(overrides: Partial<AgentRuntimeArtifact>): AgentRuntimeArtifac
   }
 }
 
+beforeEach(() => {
+  vi.restoreAllMocks()
+  listAgentRuntimeSessionArtifactsMock.mockReset()
+})
+
 describe("ProgressTab", () => {
   it("renders the latest todo checklist", () => {
     render(
@@ -70,6 +86,12 @@ describe("ProgressTab", () => {
 })
 
 describe("ArtifactPreviewDrawer", () => {
+  it("announces the artifact loading skeleton as status", () => {
+    render(<ArtifactPreviewDrawer artifacts={[]} status="loading" />)
+
+    expect(screen.getByRole("status", { name: "artifacts.loading" })).toBeInTheDocument()
+  })
+
   it("keeps routine command artifacts out of the preview tab", () => {
     render(
       <ArtifactPreviewDrawer
@@ -175,7 +197,112 @@ describe("ArtifactViewer", () => {
       "/api/v1/agent/artifacts/pdf-1/raw",
     )
     expect(screen.queryByRole("button", { name: "artifacts.copy" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "artifacts.download" })).not.toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "artifacts.open" })).toHaveAttribute(
+      "href",
+      "/api/v1/agent/artifacts/pdf-1/raw",
+    )
+    expect(screen.getByRole("link", { name: "artifacts.download" })).toHaveAttribute(
+      "href",
+      "/api/v1/agent/artifacts/pdf-1/raw",
+    )
+  })
+
+  it("opens file-backed artifacts without showing empty copy actions", () => {
+    vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}) as Promise<Response>)
+
+    render(
+      <ArtifactViewer
+        artifact={artifact({
+          id: "custom-1",
+          type: "custom_format",
+          title: "result.custom",
+          file_path: "/workspace/result.custom",
+          payload: null,
+        })}
+      />,
+    )
+
+    expect(screen.getByTestId("artifact-file-viewer")).toBeInTheDocument()
+    expect(screen.getByText("/workspace/result.custom")).toBeInTheDocument()
+    expect(screen.getByText("renderer.textLoading")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "artifacts.open" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/agent/fs/download"),
+    )
+    expect(screen.getByRole("link", { name: "artifacts.download" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/agent/fs/download"),
+    )
+    expect(screen.queryByRole("button", { name: "artifacts.copy" })).not.toBeInTheDocument()
+  })
+
+  it("ignores unsafe artifact resource URLs", () => {
+    render(
+      <ArtifactViewer
+        artifact={artifact({
+          id: "unsafe-pdf",
+          type: "pdf",
+          title: "summary.pdf",
+          payload: { url: "javascript:alert(1)" },
+        })}
+      />,
+    )
+
+    expect(screen.queryByTitle("summary.pdf")).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "artifacts.open" })).not.toBeInTheDocument()
+    expect(screen.getByText("renderer.noRenderableSource")).toBeInTheDocument()
+  })
+})
+
+describe("AgentTabbedPanel", () => {
+  it("uses tab semantics for the right-side artifact workspace", () => {
+    render(
+      <AgentTabbedPanel
+        projectId="project-1"
+        sessionId={null}
+        events={[]}
+        activeTab="preview"
+        onActiveTabChange={vi.fn()}
+        browserInput=""
+        browserSrc=""
+        onBrowserInputChange={vi.fn()}
+        onBrowserSrcChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("tablist", { name: "sidecar.title" })).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "tabs.artifacts" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+    expect(screen.getByRole("tab", { name: "tabs.files" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    )
+  })
+
+  it("labels the artifact panel as loading instead of reporting zero artifacts", () => {
+    listAgentRuntimeSessionArtifactsMock.mockReturnValue(new Promise(() => {}))
+
+    render(
+      <AgentTabbedPanel
+        projectId="project-1"
+        sessionId="session-1"
+        events={[]}
+        activeTab="preview"
+        onActiveTabChange={vi.fn()}
+        browserInput=""
+        browserSrc=""
+        onBrowserInputChange={vi.fn()}
+        onBrowserSrcChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getAllByText("artifacts.loading").length).toBeGreaterThan(0)
+    expect(screen.queryByText("artifacts.count")).not.toBeInTheDocument()
+    expect(screen.getByRole("status", { name: "artifacts.loading" })).toBeInTheDocument()
   })
 })
 

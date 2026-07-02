@@ -5,6 +5,7 @@ import {
   Box,
   Copy,
   Download,
+  ExternalLink,
   FileCode,
   FileJson,
   FileSpreadsheet,
@@ -26,6 +27,8 @@ import { TodoChecklist } from "./todo-checklist"
 import { UniversalFileRenderer } from "./universal-file-renderer"
 
 export function ArtifactViewer({ artifact }: { artifact: AgentRuntimeArtifact }) {
+  if (artifact.file_path) return <FileArtifact artifact={artifact} />
+
   switch (artifact.type) {
     case "file":
     case "html":
@@ -61,27 +64,39 @@ function FileArtifact({ artifact }: { artifact: AgentRuntimeArtifact }) {
   const path = String(payload.path ?? artifact.file_path ?? artifact.title)
   const content = typeof payload.content === "string" ? payload.content : ""
   const filename = path.split("/").pop() || artifact.title || "artifact.txt"
-  const resourceUrl = artifactResourceUrl(artifact)
+  const resourceUrl = sanitizeArtifactResourceUrl(artifactResourceUrl(artifact))
   const fileDownloadUrl = artifact.file_path ? buildAgentFsDownloadUrl(artifact.file_path) : null
   const fileInlineUrl = artifact.file_path
     ? buildAgentFsDownloadUrl(artifact.file_path, { inline: true })
     : null
+  const openUrl = resourceUrl || fileDownloadUrl
   const canCopyOrDownload = content.length > 0
+  const canDownloadInlineContent = canCopyOrDownload && !openUrl
 
   return (
-    <div className="grid gap-3" data-testid="artifact-file-viewer">
+    <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3" data-testid="artifact-file-viewer">
       <ArtifactHeader title={path} />
-      {canCopyOrDownload ? (
-        <div className="flex items-center gap-2">
-          <CopyButton text={content} label={t("artifacts.copy")} done={t("artifacts.copied")} />
-          <DownloadButton
-            text={content}
-            filename={filename}
-            label={t("artifacts.download")}
-          />
+      {canCopyOrDownload || openUrl ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {canCopyOrDownload ? (
+            <CopyButton text={content} label={t("artifacts.copy")} done={t("artifacts.copied")} />
+          ) : null}
+          {canDownloadInlineContent ? (
+            <DownloadButton
+              text={content}
+              filename={filename}
+              label={t("artifacts.download")}
+            />
+          ) : null}
+          {openUrl ? (
+            <>
+              <LinkButton href={openUrl} label={t("artifacts.open")} icon="open" />
+              <LinkButton href={openUrl} label={t("artifacts.download")} icon="download" />
+            </>
+          ) : null}
         </div>
       ) : null}
-      <div className="h-[min(68vh,720px)] overflow-hidden rounded-lg border border-border/70 bg-background">
+      <div className="min-h-0 overflow-hidden rounded-lg border border-border/70 bg-background">
         <UniversalFileRenderer
           file={{
             path,
@@ -229,6 +244,36 @@ function DownloadButton({
   )
 }
 
+function LinkButton({
+  href,
+  label,
+  icon,
+}: {
+  href: string
+  label: string
+  icon: "download" | "open"
+}) {
+  const Icon = icon === "download" ? Download : ExternalLink
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="h-8 rounded-md bg-card transition-transform active:scale-[0.98]"
+      asChild
+    >
+      <a
+        href={href}
+        target={icon === "open" ? "_blank" : undefined}
+        rel="noreferrer"
+        download={icon === "download" ? "" : undefined}
+      >
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </a>
+    </Button>
+  )
+}
+
 export function ArtifactIcon({ type }: { type: string }) {
   const className = "mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
   switch (type) {
@@ -287,6 +332,32 @@ function artifactResourceUrl(artifact: AgentRuntimeArtifact) {
   const resource = artifact.resource_ref
   if (!resource || typeof resource !== "object") return null
   return stringValue(resource.url) ?? stringValue(resource.href)
+}
+
+function sanitizeArtifactResourceUrl(url: string | null) {
+  if (!url) return null
+  try {
+    const base = typeof window !== "undefined" ? window.location.href : "http://localhost"
+    const parsed = new URL(url, base)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null
+
+    const isRelativePath = url.startsWith("/") && !url.startsWith("//")
+    if (isRelativePath) {
+      return parsed.pathname.startsWith("/api/")
+        ? `${parsed.pathname}${parsed.search}${parsed.hash}`
+        : null
+    }
+
+    const trustedOrigins = new Set<string>()
+    if (typeof window !== "undefined") trustedOrigins.add(window.location.origin)
+    trustedOrigins.add(new URL(buildAgentFsDownloadUrl("__artifact_probe__"), base).origin)
+
+    if (!trustedOrigins.has(parsed.origin)) return null
+    if (!parsed.pathname.includes("/api/")) return null
+    return parsed.toString()
+  } catch {
+    return null
+  }
 }
 
 function stringValue(value: unknown) {

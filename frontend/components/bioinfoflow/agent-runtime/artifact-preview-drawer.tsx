@@ -51,7 +51,14 @@ export function ArtifactPreviewDrawer({
 
   if (status === "loading") {
     return (
-      <div className="grid gap-2" data-testid="artifact-preview-drawer">
+      <div
+        className="grid gap-2"
+        data-testid="artifact-preview-drawer"
+        role="status"
+        aria-live="polite"
+        aria-label={t("artifacts.loading")}
+      >
+        <span className="sr-only">{t("artifacts.loading")}</span>
         {[0, 1, 2].map((index) => (
           <div
             key={index}
@@ -129,7 +136,7 @@ function ArtifactEmptyState({
 }) {
   return (
     <div
-      className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-border/80 bg-[#fbfbfa] p-6 text-center"
+      className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-border/80 bg-muted/20 p-6 text-center"
       data-testid="artifact-preview-drawer"
     >
       <div className="max-w-sm">
