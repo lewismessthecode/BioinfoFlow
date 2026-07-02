@@ -2699,6 +2699,7 @@
       "textLoadingDescription": "Reading file content and preparing a preview.",
       "textFetchFailed": "Could not load file preview.",
       "textTooLarge": "This file is too large to preview safely.",
+      "textPreviewLimited": "Preview truncated to {lines} lines.",
       "kinds": {
         "markdown": "Markdown",
         "html": "HTML",

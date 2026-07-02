@@ -1316,6 +1316,10 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
     data_root.mkdir()
     pdf_file = repo_root / "summary.pdf"
     pdf_file.write_bytes(b"%PDF-1.7\nbinary-\xff\n")
+    png_file = repo_root / "plot.png"
+    png_file.write_bytes(b"\x89PNG\r\n\x1a\nbinary-\xff\n")
+    svg_file = repo_root / "plot.svg"
+    svg_file.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
     html_file = repo_root / 'report "qc"; v1.html'
     html_file.write_text("<h1>QC</h1>", encoding="utf-8")
 
@@ -1331,6 +1335,20 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
     assert data["binary"] is True
     assert data["content"] == ""
     assert data["mime_type"] == "application/pdf"
+
+    for image_file, expected_mime_type in (
+        (png_file, "image/png"),
+        (svg_file, "image/svg+xml"),
+    ):
+        image_metadata_resp = await async_client.get(
+            "/api/v1/agent/fs/file",
+            params={"path": str(image_file)},
+        )
+        assert image_metadata_resp.status_code == 200
+        image_data = image_metadata_resp.json()["data"]
+        assert image_data["binary"] is True
+        assert image_data["content"] == ""
+        assert image_data["mime_type"] == expected_mime_type
 
     download_resp = await async_client.get(
         "/api/v1/agent/fs/download",
@@ -1348,7 +1366,7 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
     assert html_download_resp.status_code == 200
     assert html_download_resp.headers["content-type"].startswith("text/html")
     content_disposition = html_download_resp.headers["content-disposition"]
-    assert content_disposition.startswith("attachment")
+    assert content_disposition.startswith("inline")
     assert 'filename="report _qc__ v1.html"' in content_disposition
     assert "filename*=UTF-8''report%20%22qc%22%3B%20v1.html" in content_disposition
 

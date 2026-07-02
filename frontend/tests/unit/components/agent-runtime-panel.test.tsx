@@ -92,6 +92,14 @@ describe("ArtifactPreviewDrawer", () => {
     expect(screen.getByRole("status", { name: "artifacts.loading" })).toBeInTheDocument()
   })
 
+  it("announces artifact loading errors", () => {
+    render(<ArtifactPreviewDrawer artifacts={[]} status="error" error="Network down" />)
+
+    expect(screen.getByRole("alert", { name: "artifacts.loadFailed" })).toHaveTextContent(
+      "Network down",
+    )
+  })
+
   it("keeps routine command artifacts out of the preview tab", () => {
     render(
       <ArtifactPreviewDrawer
@@ -127,6 +135,29 @@ describe("ArtifactPreviewDrawer", () => {
     expect(screen.queryByRole("button", { name: /ls output/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Run record/ })).not.toBeInTheDocument()
     expect(screen.queryByText("artifacts.toolLogs")).not.toBeInTheDocument()
+  })
+
+  it("keeps selected artifact previews on a full-height layout chain", () => {
+    render(
+      <ArtifactPreviewDrawer
+        artifacts={[
+          artifact({
+            id: "file-1",
+            type: "file",
+            title: "report.md",
+            summary: null,
+            file_path: "/workspace/report.md",
+            payload: { content: "# QC report" },
+          }),
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /report.md/ }))
+
+    expect(screen.getByRole("heading", { name: "QC report" })).toBeInTheDocument()
+    expect(screen.getByTestId("artifact-preview-drawer")).toHaveClass("h-full")
+    expect(screen.getByTestId("universal-file-renderer")).toHaveClass("h-full")
   })
 })
 
@@ -181,29 +212,30 @@ describe("ArtifactViewer", () => {
   })
 
   it("renders pdf artifacts with an embedded viewer when a URL is available", () => {
+    const pdfUrl = "/api/v1/agent/fs/download?path=%2Fworkspace%2Fsummary.pdf&inline=true"
     render(
       <ArtifactViewer
         artifact={artifact({
           id: "pdf-1",
           type: "pdf",
           title: "summary.pdf",
-          payload: { url: "/api/v1/agent/artifacts/pdf-1/raw" },
+          payload: { url: pdfUrl },
         })}
       />,
     )
 
     expect(screen.getByTitle("summary.pdf")).toHaveAttribute(
       "src",
-      "/api/v1/agent/artifacts/pdf-1/raw",
+      pdfUrl,
     )
     expect(screen.queryByRole("button", { name: "artifacts.copy" })).not.toBeInTheDocument()
     expect(screen.getByRole("link", { name: "artifacts.open" })).toHaveAttribute(
       "href",
-      "/api/v1/agent/artifacts/pdf-1/raw",
+      pdfUrl,
     )
     expect(screen.getByRole("link", { name: "artifacts.download" })).toHaveAttribute(
       "href",
-      "/api/v1/agent/artifacts/pdf-1/raw",
+      pdfUrl,
     )
   })
 
@@ -227,7 +259,7 @@ describe("ArtifactViewer", () => {
     expect(screen.getByText("renderer.textLoading")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "artifacts.open" })).toHaveAttribute(
       "href",
-      expect.stringContaining("/agent/fs/download"),
+      expect.stringContaining("inline=true"),
     )
     expect(screen.getByRole("link", { name: "artifacts.download" })).toHaveAttribute(
       "href",
@@ -252,17 +284,35 @@ describe("ArtifactViewer", () => {
     expect(screen.queryByRole("link", { name: "artifacts.open" })).not.toBeInTheDocument()
     expect(screen.getByText("renderer.noRenderableSource")).toBeInTheDocument()
   })
+
+  it("rejects non-download API artifact resource URLs", () => {
+    render(
+      <ArtifactViewer
+        artifact={artifact({
+          id: "api-pdf",
+          type: "pdf",
+          title: "summary.pdf",
+          payload: { url: "/api/v1/users/me" },
+        })}
+      />,
+    )
+
+    expect(screen.queryByTitle("summary.pdf")).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "artifacts.open" })).not.toBeInTheDocument()
+    expect(screen.getByText("renderer.noRenderableSource")).toBeInTheDocument()
+  })
 })
 
 describe("AgentTabbedPanel", () => {
   it("uses tab semantics for the right-side artifact workspace", () => {
+    const onActiveTabChange = vi.fn()
     render(
       <AgentTabbedPanel
         projectId="project-1"
         sessionId={null}
         events={[]}
         activeTab="preview"
-        onActiveTabChange={vi.fn()}
+        onActiveTabChange={onActiveTabChange}
         browserInput=""
         browserSrc=""
         onBrowserInputChange={vi.fn()}
@@ -280,6 +330,10 @@ describe("AgentTabbedPanel", () => {
       "aria-selected",
       "false",
     )
+    fireEvent.keyDown(screen.getByRole("tab", { name: "tabs.artifacts" }), {
+      key: "ArrowRight",
+    })
+    expect(onActiveTabChange).toHaveBeenCalledWith("files")
   })
 
   it("labels the artifact panel as loading instead of reporting zero artifacts", () => {

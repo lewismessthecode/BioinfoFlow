@@ -35,7 +35,10 @@ export function ArtifactPreviewDrawer({
 
   if (selected) {
     return (
-      <div className="grid gap-3" data-testid="artifact-preview-drawer">
+      <div
+        className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3"
+        data-testid="artifact-preview-drawer"
+      >
         <button
           type="button"
           className="flex w-fit items-center gap-1.5 rounded-md px-1 text-sm font-medium text-foreground transition-colors hover:bg-muted/60"
@@ -75,6 +78,7 @@ export function ArtifactPreviewDrawer({
         icon={<AlertCircle className="h-8 w-8" />}
         title={t("artifacts.loadFailed")}
         description={error || t("artifacts.loadFailedDescription")}
+        kind="error"
         action={onRetry ? (
           <Button type="button" size="sm" variant="outline" className="h-8 rounded-md" onClick={onRetry}>
             <RotateCw className="h-3.5 w-3.5" />
@@ -100,7 +104,10 @@ export function ArtifactPreviewDrawer({
   }
 
   return (
-    <div className="grid gap-2" data-testid="artifact-preview-drawer">
+    <div
+      className="grid h-full min-h-0 gap-2 overflow-y-auto pr-1"
+      data-testid="artifact-preview-drawer"
+    >
       {previewArtifacts.map((artifact) => (
         <button
           key={artifact.id}
@@ -127,17 +134,21 @@ function ArtifactEmptyState({
   icon,
   title,
   description,
+  kind = "empty",
   action,
 }: {
   icon: ReactNode
   title: string
   description: string
+  kind?: "empty" | "error"
   action?: ReactNode
 }) {
   return (
     <div
       className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-border/80 bg-muted/20 p-6 text-center"
       data-testid="artifact-preview-drawer"
+      role={kind === "error" ? "alert" : undefined}
+      aria-label={kind === "error" ? title : undefined}
     >
       <div className="max-w-sm">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground">
