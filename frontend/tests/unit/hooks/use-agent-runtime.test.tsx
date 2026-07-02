@@ -148,6 +148,34 @@ describe("useAgentRuntime", () => {
     )
   })
 
+  it("refreshes state when terminal stream events can carry persisted token usage", async () => {
+    renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledTimes(1))
+    const callsBeforeEvent = mocks.getAgentRuntimeState.mock.calls.length
+    const subscription = mocks.subscribeAgentRuntimeEvents.mock.calls[0][0]
+
+    act(() => {
+      subscription.onEvent({
+        ...event,
+        id: "event-completed",
+        seq: 2,
+        type: "turn.completed",
+      })
+    })
+
+    await waitFor(() =>
+      expect(mocks.getAgentRuntimeState.mock.calls.length).toBeGreaterThan(
+        callsBeforeEvent,
+      ),
+    )
+  })
+
   it("keeps a controlled empty session as a draft conversation", async () => {
     const onActiveSessionIdChange = vi.fn()
 

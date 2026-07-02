@@ -19,6 +19,19 @@ export type AgentModelSelection = {
   profile_id?: string | null
 }
 
+export type AgentTokenUsageSummary = {
+  has_token_usage: boolean
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cached_input_tokens?: number | null
+  reasoning_tokens?: number | null
+  context_window?: number | null
+  max_output_tokens?: number | null
+  turns_with_usage: number
+  raw_totals: Record<string, number>
+}
+
 export type AgentRuntimeSession = {
   id: string
   project_id?: string | null
@@ -36,6 +49,7 @@ export type AgentRuntimeSession = {
   compression_state?: Record<string, unknown> | null
   lineage?: Record<string, unknown> | null
   model_selection?: AgentModelSelection | null
+  token_usage_summary?: AgentTokenUsageSummary | null
   status: AgentSessionStatus
   metadata?: Record<string, unknown> | null
   created_at: string

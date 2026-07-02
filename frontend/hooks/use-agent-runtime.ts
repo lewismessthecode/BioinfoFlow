@@ -206,6 +206,9 @@ export function useAgentRuntime(
         setStreamSignal({ sessionId: activeSessionId, status: "connected" })
         streamCursorRef.current = Math.max(streamCursorRef.current, event.seq)
         dispatch({ type: "event.append", event })
+        if (eventTriggersStateRefresh(event.type)) {
+          void refreshState(activeSessionId)
+        }
       },
     })
   }, [activeSessionId, isLiveRuntime, refreshState, streamCanStart])
@@ -445,6 +448,17 @@ function readDraftPermissionMode(): AgentPermissionMode {
 function writeDraftPermissionMode(mode: AgentPermissionMode) {
   if (typeof window === "undefined") return
   window.localStorage.setItem(DRAFT_PERMISSION_MODE_STORAGE_KEY, mode)
+}
+
+function eventTriggersStateRefresh(type: string) {
+  return (
+    type === "turn.completed" ||
+    type === "turn.failed" ||
+    type === "turn.cancelled" ||
+    type === "turn.interrupted" ||
+    type === "turn.no_progress" ||
+    type === "action.waiting_decision"
+  )
 }
 
 function isPermissionMode(value: unknown): value is AgentPermissionMode {

@@ -2494,6 +2494,21 @@
       "copy": "复制回复",
       "retry": "重新生成"
     },
+    "tokenUsage": {
+      "label": "Token",
+      "display": "已用 {value}",
+      "compactDisplay": "{value}",
+      "aria": "当前会话已用 {total} token。输入 {input}，输出 {output}。",
+      "title": "上下文窗口",
+      "used": "已用",
+      "remaining": "剩余",
+      "input": "输入",
+      "output": "输出",
+      "cached": "缓存",
+      "reasoning": "推理",
+      "window": "窗口",
+      "maxOutput": "最大输出"
+    },
     "activity": {
       "groups": {
         "search": "已搜索网页",

@@ -25,12 +25,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import type { ModelSelection, ProviderModels } from "@/hooks/use-llm-settings"
 import type {
   AgentMode,
   AgentPermissionMode,
   AgentRuntimeFileRefPart,
+  AgentTokenUsageSummary,
 } from "@/lib/agent-runtime"
+import { tokenUsageViewFromSummary } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 import { ContextAttachments } from "./context-attachments"
 import { ConnectedNodeSelector } from "./connected-node-selector"
@@ -52,6 +59,7 @@ type AgentComposerProps = {
   onSelectModel: (selection: ModelSelection | null) => void
   contextAttachments?: AgentRuntimeFileRefPart[]
   onRemoveContextAttachment?: (path: string) => void
+  tokenUsageSummary?: AgentTokenUsageSummary | null
   selectedRemoteConnectionId?: string
   onRemoteConnectionChange?: (connectionId: string) => void
   compactControls?: boolean
@@ -94,6 +102,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       onSelectModel,
       contextAttachments = [],
       onRemoveContextAttachment,
+      tokenUsageSummary,
       selectedRemoteConnectionId,
       onRemoteConnectionChange,
       compactControls = false,
@@ -204,6 +213,10 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               compact={compactControls}
               selectedConnectionId={selectedRemoteConnectionId}
               onSelectedConnectionChange={onRemoteConnectionChange}
+            />
+            <AgentTokenUsageBadge
+              summary={tokenUsageSummary}
+              compact={compactControls}
             />
             {onPermissionModeChange ? (
               <DropdownMenu>
@@ -319,3 +332,127 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     )
   },
 )
+
+function AgentTokenUsageBadge({
+  summary,
+  compact,
+}: {
+  summary?: AgentTokenUsageSummary | null
+  compact?: boolean
+}) {
+  const t = useTranslations("agentRuntime")
+  const view = tokenUsageViewFromSummary(summary)
+  if (!view) return null
+
+  const display = compact
+    ? t("tokenUsage.compactDisplay", { value: view.totalLabel })
+    : t("tokenUsage.display", { value: view.totalLabel })
+  const ariaLabel = t("tokenUsage.aria", {
+    total: view.totalLabel,
+    input: view.inputLabel,
+    output: view.outputLabel,
+  })
+  const toneClass =
+    view.status === "critical"
+      ? "border-[#FDEBEC] bg-[#FDEBEC]/70 text-[#9F2F2D]"
+      : view.status === "warning"
+        ? "border-[#FBF3DB] bg-[#FBF3DB]/70 text-[#956400]"
+        : "border-border/60 bg-muted/35 text-muted-foreground"
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={ariaLabel}
+          className={cn(
+            "hidden h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium tabular-nums transition-colors hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 sm:inline-flex",
+            compact ? "max-w-[5.75rem]" : "max-w-[8rem]",
+            toneClass,
+          )}
+        >
+          <span className="min-w-0 truncate">{display}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        side="top"
+        sideOffset={10}
+        className="w-64 rounded-xl border-border/70 bg-popover p-3 shadow-[0_12px_32px_rgba(0,0,0,0.04)]"
+      >
+        <div className="grid gap-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="text-xs font-medium text-muted-foreground">
+              {t("tokenUsage.title")}
+            </div>
+            <div className="font-mono text-sm font-semibold tabular-nums text-foreground">
+              {view.percentUsed == null ? view.totalLabel : `${view.percentUsed}%`}
+            </div>
+          </div>
+          {view.percentUsed == null ? null : (
+            <div className="grid gap-1.5">
+              <div className="h-1.5 overflow-hidden rounded-sm bg-muted">
+                <div
+                  className={cn(
+                    "h-full rounded-sm transition-[width] duration-200",
+                    view.status === "critical"
+                      ? "bg-[#9F2F2D]"
+                      : view.status === "warning"
+                        ? "bg-[#956400]"
+                        : "bg-foreground/55",
+                  )}
+                  style={{ width: `${view.percentUsed}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[11px] text-muted-foreground">
+                <span>{t("tokenUsage.used")}</span>
+                <span>
+                  {view.percentRemaining}% {t("tokenUsage.remaining")}
+                </span>
+              </div>
+            </div>
+          )}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <TokenUsageStat label={t("tokenUsage.input")} value={view.inputLabel} />
+            <TokenUsageStat label={t("tokenUsage.output")} value={view.outputLabel} />
+            {view.contextWindowLabel ? (
+              <TokenUsageStat
+                label={t("tokenUsage.window")}
+                value={view.contextWindowLabel}
+              />
+            ) : null}
+            {view.maxOutputLabel ? (
+              <TokenUsageStat
+                label={t("tokenUsage.maxOutput")}
+                value={view.maxOutputLabel}
+              />
+            ) : null}
+            {view.cachedInputLabel ? (
+              <TokenUsageStat
+                label={t("tokenUsage.cached")}
+                value={view.cachedInputLabel}
+              />
+            ) : null}
+            {view.reasoningLabel ? (
+              <TokenUsageStat
+                label={t("tokenUsage.reasoning")}
+                value={view.reasoningLabel}
+              />
+            ) : null}
+          </dl>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function TokenUsageStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-0.5">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-mono text-sm font-medium tabular-nums text-foreground">
+        {value}
+      </dd>
+    </div>
+  )
+}

@@ -64,6 +64,19 @@ vi.mock("next-intl", () => ({
       "status.unknown": "Not tested",
       selectedLocalAria: "Current execution target: local",
       selectedRemoteAria: `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
+      "tokenUsage.label": "Tokens",
+      "tokenUsage.display": `${values?.value ?? ""} tokens`,
+      "tokenUsage.compactDisplay": `${values?.value ?? ""}`,
+      "tokenUsage.aria": `${values?.total ?? ""} tokens used in this session. ${values?.input ?? ""} input, ${values?.output ?? ""} output.`,
+      "tokenUsage.title": "Context window",
+      "tokenUsage.used": "Used",
+      "tokenUsage.remaining": "remaining",
+      "tokenUsage.input": "Input",
+      "tokenUsage.output": "Output",
+      "tokenUsage.cached": "Cached",
+      "tokenUsage.reasoning": "Reasoning",
+      "tokenUsage.window": "Window",
+      "tokenUsage.maxOutput": "Max output",
     }
     return labels[key] ?? key
   },
@@ -272,6 +285,76 @@ describe("AgentComposer", () => {
     const modeGroup = screen.getByRole("group", { name: "Agent mode" })
     expect(modeGroup).toHaveClass("hidden")
     expect(modeGroup).not.toHaveClass("sm:flex")
+  })
+
+  it("shows cumulative token usage with accessible details", async () => {
+    render(
+      <AgentComposer
+        value="Run QC"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        tokenUsageSummary={{
+          has_token_usage: true,
+          input_tokens: 97_000,
+          output_tokens: 3_000,
+          total_tokens: 100_000,
+          cached_input_tokens: 12_000,
+          reasoning_tokens: 600,
+          context_window: 258_000,
+          max_output_tokens: 8_192,
+          turns_with_usage: 2,
+          raw_totals: {},
+        }}
+      />,
+    )
+
+    const trigger = screen.getByRole("button", {
+      name: "100K tokens used in this session. 97K input, 3K output.",
+    })
+    expect(trigger).toHaveTextContent("100K tokens")
+
+    fireEvent.click(trigger)
+
+    expect(await screen.findByText("Context window")).toBeInTheDocument()
+    expect(screen.getByText("39%")).toBeInTheDocument()
+    expect(screen.getByText("61% remaining")).toBeInTheDocument()
+    expect(screen.getByText("258K")).toBeInTheDocument()
+  })
+
+  it("uses the compact token label when composer controls are compressed", () => {
+    render(
+      <AgentComposer
+        value="Run QC"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        compactControls
+        tokenUsageSummary={{
+          has_token_usage: true,
+          input_tokens: 10_000,
+          output_tokens: 2_400,
+          total_tokens: 12_400,
+          context_window: null,
+          max_output_tokens: null,
+          turns_with_usage: 1,
+          raw_totals: {},
+        }}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: /12.4K tokens used/ })).toHaveTextContent(
+      "12.4K",
+    )
+    expect(screen.queryByText("12.4K tokens")).not.toBeInTheDocument()
   })
 
   it("surfaces selected remote connection changes", async () => {
