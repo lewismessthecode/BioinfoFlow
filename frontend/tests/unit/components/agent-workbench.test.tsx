@@ -338,11 +338,11 @@ describe("AgentWorkbench", () => {
 
     const drawer = screen.getByTestId("artifact-panel")
     expect(drawer).toBeInTheDocument()
-    expect(within(drawer).getByRole("button", { name: "Artifacts" })).toHaveAttribute(
+    expect(within(drawer).getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
       "data-active",
       "true",
     )
-    expect(within(drawer).queryByRole("button", { name: "Tools" })).not.toBeInTheDocument()
+    expect(within(drawer).queryByRole("tab", { name: "Tools" })).not.toBeInTheDocument()
   })
 
   it("does not reopen the right drawer when starting a new conversation", async () => {
@@ -374,7 +374,7 @@ describe("AgentWorkbench", () => {
       await Promise.resolve()
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
+    fireEvent.click(screen.getByRole("tab", { name: "Browser" }))
     const input = screen.getByPlaceholderText("browser.urlPlaceholder")
     fireEvent.change(input, { target: { value: "/runs" } })
     fireEvent.click(screen.getByRole("button", { name: "browser.go" }))
@@ -398,11 +398,11 @@ describe("AgentWorkbench", () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByRole("button", { name: "Artifacts" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
       "data-active",
       "true",
     )
-    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
+    fireEvent.click(screen.getByRole("tab", { name: "Browser" }))
     expect(screen.getByPlaceholderText("browser.urlPlaceholder")).toHaveValue("")
     expect(screen.getByText("Enter a URL to preview a page.")).toBeInTheDocument()
     expect(screen.queryByTitle("Browser")).not.toBeInTheDocument()
@@ -420,8 +420,8 @@ describe("AgentWorkbench", () => {
       await Promise.resolve()
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
-    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
+    fireEvent.click(screen.getByRole("tab", { name: "Browser" }))
+    expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute(
       "data-active",
       "true",
     )
@@ -442,7 +442,7 @@ describe("AgentWorkbench", () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute(
       "data-active",
       "true",
     )
@@ -461,7 +461,7 @@ describe("AgentWorkbench", () => {
       await Promise.resolve()
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Browser" }))
+    fireEvent.click(screen.getByRole("tab", { name: "Browser" }))
     const input = screen.getByPlaceholderText("browser.urlPlaceholder")
     fireEvent.change(input, { target: { value: "/runs" } })
     fireEvent.click(screen.getByRole("button", { name: "browser.go" }))
@@ -617,7 +617,7 @@ describe("AgentWorkbench", () => {
     expect(mobilePanel).toBeInTheDocument()
     expect(mobilePanel).toHaveClass("flex")
     expect(mobilePanel).not.toHaveClass("hidden")
-    expect(screen.getByRole("button", { name: "Artifacts" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
       "data-active",
       "true",
     )

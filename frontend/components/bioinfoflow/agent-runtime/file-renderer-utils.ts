@@ -18,9 +18,10 @@ export type UniversalFileLike = {
 
 export type SpreadsheetRows = string[][]
 
-export const PREVIEW_ROW_LIMIT = 200
-export const PREVIEW_COLUMN_LIMIT = 80
-export const WORKBOOK_SIZE_LIMIT_BYTES = 25 * 1024 * 1024
+const PREVIEW_ROW_LIMIT = 200
+const PREVIEW_COLUMN_LIMIT = 80
+export const WORKBOOK_SIZE_LIMIT_BYTES = 10 * 1024 * 1024
+export const TEXT_PREVIEW_SIZE_LIMIT_BYTES = 2 * 1024 * 1024
 
 const SPREADSHEET_EXTENSIONS = [
   ".csv",

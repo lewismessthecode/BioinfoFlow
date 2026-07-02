@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  TEXT_PREVIEW_SIZE_LIMIT_BYTES,
   columnLabel,
   filePreviewKind,
   parseDelimitedRows,
@@ -24,6 +25,10 @@ vi.mock("next-intl", () => ({
       "renderer.workbookEmpty": "Workbook has no visible rows.",
       "renderer.workbookEmptyDescription": "Open in a spreadsheet app.",
       "renderer.workbookTooLarge": "Workbook too large.",
+      "renderer.textLoading": "Loading text preview",
+      "renderer.textLoadingDescription": "Reading file content.",
+      "renderer.textFetchFailed": "Could not fetch text preview.",
+      "renderer.textTooLarge": "Text preview too large.",
       "renderer.kinds.markdown": "Markdown",
       "renderer.kinds.html": "HTML",
       "renderer.kinds.pdf": "PDF",
@@ -89,6 +94,71 @@ describe("UniversalFileRenderer", () => {
     expect(screen.getByRole("button", { name: "Sheet" })).toHaveAttribute("type", "button")
   })
 
+  it("fetches markdown content from an inline preview URL", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("# Loaded report\n\nQC passed", { status: 200 }),
+    )
+
+    render(
+      <UniversalFileRenderer
+        file={{ path: "report.md", inlineUrl: "/api/v1/agent/fs/download?inline=true" }}
+      />,
+    )
+
+    expect(screen.getByText("Loading text preview")).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "Loaded report" })).toBeInTheDocument()
+    expect(screen.getByText("QC passed")).toBeInTheDocument()
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/v1/agent/fs/download?inline=true",
+      expect.objectContaining({ credentials: "include" }),
+    )
+  })
+
+  it("fetches delimited spreadsheet content from an inline preview URL", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("sample,reads\nA,42", { status: 200 }),
+    )
+
+    render(
+      <UniversalFileRenderer
+        file={{ path: "metrics.csv", inlineUrl: "/api/v1/agent/fs/download?inline=true" }}
+      />,
+    )
+
+    expect(screen.getByText("Loading text preview")).toBeInTheDocument()
+    expect(await screen.findByRole("table")).toHaveTextContent("sample")
+    expect(screen.getByRole("table")).toHaveTextContent("42")
+  })
+
+  it("stops text previews when the response advertises too many bytes", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("{}", {
+        status: 200,
+        headers: { "content-length": String(TEXT_PREVIEW_SIZE_LIMIT_BYTES + 1) },
+      }),
+    )
+
+    render(
+      <UniversalFileRenderer
+        file={{ path: "summary.json", inlineUrl: "/api/v1/agent/fs/download?inline=true" }}
+      />,
+    )
+
+    expect(await screen.findByText("Text preview too large.")).toBeInTheDocument()
+  })
+
+  it("shows an accessible loading state while async previews are pending", () => {
+    vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}) as Promise<Response>)
+
+    render(
+      <UniversalFileRenderer
+        file={{ path: "summary.txt", inlineUrl: "/api/v1/agent/fs/download?inline=true" }}
+      />,
+    )
+
+    expect(screen.getByRole("status", { name: "Loading text preview" })).toBeInTheDocument()
+  })
+
   it("renders images and pretty-prints JSON", () => {
     const { rerender } = render(
       <UniversalFileRenderer
@@ -117,7 +187,7 @@ describe("UniversalFileRenderer", () => {
   })
 
   it("lazy-loads and renders XLSX workbooks", async () => {
-    const XLSX = await import("xlsx")
+    const XLSX = await import("@e965/xlsx")
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(
       workbook,
@@ -130,6 +200,7 @@ describe("UniversalFileRenderer", () => {
     const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       arrayBuffer: async () => buffer,
     } as Response)
 
@@ -152,7 +223,25 @@ describe("UniversalFileRenderer", () => {
     expect(screen.getByRole("table")).toHaveTextContent("42")
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "/agent/fs/download?metrics&inline=true",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ credentials: "include", signal: expect.any(AbortSignal) }),
     )
+  })
+
+  it("does not fetch workbooks that exceed the preview size limit", () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    render(
+      <UniversalFileRenderer
+        file={{
+          path: "metrics.xlsx",
+          size: 11 * 1024 * 1024,
+          binary: true,
+          inlineUrl: "/agent/fs/download?metrics&inline=true",
+        }}
+      />,
+    )
+
+    expect(screen.getByText("Workbook too large.")).toBeInTheDocument()
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
