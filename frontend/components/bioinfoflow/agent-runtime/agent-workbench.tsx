@@ -345,8 +345,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     useEffect(() => {
       if (!queuedSubmission || hasActiveTurn) return
       const next = queuedSubmission
-      setQueuedSubmission(null)
-      sendTurn(next.text, next.inputParts, next.modelSelection, next.optimisticTurn)
+      const timer = window.setTimeout(() => {
+        setQueuedSubmission((current) => (current === next ? null : current))
+        sendTurn(next.text, next.inputParts, next.modelSelection, next.optimisticTurn)
+      }, 0)
+      return () => window.clearTimeout(timer)
     }, [hasActiveTurn, queuedSubmission, sendTurn])
 
     const submit = () => {
