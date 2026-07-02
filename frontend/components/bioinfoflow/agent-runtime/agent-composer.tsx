@@ -14,7 +14,7 @@ import {
   Stethoscope,
   Unlock,
 } from "lucide-react"
-import { useTranslations } from "next-intl"
+import { useLocale, useTranslations } from "next-intl"
 import { toast } from "sonner"
 
 import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
@@ -341,7 +341,8 @@ function AgentTokenUsageBadge({
   compact?: boolean
 }) {
   const t = useTranslations("agentRuntime")
-  const view = tokenUsageViewFromSummary(summary)
+  const locale = useLocale()
+  const view = tokenUsageViewFromSummary(summary, locale)
   if (!view) return null
 
   const display = compact

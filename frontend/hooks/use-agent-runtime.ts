@@ -69,6 +69,7 @@ export function useAgentRuntime(
     readDraftPermissionMode,
   )
   const streamCursorRef = useRef(0)
+  const stateRefreshSequenceRef = useRef(0)
   const activeSessionId = isControlled
     ? options.activeSessionId || null
     : uncontrolledSessionId
@@ -152,10 +153,13 @@ export function useAgentRuntime(
   }, [refreshSessions])
 
   const refreshState = useCallback(async (sessionId: string) => {
+    const sequence = stateRefreshSequenceRef.current + 1
+    stateRefreshSequenceRef.current = sequence
     dispatch({ type: "loading" })
     try {
       const payload = await getAgentRuntimeState(sessionId)
       if (activeSessionIdRef.current !== sessionId) return
+      if (stateRefreshSequenceRef.current !== sequence) return
       setEventWindow({
         sessionId,
         limited: false,

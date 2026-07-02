@@ -176,6 +176,95 @@ describe("useAgentRuntime", () => {
     )
   })
 
+  it("ignores older state refreshes that resolve after a newer token usage refresh", async () => {
+    let resolveInitialState: (payload: {
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }) => void
+    let resolveReadyRefresh: (payload: {
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }) => void
+    let resolveTerminalRefresh: (payload: {
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }) => void
+    mocks.getAgentRuntimeState
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveInitialState = resolve
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveReadyRefresh = resolve
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveTerminalRefresh = resolve
+        }),
+      )
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      resolveInitialState({ session, turns: [], events: [] })
+    })
+    await waitFor(() => expect(mocks.subscribeAgentRuntimeEvents).toHaveBeenCalledTimes(1))
+    const subscription = mocks.subscribeAgentRuntimeEvents.mock.calls[0][0]
+
+    await act(async () => {
+      subscription.onReady?.()
+    })
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalledTimes(2))
+
+    act(() => {
+      subscription.onEvent({
+        ...event,
+        id: "event-completed",
+        seq: 2,
+        type: "turn.completed",
+      })
+    })
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalledTimes(3))
+
+    await act(async () => {
+      resolveTerminalRefresh({
+        session: {
+          ...session,
+          token_usage_summary: {
+            has_token_usage: true,
+            input_tokens: 90,
+            output_tokens: 10,
+            total_tokens: 100,
+            turns_with_usage: 1,
+            raw_totals: {},
+          },
+        },
+        turns: [],
+        events: [],
+      })
+    })
+    await waitFor(() =>
+      expect(result.current.state.session?.token_usage_summary?.total_tokens).toBe(100),
+    )
+
+    await act(async () => {
+      resolveReadyRefresh({ session, turns: [], events: [] })
+    })
+
+    expect(result.current.state.session?.token_usage_summary?.total_tokens).toBe(100)
+  })
+
   it("keeps a controlled empty session as a draft conversation", async () => {
     const onActiveSessionIdChange = vi.fn()
 
