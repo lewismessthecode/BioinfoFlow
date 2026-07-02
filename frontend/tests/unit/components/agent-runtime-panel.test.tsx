@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
@@ -137,7 +137,7 @@ describe("ArtifactPreviewDrawer", () => {
     expect(screen.queryByText("artifacts.toolLogs")).not.toBeInTheDocument()
   })
 
-  it("keeps selected artifact previews on a full-height layout chain", () => {
+  it("keeps selected artifact previews on a full-height layout chain", async () => {
     render(
       <ArtifactPreviewDrawer
         artifacts={[
@@ -158,6 +158,9 @@ describe("ArtifactPreviewDrawer", () => {
     expect(screen.getByRole("heading", { name: "QC report" })).toBeInTheDocument()
     expect(screen.getByTestId("artifact-preview-drawer")).toHaveClass("h-full")
     expect(screen.getByTestId("universal-file-renderer")).toHaveClass("h-full")
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "artifacts.back" })).toHaveFocus()
+    })
   })
 })
 

@@ -490,6 +490,15 @@ _FS_PREVIEWABLE_BINARY_SUFFIXES = {
     ".tif",
     ".tiff",
 }
+_FS_ACTIVE_PREVIEW_MIME_TYPES = {
+    "application/xhtml+xml",
+    "image/svg+xml",
+    "text/html",
+}
+_FS_INLINE_ACTIVE_CONTENT_CSP = (
+    "sandbox; default-src 'none'; img-src data: blob:; "
+    "style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'"
+)
 
 
 @router.get("/fs/tree")
@@ -600,13 +609,16 @@ async def download_fs_file(
 
     mime_type = _mime_type_for(target)
     disposition = "inline" if inline else "attachment"
+    headers = {
+        "Content-Disposition": _content_disposition(disposition, target.name),
+        "X-Content-Type-Options": "nosniff",
+    }
+    if inline and _is_active_preview_mime_type(mime_type):
+        headers["Content-Security-Policy"] = _FS_INLINE_ACTIVE_CONTENT_CSP
     return StreamingResponse(
         file_iterator(),
         media_type=mime_type,
-        headers={
-            "Content-Disposition": _content_disposition(disposition, target.name),
-            "X-Content-Type-Options": "nosniff",
-        },
+        headers=headers,
     )
 
 
@@ -671,6 +683,10 @@ def _language_for(path: Path) -> str | None:
 def _mime_type_for(path: Path) -> str:
     guessed, _ = mimetypes.guess_type(path.name)
     return guessed or "application/octet-stream"
+
+
+def _is_active_preview_mime_type(mime_type: str) -> bool:
+    return mime_type.lower().split(";", 1)[0] in _FS_ACTIVE_PREVIEW_MIME_TYPES
 
 
 def _is_previewable_binary(path: Path, mime_type: str) -> bool:

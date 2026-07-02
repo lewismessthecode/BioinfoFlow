@@ -262,6 +262,8 @@ describe("UniversalFileRenderer", () => {
       "src",
       "/agent/fs/download?plot",
     )
+    expect(screen.getByRole("img", { name: "UMAP plot" })).toHaveAttribute("width", "1200")
+    expect(screen.getByRole("img", { name: "UMAP plot" })).toHaveAttribute("height", "800")
 
     rerender(
       <UniversalFileRenderer
@@ -303,6 +305,7 @@ describe("UniversalFileRenderer", () => {
 
     expect(screen.getByText("Loading workbook")).toBeInTheDocument()
     expect(await screen.findByRole("button", { name: "QC" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "QC" })).toHaveAttribute("aria-pressed", "true")
     await waitFor(() => {
       expect(screen.getByRole("table")).toHaveTextContent("sample")
     })

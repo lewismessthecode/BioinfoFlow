@@ -1369,6 +1369,17 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
     assert content_disposition.startswith("inline")
     assert 'filename="report _qc__ v1.html"' in content_disposition
     assert "filename*=UTF-8''report%20%22qc%22%3B%20v1.html" in content_disposition
+    assert html_download_resp.headers["content-security-policy"].startswith("sandbox")
+    assert "default-src 'none'" in html_download_resp.headers["content-security-policy"]
+    assert "form-action 'none'" in html_download_resp.headers["content-security-policy"]
+
+    svg_download_resp = await async_client.get(
+        "/api/v1/agent/fs/download",
+        params={"path": str(svg_file), "inline": "true"},
+    )
+    assert svg_download_resp.status_code == 200
+    assert svg_download_resp.headers["content-type"].startswith("image/svg+xml")
+    assert svg_download_resp.headers["content-security-policy"].startswith("sandbox")
 
 
 @pytest.mark.asyncio
