@@ -9,7 +9,7 @@ import app.api.v1.agent as agent_api_module
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
-from app.models.agent_core import AgentEvent
+from app.models.agent_core import AgentEvent, AgentTurn
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.path_layout import project_home
 from app.services.agent_core import AgentCoreService
@@ -217,6 +217,11 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
     turn = await _wait_for_turn(async_client, turn["id"])
     assert turn["status"] == "completed"
     assert turn["final_text"] == "Mocked model reply."
+    assert turn["token_usage"] == {
+        "prompt_tokens": 6,
+        "completion_tokens": 10,
+        "total_tokens": 16,
+    }
     assert turn["model_selection"] == {"model_id": model["id"]}
     assert turn["model_profile_snapshot"]["resolved_model_selection"] == {
         "provider": "openai_compatible",
@@ -329,6 +334,97 @@ async def test_agent_session_state_can_limit_large_event_payload(async_client, d
     cancel = await async_client.post(f"/api/v1/agent/turns/{turn.id}/cancel")
     assert cancel.status_code == 200
     assert cancel.json()["data"]["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_agent_session_state_includes_cumulative_token_usage_summary(
+    async_client,
+    db_session,
+):
+    project_id = await _create_project(async_client)
+    model = await _create_llm_model(async_client)
+    model_row = await db_session.get(LlmModel, model["id"])
+    assert model_row is not None
+    model_row.context_length = 128000
+    model_row.max_output_tokens = 8192
+    await db_session.commit()
+
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "project_id": project_id,
+            "title": "Usage ledger",
+            "model_selection": {"model_id": model["id"]},
+        },
+    )
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+
+    service = AgentCoreService(db_session)
+    first_turn = await service.create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="first request",
+    )
+    second_turn = await service.create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="second request",
+    )
+    empty_turn = await service.create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="provider omitted usage",
+    )
+    first_turn_row = await db_session.get(AgentTurn, str(first_turn.id))
+    second_turn_row = await db_session.get(AgentTurn, str(second_turn.id))
+    empty_turn_row = await db_session.get(AgentTurn, str(empty_turn.id))
+    assert first_turn_row is not None
+    assert second_turn_row is not None
+    assert empty_turn_row is not None
+    first_turn_row.token_usage = {
+        "prompt_tokens": 1200,
+        "completion_tokens": 300,
+        "total_tokens": 1500,
+        "prompt_tokens_details": {"cached_tokens": 125},
+    }
+    second_turn_row.token_usage = {
+        "input_tokens": 800,
+        "output_tokens": 200,
+        "completion_tokens_details": {"reasoning_tokens": 45},
+    }
+    second_turn_row.model_profile_snapshot = {
+        **(second_turn_row.model_profile_snapshot or {}),
+        "resolved_model_id": model["id"],
+    }
+    empty_turn_row.token_usage = None
+    await db_session.commit()
+
+    state = await async_client.get(f"/api/v1/agent/sessions/{session['id']}/state")
+
+    assert state.status_code == 200
+    summary = state.json()["data"]["session"]["token_usage_summary"]
+    assert summary == {
+        "has_token_usage": True,
+        "input_tokens": 2000,
+        "output_tokens": 500,
+        "total_tokens": 2500,
+        "cached_input_tokens": 125,
+        "reasoning_tokens": 45,
+        "context_window": 128000,
+        "max_output_tokens": 8192,
+        "turns_with_usage": 2,
+        "raw_totals": {
+            "completion_tokens": 300,
+            "input_tokens": 800,
+            "output_tokens": 200,
+            "prompt_tokens": 1200,
+            "total_tokens": 1500,
+        },
+    }
 
 
 @pytest.mark.asyncio

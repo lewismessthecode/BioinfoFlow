@@ -53,6 +53,19 @@ class AgentModelSelection(BaseModel):
     profile_id: UUID | None = None
 
 
+class AgentTokenUsageSummary(BaseModel):
+    has_token_usage: bool
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cached_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    context_window: int | None = None
+    max_output_tokens: int | None = None
+    turns_with_usage: int = 0
+    raw_totals: dict[str, int] = Field(default_factory=dict)
+
+
 class AgentSessionCreate(BaseModel):
     project_id: UUID | None = None
     title: str | None = None
@@ -96,6 +109,7 @@ class AgentSessionRead(BaseModel):
     compression_state: dict | None = None
     lineage: dict | None = None
     model_selection: AgentModelSelection | None = None
+    token_usage_summary: AgentTokenUsageSummary | None = None
     status: SessionStatus
     metadata: dict | None = Field(default=None, validation_alias="session_metadata")
     created_at: datetime

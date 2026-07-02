@@ -31,9 +31,11 @@ from app.schemas.agent_core import (
     AgentSessionCreate,
     AgentSessionRead,
     AgentSessionUpdate,
+    AgentTokenUsageSummary,
     AgentTurnCreate,
     AgentTurnRead,
 )
+from app.repositories.llm_repo import LlmModelRepository
 from app.services.agent_core import AgentCoreService, AgentMemoryService
 from app.services.agent_core.metrics import agent_metrics
 from app.utils.logging import get_logger
@@ -337,9 +339,18 @@ async def get_session_state(
         user_id=user.id,
         limit=event_limit,
     )
+    token_usage_summary = await _token_usage_summary_for_turns(
+        turns,
+        db=db,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    session_read = _session_read(session).model_copy(
+        update={"token_usage_summary": token_usage_summary}
+    )
     return success_response(
         {
-            "session": _dump(_session_read(session)),
+            "session": _dump(session_read),
             "turns": [_dump(_turn_read(turn)) for turn in turns],
             "events": [_dump(_event_read(event)) for event in events],
         },
@@ -350,6 +361,107 @@ async def get_session_state(
 @router.get("/metrics")
 async def get_agent_metrics(request: Request):
     return success_response(agent_metrics.snapshot(), request=request)
+
+
+async def _token_usage_summary_for_turns(
+    turns: list,
+    *,
+    db: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+) -> AgentTokenUsageSummary:
+    input_tokens = 0
+    output_tokens = 0
+    total_tokens = 0
+    cached_input_tokens = 0
+    reasoning_tokens = 0
+    raw_totals: dict[str, int] = {}
+    turns_with_usage = 0
+
+    for turn in turns:
+        usage = getattr(turn, "token_usage", None)
+        if not isinstance(usage, dict) or not usage:
+            continue
+        turns_with_usage += 1
+        for key, value in usage.items():
+            numeric_value = _int_token_value(value)
+            if numeric_value is not None:
+                raw_totals[key] = raw_totals.get(key, 0) + numeric_value
+
+        input_count = _first_int_token_value(usage, "prompt_tokens", "input_tokens")
+        output_count = _first_int_token_value(
+            usage, "completion_tokens", "output_tokens"
+        )
+        total_count = _first_int_token_value(usage, "total_tokens")
+        if input_count is not None:
+            input_tokens += input_count
+        if output_count is not None:
+            output_tokens += output_count
+        if total_count is not None:
+            total_tokens += total_count
+        elif input_count is not None or output_count is not None:
+            total_tokens += (input_count or 0) + (output_count or 0)
+
+        prompt_details = usage.get("prompt_tokens_details")
+        if isinstance(prompt_details, dict):
+            cached_input_tokens += _first_int_token_value(
+                prompt_details, "cached_tokens"
+            ) or 0
+        completion_details = usage.get("completion_tokens_details")
+        if isinstance(completion_details, dict):
+            reasoning_tokens += _first_int_token_value(
+                completion_details, "reasoning_tokens"
+            ) or 0
+
+    context_window = None
+    max_output_tokens = None
+    model_id = _latest_resolved_model_id(turns)
+    if model_id:
+        model = await LlmModelRepository(db).get_visible(
+            model_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        if model is not None:
+            context_window = model.context_length
+            max_output_tokens = model.max_output_tokens
+
+    return AgentTokenUsageSummary(
+        has_token_usage=turns_with_usage > 0,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        cached_input_tokens=cached_input_tokens or None,
+        reasoning_tokens=reasoning_tokens or None,
+        context_window=context_window,
+        max_output_tokens=max_output_tokens,
+        turns_with_usage=turns_with_usage,
+        raw_totals=raw_totals,
+    )
+
+
+def _latest_resolved_model_id(turns: list) -> str | None:
+    for turn in reversed(turns):
+        snapshot = getattr(turn, "model_profile_snapshot", None)
+        if isinstance(snapshot, dict) and isinstance(snapshot.get("resolved_model_id"), str):
+            return snapshot["resolved_model_id"]
+    return None
+
+
+def _first_int_token_value(data: dict, *keys: str) -> int | None:
+    for key in keys:
+        value = _int_token_value(data.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _int_token_value(value) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    return None
 
 
 _FS_FILE_MAX_BYTES = 256 * 1024
