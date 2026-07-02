@@ -9,6 +9,7 @@ vi.mock("@/lib/api", () => ({
 }))
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "en",
   useTranslations: () => (key: string, values?: Record<string, string>) => {
     const labels: Record<string, string> = {
       composerPlaceholder: "Message Bioinfoflow...",

@@ -9,9 +9,9 @@ import type { AgentTokenUsageSummary } from "@/lib/agent-runtime"
 
 describe("agent token usage helpers", () => {
   it("formats compact token counts", () => {
-    expect(compactTokenCount(950)).toBe("950")
-    expect(compactTokenCount(12_450)).toBe("12.5K")
-    expect(compactTokenCount(2_400_000)).toBe("2.4M")
+    expect(compactTokenCount(950, "en")).toBe("950")
+    expect(compactTokenCount(12_450, "en")).toBe("12.5K")
+    expect(compactTokenCount(2_400_000, "en")).toBe("2.4M")
   })
 
   it("builds a view model from cumulative usage with a context window", () => {
@@ -28,7 +28,7 @@ describe("agent token usage helpers", () => {
       raw_totals: {},
     }
 
-    expect(tokenUsageViewFromSummary(summary)).toEqual({
+    expect(tokenUsageViewFromSummary(summary, "en")).toEqual({
       totalLabel: "100K",
       inputLabel: "97K",
       outputLabel: "3K",

@@ -25,6 +25,7 @@ let workspaceProjectsMock: Array<{
 }> = []
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "en",
   useTranslations: () => (key: string, values?: Record<string, string>) => {
     const labels: Record<string, string> = {
       welcomeTitle: "What should Bioinfoflow help you do today?",
