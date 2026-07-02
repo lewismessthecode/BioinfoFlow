@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { AlertCircle, ChevronLeft, FileSearch, RotateCw } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -26,12 +26,18 @@ export function ArtifactPreviewDrawer({
 }) {
   const t = useTranslations("agentRuntime")
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selectedBackButtonRef = useRef<HTMLButtonElement>(null)
   const previewArtifacts = useMemo(
     () => deliverableArtifacts(artifacts),
     [artifacts],
   )
   const selected =
     previewArtifacts.find((artifact) => artifact.id === selectedId) ?? null
+
+  useEffect(() => {
+    if (!selected) return
+    window.requestAnimationFrame(() => selectedBackButtonRef.current?.focus())
+  }, [selected])
 
   if (selected) {
     return (
@@ -40,6 +46,7 @@ export function ArtifactPreviewDrawer({
         data-testid="artifact-preview-drawer"
       >
         <button
+          ref={selectedBackButtonRef}
           type="button"
           className="flex w-fit items-center gap-1.5 rounded-md px-1 text-sm font-medium text-foreground transition-colors hover:bg-muted/60"
           onClick={() => setSelectedId(null)}
@@ -143,19 +150,22 @@ function ArtifactEmptyState({
   kind?: "empty" | "error"
   action?: ReactNode
 }) {
+  const titleId = useId()
+  const descriptionId = useId()
   return (
     <div
       className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-border/80 bg-muted/20 p-6 text-center"
       data-testid="artifact-preview-drawer"
       role={kind === "error" ? "alert" : undefined}
-      aria-label={kind === "error" ? title : undefined}
+      aria-labelledby={kind === "error" ? titleId : undefined}
+      aria-describedby={kind === "error" ? descriptionId : undefined}
     >
       <div className="max-w-sm">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground">
           {icon}
         </div>
-        <p className="mt-3 text-sm font-medium text-foreground">{title}</p>
-        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{description}</p>
+        <p id={titleId} className="mt-3 text-sm font-medium text-foreground">{title}</p>
+        <p id={descriptionId} className="mt-1.5 text-xs leading-5 text-muted-foreground">{description}</p>
         {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
       </div>
     </div>

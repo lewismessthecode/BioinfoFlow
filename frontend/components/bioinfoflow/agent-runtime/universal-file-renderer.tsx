@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react"
 import {
   AlertCircle,
   FileArchive,
@@ -249,6 +249,8 @@ export function UniversalFileRenderer({
             <img
               src={inlineUrl}
               alt={displayName}
+              width={1200}
+              height={800}
               className="max-h-full max-w-full rounded-lg border border-border/70 bg-background object-contain"
             />
           </div>
@@ -697,6 +699,7 @@ function SpreadsheetWorkbookView({ sheets }: { sheets: WorkbookSheet[] }) {
                 ? "border-foreground/20 bg-background text-foreground"
                 : "border-transparent text-muted-foreground hover:bg-background/80 hover:text-foreground",
             )}
+            aria-pressed={index === safeActiveSheetIndex}
             onClick={() => setActiveSheetIndex(index)}
           >
             {sheet.name}
@@ -770,20 +773,23 @@ function RendererState({
   title: string
   description: string
 }) {
+  const titleId = useId()
+  const descriptionId = useId()
   return (
     <div
       className="flex h-full min-h-[220px] min-w-0 items-center justify-center bg-muted/20 p-6 text-center"
       data-renderer-state={kind}
       role={kind === "loading" ? "status" : kind === "error" ? "alert" : undefined}
       aria-live={kind === "loading" ? "polite" : undefined}
-      aria-label={kind === "loading" || kind === "error" ? title : undefined}
+      aria-labelledby={kind === "loading" || kind === "error" ? titleId : undefined}
+      aria-describedby={kind === "loading" || kind === "error" ? descriptionId : undefined}
     >
       <div className="max-w-sm">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground">
           {icon}
         </div>
-        <p className="mt-3 text-sm font-medium text-foreground">{title}</p>
-        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{description}</p>
+        <p id={titleId} className="mt-3 text-sm font-medium text-foreground">{title}</p>
+        <p id={descriptionId} className="mt-1.5 text-xs leading-5 text-muted-foreground">{description}</p>
       </div>
     </div>
   )
