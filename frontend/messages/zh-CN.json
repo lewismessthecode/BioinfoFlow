@@ -2159,6 +2159,7 @@
     "nav": {
       "account": "账户",
       "appearance": "外观",
+      "agent": "智能助手默认值",
       "providers": "AI 服务商",
       "registries": "镜像仓库",
       "members": "成员管理"
@@ -2188,6 +2189,24 @@
         "disabledLabel": "关闭",
         "preview": "预览",
         "reducedMotion": "已开启减少动态效果，彩纸已暂停。"
+      }
+    },
+    "agent": {
+      "title": "智能助手默认值",
+      "description": "选择 Bioinfoflow 在智能助手仍在处理时如何接收新消息。",
+      "turnPolicy": {
+        "label": "回复进行中收到新消息",
+        "description": "当前轮次尚未结束时，发送新消息会按这个策略处理。",
+        "options": {
+          "interrupt": {
+            "label": "中断当前回复",
+            "description": "先停止正在进行的回复，再把你的新消息作为下一轮发送。"
+          },
+          "queue": {
+            "label": "排队到下一轮",
+            "description": "保留当前回复继续运行，等它结束后再发送你的草稿。"
+          }
+        }
       }
     },
     "title": "AI 服务商",

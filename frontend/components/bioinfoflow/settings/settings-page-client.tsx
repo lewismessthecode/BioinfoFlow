@@ -6,6 +6,7 @@ import {
   Cpu,
   Database,
   Loader2,
+  Bot,
   Monitor,
   Moon,
   Palette,
@@ -44,6 +45,11 @@ import {
   useCelebrationsEnabledPreference,
   useReducedMotionPreference,
 } from "@/lib/celebrations"
+import {
+  readAgentTurnPolicy,
+  writeAgentTurnPolicy,
+  type AgentTurnPolicy,
+} from "@/lib/agent-runtime/turn-policy"
 import type { AuthMode, TeamRole } from "@/lib/auth-config"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -61,7 +67,13 @@ type SettingsPageClientProps = {
   }
 }
 
-type SettingsSection = "account" | "appearance" | "providers" | "registries" | "members"
+type SettingsSection =
+  | "account"
+  | "appearance"
+  | "agent"
+  | "providers"
+  | "registries"
+  | "members"
 
 const NAV_ITEMS: {
   key: SettingsSection
@@ -71,10 +83,13 @@ const NAV_ITEMS: {
 }[] = [
   { key: "account", icon: User },
   { key: "appearance", icon: Palette },
+  { key: "agent", icon: Bot },
   { key: "providers", icon: Cpu },
   { key: "registries", icon: Database, requiresRegistryAdmin: true },
   { key: "members", icon: Users, requiresMembers: true },
 ]
+
+const AGENT_TURN_POLICIES: AgentTurnPolicy[] = ["interrupt", "queue"]
 
 function ThemePreviewCard({
   title,
@@ -370,6 +385,9 @@ export default function SettingsPageClient({
   const [newPassword, setNewPassword] = useState("")
   const [savingPassword, setSavingPassword] = useState(false)
   const [activeSection, setActiveSection] = useState<SettingsSection>("account")
+  const [agentTurnPolicy, setAgentTurnPolicy] = useState<AgentTurnPolicy>(
+    readAgentTurnPolicy,
+  )
   const celebrationsEnabled = useCelebrationsEnabledPreference()
   const reducedMotion = useReducedMotionPreference()
   const canManageRegistries =
@@ -380,7 +398,7 @@ export default function SettingsPageClient({
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("section")
-    if (section === "appearance" || section === "providers") {
+    if (section === "appearance" || section === "agent" || section === "providers") {
       setActiveSection(section)
     } else if (section === "registries" && canManageRegistries) {
       setActiveSection("registries")
@@ -423,6 +441,11 @@ export default function SettingsPageClient({
   }
 
   const modeLabel = t(`account.modes.${viewer.mode}`)
+
+  const handleAgentTurnPolicyChange = (policy: AgentTurnPolicy) => {
+    setAgentTurnPolicy(policy)
+    writeAgentTurnPolicy(policy)
+  }
 
   const visibleNavItems = NAV_ITEMS.filter(
     (item) =>
@@ -738,6 +761,62 @@ export default function SettingsPageClient({
                       />
                     </div>
                   </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeSection === "agent" && (
+            <>
+              <div>
+                <h3 className="text-base font-semibold text-foreground">
+                  {t("agent.title")}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t("agent.description")}
+                </p>
+              </div>
+
+              <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {t("agent.turnPolicy.label")}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {t("agent.turnPolicy.description")}
+                  </p>
+                </div>
+
+                <div
+                  role="radiogroup"
+                  aria-label={t("agent.turnPolicy.label")}
+                  className="grid gap-2 sm:grid-cols-2"
+                >
+                  {AGENT_TURN_POLICIES.map((policy) => {
+                    const selected = agentTurnPolicy === policy
+                    return (
+                      <button
+                        key={policy}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => handleAgentTurnPolicyChange(policy)}
+                        className={cn(
+                          "rounded-xl border px-3.5 py-3 text-left transition-colors",
+                          selected
+                            ? "border-primary/55 bg-primary/10 text-foreground"
+                            : "border-border/60 bg-secondary/25 text-muted-foreground hover:bg-secondary/45 hover:text-foreground",
+                        )}
+                      >
+                        <span className="block text-sm font-semibold">
+                          {t(`agent.turnPolicy.options.${policy}.label`)}
+                        </span>
+                        <span className="mt-1 block text-xs leading-5">
+                          {t(`agent.turnPolicy.options.${policy}.description`)}
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </>
