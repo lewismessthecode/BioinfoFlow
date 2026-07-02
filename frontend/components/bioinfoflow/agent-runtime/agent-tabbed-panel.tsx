@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { FileSearch, FolderTree, Globe, type LucideIcon, X } from "lucide-react"
+import { FileSearch, FolderTree, Globe, RotateCw, type LucideIcon, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -37,8 +37,8 @@ type AgentTabbedPanelProps = {
 }
 
 const TABS: Array<{ key: AgentTabbedPanelTab; labelKey: string; Icon: LucideIcon }> = [
+  { key: "preview", labelKey: "tabs.artifacts", Icon: FileSearch },
   { key: "files", labelKey: "tabs.files", Icon: FolderTree },
-  { key: "preview", labelKey: "tabs.preview", Icon: FileSearch },
   { key: "browser", labelKey: "tabs.browser", Icon: Globe },
 ]
 
@@ -58,32 +58,72 @@ export function AgentTabbedPanel({
   className,
 }: AgentTabbedPanelProps) {
   const t = useTranslations("agentRuntime")
-  const [artifacts, setArtifacts] = useState<AgentRuntimeArtifact[]>([])
+  const [artifactReloadNonce, setArtifactReloadNonce] = useState(0)
+  const [artifactLoadState, setArtifactLoadState] = useState<{
+    requestKey: string
+    status: "ready" | "error"
+    artifacts: AgentRuntimeArtifact[]
+    error: string | null
+  }>({
+    requestKey: "",
+    status: "ready",
+    artifacts: [],
+    error: null,
+  })
+  const artifactLoadFailed = t("artifacts.loadFailed")
 
   const artifactEventCount = useMemo(
     () => events.filter((event) => event.type === "artifact.created").length,
     [events],
   )
+  const artifactRequestKey = sessionId
+    ? `${sessionId}:${artifactEventCount}:${artifactReloadNonce}`
+    : ""
 
   useEffect(() => {
     if (!sessionId) return
     let cancelled = false
     void listAgentRuntimeSessionArtifacts(sessionId)
       .then((next) => {
-        if (!cancelled) setArtifacts(next)
+        if (!cancelled) {
+          setArtifactLoadState({
+            requestKey: artifactRequestKey,
+            status: "ready",
+            artifacts: next,
+            error: null,
+          })
+        }
       })
-      .catch(() => {
-        if (!cancelled) setArtifacts([])
+      .catch((err) => {
+        if (!cancelled) {
+          setArtifactLoadState({
+            requestKey: artifactRequestKey,
+            status: "error",
+            artifacts: [],
+            error: err instanceof Error ? err.message : artifactLoadFailed,
+          })
+        }
       })
     return () => {
       cancelled = true
     }
-  }, [sessionId, artifactEventCount])
+  }, [artifactLoadFailed, artifactRequestKey, sessionId])
 
+  const artifactStateMatchesRequest = artifactLoadState.requestKey === artifactRequestKey
   const visibleArtifacts = useMemo(
-    () => (sessionId ? deliverableArtifacts(artifacts) : []),
-    [artifacts, sessionId],
+    () =>
+      sessionId && artifactStateMatchesRequest && artifactLoadState.status === "ready"
+        ? deliverableArtifacts(artifactLoadState.artifacts)
+        : [],
+    [artifactLoadState.artifacts, artifactLoadState.status, artifactStateMatchesRequest, sessionId],
   )
+  const effectiveArtifactStatus = !sessionId
+    ? "idle"
+    : artifactStateMatchesRequest
+      ? artifactLoadState.status
+      : "loading"
+  const effectiveArtifactError =
+    sessionId && artifactStateMatchesRequest ? artifactLoadState.error : null
   const pendingDecision = useMemo(() => getPendingActions(events)[0] ?? null, [events])
   const pendingDecisionActionId = pendingDecision
     ? String(pendingDecision.payload.action_id || "")
@@ -107,7 +147,21 @@ export function AgentTabbedPanel({
       )}
       data-testid="artifact-panel"
     >
-      <div className="flex h-12 items-center justify-between border-b border-border/60 px-3">
+      <div className="flex h-[52px] min-h-[52px] items-center justify-between border-b border-border/60 px-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-foreground">
+            {activeTab === "preview"
+              ? t("artifacts.title")
+              : activeTab === "files"
+                ? t("files.title")
+                : t("browser.title")}
+          </div>
+          <div className="truncate text-[11px] text-muted-foreground">
+            {activeTab === "preview"
+              ? t("artifacts.count", { count: visibleArtifacts.length })
+              : t("sidecar.title")}
+          </div>
+        </div>
         <div className="flex items-center gap-1">
           {TABS.map(({ key, labelKey, Icon }) => (
             <button
@@ -124,19 +178,29 @@ export function AgentTabbedPanel({
               data-active={activeTab === key}
             >
               <Icon className="h-4 w-4" />
+              </button>
+            ))}
+          {activeTab === "preview" && effectiveArtifactStatus === "error" ? (
+            <button
+              type="button"
+              onClick={() => setArtifactReloadNonce((value) => value + 1)}
+              aria-label={t("artifacts.retry")}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            >
+              <RotateCw className="h-4 w-4" />
             </button>
-          ))}
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={onClose}
+            aria-label={t("sidecar.close")}
+          >
+            <X className="h-4 w-4" />
+          </Button>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={onClose}
-          aria-label={t("sidecar.close")}
-        >
-          <X className="h-4 w-4" />
-        </Button>
       </div>
 
       {pendingDecisionActionId ? (
@@ -160,7 +224,15 @@ export function AgentTabbedPanel({
         {activeTab === "files" ? (
           <WorkspaceExplorerPanel projectId={projectId} onAddContext={onAddContext} />
         ) : null}
-        {activeTab === "preview" ? <ArtifactPreviewDrawer artifacts={visibleArtifacts} /> : null}
+        {activeTab === "preview" ? (
+          <ArtifactPreviewDrawer
+            artifacts={visibleArtifacts}
+            status={effectiveArtifactStatus}
+            error={effectiveArtifactError}
+            hasSession={Boolean(sessionId)}
+            onRetry={() => setArtifactReloadNonce((value) => value + 1)}
+          />
+        ) : null}
         {activeTab === "browser" ? (
           <BrowserTab
             input={browserInput}

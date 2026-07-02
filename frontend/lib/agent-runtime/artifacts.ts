@@ -9,6 +9,7 @@ const NON_REVIEW_ARTIFACT_TYPES = new Set([
 const DELIVERABLE_ARTIFACT_TYPES = new Set([
   "file",
   "html",
+  "image",
   "pdf",
   "report",
   "markdown",

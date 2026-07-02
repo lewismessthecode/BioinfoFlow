@@ -2651,6 +2651,13 @@
       "title": "产物",
       "back": "返回产物列表",
       "empty": "暂无产物。",
+      "emptyNoSession": "开始对话后会收集产物。",
+      "emptyNoSessionDescription": "生成的报告、表格、PDF、HTML 和图片会在这里打开。",
+      "emptyRunningDescription": "Agent 创建的文件会出现在这个面板中。",
+      "count": "{count} 个产物",
+      "loadFailed": "无法加载产物。",
+      "loadFailedDescription": "请刷新面板后重试。",
+      "retry": "重试",
       "copy": "复制",
       "copied": "已复制",
       "download": "下载",
@@ -2672,10 +2679,36 @@
         "unknown": "产物"
       }
     },
+    "renderer": {
+      "previewUnavailable": "暂时无法预览这个文件。",
+      "previewUnsupported": "这个文件类型暂不支持原生预览。",
+      "openDefaultDescription": "可以打开或下载文件，并继续在默认应用中处理。",
+      "noRenderableSource": "文件需要可读取的预览链接或内联内容。",
+      "defaultSheetName": "工作表",
+      "previewLimit": "已显示 {rows} 行 · {columns} 列",
+      "workbookLoading": "正在加载工作簿",
+      "workbookLoadingDescription": "正在读取工作表并准备表格预览。",
+      "workbookFetchFailed": "无法下载这个工作簿。",
+      "workbookFailed": "无法预览工作簿。",
+      "workbookEmpty": "工作簿没有可见行。",
+      "workbookEmptyDescription": "可以在电子表格应用中检查隐藏或空工作表。",
+      "workbookTooLarge": "这个工作簿过大，无法安全预览。",
+      "kinds": {
+        "markdown": "Markdown",
+        "html": "HTML",
+        "pdf": "PDF",
+        "image": "图片",
+        "spreadsheet": "电子表格",
+        "json": "JSON",
+        "text": "文本",
+        "unsupported": "文件"
+      }
+    },
     "tabs": {
       "environment": "环境",
       "tools": "工具",
       "preview": "预览",
+      "artifacts": "产物",
       "progress": "进度",
       "files": "打开文件",
       "browser": "浏览器"

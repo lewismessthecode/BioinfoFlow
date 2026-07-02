@@ -2651,6 +2651,13 @@
       "title": "Artifacts",
       "back": "Back to artifacts",
       "empty": "No artifacts yet.",
+      "emptyNoSession": "Start a conversation to collect artifacts.",
+      "emptyNoSessionDescription": "Generated reports, tables, PDFs, HTML, and images will open here.",
+      "emptyRunningDescription": "Files created by the agent will appear in this panel.",
+      "count": "{count, plural, one {# artifact} other {# artifacts}}",
+      "loadFailed": "Could not load artifacts.",
+      "loadFailedDescription": "Refresh the panel and try again.",
+      "retry": "Retry",
       "copy": "Copy",
       "copied": "Copied",
       "download": "Download",
@@ -2672,10 +2679,36 @@
         "unknown": "Artifact"
       }
     },
+    "renderer": {
+      "previewUnavailable": "Preview is not available for this file.",
+      "previewUnsupported": "Native preview is not available for this file type.",
+      "openDefaultDescription": "Open or download the file to continue in your default application.",
+      "noRenderableSource": "The file needs a readable preview URL or inline content.",
+      "defaultSheetName": "Sheet",
+      "previewLimit": "{rows} rows · {columns} columns shown",
+      "workbookLoading": "Loading workbook",
+      "workbookLoadingDescription": "Reading sheets and preparing a table preview.",
+      "workbookFetchFailed": "Could not download the workbook.",
+      "workbookFailed": "Could not preview workbook.",
+      "workbookEmpty": "Workbook has no visible rows.",
+      "workbookEmptyDescription": "Open the file in a spreadsheet app to inspect hidden or empty sheets.",
+      "workbookTooLarge": "This workbook is too large to preview safely.",
+      "kinds": {
+        "markdown": "Markdown",
+        "html": "HTML",
+        "pdf": "PDF",
+        "image": "Image",
+        "spreadsheet": "Spreadsheet",
+        "json": "JSON",
+        "text": "Text",
+        "unsupported": "File"
+      }
+    },
     "tabs": {
       "environment": "Environment",
       "tools": "Tools",
       "preview": "Preview",
+      "artifacts": "Artifacts",
       "progress": "Progress",
       "files": "Files",
       "browser": "Browser"

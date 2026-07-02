@@ -100,7 +100,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       useState<PendingSubmission | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
-    const [activeSidecarTab, setActiveSidecarTab] = useState<AgentTabbedPanelTab>("files")
+    const [activeSidecarTab, setActiveSidecarTab] = useState<AgentTabbedPanelTab>("preview")
     const [browserInput, setBrowserInput] = useState("")
     const [browserSrc, setBrowserSrc] = useState("")
     const [artifactState, setArtifactState] = useState<{
@@ -242,7 +242,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setPendingInterruptSubmission(null)
           setEnvironmentOpen(false)
           setSidecarOpen(false)
-          setActiveSidecarTab("files")
+          setActiveSidecarTab("preview")
           setBrowserInput("")
           setBrowserSrc("")
         },
@@ -704,9 +704,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             desktopSidecarVisible
               ? cn(
                   "translate-x-0 opacity-100",
-                  activeSidecarTab === "files"
-                    ? "w-[clamp(600px,50vw,860px)]"
-                    : "w-[clamp(360px,32vw,500px)]",
+                  activeSidecarTab === "browser"
+                    ? "w-[clamp(360px,32vw,500px)]"
+                    : "w-[clamp(600px,50vw,860px)]",
                 )
               : "w-0 translate-x-4 opacity-0",
           )}

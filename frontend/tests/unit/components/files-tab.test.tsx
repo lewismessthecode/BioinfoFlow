@@ -35,6 +35,27 @@ vi.mock("next-intl", () => ({
       "files.previewUnavailable": "Preview unavailable",
       "files.previewUnsupported": "Preview unsupported",
       "files.openDefaultDescription": "Open or download the file",
+      "renderer.previewUnavailable": "Preview unavailable",
+      "renderer.previewUnsupported": "Preview unsupported",
+      "renderer.openDefaultDescription": "Open or download the file",
+      "renderer.noRenderableSource": "No renderable source",
+      "renderer.defaultSheetName": "Sheet",
+      "renderer.previewLimit": `${values?.rows ?? 0} rows · ${values?.columns ?? 0} columns shown`,
+      "renderer.workbookLoading": "Loading workbook",
+      "renderer.workbookLoadingDescription": "Preparing workbook preview",
+      "renderer.workbookFetchFailed": "Could not download workbook",
+      "renderer.workbookFailed": "Could not preview workbook",
+      "renderer.workbookEmpty": "Workbook has no visible rows",
+      "renderer.workbookEmptyDescription": "Open in spreadsheet app",
+      "renderer.workbookTooLarge": "Workbook too large",
+      "renderer.kinds.markdown": "Markdown",
+      "renderer.kinds.html": "HTML",
+      "renderer.kinds.pdf": "PDF",
+      "renderer.kinds.image": "Image",
+      "renderer.kinds.spreadsheet": "Spreadsheet",
+      "renderer.kinds.json": "JSON",
+      "renderer.kinds.text": "Text",
+      "renderer.kinds.unsupported": "File",
     }
     return labels[key] ?? key
   },
@@ -218,7 +239,7 @@ describe("FilesTab", () => {
     await waitFor(() => {
       expect(screen.getByTestId("file-preview-pane").querySelector("iframe")).toHaveAttribute(
         "title",
-        htmlPath,
+        "report.html",
       )
     })
     const htmlFrame = screen.getByTestId("file-preview-pane").querySelector("iframe")
@@ -229,7 +250,7 @@ describe("FilesTab", () => {
     await waitFor(() => {
       expect(screen.getByTestId("file-preview-pane").querySelector("iframe")).toHaveAttribute(
         "title",
-        pdfPath,
+        "summary.pdf",
       )
     })
     expect(screen.getByTestId("file-preview-pane").querySelector("iframe")).toHaveAttribute(
@@ -243,29 +264,29 @@ describe("FilesTab", () => {
     expect(screen.getByRole("table")).toHaveTextContent("42")
   })
 
-  it("offers a fallback for spreadsheet files without a text preview", async () => {
-    const spreadsheetPath = `${rootPath}/metrics.xlsx`
+  it("offers a fallback for unsupported binary files", async () => {
+    const binaryPath = `${rootPath}/reads.bam`
     vi.mocked(getAgentFsTree).mockResolvedValue({
       path: rootPath,
-      entries: [{ name: "metrics.xlsx", path: spreadsheetPath, type: "file" }],
+      entries: [{ name: "reads.bam", path: binaryPath, type: "file" }],
     })
     vi.mocked(getAgentFsFile).mockResolvedValue({
-      path: spreadsheetPath,
+      path: binaryPath,
       content: "",
       truncated: false,
       size: 4096,
-      language: "spreadsheet",
-      mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      language: null,
+      mime_type: "application/octet-stream",
       binary: true,
     })
 
     render(<FilesTab projectId="project-1" />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "metrics.xlsx" }))
+    fireEvent.click(await screen.findByRole("button", { name: "reads.bam" }))
     expect(await screen.findByText("Preview unsupported")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Open/ })).toHaveAttribute(
       "href",
-      `/agent/fs/download?path=${encodeURIComponent(spreadsheetPath)}`,
+      `/agent/fs/download?path=${encodeURIComponent(binaryPath)}`,
     )
   })
 
