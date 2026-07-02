@@ -14,7 +14,6 @@ type ProviderTestResult = {
   model: string | null
 }
 
-const updateSettingsMock = vi.fn()
 const testProviderMock = vi.fn(
   async (provider: string): Promise<ProviderTestResult> => ({
     success: true,
@@ -202,7 +201,6 @@ describe("SettingsPage", () => {
     window.history.replaceState(null, "", "/settings")
     apiRequestMock.mockReset()
     window.localStorage.clear()
-    updateSettingsMock.mockReset()
     testProviderMock.mockClear()
     celebratePreviewMock.mockReset()
     celebrationsPreference.reset()
@@ -230,16 +228,6 @@ describe("SettingsPage", () => {
 
     useLlmSettingsMock.mockReturnValue({
       settings: {
-        provider_credentials: {
-          openai: {
-            api_key: "sk-a...1234",
-            base_url: "https://api.openai.example/v1",
-          },
-          ollama: {
-            base_url: "http://localhost:11434",
-            model: "llama3.3",
-          },
-        },
         selected_provider: "openai",
         selected_model: "gpt-5.4",
         configured_providers: ["openai", "ollama"],
@@ -247,9 +235,10 @@ describe("SettingsPage", () => {
       models: [],
       allModels: [],
       isLoading: false,
+      configurationError: null,
+      configurationUnavailable: false,
       hasConfiguredProvider: true,
-      selectedModel: "gpt-5.4",
-      updateSettings: updateSettingsMock,
+      selectedModel: { provider: "openai", model: "gpt-5.4" },
       setSelectedModel: vi.fn(),
       testProvider: testProviderMock,
       refetch: vi.fn(),

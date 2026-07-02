@@ -746,6 +746,65 @@ describe("AgentWorkbench", () => {
     expect(calls).toEqual(["interrupt", "send"])
   })
 
+  it("waits for an optimistic in-flight turn to become interruptible before replacement send", async () => {
+    writeAgentTurnPolicy("interrupt")
+    const calls: string[] = []
+    const send = vi.fn((text: string) => {
+      calls.push(`send:${text}`)
+      return text === "First turn"
+        ? new Promise(() => {})
+        : Promise.resolve(undefined)
+    })
+    const interrupt = vi.fn(async () => {
+      calls.push("interrupt")
+      return null
+    })
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [] as AgentRuntimeTurn[],
+        events: [] as AgentRuntimeEvent[],
+        timeline: [] as ReturnType<typeof buildAgentRuntimeTimeline>,
+        status: "idle" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt,
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const view = render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "First turn" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    fireEvent.change(input, { target: { value: "Second turn" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(interrupt).not.toHaveBeenCalled()
+    expect(screen.getByText("Second turn")).toBeInTheDocument()
+    expect(screen.getAllByText("Queued")).toHaveLength(2)
+
+    runtime.state = {
+      ...runtime.state,
+      turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+      timeline: buildAgentRuntimeTimeline(
+        [{ ...baseTurn, id: "running-turn", status: "running" }],
+        [],
+      ),
+      status: "running",
+    }
+    view.rerender(<AgentWorkbench />)
+
+    await waitFor(() => expect(interrupt).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith("Second turn", expect.any(Object)),
+    )
+    expect(calls).toEqual(["send:First turn", "interrupt", "send:Second turn"])
+  })
+
   it("queues a submitted draft until the active turn finishes when the turn policy is queue", async () => {
     writeAgentTurnPolicy("queue")
     const send = vi.fn().mockResolvedValue(undefined)
@@ -777,6 +836,7 @@ describe("AgentWorkbench", () => {
     expect(input).toHaveValue("")
     expect(screen.getByText("Run Deaf_20 next")).toBeInTheDocument()
     expect(screen.getByText("Queued")).toBeInTheDocument()
+    expect(screen.queryByText("Working on it...")).not.toBeInTheDocument()
 
     runtime.state = {
       ...runtime.state,
@@ -792,6 +852,52 @@ describe("AgentWorkbench", () => {
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith("Run Deaf_20 next", expect.any(Object)),
     )
+  })
+
+  it("drops queued drafts when the active conversation changes", async () => {
+    writeAgentTurnPolicy("queue")
+    const send = vi.fn().mockResolvedValue(undefined)
+    const sessionA = { ...baseSession, id: "session-a" }
+    const sessionB = { ...baseSession, id: "session-b" }
+    const runtime = {
+      state: {
+        session: sessionA,
+        turns: [{ ...baseTurn, id: "running-turn", session_id: "session-a", status: "running" }],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", session_id: "session-a", status: "running" }],
+          [],
+        ),
+        status: "running" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const view = render(<AgentWorkbench activeSessionId="session-a" />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Belongs to A" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(screen.getByText("Belongs to A")).toBeInTheDocument()
+
+    runtime.state = {
+      ...runtime.state,
+      session: sessionB,
+      turns: [],
+      timeline: [],
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench activeSessionId="session-b" />)
+
+    await waitFor(() => {
+      expect(screen.queryByText("Belongs to A")).not.toBeInTheDocument()
+    })
+    expect(send).not.toHaveBeenCalled()
   })
 
   it("treats an optimistic in-flight turn as active before backend state catches up", () => {
@@ -857,6 +963,55 @@ describe("AgentWorkbench", () => {
 
     expect(send).not.toHaveBeenCalled()
     expect(screen.queryByText("Do this later")).not.toBeInTheDocument()
+  })
+
+  it("clears queued drafts when stopping the active turn", async () => {
+    writeAgentTurnPolicy("queue")
+    const send = vi.fn().mockResolvedValue(undefined)
+    const interrupt = vi.fn().mockResolvedValue(null)
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt,
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const workbenchRef = { current: null as React.ElementRef<typeof AgentWorkbench> | null }
+    const view = render(<AgentWorkbench ref={workbenchRef} />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Do not auto-send" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(screen.getByText("Do not auto-send")).toBeInTheDocument()
+
+    await act(async () => {
+      workbenchRef.current?.stop()
+      await Promise.resolve()
+    })
+
+    runtime.state = {
+      ...runtime.state,
+      turns: [],
+      timeline: [],
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench ref={workbenchRef} />)
+
+    expect(interrupt).toHaveBeenCalledTimes(1)
+    expect(send).not.toHaveBeenCalled()
+    expect(screen.queryByText("Do not auto-send")).not.toBeInTheDocument()
   })
 
   it("keeps multiple queued drafts in FIFO order", async () => {

@@ -31,6 +31,7 @@ import {
   type AgentRuntimeArtifact,
   type AgentRuntimeFileRefPart,
   type AgentRuntimeInputPart,
+  type AgentModelSelection,
   type AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
 import {
@@ -45,6 +46,14 @@ const ACTIVE_TURN_STATUSES = new Set<AgentRuntimeTurn["status"]>([
   "waiting_user",
   "waiting_approval",
 ])
+
+type PendingSubmission = {
+  text: string
+  inputParts: AgentRuntimeInputPart[]
+  modelSelection: AgentModelSelection | null
+  optimisticTurn: AgentRuntimeTurn
+  sessionId: string
+}
 
 export type AgentWorkbenchHandle = {
   focusInput: () => void
@@ -86,12 +95,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       string[]
     >([])
     const [turnPolicy] = useState<AgentTurnPolicy>(readAgentTurnPolicy)
-    const [queuedSubmissions, setQueuedSubmissions] = useState<Array<{
-      text: string
-      inputParts: AgentRuntimeInputPart[]
-      modelSelection: typeof selectedModel
-      optimisticTurn: AgentRuntimeTurn
-    }>>([])
+    const [queuedSubmissions, setQueuedSubmissions] = useState<PendingSubmission[]>([])
+    const [pendingInterruptSubmission, setPendingInterruptSubmission] =
+      useState<PendingSubmission | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
     const [activeSidecarTab, setActiveSidecarTab] = useState<AgentTabbedPanelTab>("files")
@@ -122,6 +128,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     })
     const agentMode = mode ?? "execution"
     const sessionId = state.session?.id ?? ""
+    const submissionSessionId = activeSessionId || sessionId || "pending-session"
     const sessionRemoteConnectionId = getSessionRemoteConnectionId(state.session?.metadata)
     const projectRemoteConnectionId = useMemo(() => {
       if (!projectId) return ""
@@ -157,9 +164,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const hasSelectedSession = Boolean(activeSessionId || state.session?.id)
     const hasConversation = hasTurns || hasSubmittedDraft || hasSelectedSession
     const isRunning = state.status === "running"
+    const hasInterruptibleBackendTurn = state.turns.some((turn) =>
+      ACTIVE_TURN_STATUSES.has(turn.status),
+    )
     const hasActiveTurn =
       isRunning ||
-      state.turns.some((turn) => ACTIVE_TURN_STATUSES.has(turn.status)) ||
+      hasInterruptibleBackendTurn ||
       visibleOptimisticTurns.some((turn) =>
         inFlightOptimisticTurnIds.includes(turn.id),
       )
@@ -202,13 +212,24 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       ? t("environment.close")
       : t("environment.open")
 
+    const clearLocalPendingSubmissions = useCallback(() => {
+      setQueuedSubmissions([])
+      setPendingInterruptSubmission(null)
+      setOptimisticTurns((current) =>
+        current.filter((turn) => !isLocalPendingSubmissionTurn(turn)),
+      )
+    }, [])
+
+    const stopCurrentTurn = useCallback(() => {
+      clearLocalPendingSubmissions()
+      void interrupt()
+    }, [clearLocalPendingSubmissions, interrupt])
+
     useImperativeHandle(
       ref,
       () => ({
         focusInput: () => textareaRef.current?.focus(),
-        stop: () => {
-          void interrupt()
-        },
+        stop: stopCurrentTurn,
         newConversation: () => {
           setActiveSessionId(null)
           setInput("")
@@ -218,6 +239,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setOptimisticTurns([])
           setInFlightOptimisticTurnIds([])
           setQueuedSubmissions([])
+          setPendingInterruptSubmission(null)
           setEnvironmentOpen(false)
           setSidecarOpen(false)
           setActiveSidecarTab("files")
@@ -225,7 +247,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setBrowserSrc("")
         },
       }),
-      [interrupt, setActiveSessionId],
+      [setActiveSessionId, stopCurrentTurn],
     )
 
     useEffect(() => {
@@ -243,6 +265,49 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         cancelled = true
       }
     }, [state.session?.id, artifactEventCount])
+
+    useEffect(() => {
+      if (submissionSessionId === "pending-session") return
+      const timer = window.setTimeout(() => {
+        setQueuedSubmissions((current) =>
+          current
+            .filter((submission) =>
+              submission.sessionId === submissionSessionId ||
+              submission.sessionId === "pending-session",
+            )
+            .map((submission) =>
+              submission.sessionId === "pending-session"
+                ? reassignPendingSubmission(submission, submissionSessionId)
+                : submission,
+            ),
+        )
+        setPendingInterruptSubmission((current) => {
+          if (!current) return current
+          if (current.sessionId === submissionSessionId) return current
+          if (current.sessionId === "pending-session") {
+            return reassignPendingSubmission(current, submissionSessionId)
+          }
+          return null
+        })
+        setOptimisticTurns((current) =>
+          current
+            .filter((turn) => {
+              if (!isLocalPendingSubmissionTurn(turn)) return true
+              return (
+                turn.session_id === submissionSessionId ||
+                turn.session_id === "pending-session"
+              )
+            })
+            .map((turn) =>
+              isLocalPendingSubmissionTurn(turn) &&
+              turn.session_id === "pending-session"
+                ? { ...turn, session_id: submissionSessionId }
+                : turn,
+            ),
+        )
+      }, 0)
+      return () => window.clearTimeout(timer)
+    }, [submissionSessionId])
 
     const addContextAttachment = useCallback((path: string) => {
       const label = path.split("/").pop() || path
@@ -280,7 +345,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           createOptimisticTurn({
             text: trimmedText,
             inputParts,
-            sessionId: activeSessionId || state.session?.id || "pending-session",
+            sessionId: submissionSessionId,
             projectId,
           })
         setOptimisticTurns((current) => {
@@ -309,12 +374,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         })
       },
       [
-        activeSessionId,
         hasRemoteConnectionOverride,
         projectId,
         selectedModel,
         selectedRemoteConnectionId,
         send,
+        submissionSessionId,
         state.session,
       ],
     )
@@ -336,8 +401,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           const nextOptimisticTurn = createOptimisticTurn({
             text: trimmedText,
             inputParts,
-            sessionId: activeSessionId || state.session?.id || "pending-session",
+            sessionId: submissionSessionId,
             projectId,
+            localQueue: true,
           })
           setHasSubmittedDraft(true)
           setOptimisticTurns((current) => [...current, nextOptimisticTurn])
@@ -348,8 +414,34 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               inputParts,
               modelSelection,
               optimisticTurn: nextOptimisticTurn,
+              sessionId: submissionSessionId,
             },
           ])
+          return
+        }
+
+        if (!hasInterruptibleBackendTurn) {
+          const nextOptimisticTurn = createOptimisticTurn({
+            text: trimmedText,
+            inputParts,
+            sessionId: submissionSessionId,
+            projectId,
+            localPendingInterrupt: true,
+          })
+          setHasSubmittedDraft(true)
+          setOptimisticTurns((current) => [
+            ...current.filter(
+              (turn) => turn.loop_state?.local_pending_interrupt !== true,
+            ),
+            nextOptimisticTurn,
+          ])
+          setPendingInterruptSubmission({
+            text: trimmedText,
+            inputParts,
+            modelSelection,
+            optimisticTurn: nextOptimisticTurn,
+            sessionId: submissionSessionId,
+          })
           return
         }
 
@@ -359,13 +451,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         })()
       },
       [
-        activeSessionId,
         hasActiveTurn,
+        hasInterruptibleBackendTurn,
         interrupt,
         projectId,
         selectedModel,
         sendTurn,
-        state.session?.id,
+        submissionSessionId,
         turnPolicy,
       ],
     )
@@ -373,6 +465,17 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     useEffect(() => {
       if (!queuedSubmissions.length || hasActiveTurn) return
       const next = queuedSubmissions[0]
+      if (next.sessionId !== submissionSessionId) {
+        const timer = window.setTimeout(() => {
+          setQueuedSubmissions((current) =>
+            current[0] === next ? current.slice(1) : current,
+          )
+          setOptimisticTurns((current) =>
+            current.filter((turn) => turn.id !== next.optimisticTurn.id),
+          )
+        }, 0)
+        return () => window.clearTimeout(timer)
+      }
       const timer = window.setTimeout(() => {
         setQueuedSubmissions((current) =>
           current[0] === next ? current.slice(1) : current,
@@ -380,7 +483,39 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         sendTurn(next.text, next.inputParts, next.modelSelection, next.optimisticTurn)
       }, 0)
       return () => window.clearTimeout(timer)
-    }, [hasActiveTurn, queuedSubmissions, sendTurn])
+    }, [hasActiveTurn, queuedSubmissions, sendTurn, submissionSessionId])
+
+    useEffect(() => {
+      if (!pendingInterruptSubmission) return
+      const next = pendingInterruptSubmission
+      if (next.sessionId !== submissionSessionId) {
+        const timer = window.setTimeout(() => {
+          setPendingInterruptSubmission((current) =>
+            current === next ? null : current,
+          )
+          setOptimisticTurns((current) =>
+            current.filter((turn) => turn.id !== next.optimisticTurn.id),
+          )
+        }, 0)
+        return () => window.clearTimeout(timer)
+      }
+      if (hasActiveTurn && !hasInterruptibleBackendTurn) return
+      const timer = window.setTimeout(() => {
+        setPendingInterruptSubmission((current) => (current === next ? null : current))
+        void (async () => {
+          if (hasInterruptibleBackendTurn) await interrupt()
+          sendTurn(next.text, next.inputParts, next.modelSelection, next.optimisticTurn)
+        })()
+      }, 0)
+      return () => window.clearTimeout(timer)
+    }, [
+      hasActiveTurn,
+      hasInterruptibleBackendTurn,
+      interrupt,
+      pendingInterruptSubmission,
+      sendTurn,
+      submissionSessionId,
+    ])
 
     const submit = () => {
       const text = input.trim()
@@ -481,7 +616,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         value={input}
         onChange={setInput}
         onSubmit={submit}
-        onStop={() => void interrupt()}
+        onStop={stopCurrentTurn}
         isRunning={isRunning}
         disabled={disabled}
         mode={agentMode}
@@ -628,11 +763,15 @@ function createOptimisticTurn({
   inputParts,
   sessionId,
   projectId,
+  localQueue = false,
+  localPendingInterrupt = false,
 }: {
   text: string
   inputParts: AgentRuntimeInputPart[]
   sessionId: string
   projectId?: string | null
+  localQueue?: boolean
+  localPendingInterrupt?: boolean
 }): AgentRuntimeTurn {
   const now = new Date().toISOString()
   return {
@@ -649,7 +788,12 @@ function createOptimisticTurn({
     final_text: null,
     token_usage: null,
     termination_reason: null,
-    loop_state: { state: "queued", optimistic: true },
+    loop_state: {
+      state: "queued",
+      optimistic: true,
+      ...(localQueue ? { local_queue: true } : {}),
+      ...(localPendingInterrupt ? { local_pending_interrupt: true } : {}),
+    },
     iteration_count: 0,
     budget_snapshot: null,
     interrupt_requested_at: null,
@@ -659,6 +803,24 @@ function createOptimisticTurn({
     updated_at: now,
     started_at: null,
     completed_at: null,
+  }
+}
+
+function isLocalPendingSubmissionTurn(turn: AgentRuntimeTurn) {
+  return (
+    turn.loop_state?.local_queue === true ||
+    turn.loop_state?.local_pending_interrupt === true
+  )
+}
+
+function reassignPendingSubmission(
+  submission: PendingSubmission,
+  sessionId: string,
+): PendingSubmission {
+  return {
+    ...submission,
+    sessionId,
+    optimisticTurn: { ...submission.optimisticTurn, session_id: sessionId },
   }
 }
 
