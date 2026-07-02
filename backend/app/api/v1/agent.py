@@ -475,6 +475,21 @@ _FS_DENIED_NAMES = {
     "id_rsa",
 }
 _FS_DENIED_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
+_FS_PREVIEWABLE_BINARY_SUFFIXES = {
+    ".pdf",
+    ".xlsx",
+    ".xls",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".bmp",
+    ".ico",
+    ".tif",
+    ".tiff",
+}
 
 
 @router.get("/fs/tree")
@@ -540,14 +555,12 @@ async def get_fs_file(
     truncated = len(raw) > _FS_FILE_MAX_BYTES or size > _FS_FILE_MAX_BYTES
     raw = raw[:_FS_FILE_MAX_BYTES]
     mime_type = _mime_type_for(target)
-    binary = False
-    try:
-        content = raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        if _is_previewable_binary(target, mime_type):
-            content = ""
-            binary = True
-        else:
+    binary = _is_previewable_binary(target, mime_type)
+    content = ""
+    if not binary:
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
             raise BadRequestError("File is not valid UTF-8 text") from exc
     return success_response(
         {
@@ -586,11 +599,14 @@ async def download_fs_file(
                 yield chunk
 
     mime_type = _mime_type_for(target)
-    disposition = "inline" if inline and mime_type != "text/html" else "attachment"
+    disposition = "inline" if inline else "attachment"
     return StreamingResponse(
         file_iterator(),
         media_type=mime_type,
-        headers={"Content-Disposition": _content_disposition(disposition, target.name)},
+        headers={
+            "Content-Disposition": _content_disposition(disposition, target.name),
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -661,7 +677,8 @@ def _is_previewable_binary(path: Path, mime_type: str) -> bool:
     suffix = path.suffix.lower()
     return (
         mime_type == "application/pdf"
-        or suffix in {".pdf", ".xlsx", ".xls"}
+        or mime_type.startswith("image/")
+        or suffix in _FS_PREVIEWABLE_BINARY_SUFFIXES
     )
 
 

@@ -15,7 +15,11 @@ import { useTranslations } from "next-intl"
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { cn } from "@/lib/utils"
 import {
+  PREVIEW_COLUMN_LIMIT,
+  PREVIEW_ROW_LIMIT,
   TEXT_PREVIEW_SIZE_LIMIT_BYTES,
+  TEXT_PREVIEW_LINE_LIMIT,
+  WORKBOOK_SHEET_LIMIT,
   WORKBOOK_SIZE_LIMIT_BYTES,
   columnLabel,
   delimiterForPath,
@@ -24,7 +28,9 @@ import {
   isWorkbookPath,
   normalizeSpreadsheetRows,
   parseDelimitedRows,
+  prepareTextPreviewContent,
   truncateRowsAndColumns,
+  workbookPreviewReadOptions,
   type SpreadsheetRows,
   type UniversalFileKind,
 } from "./file-renderer-utils"
@@ -57,6 +63,8 @@ type TextLoadState =
   | { requestKey: string; status: "ready"; content: string | null; error: null }
   | { requestKey: string; status: "error"; content: null; error: string }
 
+type XlsxModule = typeof import("@e965/xlsx")
+
 export function UniversalFileRenderer({
   file,
   className,
@@ -76,6 +84,9 @@ export function UniversalFileRenderer({
   const inlineUrl = file.inlineUrl || file.resourceUrl || null
   const textFetchFailedMessage = t("renderer.textFetchFailed")
   const textTooLargeMessage = t("renderer.textTooLarge")
+  const textPreviewLimitedMessage = t("renderer.textPreviewLimited", {
+    lines: TEXT_PREVIEW_LINE_LIMIT,
+  })
   const shouldFetchText =
     !file.content &&
     Boolean(inlineUrl) &&
@@ -92,10 +103,14 @@ export function UniversalFileRenderer({
 
   useEffect(() => {
     if (!shouldFetchText || !inlineUrl) return
+    const controller = new AbortController()
     let cancelled = false
     async function loadTextPreview() {
       try {
-        const response = await fetch(inlineUrl, { credentials: "include" })
+        const response = await fetch(inlineUrl, {
+          credentials: "include",
+          signal: controller.signal,
+        })
         if (!response.ok) throw new Error(textFetchFailedMessage)
         const content = await readResponseTextWithLimit(
           response,
@@ -111,6 +126,7 @@ export function UniversalFileRenderer({
           })
         }
       } catch (err) {
+        if (controller.signal.aborted || cancelled) return
         if (!cancelled) {
           setTextLoadState({
             requestKey: textRequestKey,
@@ -124,6 +140,7 @@ export function UniversalFileRenderer({
     void loadTextPreview()
     return () => {
       cancelled = true
+      controller.abort()
     }
   }, [
     inlineUrl,
@@ -139,11 +156,18 @@ export function UniversalFileRenderer({
     shouldFetchText && textStateMatchesRequest && textLoadState.status === "error"
       ? textLoadState.error
       : null
-  const previewContent =
+  const rawPreviewContent =
     file.content ??
     (shouldFetchText && textStateMatchesRequest && textLoadState.status === "ready"
       ? textLoadState.content ?? ""
       : "")
+  const preparedPreview = useMemo(
+    () => prepareTextPreviewContent(rawPreviewContent),
+    [rawPreviewContent],
+  )
+  const previewContent = preparedPreview.content
+  const previewTooLarge = preparedPreview.tooLarge
+  const previewLimitedMessage = preparedPreview.truncated ? textPreviewLimitedMessage : null
 
   return (
     <div
@@ -159,17 +183,22 @@ export function UniversalFileRenderer({
             title={t("renderer.textLoading")}
             description={t("renderer.textLoadingDescription")}
           />
-        ) : textError ? (
+        ) : textError || previewTooLarge ? (
           <RendererState
             kind="error"
             icon={<AlertCircle className="h-8 w-8" />}
             title={t("renderer.textFetchFailed")}
-            description={textError}
+            description={textError || textTooLargeMessage}
           />
         ) : (
           <div className="h-full overflow-auto bg-muted/20 p-4">
             <MarkdownRenderer
-              content={previewContent || t("renderer.previewUnavailable")}
+              content={
+                markdownPreviewContent(
+                  previewContent || t("renderer.previewUnavailable"),
+                  previewLimitedMessage,
+                )
+              }
               className="mx-auto w-full max-w-3xl px-1 py-2 text-sm leading-6"
             />
           </div>
@@ -243,15 +272,19 @@ export function UniversalFileRenderer({
             title={t("renderer.textLoading")}
             description={t("renderer.textLoadingDescription")}
           />
-        ) : textError ? (
+        ) : textError || previewTooLarge ? (
           <RendererState
             kind="error"
             icon={<AlertCircle className="h-8 w-8" />}
             title={t("renderer.textFetchFailed")}
-            description={textError}
+            description={textError || textTooLargeMessage}
           />
         ) : (
-          <CodePreview content={formatJsonContent(previewContent)} iconKind={kind} />
+          <CodePreview
+            content={formatJsonContent(previewContent)}
+            iconKind={kind}
+            truncatedNotice={previewLimitedMessage}
+          />
         )
       ) : null}
 
@@ -263,15 +296,19 @@ export function UniversalFileRenderer({
             title={t("renderer.textLoading")}
             description={t("renderer.textLoadingDescription")}
           />
-        ) : textError ? (
+        ) : textError || previewTooLarge ? (
           <RendererState
             kind="error"
             icon={<AlertCircle className="h-8 w-8" />}
             title={t("renderer.textFetchFailed")}
-            description={textError}
+            description={textError || textTooLargeMessage}
           />
         ) : (
-          <CodePreview content={previewContent || t("renderer.previewUnavailable")} iconKind={kind} />
+          <CodePreview
+            content={previewContent || t("renderer.previewUnavailable")}
+            iconKind={kind}
+            truncatedNotice={previewLimitedMessage}
+          />
         )
       ) : null}
 
@@ -293,16 +330,38 @@ export function fileKindLabel(t: ReturnType<typeof useTranslations>, kind: Unive
 
 function SpreadsheetPreview({ file }: { file: UniversalFileResource }) {
   const t = useTranslations("agentRuntime")
+  const directContentPreview = useMemo(
+    () => (file.content ? prepareTextPreviewContent(file.content) : null),
+    [file.content],
+  )
   const directRows = useMemo(() => {
     const payloadRows = normalizeSpreadsheetRows(file.rows)
     if (payloadRows) return payloadRows
-    if (!file.content?.trim()) return null
+    if (!directContentPreview?.content.trim()) return null
     if (!isDelimitedPath(file.path, file.language, file.mimeType) && !file.type) return null
     return parseDelimitedRows(
-      file.content,
+      directContentPreview.content,
       delimiterForPath(file.path, file.mimeType),
     )
-  }, [file.content, file.language, file.mimeType, file.path, file.rows, file.type])
+  }, [
+    directContentPreview,
+    file.language,
+    file.mimeType,
+    file.path,
+    file.rows,
+    file.type,
+  ])
+
+  if (directContentPreview?.tooLarge) {
+    return (
+      <RendererState
+        kind="error"
+        icon={<AlertCircle className="h-8 w-8" />}
+        title={t("renderer.textFetchFailed")}
+        description={t("renderer.textTooLarge")}
+      />
+    )
+  }
 
   if (directRows?.length) {
     return (
@@ -358,10 +417,14 @@ function DelimitedUrlSpreadsheetPreview({
   const requestKey = `${file.path}:${sourceUrl}`
 
   useEffect(() => {
+    const controller = new AbortController()
     let cancelled = false
     async function loadRows() {
       try {
-        const response = await fetch(sourceUrl, { credentials: "include" })
+        const response = await fetch(sourceUrl, {
+          credentials: "include",
+          signal: controller.signal,
+        })
         if (!response.ok) throw new Error(textFetchFailedMessage)
         const content = await readResponseTextWithLimit(
           response,
@@ -372,6 +435,7 @@ function DelimitedUrlSpreadsheetPreview({
           setState({ requestKey, status: "ready", content, error: null })
         }
       } catch (err) {
+        if (controller.signal.aborted || cancelled) return
         if (!cancelled) {
           setState({
             requestKey,
@@ -385,6 +449,7 @@ function DelimitedUrlSpreadsheetPreview({
     void loadRows()
     return () => {
       cancelled = true
+      controller.abort()
     }
   }, [requestKey, sourceUrl, textFetchFailedMessage, textTooLargeMessage])
 
@@ -464,14 +529,24 @@ function WorkbookPreview({ file }: { file: UniversalFileResource }) {
         if (cancelled) return
         const XLSX = await import("@e965/xlsx")
         if (cancelled) return
-        const workbook = XLSX.read(buffer, { type: "array", cellDates: true })
-        const sheets = workbook.SheetNames.map((name) => {
+        const workbook = XLSX.read(buffer, {
+          type: "array",
+          cellDates: true,
+          ...workbookPreviewReadOptions(),
+        })
+        const sheets = workbook.SheetNames.slice(0, WORKBOOK_SHEET_LIMIT).map((name) => {
           const sheet = workbook.Sheets[name]
+          if (!sheet) return { name, rows: [] }
+          const range = previewWorksheetRange(
+            XLSX,
+            typeof sheet?.["!ref"] === "string" ? sheet["!ref"] : undefined,
+          )
           const rows = XLSX.utils.sheet_to_json(sheet, {
             header: 1,
             raw: false,
             blankrows: false,
             defval: "",
+            ...(range ? { range } : {}),
           })
           return {
             name,
@@ -635,30 +710,51 @@ function SpreadsheetWorkbookView({ sheets }: { sheets: WorkbookSheet[] }) {
   )
 }
 
+function previewWorksheetRange(XLSX: XlsxModule, ref?: string) {
+  if (!ref) return undefined
+  try {
+    const range = XLSX.utils.decode_range(ref)
+    range.e.r = Math.min(range.e.r, PREVIEW_ROW_LIMIT - 1)
+    range.e.c = Math.min(range.e.c, PREVIEW_COLUMN_LIMIT - 1)
+    return XLSX.utils.encode_range(range)
+  } catch {
+    return undefined
+  }
+}
+
 function CodePreview({
   content,
   iconKind,
+  truncatedNotice,
 }: {
   content: string
   iconKind: "json" | "text"
+  truncatedNotice?: string | null
 }) {
   const lines = content.split(/\r?\n/)
   return (
-    <div className="h-full min-h-0 overflow-auto bg-muted/20">
-      <pre className="min-w-max p-3 font-mono text-xs leading-5 text-foreground tabular-nums">
-        <code>
-          {lines.map((line, index) => (
-            <span key={index} className="table-row">
-              <span className="sticky left-0 table-cell select-none border-r border-border/60 bg-muted pr-3 text-right text-muted-foreground">
-                {index + 1}
+    <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-muted/20">
+      <div className="min-h-0 overflow-auto">
+        <pre className="min-w-max p-3 font-mono text-xs leading-5 text-foreground tabular-nums">
+          <code>
+            {lines.map((line, index) => (
+              <span key={index} className="table-row">
+                <span className="sticky left-0 table-cell select-none border-r border-border/60 bg-muted pr-3 text-right text-muted-foreground">
+                  {index + 1}
+                </span>
+                <span className="table-cell whitespace-pre pl-3">
+                  {line || (iconKind === "json" ? "" : " ")}
+                </span>
               </span>
-              <span className="table-cell whitespace-pre pl-3">
-                {line || (iconKind === "json" ? "" : " ")}
-              </span>
-            </span>
-          ))}
-        </code>
-      </pre>
+            ))}
+          </code>
+        </pre>
+      </div>
+      {truncatedNotice ? (
+        <div className="border-t border-border/70 bg-background px-3 py-2 text-[11px] text-muted-foreground">
+          {truncatedNotice}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -678,9 +774,9 @@ function RendererState({
     <div
       className="flex h-full min-h-[220px] min-w-0 items-center justify-center bg-muted/20 p-6 text-center"
       data-renderer-state={kind}
-      role={kind === "loading" ? "status" : undefined}
+      role={kind === "loading" ? "status" : kind === "error" ? "alert" : undefined}
       aria-live={kind === "loading" ? "polite" : undefined}
-      aria-label={kind === "loading" ? title : undefined}
+      aria-label={kind === "loading" || kind === "error" ? title : undefined}
     >
       <div className="max-w-sm">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground">
@@ -700,6 +796,11 @@ function formatJsonContent(content?: string | null) {
   } catch {
     return content
   }
+}
+
+function markdownPreviewContent(content: string, truncatedNotice?: string | null) {
+  if (!truncatedNotice) return content
+  return `${content}\n\n---\n_${truncatedNotice}_`
 }
 
 async function readResponseTextWithLimit(

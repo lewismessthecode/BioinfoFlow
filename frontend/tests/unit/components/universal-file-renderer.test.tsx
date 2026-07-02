@@ -2,10 +2,14 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  PREVIEW_ROW_LIMIT,
   TEXT_PREVIEW_SIZE_LIMIT_BYTES,
+  TEXT_PREVIEW_LINE_LIMIT,
+  WORKBOOK_SHEET_LIMIT,
   columnLabel,
   filePreviewKind,
   parseDelimitedRows,
+  workbookPreviewReadOptions,
 } from "@/components/bioinfoflow/agent-runtime/file-renderer-utils"
 import { UniversalFileRenderer } from "@/components/bioinfoflow/agent-runtime/universal-file-renderer"
 
@@ -29,6 +33,7 @@ vi.mock("next-intl", () => ({
       "renderer.textLoadingDescription": "Reading file content.",
       "renderer.textFetchFailed": "Could not fetch text preview.",
       "renderer.textTooLarge": "Text preview too large.",
+      "renderer.textPreviewLimited": `Preview truncated to ${values?.lines ?? 0} lines.`,
       "renderer.kinds.markdown": "Markdown",
       "renderer.kinds.html": "HTML",
       "renderer.kinds.pdf": "PDF",
@@ -62,6 +67,18 @@ describe("file renderer helpers", () => {
     expect(columnLabel(0)).toBe("A")
     expect(columnLabel(25)).toBe("Z")
     expect(columnLabel(26)).toBe("AA")
+  })
+
+  it("uses bounded workbook parse options for previews", () => {
+    expect(workbookPreviewReadOptions()).toEqual(
+      expect.objectContaining({
+        sheetRows: PREVIEW_ROW_LIMIT,
+        sheets: Array.from({ length: WORKBOOK_SHEET_LIMIT }, (_, index) => index),
+        cellFormula: false,
+        cellHTML: false,
+        bookDeps: false,
+      }),
+    )
   })
 })
 
@@ -130,6 +147,24 @@ describe("UniversalFileRenderer", () => {
     expect(screen.getByRole("table")).toHaveTextContent("42")
   })
 
+  it("aborts pending delimited spreadsheet fetches on unmount", () => {
+    const signals: AbortSignal[] = []
+    vi.spyOn(globalThis, "fetch").mockImplementation((_, init) => {
+      signals.push((init as RequestInit).signal as AbortSignal)
+      return new Promise(() => {}) as Promise<Response>
+    })
+
+    const { unmount } = render(
+      <UniversalFileRenderer
+        file={{ path: "metrics.csv", inlineUrl: "/api/v1/agent/fs/download?inline=true" }}
+      />,
+    )
+
+    expect(signals[0]?.aborted).toBe(false)
+    unmount()
+    expect(signals[0]?.aborted).toBe(true)
+  })
+
   it("stops text previews when the response advertises too many bytes", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("{}", {
@@ -144,7 +179,58 @@ describe("UniversalFileRenderer", () => {
       />,
     )
 
-    expect(await screen.findByText("Text preview too large.")).toBeInTheDocument()
+    expect(await screen.findByRole("alert", { name: "Could not fetch text preview." })).toHaveTextContent(
+      "Text preview too large.",
+    )
+  })
+
+  it("rejects oversized inline text payloads before rendering", () => {
+    render(
+      <UniversalFileRenderer
+        file={{
+          path: "summary.txt",
+          content: "x".repeat(TEXT_PREVIEW_SIZE_LIMIT_BYTES + 1),
+        }}
+      />,
+    )
+
+    expect(screen.getByRole("alert", { name: "Could not fetch text preview." })).toHaveTextContent(
+      "Text preview too large.",
+    )
+    expect(screen.queryByText(/xxxx/)).not.toBeInTheDocument()
+  })
+
+  it("caps rendered text previews to the line limit", () => {
+    const content = Array.from(
+      { length: TEXT_PREVIEW_LINE_LIMIT + 5 },
+      (_, index) => `line-${index + 1}`,
+    ).join("\n")
+
+    render(<UniversalFileRenderer file={{ path: "summary.txt", content }} />)
+
+    expect(screen.getByText(`line-${TEXT_PREVIEW_LINE_LIMIT}`)).toBeInTheDocument()
+    expect(screen.queryByText(`line-${TEXT_PREVIEW_LINE_LIMIT + 1}`)).not.toBeInTheDocument()
+    expect(
+      screen.getByText(`Preview truncated to ${TEXT_PREVIEW_LINE_LIMIT} lines.`),
+    ).toBeInTheDocument()
+  })
+
+  it("aborts pending text preview fetches on unmount", () => {
+    const signals: AbortSignal[] = []
+    vi.spyOn(globalThis, "fetch").mockImplementation((_, init) => {
+      signals.push((init as RequestInit).signal as AbortSignal)
+      return new Promise(() => {}) as Promise<Response>
+    })
+
+    const { unmount } = render(
+      <UniversalFileRenderer
+        file={{ path: "summary.txt", inlineUrl: "/api/v1/agent/fs/download?inline=true" }}
+      />,
+    )
+
+    expect(signals[0]?.aborted).toBe(false)
+    unmount()
+    expect(signals[0]?.aborted).toBe(true)
   })
 
   it("shows an accessible loading state while async previews are pending", () => {

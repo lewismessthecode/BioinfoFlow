@@ -613,6 +613,10 @@ describe("AgentWorkbench", () => {
     })
 
     expect(screen.getByTestId("agent-mobile-sidecar-overlay")).toBeInTheDocument()
+    expect(screen.getByRole("dialog", { name: "Workspace" })).toHaveAttribute(
+      "aria-modal",
+      "true",
+    )
     const mobilePanel = screen.getByTestId("artifact-panel")
     expect(mobilePanel).toBeInTheDocument()
     expect(mobilePanel).toHaveClass("flex")
@@ -624,6 +628,11 @@ describe("AgentWorkbench", () => {
     await waitFor(() => {
       expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
     })
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Workspace" }), {
+      key: "Escape",
+    })
+    expect(screen.queryByTestId("agent-mobile-sidecar-overlay")).not.toBeInTheDocument()
   })
 
   it("moves the composer to the bottom after a turn exists", () => {

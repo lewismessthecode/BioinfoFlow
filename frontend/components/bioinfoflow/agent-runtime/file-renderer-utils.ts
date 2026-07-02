@@ -18,8 +18,11 @@ export type UniversalFileLike = {
 
 export type SpreadsheetRows = string[][]
 
-const PREVIEW_ROW_LIMIT = 200
-const PREVIEW_COLUMN_LIMIT = 80
+export const PREVIEW_ROW_LIMIT = 200
+export const PREVIEW_COLUMN_LIMIT = 80
+export const TEXT_PREVIEW_LINE_LIMIT = 1000
+export const TEXT_PREVIEW_MAX_LINE_CHARS = 4000
+export const WORKBOOK_SHEET_LIMIT = 10
 export const WORKBOOK_SIZE_LIMIT_BYTES = 10 * 1024 * 1024
 export const TEXT_PREVIEW_SIZE_LIMIT_BYTES = 2 * 1024 * 1024
 
@@ -251,6 +254,41 @@ export function truncateRowsAndColumns(rows: SpreadsheetRows) {
   return rows
     .slice(0, PREVIEW_ROW_LIMIT)
     .map((row) => row.slice(0, PREVIEW_COLUMN_LIMIT))
+}
+
+export function workbookPreviewReadOptions() {
+  return {
+    sheetRows: PREVIEW_ROW_LIMIT,
+    sheets: Array.from({ length: WORKBOOK_SHEET_LIMIT }, (_, index) => index),
+    cellFormula: false,
+    cellHTML: false,
+    bookDeps: false,
+  }
+}
+
+export function prepareTextPreviewContent(
+  content: string,
+  options?: {
+    limitBytes?: number
+    lineLimit?: number
+    maxLineChars?: number
+  },
+) {
+  const limitBytes = options?.limitBytes ?? TEXT_PREVIEW_SIZE_LIMIT_BYTES
+  if (new TextEncoder().encode(content).byteLength > limitBytes) {
+    return { content: "", tooLarge: true, truncated: false }
+  }
+
+  const lineLimit = options?.lineLimit ?? TEXT_PREVIEW_LINE_LIMIT
+  const maxLineChars = options?.maxLineChars ?? TEXT_PREVIEW_MAX_LINE_CHARS
+  const lines = content.split(/\r?\n/)
+  let truncated = lines.length > lineLimit
+  const previewLines = lines.slice(0, lineLimit).map((line) => {
+    if (line.length <= maxLineChars) return line
+    truncated = true
+    return line.slice(0, maxLineChars)
+  })
+  return { content: previewLines.join("\n"), tooLarge: false, truncated }
 }
 
 function trimColumns(row: string[]) {

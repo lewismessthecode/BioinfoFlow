@@ -69,7 +69,8 @@ function FileArtifact({ artifact }: { artifact: AgentRuntimeArtifact }) {
   const fileInlineUrl = artifact.file_path
     ? buildAgentFsDownloadUrl(artifact.file_path, { inline: true })
     : null
-  const openUrl = resourceUrl || fileDownloadUrl
+  const openUrl = resourceUrl || fileInlineUrl || fileDownloadUrl
+  const downloadLinkUrl = resourceUrl || fileDownloadUrl
   const canCopyOrDownload = content.length > 0
   const canDownloadInlineContent = canCopyOrDownload && !openUrl
 
@@ -91,7 +92,9 @@ function FileArtifact({ artifact }: { artifact: AgentRuntimeArtifact }) {
           {openUrl ? (
             <>
               <LinkButton href={openUrl} label={t("artifacts.open")} icon="open" />
-              <LinkButton href={openUrl} label={t("artifacts.download")} icon="download" />
+              {downloadLinkUrl ? (
+                <LinkButton href={downloadLinkUrl} label={t("artifacts.download")} icon="download" />
+              ) : null}
             </>
           ) : null}
         </div>
@@ -112,6 +115,7 @@ function FileArtifact({ artifact }: { artifact: AgentRuntimeArtifact }) {
             downloadUrl: fileDownloadUrl,
             resourceUrl,
           }}
+          className="h-full"
         />
       </div>
     </div>
@@ -340,12 +344,11 @@ function sanitizeArtifactResourceUrl(url: string | null) {
     const base = typeof window !== "undefined" ? window.location.href : "http://localhost"
     const parsed = new URL(url, base)
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null
+    if (!isAllowedArtifactResourcePath(parsed.pathname)) return null
 
     const isRelativePath = url.startsWith("/") && !url.startsWith("//")
     if (isRelativePath) {
-      return parsed.pathname.startsWith("/api/")
-        ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-        : null
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`
     }
 
     const trustedOrigins = new Set<string>()
@@ -353,11 +356,14 @@ function sanitizeArtifactResourceUrl(url: string | null) {
     trustedOrigins.add(new URL(buildAgentFsDownloadUrl("__artifact_probe__"), base).origin)
 
     if (!trustedOrigins.has(parsed.origin)) return null
-    if (!parsed.pathname.includes("/api/")) return null
     return parsed.toString()
   } catch {
     return null
   }
+}
+
+function isAllowedArtifactResourcePath(pathname: string) {
+  return pathname === "/agent/fs/download" || pathname === "/api/v1/agent/fs/download"
 }
 
 function stringValue(value: unknown) {

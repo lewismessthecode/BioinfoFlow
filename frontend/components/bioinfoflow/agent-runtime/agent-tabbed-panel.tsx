@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react"
 import { FileSearch, FolderTree, Globe, RotateCw, type LucideIcon, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -141,6 +141,39 @@ export function AgentTabbedPanel({
       behavior: "smooth",
     })
   }
+  const onTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentIndex: number,
+  ) => {
+    const lastIndex = TABS.length - 1
+    let nextIndex: number | null = null
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        nextIndex = currentIndex === lastIndex ? 0 : currentIndex + 1
+        break
+      case "ArrowLeft":
+      case "ArrowUp":
+        nextIndex = currentIndex === 0 ? lastIndex : currentIndex - 1
+        break
+      case "Home":
+        nextIndex = 0
+        break
+      case "End":
+        nextIndex = lastIndex
+        break
+      default:
+        break
+    }
+    if (nextIndex === null) return
+    event.preventDefault()
+    const nextTab = TABS[nextIndex]?.key
+    if (!nextTab) return
+    onActiveTabChange(nextTab)
+    window.requestAnimationFrame(() => {
+      document.getElementById(`agent-sidecar-tab-${nextTab}`)?.focus()
+    })
+  }
 
   return (
     <aside
@@ -168,7 +201,7 @@ export function AgentTabbedPanel({
         </div>
         <div className="flex items-center gap-1">
           <div className="flex items-center gap-1" role="tablist" aria-label={t("sidecar.title")}>
-            {TABS.map(({ key, labelKey, Icon }) => (
+            {TABS.map(({ key, labelKey, Icon }, index) => (
               <button
                 key={key}
                 type="button"
@@ -178,6 +211,7 @@ export function AgentTabbedPanel({
                 aria-selected={activeTab === key}
                 tabIndex={activeTab === key ? 0 : -1}
                 onClick={() => onActiveTabChange(key)}
+                onKeyDown={(event) => onTabKeyDown(event, index)}
                 aria-label={t(labelKey)}
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
@@ -229,7 +263,7 @@ export function AgentTabbedPanel({
       <div
         className={cn(
           "min-h-0 flex-1",
-          activeTab === "files" ? "overflow-hidden p-3" : "overflow-y-auto p-3",
+          activeTab === "browser" ? "overflow-y-auto p-3" : "overflow-hidden p-3",
         )}
         role="tabpanel"
         id={`agent-sidecar-panel-${activeTab}`}

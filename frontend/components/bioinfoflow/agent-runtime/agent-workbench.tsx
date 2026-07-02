@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  type KeyboardEvent,
   useMemo,
   useRef,
   useState,
@@ -82,6 +83,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
   ) {
     const t = useTranslations("agentRuntime")
     const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const mobileSidecarDialogRef = useRef<HTMLDivElement>(null)
+    const mobileSidecarRestoreFocusRef = useRef<HTMLElement | null>(null)
     const isMobile = useIsMobile()
     const [input, setInput] = useState("")
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
@@ -546,6 +549,59 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       setSidecarOpen(false)
     }, [])
 
+    useEffect(() => {
+      if (!mobileSidecarVisible) return
+      mobileSidecarRestoreFocusRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null
+      window.requestAnimationFrame(() => mobileSidecarDialogRef.current?.focus())
+      return () => {
+        const restoreTarget = mobileSidecarRestoreFocusRef.current
+        if (restoreTarget?.isConnected) restoreTarget.focus()
+        mobileSidecarRestoreFocusRef.current = null
+      }
+    }, [mobileSidecarVisible])
+
+    const onMobileSidecarKeyDown = useCallback(
+      (event: KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === "Escape") {
+          closeSidecar()
+          return
+        }
+        if (event.key !== "Tab") return
+
+        const focusable = Array.from(
+          event.currentTarget.querySelectorAll<HTMLElement>(
+            [
+              "a[href]",
+              "button:not([disabled])",
+              "textarea:not([disabled])",
+              "input:not([disabled])",
+              "select:not([disabled])",
+              "[tabindex]:not([tabindex='-1'])",
+            ].join(","),
+          ),
+        ).filter((element) => element.offsetParent !== null || element === event.currentTarget)
+
+        if (!focusable.length) {
+          event.preventDefault()
+          event.currentTarget.focus()
+          return
+        }
+
+        const first = focusable[0]
+        const last = focusable.at(-1) ?? first
+        const activeElement = document.activeElement
+        if (event.shiftKey && (activeElement === first || activeElement === event.currentTarget)) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      },
+      [closeSidecar],
+    )
+
     const toggleSidecar = useCallback(() => {
       if (desktopSidecarVisible || mobileSidecarVisible) {
         closeSidecar()
@@ -734,8 +790,14 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
         {mobileSidecarVisible ? (
           <div
-            className="fixed inset-0 z-50 bg-background/80 p-3 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-50 overscroll-contain bg-background/80 p-3 backdrop-blur-sm lg:hidden"
             data-testid="agent-mobile-sidecar-overlay"
+            ref={mobileSidecarDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("sidecar.title")}
+            tabIndex={-1}
+            onKeyDown={onMobileSidecarKeyDown}
           >
             <AgentTabbedPanel
               projectId={projectId}

@@ -2699,6 +2699,7 @@
       "textLoadingDescription": "正在读取文件内容并准备预览。",
       "textFetchFailed": "无法加载文件预览。",
       "textTooLarge": "这个文件过大，无法安全预览。",
+      "textPreviewLimited": "预览已截断为 {lines} 行。",
       "kinds": {
         "markdown": "Markdown",
         "html": "HTML",
