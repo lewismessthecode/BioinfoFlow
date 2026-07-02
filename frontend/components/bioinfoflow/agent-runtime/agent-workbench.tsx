@@ -33,6 +33,10 @@ import {
   type AgentRuntimeInputPart,
   type AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
+import {
+  readAgentTurnPolicy,
+  type AgentTurnPolicy,
+} from "@/lib/agent-runtime/turn-policy"
 import { cn } from "@/lib/utils"
 
 export type AgentWorkbenchHandle = {
@@ -71,6 +75,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     } | null>(null)
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [optimisticTurn, setOptimisticTurn] = useState<AgentRuntimeTurn | null>(null)
+    const [turnPolicy] = useState<AgentTurnPolicy>(readAgentTurnPolicy)
+    const [queuedSubmission, setQueuedSubmission] = useState<{
+      text: string
+      inputParts: AgentRuntimeInputPart[]
+      modelSelection: typeof selectedModel
+      optimisticTurn: AgentRuntimeTurn
+    } | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
     const [activeSidecarTab, setActiveSidecarTab] = useState<AgentTabbedPanelTab>("files")
@@ -136,6 +147,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const hasSelectedSession = Boolean(activeSessionId || state.session?.id)
     const hasConversation = hasTurns || hasSubmittedDraft || hasSelectedSession
     const isRunning = state.status === "running"
+    const hasActiveTurn =
+      isRunning ||
+      state.turns.some(
+        (turn) => turn.status === "queued" || turn.status === "running",
+      )
     const artifactEventCount = useMemo(
       () => state.events.filter((event) => event.type === "artifact.created").length,
       [state.events],
@@ -236,21 +252,24 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       [sessionId],
     )
 
-    const submitTurn = useCallback(
+    const sendTurn = useCallback(
       (
         text: string,
         inputParts: AgentRuntimeInputPart[],
         modelSelection = selectedModel,
+        optimisticTurnOverride?: AgentRuntimeTurn,
       ) => {
         const trimmedText = text.trim()
         if (!trimmedText) return
         setHasSubmittedDraft(true)
-        const nextOptimisticTurn = createOptimisticTurn({
-          text: trimmedText,
-          inputParts,
-          sessionId: activeSessionId || state.session?.id || "pending-session",
-          projectId,
-        })
+        const nextOptimisticTurn =
+          optimisticTurnOverride ??
+          createOptimisticTurn({
+            text: trimmedText,
+            inputParts,
+            sessionId: activeSessionId || state.session?.id || "pending-session",
+            projectId,
+          })
         setOptimisticTurn(nextOptimisticTurn)
         void send(trimmedText, {
           modelSelection,
@@ -274,6 +293,61 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         state.session,
       ],
     )
+
+    const submitTurn = useCallback(
+      (
+        text: string,
+        inputParts: AgentRuntimeInputPart[],
+        modelSelection = selectedModel,
+      ) => {
+        const trimmedText = text.trim()
+        if (!trimmedText) return
+        if (!hasActiveTurn) {
+          sendTurn(trimmedText, inputParts, modelSelection)
+          return
+        }
+
+        if (turnPolicy === "queue") {
+          const nextOptimisticTurn = createOptimisticTurn({
+            text: trimmedText,
+            inputParts,
+            sessionId: activeSessionId || state.session?.id || "pending-session",
+            projectId,
+          })
+          setHasSubmittedDraft(true)
+          setOptimisticTurn(nextOptimisticTurn)
+          setQueuedSubmission({
+            text: trimmedText,
+            inputParts,
+            modelSelection,
+            optimisticTurn: nextOptimisticTurn,
+          })
+          return
+        }
+
+        void (async () => {
+          await interrupt()
+          sendTurn(trimmedText, inputParts, modelSelection)
+        })()
+      },
+      [
+        activeSessionId,
+        hasActiveTurn,
+        interrupt,
+        projectId,
+        selectedModel,
+        sendTurn,
+        state.session?.id,
+        turnPolicy,
+      ],
+    )
+
+    useEffect(() => {
+      if (!queuedSubmission || hasActiveTurn) return
+      const next = queuedSubmission
+      setQueuedSubmission(null)
+      sendTurn(next.text, next.inputParts, next.modelSelection, next.optimisticTurn)
+    }, [hasActiveTurn, queuedSubmission, sendTurn])
 
     const submit = () => {
       const text = input.trim()
