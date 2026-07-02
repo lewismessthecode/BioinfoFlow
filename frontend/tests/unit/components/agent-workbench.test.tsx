@@ -758,7 +758,7 @@ describe("AgentWorkbench", () => {
           [{ ...baseTurn, id: "running-turn", status: "running" }],
           [],
         ),
-        status: "running" as const,
+        status: "running" as "idle" | "loading" | "running" | "error",
         error: null,
       },
       setActiveSessionId: vi.fn(),
@@ -792,6 +792,153 @@ describe("AgentWorkbench", () => {
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith("Run Deaf_20 next", expect.any(Object)),
     )
+  })
+
+  it("treats an optimistic in-flight turn as active before backend state catches up", () => {
+    writeAgentTurnPolicy("queue")
+    const send = vi.fn(() => new Promise(() => {}))
+    setupRuntime({ session: baseSession, send })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "First turn" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    fireEvent.change(input, { target: { value: "Second turn" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(screen.getByText("Second turn")).toBeInTheDocument()
+    expect(screen.getAllByText("Queued")).toHaveLength(2)
+  })
+
+  it("cancels queued drafts when starting a new conversation", async () => {
+    writeAgentTurnPolicy("queue")
+    const send = vi.fn().mockResolvedValue(undefined)
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const workbenchRef = { current: null as React.ElementRef<typeof AgentWorkbench> | null }
+    const view = render(<AgentWorkbench ref={workbenchRef} />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Do this later" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(screen.getByText("Do this later")).toBeInTheDocument()
+
+    await act(async () => {
+      workbenchRef.current?.newConversation()
+      await Promise.resolve()
+    })
+
+    runtime.state = {
+      ...runtime.state,
+      turns: [],
+      timeline: [],
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench ref={workbenchRef} />)
+
+    expect(send).not.toHaveBeenCalled()
+    expect(screen.queryByText("Do this later")).not.toBeInTheDocument()
+  })
+
+  it("keeps multiple queued drafts in FIFO order", async () => {
+    writeAgentTurnPolicy("queue")
+    const send = vi.fn().mockResolvedValue(undefined)
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [{ ...baseTurn, id: "running-turn", status: "running" }],
+        events: [] as AgentRuntimeEvent[],
+        timeline: buildAgentRuntimeTimeline(
+          [{ ...baseTurn, id: "running-turn", status: "running" }],
+          [],
+        ),
+        status: "running" as "idle" | "loading" | "running" | "error",
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send,
+      interrupt: vi.fn(),
+      decideAction: vi.fn(),
+    }
+    useAgentRuntimeMock.mockReturnValue(runtime)
+    const view = render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Queued A" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    fireEvent.change(input, { target: { value: "Queued B" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(send).not.toHaveBeenCalled()
+    expect(screen.getByText("Queued A")).toBeInTheDocument()
+    expect(screen.getByText("Queued B")).toBeInTheDocument()
+
+    runtime.state = {
+      ...runtime.state,
+      turns: [{ ...baseTurn, id: "running-turn", status: "completed" }],
+      timeline: buildAgentRuntimeTimeline(
+        [{ ...baseTurn, id: "running-turn", status: "completed" }],
+        [],
+      ),
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench />)
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith("Queued A", expect.any(Object)),
+    )
+
+    runtime.state = {
+      ...runtime.state,
+      turns: [],
+      timeline: [],
+      status: "idle",
+    }
+    view.rerender(<AgentWorkbench />)
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith("Queued B", expect.any(Object)),
+    )
+    expect(send.mock.calls.map((call) => call[0])).toEqual(["Queued A", "Queued B"])
+  })
+
+  it("treats approval and user waits as active turns for queue policy", () => {
+    writeAgentTurnPolicy("queue")
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({
+      session: baseSession,
+      turns: [{ ...baseTurn, id: "waiting-turn", status: "waiting_approval" }],
+      send,
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "After approval" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(send).not.toHaveBeenCalled()
+    expect(screen.getByText("After approval")).toBeInTheDocument()
+    expect(screen.getByText("Queued")).toBeInTheDocument()
   })
 
   it("hydrates the remote connection selection from session metadata before sending", async () => {

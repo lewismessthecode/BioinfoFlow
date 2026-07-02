@@ -820,18 +820,32 @@ describe("SettingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Agent defaults" }))
 
-    expect(screen.getByRole("radio", { name: /Interrupt current turn/ })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    )
+    expect(screen.getByRole("radio", { name: /Interrupt current turn/ })).toBeChecked()
 
     fireEvent.click(screen.getByRole("radio", { name: /Queue for next turn/ }))
 
-    expect(screen.getByRole("radio", { name: /Queue for next turn/ })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    )
+    expect(screen.getByRole("radio", { name: /Queue for next turn/ })).toBeChecked()
     expect(window.localStorage.getItem(AGENT_TURN_POLICY_STORAGE_KEY)).toBe("queue")
+  })
+
+  it("opens the agent defaults section from the settings deep link", () => {
+    window.history.replaceState(null, "", "/settings?section=agent")
+
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          role: "owner",
+          mode: "personal",
+          canManageMembers: false,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    expect(screen.getByText("Choose how Bioinfoflow handles active messages.")).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: /Interrupt current turn/ })).toBeChecked()
   })
 })
 

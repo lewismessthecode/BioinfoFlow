@@ -787,37 +787,38 @@ export default function SettingsPageClient({
                   </p>
                 </div>
 
-                <div
-                  role="radiogroup"
-                  aria-label={t("agent.turnPolicy.label")}
-                  className="grid gap-2 sm:grid-cols-2"
-                >
+                <fieldset className="grid gap-2 sm:grid-cols-2">
+                  <legend className="sr-only">{t("agent.turnPolicy.label")}</legend>
                   {AGENT_TURN_POLICIES.map((policy) => {
                     const selected = agentTurnPolicy === policy
                     return (
-                      <button
+                      <label
                         key={policy}
-                        type="button"
-                        role="radio"
-                        aria-checked={selected}
-                        onClick={() => handleAgentTurnPolicyChange(policy)}
                         className={cn(
-                          "rounded-xl border px-3.5 py-3 text-left transition-colors",
+                          "cursor-pointer rounded-xl border px-3.5 py-3 text-left transition-colors focus-within:outline-hidden focus-within:ring-2 focus-within:ring-ring",
                           selected
                             ? "border-primary/55 bg-primary/10 text-foreground"
                             : "border-border/60 bg-secondary/25 text-muted-foreground hover:bg-secondary/45 hover:text-foreground",
                         )}
                       >
+                        <input
+                          type="radio"
+                          name="agent-turn-policy"
+                          value={policy}
+                          checked={selected}
+                          onChange={() => handleAgentTurnPolicyChange(policy)}
+                          className="sr-only"
+                        />
                         <span className="block text-sm font-semibold">
                           {t(`agent.turnPolicy.options.${policy}.label`)}
                         </span>
                         <span className="mt-1 block text-xs leading-5">
                           {t(`agent.turnPolicy.options.${policy}.description`)}
                         </span>
-                      </button>
+                      </label>
                     )
                   })}
-                </div>
+                </fieldset>
               </div>
             </>
           )}
