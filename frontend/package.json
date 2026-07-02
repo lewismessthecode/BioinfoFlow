@@ -57,7 +57,8 @@
     "shiki": "^4.0.2",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.3.1",
-    "uplot": "^1.6.31"
+    "uplot": "^1.6.31",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",
