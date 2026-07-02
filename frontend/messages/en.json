@@ -2494,6 +2494,21 @@
       "copy": "Copy response",
       "retry": "Retry response"
     },
+    "tokenUsage": {
+      "label": "Tokens",
+      "display": "{value} tokens",
+      "compactDisplay": "{value}",
+      "aria": "{total} tokens used in this session. {input} input, {output} output.",
+      "title": "Context window",
+      "used": "Used",
+      "remaining": "remaining",
+      "input": "Input",
+      "output": "Output",
+      "cached": "Cached",
+      "reasoning": "Reasoning",
+      "window": "Window",
+      "maxOutput": "Max output"
+    },
     "activity": {
       "groups": {
         "search": "Searched web",

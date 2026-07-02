@@ -631,6 +631,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onSelectModel={(model) => void setSelectedModel(model)}
         contextAttachments={contextAttachments}
         onRemoveContextAttachment={removeContextAttachment}
+        tokenUsageSummary={state.session?.token_usage_summary}
         selectedRemoteConnectionId={selectedRemoteConnectionId}
         onRemoteConnectionChange={handleRemoteConnectionChange}
         compactControls={desktopSidecarVisible}

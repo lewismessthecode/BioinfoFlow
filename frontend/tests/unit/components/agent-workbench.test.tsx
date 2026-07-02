@@ -100,6 +100,19 @@ vi.mock("next-intl", () => ({
       "status.unknown": "Not tested",
       selectedLocalAria: "Current execution target: local",
       selectedRemoteAria: `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
+      "tokenUsage.label": "Tokens",
+      "tokenUsage.display": `${values?.value ?? ""} tokens`,
+      "tokenUsage.compactDisplay": `${values?.value ?? ""}`,
+      "tokenUsage.aria": `${values?.total ?? ""} tokens used in this session. ${values?.input ?? ""} input, ${values?.output ?? ""} output.`,
+      "tokenUsage.title": "Context window",
+      "tokenUsage.used": "Used",
+      "tokenUsage.remaining": "remaining",
+      "tokenUsage.input": "Input",
+      "tokenUsage.output": "Output",
+      "tokenUsage.cached": "Cached",
+      "tokenUsage.reasoning": "Reasoning",
+      "tokenUsage.window": "Window",
+      "tokenUsage.maxOutput": "Max output",
       auto: "Auto",
       configure: "Configure providers",
       noProviders: "No model available",
@@ -611,6 +624,36 @@ describe("AgentWorkbench", () => {
       "data-placement",
       "bottom",
     )
+  })
+
+  it("shows cumulative token usage from the loaded session state", async () => {
+    setupRuntime({
+      session: {
+        ...baseSession,
+        token_usage_summary: {
+          has_token_usage: true,
+          input_tokens: 97_000,
+          output_tokens: 3_000,
+          total_tokens: 100_000,
+          context_window: 258_000,
+          max_output_tokens: null,
+          turns_with_usage: 2,
+          raw_totals: {},
+        },
+      },
+      turns: [baseTurn],
+    })
+
+    render(<AgentWorkbench />)
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/agent/sessions/session-1/artifacts")
+    })
+    expect(
+      screen.getByRole("button", {
+        name: "100K tokens used in this session. 97K input, 3K output.",
+      }),
+    ).toHaveTextContent("100K tokens")
   })
 
   it("retries a completed turn through the existing send path and shows a duplicate optimistic turn", async () => {
