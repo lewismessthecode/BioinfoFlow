@@ -123,12 +123,12 @@ export function AgentTranscript({
                         />
                       ))}
                     </div>
-                  ) : (
+                  ) : !isLocalPendingSubmissionTurn(entry.turn) ? (
                     <MarkdownRenderer
                       className="text-[15px] leading-7"
                       content={t("pendingResponse")}
                     />
-                  )}
+                  ) : null}
                   {liveStatusLabel ? <LiveStatusLine label={liveStatusLabel} /> : null}
                   {showResponseActions ? (
                     <ResponseActionBar
@@ -412,6 +412,13 @@ function liveTurnStatusLabel(
 function numericCitationIndex(sourceId: string) {
   if (!/^\d+$/.test(sourceId)) return null
   return Math.max(0, Number(sourceId) - 1)
+}
+
+function isLocalPendingSubmissionTurn(turn: AgentRuntimeTurn) {
+  return (
+    turn.loop_state?.local_queue === true ||
+    turn.loop_state?.local_pending_interrupt === true
+  )
 }
 
 function turnStatusLabel(
