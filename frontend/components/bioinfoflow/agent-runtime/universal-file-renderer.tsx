@@ -103,11 +103,12 @@ export function UniversalFileRenderer({
 
   useEffect(() => {
     if (!shouldFetchText || !inlineUrl) return
+    const requestUrl = inlineUrl
     const controller = new AbortController()
     let cancelled = false
     async function loadTextPreview() {
       try {
-        const response = await fetch(inlineUrl, {
+        const response = await fetch(requestUrl, {
           credentials: "include",
           signal: controller.signal,
         })
@@ -513,12 +514,13 @@ function WorkbookPreview({ file }: { file: UniversalFileResource }) {
     if (!sourceUrl) return
     if (typeof file.size === "number" && file.size > WORKBOOK_SIZE_LIMIT_BYTES) return
 
+    const requestUrl = sourceUrl
     const controller = new AbortController()
     let cancelled = false
 
     async function loadWorkbook() {
       try {
-        const response = await fetch(sourceUrl, {
+        const response = await fetch(requestUrl, {
           credentials: "include",
           signal: controller.signal,
         })
