@@ -479,6 +479,8 @@ _FS_PREVIEWABLE_BINARY_SUFFIXES = {
     ".pdf",
     ".xlsx",
     ".xls",
+    ".xlsm",
+    ".ods",
     ".png",
     ".jpg",
     ".jpeg",
@@ -677,6 +679,8 @@ def _language_for(path: Path) -> str | None:
         ".pdf": "pdf",
         ".xlsx": "spreadsheet",
         ".xls": "spreadsheet",
+        ".xlsm": "spreadsheet",
+        ".ods": "spreadsheet",
     }.get(path.suffix.lower())
 
 

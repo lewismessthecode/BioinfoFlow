@@ -1316,6 +1316,10 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
     data_root.mkdir()
     pdf_file = repo_root / "summary.pdf"
     pdf_file.write_bytes(b"%PDF-1.7\nbinary-\xff\n")
+    xlsm_file = repo_root / "metrics.xlsm"
+    xlsm_file.write_bytes(b"PK\x03\x04binary-\xff\n")
+    ods_file = repo_root / "metrics.ods"
+    ods_file.write_bytes(b"PK\x03\x04binary-\xff\n")
     png_file = repo_root / "plot.png"
     png_file.write_bytes(b"\x89PNG\r\n\x1a\nbinary-\xff\n")
     svg_file = repo_root / "plot.svg"
@@ -1335,6 +1339,17 @@ async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_
     assert data["binary"] is True
     assert data["content"] == ""
     assert data["mime_type"] == "application/pdf"
+
+    for workbook_file in (xlsm_file, ods_file):
+        workbook_metadata_resp = await async_client.get(
+            "/api/v1/agent/fs/file",
+            params={"path": str(workbook_file)},
+        )
+        assert workbook_metadata_resp.status_code == 200
+        workbook_data = workbook_metadata_resp.json()["data"]
+        assert workbook_data["binary"] is True
+        assert workbook_data["content"] == ""
+        assert workbook_data["language"] == "spreadsheet"
 
     for image_file, expected_mime_type in (
         (png_file, "image/png"),
