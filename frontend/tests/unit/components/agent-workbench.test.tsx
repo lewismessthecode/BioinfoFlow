@@ -26,7 +26,7 @@ let workspaceProjectsMock: Array<{
 
 vi.mock("next-intl", () => ({
   useLocale: () => "en",
-  useTranslations: () => (key: string, values?: Record<string, string>) => {
+  useTranslations: () => (key: string, values?: Record<string, string | number>) => {
     const labels: Record<string, string> = {
       welcomeTitle: "What should Bioinfoflow help you do today?",
       composerPlaceholder: "Message Bioinfoflow...",
@@ -66,8 +66,20 @@ vi.mock("next-intl", () => ({
       "sidecar.noActivity": "No activity yet",
       "tabs.tools": "Tools",
       "tabs.preview": "Preview",
+      "tabs.artifacts": "Artifacts",
       "tabs.files": "Files",
       "tabs.browser": "Browser",
+      "artifacts.title": "Artifacts",
+      "artifacts.count": `${values?.count ?? 0} artifacts`,
+      "artifacts.empty": "No artifacts yet.",
+      "artifacts.emptyNoSession": "Start a conversation to collect artifacts.",
+      "artifacts.emptyNoSessionDescription": "Generated files will open here.",
+      "artifacts.emptyRunningDescription": "Files created by the agent will appear here.",
+      "artifacts.loadFailed": "Could not load artifacts.",
+      "artifacts.loadFailedDescription": "Refresh the panel and try again.",
+      "artifacts.retry": "Retry",
+      "files.title": "Files",
+      "browser.title": "Browser",
       "browser.empty": "Enter a URL to preview a page.",
       "environment.open": "Open environment",
       "environment.close": "Close environment",
@@ -311,7 +323,7 @@ describe("AgentWorkbench", () => {
     ).not.toBeInTheDocument()
   })
 
-  it("opens the desktop workspace drawer to project files on first user request", async () => {
+  it("opens the desktop workspace drawer to artifacts on first user request", async () => {
     setupRuntime({ session: baseSession })
     render(<AgentWorkbench projectId="project-1" />)
     const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
@@ -326,7 +338,7 @@ describe("AgentWorkbench", () => {
 
     const drawer = screen.getByTestId("artifact-panel")
     expect(drawer).toBeInTheDocument()
-    expect(within(drawer).getByRole("button", { name: "Files" })).toHaveAttribute(
+    expect(within(drawer).getByRole("button", { name: "Artifacts" })).toHaveAttribute(
       "data-active",
       "true",
     )
@@ -366,7 +378,7 @@ describe("AgentWorkbench", () => {
     const input = screen.getByPlaceholderText("browser.urlPlaceholder")
     fireEvent.change(input, { target: { value: "/runs" } })
     fireEvent.click(screen.getByRole("button", { name: "browser.go" }))
-    expect(screen.getByTitle("browser.title")).toHaveAttribute(
+    expect(screen.getByTitle("Browser")).toHaveAttribute(
       "src",
       "http://localhost:3000/runs",
     )
@@ -386,14 +398,14 @@ describe("AgentWorkbench", () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Artifacts" })).toHaveAttribute(
       "data-active",
       "true",
     )
     fireEvent.click(screen.getByRole("button", { name: "Browser" }))
     expect(screen.getByPlaceholderText("browser.urlPlaceholder")).toHaveValue("")
     expect(screen.getByText("Enter a URL to preview a page.")).toBeInTheDocument()
-    expect(screen.queryByTitle("browser.title")).not.toBeInTheDocument()
+    expect(screen.queryByTitle("Browser")).not.toBeInTheDocument()
   })
 
   it("preserves the active workspace drawer panel after closing and reopening", async () => {
@@ -453,7 +465,7 @@ describe("AgentWorkbench", () => {
     const input = screen.getByPlaceholderText("browser.urlPlaceholder")
     fireEvent.change(input, { target: { value: "/runs" } })
     fireEvent.click(screen.getByRole("button", { name: "browser.go" }))
-    expect(screen.getByTitle("browser.title")).toHaveAttribute(
+    expect(screen.getByTitle("Browser")).toHaveAttribute(
       "src",
       "http://localhost:3000/runs",
     )
@@ -477,7 +489,7 @@ describe("AgentWorkbench", () => {
     expect(screen.getByPlaceholderText("browser.urlPlaceholder")).toHaveValue(
       "http://localhost:3000/runs",
     )
-    expect(screen.getByTitle("browser.title")).toHaveAttribute(
+    expect(screen.getByTitle("Browser")).toHaveAttribute(
       "src",
       "http://localhost:3000/runs",
     )
@@ -605,7 +617,7 @@ describe("AgentWorkbench", () => {
     expect(mobilePanel).toBeInTheDocument()
     expect(mobilePanel).toHaveClass("flex")
     expect(mobilePanel).not.toHaveClass("hidden")
-    expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Artifacts" })).toHaveAttribute(
       "data-active",
       "true",
     )

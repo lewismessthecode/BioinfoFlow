@@ -39,6 +39,7 @@ describe("Agent runtime deliverable artifact semantics", () => {
       artifact("log_summary"),
       artifact("todo_list"),
       artifact("markdown"),
+      artifact("image"),
       artifact("unknown", { file_path: "results/table.tsv" }),
     ]
 
@@ -48,7 +49,8 @@ describe("Agent runtime deliverable artifact semantics", () => {
       false,
       true,
       true,
+      true,
     ])
-    expect(countDeliverableArtifacts(artifacts)).toBe(2)
+    expect(countDeliverableArtifacts(artifacts)).toBe(3)
   })
 })

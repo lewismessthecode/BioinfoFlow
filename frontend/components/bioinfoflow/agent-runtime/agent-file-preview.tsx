@@ -4,20 +4,19 @@ import {
   Copy,
   Download,
   ExternalLink,
-  FileCode,
   FileText,
   Paperclip,
-  Table,
   X,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
-import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { buildAgentFsDownloadUrl, type AgentFsFile } from "@/lib/agent-runtime"
 import { formatSize } from "@/lib/format-utils"
 import { cn } from "@/lib/utils"
+import { filePreviewKind } from "./file-renderer-utils"
+import { fileKindLabel, UniversalFileRenderer } from "./universal-file-renderer"
 
 export function AgentFilePreview({
   file,
@@ -34,7 +33,12 @@ export function AgentFilePreview({
 }) {
   const t = useTranslations("agentRuntime")
   const filename = file.path.split("/").pop() || file.path
-  const kind = filePreviewKind(file)
+  const kind = filePreviewKind({
+    path: file.path,
+    language: file.language,
+    mimeType: file.mime_type,
+    binary: file.binary,
+  })
   const inlineUrl = buildAgentFsDownloadUrl(file.path, { inline: true })
   const downloadUrl = buildAgentFsDownloadUrl(file.path)
   const openLabel = t("files.openDefault")
@@ -60,7 +64,7 @@ export function AgentFilePreview({
         <div className="min-w-0 flex-1" title={file.path}>
           <div className="truncate text-sm font-medium text-foreground">{filename}</div>
           <div className="truncate font-mono text-[11px] text-muted-foreground">
-            {file.path} · {formatSize(file.size)} · {file.language || "text"}
+            {file.path} · {formatSize(file.size)} · {fileKindLabel(t, kind)}
           </div>
         </div>
         <div className="flex shrink-0 gap-1.5">
@@ -69,7 +73,7 @@ export function AgentFilePreview({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 rounded-lg bg-card px-2"
+                className="h-8 rounded-md bg-card px-2 transition-transform active:scale-[0.98]"
                 asChild
               >
                 <a
@@ -91,7 +95,7 @@ export function AgentFilePreview({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 rounded-lg bg-card px-2"
+                className="h-8 rounded-md bg-card px-2 transition-transform active:scale-[0.98]"
                 asChild
               >
                 <a href={downloadUrl} aria-label={downloadLabel} title={downloadLabel}>
@@ -108,7 +112,7 @@ export function AgentFilePreview({
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8 rounded-lg bg-card px-2"
+                className="h-8 rounded-md bg-card px-2 transition-transform active:scale-[0.98]"
                 onClick={() => onAddToContext(file.path)}
                 aria-label={addLabel}
                 title={addLabel}
@@ -125,7 +129,7 @@ export function AgentFilePreview({
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8 rounded-lg bg-card px-2"
+                className="h-8 rounded-md bg-card px-2 transition-transform active:scale-[0.98]"
                 onClick={() => onCopyPath(file.path)}
                 aria-label={copyLabel}
                 title={copyLabel}
@@ -138,7 +142,18 @@ export function AgentFilePreview({
           </Tooltip>
         </div>
       </div>
-      <FilePreviewBody file={file} kind={kind} inlineUrl={inlineUrl} />
+      <UniversalFileRenderer
+        file={{
+          path: file.path,
+          content: file.content,
+          size: file.size,
+          language: file.language,
+          mimeType: file.mime_type,
+          binary: file.binary,
+          inlineUrl,
+          downloadUrl,
+        }}
+      />
       {file.truncated ? (
         <p className="shrink-0 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
           {t("files.truncated")}
@@ -146,197 +161,4 @@ export function AgentFilePreview({
       ) : null}
     </div>
   )
-}
-
-function FilePreviewBody({
-  file,
-  kind,
-  inlineUrl,
-}: {
-  file: AgentFsFile
-  kind: FilePreviewKind
-  inlineUrl: string
-}) {
-  const t = useTranslations("agentRuntime")
-
-  if (kind === "markdown") {
-    return (
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-3">
-        <MarkdownRenderer
-          content={file.content || t("files.previewUnavailable")}
-          className="mx-auto w-full max-w-3xl px-1 py-2 text-sm"
-        />
-      </div>
-    )
-  }
-
-  if (kind === "html") {
-    return (
-      <iframe
-        title={file.path}
-        srcDoc={file.content || undefined}
-        src={file.content ? undefined : inlineUrl}
-        sandbox=""
-        className="min-h-0 min-w-0 flex-1 border-0 bg-background"
-      />
-    )
-  }
-
-  if (kind === "pdf") {
-    return (
-      <iframe
-        title={file.path}
-        src={inlineUrl}
-        className="min-h-0 min-w-0 flex-1 border-0 bg-background"
-      />
-    )
-  }
-
-  if (kind === "table") {
-    const rows = parseDelimitedRows(
-      file.content,
-      file.path.toLowerCase().endsWith(".tsv") ? "\t" : ",",
-    )
-    if (rows.length > 0) return <DelimitedTable rows={rows} />
-  }
-
-  if (kind === "unsupported") {
-    return (
-      <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-muted/20 p-6 text-center">
-        <div className="max-w-sm">
-          <FileCode className="mx-auto h-8 w-8 text-muted-foreground" />
-          <p className="mt-3 text-sm font-medium text-foreground">
-            {t("files.previewUnsupported")}
-          </p>
-          <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-            {t("files.openDefaultDescription")}
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  return <CodePreview content={file.content || t("files.previewUnavailable")} />
-}
-
-function CodePreview({ content }: { content: string }) {
-  const lines = content.split(/\r?\n/)
-  return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-muted/20">
-      <pre className="min-w-max p-3 font-mono text-xs leading-5 text-foreground tabular-nums">
-        <code>
-          {lines.map((line, index) => (
-            <span key={index} className="table-row">
-              <span className="sticky left-0 table-cell select-none border-r border-border/50 bg-muted/95 pr-3 text-right text-muted-foreground">
-                {index + 1}
-              </span>
-              <span className="table-cell whitespace-pre pl-3">{line || " "}</span>
-            </span>
-          ))}
-        </code>
-      </pre>
-    </div>
-  )
-}
-
-function DelimitedTable({ rows }: { rows: string[][] }) {
-  const [header, ...body] = rows
-  return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-3">
-      <div className="overflow-auto rounded-lg border border-border/65 bg-card">
-        <table className="min-w-max w-full border-collapse text-left text-sm">
-          <thead className="sticky top-0 bg-muted/85 text-xs font-medium text-muted-foreground">
-            <tr>
-              {header.map((cell, index) => (
-                <th key={`${cell}-${index}`} className="whitespace-nowrap border-b border-border/65 px-3 py-2">
-                  <span className="inline-flex items-center gap-1.5">
-                    {index === 0 ? <Table className="h-3.5 w-3.5" /> : null}
-                    {cell || "—"}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {body.map((row, rowIndex) => (
-              <tr key={rowIndex} className="border-b border-border/45 last:border-b-0">
-                {header.map((_, cellIndex) => (
-                  <td key={cellIndex} className="whitespace-nowrap px-3 py-2 align-top text-foreground">
-                    {row[cellIndex] || ""}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-type FilePreviewKind = "markdown" | "html" | "pdf" | "table" | "text" | "unsupported"
-
-function filePreviewKind(file: AgentFsFile): FilePreviewKind {
-  const lowerPath = file.path.toLowerCase()
-  const language = file.language?.toLowerCase() ?? ""
-  const mime = file.mime_type?.toLowerCase() ?? ""
-  if (language === "markdown" || lowerPath.endsWith(".md") || lowerPath.endsWith(".markdown")) {
-    return "markdown"
-  }
-  if (language === "html" || mime.includes("html") || lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")) {
-    return "html"
-  }
-  if (language === "pdf" || mime.includes("pdf") || lowerPath.endsWith(".pdf")) {
-    return "pdf"
-  }
-  if (
-    language === "csv" ||
-    language === "tsv" ||
-    mime.includes("csv") ||
-    mime.includes("tab-separated") ||
-    lowerPath.endsWith(".csv") ||
-    lowerPath.endsWith(".tsv")
-  ) {
-    return "table"
-  }
-  if (file.binary || lowerPath.endsWith(".xlsx") || lowerPath.endsWith(".xls")) {
-    return "unsupported"
-  }
-  return "text"
-}
-
-function parseDelimitedRows(content: string, delimiter: "," | "\t") {
-  if (!content.trim()) return []
-  return content
-    .trim()
-    .split(/\r?\n/)
-    .slice(0, 200)
-    .map((line) => parseDelimitedLine(line, delimiter))
-    .filter((row) => row.some((cell) => cell.trim().length > 0))
-}
-
-function parseDelimitedLine(line: string, delimiter: "," | "\t") {
-  const cells: string[] = []
-  let current = ""
-  let quoted = false
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index]
-    if (char === '"') {
-      if (quoted && line[index + 1] === '"') {
-        current += '"'
-        index += 1
-      } else {
-        quoted = !quoted
-      }
-      continue
-    }
-    if (char === delimiter && !quoted) {
-      cells.push(current)
-      current = ""
-      continue
-    }
-    current += char
-  }
-  cells.push(current)
-  return cells
 }
