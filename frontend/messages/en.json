@@ -2159,6 +2159,7 @@
     "nav": {
       "account": "Account",
       "appearance": "Appearance",
+      "agent": "Agent defaults",
       "providers": "AI Providers",
       "registries": "Container Registries",
       "members": "Members"
@@ -2188,6 +2189,24 @@
         "disabledLabel": "Off",
         "preview": "Preview",
         "reducedMotion": "Reduced motion is on, so confetti is paused."
+      }
+    },
+    "agent": {
+      "title": "Agent defaults",
+      "description": "Choose how Bioinfoflow handles a new message while the agent is still working.",
+      "turnPolicy": {
+        "label": "During active responses",
+        "description": "Apply this behavior when you send a message before the current turn finishes.",
+        "options": {
+          "interrupt": {
+            "label": "Interrupt current turn",
+            "description": "Stop the active response first, then send your new message as the next turn."
+          },
+          "queue": {
+            "label": "Queue for next turn",
+            "description": "Keep the active response running and send your draft after it finishes."
+          }
+        }
       }
     },
     "title": "AI Providers",

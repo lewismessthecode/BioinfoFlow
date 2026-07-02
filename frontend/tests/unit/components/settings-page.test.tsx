@@ -5,6 +5,7 @@ import { apiRequest } from "@/lib/api"
 import { useAppearance } from "@/lib/appearance/use-appearance"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
 import { createCelebrationsPreferenceMock } from "@/tests/support/mock-celebrations-preference"
+import { AGENT_TURN_POLICY_STORAGE_KEY } from "@/lib/agent-runtime/turn-policy"
 
 type ProviderTestResult = {
   success: boolean
@@ -32,6 +33,7 @@ vi.mock("next-intl", () => ({
       pageTitle: "Settings",
       "nav.account": "Account",
       "nav.appearance": "Appearance",
+      "nav.agent": "Agent defaults",
       "nav.providers": "AI Providers",
       "nav.registries": "Container Registries",
       "nav.members": "Members",
@@ -60,6 +62,14 @@ vi.mock("next-intl", () => ({
       "appearance.celebrations.disabledLabel": "Off",
       "appearance.celebrations.preview": "Preview",
       "appearance.celebrations.reducedMotion": "Reduced motion is on, so confetti is paused.",
+      "agent.title": "Agent defaults",
+      "agent.description": "Choose how Bioinfoflow handles active messages.",
+      "agent.turnPolicy.label": "During active responses",
+      "agent.turnPolicy.description": "Apply this behavior while the current turn runs.",
+      "agent.turnPolicy.options.interrupt.label": "Interrupt current turn",
+      "agent.turnPolicy.options.interrupt.description": "Stop the active response first.",
+      "agent.turnPolicy.options.queue.label": "Queue for next turn",
+      "agent.turnPolicy.options.queue.description": "Send your draft after it finishes.",
       title: "AI Providers",
       subtitle: "Configure providers",
       apiKey: "API Key",
@@ -191,6 +201,7 @@ describe("SettingsPage", () => {
   beforeEach(() => {
     window.history.replaceState(null, "", "/settings")
     apiRequestMock.mockReset()
+    window.localStorage.clear()
     updateSettingsMock.mockReset()
     testProviderMock.mockClear()
     celebratePreviewMock.mockReset()
@@ -791,6 +802,36 @@ describe("SettingsPage", () => {
     // Members nav item should not exist
     expect(screen.queryByText("Members")).not.toBeInTheDocument()
     expect(screen.queryByText("Members Panel")).not.toBeInTheDocument()
+  })
+
+  it("persists the agent active-turn policy from settings", () => {
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          role: "owner",
+          mode: "personal",
+          canManageMembers: false,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent defaults" }))
+
+    expect(screen.getByRole("radio", { name: /Interrupt current turn/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    )
+
+    fireEvent.click(screen.getByRole("radio", { name: /Queue for next turn/ }))
+
+    expect(screen.getByRole("radio", { name: /Queue for next turn/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    )
+    expect(window.localStorage.getItem(AGENT_TURN_POLICY_STORAGE_KEY)).toBe("queue")
   })
 })
 
