@@ -1,20 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { useTranslations } from "next-intl"
 import {
-  Cpu,
-  Database,
   Loader2,
-  Bot,
   Monitor,
   Moon,
-  Palette,
   PartyPopper,
-  ShieldCheck,
   Sun,
-  User,
-  Users,
 } from "lucide-react"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { ContainerRegistriesPanel } from "@/components/bioinfoflow/settings/container-registries-panel"
@@ -77,19 +70,144 @@ type SettingsSection =
 
 const NAV_ITEMS: {
   key: SettingsSection
-  icon: typeof User
   requiresMembers?: boolean
   requiresRegistryAdmin?: boolean
 }[] = [
-  { key: "account", icon: User },
-  { key: "appearance", icon: Palette },
-  { key: "agent", icon: Bot },
-  { key: "providers", icon: Cpu },
-  { key: "registries", icon: Database, requiresRegistryAdmin: true },
-  { key: "members", icon: Users, requiresMembers: true },
+  { key: "account" },
+  { key: "appearance" },
+  { key: "agent" },
+  { key: "providers" },
+  { key: "registries", requiresRegistryAdmin: true },
+  { key: "members", requiresMembers: true },
 ]
 
 const AGENT_TURN_POLICIES: AgentTurnPolicy[] = ["interrupt", "queue"]
+
+function updateSectionUrl(section: SettingsSection) {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  const url = new URL(window.location.href)
+  if (section === "account") {
+    url.searchParams.delete("section")
+  } else {
+    url.searchParams.set("section", section)
+  }
+  window.history.replaceState(null, "", `${url.pathname}${url.search}`)
+}
+
+function SettingsSectionNav({
+  activeSection,
+  items,
+  onSelect,
+  t,
+}: {
+  activeSection: SettingsSection
+  items: typeof NAV_ITEMS
+  onSelect: (section: SettingsSection) => void
+  t: (key: string) => string
+}) {
+  return (
+    <nav aria-label="Settings sections" className="mt-6 overflow-x-auto pb-1">
+      <ul className="flex min-w-max items-center gap-1.5 lg:min-w-0 lg:flex-wrap">
+        {items.map((item) => (
+          <li key={item.key}>
+            <button
+              type="button"
+              onClick={() => onSelect(item.key)}
+              className={cn(
+                "rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                activeSection === item.key
+                  ? "border-border bg-card text-foreground"
+                  : "border-transparent text-muted-foreground hover:bg-secondary/55 hover:text-foreground",
+              )}
+            >
+              {t(`nav.${item.key}`)}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+function SettingsSectionHeader({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <header className="space-y-1.5">
+      <h2 className="text-lg font-semibold tracking-[-0.015em] text-foreground">
+        {title}
+      </h2>
+      <p className="max-w-[65ch] text-sm leading-6 text-muted-foreground">
+        {description}
+      </p>
+    </header>
+  )
+}
+
+function SettingsGroup({
+  children,
+  className,
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <section className={cn("rounded-xl border border-border/70 bg-card", className)}>
+      {children}
+    </section>
+  )
+}
+
+function SettingsRow({
+  title,
+  description,
+  descriptionId,
+  children,
+  className,
+}: {
+  title: string
+  description?: string
+  descriptionId?: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        "grid gap-3 border-b border-border/60 px-5 py-4 last:border-b-0 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,auto)] lg:items-center",
+        className,
+      )}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        {description ? (
+          <p
+            id={descriptionId}
+            className="mt-1 text-[13px] leading-5 text-muted-foreground"
+          >
+            {description}
+          </p>
+        ) : null}
+      </div>
+      <div className="min-w-0 lg:justify-self-end">{children}</div>
+    </div>
+  )
+}
+
+function SettingsValue({ children }: { children: ReactNode }) {
+  return (
+    <span className="block text-sm font-medium text-foreground lg:text-right">
+      {children}
+    </span>
+  )
+}
 
 function ThemePreviewCard({
   title,
@@ -109,15 +227,11 @@ function ThemePreviewCard({
   return (
     <div
       data-testid="appearance-preview-shell"
-      className="relative flex min-h-[452px] flex-col overflow-hidden rounded-[28px] border"
+      className="relative flex min-h-[420px] flex-col overflow-hidden rounded-xl border"
       style={{
         backgroundColor: tokens.background,
         borderColor: tokens.border,
         color: tokens.foreground,
-        boxShadow:
-          mode === "dark"
-            ? "0 26px 64px -36px rgba(0, 0, 0, 0.72)"
-            : "0 26px 64px -36px rgba(15, 23, 42, 0.18)",
       }}
     >
       <div
@@ -136,7 +250,7 @@ function ThemePreviewCard({
       >
         <div className="flex items-center gap-3">
           <div
-            className="flex size-10 shrink-0 items-center justify-center rounded-2xl border"
+            className="flex size-10 shrink-0 items-center justify-center rounded-lg border"
             style={{
               borderColor: tokens.border,
               backgroundColor: tokens.card,
@@ -169,7 +283,7 @@ function ThemePreviewCard({
 
       <div className="relative grid flex-1 gap-3 p-4 md:grid-cols-[104px_minmax(0,1fr)]">
         <aside
-          className="flex h-full flex-col rounded-[24px] border px-3 py-4"
+          className="flex h-full flex-col rounded-xl border px-3 py-4"
           style={{
             backgroundColor: tokens.sidebar,
             borderColor: tokens["sidebar-border"],
@@ -178,7 +292,7 @@ function ThemePreviewCard({
         >
           <div className="flex justify-center">
             <div
-              className="flex h-11 w-11 items-center justify-center rounded-[18px]"
+              className="flex h-11 w-11 items-center justify-center rounded-lg"
               style={{ backgroundColor: tokens["sidebar-accent"] }}
             >
               <Logo size={24} />
@@ -186,7 +300,7 @@ function ThemePreviewCard({
           </div>
           <div className="mt-4 space-y-2.5">
             <div
-              className="h-8 rounded-2xl"
+              className="h-8 rounded-lg"
               style={{ backgroundColor: tokens["sidebar-accent"] }}
             />
             <div
@@ -206,7 +320,7 @@ function ThemePreviewCard({
 
         <div className="flex h-full flex-col gap-3">
           <div
-            className="rounded-[24px] border p-3.5"
+            className="rounded-xl border p-3.5"
             style={{
               borderColor: tokens.border,
               backgroundColor: tokens.card,
@@ -251,7 +365,7 @@ function ThemePreviewCard({
             >
               <div className="space-y-3">
                 <div
-                  className="min-h-[126px] rounded-[20px] p-3"
+                  className="min-h-[126px] rounded-lg p-3"
                   style={{
                     backgroundColor: tokens.accent,
                     color: tokens["text-secondary"],
@@ -293,7 +407,7 @@ function ThemePreviewCard({
                   {Array.from({ length: 2 }).map((_, index) => (
                     <div
                       key={`${presetLabel}-${mode}-${index}`}
-                      className="rounded-[18px] border p-3"
+                      className="rounded-lg border p-3"
                       style={{
                         borderColor: tokens.border,
                         backgroundColor:
@@ -305,7 +419,7 @@ function ThemePreviewCard({
                         style={{ backgroundColor: tokens["accent-muted"] }}
                       />
                       <div
-                        className="mt-3 h-8 rounded-2xl"
+                        className="mt-3 h-8 rounded-lg"
                         style={{ backgroundColor: tokens["accent-subtle"] }}
                       />
                     </div>
@@ -314,7 +428,7 @@ function ThemePreviewCard({
               </div>
 
               <div
-                className="flex h-full min-h-[239px] flex-col rounded-[20px] border px-3 py-3 font-mono text-[11px]"
+                className="flex h-full min-h-[239px] flex-col rounded-lg border px-3 py-3 font-mono text-[11px]"
                 style={{
                   borderColor: tokens.border,
                   backgroundColor: tokens["terminal-background"],
@@ -352,7 +466,7 @@ function ThemePreviewCard({
                     />
                   </div>
                   <div
-                    className="h-9 rounded-2xl border"
+                    className="h-9 rounded-lg border"
                     style={{
                       borderColor: tokens.border,
                       backgroundColor: tokens["terminal-selection"],
@@ -419,7 +533,7 @@ export default function SettingsPageClient({
   }, [activeSection, canManageRegistries, viewer.canManageMembers])
 
   const handleChangePassword = async (
-    event: React.FormEvent<HTMLFormElement>,
+    event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault()
     setSavingPassword(true)
@@ -447,6 +561,11 @@ export default function SettingsPageClient({
     writeAgentTurnPolicy(policy)
   }
 
+  const handleSectionSelect = (section: SettingsSection) => {
+    setActiveSection(section)
+    updateSectionUrl(section)
+  }
+
   const visibleNavItems = NAV_ITEMS.filter(
     (item) =>
       (!item.requiresMembers || viewer.canManageMembers) &&
@@ -456,175 +575,127 @@ export default function SettingsPageClient({
   const darkTokens = appearancePresets[darkPreset].dark
 
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
-      {/* ── Sub-sidebar ──────────────────────────────────── */}
-      <nav className="w-full shrink-0 border-b border-border/60 bg-secondary/30 p-4 md:w-[200px] md:border-b-0 md:border-r">
-        <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
-          {t("pageTitle")}
-        </h2>
-        <ul className="grid grid-cols-2 gap-1 md:block md:space-y-0.5">
-          {visibleNavItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <li key={item.key}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveSection(item.key)
-                    if (typeof window !== "undefined") {
-                      const url = new URL(window.location.href)
-                      if (item.key === "account") {
-                        url.searchParams.delete("section")
-                      } else {
-                        url.searchParams.set("section", item.key)
-                      }
-                      window.history.replaceState(null, "", `${url.pathname}${url.search}`)
-                    }
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
-                    activeSection === item.key
-                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/40"
-                      : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
-                  )}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  {t(`nav.${item.key}`)}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      </nav>
+    <div className="h-full min-w-0 overflow-y-auto bg-background">
+      <div
+        className={cn(
+          "mx-auto w-full px-4 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-14",
+          activeSection === "providers" || activeSection === "registries"
+            ? "max-w-[1040px]"
+            : "max-w-[880px]",
+        )}
+      >
+        <header>
+          <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.03em] text-foreground sm:text-[32px]">
+            {t("pageTitle")}
+          </h1>
+          <SettingsSectionNav
+            activeSection={activeSection}
+            items={visibleNavItems}
+            onSelect={handleSectionSelect}
+            t={t}
+          />
+        </header>
 
-      {/* ── Content area ─────────────────────────────────── */}
-      <div className="min-w-0 flex-1 overflow-y-visible md:overflow-y-auto">
-        <div
-          className={cn(
-            "mx-auto w-full space-y-6 p-4 sm:p-6",
-            activeSection === "appearance" ||
-              activeSection === "providers" ||
-              activeSection === "registries"
-              ? "max-w-5xl"
-              : "max-w-2xl",
-          )}
-        >
-          {/* ── Account Section ────────────────────────── */}
+        <div className="mt-8 space-y-8">
           {activeSection === "account" && (
             <>
-              <div>
-                <h3 className="text-base font-semibold text-foreground">{t("account.title")}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{t("account.description")}</p>
-              </div>
+              <SettingsSectionHeader
+                title={t("account.title")}
+                description={t("account.description")}
+              />
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                {[
-                  { label: t("account.email"), value: viewer.email || t("account.notAvailable") },
-                  { label: t("account.role"), value: t(`members.roles.${viewer.role}`) },
-                  { label: t("account.mode"), value: modeLabel },
-                ].map((item) => (
-                  <div key={item.label} className="rounded-xl border border-border/60 bg-secondary/30 p-3.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      {item.label}
-                    </p>
-                    <p className="mt-1.5 text-sm font-medium text-foreground">
-                      {item.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
+              <SettingsGroup>
+                <SettingsRow title={t("account.email")}>
+                  <SettingsValue>
+                    {viewer.email || t("account.notAvailable")}
+                  </SettingsValue>
+                </SettingsRow>
+                <SettingsRow title={t("account.role")}>
+                  <span className="inline-flex rounded-md border border-border/70 bg-secondary/45 px-2.5 py-1 text-sm font-medium text-foreground">
+                    {t(`members.roles.${viewer.role}`)}
+                  </span>
+                </SettingsRow>
+                <SettingsRow title={t("account.mode")}>
+                  <SettingsValue>{modeLabel}</SettingsValue>
+                </SettingsRow>
 
-              {viewer.authEnabled && viewer.authLocalEnabled ? (
-                <form
-                  className="space-y-4 rounded-xl border border-border/60 bg-card p-4"
-                  onSubmit={handleChangePassword}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                      <ShieldCheck className="size-4" />
-                    </div>
+                {viewer.authEnabled && viewer.authLocalEnabled ? (
+                  <form
+                    className="grid gap-4 border-b border-border/60 px-5 py-4 last:border-b-0 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(420px,auto)] lg:items-start"
+                    onSubmit={handleChangePassword}
+                  >
                     <div>
                       <p className="text-sm font-medium text-foreground">
                         {t("account.changePasswordTitle")}
                       </p>
-                      <p className="text-xs leading-5 text-muted-foreground">
+                      <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
                         {t("account.changePasswordDescription")}
                       </p>
                     </div>
-                  </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="current-password">
-                        {t("account.currentPassword")}
-                      </Label>
-                      <Input
-                        id="current-password"
-                        type="password"
-                        autoComplete="current-password"
-                        value={currentPassword}
-                        onChange={(event) => setCurrentPassword(event.target.value)}
-                        required
-                      />
+                    <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:justify-self-end">
+                      <div className="space-y-2">
+                        <Label htmlFor="current-password">
+                          {t("account.currentPassword")}
+                        </Label>
+                        <Input
+                          id="current-password"
+                          type="password"
+                          autoComplete="current-password"
+                          value={currentPassword}
+                          onChange={(event) => setCurrentPassword(event.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="new-password">
+                          {t("account.newPassword")}
+                        </Label>
+                        <Input
+                          id="new-password"
+                          type="password"
+                          autoComplete="new-password"
+                          value={newPassword}
+                          onChange={(event) => setNewPassword(event.target.value)}
+                          required
+                        />
+                      </div>
+                      <Button
+                        type="submit"
+                        disabled={savingPassword || !currentPassword || !newPassword}
+                        size="sm"
+                        className="sm:col-span-2 sm:w-fit"
+                      >
+                        {savingPassword ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" />
+                            {t("account.savingPassword")}
+                          </>
+                        ) : (
+                          t("account.savePassword")
+                        )}
+                      </Button>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="new-password">
-                        {t("account.newPassword")}
-                      </Label>
-                      <Input
-                        id="new-password"
-                        type="password"
-                        autoComplete="new-password"
-                        value={newPassword}
-                        onChange={(event) => setNewPassword(event.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <Button
-                    type="submit"
-                    disabled={savingPassword || !currentPassword || !newPassword}
-                    size="sm"
-                  >
-                    {savingPassword ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        {t("account.savingPassword")}
-                      </>
-                    ) : (
-                      t("account.savePassword")
-                    )}
-                  </Button>
-                </form>
-              ) : null}
+                  </form>
+                ) : null}
+              </SettingsGroup>
             </>
           )}
 
           {activeSection === "appearance" && (
             <>
-              <div>
-                <h3 className="text-base font-semibold text-foreground">
-                  {t("appearance.title")}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t("appearance.description")}
-                </p>
-              </div>
+              <SettingsSectionHeader
+                title={t("appearance.title")}
+                description={t("appearance.description")}
+              />
 
-              <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {t("appearance.mode")}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {t("appearance.activePreset", {
-                        preset: appearancePresets[activePreset].label,
-                      })}
-                    </p>
-                  </div>
-
+              <SettingsGroup>
+                <SettingsRow
+                  title={t("appearance.mode")}
+                  description={t("appearance.activePreset", {
+                    preset: appearancePresets[activePreset].label,
+                  })}
+                >
                   <Tabs
                     value={mode}
                     onValueChange={(value) =>
@@ -647,94 +718,76 @@ export default function SettingsPageClient({
                       </TabsTrigger>
                     </TabsList>
                   </Tabs>
-                </div>
+                </SettingsRow>
 
-                <div className="grid gap-4 xl:grid-cols-2">
-                  <ThemePreviewCard
-                    title={t("appearance.preview.light")}
-                    mode="light"
-                    modeLabel={t("appearance.modes.light")}
-                    presetLabel={appearancePresets[lightPreset].label}
-                    tokens={lightTokens}
-                  />
-                  <ThemePreviewCard
-                    title={t("appearance.preview.dark")}
-                    mode="dark"
-                    modeLabel={t("appearance.modes.dark")}
-                    presetLabel={appearancePresets[darkPreset].label}
-                    tokens={darkTokens}
-                  />
-                </div>
+                <SettingsRow title={t("appearance.presets.light")}>
+                  <Select
+                    value={lightPreset}
+                    onValueChange={(value) => setLightPreset(value as typeof lightPreset)}
+                  >
+                    <SelectTrigger className="w-full lg:w-[280px]">
+                      <SelectValue placeholder={t("appearance.presets.light")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {appearancePresetIds.map((presetId) => (
+                        <SelectItem key={`light-${presetId}`} value={presetId}>
+                          {appearancePresets[presetId].label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </SettingsRow>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>{t("appearance.presets.light")}</Label>
-                    <Select value={lightPreset} onValueChange={(value) => setLightPreset(value as typeof lightPreset)}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder={t("appearance.presets.light")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {appearancePresetIds.map((presetId) => (
-                          <SelectItem key={`light-${presetId}`} value={presetId}>
-                            {appearancePresets[presetId].label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <SettingsRow title={t("appearance.presets.dark")}>
+                  <Select
+                    value={darkPreset}
+                    onValueChange={(value) => setDarkPreset(value as typeof darkPreset)}
+                  >
+                    <SelectTrigger className="w-full lg:w-[280px]">
+                      <SelectValue placeholder={t("appearance.presets.dark")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {appearancePresetIds.map((presetId) => (
+                        <SelectItem key={`dark-${presetId}`} value={presetId}>
+                          {appearancePresets[presetId].label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </SettingsRow>
+              </SettingsGroup>
 
-                  <div className="space-y-2">
-                    <Label>{t("appearance.presets.dark")}</Label>
-                    <Select value={darkPreset} onValueChange={(value) => setDarkPreset(value as typeof darkPreset)}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder={t("appearance.presets.dark")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {appearancePresetIds.map((presetId) => (
-                          <SelectItem key={`dark-${presetId}`} value={presetId}>
-                            {appearancePresets[presetId].label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <ThemePreviewCard
+                  title={t("appearance.preview.light")}
+                  mode="light"
+                  modeLabel={t("appearance.modes.light")}
+                  presetLabel={appearancePresets[lightPreset].label}
+                  tokens={lightTokens}
+                />
+                <ThemePreviewCard
+                  title={t("appearance.preview.dark")}
+                  mode="dark"
+                  modeLabel={t("appearance.modes.dark")}
+                  presetLabel={appearancePresets[darkPreset].label}
+                  tokens={darkTokens}
+                />
+              </div>
 
-                <div className="rounded-[24px] border border-border/70 bg-secondary/35 p-4">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary">
-                        <PartyPopper className="size-5" />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-semibold text-foreground">
-                            {t("appearance.celebrations.title")}
-                          </p>
-                          <span className="rounded-full border border-border/70 bg-background px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                            {celebrationsEnabled
-                              ? t("appearance.celebrations.enabledLabel")
-                              : t("appearance.celebrations.disabledLabel")}
-                          </span>
-                        </div>
-                        <p
-                          id="celebrations-description"
-                          className="max-w-2xl text-sm leading-6 text-muted-foreground"
-                        >
-                          {t("appearance.celebrations.description")}
-                        </p>
-                        {reducedMotion ? (
-                          <p
-                            id="celebrations-reduced-motion"
-                            className="text-xs text-muted-foreground"
-                          >
-                            {t("appearance.celebrations.reducedMotion")}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-
+              <SettingsGroup>
+                <SettingsRow
+                  title={t("appearance.celebrations.title")}
+                  description={t("appearance.celebrations.description")}
+                  descriptionId="celebrations-description"
+                  className="lg:items-start"
+                >
+                  <div className="space-y-2 lg:text-right">
                     <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+                      <span className="rounded-md border border-border/70 bg-secondary/45 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+                        {celebrationsEnabled
+                          ? t("appearance.celebrations.enabledLabel")
+                          : t("appearance.celebrations.disabledLabel")}
+                      </span>
                       <Button
                         type="button"
                         variant="outline"
@@ -760,76 +813,75 @@ export default function SettingsPageClient({
                         }
                       />
                     </div>
+                    {reducedMotion ? (
+                      <p
+                        id="celebrations-reduced-motion"
+                        className="text-[13px] leading-5 text-muted-foreground"
+                      >
+                        {t("appearance.celebrations.reducedMotion")}
+                      </p>
+                    ) : null}
                   </div>
-                </div>
-              </div>
+                </SettingsRow>
+              </SettingsGroup>
             </>
           )}
 
           {activeSection === "agent" && (
             <>
-              <div>
-                <h3 className="text-base font-semibold text-foreground">
-                  {t("agent.title")}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t("agent.description")}
-                </p>
-              </div>
+              <SettingsSectionHeader
+                title={t("agent.title")}
+                description={t("agent.description")}
+              />
 
-              <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    {t("agent.turnPolicy.label")}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {t("agent.turnPolicy.description")}
-                  </p>
-                </div>
-
-                <fieldset className="grid gap-2 sm:grid-cols-2">
-                  <legend className="sr-only">{t("agent.turnPolicy.label")}</legend>
-                  {AGENT_TURN_POLICIES.map((policy) => {
-                    const selected = agentTurnPolicy === policy
-                    return (
-                      <label
-                        key={policy}
-                        className={cn(
-                          "cursor-pointer rounded-xl border px-3.5 py-3 text-left transition-colors focus-within:outline-hidden focus-within:ring-2 focus-within:ring-ring",
-                          selected
-                            ? "border-primary/55 bg-primary/10 text-foreground"
-                            : "border-border/60 bg-secondary/25 text-muted-foreground hover:bg-secondary/45 hover:text-foreground",
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          name="agent-turn-policy"
-                          value={policy}
-                          checked={selected}
-                          onChange={() => handleAgentTurnPolicyChange(policy)}
-                          className="sr-only"
-                        />
-                        <span className="block text-sm font-semibold">
-                          {t(`agent.turnPolicy.options.${policy}.label`)}
-                        </span>
-                        <span className="mt-1 block text-xs leading-5">
-                          {t(`agent.turnPolicy.options.${policy}.description`)}
-                        </span>
-                      </label>
-                    )
-                  })}
-                </fieldset>
-              </div>
+              <SettingsGroup>
+                <SettingsRow
+                  title={t("agent.turnPolicy.label")}
+                  description={t("agent.turnPolicy.description")}
+                  className="lg:items-start"
+                >
+                  <fieldset className="w-full space-y-2 lg:w-[360px]">
+                    <legend className="sr-only">{t("agent.turnPolicy.label")}</legend>
+                    {AGENT_TURN_POLICIES.map((policy) => {
+                      const selected = agentTurnPolicy === policy
+                      return (
+                        <label
+                          key={policy}
+                          className={cn(
+                            "grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors focus-within:outline-hidden focus-within:ring-2 focus-within:ring-ring",
+                            selected
+                              ? "border-border bg-secondary/45 text-foreground"
+                              : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/35 hover:text-foreground",
+                          )}
+                        >
+                          <span>
+                            <span className="block text-sm font-medium">
+                              {t(`agent.turnPolicy.options.${policy}.label`)}
+                            </span>
+                            <span className="mt-1 block text-[13px] leading-5">
+                              {t(`agent.turnPolicy.options.${policy}.description`)}
+                            </span>
+                          </span>
+                          <input
+                            type="radio"
+                            name="agent-turn-policy"
+                            value={policy}
+                            checked={selected}
+                            onChange={() => handleAgentTurnPolicyChange(policy)}
+                            className="mt-1 size-4 accent-foreground"
+                          />
+                        </label>
+                      )
+                    })}
+                  </fieldset>
+                </SettingsRow>
+              </SettingsGroup>
             </>
           )}
 
-          {/* ── AI Providers Section ───────────────────── */}
           {activeSection === "providers" && (
             <>
-              <div>
-                <h3 className="text-base font-semibold text-foreground">{t("title")}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{t("subtitle")}</p>
-              </div>
+              <SettingsSectionHeader title={t("title")} description={t("subtitle")} />
 
               <LlmCatalogPanel />
             </>
