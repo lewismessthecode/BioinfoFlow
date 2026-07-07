@@ -80,13 +80,13 @@ export function ProjectItem({
             onClick={() => onSelectProject(project)}
             aria-label={project.name}
             className={cn(
-              "flex h-9 w-full items-center justify-center rounded-[8px] transition-colors",
+              "flex h-8 w-full items-center justify-center rounded-[7px] transition-colors",
               isActive
-                ? "bg-sidebar-accent text-sidebar-foreground"
-                : "text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+                ? "bg-sidebar-foreground/[0.08] text-sidebar-foreground"
+                : "text-sidebar-foreground/78 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
             )}
           >
-            <FolderKanban className="h-4 w-4" />
+            <FolderKanban className="h-3.5 w-3.5" />
           </button>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={12}>{project.name}</TooltipContent>
@@ -97,8 +97,8 @@ export function ProjectItem({
   return (
     <div
       className={cn(
-        "rounded-[10px] transition-colors duration-150",
-        isDropTarget && "bg-sidebar-accent/20 ring-1 ring-sidebar-border/45"
+        "transition-colors duration-150",
+        isDropTarget && "rounded-[8px] bg-sidebar-foreground/[0.04] ring-1 ring-sidebar-border/45"
       )}
       onDragOver={(event) => {
         event.preventDefault()
@@ -113,31 +113,31 @@ export function ProjectItem({
       {/* Project Header */}
       <div
         className={cn(
-          "group flex items-center gap-1 rounded-[8px] border border-transparent px-2 py-1.5 text-[13px] transition-colors duration-150",
+          "group flex min-h-[28px] items-center gap-1 rounded-[7px] border border-transparent px-1.5 py-1 text-[12px] transition-colors duration-150",
           isActive
-            ? "bg-sidebar-accent text-sidebar-foreground"
-            : "text-sidebar-foreground/82 hover:bg-sidebar-accent/65 hover:text-sidebar-foreground"
+            ? "bg-sidebar-foreground/[0.08] text-sidebar-foreground"
+            : "text-sidebar-foreground/82 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
         )}
       >
         <button
           onClick={() => onToggleExpand(project.id)}
-          className="flex shrink-0 items-center rounded-lg p-1 transition-colors hover:bg-sidebar-accent/45"
+          className="flex shrink-0 items-center rounded-[5px] p-0.5 transition-colors hover:bg-sidebar-foreground/[0.045]"
           aria-label={isExpanded ? "Collapse" : "Expand"}
         >
           <ChevronRight
             className={cn(
-              "h-3.5 w-3.5 transition-transform duration-150",
+              "h-3 w-3 transition-transform duration-150",
               isExpanded && "rotate-90"
             )}
           />
         </button>
         <button
           onClick={() => onSelectProject(project)}
-          className="flex min-w-0 flex-1 items-center gap-2.5"
+          className="flex min-w-0 flex-1 items-center gap-2"
         >
           <span
             className={cn(
-              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150",
+              "flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] transition-colors duration-150",
               isActive
                 ? "text-sidebar-foreground"
                 : "text-sidebar-foreground/72"
@@ -145,9 +145,9 @@ export function ProjectItem({
           >
             <FolderKanban className="h-3.5 w-3.5 shrink-0" />
           </span>
-          <span className={cn("truncate text-[13px] font-semibold", !isActive && "font-medium")}>{project.name}</span>
+          <span className={cn("truncate text-[12px] font-semibold", !isActive && "font-medium")}>{project.name}</span>
           {isRemoteProject ? (
-            <span className="shrink-0 rounded-[6px] border border-sidebar-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/64">
+            <span className="shrink-0 rounded-[5px] border border-sidebar-border/60 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-sidebar-foreground/64">
               {tSidebar("remoteProjectBadge")}
             </span>
           ) : null}
@@ -157,7 +157,7 @@ export function ProjectItem({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 rounded-[7px] opacity-0 transition-opacity hover:bg-sidebar-accent/70 group-hover:opacity-100 focus-visible:opacity-100"
+              className="h-6 w-6 shrink-0 rounded-[6px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100"
               aria-label={tCommon("actions")}
             >
               <MoreVertical className="h-3 w-3" />
@@ -194,13 +194,13 @@ export function ProjectItem({
 
       {/* Expanded Conversations */}
       {isExpanded && (
-        <div className="ml-5 mt-1.5 space-y-0.5 border-l border-border/35 pl-3 pb-1.5">
+        <div className="ml-4 mt-1 space-y-0.5 border-l border-border/35 pb-1 pl-2">
           {isLoadingConversations ? (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            <div className="px-2 py-1 text-[11px] text-muted-foreground">
               {tCommon("loading")}
             </div>
           ) : conversations.length === 0 ? (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            <div className="px-2 py-1 text-[11px] text-muted-foreground">
               {tSidebar("noConversations")}
             </div>
           ) : (
@@ -224,7 +224,7 @@ export function ProjectItem({
           )}
           <button
             onClick={() => onCreateConversation(project.id)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1 text-xs font-medium text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-foreground"
+            className="flex h-[26px] w-full items-center gap-1.5 rounded-[7px] px-2 text-[11px] font-medium text-sidebar-foreground/78 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
           >
             <Plus className="h-3 w-3" />
             <span>{tSidebar("newConversation")}</span>

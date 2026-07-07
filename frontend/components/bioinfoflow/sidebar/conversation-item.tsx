@@ -73,15 +73,15 @@ export function ConversationItem({
       }}
       onDragEnd={() => onDragEnd?.()}
       className={cn(
-        "group flex items-center gap-2 rounded-[8px] border border-transparent px-3 py-1.5 text-sm transition-colors duration-150",
+        "group flex items-center gap-1.5 rounded-[7px] border border-transparent px-2 py-1 text-[12px] leading-4 transition-colors duration-150",
         isActive
-          ? "bg-sidebar-accent text-sidebar-foreground font-semibold"
-          : "text-sidebar-foreground/78 font-medium hover:bg-sidebar-accent/55 hover:text-sidebar-foreground",
+          ? "bg-sidebar-foreground/[0.08] text-sidebar-foreground font-semibold"
+          : "text-sidebar-foreground/78 font-medium hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground",
         isDragging && "opacity-45"
       )}
     >
       {isEditing ? (
-        <div className="flex flex-1 items-center gap-2 text-sm-tight min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px]">
           <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
           <input
             ref={editInputRef}
@@ -92,7 +92,7 @@ export function ConversationItem({
               if (e.key === "Enter") commitRename()
               if (e.key === "Escape") setIsEditing(false)
             }}
-            className="flex-1 min-w-0 bg-transparent outline-none border-b border-primary py-0"
+            className="min-w-0 flex-1 border-b border-primary bg-transparent py-0 outline-none"
             autoFocus
           />
         </div>
@@ -100,7 +100,7 @@ export function ConversationItem({
         <button
           onClick={() => onSelect(conversation, projectId)}
           onDoubleClick={startRename}
-          className="flex flex-1 items-center gap-2 text-left text-sm-tight min-w-0"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[12px]"
         >
           {isActive ? (
             <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-sidebar-foreground" />
@@ -115,7 +115,7 @@ export function ConversationItem({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 rounded-[7px] opacity-0 transition-opacity hover:bg-sidebar-accent/70 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
+            className="h-6 w-6 rounded-[6px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
             aria-label={tCommon("actions")}
           >
             <MoreVertical className="h-3 w-3" />

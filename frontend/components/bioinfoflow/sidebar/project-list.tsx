@@ -96,7 +96,7 @@ export function ProjectList({
 
   if (collapsed) {
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         {projects.map((project) => (
           <ProjectItem
             key={project.id}
@@ -129,22 +129,22 @@ export function ProjectList({
         <button
           onClick={onOpenCreateDialog}
           aria-label={tSidebar("newProject")}
-          className="flex h-9 w-full items-center justify-center rounded-[8px] text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+          className="flex h-8 w-full items-center justify-center rounded-[7px] text-sidebar-foreground/78 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
     )
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       {defaultProjectId ? (
         <div
           data-testid="sidebar-recent-section"
           className={cn(
-            "rounded-[10px] px-1 py-1 transition-colors duration-150",
-            dropTargetProjectId === defaultProjectId && "bg-sidebar-accent/20 ring-1 ring-sidebar-border/45"
+            "py-0.5 transition-colors duration-150",
+            dropTargetProjectId === defaultProjectId && "rounded-[8px] bg-sidebar-foreground/[0.04] ring-1 ring-sidebar-border/45"
           )}
           onDragOver={(event) => {
             event.preventDefault()
@@ -156,12 +156,12 @@ export function ProjectList({
             handleConversationDrop(defaultProjectId)
           }}
         >
-          <div className="px-2 pb-1.5 text-[13px] font-medium text-sidebar-foreground/58">
+          <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-sidebar-foreground/58">
             {tSidebar("recent")}
           </div>
           <div className="space-y-0.5">
             {showRecentEmptyState ? (
-              <div className="px-2.5 py-1 text-xs text-muted-foreground">
+              <div className="px-2 py-1 text-[11px] text-muted-foreground">
                 {tSidebar("noConversations")}
               </div>
             ) : (
@@ -189,9 +189,9 @@ export function ProjectList({
       ) : null}
 
       {projects.length === 0 ? (
-        <div className="rounded-[10px] border border-dashed border-sidebar-border/70 bg-sidebar-accent/35 px-4 py-4">
-          <p className="text-sm font-semibold text-foreground">{tSidebar("noProjects")}</p>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+        <div className="px-2.5 py-1.5">
+          <p className="text-[12px] font-medium text-sidebar-foreground/72">{tSidebar("noProjects")}</p>
+          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
             {tSidebar("noProjectsDescription")}
           </p>
         </div>
@@ -232,11 +232,11 @@ export function ProjectList({
       <button
         onClick={onOpenCreateDialog}
         className={cn(
-          "flex w-full items-center gap-3 rounded-[8px] px-4 py-2 text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/65 hover:text-sidebar-foreground",
+          "flex h-[28px] w-full items-center gap-2 rounded-[7px] px-2.5 text-[12px] font-medium text-sidebar-foreground/78 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground",
         )}
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/76">
-          <Plus className="h-4 w-4" />
+        <span className="flex h-4 w-4 items-center justify-center rounded-[5px] text-sidebar-foreground/72">
+          <Plus className="h-3.5 w-3.5" />
         </span>
         <span>{tSidebar("newProject")}</span>
       </button>

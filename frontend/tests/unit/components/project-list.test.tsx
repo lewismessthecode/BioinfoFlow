@@ -158,4 +158,115 @@ describe("ProjectList", () => {
       "project-default",
     )
   })
+
+  it("keeps the recent section unframed like a list group", () => {
+    render(
+      <ProjectList
+        projects={[{ id: "project-demo", name: "Demo", project_root: "asset://project" }]}
+        inboxConversations={[]}
+        defaultProjectId="project-default"
+        expandedProjects={new Set()}
+        projectConversations={new Map()}
+        loadingProjects={new Set()}
+        collapsed={false}
+        activeProjectId=""
+        activeConversationId=""
+        onToggleExpand={noop}
+        onSelectProject={noop}
+        onSelectConversation={noop}
+        onMoveConversation={noop}
+        onCreateConversation={noop}
+        onRenameConversation={noop}
+        onTogglePin={noop}
+        onDeleteConversation={noop}
+        onRenameProject={noop}
+        onDuplicateProject={noop}
+        onDeleteProject={noop}
+        onOpenCreateDialog={noop}
+        tSidebar={(key) => key}
+        tCommon={(key) => key}
+      />,
+    )
+
+    const recentSection = screen.getByTestId("sidebar-recent-section")
+    expect(recentSection.className).not.toContain("rounded-[10px]")
+    expect(recentSection.className).not.toContain("px-1")
+    expect(recentSection.className).toContain("py-0.5")
+  })
+
+  it("renders the empty project state as inline copy without a dashed card", () => {
+    render(
+      <ProjectList
+        projects={[]}
+        inboxConversations={[]}
+        defaultProjectId="project-default"
+        expandedProjects={new Set()}
+        projectConversations={new Map()}
+        loadingProjects={new Set()}
+        collapsed={false}
+        activeProjectId=""
+        activeConversationId=""
+        onToggleExpand={noop}
+        onSelectProject={noop}
+        onSelectConversation={noop}
+        onMoveConversation={noop}
+        onCreateConversation={noop}
+        onRenameConversation={noop}
+        onTogglePin={noop}
+        onDeleteConversation={noop}
+        onRenameProject={noop}
+        onDuplicateProject={noop}
+        onDeleteProject={noop}
+        onOpenCreateDialog={noop}
+        tSidebar={(key) => key}
+        tCommon={(key) => key}
+      />,
+    )
+
+    const emptyTitle = screen.getByText("noProjects")
+    const emptyState = emptyTitle.closest("div")
+
+    expect(emptyTitle.className).toContain("text-[12px]")
+    expect(emptyState?.className).not.toContain("border")
+    expect(emptyState?.className).not.toContain("dashed")
+    expect(emptyState?.className).not.toContain("bg-sidebar-accent/35")
+  })
+
+  it("renders the new project action as a compact list row", () => {
+    render(
+      <ProjectList
+        projects={[{ id: "project-demo", name: "Demo", project_root: "asset://project" }]}
+        inboxConversations={[]}
+        defaultProjectId="project-default"
+        expandedProjects={new Set()}
+        projectConversations={new Map()}
+        loadingProjects={new Set()}
+        collapsed={false}
+        activeProjectId=""
+        activeConversationId=""
+        onToggleExpand={noop}
+        onSelectProject={noop}
+        onSelectConversation={noop}
+        onMoveConversation={noop}
+        onCreateConversation={noop}
+        onRenameConversation={noop}
+        onTogglePin={noop}
+        onDeleteConversation={noop}
+        onRenameProject={noop}
+        onDuplicateProject={noop}
+        onDeleteProject={noop}
+        onOpenCreateDialog={noop}
+        tSidebar={(key) => key}
+        tCommon={(key) => key}
+      />,
+    )
+
+    const newProjectButton = screen.getByRole("button", { name: "newProject" })
+
+    expect(newProjectButton.className).toContain("h-[28px]")
+    expect(newProjectButton.className).toContain("px-2.5")
+    expect(newProjectButton.className).toContain("text-[12px]")
+    expect(newProjectButton.className).not.toContain("px-4")
+    expect(newProjectButton.className).not.toContain("text-sm")
+  })
 })
