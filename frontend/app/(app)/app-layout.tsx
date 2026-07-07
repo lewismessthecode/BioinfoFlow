@@ -2,16 +2,25 @@
 
 import type React from "react"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { TerminalSquare } from "lucide-react"
 import { BreadcrumbProvider } from "@/components/bioinfoflow/breadcrumb-context"
 import { Navbar } from "@/components/bioinfoflow/navbar"
 import { ProjectProvider } from "@/components/bioinfoflow/project-context"
-import { Sidebar } from "@/components/bioinfoflow/sidebar/index"
+import { SettingsSidebar, Sidebar } from "@/components/bioinfoflow/sidebar/index"
 import { SidebarDrawer } from "@/components/bioinfoflow/sidebar/sidebar-drawer"
+import {
+  canManageMembers as canManageMembersHelper,
+  canManageRegistryCatalog,
+} from "@/lib/auth-config"
+import { writeSettingsReturnPath } from "@/lib/settings-return-path"
+import {
+  isSettingsSectionKey,
+  type SettingsSectionKey,
+} from "@/lib/settings-nav"
 import {
   useWorkspaceShell,
   WorkspaceShellProvider,
@@ -55,7 +64,23 @@ export default function AppLayout({
 }: AppLayoutProps) {
   const runtime = getActiveRuntime(runtimeMode)
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const tAccessibility = useTranslations("accessibility")
+  const isSettingsRoute =
+    pathname === "/settings" || pathname.startsWith("/settings/")
+  const canManageMembersFlag = viewer
+    ? canManageMembersHelper(viewer.mode, viewer.role, viewer.authEnabled)
+    : false
+  const canManageRegistriesFlag = viewer
+    ? canManageRegistryCatalog(viewer.mode, viewer.role, viewer.authEnabled)
+    : true
+  const activeSettingsSection: SettingsSectionKey = useMemo(() => {
+    const raw = searchParams?.get("section") ?? null
+    if (!isSettingsSectionKey(raw)) return "account"
+    if (raw === "members" && !canManageMembersFlag) return "account"
+    if (raw === "registries" && !canManageRegistriesFlag) return "account"
+    return raw
+  }, [searchParams, canManageMembersFlag, canManageRegistriesFlag])
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(LEFT_SIDEBAR_DEFAULT)
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false)
   const [selectedProjectId, setSelectedProjectId] = useState(
@@ -150,7 +175,36 @@ export default function AppLayout({
     return () => window.removeEventListener("keydown", handler)
   }, [toggleCommandPalette, toggleLeftSidebar])
 
-  const effectiveLeftWidth = leftSidebarCollapsed ? LEFT_SIDEBAR_COLLAPSED : leftSidebarWidth
+  useEffect(() => {
+    if (!isSettingsRoute) {
+      writeSettingsReturnPath(pathname)
+    }
+  }, [isSettingsRoute, pathname])
+
+  const workspaceLeftWidth = leftSidebarCollapsed
+    ? LEFT_SIDEBAR_COLLAPSED
+    : leftSidebarWidth
+  const effectiveLeftWidth = isSettingsRoute
+    ? LEFT_SIDEBAR_DEFAULT
+    : workspaceLeftWidth
+  const showResizeHandle = !isSettingsRoute && !leftSidebarCollapsed
+  const renderSidebar = (mobile: boolean) =>
+    isSettingsRoute ? (
+      <SettingsSidebar
+        activeSection={activeSettingsSection}
+        viewer={viewer}
+        canManageMembers={canManageMembersFlag}
+        canManageRegistries={canManageRegistriesFlag}
+      />
+    ) : (
+      <Sidebar
+        collapsed={mobile ? false : leftSidebarCollapsed}
+        onCollapsedChange={mobile ? undefined : setLeftSidebarCollapsed}
+        onCommandOpen={toggleCommandPalette}
+        viewer={viewer}
+        runtimeMode={runtimeMode}
+      />
+    )
 
   return (
     <RuntimeProvider mode={runtimeMode}>
@@ -194,20 +248,14 @@ export default function AppLayout({
                     className="relative flex-shrink-0 transition-[width,opacity] duration-200"
                     style={{ width: effectiveLeftWidth }}
                     role="navigation"
-                    aria-label="Project navigation"
+                    aria-label={isSettingsRoute ? "Settings sidebar" : "Project navigation"}
                   >
                     <div
                       className="fixed inset-y-0 left-0 z-20 h-[100dvh] transition-[width,opacity] duration-200"
                       style={{ opacity: 1, width: effectiveLeftWidth }}
                     >
-                      <Sidebar
-                        collapsed={leftSidebarCollapsed}
-                        onCollapsedChange={setLeftSidebarCollapsed}
-                        onCommandOpen={toggleCommandPalette}
-                        viewer={viewer}
-                        runtimeMode={runtimeMode}
-                      />
-                      {!leftSidebarCollapsed && (
+                      {renderSidebar(false)}
+                      {showResizeHandle && (
                         <ResizeHandle side="left" onResize={handleLeftResize} />
                       )}
                     </div>
@@ -217,12 +265,7 @@ export default function AppLayout({
                 {/* Left Sidebar - Mobile Drawer */}
                 {isMobile && (
                   <SidebarDrawer open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
-                    <Sidebar
-                      collapsed={false}
-                      onCommandOpen={toggleCommandPalette}
-                      viewer={viewer}
-                      runtimeMode={runtimeMode}
-                    />
+                    {renderSidebar(true)}
                   </SidebarDrawer>
                 )}
 
@@ -231,8 +274,8 @@ export default function AppLayout({
                   className="flex min-h-[100dvh] min-w-0 flex-1 flex-col bg-background"
                   style={{
                     "--left-rail-compensation":
-                      !isMobile && leftSidebarCollapsed
-                        ? `${effectiveLeftWidth / 2}px`
+                      !isMobile && !isSettingsRoute && leftSidebarCollapsed
+                        ? `${workspaceLeftWidth / 2}px`
                         : "0px",
                   } as React.CSSProperties}
                 >

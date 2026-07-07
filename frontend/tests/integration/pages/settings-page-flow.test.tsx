@@ -21,6 +21,10 @@ const {
   toastErrorMock: vi.fn(),
 }))
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}))
+
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, string>) => {
     const labels: Record<string, string> = {
@@ -149,6 +153,7 @@ describe("Settings page flow", () => {
   const useLlmSettingsMock = vi.mocked(useLlmSettings)
 
   beforeEach(() => {
+    window.history.replaceState(null, "", "/settings")
     updateSettingsMock.mockReset()
     testProviderMock.mockReset()
     changePasswordMock.mockReset()
@@ -366,6 +371,7 @@ describe("Settings page flow", () => {
 
   it("loads provider cards and saves a write-only credential", async () => {
     const user = userEvent.setup()
+    window.history.replaceState(null, "", "/settings?section=providers")
 
     render(
       <SettingsPageClient
@@ -381,7 +387,6 @@ describe("Settings page flow", () => {
       />,
     )
 
-    await user.click(screen.getByRole("button", { name: "AI Providers" }))
     expect(await screen.findByRole("group", { name: "OpenAI" })).toBeInTheDocument()
     expect(screen.getByRole("group", { name: "OpenRouter" })).toBeInTheDocument()
     expect(screen.getByText("From .env")).toBeInTheDocument()
@@ -403,7 +408,7 @@ describe("Settings page flow", () => {
   })
 
   it("renders the appearance section and the dual preset controls", async () => {
-    const user = userEvent.setup()
+    window.history.replaceState(null, "", "/settings?section=appearance")
 
     render(
       <SettingsPageClient
@@ -418,8 +423,6 @@ describe("Settings page flow", () => {
         }}
       />,
     )
-
-    await user.click(screen.getByRole("button", { name: "Appearance" }))
 
     expect(screen.getByText("Choose a focused theme and mode for the app shell.")).toBeInTheDocument()
     expect(screen.getByText("Current preset: Notion")).toBeInTheDocument()

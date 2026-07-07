@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react"
+import { useMemo, useState, type FormEvent, type ReactNode } from "react"
+import { useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
 import {
   Loader2,
@@ -43,6 +44,12 @@ import {
   writeAgentTurnPolicy,
   type AgentTurnPolicy,
 } from "@/lib/agent-runtime/turn-policy"
+import {
+  filterSettingsNavItems,
+  isSettingsSectionKey,
+  SETTINGS_NAV_ITEMS,
+  type SettingsSectionKey,
+} from "@/lib/settings-nav"
 import type { AuthMode, TeamRole } from "@/lib/auth-config"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -60,77 +67,7 @@ type SettingsPageClientProps = {
   }
 }
 
-type SettingsSection =
-  | "account"
-  | "appearance"
-  | "agent"
-  | "providers"
-  | "registries"
-  | "members"
-
-const NAV_ITEMS: {
-  key: SettingsSection
-  requiresMembers?: boolean
-  requiresRegistryAdmin?: boolean
-}[] = [
-  { key: "account" },
-  { key: "appearance" },
-  { key: "agent" },
-  { key: "providers" },
-  { key: "registries", requiresRegistryAdmin: true },
-  { key: "members", requiresMembers: true },
-]
-
 const AGENT_TURN_POLICIES: AgentTurnPolicy[] = ["interrupt", "queue"]
-
-function updateSectionUrl(section: SettingsSection) {
-  if (typeof window === "undefined") {
-    return
-  }
-
-  const url = new URL(window.location.href)
-  if (section === "account") {
-    url.searchParams.delete("section")
-  } else {
-    url.searchParams.set("section", section)
-  }
-  window.history.replaceState(null, "", `${url.pathname}${url.search}`)
-}
-
-function SettingsSectionNav({
-  activeSection,
-  items,
-  onSelect,
-  t,
-}: {
-  activeSection: SettingsSection
-  items: typeof NAV_ITEMS
-  onSelect: (section: SettingsSection) => void
-  t: (key: string) => string
-}) {
-  return (
-    <nav aria-label="Settings sections" className="mt-6 overflow-x-auto pb-1">
-      <ul className="flex min-w-max items-center gap-1.5 lg:min-w-0 lg:flex-wrap">
-        {items.map((item) => (
-          <li key={item.key}>
-            <button
-              type="button"
-              onClick={() => onSelect(item.key)}
-              className={cn(
-                "rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                activeSection === item.key
-                  ? "border-border bg-card text-foreground"
-                  : "border-transparent text-muted-foreground hover:bg-secondary/55 hover:text-foreground",
-              )}
-            >
-              {t(`nav.${item.key}`)}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </nav>
-  )
-}
 
 function SettingsSectionHeader({
   title,
@@ -486,6 +423,7 @@ export default function SettingsPageClient({
   viewer,
 }: SettingsPageClientProps) {
   const t = useTranslations("settings")
+  const searchParams = useSearchParams()
   const {
     mode,
     setMode,
@@ -498,7 +436,6 @@ export default function SettingsPageClient({
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [savingPassword, setSavingPassword] = useState(false)
-  const [activeSection, setActiveSection] = useState<SettingsSection>("account")
   const [agentTurnPolicy, setAgentTurnPolicy] = useState<AgentTurnPolicy>(
     readAgentTurnPolicy,
   )
@@ -509,28 +446,22 @@ export default function SettingsPageClient({
     viewer.mode !== "team" ||
     viewer.role === "owner" ||
     viewer.role === "admin"
-
-  useEffect(() => {
-    const section = new URLSearchParams(window.location.search).get("section")
-    if (section === "appearance" || section === "agent" || section === "providers") {
-      setActiveSection(section)
-    } else if (section === "registries" && canManageRegistries) {
-      setActiveSection("registries")
-    } else if (section === "members" && viewer.canManageMembers) {
-      setActiveSection("members")
-    } else {
-      setActiveSection("account")
-    }
-  }, [canManageRegistries, viewer.canManageMembers])
-
-  useEffect(() => {
-    const sectionIsHidden =
-      (activeSection === "registries" && !canManageRegistries) ||
-      (activeSection === "members" && !viewer.canManageMembers)
-    if (sectionIsHidden) {
-      setActiveSection("account")
-    }
-  }, [activeSection, canManageRegistries, viewer.canManageMembers])
+  const visibleSettingsSections = useMemo(
+    () =>
+      new Set(
+        filterSettingsNavItems(SETTINGS_NAV_ITEMS, {
+          canManageMembers: viewer.canManageMembers,
+          canManageRegistries,
+        }).map((item) => item.key),
+      ),
+    [canManageRegistries, viewer.canManageMembers],
+  )
+  const requestedSection = searchParams?.get("section") ?? null
+  const activeSection: SettingsSectionKey =
+    isSettingsSectionKey(requestedSection) &&
+    visibleSettingsSections.has(requestedSection)
+      ? requestedSection
+      : "account"
 
   const handleChangePassword = async (
     event: FormEvent<HTMLFormElement>,
@@ -561,16 +492,6 @@ export default function SettingsPageClient({
     writeAgentTurnPolicy(policy)
   }
 
-  const handleSectionSelect = (section: SettingsSection) => {
-    setActiveSection(section)
-    updateSectionUrl(section)
-  }
-
-  const visibleNavItems = NAV_ITEMS.filter(
-    (item) =>
-      (!item.requiresMembers || viewer.canManageMembers) &&
-      (!item.requiresRegistryAdmin || canManageRegistries),
-  )
   const lightTokens = appearancePresets[lightPreset].light
   const darkTokens = appearancePresets[darkPreset].dark
 
@@ -584,19 +505,7 @@ export default function SettingsPageClient({
             : "max-w-[880px]",
         )}
       >
-        <header>
-          <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.03em] text-foreground sm:text-[32px]">
-            {t("pageTitle")}
-          </h1>
-          <SettingsSectionNav
-            activeSection={activeSection}
-            items={visibleNavItems}
-            onSelect={handleSectionSelect}
-            t={t}
-          />
-        </header>
-
-        <div className="mt-8 space-y-8">
+        <div className="space-y-8">
           {activeSection === "account" && (
             <>
               <SettingsSectionHeader
