@@ -48,6 +48,7 @@ export default function DashboardPage() {
       | "dashboardEvening"
       | "dashboardLateNight";
   const greeting = tGreeting(dashboardKey, { name: firstName });
+  const monitoringOverviewLabel = tDashboard("monitoringOverview");
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -84,18 +85,22 @@ export default function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="h-full overflow-y-auto">
-        <div className="p-4 sm:p-6 max-w-6xl mx-auto">
-          <div className="mb-5">
-            <h1 className="text-xl font-semibold text-foreground">
+      <div className="bif-workbench-page h-full overflow-y-auto">
+        <section
+          aria-label={monitoringOverviewLabel}
+          data-dashboard-surface="monitoring"
+          className="bif-workbench-page__inner"
+        >
+          <div className="mb-5 flex flex-col gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               {greeting}
             </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
               {tDashboard("subtitle")}
             </p>
           </div>
           <DashboardSkeleton />
-        </div>
+        </section>
       </div>
     );
   }
@@ -105,12 +110,17 @@ export default function DashboardPage() {
   ) ?? [];
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="p-6 max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-5">
-          <h1 className="text-xl font-semibold text-foreground">{greeting}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+    <div className="bif-workbench-page h-full overflow-y-auto">
+      <section
+        aria-label={monitoringOverviewLabel}
+        data-dashboard-surface="monitoring"
+        className="bif-workbench-page__inner"
+      >
+        <div className="mb-5 flex flex-col gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            {greeting}
+          </h1>
+          <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
             {stats ? buildNarrative(stats, tDashboard) : tDashboard("subtitle")}
           </p>
         </div>
@@ -127,41 +137,50 @@ export default function DashboardPage() {
 
         <ReadinessCenter readiness={readiness} onRefresh={fetchData} />
 
-        <motion.div
-          initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.05 }}
-        >
-          <StatCards stats={stats} />
-        </motion.div>
-        <motion.div
-          initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.15 }}
-        >
-          <RecentActivity recentRuns={stats?.recent_runs} />
-        </motion.div>
-        <motion.div
-          initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.25 }}
-        >
-          <SystemStatus
-            health={health}
-            gpuInfo={gpuInfo}
-            optionalNotes={optionalReadinessNotes}
-          />
-        </motion.div>
-        {schedulerStatus && (
+        <div className="grid gap-4">
           <motion.div
             initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, delay: 0.35 }}
+            transition={{ duration: 0.35, delay: 0.05 }}
           >
-            <SchedulerSummary schedulerStatus={schedulerStatus} />
+            <StatCards stats={stats} />
           </motion.div>
-        )}
-      </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.85fr)]">
+            <motion.div
+              className="min-w-0"
+              initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.15 }}
+            >
+              <RecentActivity recentRuns={stats?.recent_runs} />
+            </motion.div>
+
+            <div className="grid min-w-0 content-start gap-4">
+              <motion.div
+                initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.25 }}
+              >
+                <SystemStatus
+                  health={health}
+                  gpuInfo={gpuInfo}
+                  optionalNotes={optionalReadinessNotes}
+                />
+              </motion.div>
+              {schedulerStatus && (
+                <motion.div
+                  initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, delay: 0.35 }}
+                >
+                  <SchedulerSummary schedulerStatus={schedulerStatus} />
+                </motion.div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

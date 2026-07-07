@@ -63,7 +63,7 @@ export function StatCards({ stats }: StatCardsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
       {statCards.map((card, index) => {
         const Icon = card.icon;
         return (
@@ -75,19 +75,21 @@ export function StatCards({ stats }: StatCardsProps) {
             className="h-full"
           >
             <Link href={card.href} className="block h-full">
-              <CardRoot className={cn(
-                "group h-full hover:shadow-md transition-all duration-300 cursor-pointer hover:-translate-y-0.5",
-                card.key === "runs"
-                  ? "border-foreground/20 hover:border-foreground/40"
-                  : "hover:border-foreground/30"
-              )}>
-                <CardContent className="p-6">
+              <CardRoot
+                variant="workbench"
+                data-interactive="true"
+                className={cn(
+                  "group h-full cursor-pointer",
+                  card.key === "runs" && "border-foreground/20"
+                )}
+              >
+                <CardContent className="flex h-full flex-col p-4">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <p className="text-sm text-muted-foreground mb-1 group-hover:text-muted-foreground/80 transition-colors">
+                      <p className="mb-1 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
                         {tDashboard(card.key)}
                       </p>
-                      <p className="text-2xl font-semibold text-foreground tracking-tight">
+                      <p className="font-mono text-3xl font-semibold tracking-tight text-foreground tabular-nums">
                         {card.getValue()}
                       </p>
                       {card.key === "runs" && (stats?.runs.running ?? 0) > 0 && (
@@ -99,14 +101,14 @@ export function StatCards({ stats }: StatCardsProps) {
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center justify-center">
-                      <Icon className="h-4 w-4 text-muted-foreground/60 group-hover:text-muted-foreground transition-colors duration-300" />
+                    <div className="quiet-card-icon-shell size-9 rounded-lg">
+                      <Icon className="quiet-card-icon-glyph size-4 transition-colors duration-300" />
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <div className="mt-auto flex flex-wrap gap-1.5 text-xs text-muted-foreground">
                     {card.getDetails().map((detail, i) => (
-                      <span key={i} className="flex items-center gap-1.5">
-                        <span className="font-medium text-foreground">
+                      <span key={i} className="metadata-pill flex items-center gap-1.5 rounded-md border px-2 py-1">
+                        <span className="font-mono font-medium text-foreground tabular-nums">
                           {detail.value}
                         </span>
                         <span>{detail.label}</span>

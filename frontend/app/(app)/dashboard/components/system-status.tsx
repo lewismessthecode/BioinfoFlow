@@ -115,9 +115,10 @@ export function SystemStatus({ health, gpuInfo, optionalNotes = [] }: SystemStat
   const hasGpuOptionalNote = optionalNotes.some((note) => note.id === "gpu");
 
   return (
-    <CardRoot className="mb-5 flex flex-1 flex-col">
+    <CardRoot variant="workbench" className="flex flex-1 flex-col">
       <CardHeader
         title={tDashboard("systemStatus")}
+        className="border-b-0"
         badge={
           <StatusBadge
             variant={health?.docker.available ? "success" : "destructive"}
@@ -128,8 +129,8 @@ export function SystemStatus({ health, gpuInfo, optionalNotes = [] }: SystemStat
           </StatusBadge>
         }
       />
-      <CardContent className="flex flex-col gap-6 md:grid md:grid-cols-2">
-        <div className="flex flex-col gap-3">
+      <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        <div className="bif-workbench-panel flex flex-col gap-3 p-3">
           <div className="flex items-center gap-2">
             <Container className="size-4 text-muted-foreground" />
             <span className="text-sm font-medium">{tDashboard("dockerAvailable")}</span>
@@ -164,7 +165,7 @@ export function SystemStatus({ health, gpuInfo, optionalNotes = [] }: SystemStat
           </div>
         </div>
 
-        <div className="flex flex-col gap-3">
+        <div className="bif-workbench-panel flex flex-col gap-3 p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Cpu className="size-4 text-muted-foreground" />
@@ -222,7 +223,7 @@ export function SystemStatus({ health, gpuInfo, optionalNotes = [] }: SystemStat
             ) : null}
 
             {optionalNotes.length > 0 ? (
-              <section className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              <section className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-medium text-foreground">
                     {tDashboard("systemNotes.title")}
