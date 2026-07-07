@@ -46,8 +46,7 @@ vi.mock("@/lib/api", async () => {
 })
 
 // The real hook opens an EventSource, which jsdom doesn't provide.
-// Integration tests only care that the page chrome renders; per-metric
-// chart behaviour is covered by scoring.test.ts and manual verification.
+// Integration tests only care that the simplified scheduler chrome renders.
 vi.mock("@/hooks/use-resource-stream", () => ({
   useResourceStream: () => ({
     connectionState: "disconnected",
@@ -55,20 +54,6 @@ vi.mock("@/hooks/use-resource-stream", () => ({
     samples: [],
     events: [],
   }),
-}))
-
-// The uplot chart components render as empty divs in jsdom. Mock to pure
-// placeholder so we don't drag uplot through the test runtime.
-vi.mock("@/app/(app)/scheduler/components/primary-chart", () => ({
-  PrimaryChart: () => null,
-}))
-vi.mock("@/app/(app)/scheduler/components/mini-metric", () => ({
-  MiniMetric: ({ label, value }: { label: string; value: string }) => (
-    <div>
-      <span>{label}</span>
-      <span>{value}</span>
-    </div>
-  ),
 }))
 
 describe("SchedulerPage", () => {
@@ -122,8 +107,6 @@ describe("SchedulerPage", () => {
       expect(screen.getAllByText("1")).toHaveLength(2)
       expect(screen.getByText("scheduler.status.activeTitle")).toBeInTheDocument()
       expect(screen.getByText("scheduler.status.activeBody")).toBeInTheDocument()
-      expect(screen.getByText("scheduler.guidance.title")).toBeInTheDocument()
-      expect(screen.getByText("scheduler.guidance.body")).toBeInTheDocument()
       // The live monitor waits for the first resource sample before showing pressure.
       expect(screen.getByText("scheduler.resourceSnapshotPending")).toBeInTheDocument()
       expect(screen.getByText("scheduler.activeRuns.title")).toBeInTheDocument()

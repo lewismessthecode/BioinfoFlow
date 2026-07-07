@@ -7,18 +7,12 @@ import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import {
   Activity,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
   Gauge,
-  Layers,
   RefreshCw,
   ShieldAlert,
 } from "lucide-react"
-import type { LucideIcon } from "lucide-react"
 import {
   CardContent,
-  CardHeader,
   CardRoot,
 } from "@/components/bioinfoflow/card/card-base"
 import { StatusBadge } from "@/components/ui/status-badge"
@@ -28,15 +22,6 @@ import type { SchedulerStatus } from "@/lib/types"
 import { ResourceMonitor } from "./components/resource-monitor"
 
 const REFRESH_INTERVAL_MS = 30_000
-
-type StatKey = "queued" | "dispatched" | "completed" | "failed"
-
-type StatItem = {
-  key: StatKey
-  icon: LucideIcon
-  variant: "neutral" | "warning" | "info" | "success" | "destructive"
-  value: number
-}
 
 function formatUtcTimestamp(value: string | null) {
   if (!value) return null
@@ -86,52 +71,18 @@ export default function SchedulerPage() {
 
   const isPersistentActive = status?.effective_mode === "persistent"
 
-  const statItems: StatItem[] = [
-    {
-      key: "queued",
-      icon: Clock,
-      variant: status && status.states.queued > 0 ? "warning" : "neutral",
-      value: status?.states.queued ?? 0,
-    },
-    {
-      key: "dispatched",
-      icon: Layers,
-      variant: status && status.states.dispatched > 0 ? "info" : "neutral",
-      value: status?.states.dispatched ?? 0,
-    },
-    {
-      key: "completed",
-      icon: CheckCircle2,
-      variant: "neutral",
-      value: status?.states.completed ?? 0,
-    },
-    {
-      key: "failed",
-      icon: AlertTriangle,
-      variant: status && status.states.failed > 0 ? "destructive" : "neutral",
-      value: status?.states.failed ?? 0,
-    },
-  ]
-
   if (isLoading) {
     return (
-      <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">{t("subtitle")}</p>
+      <div className="bif-workbench-page h-full overflow-y-auto">
+        <div className="bif-workbench-page__inner">
+          <div className="mb-6 flex flex-col gap-2.5">
+            <h1 className="text-2xl font-medium tracking-tight text-foreground">{t("title")}</h1>
+            <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{t("subtitle")}</p>
           </div>
           <Skeleton className="h-32 rounded-xl" />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 rounded-xl" />
-            ))}
-          </div>
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-            <Skeleton className="h-72 rounded-xl lg:col-span-5" />
-            <Skeleton className="h-72 rounded-xl lg:col-span-7" />
-            <Skeleton className="h-56 rounded-xl lg:col-span-5" />
-            <Skeleton className="h-56 rounded-xl lg:col-span-7" />
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <Skeleton className="h-72 rounded-xl" />
+            <Skeleton className="h-72 rounded-xl" />
           </div>
         </div>
       </div>
@@ -139,17 +90,17 @@ export default function SchedulerPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-6xl space-y-5 p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className="bif-workbench-page h-full overflow-y-auto">
+      <div className="bif-workbench-page__inner">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
-            <p className="mt-0.5 max-w-2xl text-sm leading-6 text-muted-foreground">
+            <h1 className="text-2xl font-medium tracking-tight text-foreground">{t("title")}</h1>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
               {t("subtitle")}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <StatusBadge variant={isPersistentActive ? "success" : "warning"}>
+            <StatusBadge variant={isPersistentActive ? "neutral" : "warning"}>
               {isPersistentActive ? (
                 <Activity className="h-3 w-3" aria-hidden="true" />
               ) : (
@@ -165,22 +116,15 @@ export default function SchedulerPage() {
         </div>
 
         {status && (
-          <>
+          <div className="grid gap-4">
             <SchedulerStateStrip
               status={status}
               isPersistentActive={isPersistentActive}
               lastUpdatedAt={lastUpdatedAt}
             />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {statItems.map((item) => (
-                <QueueMetricCard key={item.key} item={item} />
-              ))}
-            </div>
-          </>
+            <ResourceMonitor schedulerStatus={status} />
+          </div>
         )}
-
-        <ResourceMonitor schedulerStatus={status} />
-        <GuidanceCard />
       </div>
     </div>
   )
@@ -198,26 +142,26 @@ function SchedulerStateStrip({
   const t = useTranslations("scheduler")
 
   return (
-    <CardRoot>
-      <CardContent className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="flex items-start gap-4">
+    <CardRoot variant="workbench">
+      <CardContent className="grid gap-4 !p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
+        <div className="flex items-start gap-3">
           <div
-            className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
+            className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${
               isPersistentActive
-                ? "border-success-border bg-success-muted text-success"
+                ? "border-border bg-muted text-muted-foreground"
                 : "border-warning-border bg-warning-muted text-warning"
             }`}
           >
-            <Gauge className="h-5 w-5" aria-hidden="true" />
+            <Gauge className="h-4 w-4" aria-hidden="true" />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-semibold text-foreground">
+              <h2 className="text-sm font-medium text-foreground">
                 {isPersistentActive
                   ? t("status.activeTitle")
                   : t("status.fallbackTitle")}
               </h2>
-              <StatusBadge variant={isPersistentActive ? "success" : "warning"}>
+              <StatusBadge variant={isPersistentActive ? "neutral" : "warning"}>
                 {isPersistentActive ? t("status.ready") : t("status.attention")}
               </StatusBadge>
             </div>
@@ -227,10 +171,14 @@ function SchedulerStateStrip({
           </div>
         </div>
 
-        <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[440px]">
-          <StateMetric label={t("mode")} value={status.effective_mode} />
-          <StateMetric label={t("workers")} value={status.workers} />
+        <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
           <StateMetric label={t("queueDepth")} value={status.queue_depth} />
+          <StateMetric label={t("workers")} value={status.workers} />
+          <StateMetric label={t("queued")} value={status.states.queued} />
+          <StateMetric label={t("dispatched")} value={status.states.dispatched} />
+          <StateMetric label={t("completed")} value={status.states.completed} />
+          <StateMetric label={t("failed")} value={status.states.failed} />
+          <StateMetric label={t("mode")} value={status.effective_mode} />
           <StateMetric
             label={t("snapshot")}
             value={formatRefreshTimestamp(lastUpdatedAt)}
@@ -252,68 +200,15 @@ function StateMetric({
   muted?: boolean
 }) {
   return (
-    <div className="rounded-lg border border-border/70 bg-muted/25 px-3 py-2.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
+    <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+      <p className="truncate text-xs text-muted-foreground">{label}</p>
       <p
-        className={`mt-1 break-words font-mono text-xs font-medium sm:text-sm ${
+        className={`mt-1 truncate font-mono text-xs font-medium sm:text-sm ${
           muted ? "text-muted-foreground" : "text-foreground"
         }`}
       >
         {value}
       </p>
     </div>
-  )
-}
-
-function QueueMetricCard({ item }: { item: StatItem }) {
-  const t = useTranslations("scheduler")
-  const Icon = item.icon
-
-  return (
-    <CardRoot>
-      <CardContent className="space-y-3 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium text-muted-foreground">{t(item.key)}</p>
-          <StatusBadge variant={item.variant} className="px-2 py-1">
-            <Icon className="h-3.5 w-3.5" />
-            <span className="sr-only">{t(item.key)}</span>
-          </StatusBadge>
-        </div>
-        <div className="text-3xl font-semibold tracking-tight text-foreground">
-          {item.value}
-        </div>
-        <p className="min-h-10 text-xs leading-5 text-muted-foreground">
-          {t(`cardDescriptions.${item.key}`)}
-        </p>
-      </CardContent>
-    </CardRoot>
-  )
-}
-
-function GuidanceCard() {
-  const t = useTranslations("scheduler")
-  const items = [
-    { title: t("guidance.queueTitle"), body: t("guidance.queueBody") },
-    { title: t("guidance.dispatchTitle"), body: t("guidance.dispatchBody") },
-    { title: t("guidance.resourcesTitle"), body: t("guidance.resourcesBody") },
-  ]
-
-  return (
-    <CardRoot className="bg-card/70">
-      <CardHeader title={t("guidance.title")} />
-      <CardContent className="space-y-4 p-5">
-        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          {t("guidance.body")}
-        </p>
-        <div className="grid gap-3 md:grid-cols-3">
-          {items.map((item) => (
-            <div key={item.title} className="rounded-lg border border-border/70 bg-muted/20 p-3">
-              <p className="text-sm font-medium text-foreground">{item.title}</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.body}</p>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </CardRoot>
   )
 }
