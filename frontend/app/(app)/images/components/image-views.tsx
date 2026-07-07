@@ -75,7 +75,7 @@ function ImageStatusBadge({ image, tImages }: { image: DockerImage; tImages: Ima
         image.status === "local" && "metadata-pill metadata-pill--source",
         image.status === "remote" && "metadata-pill",
         image.status === "pulling" && "bg-info/10 text-info border-info/20",
-        image.status === "failed" && "bg-destructive/10 text-destructive border-destructive/20",
+        image.status === "failed" && "bg-destructive/7 text-destructive border-destructive/16",
       )}
     >
       <StatusIcon
@@ -123,7 +123,9 @@ function ImageActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => onViewDetails(image)}>{tImages("actions.viewDetails")}</DropdownMenuItem>
+        <DropdownMenuItem data-testid="image-card-view-details" onClick={() => onViewDetails(image)}>
+          {tImages("actions.viewDetails")}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onCopyName(image)}>
           <Copy className="h-4 w-4 mr-2" />
           {tImages("actions.copyName")}
@@ -175,7 +177,7 @@ export function ImageCardsGrid({
   const groups = buildImageRepositoryGroups(images)
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
       {groups.map((group) => (
         <ImageRepositoryCard
           key={group.key}
@@ -293,56 +295,42 @@ function ImageRepositoryCard({
             />
           </div>
         }
+        className="rounded-2xl border-border/60 bg-card/90 py-0 shadow-none hover:border-border hover:shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
+        contentClassName="p-4"
         metadata={
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="metadata-pill text-xs-tight font-mono">
+            <span className="rounded-md border border-border/60 bg-muted/25 px-2 py-1 font-mono text-[11px] leading-none text-muted-foreground">
               {image.registry || "local"}
-            </Badge>
+            </span>
             <ImageStatusBadge image={image} tImages={tImages} />
           </div>
         }
-        footerMeta={
-          <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
-            <HardDrive className="h-3 w-3" />
-            {formatSize(image.size_bytes)}
-          </div>
-        }
+        actionColumns={1}
         actions={
-          <>
-            <Button
-              className="w-full min-w-0"
-              size="sm"
-              variant={image.status === "local" ? "outline" : "default"}
-              disabled={image.status === "pulling"}
-              onClick={() => onPull(image)}
-            >
-              <Download className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-              <span className="truncate">
-                {image.status === "pulling"
-                  ? tImages("actions.pulling")
-                  : image.status === "local"
-                    ? tImages("actions.repull")
-                    : tImages("actions.pull")}
-              </span>
-            </Button>
-            <Button
-              className="w-full min-w-0"
-              size="sm"
-              variant="outline"
-              data-testid="image-card-view-details"
-              onClick={() => onViewDetails(image)}
-            >
-              <span className="truncate">{tImages("actions.viewDetails")}</span>
-            </Button>
-          </>
+          <Button
+            className="w-full min-w-0 rounded-lg"
+            size="sm"
+            variant={image.status === "local" ? "outline" : "default"}
+            disabled={image.status === "pulling"}
+            onClick={() => onPull(image)}
+          >
+            <Download className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              {image.status === "pulling"
+                ? tImages("actions.pulling")
+                : image.status === "local"
+                  ? tImages("actions.repull")
+                  : tImages("actions.pull")}
+            </span>
+          </Button>
         }
       >
-
-          <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 rounded-xl border border-border/55 bg-muted/15 p-3">
+          <div className="flex items-center gap-2">
             {hasMultipleVersions ? (
               <Select value={image.id} onValueChange={handleVersionChange}>
                 <SelectTrigger
-                  className="h-8 min-w-0 flex-1 rounded-full bg-background text-xs"
+                  className="h-8 min-w-0 flex-1 rounded-lg bg-background text-xs"
                   aria-label={tImages("table.version")}
                 >
                   <SelectValue />
@@ -356,14 +344,22 @@ function ImageRepositoryCard({
                 </SelectContent>
               </Select>
             ) : (
-              <Badge variant="secondary" className="min-w-0 max-w-[65%] rounded-full px-3 py-1.5 text-xs-tight font-mono">
-                <span className="truncate">{image.tag}</span>
-              </Badge>
+              <span className="min-w-0 max-w-[65%] truncate rounded-lg bg-background px-2.5 py-1.5 font-mono text-xs-tight text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
+                {image.tag}
+              </span>
             )}
-            <Badge variant="secondary" className="rounded-full px-2.5 text-xs-tight">
+            <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs-tight font-medium text-muted-foreground">
               {tImages("card.versionCount", { count: group.images.length })}
-            </Badge>
+            </span>
           </div>
+          <div className="mt-3 flex items-center justify-between border-t border-border/45 pt-2.5 text-xs text-muted-foreground">
+            <span>{tImages("table.size")}</span>
+            <span className="flex items-center gap-1 font-medium text-foreground/80">
+              <HardDrive className="h-3 w-3" />
+              {formatSize(image.size_bytes)}
+            </span>
+          </div>
+        </div>
       </BrowseCard>
     </article>
   )
