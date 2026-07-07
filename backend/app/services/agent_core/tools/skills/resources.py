@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.path_layout import state_root
+from app.path_layout import skills_root, state_root
 from app.services.agent_core.plugins import AgentPluginRegistry
 from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
@@ -90,7 +90,7 @@ class ListPluginsTool:
 
 
 def _skills_root() -> Path:
-    return state_root() / "agent_core" / "skills"
+    return skills_root()
 
 
 def _plugins_root() -> Path:
@@ -100,8 +100,10 @@ def _plugins_root() -> Path:
 def _skill_payload(skill, *, include_body: bool = False) -> dict[str, Any]:
     payload = {
         "name": skill.name,
+        "title": skill.title,
         "version": skill.version,
         "description": skill.description,
+        "category": skill.category,
         "tags": skill.tags,
         "path": str(skill.path),
     }

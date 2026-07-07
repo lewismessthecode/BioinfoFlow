@@ -66,6 +66,17 @@ class AgentTokenUsageSummary(BaseModel):
     raw_totals: dict[str, int] = Field(default_factory=dict)
 
 
+class AgentSkillRead(BaseModel):
+    name: str
+    title: str | None = None
+    version: str
+    description: str
+    category: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    path: str
+    body: str | None = None
+
+
 class AgentSessionCreate(BaseModel):
     project_id: UUID | None = None
     title: str | None = None
@@ -119,6 +130,7 @@ class AgentSessionRead(BaseModel):
 class AgentTurnCreate(BaseModel):
     input_text: str
     input_parts: list[dict] | None = None
+    active_skill_names: list[str] | None = None
     model_profile_id: UUID | None = None
     model_selection: AgentModelSelection | None = None
     metadata: dict | None = None
@@ -134,6 +146,7 @@ class AgentTurnRead(BaseModel):
     user_id: str
     input_text: str
     input_parts: list[dict] | None = None
+    active_skill_names: list[str] = Field(default_factory=list)
     status: TurnStatus
     model_selection: AgentModelSelection | None = None
     model_profile_snapshot: dict | None = None

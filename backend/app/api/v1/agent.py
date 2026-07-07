@@ -16,7 +16,7 @@ import app.database as app_database
 from app.api.deps import get_current_user, get_db
 from app.auth.session import AuthUser
 from app.config import settings
-from app.path_layout import project_home
+from app.path_layout import project_home, skills_root
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.schemas.agent_core import (
@@ -31,12 +31,14 @@ from app.schemas.agent_core import (
     AgentSessionCreate,
     AgentSessionRead,
     AgentSessionUpdate,
+    AgentSkillRead,
     AgentTokenUsageSummary,
     AgentTurnCreate,
     AgentTurnRead,
 )
 from app.repositories.llm_repo import LlmModelRepository
 from app.services.agent_core import AgentCoreService, AgentMemoryService
+from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.metrics import agent_metrics
 from app.utils.logging import get_logger
 from app.services.agent_core.model_selection import (
@@ -84,8 +86,15 @@ def _turn_read(turn) -> AgentTurnRead:
             "model_id": snapshot.get("resolved_model_id"),
         }
     model_selection = normalize_model_selection(model_selection_payload)
+    active_skill_names = []
+    metadata = snapshot.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("active_skill_names"), list):
+        active_skill_names = [
+            item for item in metadata["active_skill_names"] if isinstance(item, str)
+        ]
     return AgentTurnRead.model_validate(turn).model_copy(
         update={
+            "active_skill_names": active_skill_names,
             "model_selection": (
                 AgentModelSelection.model_validate(model_selection)
                 if model_selection
@@ -109,6 +118,44 @@ def _artifact_read(artifact) -> AgentArtifactRead:
 
 def _memory_read(memory) -> AgentMemoryRead:
     return AgentMemoryRead.model_validate(memory)
+
+
+def _skill_read(skill, *, include_body: bool = False) -> AgentSkillRead:
+    return AgentSkillRead(
+        name=skill.name,
+        title=skill.title,
+        version=skill.version,
+        description=skill.description,
+        category=skill.category,
+        tags=skill.tags,
+        path=str(skill.path),
+        body=skill.body if include_body else None,
+    )
+
+
+@router.get("/skills")
+async def list_skills(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+):
+    del user
+    registry = AgentSkillRegistry.from_directory(skills_root())
+    return success_response(
+        {"skills": [_dump(_skill_read(skill)) for skill in registry.list()]},
+        request=request,
+    )
+
+
+@router.get("/skills/{skill_name}")
+async def get_skill(
+    skill_name: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+):
+    del user
+    registry = AgentSkillRegistry.from_directory(skills_root())
+    skill = registry.get(skill_name)
+    return success_response(_dump(_skill_read(skill, include_body=True)), request=request)
 
 
 @router.post("/sessions")
@@ -236,6 +283,7 @@ async def create_turn(
         user_id=user.id,
         input_text=payload.input_text,
         input_parts=payload.input_parts,
+        active_skill_names=payload.active_skill_names,
         model_profile_id=str(payload.model_profile_id) if payload.model_profile_id else None,
         model_selection=(
             payload.model_selection.model_dump(mode="json", exclude_none=True)

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.agent_core import AgentMemoryStatus
-from app.path_layout import state_root
+from app.path_layout import skills_root, state_root
 from app.repositories.agent_core_repo import AgentMemoryRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.project_repo import ProjectRepository
@@ -14,7 +14,11 @@ from app.services.agent_core.context.remote import render_remote_connection_cont
 from app.services.agent_core.context.system_prompt import resolve_system_prompt_prefix
 from app.services.agent_core.plugins import AgentPluginRegistry
 from app.services.agent_core.sandbox import FilesystemPolicy
-from app.services.agent_core.skills import AgentSkillRegistry
+from app.services.agent_core.skills import (
+    ActiveSkillResolutionError,
+    AgentSkillRegistry,
+    resolve_active_skills,
+)
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.transcript import (
     AgentTranscriptStore,
@@ -47,7 +51,7 @@ class AgentContextAssembler:
         memory_context = await self._memory_context(agent_session)
         if memory_context:
             system_sections.append(memory_context)
-        skills_context = self._skills_context()
+        skills_context = self._skills_context(turn)
         if skills_context:
             system_sections.append(skills_context)
         messages: list[dict[str, str]] = [
@@ -179,13 +183,37 @@ class AgentContextAssembler:
             lines.append(f"- {memory.scope}/{memory.type}: {memory.content}")
         return "\n".join(lines)
 
-    def _skills_context(self) -> str | None:
-        skills = AgentSkillRegistry.from_directory(state_root() / "agent_core" / "skills")
+    def _skills_context(self, turn) -> str | None:
+        skills = AgentSkillRegistry.from_directory(skills_root())
         plugins = AgentPluginRegistry.from_directory(state_root() / "agent_core" / "plugins")
         lines: list[str] = []
         if skills.list():
-            lines.append("Available skills:")
+            lines.append("## Agent skills")
+            lines.append(
+                "Skill summaries are available every turn. Load full skill bodies only "
+                "when the skill is relevant or explicitly requested."
+            )
             lines.extend(f"- {line}" for line in skills.describe_for_prompt().splitlines())
+
+        active_skill_names = _active_skill_names_for_turn(turn)
+        if active_skill_names:
+            lines.append("")
+            lines.append("## Active skills for this turn")
+            lines.append(
+                "The user explicitly activated these skills for the current turn. "
+                "Treat them as task guidance below system policy, tool schemas, "
+                "permission policy, and the user's latest request."
+            )
+            try:
+                active_skills = resolve_active_skills(skills, active_skill_names)
+            except ActiveSkillResolutionError as exc:
+                active_skills = []
+                lines.append(f"Unavailable active skills: {', '.join(exc.missing)}")
+            for skill in active_skills:
+                lines.append("")
+                lines.append(f"### {skill.name} ({skill.version})")
+                lines.append(skill.body)
+
         enabled_plugins = plugins.list()
         if enabled_plugins:
             lines.append("Enabled plugins:")
@@ -194,6 +222,16 @@ class AgentContextAssembler:
                     f"- {plugin.id} ({plugin.version}): tools={plugin.tools}, skills={plugin.skills}"
                 )
         return "\n".join(lines) if lines else None
+
+def _active_skill_names_for_turn(turn) -> list[str]:
+    snapshot = getattr(turn, "model_profile_snapshot", None) or {}
+    metadata = snapshot.get("metadata") if isinstance(snapshot, dict) else None
+    if not isinstance(metadata, dict):
+        return []
+    names = metadata.get("active_skill_names")
+    if not isinstance(names, list):
+        return []
+    return [name for name in names if isinstance(name, str) and name.strip()]
 
 
 def _exposed_tool_lines(exposed_tools) -> list[str]:

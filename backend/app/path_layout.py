@@ -31,6 +31,10 @@ def state_root() -> Path:
     return settings.state_root.resolve()
 
 
+def skills_root() -> Path:
+    return settings.skills_root.resolve()
+
+
 def auth_root() -> Path:
     return state_root() / "auth"
 
@@ -252,6 +256,7 @@ def ensure_run_layout(
 def ensure_platform_layout() -> None:
     for path in (
         state_root(),
+        skills_root(),
         auth_root(),
         workflows_root(),
         deliveries_root(),

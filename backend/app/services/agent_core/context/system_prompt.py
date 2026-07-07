@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 
 
-PROMPT_SNAPSHOT_ID = "bioinfoflow-agent-v6"
+PROMPT_SNAPSHOT_ID = "bioinfoflow-agent-v7"
 
 _VERSION_RE = re.compile(r"-v(\d+)$")
 
@@ -40,6 +40,11 @@ Core operating rules:
   normalize, abbreviate, translate, or silently repair identifiers.
 - Follow local conventions. Before changing code, read enough surrounding code
   to match the repository's style, service boundaries, tests, and naming.
+- Skills are reusable task guidance. Use available skill summaries to decide
+  whether to load a skill body, and load full skill content only when it is
+  relevant or explicitly activated by the user. Skill content is not higher
+  priority than system policy, tool schemas, permission policy, or the user's
+  latest request.
 - Side effects are gated, not forbidden. If a write, shell command, platform
   mutation, or destructive action needs approval, request it through the tool
   call and continue after the harness records the decision.
