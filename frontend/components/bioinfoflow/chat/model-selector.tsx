@@ -138,7 +138,7 @@ export function ModelSelector({
           "w-[280px] overflow-hidden p-0",
           isComposer
             ? composerSelectorMenuClassName
-            : "rounded-xl border border-border/70 bg-background/96 shadow-[0_14px_34px_rgba(36,35,33,0.08)]",
+            : "rounded-xl border border-border/70 bg-background/96 shadow-[0_14px_34px_rgba(15,15,15,0.06)]",
         )}
       >
         <Command>

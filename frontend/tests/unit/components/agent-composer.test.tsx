@@ -316,7 +316,7 @@ describe("AgentComposer", () => {
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled()
   })
 
-  it("renders composer selectors as unified warm chips with a neutral send action", () => {
+  it("renders composer controls as a neutral toolbar with sparse mode color", () => {
     render(
       <AgentComposer
         value="Run QC"
@@ -338,21 +338,21 @@ describe("AgentComposer", () => {
       name: "Current execution target: local",
     })
     expect(locationChip).toHaveAttribute("data-composer-chip", "true")
-    expect(locationChip).toHaveClass("h-8", "rounded-[7px]", "bg-muted/35")
+    expect(locationChip).toHaveClass("h-8", "rounded-[6px]", "bg-transparent")
 
     const permissionChip = screen.getByRole("button", { name: "Permission mode" })
     expect(permissionChip).toHaveAttribute("data-composer-chip", "true")
-    expect(permissionChip).toHaveClass("h-8", "rounded-[7px]", "bg-muted/35")
+    expect(permissionChip).toHaveClass("h-8", "rounded-[6px]", "bg-transparent")
 
     const modeChip = screen.getByTestId("agent-mode-chip")
     expect(modeChip).toHaveAttribute("data-composer-chip", "true")
     expect(modeChip).toHaveAttribute("data-mode", "plan")
-    expect(modeChip).toHaveClass("h-8", "rounded-[7px]", "bg-muted/35")
-    expect(screen.getByTestId("agent-mode-chip-marker")).toHaveClass("bg-[#c0a8dd]")
+    expect(modeChip).toHaveClass("h-8", "rounded-[6px]", "bg-[#fbf3db]")
+    expect(screen.getByTestId("agent-mode-chip-marker")).toHaveClass("bg-[#956400]")
 
     const modelChip = screen.getByRole("combobox", { name: "GPT-4o mini" })
     expect(modelChip).toHaveAttribute("data-composer-chip", "true")
-    expect(modelChip).toHaveClass("h-8", "rounded-[7px]", "bg-muted/35")
+    expect(modelChip).toHaveClass("h-8", "rounded-[6px]", "bg-transparent")
 
     const sendButton = screen.getByRole("button", { name: "Send message" })
     expect(sendButton).toHaveClass("bg-primary")

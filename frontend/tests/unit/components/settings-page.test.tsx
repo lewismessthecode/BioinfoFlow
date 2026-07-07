@@ -218,9 +218,9 @@ describe("SettingsPage", () => {
     useAppearanceMock.mockReturnValue({
       mode: "system",
       resolvedMode: "light",
-      lightPreset: "workbench",
-      darkPreset: "workbench",
-      activePreset: "workbench",
+      lightPreset: "notion",
+      darkPreset: "notion",
+      activePreset: "notion",
       setMode: vi.fn(),
       setLightPreset: vi.fn(),
       setDarkPreset: vi.fn(),

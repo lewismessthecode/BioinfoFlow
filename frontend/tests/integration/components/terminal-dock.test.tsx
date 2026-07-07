@@ -9,7 +9,7 @@ import { renderAppPage } from "@/tests/app-test-utils"
 
 const appearanceState = {
   resolvedMode: "light" as const,
-  activePreset: "workbench",
+  activePreset: "notion",
 }
 
 const resizeMock = vi.fn()
@@ -85,8 +85,8 @@ vi.mock("@/lib/appearance/use-appearance", () => ({
   useAppearance: () => ({
     mode: appearanceState.resolvedMode,
     resolvedMode: appearanceState.resolvedMode,
-    lightPreset: "workbench",
-    darkPreset: "workbench",
+    lightPreset: "notion",
+    darkPreset: "notion",
     activePreset: appearanceState.activePreset,
     setMode: vi.fn(),
     setLightPreset: vi.fn(),
@@ -138,7 +138,7 @@ function renderDock() {
 describe("TerminalDock", () => {
   beforeEach(() => {
     appearanceState.resolvedMode = "light"
-    appearanceState.activePreset = "workbench"
+    appearanceState.activePreset = "notion"
     terminalInstances.length = 0
     resizeObserverInstances.length = 0
     fitCallCount = 0
