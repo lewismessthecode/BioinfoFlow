@@ -1,10 +1,10 @@
 import type { RemoteConnectionStatus } from "@/lib/demo-connections"
 import { cn } from "@/lib/utils"
 
-export const remoteConnectionStatusDotClassNames: Record<RemoteConnectionStatus, string> = {
+const remoteConnectionStatusDotClassNames: Record<RemoteConnectionStatus, string> = {
   online: "bg-emerald-500 shadow-emerald-500/40",
   offline: "bg-rose-500 shadow-rose-500/40",
-  error: "bg-amber-500 shadow-amber-500/40",
+  error: "bg-rose-500 shadow-rose-500/40",
   unknown: "bg-slate-400 shadow-slate-400/30",
 }
 

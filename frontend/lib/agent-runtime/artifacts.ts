@@ -17,7 +17,7 @@ const DELIVERABLE_ARTIFACT_TYPES = new Set([
   "spreadsheet",
 ])
 
-export function isDeliverableArtifact(artifact: AgentRuntimeArtifact) {
+function isDeliverableArtifact(artifact: AgentRuntimeArtifact) {
   if (NON_REVIEW_ARTIFACT_TYPES.has(artifact.type)) return false
   if (artifact.file_path) return true
   return DELIVERABLE_ARTIFACT_TYPES.has(artifact.type)
@@ -25,8 +25,4 @@ export function isDeliverableArtifact(artifact: AgentRuntimeArtifact) {
 
 export function deliverableArtifacts(artifacts: AgentRuntimeArtifact[]) {
   return artifacts.filter(isDeliverableArtifact)
-}
-
-export function countDeliverableArtifacts(artifacts: AgentRuntimeArtifact[]) {
-  return deliverableArtifacts(artifacts).length
 }

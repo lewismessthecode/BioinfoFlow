@@ -1,6 +1,6 @@
 import type { ReadinessCheck } from "./dashboard-types";
 
-export type ReadinessCounts = {
+type ReadinessCounts = {
   requiredTotal: number;
   requiredCompleted: number;
   blockers: number;
@@ -84,11 +84,11 @@ export function readNumber(value: unknown): number {
   return typeof value === "number" ? value : 0;
 }
 
-export function readString(value: unknown): string {
+function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-export function readStringList(value: unknown): string[] {
+function readStringList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
     : [];
