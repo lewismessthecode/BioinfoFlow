@@ -72,20 +72,20 @@ function ApprovalCard({
 }) {
   const t = useTranslations("agentRuntime")
   return (
-    <div className="rounded-[18px] border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm">
-      <div className="mb-1 font-medium text-amber-900 dark:text-amber-200">
+    <div className="rounded-[14px] border border-foreground/12 bg-foreground/[0.045] px-3 py-3 text-sm">
+      <div className="mb-1 font-medium text-foreground/82">
         {t("sidecar.needsDecision")}
       </div>
-      <div className="mb-1 font-mono text-xs text-amber-800/80 dark:text-amber-100/80">
+      <div className="mb-1 font-mono text-xs text-muted-foreground">
         {decision.name ?? decision.actionId}
         {decision.riskLevel ? (
-          <span className="ml-2 rounded-full bg-amber-500/20 px-1.5 py-0.5">
+          <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-foreground/65">
             {decision.riskLevel}
           </span>
         ) : null}
       </div>
       {decision.inputPreview ? (
-        <div className="mb-3 truncate font-mono text-xs text-amber-800/70 dark:text-amber-100/70">
+        <div className="mb-3 truncate font-mono text-xs text-muted-foreground/82">
           {decision.inputPreview}
         </div>
       ) : null}
@@ -93,7 +93,7 @@ function ApprovalCard({
         <Button
           type="button"
           size="sm"
-          className="h-8 rounded-full"
+          className="h-8 rounded-md"
           onClick={() => onDecision(decision.actionId, "approve")}
         >
           <Check className="h-3.5 w-3.5" />
@@ -103,7 +103,7 @@ function ApprovalCard({
           type="button"
           size="sm"
           variant="outline"
-          className="h-8 rounded-full bg-card"
+          className="h-8 rounded-md bg-card"
           onClick={() => onDecision(decision.actionId, "reject")}
         >
           {t("reject")}
