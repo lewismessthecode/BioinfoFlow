@@ -21,6 +21,18 @@ describe("sidebar header styling", () => {
     )
 
     expect(source).toContain('"flex h-11 shrink-0 items-center"')
-    expect(source).toContain("h-8 w-8 rounded-lg")
+    expect(source).toContain("h-8 w-8 rounded-[8px]")
+    expect(source).toContain("rounded-[8px]")
+    expect(source).not.toContain("rounded-full")
+  })
+
+  it("keeps the protected app shell on the mobile-safe viewport unit", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "app/(app)/app-layout.tsx"),
+      "utf8",
+    )
+
+    expect(source).toContain("min-h-[100dvh]")
+    expect(source).not.toContain("h-screen")
   })
 })

@@ -17,14 +17,14 @@
 - Modify: `frontend/tests/unit/lib/appearance-presets.test.ts`
 
 **Steps:**
-- [ ] Replace cold blue-tinted light tokens with warm white, warm gray, and low-contrast border variables.
-- [ ] Update the default `codex` light appearance preset so hydration keeps the same palette.
-- [ ] Update token anchor tests from the old Gemini-inspired palette to the new warm app shell palette.
-- [ ] Reduce composer/global shadow tokens to ultra-diffuse shadows.
-- [ ] Change `--font-sans` to prefer `Geist Sans`, `SF Pro Display`, and system UI before falling back.
-- [ ] Keep dark mode compatible without re-theming the full dark surface.
-- [ ] Verify with `rtk bun run lint` from `frontend/`.
-- [ ] Commit as `style: warm minimalist shell tokens`.
+- [x] Replace cold blue-tinted light tokens with warm white, warm gray, and low-contrast border variables.
+- [x] Update the default `codex` light appearance preset so hydration keeps the same palette.
+- [x] Update token anchor tests from the old Gemini-inspired palette to the new warm app shell palette.
+- [x] Reduce composer/global shadow tokens to ultra-diffuse shadows.
+- [x] Change `--font-sans` to prefer `Geist Sans`, `SF Pro Display`, and system UI before falling back.
+- [x] Keep dark mode compatible without re-theming the full dark surface.
+- [x] Verify with `rtk bun run lint` from `frontend/`.
+- [x] Commit as `style: warm minimalist shell tokens`.
 
 ## Phase 2: App shell and left sidebar chrome
 
@@ -36,13 +36,13 @@
 - Modify tests if selectors/classes need updating.
 
 **Steps:**
-- [ ] Replace `h-screen` shell sizing with `min-h-[100dvh]` and keep the main area overflow-safe.
-- [ ] Make the top navbar look like a thin desktop-app toolbar with warm background and subtle divider.
-- [ ] Make expanded and collapsed sidebar items squared-rounded instead of oversized pills.
-- [ ] Lower sidebar contrast and remove elevated/blur-heavy effects.
-- [ ] Preserve all existing navigation, keyboard, project, user-menu, and command-palette behavior.
-- [ ] Verify targeted tests: `rtk bun run test frontend/tests/unit/components/sidebar.test.tsx frontend/tests/unit/components/sidebar-nav.test.tsx frontend/tests/unit/components/navbar.test.tsx frontend/tests/unit/components/app-layout-coordination.test.tsx`.
-- [ ] Commit as `style: refine app shell sidebar chrome`.
+- [x] Replace `h-screen` shell sizing with `min-h-[100dvh]` and keep the main area overflow-safe.
+- [x] Make the top navbar look like a thin desktop-app toolbar with warm background and subtle divider.
+- [x] Make expanded and collapsed sidebar items squared-rounded instead of oversized pills.
+- [x] Lower sidebar contrast and remove elevated/blur-heavy effects.
+- [x] Preserve all existing navigation, keyboard, project, user-menu, and command-palette behavior.
+- [x] Verify targeted tests: `rtk bun run test tests/unit/components/sidebar.test.tsx tests/unit/components/sidebar-nav.test.tsx tests/unit/components/navbar.test.tsx tests/integration/components/app-layout-coordination.test.tsx tests/unit/styles/sidebar-header-style.test.ts tests/unit/styles/language-switcher-style.test.ts`.
+- [x] Commit as `style: refine app shell sidebar chrome`.
 
 ## Phase 3: Agent composer and right panel polish
 

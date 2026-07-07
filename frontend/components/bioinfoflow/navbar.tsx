@@ -58,11 +58,11 @@ export function Navbar({
   })
 
   const actionButtonClassName =
-    "h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+    "h-8 w-8 rounded-[8px] border border-transparent text-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent"
 
   return (
-    <header className="shrink-0 border-b border-border/45 bg-background/88 backdrop-blur-xl supports-[backdrop-filter]:bg-background/78">
-      <div className="flex h-11 items-center gap-3 px-4">
+    <header className="shrink-0 border-b border-border/60 bg-background/95 supports-[backdrop-filter]:bg-background/90">
+      <div className="flex h-11 items-center gap-3 px-3.5">
       {/* Mobile hamburger */}
       {showHamburger && onSidebarToggle && (
         <Button
