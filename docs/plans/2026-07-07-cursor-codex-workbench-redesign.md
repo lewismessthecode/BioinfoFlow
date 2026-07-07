@@ -6,7 +6,10 @@ Branch: `codex/minimalist-app-shell-redesign`
 ## Decisions
 
 - Keep the product direction as a Codex-like near-black, warm-white workbench.
-- Use orange only as a small action accent for send or primary execution moments.
+- Do not use orange in the default design. Primary actions use the same
+  near-black/warm-white system by default.
+- A configurable small action accent can be considered later, but accent colors
+  must be opt-in rather than hard-coded into Workbench.
 - Rename the default appearance preset from Codex to Workbench.
 - Keep a curated theme set in settings: Workbench, Notion, GitHub, Linear, One,
   and Vercel. Each preset keeps its light and dark modes.
@@ -39,7 +42,7 @@ Branch: `codex/minimalist-app-shell-redesign`
   sizing and state styles.
 - Add small, muted color distinction for mode chips.
 - Keep safety-critical permission/runtime context visible.
-- Keep orange confined to enabled send or primary action affordances.
+- Keep send and primary action affordances neutral by default.
 
 ### Phase 4: Dashboard and Page Consistency
 
