@@ -191,7 +191,7 @@ export default function AppLayout({
                 {/* Left Sidebar - Desktop */}
                 {!isMobile && (
                   <nav
-                    className="relative flex-shrink-0 transition-[width,opacity] duration-200"
+                    className="sticky top-0 h-[100dvh] flex-shrink-0 self-start transition-[width,opacity] duration-200"
                     style={{ width: effectiveLeftWidth }}
                     role="navigation"
                     aria-label="Project navigation"
