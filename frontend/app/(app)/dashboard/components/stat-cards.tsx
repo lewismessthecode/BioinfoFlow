@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Play, GitBranch, Container, FolderOpen } from "lucide-react";
-import { motion, useReducedMotion } from "framer-motion";
-import { CardRoot } from "@/components/bioinfoflow/card";
+import {
+  CardRoot,
+  CardContent,
+} from "@/components/bioinfoflow/card";
 import type { DashboardStats } from "./dashboard-types";
 
 type StatCardsProps = {
@@ -14,7 +16,6 @@ type StatCardsProps = {
 export function StatCards({ stats }: StatCardsProps) {
   const tDashboard = useTranslations("dashboard");
   const tStatus = useTranslations("status");
-  const prefersReducedMotion = useReducedMotion();
 
   const statCards = [
     {
@@ -59,59 +60,58 @@ export function StatCards({ stats }: StatCardsProps) {
   ];
 
   return (
-    <CardRoot
-      variant="workbench"
-      className="overflow-hidden"
-      data-testid="dashboard-metric-strip"
+    <div
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      data-testid="dashboard-metric-grid"
     >
-      <div className="bif-dashboard-metric-grid">
-        {statCards.map((card, index) => {
-          const Icon = card.icon;
-          return (
-            <motion.div
-              key={card.key}
-              initial={prefersReducedMotion ? {} : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05, ease: [0.25, 0.1, 0.25, 1.0] }}
-            >
+      {statCards.map((card) => {
+        const Icon = card.icon;
+        return (
+          <div
+            key={card.key}
+            className="min-w-0"
+          >
+            <CardRoot variant="workbench" className="h-full">
               <Link
                 href={card.href}
-                className="group flex min-h-[5.875rem] min-w-0 flex-col justify-between gap-2.5 px-4 py-3 transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-inset min-[360px]:min-h-[4.875rem] min-[360px]:px-3.5 min-[360px]:py-2.5 lg:min-h-[5.875rem] lg:px-4 lg:py-3"
+                className="group block h-full rounded-[inherit] transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-inset"
               >
-                <span className="flex min-w-0 items-start justify-between gap-3">
-                  <span className="min-w-0">
-                    <span className="inline-flex max-w-full items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
-                      <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                      <span className="truncate">{tDashboard(card.key)}</span>
-                    </span>
-                    <span className="mt-1 block font-mono text-2xl font-semibold tracking-tight text-foreground tabular-nums">
-                      {card.getValue()}
-                    </span>
-                    {card.key === "runs" && (stats?.runs.running ?? 0) > 0 ? (
-                      <span className="mt-1.5 flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse motion-reduce:animate-none" />
-                        <span className="text-xs font-medium text-info">
-                          {stats?.runs.running} {tStatus("running")}
+                <CardContent className="flex min-h-[7rem] flex-col justify-between gap-4 !p-5">
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                        {tDashboard(card.key)}
+                      </span>
+                      <span className="mt-2 block font-mono text-3xl font-semibold tracking-tight text-foreground tabular-nums">
+                        {card.getValue()}
+                      </span>
+                      {card.key === "runs" && (stats?.runs.running ?? 0) > 0 ? (
+                        <span className="mt-2 flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse motion-reduce:animate-none" />
+                          <span className="text-xs font-medium text-info">
+                            {stats?.runs.running} {tStatus("running")}
+                          </span>
                         </span>
-                      </span>
-                    ) : null}
-                  </span>
-                </span>
-                <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  {card.getDetails().map((detail) => (
-                    <span key={detail.label} className="inline-flex min-w-0 items-center gap-1.5">
-                      <span className="font-mono font-medium text-foreground tabular-nums">
-                        {detail.value}
-                      </span>
-                      <span className="truncate">{detail.label}</span>
+                      ) : null}
                     </span>
-                  ))}
-                </span>
+                    <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" aria-hidden="true" />
+                  </span>
+                  <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {card.getDetails().map((detail) => (
+                      <span key={detail.label} className="inline-flex min-w-0 items-center gap-1.5">
+                        <span className="font-mono font-medium text-foreground tabular-nums">
+                          {detail.value}
+                        </span>
+                        <span className="truncate">{detail.label}</span>
+                      </span>
+                    ))}
+                  </span>
+                </CardContent>
               </Link>
-            </motion.div>
-          );
-        })}
-      </div>
-    </CardRoot>
+            </CardRoot>
+          </div>
+        );
+      })}
+    </div>
   );
 }

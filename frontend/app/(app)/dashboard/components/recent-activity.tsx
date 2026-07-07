@@ -36,7 +36,7 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
     <CardRoot variant="workbench" className="flex min-h-[16rem] flex-1 flex-col">
       <CardHeader
         title={tDashboard("recentActivity")}
-        className="border-b-0"
+        className="border-b-0 !pb-2"
         action={
           <Button variant="ghost" size="sm" asChild>
             <Link
@@ -49,12 +49,12 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
           </Button>
         }
       />
-      <CardContent>
+      <CardContent className="!pt-0">
         {!recentRuns?.length ? (
-          <div className="flex min-h-[10rem] items-center justify-center rounded-md border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center">
+          <div className="flex min-h-[8.5rem] items-center justify-center px-4 py-5 text-center">
             <div className="max-w-sm">
-              <span className="mx-auto flex size-9 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
-                <Play className="size-4" aria-hidden="true" />
+              <span className="mx-auto flex size-8 items-center justify-center rounded-md bg-muted/35 text-muted-foreground">
+                <Play className="size-3.5" aria-hidden="true" />
               </span>
               <h2 className="mt-3 text-sm font-medium text-foreground">
                 {tDashboard("noRecentRuns")}
@@ -65,7 +65,7 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
             </div>
           </div>
         ) : (
-          <div className="space-y-1">
+          <div className="overflow-hidden rounded-md">
             {recentRuns.map((run) => {
               const config = runStatusLabel[run.status];
               const isFailed = run.status === "failed";
@@ -74,7 +74,7 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
                   key={run.run_id}
                   href={`/runs?highlight=${run.run_id}`}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors hover:border-border/70 hover:bg-muted/35",
+                    "flex items-center gap-3 px-2.5 py-2 text-sm transition-colors hover:bg-muted/35",
                     isFailed && "bg-destructive/[0.04]",
                   )}
                 >

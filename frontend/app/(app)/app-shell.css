@@ -25,25 +25,6 @@
   box-shadow: none;
 }
 
-.bif-workbench-card[data-interactive="true"] {
-  transition:
-    transform var(--duration-normal) var(--ease-out),
-    border-color var(--duration-normal) var(--ease-out),
-    box-shadow var(--duration-normal) var(--ease-out),
-    background var(--duration-normal) var(--ease-out);
-}
-
-.bif-workbench-card[data-interactive="true"]:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--foreground) 22%, var(--border) 78%);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 4%, transparent);
-}
-
-.dark .bif-workbench-card[data-interactive="true"]:hover {
-  border-color: color-mix(in srgb, var(--fg-muted) 36%, var(--border) 64%);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
-}
-
 .bif-workbench-card [data-slot="bioflow-card-header"] {
   border-color: color-mix(in srgb, var(--border) 66%, transparent);
   padding: 0.875rem 1rem;
@@ -51,68 +32,4 @@
 
 .bif-workbench-card [data-slot="bioflow-card-content"] {
   padding: 1rem;
-}
-
-.bif-dashboard-metric-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.bif-dashboard-metric-grid > * + * {
-  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-}
-
-@media (min-width: 360px) {
-  .bif-dashboard-metric-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .bif-dashboard-metric-grid > * + * {
-    border-top: 0;
-  }
-
-  .bif-dashboard-metric-grid > *:nth-child(n + 3) {
-    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  }
-
-  .bif-dashboard-metric-grid > *:nth-child(even) {
-    border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  }
-}
-
-@media (min-width: 1024px) {
-  .bif-dashboard-metric-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .bif-dashboard-metric-grid > * + * {
-    border-top: 0;
-    border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  }
-
-  .bif-dashboard-metric-grid > *:nth-child(n + 3) {
-    border-top: 0;
-  }
-
-  .bif-dashboard-metric-grid > *:nth-child(even) {
-    border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  }
-}
-
-.bif-workbench-panel {
-  border-radius: 0.5rem;
-  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
-  background: color-mix(in srgb, var(--surface-subtle) 48%, transparent);
-}
-
-.dark .bif-workbench-panel {
-  border-color: color-mix(in srgb, var(--border-hover) 34%, transparent);
-  background: color-mix(in srgb, var(--bg-surface) 48%, transparent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bif-workbench-card[data-interactive="true"],
-  .bif-workbench-card[data-interactive="true"]:hover {
-    transform: none;
-  }
 }

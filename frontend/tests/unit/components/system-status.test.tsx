@@ -2,10 +2,10 @@ import { render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { SystemStatus } from "@/app/(app)/dashboard/components/system-status"
-import type { GpuInfo, ReadinessCheck, SystemHealth } from "@/app/(app)/dashboard/components/dashboard-types"
+import type { GpuInfo, SystemHealth } from "@/app/(app)/dashboard/components/dashboard-types"
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string, values?: Record<string, string | number>) => {
+  useTranslations: () => (key: string) => {
     const copy: Record<string, string> = {
       systemStatus: "System Status",
       healthy: "Healthy",
@@ -20,12 +20,6 @@ vi.mock("next-intl", () => ({
       parabricksCompatible: "Parabricks Compatible",
       noGpuDetected: "No GPU detected",
       "gpu.nvidiaRuntimeVisible": "NVIDIA runtime visible",
-      "gpu.detailsUnavailable": "GPU details unavailable to backend",
-      "systemNotes.title": "Optional notes",
-      "systemNotes.badge": "Doesn't block setup",
-      "systemNotes.description": "These notes do not block CPU or local workflows.",
-      "systemNotes.gpuRuntimeHiddenWithRecommendation": `This host supports GPU work, but containers cannot use the GPU yet. CPU and local workflows can run now. ${values?.recommendation ?? ""}`,
-      "readiness.checks.gpu.label": "GPU",
     }
 
     return copy[key] ?? key
@@ -58,38 +52,13 @@ const runtimeOnlyGpu: GpuInfo = {
   gpus: [],
 }
 
-const gpuOptionalNote: ReadinessCheck = {
-  id: "gpu",
-  status: "warn",
-  severity: "optional",
-  facts: {
-    docker_nvidia_runtime: true,
-    runtime_visible_to_backend: false,
-    recommendation: "Enable the GPU compose override only when a workflow needs acceleration.",
-  },
-}
-
 describe("SystemStatus", () => {
   it("does not report no GPU when the NVIDIA runtime is visible", () => {
     render(<SystemStatus health={healthyWithNvidiaRuntime} gpuInfo={runtimeOnlyGpu} />)
 
     expect(screen.queryByText("No GPU detected")).not.toBeInTheDocument()
     expect(screen.getByText("NVIDIA runtime visible")).toBeInTheDocument()
-    expect(screen.getByText(runtimeOnlyGpu.recommendation)).toBeInTheDocument()
-  })
-
-  it("shows optional readiness notes as non-blocking system guidance", () => {
-    render(
-      <SystemStatus
-        health={healthyWithNvidiaRuntime}
-        gpuInfo={runtimeOnlyGpu}
-        optionalNotes={[gpuOptionalNote]}
-      />,
-    )
-
-    expect(screen.getByText("Optional notes")).toBeInTheDocument()
-    expect(screen.getByText("Doesn't block setup")).toBeInTheDocument()
-    expect(screen.getByText("GPU")).toBeInTheDocument()
-    expect(screen.getByText(/CPU and local workflows can run now/)).toBeInTheDocument()
+    expect(screen.queryByText("GPU details unavailable to backend")).not.toBeInTheDocument()
+    expect(screen.queryByText(runtimeOnlyGpu.recommendation)).not.toBeInTheDocument()
   })
 })

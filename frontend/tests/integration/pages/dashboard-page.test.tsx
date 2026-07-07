@@ -169,7 +169,7 @@ describe("DashboardPage", () => {
     expect(workflowsCard).toHaveAttribute("href", "/workflows?scope=hub")
   })
 
-  it("renders stat cards as a responsive metric strip", async () => {
+  it("renders stat cards as a responsive KPI grid", async () => {
     mockDashboardApi({
       stats: {
         ...defaultStats,
@@ -186,19 +186,22 @@ describe("DashboardPage", () => {
       screen.getByRole("link", { name: /dashboard\.projects/i }),
     ]
 
-    const metricStrip = await screen.findByTestId("dashboard-metric-strip")
-    const metricGrid = metricStrip.firstElementChild
+    const metricGrid = await screen.findByTestId("dashboard-metric-grid")
 
-    expect(metricGrid).toHaveClass("bif-dashboard-metric-grid")
-    expect(metricGrid?.children).toHaveLength(4)
+    expect(metricGrid).toHaveClass(
+      "grid",
+      "grid-cols-1",
+      "sm:grid-cols-2",
+      "xl:grid-cols-4"
+    )
+    expect(metricGrid.children).toHaveLength(4)
 
     for (const cardLink of statCardLinks) {
       expect(metricGrid).toContainElement(cardLink)
       expect(cardLink).toHaveClass(
-        "min-h-[5.875rem]",
-        "min-[360px]:min-h-[4.875rem]",
-        "flex-col",
-        "justify-between"
+        "block",
+        "h-full",
+        "rounded-[inherit]"
       )
     }
   })
@@ -329,7 +332,7 @@ describe("DashboardPage", () => {
     ).toHaveAttribute("href", "/settings?section=providers")
   })
 
-  it("moves optional readiness warnings into system status after required setup is ready", async () => {
+  it("keeps optional readiness warnings out of dashboard monitoring cards after required setup is ready", async () => {
     mockDashboardApi({
       stats: {
         runs: {
@@ -419,10 +422,9 @@ describe("DashboardPage", () => {
 
     renderAppPage(<DashboardPage />)
 
-    expect(await screen.findByText("dashboard.systemNotes.title")).toBeInTheDocument()
+    expect(await screen.findByText("dashboard.systemStatus")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /dashboard\.readiness\.trigger/ })).not.toBeInTheDocument()
-    expect(screen.getAllByText("dashboard.readiness.checks.gpu.label").length).toBeGreaterThan(0)
-    expect(screen.getByText(/dashboard\.systemNotes\.gpuRuntimeHiddenWithRecommendation/)).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "dashboard.readiness.checks.gpu.action" })).toHaveAttribute("href", "/scheduler")
+    expect(screen.queryByText("Enable GPU access only when an accelerated workflow needs it.")).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "dashboard.readiness.checks.gpu.action" })).not.toBeInTheDocument()
   })
 })
