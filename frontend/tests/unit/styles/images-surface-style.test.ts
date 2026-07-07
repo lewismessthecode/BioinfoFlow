@@ -17,6 +17,8 @@ describe("images page card styling", () => {
     expect(source).toContain("hover:shadow-sm")
     expect(source).not.toContain("hover:shadow-lg")
     expect(imageSource).not.toContain("bg-card/70")
+    expect(imageSource).not.toContain("rounded-xl border border-border/55 bg-muted/15")
+    expect(imageSource).toContain("metadata-pill metadata-pill--version")
   })
 
   it("uses a softer action button and a quieter warning banner", () => {
