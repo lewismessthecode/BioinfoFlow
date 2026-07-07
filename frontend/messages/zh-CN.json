@@ -313,6 +313,7 @@
   "dashboard": {
     "title": "仪表盘",
     "subtitle": "平台概览和系统状态",
+    "monitoringOverview": "监控总览",
     "runs": "运行",
     "workflows": "工作流",
     "images": "镜像",
@@ -359,8 +360,8 @@
       "gpuError": "暂时无法确认 GPU 状态。CPU 和本地工作流可以先运行。详情：{error}",
       "gpuCpuOnly": "未启用 GPU 加速。CPU 和本地工作流可以直接运行。"
     },
-    "narrativeEmpty": "还没有运行记录，去智能助手页面开始你的第一次分析吧！",
-    "narrativeAllComplete": "已完成全部 {total} 次运行，一切顺利 ✅",
+    "narrativeEmpty": "还没有运行记录。系统检查会为第一次分析保持就绪。",
+    "narrativeAllComplete": "已完成全部 {total} 次运行，一切顺利",
     "narrativeTotal": "共 {total} 次运行",
     "narrativeCompleted": "{count} 次已完成",
     "narrativeRunning": "{count} 次正在进行中",
@@ -465,7 +466,12 @@
     },
     "schedulerCard": {
       "title": "调度器",
-      "queueDepth": "队列深度"
+      "queueDepth": "队列深度",
+      "states": {
+        "queued": "排队中",
+        "dispatched": "已分派",
+        "completed": "已完成"
+      }
     }
   },
   "runs": {

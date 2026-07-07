@@ -313,6 +313,7 @@
   "dashboard": {
     "title": "Dashboard",
     "subtitle": "Platform overview and system status",
+    "monitoringOverview": "Monitoring overview",
     "runs": "Runs",
     "workflows": "Workflows",
     "images": "Images",
@@ -359,7 +360,7 @@
       "gpuError": "GPU status is unavailable. CPU and local workflows can run now. Details: {error}",
       "gpuCpuOnly": "GPU acceleration is not enabled. CPU and local workflows can run now."
     },
-    "narrativeEmpty": "No runs yet — head to the Agent to start your first analysis!",
+    "narrativeEmpty": "No runs yet. System checks are ready for the first analysis.",
     "narrativeAllComplete": "All {total} runs completed successfully",
     "narrativeTotal": "{total} total runs",
     "narrativeCompleted": "{count} completed",
@@ -465,7 +466,12 @@
     },
     "schedulerCard": {
       "title": "Scheduler",
-      "queueDepth": "Queue Depth"
+      "queueDepth": "Queue depth",
+      "states": {
+        "queued": "queued",
+        "dispatched": "dispatched",
+        "completed": "completed"
+      }
     }
   },
   "runs": {

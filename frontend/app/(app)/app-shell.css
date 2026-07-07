@@ -1,1 +1,72 @@
 @import "@xterm/xterm/css/xterm.css";
+
+.bif-workbench-page {
+  position: relative;
+  isolation: isolate;
+  background: var(--background);
+}
+
+.bif-workbench-page__inner {
+  width: min(100%, 78rem);
+  margin-inline: auto;
+  padding: clamp(1rem, 2.8vw, 1.75rem);
+}
+
+.bif-workbench-card {
+  border-radius: 0.5rem;
+  border-color: color-mix(in srgb, var(--border) 76%, transparent);
+  background: color-mix(in srgb, var(--card) 94%, var(--surface-subtle) 6%);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.dark .bif-workbench-card {
+  border-color: color-mix(in srgb, var(--border-hover) 48%, var(--border) 52%);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg-surface) 8%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.bif-workbench-card[data-interactive="true"] {
+  transition:
+    transform var(--duration-normal) var(--ease-out),
+    border-color var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    background var(--duration-normal) var(--ease-out);
+}
+
+.bif-workbench-card[data-interactive="true"]:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--foreground) 22%, var(--border) 78%);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.dark .bif-workbench-card[data-interactive="true"]:hover {
+  border-color: color-mix(in srgb, var(--fg-muted) 36%, var(--border) 64%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+.bif-workbench-card [data-slot="bioflow-card-header"] {
+  border-color: color-mix(in srgb, var(--border) 66%, transparent);
+  padding: 0.875rem 1rem;
+}
+
+.bif-workbench-card [data-slot="bioflow-card-content"] {
+  padding: 1rem;
+}
+
+.bif-workbench-panel {
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  background: color-mix(in srgb, var(--surface-subtle) 48%, transparent);
+}
+
+.dark .bif-workbench-panel {
+  border-color: color-mix(in srgb, var(--border-hover) 34%, transparent);
+  background: color-mix(in srgb, var(--bg-surface) 48%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bif-workbench-card[data-interactive="true"],
+  .bif-workbench-card[data-interactive="true"]:hover {
+    transform: none;
+  }
+}

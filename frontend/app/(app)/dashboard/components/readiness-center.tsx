@@ -162,7 +162,7 @@ function SetupItem({
       aria-label={rowLabel}
       data-testid={`readiness-check-${check.id}`}
       className={cn(
-        "group rounded-2xl px-2.5 transition-colors",
+        "group rounded-lg px-2.5 transition-colors",
         "hover:bg-muted/35",
         isComplete ? "py-1.5 text-muted-foreground" : "py-2.5",
         isComplete && "text-muted-foreground",
@@ -211,13 +211,13 @@ function SetupItem({
           ) : null}
         </div>
         {!isComplete && actionLabel && check.action?.kind === "dialog" ? (
-          <Button size="sm" variant="ghost" className="h-8 shrink-0 rounded-full px-2.5 text-xs" onClick={onProjectAction}>
+          <Button size="sm" variant="ghost" className="h-8 shrink-0 rounded-md px-2.5 text-xs" onClick={onProjectAction}>
             {actionLabel}
             <ArrowRight data-icon="inline-end" aria-hidden="true" />
           </Button>
         ) : null}
         {!isComplete && actionLabel && actionHref && check.id !== "project" ? (
-          <Button asChild size="sm" variant="ghost" className="h-8 shrink-0 rounded-full px-2.5 text-xs">
+          <Button asChild size="sm" variant="ghost" className="h-8 shrink-0 rounded-md px-2.5 text-xs">
             <Link href={actionHref}>
               {actionLabel}
               <ArrowRight data-icon="inline-end" aria-hidden="true" />
@@ -253,7 +253,7 @@ function ChecklistSection({
           {description}
         </p>
       ) : null}
-      <ul className="grid gap-1 rounded-[22px] bg-card/45 p-1">
+      <ul className="grid gap-1 rounded-lg bg-card/45 p-1">
         {checks.map((check) => (
           <SetupItem key={check.id} check={check} onProjectAction={onProjectAction} />
         ))}
@@ -309,16 +309,16 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
     <Sheet open={open} onOpenChange={setOpen}>
       <CardRoot
         variant="warning"
-        className="mb-5 overflow-hidden border border-border/70 bg-card/85 shadow-sm shadow-foreground/5"
+        className="bif-workbench-card overflow-hidden border-warning-border/60 bg-warning-muted/30"
       >
         <CardContent className="p-2">
           <button
             type="button"
             aria-label={triggerAriaLabel}
-            className="group flex min-w-0 w-full items-center gap-3 rounded-[22px] px-3 py-3 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="group flex min-w-0 w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => setOpen(true)}
           >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-warning-border/70 bg-warning-muted text-warning">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-warning-border/70 bg-warning-muted text-warning">
               <ListChecks className="size-4" aria-hidden="true" />
             </span>
             <span className="min-w-0 flex-1">

@@ -6,18 +6,20 @@ import { LucideIcon } from "lucide-react"
 
 // Card Root
 interface CardRootProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: "default" | "success" | "error" | "warning"
+  variant?: "default" | "success" | "error" | "warning" | "workbench"
 }
 
 export function CardRoot({ className, variant = "default", ...props }: CardRootProps) {
   return (
     <div
+      data-slot="bioflow-card"
       className={cn(
         "rounded-xl border bg-card overflow-hidden",
         variant === "default" && "border-border",
         variant === "success" && "border-emerald-200 dark:border-emerald-900/50",
         variant === "error" && "border-red-200 dark:border-red-900/50",
         variant === "warning" && "border-amber-200 dark:border-amber-900/50",
+        variant === "workbench" && "bif-workbench-card",
         className
       )}
       {...props}
@@ -45,6 +47,7 @@ export function CardHeader({
 }: CardHeaderProps) {
   return (
     <div
+      data-slot="bioflow-card-header"
       className={cn(
         "flex items-center justify-between border-b border-border px-4 py-3",
         className
@@ -74,6 +77,7 @@ export function CardContent({
 }: CardContentProps) {
   return (
     <div
+      data-slot="bioflow-card-content"
       className={cn(
         "p-4",
         divided && "[&>*:not(:last-child)]:border-b [&>*:not(:last-child)]:border-border [&>*:not(:last-child)]:pb-4 [&>*:not(:first-child)]:pt-4 space-y-0",
@@ -86,4 +90,3 @@ export function CardContent({
     </div>
   )
 }
-

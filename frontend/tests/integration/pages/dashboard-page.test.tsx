@@ -192,6 +192,43 @@ describe("DashboardPage", () => {
     }
   })
 
+  it("renders the dashboard as a monitoring overview workbench", async () => {
+    mockDashboardApi({
+      scheduler: {
+        mode: "persistent",
+        effective_mode: "persistent",
+        scheduler_available: true,
+        resource_monitoring_enabled: true,
+        workers: 2,
+        queue_depth: 3,
+        states: {
+          queued: 3,
+          dispatched: 1,
+          completed: 18,
+          failed: 0,
+          cancelled: 0,
+        },
+        total_slots: 4,
+        used_slots: 1,
+        available_slots: 3,
+        active_runs: [],
+      },
+    })
+
+    renderAppPage(<DashboardPage />)
+
+    const overview = await screen.findByRole("region", {
+      name: "dashboard.monitoringOverview",
+    })
+    expect(overview).toHaveAttribute("data-dashboard-surface", "monitoring")
+    expect(
+      await screen.findByRole("link", { name: /dashboard\.schedulerCard\.title/i }),
+    ).toHaveAttribute("href", "/scheduler")
+    expect(screen.getByText("dashboard.schedulerCard.states.queued")).toBeInTheDocument()
+    expect(screen.getByText("dashboard.schedulerCard.states.dispatched")).toBeInTheDocument()
+    expect(screen.getByText("dashboard.schedulerCard.states.completed")).toBeInTheDocument()
+  })
+
   it("surfaces readiness guidance when first-run setup is blocked", async () => {
     mockDashboardApi({
       stats: {

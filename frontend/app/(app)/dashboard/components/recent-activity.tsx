@@ -34,9 +34,10 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
   const tStatus = useTranslations("status");
 
   return (
-    <CardRoot className="mb-5 flex-1 flex flex-col">
+    <CardRoot variant="workbench" className="flex min-h-[24rem] flex-1 flex-col">
       <CardHeader
         title={tDashboard("recentActivity")}
+        className="border-b-0"
         action={
           <Button variant="ghost" size="sm" asChild>
             <Link
@@ -55,7 +56,7 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
             icon={Play}
             title={tDashboard("noRecentRuns")}
             description={tDashboard("noRecentRunsDescription")}
-            className="py-8"
+            className="py-10"
           />
         ) : (
           <div className="space-y-1">
@@ -67,8 +68,8 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
                   key={run.run_id}
                   href={`/runs?highlight=${run.run_id}`}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/50",
-                    isFailed && "bg-destructive/[0.03]",
+                    "flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors hover:border-border/70 hover:bg-muted/35",
+                    isFailed && "bg-destructive/[0.04]",
                   )}
                 >
                   {/* Status dot */}
@@ -81,20 +82,20 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
                     role="img"
                   />
 
-                  <span className="font-mono text-xs text-foreground truncate min-w-0 flex-1">
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
                     {run.run_id}
                   </span>
 
                   {/* Status label */}
                   <StatusBadge
                     variant={runStatusVariant[run.status]}
-                    className="flex-shrink-0"
+                    className="shrink-0"
                   >
                     {tStatus(config ?? run.status)}
                   </StatusBadge>
 
                   {/* Timestamp + duration */}
-                  <span className="text-xs text-muted-foreground flex-shrink-0 tabular-nums">
+                  <span className="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline">
                     {formatDateTime(run.started_at)}
                     {run.duration_seconds != null &&
                       ` · ${formatDuration(run.duration_seconds)}`}

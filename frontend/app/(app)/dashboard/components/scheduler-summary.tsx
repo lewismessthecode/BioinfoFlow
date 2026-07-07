@@ -18,43 +18,48 @@ export function SchedulerSummary({ schedulerStatus }: SchedulerSummaryProps) {
   const tDashboard = useTranslations("dashboard");
 
   return (
-    <Link href="/scheduler">
-      <CardRoot className="mb-5 flex-1 flex flex-col">
+    <Link href="/scheduler" className="group block">
+      <CardRoot
+        variant="workbench"
+        data-interactive="true"
+        className="flex flex-1 cursor-pointer flex-col"
+      >
         <CardHeader
           title={tDashboard("schedulerCard.title")}
           icon={Gauge}
+          className="border-b-0"
           action={
             <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
           }
         />
         <CardContent>
-          <div className="flex items-center gap-6 text-sm">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">
+          <div className="flex flex-col gap-4 text-sm sm:flex-row sm:items-center sm:gap-6">
+            <div className="bif-workbench-panel px-3 py-2">
+              <p className="mb-0.5 text-xs font-medium text-muted-foreground">
                 {tDashboard("schedulerCard.queueDepth")}
               </p>
-              <p className="text-lg font-semibold text-foreground font-mono">
+              <p className="font-mono text-2xl font-semibold text-foreground tabular-nums">
                 {schedulerStatus.queue_depth}
               </p>
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>
-                <span className="font-medium text-foreground">
+            <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+              <span className="metadata-pill flex items-center gap-1.5 rounded-md border px-2 py-1">
+                <span className="font-mono font-medium text-foreground tabular-nums">
                   {schedulerStatus.states.queued}
                 </span>{" "}
-                queued
+                {tDashboard("schedulerCard.states.queued")}
               </span>
-              <span>
-                <span className="font-medium text-foreground">
+              <span className="metadata-pill flex items-center gap-1.5 rounded-md border px-2 py-1">
+                <span className="font-mono font-medium text-foreground tabular-nums">
                   {schedulerStatus.states.dispatched}
                 </span>{" "}
-                dispatched
+                {tDashboard("schedulerCard.states.dispatched")}
               </span>
-              <span>
-                <span className="font-medium text-foreground">
+              <span className="metadata-pill flex items-center gap-1.5 rounded-md border px-2 py-1">
+                <span className="font-mono font-medium text-foreground tabular-nums">
                   {schedulerStatus.states.completed}
                 </span>{" "}
-                completed
+                {tDashboard("schedulerCard.states.completed")}
               </span>
             </div>
           </div>
