@@ -212,7 +212,7 @@ export function LlmCatalogPanel() {
         </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
         {providerTemplates.map((template) => {
           const provider = providersByTemplate.get(template.id)
           const values = fieldValues[template.id] ?? {}
@@ -227,46 +227,50 @@ export function LlmCatalogPanel() {
               key={template.id}
               role="group"
               aria-label={template.name}
-              className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card p-4 shadow-sm shadow-foreground/5 transition-colors hover:border-border"
+              className="grid gap-4 border-b border-border/60 px-4 py-4 last:border-b-0 sm:px-5 lg:grid-cols-[minmax(180px,1fr)_minmax(420px,1.35fr)] lg:items-start"
             >
-              <div className="flex items-center justify-between gap-3">
-                <h4 className="truncate text-base font-semibold leading-6 text-foreground">
-                  {template.name}
-                </h4>
-                <span
-                  className={cn(
-                    "inline-flex h-6 shrink-0 items-center rounded-md border px-2 text-xs font-medium",
-                    configured
-                      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                      : "border-border bg-muted text-muted-foreground",
-                  )}
-                >
-                  {configured ? <CheckCircle2 className="mr-1 size-3.5" /> : null}
-                  {configured ? t("providerCards.ready") : t("providerCards.needsSetup")}
-                </span>
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="truncate text-sm font-semibold leading-6 text-foreground">
+                    {template.name}
+                  </h4>
+                  <span
+                    className={cn(
+                      "inline-flex h-6 shrink-0 items-center rounded-md border px-2 text-xs font-medium",
+                      configured
+                        ? "border-border bg-secondary/45 text-foreground"
+                        : "border-border bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {configured ? <CheckCircle2 className="mr-1 size-3.5" /> : null}
+                    {configured ? t("providerCards.ready") : t("providerCards.needsSetup")}
+                  </span>
+                </div>
+                {note ? (
+                  <p className="text-[13px] leading-5 text-muted-foreground">
+                    {note}
+                  </p>
+                ) : null}
               </div>
 
-              <div className="grid gap-2">
-                {template.fields.map((field) => (
-                  <Input
-                    key={field.name}
-                    aria-label={`${template.name} ${fieldAriaLabel(field)}`}
-                    type={field.secret ? "password" : "text"}
-                    value={values[field.name] ?? ""}
-                    onChange={(event) =>
-                      setFieldValue(template.id, field.name, event.target.value)
-                    }
-                    placeholder={placeholderForField(t, field, configured)}
-                    className="h-10 rounded-md"
-                  />
-                ))}
-              </div>
+              <div className="min-w-0 space-y-3 lg:justify-self-end">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {template.fields.map((field) => (
+                    <Input
+                      key={field.name}
+                      aria-label={`${template.name} ${fieldAriaLabel(field)}`}
+                      type={field.secret ? "password" : "text"}
+                      value={values[field.name] ?? ""}
+                      onChange={(event) =>
+                        setFieldValue(template.id, field.name, event.target.value)
+                      }
+                      placeholder={placeholderForField(t, field, configured)}
+                      className="h-10 rounded-md"
+                    />
+                  ))}
+                </div>
 
-              <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-                <span className="truncate text-xs text-muted-foreground">
-                  {note}
-                </span>
-                <div className="flex shrink-0 items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3 sm:justify-end">
                   <a
                     href={template.docs_url}
                     target="_blank"

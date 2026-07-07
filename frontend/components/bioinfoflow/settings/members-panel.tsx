@@ -15,13 +15,6 @@ import type { TeamRole } from "@/lib/auth-config"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -279,23 +272,30 @@ export function MembersPanel({
 
   return (
     <>
-      <Card className="border-border/60 bg-card/95 shadow-sm">
-        <CardHeader className="gap-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <CardTitle>{t("title")}</CardTitle>
-              <CardDescription>{t("description")}</CardDescription>
-            </div>
-            <Button onClick={() => setCreateOpen(true)} className="rounded-2xl">
-              {t("createCta")}
-            </Button>
+      <section className="space-y-4">
+        <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1.5">
+            <h3 className="text-lg font-semibold tracking-[-0.015em] text-foreground">
+              {t("title")}
+            </h3>
+            <p className="max-w-[65ch] text-sm leading-6 text-muted-foreground">
+              {t("description")}
+            </p>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          <Button onClick={() => setCreateOpen(true)} className="rounded-md">
+            {t("createCta")}
+          </Button>
+        </header>
+
+        <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
           {loading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 px-5 py-4 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               {t("loading")}
+            </div>
+          ) : members.length === 0 ? (
+            <div className="px-5 py-6 text-sm text-muted-foreground">
+              {t("empty")}
             </div>
           ) : (
             members.map((member) => {
@@ -314,25 +314,25 @@ export function MembersPanel({
               return (
                 <div
                   key={member.id}
-                  className="rounded-[24px] border border-border/60 bg-[color:var(--surface-subtle)] p-4"
+                  className="border-b border-border/60 px-5 py-4 last:border-b-0"
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-medium text-foreground">{member.name}</p>
-                        <Badge variant="outline" className="rounded-full">
+                        <Badge variant="outline" className="rounded-md">
                           <span className="flex items-center gap-1">
                             {icon}
                             {t(`roles.${memberRole}`)}
                           </span>
                         </Badge>
                         {member.banned ? (
-                          <Badge variant="destructive" className="rounded-full">
+                          <Badge variant="destructive" className="rounded-md">
                             {t("disabledBadge")}
                           </Badge>
                         ) : null}
                         {isSelf ? (
-                          <Badge variant="secondary" className="rounded-full">
+                          <Badge variant="secondary" className="rounded-md">
                             {t("you")}
                           </Badge>
                         ) : null}
@@ -349,7 +349,7 @@ export function MembersPanel({
                           }
                           disabled={savingId === member.id || (isLastOwner && isSelf)}
                         >
-                          <SelectTrigger className="h-10 w-full rounded-2xl bg-background sm:w-[160px]">
+                          <SelectTrigger className="h-10 w-full rounded-md bg-background sm:w-[160px]">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -368,7 +368,7 @@ export function MembersPanel({
                         <Button
                           type="button"
                           variant={member.banned ? "outline" : "secondary"}
-                          className="h-10 rounded-2xl"
+                          className="h-10 rounded-md"
                           onClick={() => void handleToggleDisabled(member)}
                           disabled={savingId === member.id || isLastOwner}
                         >
@@ -382,7 +382,7 @@ export function MembersPanel({
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-10 rounded-2xl"
+                            className="h-10 rounded-md"
                             onClick={() => setPasswordResetUser(member)}
                             disabled={savingId === member.id}
                           >
@@ -394,7 +394,7 @@ export function MembersPanel({
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-10 rounded-2xl"
+                          className="h-10 rounded-md"
                           onClick={() => void handleRevokeSessions(member.id)}
                           disabled={savingId === member.id}
                         >
@@ -407,8 +407,8 @@ export function MembersPanel({
               )
             })
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <Dialog
         open={createOpen}
