@@ -80,7 +80,7 @@ export function AgentTranscript({
       data-testid="agent-transcript-scroll"
       onScroll={updateBottomState}
     >
-      <div className="mx-auto grid w-full min-w-0 max-w-4xl gap-10">
+      <div className="mx-auto grid w-full min-w-0 max-w-[46rem] gap-10">
         {eventWindowLimited ? (
           <div className="justify-self-start rounded-full border border-border/60 bg-muted/35 px-3 py-1 text-xs text-muted-foreground">
             {t("recentActivityWindow")}

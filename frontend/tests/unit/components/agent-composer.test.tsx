@@ -208,6 +208,29 @@ describe("AgentComposer", () => {
     expect(onRemoveContextAttachment).toHaveBeenCalledWith("/workspace/workflow.wdl")
   })
 
+  it("renders a centered composer context row when provided", () => {
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        presentation="center"
+        contextTitle="Cancer Cohort"
+      />,
+    )
+
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-presentation",
+      "center",
+    )
+    expect(screen.getByText("Cancer Cohort")).toBeInTheDocument()
+  })
+
   it("changes permission mode from the composer dropdown", async () => {
     const onPermissionModeChange = vi.fn()
     render(

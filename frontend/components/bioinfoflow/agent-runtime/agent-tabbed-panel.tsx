@@ -178,7 +178,7 @@ export function AgentTabbedPanel({
   return (
     <aside
       className={cn(
-        "pointer-events-auto h-full overflow-hidden border-l border-border/70 bg-background",
+        "pointer-events-auto h-full overflow-hidden border-l border-border/70 bg-background/95",
         variant === "desktop"
           ? "hidden lg:flex lg:w-full lg:flex-col"
           : "flex flex-col",
@@ -186,16 +186,16 @@ export function AgentTabbedPanel({
       )}
       data-testid="artifact-panel"
     >
-      <div className="flex h-[52px] min-h-[52px] items-center justify-between border-b border-border/60 px-3">
+      <div className="flex h-11 min-h-11 items-center justify-between border-b border-border/60 px-2.5">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-foreground">
+          <div className="truncate text-[13px] font-medium text-foreground/78">
             {activeTab === "preview"
               ? t("artifacts.title")
               : activeTab === "files"
                 ? t("files.title")
                 : t("browser.title")}
           </div>
-          <div className="truncate text-[11px] text-muted-foreground">
+          <div className="truncate text-[11px] text-muted-foreground/82">
             {activeTab === "preview" ? artifactSubtitle : t("sidecar.title")}
           </div>
         </div>
@@ -214,7 +214,7 @@ export function AgentTabbedPanel({
                 onKeyDown={(event) => onTabKeyDown(event, index)}
                 aria-label={t(labelKey)}
                 className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+                  "flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors",
                   activeTab === key
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
@@ -230,7 +230,7 @@ export function AgentTabbedPanel({
               type="button"
               onClick={() => setArtifactReloadNonce((value) => value + 1)}
               aria-label={t("artifacts.retry")}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              className="flex h-8 w-8 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
             >
               <RotateCw className="h-4 w-4" />
             </button>
@@ -239,7 +239,7 @@ export function AgentTabbedPanel({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="h-8 w-8 rounded-[8px] text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={onClose}
             aria-label={t("sidecar.close")}
           >
@@ -252,7 +252,7 @@ export function AgentTabbedPanel({
         <div className="border-b border-border/60 px-3 py-2" data-testid="sidecar-decision-indicator">
           <button
             type="button"
-            className="w-full rounded-full bg-amber-500/10 px-3 py-1.5 text-left text-xs font-medium text-amber-800 hover:bg-amber-500/15 dark:text-amber-200"
+            className="w-full rounded-[8px] bg-[#FBF3DB] px-3 py-1.5 text-left text-xs font-medium text-[#956400] hover:bg-[#FBF3DB]/80 dark:bg-amber-500/10 dark:text-amber-200"
             onClick={jumpToPendingDecision}
           >
             {t("approval.jumpToDecision")}

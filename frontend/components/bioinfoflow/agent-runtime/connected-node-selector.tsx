@@ -129,7 +129,7 @@ export function ConnectedNodeSelector({
           type="button"
           variant="ghost"
           className={cn(
-            "h-9 min-w-0 max-w-[13rem] rounded-full border border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground shadow-xs hover:bg-muted/70 hover:text-foreground",
+            "h-9 min-w-0 max-w-[13rem] rounded-[8px] border border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground shadow-none hover:bg-muted/70 hover:text-foreground",
             compact && "max-w-[10rem]",
           )}
           disabled={disabled}
@@ -169,13 +169,13 @@ export function ConnectedNodeSelector({
         align="start"
         side="top"
         sideOffset={10}
-        className="w-80 rounded-2xl border-border/70 bg-popover p-1.5 shadow-2xl shadow-foreground/10"
+        className="w-80 rounded-xl border-border/70 bg-popover p-1.5 shadow-[0_14px_34px_rgba(36,35,33,0.08)]"
       >
         <DropdownMenuLabel className="px-2.5 py-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
           {t("menuTitle")}
         </DropdownMenuLabel>
         <DropdownMenuItem
-          className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm"
+          className="items-start gap-3 rounded-[8px] px-2.5 py-2.5 text-sm"
           role="menuitemradio"
           aria-checked={!currentSelectedConnectionId && !hasPendingSelectedConnection}
           onSelect={() => updateSelectedConnection("")}
@@ -206,7 +206,7 @@ export function ConnectedNodeSelector({
           return (
             <DropdownMenuItem
               key={connection.id}
-              className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm"
+              className="items-start gap-3 rounded-[8px] px-2.5 py-2.5 text-sm"
               role="menuitemradio"
               aria-checked={selected}
               onSelect={() => updateSelectedConnection(connection.id)}
@@ -225,7 +225,7 @@ export function ConnectedNodeSelector({
         {hasPendingSelectedConnection ? (
           <DropdownMenuItem
             disabled
-            className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm text-muted-foreground"
+            className="items-start gap-3 rounded-[8px] px-2.5 py-2.5 text-sm text-muted-foreground"
             role="menuitemradio"
             aria-checked
           >
@@ -241,7 +241,7 @@ export function ConnectedNodeSelector({
         ) : hasRemoteLoadFailed ? (
           <DropdownMenuItem
             disabled
-            className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm text-muted-foreground"
+            className="items-start gap-3 rounded-[8px] px-2.5 py-2.5 text-sm text-muted-foreground"
           >
             <Server className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{t("loadFailed")}</span>
@@ -249,14 +249,14 @@ export function ConnectedNodeSelector({
         ) : !connections.length ? (
           <DropdownMenuItem
             disabled
-            className="items-start gap-3 rounded-xl px-2.5 py-2.5 text-sm text-muted-foreground"
+            className="items-start gap-3 rounded-[8px] px-2.5 py-2.5 text-sm text-muted-foreground"
           >
             <Server className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{t("emptyRemoteHosts")}</span>
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild className="rounded-xl px-2.5 py-2 text-sm">
+        <DropdownMenuItem asChild className="rounded-[8px] px-2.5 py-2 text-sm">
           <Link href="/connections">
             <Server className="h-4 w-4" />
             <span>{t("manage")}</span>
