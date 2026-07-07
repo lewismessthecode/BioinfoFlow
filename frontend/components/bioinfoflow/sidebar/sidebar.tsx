@@ -150,7 +150,6 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
             <RailButton
               label={tSidebar("newConversation")}
               onClick={handleNewConversation}
-              active
               icon={<SquarePen className="h-3.5 w-3.5" />}
             />
             <RailButton

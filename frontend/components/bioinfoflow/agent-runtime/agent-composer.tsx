@@ -204,9 +204,10 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 shrink-0 rounded-[7px] border border-[#e6e5e0] bg-[#fafaf7] text-[#807d72] hover:border-[#cfcdc4] hover:bg-white hover:text-[#26251e] dark:border-border/65 dark:bg-background/80 dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground"
+                className={cn(composerSelectorChipClassName, "w-8 shrink-0 justify-center px-0")}
                 disabled={disabled}
                 aria-label={t("attach")}
+                data-composer-chip="true"
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -297,8 +298,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             {onModeChange ? (
               <span
                 className={cn(
-                  "hidden shrink-0",
-                  !compactControls && "sm:inline-flex",
+                  "hidden shrink-0 sm:inline-flex",
                 )}
                 data-testid="agent-mode-chip-shell"
               >
@@ -308,7 +308,11 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className={cn(composerSelectorChipClassName, "shrink-0")}
+                      className={cn(
+                        composerSelectorChipClassName,
+                        "shrink-0",
+                        compactControls ? "max-w-9 px-2" : "max-w-[8rem]",
+                      )}
                       data-composer-chip="true"
                       data-mode={mode}
                       data-testid="agent-mode-chip"
@@ -323,8 +327,10 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                         )}
                         data-testid="agent-mode-chip-marker"
                       />
-                      <span>{t(mode === "plan" ? "mode.plan" : "mode.act")}</span>
-                      <ChevronDown className={composerSelectorChevronClassName} />
+                      <span className={cn(compactControls && "sr-only")}>
+                        {t(mode === "plan" ? "mode.plan" : "mode.act")}
+                      </span>
+                      <ChevronDown className={cn(composerSelectorChevronClassName, compactControls && "hidden")} />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
@@ -354,7 +360,12 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 </DropdownMenu>
               </span>
             ) : null}
-            <div className={cn("hidden min-w-0 shrink", !compactControls && "sm:flex sm:items-center")}>
+            <div
+              className={cn(
+                "hidden min-w-0 shrink sm:flex sm:items-center",
+                compactControls ? "max-w-9" : "max-w-[12.25rem]",
+              )}
+            >
               <ModelSelector
                 models={models}
                 selectedModel={selectedModel}
@@ -362,6 +373,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 disabled={modelsLoading || disabled}
                 allowAuto
                 variant="composer"
+                compact={compactControls}
               />
             </div>
             {isRunning ? (

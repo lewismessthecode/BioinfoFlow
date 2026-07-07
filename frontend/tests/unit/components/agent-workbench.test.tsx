@@ -674,6 +674,9 @@ describe("AgentWorkbench", () => {
       "data-placement",
       "bottom",
     )
+    expect(screen.getByTestId("agent-transcript-scroll").className).toContain(
+      "[padding-bottom:var(--agent-composer-bottom-space,8rem)]",
+    )
     expect(screen.getByTestId("agent-composer")).toHaveAttribute(
       "data-presentation",
       "dock",

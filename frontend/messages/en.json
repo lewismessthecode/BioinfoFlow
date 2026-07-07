@@ -1,12 +1,12 @@
 {
   "greeting": {
-    "morning": "Good morning ☀️ What data shall we explore?",
-    "afternoon": "Good afternoon 🌤️ Ready to run some analyses?",
-    "evening": "Evening session 🌙 Let's explore some data",
+    "morning": "Good morning. What data shall we explore?",
+    "afternoon": "Good afternoon. Ready to run some analyses?",
+    "evening": "Evening session. Let's explore some data",
     "lateNight": "Late night science 🔬 The best discoveries happen after hours",
-    "dashboardMorning": "Good morning ☀️ {name}",
-    "dashboardAfternoon": "Good afternoon 🌤️ {name}",
-    "dashboardEvening": "Good evening 🌙 {name}",
+    "dashboardMorning": "Good morning {name}",
+    "dashboardAfternoon": "Good afternoon {name}",
+    "dashboardEvening": "Good evening {name}",
     "dashboardLateNight": "Late night 🔬 {name}"
   },
   "common": {
@@ -360,7 +360,7 @@
       "gpuError": "GPU status is unavailable. CPU and local workflows can run now. Details: {error}",
       "gpuCpuOnly": "GPU acceleration is not enabled. CPU and local workflows can run now."
     },
-    "narrativeEmpty": "No runs yet. System checks are ready for the first analysis.",
+    "narrativeEmpty": "No runs yet. Review system readiness below before starting the first analysis.",
     "narrativeAllComplete": "All {total} runs completed successfully",
     "narrativeTotal": "{total} total runs",
     "narrativeCompleted": "{count} completed",
@@ -1472,7 +1472,7 @@
       "title": "Bioinfoflow",
       "titleSuffix": "runs WGS at home.",
       "description": "Full 30X whole genome sequencing analysis in under 2 hours on your RTX 4090.",
-      "wgsHighlight": "✨ Free for personal use. Your data never leaves your machine.",
+      "wgsHighlight": "Free for personal use. Your data never leaves your machine.",
       "startFree": "Get started",
       "bookDemo": "Learn more",
       "windowTitle": "bioinfoflow — agent",

@@ -76,7 +76,7 @@ export function AgentTranscript({
   return (
     <div
       ref={scrollRef}
-      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-32 pt-6 sm:px-8"
+      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pt-6 [padding-bottom:var(--agent-composer-bottom-space,8rem)] sm:px-8"
       data-testid="agent-transcript-scroll"
       onScroll={updateBottomState}
     >

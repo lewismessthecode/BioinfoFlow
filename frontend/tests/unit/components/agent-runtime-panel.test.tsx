@@ -428,6 +428,7 @@ describe("BrowserTab", () => {
 
     const input = screen.getByPlaceholderText("browser.urlPlaceholder")
     expect(input).toHaveValue("")
+    expect(input).toHaveAccessibleName("browser.urlPlaceholder")
     expect(screen.getByText("browser.empty")).toBeInTheDocument()
     expect(screen.queryByTitle("browser.title")).not.toBeInTheDocument()
   })

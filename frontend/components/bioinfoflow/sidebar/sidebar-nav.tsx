@@ -31,6 +31,7 @@ export function SidebarNav({ collapsed }: SidebarNavProps) {
                 <Link
                   href={item.href}
                   aria-label={tNav(item.key)}
+                  aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "flex h-8 w-full items-center justify-center rounded-[7px] border border-transparent transition-colors duration-150",
                     isActive
