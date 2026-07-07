@@ -2313,7 +2313,8 @@
         "edit": "Edit",
         "test": "Test",
         "makeDefault": "Make default",
-        "delete": "Delete"
+        "delete": "Delete",
+        "cancel": "Cancel"
       }
     },
     "members": {
@@ -2321,6 +2322,7 @@
       "description": "Manage who can enter this Bioinfoflow instance. Shared analysis resources remain visible inside the workspace; identity is used for access, audit, and administration.",
       "createCta": "Add member",
       "loading": "Loading members...",
+      "empty": "No members yet.",
       "loadFailed": "Couldn't load members.",
       "created": "Member created.",
       "createFailed": "Couldn't create that member.",

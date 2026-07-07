@@ -2313,7 +2313,8 @@
         "edit": "编辑",
         "test": "测试",
         "makeDefault": "设为默认",
-        "delete": "删除"
+        "delete": "删除",
+        "cancel": "取消"
       }
     },
     "members": {
@@ -2321,6 +2322,7 @@
       "description": "管理谁可以进入这个 Bioinfoflow 实例。共享分析资源保留在同一个 workspace 中，身份只用于门禁、审计和管理。",
       "createCta": "添加成员",
       "loading": "正在加载成员...",
+      "empty": "暂无成员。",
       "loadFailed": "无法加载成员列表。",
       "created": "成员已创建。",
       "createFailed": "无法创建该成员。",
