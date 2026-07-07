@@ -85,6 +85,20 @@ export function canManageDestructiveBusinessActions(
   return ["owner", "admin"].includes(role)
 }
 
+export function canManageRegistryCatalog(
+  mode: AuthMode,
+  role: TeamRole,
+  authEnabled = true,
+): boolean {
+  if (!authEnabled) {
+    return true
+  }
+  if (mode !== "team") {
+    return true
+  }
+  return ["owner", "admin"].includes(role)
+}
+
 export function getServerAuthConfig() {
   const mode = resolveAuthMode(
     process.env.AUTH_MODE ?? process.env.NEXT_PUBLIC_AUTH_MODE,

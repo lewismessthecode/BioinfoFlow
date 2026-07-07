@@ -217,16 +217,16 @@ export function ModelSelector({
             <CommandSeparator />
             <CommandGroup>
               <CommandItem
-                onSelect={() => {
-                  setOpen(false)
-                  window.location.href = "/settings?section=providers"
-                }}
+                value={t("configure")}
+                asChild
                 className={cn(isComposer ? "px-2 py-1.5" : "px-3 py-2")}
               >
-                <SettingsIcon className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "mr-2 opacity-50")} />
-                <span className="text-xs text-muted-foreground">
-                  {t("configure")}
-                </span>
+                <Link href="/settings?section=providers" onClick={() => setOpen(false)}>
+                  <SettingsIcon className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "mr-2 opacity-50")} />
+                  <span className="text-xs text-muted-foreground">
+                    {t("configure")}
+                  </span>
+                </Link>
               </CommandItem>
             </CommandGroup>
           </CommandList>

@@ -12,8 +12,13 @@ const pathnameState = {
   value: "/agent",
 }
 
+const searchParamsState = {
+  value: new URLSearchParams(),
+}
+
 vi.mock("next/navigation", () => ({
   usePathname: () => pathnameState.value,
+  useSearchParams: () => searchParamsState.value,
   useRouter: () => ({
     push: vi.fn(),
     replace: vi.fn(),
@@ -96,6 +101,9 @@ vi.mock("@/components/bioinfoflow/sidebar/index", () => ({
   Sidebar: ({ collapsed }: { collapsed: boolean }) => (
     <div data-testid="sidebar-state">{collapsed ? "collapsed" : "expanded"}</div>
   ),
+  SettingsSidebar: ({ activeSection }: { activeSection: string }) => (
+    <div data-testid="settings-sidebar-state">{activeSection}</div>
+  ),
 }))
 
 vi.mock("@/components/bioinfoflow/sidebar/sidebar-drawer", () => ({
@@ -170,6 +178,7 @@ function LayoutStateSeeder({
 describe("AppLayout coordination", () => {
   beforeEach(() => {
     pathnameState.value = "/agent"
+    searchParamsState.value = new URLSearchParams()
     localStorage.clear()
   })
 
@@ -235,5 +244,19 @@ describe("AppLayout coordination", () => {
     })
     expect(screen.getByText("Dashboard")).toBeInTheDocument()
     expect(screen.queryByText("Run r-123")).not.toBeInTheDocument()
+  })
+
+  it("renders the settings sidebar instead of the workspace sidebar on settings routes", async () => {
+    pathnameState.value = "/settings"
+    searchParamsState.value = new URLSearchParams("section=appearance")
+
+    renderAppPage(
+      <AppLayout>
+        <LayoutStateSeeder projectId="project-1" projectName="Cancer Cohort" />
+      </AppLayout>,
+    )
+
+    expect(await screen.findByTestId("settings-sidebar-state")).toHaveTextContent("appearance")
+    expect(screen.queryByTestId("sidebar-state")).not.toBeInTheDocument()
   })
 })

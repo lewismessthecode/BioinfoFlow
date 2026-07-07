@@ -2152,6 +2152,17 @@
   },
   "settings": {
     "pageTitle": "设置",
+    "sidebar": {
+      "ariaLabel": "设置导航",
+      "backToApp": "返回应用",
+      "searchPlaceholder": "搜索设置",
+      "noResults": "没有找到设置项",
+      "groups": {
+        "personal": "个人",
+        "integrations": "集成",
+        "team": "团队"
+      }
+    },
     "nav": {
       "account": "账户",
       "appearance": "外观",

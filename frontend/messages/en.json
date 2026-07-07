@@ -2152,6 +2152,17 @@
   },
   "settings": {
     "pageTitle": "Settings",
+    "sidebar": {
+      "ariaLabel": "Settings navigation",
+      "backToApp": "Back to app",
+      "searchPlaceholder": "Search settings",
+      "noResults": "No settings found",
+      "groups": {
+        "personal": "Personal",
+        "integrations": "Integrations",
+        "team": "Team"
+      }
+    },
     "nav": {
       "account": "Account",
       "appearance": "Appearance",

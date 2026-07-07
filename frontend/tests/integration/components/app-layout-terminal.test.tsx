@@ -11,10 +11,15 @@ const pathnameState = {
   value: "/agent",
 }
 
+const searchParamsState = {
+  value: new URLSearchParams(),
+}
+
 let workspaceNavbarActions: React.ReactNode = null
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathnameState.value,
+  useSearchParams: () => searchParamsState.value,
 }))
 
 vi.mock("next/dynamic", () => ({
@@ -50,6 +55,7 @@ vi.mock("@/components/bioinfoflow/navbar", () => ({
 
 vi.mock("@/components/bioinfoflow/sidebar/index", () => ({
   Sidebar: () => <div>sidebar</div>,
+  SettingsSidebar: () => <div>settings sidebar</div>,
 }))
 
 vi.mock("@/components/bioinfoflow/workspace-shell-context", () => ({
@@ -101,6 +107,7 @@ function ProjectSeeder({ projectId }: { projectId: string }) {
 describe("AppLayout terminal integration", () => {
   beforeEach(() => {
     workspaceNavbarActions = null
+    searchParamsState.value = new URLSearchParams()
   })
 
   it("shows the terminal toggle on terminal-enabled routes when a project is active", async () => {

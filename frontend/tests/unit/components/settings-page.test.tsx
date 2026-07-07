@@ -26,6 +26,10 @@ const celebratePreviewMock = vi.fn()
 const reducedMotionState = { value: false }
 const celebrationsPreference = createCelebrationsPreferenceMock()
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}))
+
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => {
     const labels: Record<string, string> = {
@@ -483,6 +487,7 @@ describe("SettingsPage", () => {
   })
 
   it("manages container registries from the settings page", async () => {
+    window.history.replaceState(null, "", "/settings?section=registries")
     render(
       <SettingsPageClient
         viewer={{
@@ -496,9 +501,7 @@ describe("SettingsPage", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Container Registries" }))
-
-    expect(await screen.findAllByText("Container Registries")).toHaveLength(2)
+    expect(await screen.findByText("Container Registries")).toBeInTheDocument()
     expect(await screen.findByText("Lab Harbor")).toBeInTheDocument()
     expect(screen.getByText("http://10.227.4.56:80/pipeline-dev")).toBeInTheDocument()
 
@@ -557,6 +560,7 @@ describe("SettingsPage", () => {
       throw new Error(`Unexpected path: ${path}`)
     })
 
+    window.history.replaceState(null, "", "/settings?section=registries")
     render(
       <SettingsPageClient
         viewer={{
@@ -569,8 +573,6 @@ describe("SettingsPage", () => {
         }}
       />,
     )
-
-    fireEvent.click(screen.getByRole("button", { name: "Container Registries" }))
 
     expect(await screen.findByText("Lab Harbor")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
@@ -613,6 +615,7 @@ describe("SettingsPage", () => {
   })
 
   it("shows provider cards and creates a write-only provider credential", async () => {
+    window.history.replaceState(null, "", "/settings?section=providers")
     render(
       <SettingsPageClient
         viewer={{
@@ -625,8 +628,6 @@ describe("SettingsPage", () => {
         }}
       />,
     )
-
-    fireEvent.click(screen.getByRole("button", { name: "AI Providers" }))
 
     expect(await screen.findByRole("group", { name: "OpenAI" })).toBeInTheDocument()
     expect(screen.getByRole("group", { name: "OpenRouter" })).toBeInTheDocument()
@@ -649,7 +650,8 @@ describe("SettingsPage", () => {
     })
   })
 
-  it("shows an appearance section in the settings navigation", async () => {
+  it("opens the appearance section from the settings deep link", async () => {
+    window.history.replaceState(null, "", "/settings?section=appearance")
     render(
       <SettingsPageClient
         viewer={{
@@ -663,10 +665,11 @@ describe("SettingsPage", () => {
       />,
     )
 
-    expect(screen.getByRole("button", { name: "Appearance" })).toBeInTheDocument()
+    expect(screen.getByText("Choose a focused theme and mode for the app shell.")).toBeInTheDocument()
   })
 
   it("shows celebration controls in appearance and persists the preference", async () => {
+    window.history.replaceState(null, "", "/settings?section=appearance")
     render(
       <SettingsPageClient
         viewer={{
@@ -679,8 +682,6 @@ describe("SettingsPage", () => {
         }}
       />,
     )
-
-    fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
 
     expect(screen.getByText("Quiet celebrations")).toBeInTheDocument()
     expect(
@@ -695,6 +696,7 @@ describe("SettingsPage", () => {
   })
 
   it("previews confetti from the appearance section", async () => {
+    window.history.replaceState(null, "", "/settings?section=appearance")
     render(
       <SettingsPageClient
         viewer={{
@@ -708,7 +710,6 @@ describe("SettingsPage", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
     fireEvent.click(screen.getByRole("button", { name: "Preview" }))
 
     expect(celebratePreviewMock).toHaveBeenCalledTimes(1)
@@ -716,6 +717,7 @@ describe("SettingsPage", () => {
 
   it("pauses the settings preview but keeps the celebration switch available for reduced motion", async () => {
     reducedMotionState.value = true
+    window.history.replaceState(null, "", "/settings?section=appearance")
     render(
       <SettingsPageClient
         viewer={{
@@ -729,14 +731,13 @@ describe("SettingsPage", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
-
     expect(screen.getByText("Reduced motion is on, so confetti is paused.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled()
     expect(screen.getByRole("switch", { name: "Quiet celebrations" })).not.toBeDisabled()
   })
 
   it("shows the members panel only to admins and owners", async () => {
+    window.history.replaceState(null, "", "/settings?section=members")
     const { rerender } = render(
       <SettingsPageClient
         viewer={{
@@ -750,8 +751,6 @@ describe("SettingsPage", () => {
       />,
     )
 
-    // Navigate to Members section
-    fireEvent.click(screen.getByRole("button", { name: "Members" }))
     expect(await screen.findByText("Members Panel")).toBeInTheDocument()
 
     rerender(
@@ -772,6 +771,7 @@ describe("SettingsPage", () => {
   })
 
   it("hides the members panel in personal mode even for owners", async () => {
+    window.history.replaceState(null, "", "/settings?section=providers")
     render(
       <SettingsPageClient
         viewer={{
@@ -785,8 +785,6 @@ describe("SettingsPage", () => {
       />,
     )
 
-    // Navigate to AI Providers section
-    fireEvent.click(screen.getByRole("button", { name: "AI Providers" }))
     expect(await screen.findByRole("group", { name: "OpenAI" })).toBeInTheDocument()
     // Members nav item should not exist
     expect(screen.queryByText("Members")).not.toBeInTheDocument()
@@ -794,6 +792,7 @@ describe("SettingsPage", () => {
   })
 
   it("persists the agent active-turn policy from settings", () => {
+    window.history.replaceState(null, "", "/settings?section=agent")
     render(
       <SettingsPageClient
         viewer={{
@@ -806,8 +805,6 @@ describe("SettingsPage", () => {
         }}
       />,
     )
-
-    fireEvent.click(screen.getByRole("button", { name: "Agent defaults" }))
 
     expect(screen.getByRole("radio", { name: /Interrupt current turn/ })).toBeChecked()
 
