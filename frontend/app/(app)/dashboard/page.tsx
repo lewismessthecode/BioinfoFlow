@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
-import { motion, useReducedMotion } from "framer-motion";
 import { apiRequest, getApiErrorMessage } from "@/lib/api";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import type { SchedulerStatus } from "@/lib/types";
@@ -15,7 +14,6 @@ import {
   type DashboardStats,
   type SystemHealth,
   type GpuInfo,
-  type ReadinessCheck,
   type ReadinessStatus,
 } from "./components/dashboard-types";
 import { DashboardSkeleton } from "./components/dashboard-skeleton";
@@ -36,7 +34,6 @@ export default function DashboardPage() {
   const [readiness, setReadiness] = useState<ReadinessStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const prefersReducedMotion = useReducedMotion();
   const { data: session } = authClient.useSession();
   const userName = session?.user?.name;
   const firstName = userName?.split(/\s+/)[0] || "";
@@ -105,10 +102,6 @@ export default function DashboardPage() {
     );
   }
 
-  const optionalReadinessNotes: ReadinessCheck[] = readiness?.checks.filter(
-    (check) => check.status !== "pass" && check.severity !== "blocking",
-  ) ?? [];
-
   return (
     <div className="bif-workbench-page h-full overflow-y-auto">
       <section
@@ -138,53 +131,31 @@ export default function DashboardPage() {
         <div className="grid gap-3">
           <ReadinessCenter readiness={readiness} onRefresh={fetchData} />
 
-          <motion.div
-            initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, delay: 0.05 }}
-          >
-            <StatCards stats={stats} />
-          </motion.div>
+          <StatCards stats={stats} />
 
           <div
             className={
               schedulerStatus
-                ? "grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)]"
+                ? "grid items-stretch gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,0.75fr)]"
                 : "grid items-start gap-3"
             }
           >
-            <motion.div
-              className="min-w-0"
-              initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: 0.15 }}
-            >
+            <div className="min-w-0 h-full">
               <SystemStatus
                 health={health}
                 gpuInfo={gpuInfo}
-                optionalNotes={optionalReadinessNotes}
               />
-            </motion.div>
+            </div>
             {schedulerStatus && (
-              <motion.div
-                className="min-w-0"
-                initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, delay: 0.25 }}
-              >
+              <div className="min-w-0 h-full">
                 <SchedulerSummary schedulerStatus={schedulerStatus} />
-              </motion.div>
+              </div>
             )}
           </div>
 
-          <motion.div
-            className="min-w-0"
-            initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, delay: 0.35 }}
-          >
+          <div className="min-w-0">
             <RecentActivity recentRuns={stats?.recent_runs} />
-          </motion.div>
+          </div>
         </div>
       </section>
     </div>
