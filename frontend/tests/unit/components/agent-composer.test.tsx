@@ -338,21 +338,21 @@ describe("AgentComposer", () => {
       name: "Current execution target: local",
     })
     expect(locationChip).toHaveAttribute("data-composer-chip", "true")
-    expect(locationChip).toHaveClass("h-8", "rounded-[6px]", "bg-transparent")
+    expect(locationChip).toHaveClass("h-[26px]", "rounded-[8px]", "bg-transparent")
 
     const permissionChip = screen.getByRole("button", { name: "Permission mode" })
     expect(permissionChip).toHaveAttribute("data-composer-chip", "true")
-    expect(permissionChip).toHaveClass("h-8", "rounded-[6px]", "bg-transparent")
+    expect(permissionChip).toHaveClass("h-[26px]", "rounded-[8px]", "bg-transparent")
 
     const modeChip = screen.getByTestId("agent-mode-chip")
     expect(modeChip).toHaveAttribute("data-composer-chip", "true")
     expect(modeChip).toHaveAttribute("data-mode", "plan")
-    expect(modeChip).toHaveClass("h-8", "rounded-[6px]", "bg-[#fbf3db]")
-    expect(screen.getByTestId("agent-mode-chip-marker")).toHaveClass("bg-[#956400]")
+    expect(modeChip).toHaveClass("h-[26px]", "rounded-[8px]", "bg-[#f7ead3]")
+    expect(screen.getByTestId("agent-mode-chip-marker")).toHaveClass("bg-[#b87924]")
 
     const modelChip = screen.getByRole("combobox", { name: "GPT-4o mini" })
     expect(modelChip).toHaveAttribute("data-composer-chip", "true")
-    expect(modelChip).toHaveClass("h-8", "rounded-[6px]", "bg-transparent")
+    expect(modelChip).toHaveClass("h-[26px]", "rounded-[8px]", "bg-transparent")
 
     const sendButton = screen.getByRole("button", { name: "Send message" })
     expect(sendButton).toHaveClass("bg-primary")
