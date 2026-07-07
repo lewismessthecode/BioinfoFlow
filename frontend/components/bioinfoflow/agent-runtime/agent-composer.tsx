@@ -21,7 +21,7 @@ import { toast } from "sonner"
 import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
 import {
   composerModeMarkerClassName,
-  composerSelectorChevronClassName,
+  composerModeToneClassName,
   composerSelectorChipClassName,
   composerSelectorIconClassName,
   composerSelectorMenuClassName,
@@ -150,8 +150,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     return (
       <div
         className={cn(
-          "mx-auto flex w-full max-w-[46rem] flex-col gap-1.5 rounded-[16px] border border-border/75 bg-card p-2 shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] duration-200",
-          "focus-within:border-border hover:border-border/95",
+          "mx-auto flex w-full max-w-[46rem] flex-col gap-2 rounded-[18px] border border-border bg-card p-2 shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] duration-200",
+          "focus-within:border-foreground/20 hover:border-foreground/12",
           isCenterPresentation && "p-2.5",
           className,
         )}
@@ -160,8 +160,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
         data-compact-controls={compactControls ? "true" : "false"}
       >
         {contextTitle ? (
-          <div className="flex min-h-7 min-w-0 items-center gap-2 px-3 pt-1 text-xs font-medium text-muted-foreground">
-            <span className="min-w-0 truncate text-foreground/76">{contextTitle}</span>
+          <div className="flex min-h-7 min-w-0 items-center gap-2 px-3 pt-1.5 text-xs font-medium text-muted-foreground">
+            <span className="min-w-0 truncate text-foreground/70">{contextTitle}</span>
           </div>
         ) : null}
         <ContextAttachments
@@ -190,21 +190,21 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
           placeholder={t("composerPlaceholder")}
           aria-label={t("composerPlaceholder")}
           className={cn(
-            "w-full resize-none bg-transparent px-4 py-3 text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/88",
-            isCenterPresentation ? "min-h-[76px]" : "min-h-11",
+            "w-full resize-none bg-transparent px-4 py-3 text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/72",
+            isCenterPresentation ? "min-h-[82px]" : "min-h-12",
           )}
           rows={1}
           disabled={disabled}
           style={{ overflowY: "hidden" }}
         />
-        <div className="flex min-h-10 flex-wrap items-center gap-1.5">
+        <div className="flex min-h-10 flex-wrap items-center gap-2 px-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className={cn(composerSelectorChipClassName, "w-8 shrink-0 justify-center px-0")}
+                className="h-9 w-9 shrink-0 rounded-full border-0 bg-muted p-0 text-foreground/68 shadow-none hover:bg-accent hover:text-foreground"
                 disabled={disabled}
                 aria-label={t("attach")}
                 data-composer-chip="true"
@@ -235,15 +235,93 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5"
             data-testid="agent-composer-controls"
           >
+            {onModeChange ? (
+              <span
+                className={cn(
+                  "hidden shrink-0 sm:inline-flex",
+                )}
+                data-testid="agent-mode-chip-shell"
+              >
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        composerSelectorChipClassName,
+                        composerModeToneClassName[mode],
+                        "shrink-0",
+                        compactControls ? "max-w-9 px-2" : "max-w-[8rem] px-2.5",
+                      )}
+                      data-composer-chip="true"
+                      data-mode={mode}
+                      data-testid="agent-mode-chip"
+                      disabled={disabled}
+                      aria-label={t("mode.label")}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          composerModeMarkerClassName[mode],
+                        )}
+                        data-testid="agent-mode-chip-marker"
+                      />
+                      <span className={cn(compactControls && "sr-only")}>
+                        {t(mode === "plan" ? "mode.plan" : "mode.act")}
+                      </span>
+                      <ChevronDown className={cn("h-3 w-3 shrink-0 opacity-60", compactControls && "hidden")} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    side="top"
+                    sideOffset={10}
+                    className={cn("w-40", composerSelectorMenuClassName)}
+                  >
+                    {agentModeOptions.map((optionMode) => (
+                      <DropdownMenuItem
+                        key={optionMode}
+                        className="items-center gap-2 rounded-lg px-2.5 py-2 text-sm"
+                        onSelect={() => onModeChange(optionMode)}
+                      >
+                        <span
+                          className={cn(
+                            "h-1.5 w-1.5 shrink-0 rounded-full",
+                            composerModeMarkerClassName[optionMode],
+                          )}
+                        />
+                        <span className="flex-1">
+                          {t(optionMode === "plan" ? "mode.plan" : "mode.act")}
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </span>
+            ) : null}
+            <div
+              className={cn(
+                "hidden min-w-0 shrink sm:flex sm:items-center",
+                compactControls ? "max-w-9" : "max-w-[12.25rem]",
+              )}
+            >
+              <ModelSelector
+                models={models}
+                selectedModel={selectedModel}
+                onSelectModel={onSelectModel}
+                disabled={modelsLoading || disabled}
+                allowAuto
+                variant="composer"
+                compact={compactControls}
+              />
+            </div>
             <ConnectedNodeSelector
               disabled={disabled}
               compact={compactControls}
               selectedConnectionId={selectedRemoteConnectionId}
               onSelectedConnectionChange={onRemoteConnectionChange}
-            />
-            <AgentTokenUsageBadge
-              summary={tokenUsageSummary}
-              compact={compactControls}
             />
             {onPermissionModeChange ? (
               <DropdownMenu>
@@ -295,87 +373,10 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
-            {onModeChange ? (
-              <span
-                className={cn(
-                  "hidden shrink-0 sm:inline-flex",
-                )}
-                data-testid="agent-mode-chip-shell"
-              >
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        composerSelectorChipClassName,
-                        "shrink-0",
-                        compactControls ? "max-w-9 px-2" : "max-w-[8rem]",
-                      )}
-                      data-composer-chip="true"
-                      data-mode={mode}
-                      data-testid="agent-mode-chip"
-                      disabled={disabled}
-                      aria-label={t("mode.label")}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          "h-1.5 w-1.5 shrink-0 rounded-full",
-                          composerModeMarkerClassName[mode],
-                        )}
-                        data-testid="agent-mode-chip-marker"
-                      />
-                      <span className={cn(compactControls && "sr-only")}>
-                        {t(mode === "plan" ? "mode.plan" : "mode.act")}
-                      </span>
-                      <ChevronDown className={cn(composerSelectorChevronClassName, compactControls && "hidden")} />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    side="top"
-                    sideOffset={10}
-                    className={cn("w-40", composerSelectorMenuClassName)}
-                  >
-                    {agentModeOptions.map((optionMode) => (
-                      <DropdownMenuItem
-                        key={optionMode}
-                        className="items-center gap-2 rounded-lg px-2.5 py-2 text-sm"
-                        onSelect={() => onModeChange(optionMode)}
-                      >
-                        <span
-                          className={cn(
-                            "h-1.5 w-1.5 shrink-0 rounded-full",
-                            composerModeMarkerClassName[optionMode],
-                          )}
-                        />
-                        <span className="flex-1">
-                          {t(optionMode === "plan" ? "mode.plan" : "mode.act")}
-                        </span>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </span>
-            ) : null}
-            <div
-              className={cn(
-                "hidden min-w-0 shrink sm:flex sm:items-center",
-                compactControls ? "max-w-9" : "max-w-[12.25rem]",
-              )}
-            >
-              <ModelSelector
-                models={models}
-                selectedModel={selectedModel}
-                onSelectModel={onSelectModel}
-                disabled={modelsLoading || disabled}
-                allowAuto
-                variant="composer"
-                compact={compactControls}
-              />
-            </div>
+            <AgentTokenUsageBadge
+              summary={tokenUsageSummary}
+              compact={compactControls}
+            />
             {isRunning ? (
               <Button
                 type="button"
@@ -454,7 +455,7 @@ function AgentTokenUsageBadge({
         align="end"
         side="top"
         sideOffset={10}
-        className="w-64 rounded-xl border-border/70 bg-popover p-3 shadow-[0_14px_34px_rgba(36,35,33,0.08)]"
+        className="w-64 rounded-xl border-border bg-popover p-3 shadow-[0_14px_34px_rgba(15,15,15,0.06)]"
       >
         <div className="grid gap-3">
           <div className="flex items-baseline justify-between gap-3">

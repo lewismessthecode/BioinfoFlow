@@ -158,9 +158,9 @@ describe("Settings page flow", () => {
     useAppearanceMock.mockReturnValue({
       mode: "system",
       resolvedMode: "light",
-      lightPreset: "workbench",
-      darkPreset: "workbench",
-      activePreset: "workbench",
+      lightPreset: "notion",
+      darkPreset: "notion",
+      activePreset: "notion",
       setMode: vi.fn(),
       setLightPreset: vi.fn(),
       setDarkPreset: vi.fn(),
@@ -422,7 +422,7 @@ describe("Settings page flow", () => {
     await user.click(screen.getByRole("button", { name: "Appearance" }))
 
     expect(screen.getByText("Choose a focused theme and mode for the app shell.")).toBeInTheDocument()
-    expect(screen.getByText("Current preset: Workbench")).toBeInTheDocument()
+    expect(screen.getByText("Current preset: Notion")).toBeInTheDocument()
     expect(screen.getByText("Light preview")).toBeInTheDocument()
     expect(screen.getByText("Dark preview")).toBeInTheDocument()
     expect(screen.getAllByTestId("appearance-preview-shell")).toHaveLength(2)

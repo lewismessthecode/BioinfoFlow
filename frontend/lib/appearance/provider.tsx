@@ -36,11 +36,12 @@ type AppearanceContextValue = {
 }
 
 const DEFAULT_APPEARANCE_CONFIG: AppearanceConfig = {
-  lightPreset: "workbench",
-  darkPreset: "workbench",
+  lightPreset: "notion",
+  darkPreset: "notion",
 }
 const LEGACY_PRESET_ALIASES: Partial<Record<string, ThemePresetId>> = {
-  codex: "workbench",
+  codex: "notion",
+  workbench: "notion",
 }
 const SYSTEM_COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)"
 

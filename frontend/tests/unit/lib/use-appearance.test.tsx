@@ -73,27 +73,27 @@ describe("useAppearance", () => {
     })))
   })
 
-  it("falls back to workbench presets when no saved config exists", async () => {
+  it("falls back to Notion presets when no saved config exists", async () => {
     const { result } = renderHook(() => useAppearance(), { wrapper: Wrapper })
 
     await waitFor(() => {
-      expect(result.current.lightPreset).toBe("workbench")
+      expect(result.current.lightPreset).toBe("notion")
     })
 
-    expect(result.current.darkPreset).toBe("workbench")
-    expect(result.current.activePreset).toBe("workbench")
+    expect(result.current.darkPreset).toBe("notion")
+    expect(result.current.activePreset).toBe("notion")
     expect(result.current.mode).toBe("system")
     expect(result.current.resolvedMode).toBe("light")
     expect(document.documentElement.dataset.appearanceMode).toBe("light")
-    expect(document.documentElement.dataset.appearancePreset).toBe("workbench")
+    expect(document.documentElement.dataset.appearancePreset).toBe("notion")
   })
 
-  it("ignores corrupt, unknown, or legacy local storage and restores workbench defaults", async () => {
+  it("ignores corrupt, unknown, or legacy local storage and restores Notion defaults", async () => {
     localStorage.setItem(
       APPEARANCE_STORAGE_KEY,
       JSON.stringify({
         lightPreset: "codex",
-        darkPreset: "broken",
+        darkPreset: "workbench",
       }),
     )
 
@@ -102,8 +102,10 @@ describe("useAppearance", () => {
     })
 
     await waitFor(() => {
-      expect(result.current.lightPreset).toBe("workbench")
+      expect(result.current.lightPreset).toBe("notion")
     })
+
+    expect(result.current.darkPreset).toBe("notion")
 
     unmount()
     localStorage.setItem(APPEARANCE_STORAGE_KEY, "{bad-json")
@@ -113,7 +115,7 @@ describe("useAppearance", () => {
     })
 
     await waitFor(() => {
-      expect(nextResult.current.darkPreset).toBe("workbench")
+      expect(nextResult.current.darkPreset).toBe("notion")
     })
   })
 
@@ -121,7 +123,7 @@ describe("useAppearance", () => {
     const { result } = renderHook(() => useAppearance(), { wrapper: Wrapper })
 
     await waitFor(() => {
-      expect(result.current.lightPreset).toBe("workbench")
+      expect(result.current.lightPreset).toBe("notion")
     })
 
     act(() => {
@@ -156,9 +158,9 @@ describe("useAppearance", () => {
 
     expect(result.current.mode).toBe("system")
     expect(document.documentElement.dataset.appearanceMode).toBe("dark")
-    expect(document.documentElement.dataset.appearancePreset).toBe("workbench")
+    expect(document.documentElement.dataset.appearancePreset).toBe("notion")
     expect(
       document.querySelector('meta[name="theme-color"]')?.getAttribute("content"),
-    ).toBe("#0d0c0a")
+    ).toBe("#191919")
   })
 })

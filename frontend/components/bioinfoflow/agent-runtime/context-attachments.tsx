@@ -16,11 +16,11 @@ export function ContextAttachments({
   if (!attachments.length) return null
 
   return (
-    <div className="flex max-w-48 flex-wrap items-center gap-1.5 sm:max-w-64" data-testid="context-attachments">
+    <div className="flex max-w-full flex-wrap items-center gap-1.5 px-2 pt-1" data-testid="context-attachments">
       {attachments.map((attachment) => (
         <span
           key={attachment.path}
-          className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/70 bg-muted/50 px-2 py-1 text-xs text-muted-foreground"
+          className="inline-flex max-w-full items-center gap-1.5 rounded-[6px] border border-border bg-muted px-2 py-1 text-xs text-foreground/68"
         >
           <span className="truncate">{attachment.label || attachment.path}</span>
           <button

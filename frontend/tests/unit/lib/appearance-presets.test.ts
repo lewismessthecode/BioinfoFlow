@@ -9,7 +9,6 @@ import {
 describe("appearance preset registry", () => {
   it("registers all supported preset ids", () => {
     expect(appearancePresetIds).toEqual([
-      "workbench",
       "notion",
       "github",
       "linear",
@@ -33,22 +32,23 @@ describe("appearance preset registry", () => {
     }
   })
 
-  it("keeps the curated palette anchors", () => {
-    expect(appearancePresets.workbench.label).toBe("Workbench")
-    expect(appearancePresets.workbench.light).toMatchObject({
-      background: "#fbfaf7",
-      foreground: "#201f1b",
-      primary: "#201f1b",
-      sidebar: "#f2f0eb",
-      "sidebar-accent": "#e7e2da",
-      "bg-surface": "#f4f1eb",
+  it("keeps the Notion palette anchors", () => {
+    expect(appearancePresets.notion.label).toBe("Notion")
+    expect(appearancePresets.notion.light).toMatchObject({
+      background: "#ffffff",
+      foreground: "#191919",
+      primary: "#191919",
+      sidebar: "#fbfbfa",
+      "sidebar-accent": "#f1f1ef",
+      "bg-surface": "#f7f7f5",
     })
-    expect(appearancePresets.workbench.dark).toMatchObject({
-      background: "#0d0c0a",
-      foreground: "#f2eee8",
-      primary: "#f2eee8",
-      sidebar: "#0b0a08",
-      "bg-surface": "#181613",
+    expect(appearancePresets.notion.dark).toMatchObject({
+      background: "#191919",
+      foreground: "#f1f1ef",
+      primary: "#f1f1ef",
+      sidebar: "#181818",
+      "bg-surface": "#242424",
     })
+    expect(appearancePresets).not.toHaveProperty("workbench")
   })
 })
