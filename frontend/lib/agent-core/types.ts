@@ -26,6 +26,15 @@ export type AgentModelSelection = {
   profile_id?: string | null
 }
 
+export type AgentCoreSkill = {
+  name: string
+  title?: string | null
+  version: string
+  description: string
+  category?: string | null
+  tags: string[]
+}
+
 export type AgentCoreSession = {
   id: string
   project_id: string
@@ -52,6 +61,7 @@ export type AgentCoreTurn = {
   user_id: string
   input_text: string
   input_parts?: Array<Record<string, unknown>> | null
+  active_skill_names?: string[] | null
   status: AgentTurnStatus
   model_selection?: AgentModelSelection | null
   model_profile_snapshot?: Record<string, unknown> | null

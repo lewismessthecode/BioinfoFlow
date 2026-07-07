@@ -32,6 +32,15 @@ export type AgentTokenUsageSummary = {
   raw_totals: Record<string, number>
 }
 
+export type AgentRuntimeSkill = {
+  name: string
+  title?: string | null
+  version: string
+  description: string
+  category?: string | null
+  tags: string[]
+}
+
 export type AgentRuntimeSession = {
   id: string
   project_id?: string | null
@@ -78,6 +87,7 @@ export type AgentRuntimeTurn = {
   user_id: string
   input_text: string
   input_parts?: AgentRuntimeInputPart[] | null
+  active_skill_names?: string[] | null
   status: AgentTurnStatus
   model_selection?: AgentModelSelection | null
   model_profile_snapshot?: Record<string, unknown> | null

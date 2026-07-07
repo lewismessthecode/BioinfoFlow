@@ -13,6 +13,7 @@ import type {
   AgentCoreEvent,
   AgentCoreMemory,
   AgentCoreSession,
+  AgentCoreSkill,
   AgentCoreTurn,
 } from "@/lib/agent-core"
 import type {
@@ -134,12 +135,16 @@ describe("createDemoRuntime", () => {
         }),
       },
     )
+    const skillsResponse = await runtime.request<{ skills: AgentCoreSkill[] }>(
+      "/agent/skills",
+    )
     const turnResponse = await runtime.request<AgentCoreTurn>(
       `/agent/sessions/${sessionResponse.data.id}/turns`,
       {
         method: "POST",
         body: JSON.stringify({
           input_text: "Run the seeded RNA-seq demo.",
+          active_skill_names: ["nextflow-debugging"],
         }),
       },
     )
@@ -187,7 +192,12 @@ describe("createDemoRuntime", () => {
 
     await expect(rejectedLegacyMessage).rejects.toMatchObject({ status: 404 })
     expect(sessionResponse.data.id).toMatch(/^agent-session-demo-/)
+    expect(skillsResponse.data.skills.map((skill) => skill.name)).toEqual([
+      "nextflow-debugging",
+      "run-failure-triage",
+    ])
     expect(turnResponse.data.status).toBe("completed")
+    expect(turnResponse.data.active_skill_names).toEqual(["nextflow-debugging"])
     expect(turnResponse.data.final_text).toContain("seeded RNA-seq demo workflow")
     expect(eventsResponse.data.map((event) => event.type)).toEqual([
       "turn.created",

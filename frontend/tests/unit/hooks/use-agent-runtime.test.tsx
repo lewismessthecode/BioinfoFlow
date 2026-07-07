@@ -298,6 +298,7 @@ describe("useAgentRuntime", () => {
           { type: "text", text: "hello" },
           { kind: "file_ref", path: "/workspace/workflow.wdl", label: "workflow.wdl" },
         ],
+        activeSkillNames: ["nextflow-debugging"],
       })
     })
 
@@ -310,6 +311,7 @@ describe("useAgentRuntime", () => {
           { type: "text", text: "hello" },
           { kind: "file_ref", path: "/workspace/workflow.wdl", label: "workflow.wdl" },
         ],
+        activeSkillNames: ["nextflow-debugging"],
       }),
     )
   })
