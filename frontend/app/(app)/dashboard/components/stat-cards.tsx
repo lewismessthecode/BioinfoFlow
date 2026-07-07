@@ -4,11 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Play, GitBranch, Container, FolderOpen } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
-import {
-  CardRoot,
-  CardContent,
-} from "@/components/bioinfoflow/card";
-import { cn } from "@/lib/utils";
+import { CardRoot } from "@/components/bioinfoflow/card";
 import type { DashboardStats } from "./dashboard-types";
 
 type StatCardsProps = {
@@ -63,64 +59,59 @@ export function StatCards({ stats }: StatCardsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-      {statCards.map((card, index) => {
-        const Icon = card.icon;
-        return (
-          <motion.div
-            key={card.key}
-            initial={prefersReducedMotion ? {} : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: index * 0.05, ease: [0.25, 0.1, 0.25, 1.0] }}
-            className="h-full"
-          >
-            <Link href={card.href} className="block h-full">
-              <CardRoot
-                variant="workbench"
-                data-interactive="true"
-                className={cn(
-                  "group h-full cursor-pointer",
-                  card.key === "runs" && "border-foreground/20"
-                )}
+    <CardRoot
+      variant="workbench"
+      className="overflow-hidden"
+      data-testid="dashboard-metric-strip"
+    >
+      <div className="bif-dashboard-metric-grid">
+        {statCards.map((card, index) => {
+          const Icon = card.icon;
+          return (
+            <motion.div
+              key={card.key}
+              initial={prefersReducedMotion ? {} : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: index * 0.05, ease: [0.25, 0.1, 0.25, 1.0] }}
+            >
+              <Link
+                href={card.href}
+                className="group flex min-h-[5.875rem] min-w-0 flex-col justify-between gap-2.5 px-4 py-3 transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-inset min-[360px]:min-h-[4.875rem] min-[360px]:px-3.5 min-[360px]:py-2.5 lg:min-h-[5.875rem] lg:px-4 lg:py-3"
               >
-                <CardContent className="flex h-full flex-col p-4">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <p className="mb-1 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
-                        {tDashboard(card.key)}
-                      </p>
-                      <p className="font-mono text-3xl font-semibold tracking-tight text-foreground tabular-nums">
-                        {card.getValue()}
-                      </p>
-                      {card.key === "runs" && (stats?.runs.running ?? 0) > 0 && (
-                        <div className="flex items-center gap-1.5 mt-1.5">
-                          <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse motion-reduce:animate-none" />
-                          <span className="text-xs text-info font-medium">
-                            {stats?.runs.running} {tStatus("running")}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="quiet-card-icon-shell size-9 rounded-lg">
-                      <Icon className="quiet-card-icon-glyph size-4 transition-colors duration-300" />
-                    </div>
-                  </div>
-                  <div className="mt-auto flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-                    {card.getDetails().map((detail, i) => (
-                      <span key={i} className="metadata-pill flex items-center gap-1.5 rounded-md border px-2 py-1">
-                        <span className="font-mono font-medium text-foreground tabular-nums">
-                          {detail.value}
+                <span className="flex min-w-0 items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="inline-flex max-w-full items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                      <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{tDashboard(card.key)}</span>
+                    </span>
+                    <span className="mt-1 block font-mono text-2xl font-semibold tracking-tight text-foreground tabular-nums">
+                      {card.getValue()}
+                    </span>
+                    {card.key === "runs" && (stats?.runs.running ?? 0) > 0 ? (
+                      <span className="mt-1.5 flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse motion-reduce:animate-none" />
+                        <span className="text-xs font-medium text-info">
+                          {stats?.runs.running} {tStatus("running")}
                         </span>
-                        <span>{detail.label}</span>
                       </span>
-                    ))}
-                  </div>
-                </CardContent>
-              </CardRoot>
-            </Link>
-          </motion.div>
-        );
-      })}
-    </div>
+                    ) : null}
+                  </span>
+                </span>
+                <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  {card.getDetails().map((detail) => (
+                    <span key={detail.label} className="inline-flex min-w-0 items-center gap-1.5">
+                      <span className="font-mono font-medium text-foreground tabular-nums">
+                        {detail.value}
+                      </span>
+                      <span className="truncate">{detail.label}</span>
+                    </span>
+                  ))}
+                </span>
+              </Link>
+            </motion.div>
+          );
+        })}
+      </div>
+    </CardRoot>
   );
 }

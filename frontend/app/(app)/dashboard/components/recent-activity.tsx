@@ -9,7 +9,6 @@ import {
   CardHeader,
 } from "@/components/bioinfoflow/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDateTime, formatDuration } from "@/lib/format-utils";
@@ -34,7 +33,7 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
   const tStatus = useTranslations("status");
 
   return (
-    <CardRoot variant="workbench" className="flex min-h-[24rem] flex-1 flex-col">
+    <CardRoot variant="workbench" className="flex min-h-[16rem] flex-1 flex-col">
       <CardHeader
         title={tDashboard("recentActivity")}
         className="border-b-0"
@@ -52,12 +51,19 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
       />
       <CardContent>
         {!recentRuns?.length ? (
-          <EmptyState
-            icon={Play}
-            title={tDashboard("noRecentRuns")}
-            description={tDashboard("noRecentRunsDescription")}
-            className="py-10"
-          />
+          <div className="flex min-h-[10rem] items-center justify-center rounded-md border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center">
+            <div className="max-w-sm">
+              <span className="mx-auto flex size-9 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+                <Play className="size-4" aria-hidden="true" />
+              </span>
+              <h2 className="mt-3 text-sm font-medium text-foreground">
+                {tDashboard("noRecentRuns")}
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {tDashboard("noRecentRunsDescription")}
+              </p>
+            </div>
+          </div>
         ) : (
           <div className="space-y-1">
             {recentRuns.map((run) => {

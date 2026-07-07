@@ -12,7 +12,6 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { CardContent, CardRoot } from "@/components/bioinfoflow/card";
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -307,45 +306,37 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <CardRoot
-        variant="warning"
-        className="bif-workbench-card overflow-hidden border-warning-border/60 bg-warning-muted/30"
+      <button
+        type="button"
+        aria-label={triggerAriaLabel}
+        className="group flex min-w-0 w-full items-center gap-3 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5 text-left transition-colors hover:border-foreground/15 hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2"
+        data-testid="readiness-compact-strip"
+        onClick={() => setOpen(true)}
       >
-        <CardContent className="p-2">
-          <button
-            type="button"
-            aria-label={triggerAriaLabel}
-            className="group flex min-w-0 w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            onClick={() => setOpen(true)}
-          >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-warning-border/70 bg-warning-muted text-warning">
-              <ListChecks className="size-4" aria-hidden="true" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold text-foreground">
-                  {tDashboard("readiness.title")}
-                </span>
-                <StatusBadge variant="warning">
-                  {triggerSummary}
-                </StatusBadge>
-                {optionalWarningsLabel ? (
-                  <StatusBadge variant="neutral">
-                    {optionalWarningsLabel}
-                  </StatusBadge>
-                ) : null}
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
+          <ListChecks className="size-4" aria-hidden="true" />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center">
+          <span className="min-w-0 truncate text-sm font-medium text-foreground">
+            {tDashboard("readiness.title")}
+          </span>
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <StatusBadge variant="neutral">
+              {triggerSummary}
+            </StatusBadge>
+            <span className="truncate">{requiredRemainingLabel}</span>
+            {optionalWarningsLabel ? (
+              <span className="truncate text-muted-foreground/80">
+                {optionalWarningsLabel}
               </span>
-              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                {requiredRemainingLabel}
-              </span>
-            </span>
-            <ArrowRight
-              className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-              aria-hidden="true"
-            />
-          </button>
-        </CardContent>
-      </CardRoot>
+            ) : null}
+          </span>
+        </span>
+        <ArrowRight
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+          aria-hidden="true"
+        />
+      </button>
 
       <SheetContent
         side="right"
@@ -375,7 +366,7 @@ export function ReadinessCenter({ readiness, onRefresh }: ReadinessCenterProps) 
             </div>
             <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-warning transition-[width] duration-300"
+                className="h-full rounded-full bg-foreground/70 transition-[width] duration-300"
                 style={{ width: `${readinessSummary.requiredProgress}%` }}
               />
             </div>

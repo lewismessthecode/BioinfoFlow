@@ -169,7 +169,7 @@ describe("DashboardPage", () => {
     expect(workflowsCard).toHaveAttribute("href", "/workflows?scope=hub")
   })
 
-  it("stretches each stat card to the full grid row height", async () => {
+  it("renders stat cards as a responsive metric strip", async () => {
     mockDashboardApi({
       stats: {
         ...defaultStats,
@@ -186,9 +186,20 @@ describe("DashboardPage", () => {
       screen.getByRole("link", { name: /dashboard\.projects/i }),
     ]
 
+    const metricStrip = await screen.findByTestId("dashboard-metric-strip")
+    const metricGrid = metricStrip.firstElementChild
+
+    expect(metricGrid).toHaveClass("bif-dashboard-metric-grid")
+    expect(metricGrid?.children).toHaveLength(4)
+
     for (const cardLink of statCardLinks) {
-      expect(cardLink).toHaveClass("h-full")
-      expect(cardLink.firstElementChild).toHaveClass("h-full")
+      expect(metricGrid).toContainElement(cardLink)
+      expect(cardLink).toHaveClass(
+        "min-h-[5.875rem]",
+        "min-[360px]:min-h-[4.875rem]",
+        "flex-col",
+        "justify-between"
+      )
     }
   })
 

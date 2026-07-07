@@ -7,7 +7,7 @@
 }
 
 .bif-workbench-page__inner {
-  width: min(100%, 78rem);
+  width: min(100%, 72rem);
   margin-inline: auto;
   padding: clamp(1rem, 2.8vw, 1.75rem);
 }
@@ -16,13 +16,13 @@
   border-radius: 0.5rem;
   border-color: color-mix(in srgb, var(--border) 76%, transparent);
   background: color-mix(in srgb, var(--card) 94%, var(--surface-subtle) 6%);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent);
+  box-shadow: none;
 }
 
 .dark .bif-workbench-card {
   border-color: color-mix(in srgb, var(--border-hover) 48%, var(--border) 52%);
   background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg-surface) 8%);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  box-shadow: none;
 }
 
 .bif-workbench-card[data-interactive="true"] {
@@ -51,6 +51,52 @@
 
 .bif-workbench-card [data-slot="bioflow-card-content"] {
   padding: 1rem;
+}
+
+.bif-dashboard-metric-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.bif-dashboard-metric-grid > * + * {
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+@media (min-width: 360px) {
+  .bif-dashboard-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bif-dashboard-metric-grid > * + * {
+    border-top: 0;
+  }
+
+  .bif-dashboard-metric-grid > *:nth-child(n + 3) {
+    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+
+  .bif-dashboard-metric-grid > *:nth-child(even) {
+    border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+}
+
+@media (min-width: 1024px) {
+  .bif-dashboard-metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .bif-dashboard-metric-grid > * + * {
+    border-top: 0;
+    border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+
+  .bif-dashboard-metric-grid > *:nth-child(n + 3) {
+    border-top: 0;
+  }
+
+  .bif-dashboard-metric-grid > *:nth-child(even) {
+    border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
 }
 
 .bif-workbench-panel {

@@ -135,9 +135,9 @@ export default function DashboardPage() {
           </Alert>
         )}
 
-        <ReadinessCenter readiness={readiness} onRefresh={fetchData} />
+        <div className="grid gap-3">
+          <ReadinessCenter readiness={readiness} onRefresh={fetchData} />
 
-        <div className="grid gap-4">
           <motion.div
             initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -146,39 +146,45 @@ export default function DashboardPage() {
             <StatCards stats={stats} />
           </motion.div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.85fr)]">
+          <div
+            className={
+              schedulerStatus
+                ? "grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)]"
+                : "grid items-start gap-3"
+            }
+          >
             <motion.div
               className="min-w-0"
               initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.15 }}
             >
-              <RecentActivity recentRuns={stats?.recent_runs} />
+              <SystemStatus
+                health={health}
+                gpuInfo={gpuInfo}
+                optionalNotes={optionalReadinessNotes}
+              />
             </motion.div>
-
-            <div className="grid min-w-0 content-start gap-4">
+            {schedulerStatus && (
               <motion.div
+                className="min-w-0"
                 initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, delay: 0.25 }}
               >
-                <SystemStatus
-                  health={health}
-                  gpuInfo={gpuInfo}
-                  optionalNotes={optionalReadinessNotes}
-                />
+                <SchedulerSummary schedulerStatus={schedulerStatus} />
               </motion.div>
-              {schedulerStatus && (
-                <motion.div
-                  initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: 0.35 }}
-                >
-                  <SchedulerSummary schedulerStatus={schedulerStatus} />
-                </motion.div>
-              )}
-            </div>
+            )}
           </div>
+
+          <motion.div
+            className="min-w-0"
+            initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.35 }}
+          >
+            <RecentActivity recentRuns={stats?.recent_runs} />
+          </motion.div>
         </div>
       </section>
     </div>

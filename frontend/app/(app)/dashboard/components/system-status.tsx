@@ -102,7 +102,6 @@ function hasNvidiaSignal(health: SystemHealth | null, gpuInfo: GpuInfo | null): 
 
 function gpuSummaryVariant(health: SystemHealth | null, gpuInfo: GpuInfo | null) {
   if (gpuInfo?.parabricks_compatible) return "success";
-  if (gpuInfo?.available || hasNvidiaSignal(health, gpuInfo)) return "warning";
   return "neutral";
 }
 
@@ -118,10 +117,10 @@ export function SystemStatus({ health, gpuInfo, optionalNotes = [] }: SystemStat
     <CardRoot variant="workbench" className="flex flex-1 flex-col">
       <CardHeader
         title={tDashboard("systemStatus")}
-        className="border-b-0"
+        className="border-b border-border/60"
         badge={
           <StatusBadge
-            variant={health?.docker.available ? "success" : "destructive"}
+            variant={health?.docker.available ? "neutral" : "destructive"}
           >
             {health?.docker.available
               ? tDashboard("healthy")
@@ -129,141 +128,140 @@ export function SystemStatus({ health, gpuInfo, optionalNotes = [] }: SystemStat
           </StatusBadge>
         }
       />
-      <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-        <div className="bif-workbench-panel flex flex-col gap-3 p-3">
-          <div className="flex items-center gap-2">
-            <Container className="size-4 text-muted-foreground" />
-            <span className="text-sm font-medium">{tDashboard("dockerAvailable")}</span>
-          </div>
-          <div className="flex flex-col gap-2 pl-6 text-sm text-muted-foreground">
-            <div className="flex items-center justify-between gap-3">
-              <span>{tDashboard("docker.badgePrefix")}</span>
-              <span className="flex items-center gap-1.5">
-                <span className={cn(
-                  "size-1.5 rounded-full",
-                  health?.docker.available ? "bg-success" : "bg-destructive",
-                )} />
-                <span className={cn("text-xs", health?.docker.available ? "text-success" : "text-destructive")}>
-                  {health?.docker.available ? tDashboard("docker.available") : tDashboard("docker.notRunning")}
-                </span>
-              </span>
+      <CardContent className="space-y-0 p-0">
+        <div className="grid divide-y divide-border/60 md:grid-cols-2 md:divide-x md:divide-y-0">
+          <section className="px-4 py-3">
+            <div className="flex items-center gap-2 text-foreground">
+              <Container className="size-3.5 text-muted-foreground" />
+              <span className="text-sm font-medium">{tDashboard("dockerAvailable")}</span>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <span>{tDashboard("docker.nvidiaRuntimePrefix")}</span>
-              <span className="flex items-center gap-1.5">
-                <span className={cn(
-                  "size-1.5 rounded-full",
-                  health?.docker.nvidia_runtime || gpuInfo?.docker_nvidia_runtime ? "bg-success" : "bg-muted-foreground/50",
-                )} />
-                <span className="text-xs text-muted-foreground">
-                  {health?.docker.nvidia_runtime || gpuInfo?.docker_nvidia_runtime
-                    ? tDashboard("docker.available")
-                    : tDashboard("docker.notFound")}
+            <div className="mt-2 grid gap-1.5 pl-5 text-sm text-muted-foreground">
+              <div className="flex items-center justify-between gap-3">
+                <span>{tDashboard("docker.badgePrefix")}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className={cn(
+                    "size-1.5 rounded-full",
+                    health?.docker.available ? "bg-muted-foreground/65" : "bg-destructive",
+                  )} />
+                  <span className={cn("text-xs", health?.docker.available ? "text-muted-foreground" : "text-destructive")}>
+                    {health?.docker.available ? tDashboard("docker.available") : tDashboard("docker.notRunning")}
+                  </span>
                 </span>
-              </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>{tDashboard("docker.nvidiaRuntimePrefix")}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className={cn(
+                    "size-1.5 rounded-full",
+                    health?.docker.nvidia_runtime || gpuInfo?.docker_nvidia_runtime ? "bg-muted-foreground/65" : "bg-muted-foreground/35",
+                  )} />
+                  <span className="text-xs text-muted-foreground">
+                    {health?.docker.nvidia_runtime || gpuInfo?.docker_nvidia_runtime
+                      ? tDashboard("docker.available")
+                      : tDashboard("docker.notFound")}
+                  </span>
+                </span>
+              </div>
             </div>
-          </div>
+          </section>
+
+          <section className="px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-foreground">
+                <Cpu className="size-3.5 text-muted-foreground" />
+                <span className="text-sm font-medium">{tDashboard("gpuStatus")}</span>
+              </div>
+              {gpuInfo?.parabricks_compatible || nvidiaSignal ? (
+                <StatusBadge variant={gpuSummaryVariant(health, gpuInfo)}>
+                  {gpuInfo?.parabricks_compatible
+                    ? tDashboard("parabricksCompatible")
+                    : tDashboard("gpu.nvidiaRuntimeVisible")}
+                </StatusBadge>
+              ) : null}
+            </div>
+            <div className="mt-2 grid gap-1.5 pl-5 text-sm text-muted-foreground">
+              {gpuRows.length > 0 ? (
+                gpuRows.map((gpu) => (
+                  <div key={gpu.index} className="flex items-center justify-between gap-3">
+                    <span className="truncate">{gpu.name}</span>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <span className="size-1.5 rounded-full bg-muted-foreground/65" />
+                      <span className="text-xs">{Math.round(gpu.memory_total_mb / 1024)}GB</span>
+                    </span>
+                  </div>
+                ))
+              ) : null}
+
+              {gpuInfo?.parabricks_compatible ? (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <CheckCircle2 className="size-3" aria-hidden="true" />
+                  <span>{tDashboard("parabricksCompatible")}</span>
+                </div>
+              ) : null}
+
+              {showRuntimeOnly ? (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <CircleAlert className="size-3" aria-hidden="true" />
+                  <span>{tDashboard("gpu.detailsUnavailable")}</span>
+                </div>
+              ) : null}
+
+              {showNoGpu ? (
+                <div className="flex items-center gap-1.5 text-xs">
+                  <HardDrive className="size-3" aria-hidden="true" />
+                  <span>{tDashboard("noGpuDetected")}</span>
+                </div>
+              ) : null}
+
+              {gpuInfo?.recommendation && !hasGpuOptionalNote ? (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {gpuInfo.recommendation}
+                </p>
+              ) : null}
+            </div>
+          </section>
         </div>
 
-        <div className="bif-workbench-panel flex flex-col gap-3 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Cpu className="size-4 text-muted-foreground" />
-              <span className="text-sm font-medium">{tDashboard("gpuStatus")}</span>
-            </div>
-            <StatusBadge variant={gpuSummaryVariant(health, gpuInfo)}>
-              {gpuInfo?.parabricks_compatible
-                ? tDashboard("parabricksCompatible")
-                : nvidiaSignal
-                  ? tDashboard("gpu.nvidiaRuntimeVisible")
-                  : tDashboard("gpuStatus")}
-            </StatusBadge>
-          </div>
-          <div className="flex flex-col gap-2 pl-6 text-sm text-muted-foreground">
-            {gpuRows.length > 0 ? (
-              gpuRows.map((gpu) => (
-                <div key={gpu.index} className="flex items-center justify-between gap-3">
-                  <span className="truncate">{gpu.name}</span>
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <span className={cn(
-                      "size-1.5 rounded-full",
-                      gpu.gpu_type === "Apple Silicon" ? "bg-info" : "bg-success",
-                    )} />
-                    <span className="text-xs">{Math.round(gpu.memory_total_mb / 1024)}GB</span>
-                  </span>
-                </div>
-              ))
-            ) : null}
-
-            {gpuInfo?.parabricks_compatible ? (
-              <div className="flex items-center gap-1.5 text-xs text-info">
-                <CheckCircle2 className="size-3" aria-hidden="true" />
-                <span>{tDashboard("parabricksCompatible")}</span>
-              </div>
-            ) : null}
-
-            {showRuntimeOnly ? (
-              <div className="flex items-center gap-1.5 text-xs text-warning">
-                <CircleAlert className="size-3" aria-hidden="true" />
-                <span>{tDashboard("gpu.detailsUnavailable")}</span>
-              </div>
-            ) : null}
-
-            {showNoGpu ? (
-              <div className="flex items-center gap-1.5 text-xs">
-                <HardDrive className="size-3" aria-hidden="true" />
-                <span>{tDashboard("noGpuDetected")}</span>
-              </div>
-            ) : null}
-
-            {gpuInfo?.recommendation && !hasGpuOptionalNote ? (
-              <p className="text-xs leading-5 text-muted-foreground">
-                {gpuInfo.recommendation}
+        {optionalNotes.length > 0 ? (
+          <section className="border-t border-border/60 bg-muted/15 px-4 py-3 text-xs leading-5 text-muted-foreground">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium text-foreground">
+                {tDashboard("systemNotes.title")}
               </p>
-            ) : null}
+              <span className="text-muted-foreground">
+                {tDashboard("systemNotes.badge")}
+              </span>
+            </div>
+            <p className="mt-1">{tDashboard("systemNotes.description")}</p>
+            <ul className="mt-2 grid gap-2">
+              {optionalNotes.map((note) => {
+                const actionHref = actionHrefForOptionalNote(note);
+                const actionLabel = actionLabelForOptionalNote(tDashboard, note);
 
-            {optionalNotes.length > 0 ? (
-              <section className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-medium text-foreground">
-                    {tDashboard("systemNotes.title")}
-                  </p>
-                  <span className="text-muted-foreground">
-                    {tDashboard("systemNotes.badge")}
-                  </span>
-                </div>
-                <p className="mt-1">{tDashboard("systemNotes.description")}</p>
-                <ul className="mt-2 grid gap-2">
-                  {optionalNotes.map((note) => {
-                    const actionHref = actionHrefForOptionalNote(note);
-                    const actionLabel = actionLabelForOptionalNote(tDashboard, note);
-
-                    return (
-                      <li key={`${note.id}-${note.status}`} className="flex gap-2">
-                        <CircleAlert className="mt-1 size-3 shrink-0 text-warning" aria-hidden="true" />
-                        <span className="min-w-0">
-                          <span className="block font-medium text-foreground">
-                            {labelForOptionalNote(tDashboard, note)}
-                          </span>
-                          <span>{descriptionForOptionalNote(tDashboard, note)}</span>
-                          {actionHref && actionLabel ? (
-                            <Link
-                              href={actionHref}
-                              className="mt-1 inline-flex items-center gap-1 font-medium text-foreground transition hover:text-primary"
-                            >
-                              {actionLabel}
-                              <ArrowRight className="size-3" aria-hidden="true" />
-                            </Link>
-                          ) : null}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            ) : null}
-          </div>
-        </div>
+                return (
+                  <li key={`${note.id}-${note.status}`} className="flex gap-2">
+                    <CircleAlert className="mt-1 size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-foreground">
+                        {labelForOptionalNote(tDashboard, note)}
+                      </span>
+                      <span>{descriptionForOptionalNote(tDashboard, note)}</span>
+                      {actionHref && actionLabel ? (
+                        <Link
+                          href={actionHref}
+                          className="mt-1 inline-flex items-center gap-1 font-medium text-foreground transition hover:text-primary"
+                        >
+                          {actionLabel}
+                          <ArrowRight className="size-3" aria-hidden="true" />
+                        </Link>
+                      ) : null}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
       </CardContent>
     </CardRoot>
   );
