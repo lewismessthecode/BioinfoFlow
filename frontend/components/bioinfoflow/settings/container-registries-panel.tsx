@@ -13,6 +13,14 @@ import { Loader2, PlayCircle, Plus, Star, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -68,6 +76,10 @@ export function ContainerRegistriesPanel() {
   const [saving, setSaving] = useState(false)
   const [testingId, setTestingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<ContainerRegistryConfig | null>(null)
+
+  const pendingDeleteLabel =
+    pendingDelete?.name ?? pendingDelete?.endpoint ?? pendingDelete?.id ?? ""
 
   const editing = Boolean(form.id)
   const credentialsReady =
@@ -199,16 +211,19 @@ export function ContainerRegistriesPanel() {
     }
   }
 
-  const deleteRegistry = async (registry: ContainerRegistryConfig) => {
+  const requestDeleteRegistry = (registry: ContainerRegistryConfig) => {
     if (!registry.id) return
-    if (!window.confirm(t("registries.deleteConfirm", { name: registry.name ?? registry.endpoint ?? registry.id }))) {
-      return
-    }
-    setDeletingId(registry.id)
+    setPendingDelete(registry)
+  }
+
+  const confirmDeleteRegistry = async () => {
+    if (!pendingDelete?.id) return
+    setDeletingId(pendingDelete.id)
     try {
-      await apiRequest(`/container-registries/${registry.id}`, { method: "DELETE" })
+      await apiRequest(`/container-registries/${pendingDelete.id}`, { method: "DELETE" })
       toast.success(t("registries.deleted"))
-      if (form.id === registry.id) resetForm()
+      if (form.id === pendingDelete.id) resetForm()
+      setPendingDelete(null)
       await loadRegistries()
     } catch (error) {
       toast.error(getApiErrorMessage(error, t("registries.deleteFailed")))
@@ -218,7 +233,8 @@ export function ContainerRegistriesPanel() {
   }
 
   return (
-    <section className="space-y-5">
+    <>
+      <section className="space-y-6">
       <div>
         <h3 className="text-base font-semibold text-foreground">
           {t("registries.title")}
@@ -228,8 +244,8 @@ export function ContainerRegistriesPanel() {
         </p>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
-        <div className="space-y-4 rounded-xl border border-border/60 bg-card p-4">
+      <div className="space-y-4">
+        <div className="space-y-5 rounded-xl border border-border/70 bg-card p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-foreground">
@@ -391,7 +407,7 @@ export function ContainerRegistriesPanel() {
 
         <div className="space-y-3">
           {loading ? (
-            <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card p-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-card p-4 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               {t("registries.loading")}
             </div>
@@ -400,22 +416,58 @@ export function ContainerRegistriesPanel() {
               {t("registries.empty")}
             </div>
           ) : (
-            sortedRegistries.map((registry) => (
-              <RegistryRow
-                key={registry.id ?? registry.endpoint ?? registry.name}
-                registry={registry}
-                testing={testingId === registry.id}
-                deleting={deletingId === registry.id}
-                onEdit={editRegistry}
-                onTest={(id) => void testRegistry(id)}
-                onDefault={(id) => void makeDefault(id)}
-                onDelete={(item) => void deleteRegistry(item)}
-              />
-            ))
+            <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+              {sortedRegistries.map((registry) => (
+                <RegistryRow
+                  key={registry.id ?? registry.endpoint ?? registry.name}
+                  registry={registry}
+                  testing={testingId === registry.id}
+                  deleting={deletingId === registry.id}
+                  onEdit={editRegistry}
+                  onTest={(id) => void testRegistry(id)}
+                  onDefault={(id) => void makeDefault(id)}
+                  onDelete={requestDeleteRegistry}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>
-    </section>
+      </section>
+
+      <Dialog open={Boolean(pendingDelete)} onOpenChange={(open) => {
+        if (!open) setPendingDelete(null)
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("registries.actions.delete")}</DialogTitle>
+            <DialogDescription>
+              {t("registries.deleteConfirm", { name: pendingDeleteLabel })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingDelete(null)}
+            >
+              {t("registries.actions.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={Boolean(pendingDelete?.id && deletingId === pendingDelete.id)}
+              onClick={() => void confirmDeleteRegistry()}
+            >
+              {pendingDelete?.id && deletingId === pendingDelete.id ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : null}
+              {t("registries.actions.delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -442,7 +494,7 @@ function RegistryRow({
   const registryId = registry.id ?? null
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card p-4">
+    <div className="border-b border-border/60 px-4 py-4 last:border-b-0 sm:px-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -450,7 +502,7 @@ function RegistryRow({
               {registry.name || endpoint}
             </h4>
             {registry.is_default ? (
-              <span className="inline-flex h-6 items-center gap-1 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+              <span className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-secondary/45 px-2 text-xs font-medium text-foreground">
                 <Star className="size-3" />
                 {t("registries.defaultBadge")}
               </span>
@@ -459,7 +511,7 @@ function RegistryRow({
               className={cn(
                 "inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium",
                 status === "ok"
-                  ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  ? "border-border bg-secondary/45 text-foreground"
                   : status === "error"
                     ? "border-destructive/25 bg-destructive/10 text-destructive"
                     : "border-border bg-muted text-muted-foreground",
