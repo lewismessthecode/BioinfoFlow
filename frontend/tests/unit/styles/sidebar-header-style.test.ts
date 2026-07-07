@@ -50,4 +50,15 @@ describe("sidebar header styling", () => {
     expect(source).toContain("min-h-[100dvh]")
     expect(source).not.toContain("h-screen")
   })
+
+  it("keeps the desktop sidebar pinned while page content scrolls", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "app/(app)/app-layout.tsx"),
+      "utf8",
+    )
+
+    expect(source).toContain(
+      'className="sticky top-0 h-[100dvh] flex-shrink-0 self-start transition-[width,opacity] duration-200"',
+    )
+  })
 })
