@@ -4,6 +4,12 @@ import { useState } from "react"
 import { useTranslations } from "next-intl"
 import { Check, ChevronDown, Settings as SettingsIcon } from "lucide-react"
 import Link from "next/link"
+import {
+  composerSelectorChevronClassName,
+  composerSelectorChipClassName,
+  composerSelectorIconClassName,
+  composerSelectorMenuClassName,
+} from "@/components/bioinfoflow/composer-selector-chip"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
@@ -16,6 +22,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command"
 import type { ModelSelection, ProviderModels } from "@/hooks/use-llm-settings"
+import { cn } from "@/lib/utils"
 import { ProviderIcon } from "./provider-icons"
 
 interface ModelSelectorProps {
@@ -39,10 +46,10 @@ export function ModelSelector({
   const [open, setOpen] = useState(false)
   const isComposer = variant === "composer"
   const triggerClassName = isComposer
-    ? "h-9 max-w-[196px] gap-1 rounded-[8px] px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+    ? cn(composerSelectorChipClassName, "max-w-[196px]")
     : "h-9 max-w-[196px] gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
   const configureClassName = isComposer
-    ? "h-9 gap-1 rounded-[8px] px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+    ? cn(composerSelectorChipClassName, "max-w-[196px]")
     : "h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
 
   // Find the display name for the current selection
@@ -72,10 +79,13 @@ export function ModelSelector({
         disabled={disabled}
         aria-label={t("configure")}
         data-variant={variant}
+        data-composer-chip={isComposer ? "true" : undefined}
         asChild
       >
         <Link href="/settings?section=providers">
-          <SettingsIcon className="h-3.5 w-3.5" />
+          <SettingsIcon
+            className={isComposer ? composerSelectorIconClassName : "h-3.5 w-3.5"}
+          />
           <span className="hidden sm:inline">{t("configure")}</span>
         </Link>
       </Button>
@@ -94,6 +104,7 @@ export function ModelSelector({
           aria-expanded={open}
           aria-label={displayLabel}
           data-variant={variant}
+          data-composer-chip={isComposer ? "true" : undefined}
         >
           {currentModel && (
             <ProviderIcon
@@ -106,13 +117,24 @@ export function ModelSelector({
             />
           )}
           <span className="hidden truncate sm:inline">{displayLabel}</span>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+          <ChevronDown
+            className={
+              isComposer
+                ? composerSelectorChevronClassName
+                : "h-3 w-3 shrink-0 opacity-50"
+            }
+          />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
         side="top"
-        className="w-[280px] overflow-hidden rounded-xl border border-border/70 bg-background/96 p-0 shadow-[0_14px_34px_rgba(36,35,33,0.08)]"
+        className={cn(
+          "w-[280px] overflow-hidden p-0",
+          isComposer
+            ? composerSelectorMenuClassName
+            : "rounded-xl border border-border/70 bg-background/96 shadow-[0_14px_34px_rgba(36,35,33,0.08)]",
+        )}
       >
         <Command>
           <CommandInput placeholder={t("searchModels")} className="h-9" />

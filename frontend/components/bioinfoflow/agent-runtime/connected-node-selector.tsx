@@ -5,6 +5,12 @@ import Link from "next/link"
 import { Check, ChevronDown, Monitor, Server } from "lucide-react"
 import { useTranslations } from "next-intl"
 
+import {
+  composerSelectorChevronClassName,
+  composerSelectorChipClassName,
+  composerSelectorIconClassName,
+  composerSelectorMenuClassName,
+} from "@/components/bioinfoflow/composer-selector-chip"
 import { Button } from "@/components/ui/button"
 import { RemoteConnectionStatusDot } from "@/components/bioinfoflow/remote-connection-status"
 import {
@@ -128,10 +134,13 @@ export function ConnectedNodeSelector({
         <Button
           type="button"
           variant="ghost"
+          size="sm"
           className={cn(
-            "h-9 min-w-0 max-w-[13rem] rounded-[8px] border border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground shadow-none hover:bg-muted/70 hover:text-foreground",
+            composerSelectorChipClassName,
+            "max-w-[13rem]",
             compact && "max-w-[10rem]",
           )}
+          data-composer-chip="true"
           disabled={disabled}
           aria-label={
             selectedConnection
@@ -150,9 +159,9 @@ export function ConnectedNodeSelector({
           }
         >
           {selectedConnection || hasPendingSelectedConnection ? (
-            <Server className="h-3.5 w-3.5 shrink-0" />
+            <Server className={composerSelectorIconClassName} />
           ) : (
-            <Monitor className="h-3.5 w-3.5 shrink-0" />
+            <Monitor className={composerSelectorIconClassName} />
           )}
           {selectedConnection ? <RemoteConnectionStatusDot status={selectedConnection.status} className="shadow-[0_0_0_3px]" /> : null}
           <span className="min-w-0 truncate">
@@ -162,14 +171,14 @@ export function ConnectedNodeSelector({
                 ? t("remote.label")
                 : t("local.label")}
           </span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+          <ChevronDown className={composerSelectorChevronClassName} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
         side="top"
         sideOffset={10}
-        className="w-80 rounded-xl border-border/70 bg-popover p-1.5 shadow-[0_14px_34px_rgba(36,35,33,0.08)]"
+        className={cn("w-80", composerSelectorMenuClassName)}
       >
         <DropdownMenuLabel className="px-2.5 py-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
           {t("menuTitle")}

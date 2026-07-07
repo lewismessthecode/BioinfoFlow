@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -115,6 +116,22 @@ const composerConnections = [
     key_path: "",
     status: "online",
     skill_instructions: "Use /data/test.",
+  },
+]
+
+const composerModels = [
+  {
+    provider: "openai",
+    provider_id: "provider-openai",
+    label: "OpenAI",
+    base_url: "https://api.openai.com/v1",
+    models: [
+      {
+        id: "gpt-4o-mini",
+        name: "GPT-4o mini",
+        context_window: 128000,
+      },
+    ],
   },
 ]
 
@@ -294,9 +311,64 @@ describe("AgentComposer", () => {
     )
 
     expect(screen.getByRole("button", { name: "Permission mode" })).toBeVisible()
-    expect(screen.getByRole("group", { name: "Agent mode" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Agent mode" })).toBeVisible()
     expect(screen.getByRole("link", { name: "Configure providers" })).toBeVisible()
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled()
+  })
+
+  it("renders composer selectors as unified warm chips with a neutral send action", () => {
+    render(
+      <AgentComposer
+        value="Run QC"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        permissionMode="guarded_auto"
+        onPermissionModeChange={vi.fn()}
+        mode="plan"
+        onModeChange={vi.fn()}
+        models={composerModels}
+        selectedModel={{ provider: "openai", model: "gpt-4o-mini" }}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    const locationChip = screen.getByRole("button", {
+      name: "Current execution target: local",
+    })
+    expect(locationChip).toHaveAttribute("data-composer-chip", "true")
+    expect(locationChip).toHaveClass("h-8", "rounded-[7px]", "bg-[#fafaf7]")
+
+    const permissionChip = screen.getByRole("button", { name: "Permission mode" })
+    expect(permissionChip).toHaveAttribute("data-composer-chip", "true")
+    expect(permissionChip).toHaveClass("h-8", "rounded-[7px]", "bg-[#fafaf7]")
+
+    const modeChip = screen.getByTestId("agent-mode-chip")
+    expect(modeChip).toHaveAttribute("data-composer-chip", "true")
+    expect(modeChip).toHaveAttribute("data-mode", "plan")
+    expect(modeChip).toHaveClass("h-8", "rounded-[7px]", "bg-[#fafaf7]")
+    expect(screen.getByTestId("agent-mode-chip-marker")).toHaveClass("bg-[#c0a8dd]")
+
+    const modelChip = screen.getByRole("combobox", { name: "GPT-4o mini" })
+    expect(modelChip).toHaveAttribute("data-composer-chip", "true")
+    expect(modelChip).toHaveClass("h-8", "rounded-[7px]", "bg-[#fafaf7]")
+
+    const sendButton = screen.getByRole("button", { name: "Send message" })
+    expect(sendButton).toHaveClass("bg-primary")
+    expect(sendButton.getAttribute("class")).not.toContain("f54e00")
+    expect(sendButton.getAttribute("class")).not.toContain("d04200")
+  })
+
+  it("does not hard-code orange into composer primary actions", () => {
+    const composerSource = readFileSync(
+      "components/bioinfoflow/agent-runtime/agent-composer.tsx",
+      "utf8",
+    )
+
+    for (const forbiddenHex of ["f54e" + "00", "d042" + "00"]) {
+      expect(composerSource).not.toContain(forbiddenHex)
+    }
   })
 
   it("compresses secondary controls when rendered beside the side panel", () => {
@@ -325,9 +397,9 @@ describe("AgentComposer", () => {
     expect(screen.getByRole("button", { name: "Permission mode" })).toHaveClass(
       "max-w-9",
     )
-    const modeGroup = screen.getByRole("group", { name: "Agent mode" })
-    expect(modeGroup).toHaveClass("hidden")
-    expect(modeGroup).not.toHaveClass("sm:flex")
+    const modeChipShell = screen.getByTestId("agent-mode-chip-shell")
+    expect(modeChipShell).toHaveClass("hidden")
+    expect(modeChipShell).not.toHaveClass("sm:inline-flex")
   })
 
   it("shows cumulative token usage with accessible details", async () => {
