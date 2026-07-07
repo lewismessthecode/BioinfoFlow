@@ -1,12 +1,12 @@
 {
   "greeting": {
-    "morning": "早上好 ☀️ 今天想探索什么数据？",
-    "afternoon": "下午好 🌤️ 准备好运行分析了吗？",
-    "evening": "晚上好 🌙 来探索一些数据吧",
+    "morning": "早上好。今天想探索什么数据？",
+    "afternoon": "下午好。准备好运行分析了吗？",
+    "evening": "晚上好。来探索一些数据吧",
     "lateNight": "夜深了 🔬 最好的发现往往在深夜诞生",
-    "dashboardMorning": "早上好 ☀️ {name}",
-    "dashboardAfternoon": "下午好 🌤️ {name}",
-    "dashboardEvening": "晚上好 🌙 {name}",
+    "dashboardMorning": "早上好 {name}",
+    "dashboardAfternoon": "下午好 {name}",
+    "dashboardEvening": "晚上好 {name}",
     "dashboardLateNight": "夜深了 🔬 {name}"
   },
   "common": {
@@ -360,7 +360,7 @@
       "gpuError": "暂时无法确认 GPU 状态。CPU 和本地工作流可以先运行。详情：{error}",
       "gpuCpuOnly": "未启用 GPU 加速。CPU 和本地工作流可以直接运行。"
     },
-    "narrativeEmpty": "还没有运行记录。系统检查会为第一次分析保持就绪。",
+    "narrativeEmpty": "还没有运行记录。开始第一次分析前，请先查看下方系统准备状态。",
     "narrativeAllComplete": "已完成全部 {total} 次运行，一切顺利",
     "narrativeTotal": "共 {total} 次运行",
     "narrativeCompleted": "{count} 次已完成",
@@ -1472,7 +1472,7 @@
       "title": "Bioinfoflow",
       "titleSuffix": "让你在家运行 WGS。",
       "description": "使用 RTX 4090 在 2 小时内完成完整的 30X 全基因组测序分析。",
-      "wgsHighlight": "✨ 个人使用免费。数据永不离开你的机器。",
+      "wgsHighlight": "个人使用免费。数据永不离开你的机器。",
       "startFree": "立即开始",
       "bookDemo": "了解更多",
       "windowTitle": "bioinfoflow — 智能助手",

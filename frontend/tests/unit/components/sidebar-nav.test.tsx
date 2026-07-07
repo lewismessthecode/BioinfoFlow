@@ -48,6 +48,15 @@ describe("SidebarNav", () => {
     expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current")
   })
 
+  it("preserves aria-current when the nav is collapsed", () => {
+    usePathnameMock.mockReturnValue("/agent")
+
+    render(<SidebarNav collapsed />)
+
+    expect(screen.getByRole("link", { name: "Agent" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current")
+  })
+
   it("keeps the active route visually flat instead of elevated", () => {
     usePathnameMock.mockReturnValue("/agent")
 

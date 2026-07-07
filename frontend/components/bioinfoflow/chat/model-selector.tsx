@@ -32,6 +32,7 @@ interface ModelSelectorProps {
   disabled?: boolean
   allowAuto?: boolean
   variant?: "default" | "composer"
+  compact?: boolean
 }
 
 export function ModelSelector({
@@ -41,15 +42,16 @@ export function ModelSelector({
   disabled = false,
   allowAuto = false,
   variant = "default",
+  compact = false,
 }: ModelSelectorProps) {
   const t = useTranslations("settings.modelSelector")
   const [open, setOpen] = useState(false)
   const isComposer = variant === "composer"
   const triggerClassName = isComposer
-    ? cn(composerSelectorChipClassName, "max-w-[196px]")
+    ? cn(composerSelectorChipClassName, compact ? "max-w-9 px-2" : "max-w-[196px]")
     : "h-9 max-w-[196px] gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
   const configureClassName = isComposer
-    ? cn(composerSelectorChipClassName, "max-w-[196px]")
+    ? cn(composerSelectorChipClassName, compact ? "max-w-9 px-2" : "max-w-[196px]")
     : "h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
 
   // Find the display name for the current selection
@@ -86,7 +88,7 @@ export function ModelSelector({
           <SettingsIcon
             className={isComposer ? composerSelectorIconClassName : "h-3.5 w-3.5"}
           />
-          <span className="hidden sm:inline">{t("configure")}</span>
+          <span className={cn(compact ? "sr-only" : "hidden sm:inline")}>{t("configure")}</span>
         </Link>
       </Button>
     )
@@ -116,13 +118,16 @@ export function ModelSelector({
               size={13}
             />
           )}
-          <span className="hidden truncate sm:inline">{displayLabel}</span>
+          <span className={cn("truncate", compact ? "sr-only" : "hidden sm:inline")}>
+            {displayLabel}
+          </span>
           <ChevronDown
-            className={
+            className={cn(
               isComposer
                 ? composerSelectorChevronClassName
-                : "h-3 w-3 shrink-0 opacity-50"
-            }
+                : "h-3 w-3 shrink-0 opacity-50",
+              compact && "hidden",
+            )}
           />
         </Button>
       </PopoverTrigger>

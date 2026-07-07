@@ -338,21 +338,21 @@ describe("AgentComposer", () => {
       name: "Current execution target: local",
     })
     expect(locationChip).toHaveAttribute("data-composer-chip", "true")
-    expect(locationChip).toHaveClass("h-8", "rounded-[7px]", "bg-[#fafaf7]")
+    expect(locationChip).toHaveClass("h-8", "rounded-[7px]", "bg-muted/35")
 
     const permissionChip = screen.getByRole("button", { name: "Permission mode" })
     expect(permissionChip).toHaveAttribute("data-composer-chip", "true")
-    expect(permissionChip).toHaveClass("h-8", "rounded-[7px]", "bg-[#fafaf7]")
+    expect(permissionChip).toHaveClass("h-8", "rounded-[7px]", "bg-muted/35")
 
     const modeChip = screen.getByTestId("agent-mode-chip")
     expect(modeChip).toHaveAttribute("data-composer-chip", "true")
     expect(modeChip).toHaveAttribute("data-mode", "plan")
-    expect(modeChip).toHaveClass("h-8", "rounded-[7px]", "bg-[#fafaf7]")
+    expect(modeChip).toHaveClass("h-8", "rounded-[7px]", "bg-muted/35")
     expect(screen.getByTestId("agent-mode-chip-marker")).toHaveClass("bg-[#c0a8dd]")
 
     const modelChip = screen.getByRole("combobox", { name: "GPT-4o mini" })
     expect(modelChip).toHaveAttribute("data-composer-chip", "true")
-    expect(modelChip).toHaveClass("h-8", "rounded-[7px]", "bg-[#fafaf7]")
+    expect(modelChip).toHaveClass("h-8", "rounded-[7px]", "bg-muted/35")
 
     const sendButton = screen.getByRole("button", { name: "Send message" })
     expect(sendButton).toHaveClass("bg-primary")
@@ -398,8 +398,9 @@ describe("AgentComposer", () => {
       "max-w-9",
     )
     const modeChipShell = screen.getByTestId("agent-mode-chip-shell")
-    expect(modeChipShell).toHaveClass("hidden")
-    expect(modeChipShell).not.toHaveClass("sm:inline-flex")
+    expect(modeChipShell).toHaveClass("hidden", "sm:inline-flex")
+    expect(screen.getByRole("button", { name: "Agent mode" })).toHaveClass("max-w-9")
+    expect(screen.getByRole("link", { name: "Configure providers" })).toHaveClass("max-w-9")
   })
 
   it("shows cumulative token usage with accessible details", async () => {

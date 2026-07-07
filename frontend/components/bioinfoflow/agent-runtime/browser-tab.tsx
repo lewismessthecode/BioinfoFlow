@@ -70,12 +70,13 @@ export function BrowserTab({
       <div className="flex items-center gap-1.5">
         <input
           value={input}
+          aria-label={t("browser.urlPlaceholder")}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") go()
           }}
           placeholder={t("browser.urlPlaceholder")}
-          className="min-w-0 flex-1 rounded-[8px] border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground outline-none focus:border-border"
+          className="min-w-0 flex-1 rounded-[8px] border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground outline-none focus-visible:border-foreground/25 focus-visible:ring-2 focus-visible:ring-ring/30"
         />
         <Button
           type="button"

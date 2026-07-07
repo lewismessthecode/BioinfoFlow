@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  type CSSProperties,
   type KeyboardEvent,
   useMemo,
   useRef,
@@ -85,6 +86,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const mobileSidecarDialogRef = useRef<HTMLDivElement>(null)
     const mobileSidecarRestoreFocusRef = useRef<HTMLElement | null>(null)
+    const composerShellRef = useRef<HTMLDivElement>(null)
     const isMobile = useIsMobile()
     const [input, setInput] = useState("")
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
@@ -104,6 +106,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
     const [activeSidecarTab, setActiveSidecarTab] = useState<AgentTabbedPanelTab>("preview")
+    const [composerBottomSpace, setComposerBottomSpace] = useState(176)
     const [browserInput, setBrowserInput] = useState("")
     const [browserSrc, setBrowserSrc] = useState("")
     const [artifactState, setArtifactState] = useState<{
@@ -211,6 +214,24 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     // The side panel is now secondary detail. Approvals surface inline and above
     // the composer, so pending decisions no longer force the drawer open.
     const desktopSidecarVisible = sidecarOpen && !isMobile
+
+    useEffect(() => {
+      if (!hasConversation) return
+      const shell = composerShellRef.current
+      if (!shell) return
+
+      const updateBottomSpace = () => {
+        const next = Math.max(160, Math.ceil(shell.getBoundingClientRect().height + 24))
+        setComposerBottomSpace((current) => (Math.abs(current - next) > 1 ? next : current))
+      }
+
+      updateBottomSpace()
+      if (typeof ResizeObserver === "undefined") return
+
+      const resizeObserver = new ResizeObserver(updateBottomSpace)
+      resizeObserver.observe(shell)
+      return () => resizeObserver.disconnect()
+    }, [hasConversation])
     const mobileSidecarVisible = sidecarOpen && isMobile
     const sidecarLabel = desktopSidecarVisible || mobileSidecarVisible
       ? t("sidecar.collapse")
@@ -705,6 +726,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         <main
           className="relative flex min-w-0 flex-1 flex-col overflow-hidden transition-[padding,width] duration-300 ease-out"
           data-testid="agent-workbench-main"
+          style={
+            hasConversation
+              ? ({
+                  "--agent-composer-bottom-space": `${composerBottomSpace}px`,
+                } as CSSProperties)
+              : undefined
+          }
         >
           {hasConversation ? (
             <>
@@ -716,6 +744,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 eventWindowLimited={eventWindowLimited}
               />
               <div
+                ref={composerShellRef}
                 className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-4 pt-10 sm:px-6"
                 data-testid="agent-composer-shell"
                 data-placement="bottom"
