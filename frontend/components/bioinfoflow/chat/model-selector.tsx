@@ -48,10 +48,10 @@ export function ModelSelector({
   const [open, setOpen] = useState(false)
   const isComposer = variant === "composer"
   const triggerClassName = isComposer
-    ? cn(composerSelectorChipClassName, compact ? "max-w-9 px-2" : "max-w-[196px]")
+    ? cn(composerSelectorChipClassName, compact ? "max-w-9 px-2" : "max-w-[168px]")
     : "h-9 max-w-[196px] gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
   const configureClassName = isComposer
-    ? cn(composerSelectorChipClassName, compact ? "max-w-9 px-2" : "max-w-[196px]")
+    ? cn(composerSelectorChipClassName, compact ? "max-w-9 px-2" : "max-w-[168px]")
     : "h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
 
   // Find the display name for the current selection
@@ -135,14 +135,14 @@ export function ModelSelector({
         align="start"
         side="top"
         className={cn(
-          "w-[280px] overflow-hidden p-0",
+          isComposer ? "w-[244px] overflow-hidden" : "w-[280px] overflow-hidden p-0",
           isComposer
             ? composerSelectorMenuClassName
             : "rounded-xl border border-border/70 bg-background/96 shadow-[0_14px_34px_rgba(15,15,15,0.06)]",
         )}
       >
         <Command>
-          <CommandInput placeholder={t("searchModels")} className="h-9" />
+          <CommandInput placeholder={t("searchModels")} className={isComposer ? "h-7 text-[12px]" : "h-9"} />
           <CommandList>
             <CommandEmpty>{t("noProviders")}</CommandEmpty>
             {allowAuto ? (
@@ -150,18 +150,21 @@ export function ModelSelector({
                 <CommandGroup heading={t("section")}>
                   <CommandItem
                     value={t("auto")}
-                      onSelect={() => {
-                        onSelectModel(null)
-                        setOpen(false)
-                      }}
-                    className="flex items-center justify-between px-3 py-2"
+                    onSelect={() => {
+                      onSelectModel(null)
+                      setOpen(false)
+                    }}
+                    className={cn(
+                      "flex items-center justify-between",
+                      isComposer ? "min-h-7 px-2 py-1.5 text-xs" : "px-3 py-2",
+                    )}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <SettingsIcon className="h-3.5 w-3.5 opacity-60" />
-                      <span className="text-sm">{t("auto")}</span>
+                    <div className={cn("flex items-center", isComposer ? "gap-2" : "gap-2.5")}>
+                      <SettingsIcon className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "opacity-60")} />
+                      <span className={isComposer ? "text-xs" : "text-sm"}>{t("auto")}</span>
                     </div>
                     {selectedModel === null ? (
-                      <Check className="h-3.5 w-3.5 text-primary" />
+                      <Check className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "text-primary")} />
                     ) : null}
                   </CommandItem>
                 </CommandGroup>
@@ -186,22 +189,25 @@ export function ModelSelector({
                         })
                         setOpen(false)
                       }}
-                      className="flex items-center justify-between px-3 py-2"
+                      className={cn(
+                        "flex items-center justify-between",
+                        isComposer ? "min-h-7 px-2 py-1.5 text-xs" : "px-3 py-2",
+                      )}
                     >
-                      <div className="flex items-center gap-2.5">
+                      <div className={cn("flex items-center", isComposer ? "gap-2" : "gap-2.5")}>
                         <ProviderIcon
                           provider={providerGroup.provider}
                           providerLabel={providerGroup.label}
                           baseUrl={providerGroup.base_url}
                           modelId={model.id}
                           modelName={model.name}
-                          size={14}
+                          size={isComposer ? 13 : 14}
                         />
-                        <span className="text-sm">{model.name}</span>
+                        <span className={isComposer ? "text-xs" : "text-sm"}>{model.name}</span>
                       </div>
                       {selectedModel?.provider === providerGroup.provider &&
                       selectedModel?.model === model.id && (
-                        <Check className="h-3.5 w-3.5 text-primary" />
+                        <Check className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "text-primary")} />
                       )}
                     </CommandItem>
                   ))}
@@ -215,9 +221,9 @@ export function ModelSelector({
                   setOpen(false)
                   window.location.href = "/settings?section=providers"
                 }}
-                className="px-3 py-2"
+                className={cn(isComposer ? "px-2 py-1.5" : "px-3 py-2")}
               >
-                <SettingsIcon className="h-3.5 w-3.5 mr-2 opacity-50" />
+                <SettingsIcon className={cn(isComposer ? "h-3 w-3" : "h-3.5 w-3.5", "mr-2 opacity-50")} />
                 <span className="text-xs text-muted-foreground">
                   {t("configure")}
                 </span>

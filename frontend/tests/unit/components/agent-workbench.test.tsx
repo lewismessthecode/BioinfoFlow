@@ -312,7 +312,7 @@ describe("AgentWorkbench", () => {
     )
   })
 
-  it("shows the active project context in the centered composer", () => {
+  it("keeps active project context out of the centered composer", () => {
     workspaceProjectsMock = [
       {
         id: "project-1",
@@ -327,7 +327,7 @@ describe("AgentWorkbench", () => {
       "data-presentation",
       "center",
     )
-    expect(screen.getByText("Mitochondrial variant review")).toBeInTheDocument()
+    expect(screen.queryByText("Mitochondrial variant review")).not.toBeInTheDocument()
   })
 
   it("registers the runtime sidecar toggle with the navbar action group", () => {

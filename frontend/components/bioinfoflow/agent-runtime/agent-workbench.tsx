@@ -115,10 +115,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     } | null>(null)
     const workspaceShell = useOptionalWorkspaceShell()
     const setNavbarActions = workspaceShell?.setNavbarActions
-    const activeProjectName = useMemo(() => {
-      if (!projectId) return null
-      return workspaceShell?.projects.find((project) => project.id === projectId)?.name ?? null
-    }, [projectId, workspaceShell?.projects])
     const { models, selectedModel, isLoading: modelsLoading, setSelectedModel } =
       useLlmSettings()
     const {
@@ -717,7 +713,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onRemoteConnectionChange={handleRemoteConnectionChange}
         compactControls={desktopSidecarVisible}
         presentation={hasConversation ? "dock" : "center"}
-        contextTitle={!hasConversation ? activeProjectName : null}
+        contextTitle={null}
       />
     )
 
@@ -757,8 +753,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             </>
           ) : (
             <div className="agent-halo-surface flex min-h-0 flex-1 items-center justify-center px-4">
-              <div className="agent-center-stage w-full max-w-[46rem] -translate-y-8">
-                <h1 className="mb-5 text-center text-[15px] font-medium tracking-normal text-muted-foreground">
+              <div className="agent-center-stage w-full max-w-[42rem] -translate-y-8">
+                <h1 className="mb-4 text-center text-[15px] font-medium tracking-normal text-muted-foreground">
                   {t("welcomeTitle")}
                 </h1>
                 <div data-testid="agent-composer-shell" data-placement="center">
