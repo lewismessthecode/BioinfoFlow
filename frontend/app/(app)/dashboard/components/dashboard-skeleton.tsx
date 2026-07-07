@@ -6,7 +6,7 @@ import { CardContent, CardRoot } from "@/components/bioinfoflow/card"
 function StatCardSkeleton() {
   return (
     <CardRoot variant="workbench" className="h-full">
-      <CardContent className="flex min-h-[7rem] flex-col justify-between gap-4 !p-5">
+      <CardContent className="flex min-h-[6.75rem] flex-col justify-between gap-3 !p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 space-y-3">
             <Skeleton className="h-4 w-20" />
@@ -59,7 +59,7 @@ function SystemStatusSkeleton() {
         </div>
       </div>
       <CardContent className="!pt-0">
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2">
           <div className="space-y-2">
             <Skeleton className="h-4 w-28" />
             <Skeleton className="h-4 w-full" />
@@ -83,7 +83,7 @@ function SchedulerSummarySkeleton() {
           <Skeleton className="h-7 w-7 rounded-md" />
         </div>
       </div>
-      <CardContent className="flex flex-col gap-5 !pt-0">
+      <CardContent className="flex flex-col gap-4 !pt-0">
         <div className="space-y-2">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-8 w-12" />
@@ -100,15 +100,15 @@ function SchedulerSummarySkeleton() {
 
 export function DashboardSkeleton() {
   return (
-    <div className="grid gap-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCardSkeleton />
         <StatCardSkeleton />
         <StatCardSkeleton />
         <StatCardSkeleton />
       </div>
 
-      <div className="grid items-stretch gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,0.75fr)]">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,0.75fr)]">
         <SystemStatusSkeleton />
         <SchedulerSummarySkeleton />
       </div>

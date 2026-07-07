@@ -88,8 +88,11 @@ export default function DashboardPage() {
           data-dashboard-surface="monitoring"
           className="bif-workbench-page__inner"
         >
-          <div className="mb-5 flex flex-col gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          <div className="mb-6 flex flex-col gap-2.5">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              {monitoringOverviewLabel}
+            </p>
+            <h1 className="text-2xl font-medium tracking-tight text-foreground">
               {greeting}
             </h1>
             <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -109,8 +112,11 @@ export default function DashboardPage() {
         data-dashboard-surface="monitoring"
         className="bif-workbench-page__inner"
       >
-        <div className="mb-5 flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+        <div className="mb-6 flex flex-col gap-2.5">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            {monitoringOverviewLabel}
+          </p>
+          <h1 className="text-2xl font-medium tracking-tight text-foreground">
             {greeting}
           </h1>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -128,7 +134,7 @@ export default function DashboardPage() {
           </Alert>
         )}
 
-        <div className="grid gap-3">
+        <div className="grid gap-4">
           <ReadinessCenter readiness={readiness} onRefresh={fetchData} />
 
           <StatCards stats={stats} />
@@ -136,8 +142,8 @@ export default function DashboardPage() {
           <div
             className={
               schedulerStatus
-                ? "grid items-stretch gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,0.75fr)]"
-                : "grid items-start gap-3"
+                ? "grid items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,0.75fr)]"
+                : "grid items-start gap-4"
             }
           >
             <div className="min-w-0 h-full">

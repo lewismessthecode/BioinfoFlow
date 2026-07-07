@@ -57,37 +57,33 @@ export function SystemStatus({ health, gpuInfo }: SystemStatusProps) {
         }
       />
       <CardContent className="!pt-0">
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2">
           <section className="min-w-0">
             <div className="flex items-center gap-2 text-foreground">
-              <Container className="size-3.5 text-muted-foreground" />
+              <Container className="size-3.5 text-muted-foreground/80" />
               <span className="text-sm font-medium">{tDashboard("dockerAvailable")}</span>
             </div>
-            <dl className="mt-3 grid gap-2 text-sm text-muted-foreground">
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                <dt className="truncate">{tDashboard("docker.badgePrefix")}</dt>
-                <dd className="flex items-center gap-1.5">
+            <dl className="mt-3 grid gap-2.5 text-sm">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border/70 pt-2.5">
+                <dt className="truncate text-muted-foreground">{tDashboard("docker.badgePrefix")}</dt>
+                <dd className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <span className={cn(
                     "size-1.5 rounded-full",
-                    health?.docker.available ? "bg-muted-foreground/65" : "bg-destructive",
+                    health?.docker.available ? "bg-muted-foreground/60" : "bg-destructive",
                   )} />
-                  <span className={cn("text-xs", health?.docker.available ? "text-muted-foreground" : "text-destructive")}>
-                    {health?.docker.available ? tDashboard("docker.available") : tDashboard("docker.notRunning")}
-                  </span>
+                  {health?.docker.available ? tDashboard("docker.available") : tDashboard("docker.notRunning")}
                 </dd>
               </div>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                <dt className="truncate">{tDashboard("docker.nvidiaRuntimePrefix")}</dt>
-                <dd className="flex items-center gap-1.5">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border/70 pt-2.5">
+                <dt className="truncate text-muted-foreground">{tDashboard("docker.nvidiaRuntimePrefix")}</dt>
+                <dd className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <span className={cn(
                     "size-1.5 rounded-full",
-                    health?.docker.nvidia_runtime || gpuInfo?.docker_nvidia_runtime ? "bg-muted-foreground/65" : "bg-muted-foreground/35",
+                    health?.docker.nvidia_runtime || gpuInfo?.docker_nvidia_runtime ? "bg-muted-foreground/60" : "bg-muted-foreground/30",
                   )} />
-                  <span className="text-xs text-muted-foreground">
-                    {health?.docker.nvidia_runtime || gpuInfo?.docker_nvidia_runtime
-                      ? tDashboard("docker.available")
-                      : tDashboard("docker.notFound")}
-                  </span>
+                  {health?.docker.nvidia_runtime || gpuInfo?.docker_nvidia_runtime
+                    ? tDashboard("docker.available")
+                    : tDashboard("docker.notFound")}
                 </dd>
               </div>
             </dl>
@@ -96,7 +92,7 @@ export function SystemStatus({ health, gpuInfo }: SystemStatusProps) {
           <section className="min-w-0">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-foreground">
-                <Cpu className="size-3.5 text-muted-foreground" />
+                <Cpu className="size-3.5 text-muted-foreground/80" />
                 <span className="text-sm font-medium">{tDashboard("gpuStatus")}</span>
               </div>
               {gpuInfo?.parabricks_compatible || nvidiaSignal ? (
@@ -107,33 +103,29 @@ export function SystemStatus({ health, gpuInfo }: SystemStatusProps) {
                 </StatusBadge>
               ) : null}
             </div>
-            <div className="mt-3 grid gap-2 text-sm text-muted-foreground">
-              {gpuRows.length > 0 ? (
-                gpuRows.map((gpu) => (
-                  <div key={gpu.index} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                    <span className="truncate">{gpu.name}</span>
-                    <span className="flex shrink-0 items-center gap-1.5">
-                      <span className="size-1.5 rounded-full bg-muted-foreground/65" />
-                      <span className="text-xs">{Math.round(gpu.memory_total_mb / 1024)}GB</span>
-                    </span>
-                  </div>
-                ))
-              ) : null}
+            <div className="mt-3 grid gap-2.5 text-sm">
+              {gpuRows.map((gpu) => (
+                <div key={gpu.index} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border/70 pt-2.5">
+                  <span className="truncate text-muted-foreground">{gpu.name}</span>
+                  <span className="font-mono text-xs text-foreground tabular-nums">
+                    {Math.round(gpu.memory_total_mb / 1024)}GB
+                  </span>
+                </div>
+              ))}
 
               {gpuInfo?.parabricks_compatible ? (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5 border-t border-border/70 pt-2.5 text-xs text-muted-foreground">
                   <CheckCircle2 className="size-3" aria-hidden="true" />
                   <span>{tDashboard("parabricksCompatible")}</span>
                 </div>
               ) : null}
 
               {showNoGpu ? (
-                <div className="flex items-center gap-1.5 text-xs">
+                <div className="flex items-center gap-1.5 border-t border-border/70 pt-2.5 text-xs text-muted-foreground">
                   <HardDrive className="size-3" aria-hidden="true" />
                   <span>{tDashboard("noGpuDetected")}</span>
                 </div>
               ) : null}
-
             </div>
           </section>
         </div>

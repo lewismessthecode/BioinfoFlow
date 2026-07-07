@@ -13,15 +13,15 @@
 }
 
 .bif-workbench-card {
-  border-radius: 0.5rem;
-  border-color: color-mix(in srgb, var(--border) 76%, transparent);
-  background: color-mix(in srgb, var(--card) 94%, var(--surface-subtle) 6%);
+  border-radius: 0.625rem;
+  border-color: var(--border);
+  background: var(--card);
   box-shadow: none;
 }
 
 .dark .bif-workbench-card {
-  border-color: color-mix(in srgb, var(--border-hover) 48%, var(--border) 52%);
-  background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg-surface) 8%);
+  border-color: color-mix(in srgb, var(--border-hover) 42%, var(--border) 58%);
+  background: var(--bg-elevated);
   box-shadow: none;
 }
 
