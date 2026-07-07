@@ -265,7 +265,8 @@ describe("ImageCardsGrid", () => {
 
     const title = screen.getByRole("heading", { name: longName })
     expect(title.className).toContain("min-w-0")
-    expect(title.className).toContain("line-clamp-2")
+    expect(title.className).toContain("truncate")
+    expect(title.className).not.toContain("line-clamp-2")
     expect(title.closest(".min-w-0.flex-1")).not.toBeNull()
     expect(screen.getByRole("button", { name: "actions.versionActions" }).className).toContain("shrink-0")
   })

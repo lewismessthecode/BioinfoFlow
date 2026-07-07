@@ -11,6 +11,7 @@ import {
   Package2,
   MoreHorizontal,
   Copy,
+  Clock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -32,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table"
 import { BrowseCard } from "@/components/bioinfoflow/card/browse-card"
 import { cn } from "@/lib/utils"
-import { formatSize } from "@/lib/format-utils"
+import { formatDate, formatSize } from "@/lib/format-utils"
 import { canDeleteDockerImage } from "@/lib/docker-image-utils"
 import type { DockerImage, ImageStatus } from "@/lib/types"
 
@@ -177,7 +178,7 @@ export function ImageCardsGrid({
   const groups = buildImageRepositoryGroups(images)
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {groups.map((group) => (
         <ImageRepositoryCard
           key={group.key}
@@ -229,6 +230,7 @@ function ImageRepositoryCard({
     [group.images, group.primaryImage, selectedImageId],
   )
   const hasMultipleVersions = group.images.length > 1
+  const updatedLabel = formatDate(image.updated_at)
   const isSelected = selectedImageIds?.has(image.id) ?? false
   const canSelect = selectionMode && image.status === "local" && Boolean(onToggleSelection)
   const handleVersionChange = (nextImageId: string) => {
@@ -243,9 +245,8 @@ function ImageRepositoryCard({
       <BrowseCard
         title={group.label}
         icon={Package2}
-        iconVariant="artifact"
         titleAs="h2"
-        titleClassName="line-clamp-2 break-all"
+        titleClassName="truncate"
         titleWrapper={(children) => (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -290,27 +291,39 @@ function ImageRepositoryCard({
               onCopyName={onCopyName}
               onCopyPullCommand={onCopyPullCommand}
               onDeleteLocal={onDeleteLocal}
-              triggerClassName="h-7 w-7 shrink-0 opacity-100"
+              triggerClassName="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
               ariaLabel={tImages("actions.versionActions", { tag: image.tag })}
             />
           </div>
         }
-        className="rounded-2xl border-border/60 bg-card/90 py-0 shadow-none hover:border-border hover:shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
-        contentClassName="p-4"
         metadata={
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="rounded-md border border-border/60 bg-muted/25 px-2 py-1 font-mono text-[11px] leading-none text-muted-foreground">
-              {image.registry || "local"}
-            </span>
+          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5">
+            <Badge variant="outline" className="metadata-pill max-w-[10rem] text-xs-tight font-mono">
+              <span className="truncate">{image.registry || "local"}</span>
+            </Badge>
             <ImageStatusBadge image={image} tImages={tImages} />
+          </div>
+        }
+        footerMeta={
+          <div className="mt-3 flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1 font-medium text-foreground/80">
+              <HardDrive className="h-3 w-3 shrink-0" />
+              <span className="truncate">{formatSize(image.size_bytes)}</span>
+            </span>
+            {updatedLabel !== "-" ? (
+              <span className="flex min-w-0 items-center justify-end gap-1 text-right">
+                <Clock className="h-3 w-3 shrink-0" />
+                <span className="truncate">{updatedLabel}</span>
+              </span>
+            ) : null}
           </div>
         }
         actionColumns={1}
         actions={
           <Button
-            className="w-full min-w-0 rounded-lg"
+            className="w-full min-w-0"
             size="sm"
-            variant={image.status === "local" ? "outline" : "default"}
+            variant="outline"
             disabled={image.status === "pulling"}
             onClick={() => onPull(image)}
           >
@@ -325,40 +338,31 @@ function ImageRepositoryCard({
           </Button>
         }
       >
-        <div className="mt-3 rounded-xl border border-border/55 bg-muted/15 p-3">
-          <div className="flex items-center gap-2">
-            {hasMultipleVersions ? (
-              <Select value={image.id} onValueChange={handleVersionChange}>
-                <SelectTrigger
-                  className="h-8 min-w-0 flex-1 rounded-lg bg-background text-xs"
-                  aria-label={tImages("table.version")}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {group.images.map((version) => (
-                    <SelectItem key={version.id} value={version.id}>
-                      {version.tag}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <span className="min-w-0 max-w-[65%] truncate rounded-lg bg-background px-2.5 py-1.5 font-mono text-xs-tight text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
-                {image.tag}
-              </span>
-            )}
-            <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs-tight font-medium text-muted-foreground">
-              {tImages("card.versionCount", { count: group.images.length })}
-            </span>
-          </div>
-          <div className="mt-3 flex items-center justify-between border-t border-border/45 pt-2.5 text-xs text-muted-foreground">
-            <span>{tImages("table.size")}</span>
-            <span className="flex items-center gap-1 font-medium text-foreground/80">
-              <HardDrive className="h-3 w-3" />
-              {formatSize(image.size_bytes)}
-            </span>
-          </div>
+        <div className="mt-3 flex min-w-0 items-center gap-2">
+          {hasMultipleVersions ? (
+            <Select value={image.id} onValueChange={handleVersionChange}>
+              <SelectTrigger
+                className="h-8 min-w-0 max-w-[calc(100%-6.5rem)] rounded-full bg-background text-xs font-mono sm:w-[150px]"
+                aria-label={tImages("table.version")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {group.images.map((version) => (
+                  <SelectItem key={version.id} value={version.id}>
+                    {version.tag}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge variant="outline" className="metadata-pill metadata-pill--version h-8 min-w-0 max-w-[calc(100%-6.5rem)] justify-start rounded-full px-3 text-xs-tight font-mono sm:max-w-[150px]">
+              <span className="truncate">{image.tag}</span>
+            </Badge>
+          )}
+          <Badge variant="secondary" className="h-8 shrink-0 rounded-full px-2.5 text-xs-tight">
+            {tImages("card.versionCount", { count: group.images.length })}
+          </Badge>
         </div>
       </BrowseCard>
     </article>
