@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
-import { PanelLeftClose, PanelLeftOpen, Search, SquarePen } from "lucide-react"
+import { ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, Search, SquarePen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
@@ -34,6 +34,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
   const { activeProjectId, activeConversationId } = useProjectContext()
   const tSidebar = useTranslations("sidebar")
   const tCommon = useTranslations("common")
+  const [workspaceExpanded, setWorkspaceExpanded] = useState(true)
   const [deleteConfirm, setDeleteConfirm] = useState<{
     type: "project" | "conversation"
     id: string
@@ -184,47 +185,84 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
         <SidebarNav collapsed={collapsed} />
       </div>
 
-      {/* Divider + Section Label */}
-      {!collapsed && (
-        <div className="px-4 pb-1 pt-4">
-          <span className="block px-0 text-[12px] font-medium text-sidebar-foreground/68">
-            {tSidebar("workspace")}
-          </span>
+      {!collapsed ? (
+        <div className="px-2.5 pb-1 pt-3">
+          <div className="group/workspace flex h-7 items-center justify-between gap-1 rounded-[7px] px-1">
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] font-medium text-sidebar-foreground/62 transition-colors hover:text-sidebar-foreground/82"
+              onClick={() => setWorkspaceExpanded((expanded) => !expanded)}
+              aria-expanded={workspaceExpanded}
+              aria-controls="sidebar-workspace-tree"
+            >
+              <ChevronRight
+                className={cn(
+                  "h-3 w-3 shrink-0 transition-transform duration-150",
+                  workspaceExpanded && "rotate-90",
+                )}
+              />
+              <span className="truncate">{tSidebar("workspace")}</span>
+            </button>
+            <div className="flex shrink-0 items-center gap-0.5 text-sidebar-foreground/54 opacity-80 transition-opacity group-hover/workspace:opacity-100">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-[6px] text-sidebar-foreground/58 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
+                onClick={onCommandOpen}
+                aria-label={tSidebar("search")}
+              >
+                <Search className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-[6px] text-sidebar-foreground/58 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
+                onClick={workspaceShell.openCreateProjectDialog}
+                aria-label={tSidebar("newProject")}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
         </div>
-      )}
-      {collapsed && (
+      ) : (
         <div className="px-4 py-1.5">
           <div className="border-t border-border/35" />
         </div>
       )}
 
       {/* Workspace */}
-      <div className={cn("min-h-0 flex-1 overflow-y-auto px-2.5 pb-1.5 pt-0.5", collapsed && "px-2")}>
-        <ProjectList
-          projects={workspaceShell.projects}
-          inboxConversations={workspaceShell.inboxConversations}
-          defaultProjectId={workspaceShell.defaultProject?.id}
-          expandedProjects={workspaceShell.expandedProjects}
-          projectConversations={workspaceShell.projectConversations}
-          loadingProjects={workspaceShell.loadingProjects}
-          collapsed={collapsed}
-          activeProjectId={activeProjectId}
-          activeConversationId={activeConversationId}
-          onToggleExpand={workspaceShell.toggleProjectExpanded}
-          onSelectProject={workspaceShell.handleSelectProject}
-          onSelectConversation={workspaceShell.handleSelectConversation}
-          onMoveConversation={workspaceShell.handleMoveConversation}
-          onCreateConversation={workspaceShell.handleCreateConversation}
-          onRenameConversation={workspaceShell.handleRenameConversation}
-          onDeleteConversation={handleDeleteConversation}
-          onRenameProject={workspaceShell.handleRenameProject}
-          onDuplicateProject={workspaceShell.handleDuplicateProject}
-          onDeleteProject={handleDeleteProject}
-          canDeleteWorkspaceResources={canDeleteWorkspaceResources}
-          onOpenCreateDialog={workspaceShell.openCreateProjectDialog}
-          tSidebar={tSidebar}
-          tCommon={tCommon}
-        />
+      <div
+        id="sidebar-workspace-tree"
+        className={cn("min-h-0 flex-1 overflow-y-auto px-2.5 pb-1.5 pt-0.5", collapsed && "px-2")}
+      >
+        {collapsed || workspaceExpanded ? (
+          <ProjectList
+            projects={workspaceShell.projects}
+            inboxConversations={workspaceShell.inboxConversations}
+            defaultProjectId={workspaceShell.defaultProject?.id}
+            expandedProjects={workspaceShell.expandedProjects}
+            projectConversations={workspaceShell.projectConversations}
+            loadingProjects={workspaceShell.loadingProjects}
+            collapsed={collapsed}
+            activeProjectId={activeProjectId}
+            activeConversationId={activeConversationId}
+            onToggleExpand={workspaceShell.toggleProjectExpanded}
+            onSelectProject={workspaceShell.handleSelectProject}
+            onSelectConversation={workspaceShell.handleSelectConversation}
+            onMoveConversation={workspaceShell.handleMoveConversation}
+            onCreateConversation={workspaceShell.handleCreateConversation}
+            onRenameConversation={workspaceShell.handleRenameConversation}
+            onDeleteConversation={handleDeleteConversation}
+            onRenameProject={workspaceShell.handleRenameProject}
+            onDuplicateProject={workspaceShell.handleDuplicateProject}
+            onDeleteProject={handleDeleteProject}
+            canDeleteWorkspaceResources={canDeleteWorkspaceResources}
+            onOpenCreateDialog={workspaceShell.openCreateProjectDialog}
+            tSidebar={tSidebar}
+            tCommon={tCommon}
+          />
+        ) : null}
 
         <CreateProjectDialog
           collapsed={collapsed}

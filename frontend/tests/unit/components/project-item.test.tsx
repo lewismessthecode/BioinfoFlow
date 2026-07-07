@@ -99,4 +99,38 @@ describe("ProjectItem", () => {
     expect(projectHeader?.className).not.toContain("text-[13px]")
     expect(projectHeader?.className).not.toContain("py-1.5")
   })
+
+  it("keeps empty expanded projects free of explanatory rows", () => {
+    render(
+      <ProjectItem
+        project={{ id: "demo-project", name: "Demo", project_root: "asset://project" }}
+        isActive={false}
+        isExpanded
+        collapsed={false}
+        conversations={[]}
+        isLoadingConversations={false}
+        activeConversationId=""
+        onToggleExpand={noop}
+        onSelectProject={noop}
+        onSelectConversation={noop}
+        onConversationDragStart={noop}
+        onConversationDragEnd={noop}
+        onConversationDrop={noop}
+        onConversationDragOver={noop}
+        onConversationDragLeave={noop}
+        onCreateConversation={noop}
+        onRenameConversation={noop}
+        onTogglePin={noop}
+        onDeleteConversation={noop}
+        onRenameProject={noop}
+        onDuplicateProject={noop}
+        onDeleteProject={noop}
+        tSidebar={(key) => key}
+        tCommon={(key) => key}
+      />,
+    )
+
+    expect(screen.queryByText("noConversations")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "newConversation" })).toBeInTheDocument()
+  })
 })

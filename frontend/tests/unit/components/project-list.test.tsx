@@ -159,7 +159,7 @@ describe("ProjectList", () => {
     )
   })
 
-  it("keeps the recent section unframed like a list group", () => {
+  it("keeps the recent drop target invisible when there are no inbox conversations", () => {
     render(
       <ProjectList
         projects={[{ id: "project-demo", name: "Demo", project_root: "asset://project" }]}
@@ -191,10 +191,11 @@ describe("ProjectList", () => {
     const recentSection = screen.getByTestId("sidebar-recent-section")
     expect(recentSection.className).not.toContain("rounded-[10px]")
     expect(recentSection.className).not.toContain("px-1")
-    expect(recentSection.className).toContain("py-0.5")
+    expect(recentSection.className).toContain("h-0")
+    expect(recentSection.className).toContain("overflow-hidden")
   })
 
-  it("renders the empty project state as inline copy without a dashed card", () => {
+  it("omits empty project explanatory copy", () => {
     render(
       <ProjectList
         projects={[]}
@@ -223,16 +224,12 @@ describe("ProjectList", () => {
       />,
     )
 
-    const emptyTitle = screen.getByText("noProjects")
-    const emptyState = emptyTitle.closest("div")
-
-    expect(emptyTitle.className).toContain("text-[12px]")
-    expect(emptyState?.className).not.toContain("border")
-    expect(emptyState?.className).not.toContain("dashed")
-    expect(emptyState?.className).not.toContain("bg-sidebar-accent/35")
+    expect(screen.queryByText("noProjects")).not.toBeInTheDocument()
+    expect(screen.queryByText("noProjectsDescription")).not.toBeInTheDocument()
+    expect(screen.queryByText("noConversations")).not.toBeInTheDocument()
   })
 
-  it("renders the new project action as a compact list row", () => {
+  it("leaves project creation to the workspace header in expanded mode", () => {
     render(
       <ProjectList
         projects={[{ id: "project-demo", name: "Demo", project_root: "asset://project" }]}
@@ -261,12 +258,6 @@ describe("ProjectList", () => {
       />,
     )
 
-    const newProjectButton = screen.getByRole("button", { name: "newProject" })
-
-    expect(newProjectButton.className).toContain("h-[28px]")
-    expect(newProjectButton.className).toContain("px-2.5")
-    expect(newProjectButton.className).toContain("text-[12px]")
-    expect(newProjectButton.className).not.toContain("px-4")
-    expect(newProjectButton.className).not.toContain("text-sm")
+    expect(screen.queryByRole("button", { name: "newProject" })).not.toBeInTheDocument()
   })
 })

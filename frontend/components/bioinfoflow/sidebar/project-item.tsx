@@ -152,12 +152,21 @@ export function ProjectItem({
             </span>
           ) : null}
         </button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5 shrink-0 rounded-[5px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100"
+          aria-label={tSidebar("newConversation")}
+          onClick={() => onCreateConversation(project.id)}
+        >
+          <Plus className="h-3 w-3" />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 shrink-0 rounded-[6px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100"
+              className="h-5 w-5 shrink-0 rounded-[5px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100"
               aria-label={tCommon("actions")}
             >
               <MoreVertical className="h-3 w-3" />
@@ -193,15 +202,11 @@ export function ProjectItem({
       </div>
 
       {/* Expanded Conversations */}
-      {isExpanded && (
+      {isExpanded && (isLoadingConversations || conversations.length > 0) ? (
         <div className="ml-4 mt-1 space-y-0.5 border-l border-border/35 pb-1 pl-2">
           {isLoadingConversations ? (
             <div className="px-2 py-1 text-[11px] text-muted-foreground">
               {tCommon("loading")}
-            </div>
-          ) : conversations.length === 0 ? (
-            <div className="px-2 py-1 text-[11px] text-muted-foreground">
-              {tSidebar("noConversations")}
             </div>
           ) : (
             conversations.map((conversation, index) => (
@@ -222,15 +227,8 @@ export function ProjectItem({
               />
             ))
           )}
-          <button
-            onClick={() => onCreateConversation(project.id)}
-            className="flex h-[26px] w-full items-center gap-1.5 rounded-[7px] px-2 text-[11px] font-medium text-sidebar-foreground/78 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"
-          >
-            <Plus className="h-3 w-3" />
-            <span>{tSidebar("newConversation")}</span>
-          </button>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
