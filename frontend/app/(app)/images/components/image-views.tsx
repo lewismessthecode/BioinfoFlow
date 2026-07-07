@@ -33,6 +33,7 @@ import { DataTable, type DataTableColumn } from "@/components/ui/data-table"
 import { BrowseCard } from "@/components/bioinfoflow/card/browse-card"
 import { cn } from "@/lib/utils"
 import { formatSize } from "@/lib/format-utils"
+import { canDeleteDockerImage } from "@/lib/docker-image-utils"
 import type { DockerImage, ImageStatus } from "@/lib/types"
 
 type ImageRepositoryGroup = {
@@ -131,11 +132,11 @@ function ImageActionsMenu({
           <Download className="h-4 w-4 mr-2" />
           {tImages("actions.copyPullCommand")}
         </DropdownMenuItem>
-        {onDeleteLocal && image.status === "local" ? (
+        {onDeleteLocal && canDeleteDockerImage(image) ? (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive" onClick={() => onDeleteLocal(image)}>
-              {tImages("actions.deleteLocal")}
+              {tImages(image.status === "failed" ? "actions.deleteFailedRecord" : "actions.deleteLocal")}
             </DropdownMenuItem>
           </>
         ) : null}

@@ -18,3 +18,7 @@ export function getDockerImageReference(image: DockerImage) {
 export function getDockerPullCommand(image: DockerImage) {
   return `docker pull ${getDockerImageReference(image)}`
 }
+
+export function canDeleteDockerImage(image: DockerImage) {
+  return image.status === "local" || image.status === "failed"
+}

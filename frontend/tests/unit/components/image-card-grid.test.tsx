@@ -154,6 +154,35 @@ describe("ImageCardsGrid", () => {
     expect(screen.queryByRole("button", { name: "actions.deleteLocal" })).not.toBeInTheDocument()
   })
 
+  it("shows delete actions for failed versions", () => {
+    const onDeleteLocal = vi.fn()
+    const failedImage = {
+      ...image,
+      id: "img-failed",
+      tag: "1.0.0",
+      full_name: "minibwa:1.0.0",
+      name: "minibwa",
+      status: "failed" as const,
+    }
+
+    render(
+      <ImageCardsGrid
+        images={[failedImage]}
+        tImages={(key) => key}
+        tCommon={(key) => key}
+        onPull={vi.fn()}
+        onViewDetails={vi.fn()}
+        onCopyName={vi.fn()}
+        onCopyPullCommand={vi.fn()}
+        onDeleteLocal={onDeleteLocal}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.deleteFailedRecord" }))
+
+    expect(onDeleteLocal).toHaveBeenCalledWith(failedImage)
+  })
+
   it("clears the selected visible version when switching a selected multi-version card", () => {
     const onToggleSelection = vi.fn()
     const oneZero = {

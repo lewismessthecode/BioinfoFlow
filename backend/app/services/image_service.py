@@ -175,6 +175,9 @@ class ImageService:
                 "IMAGE_PULLING",
                 "Image pull is still in progress",
             )
+        if image.status == ImageStatus.FAILED.value:
+            await self.repo.delete(image)
+            return True
 
         usage = await self.docker.get_image_usage(image.full_name)
         if usage:

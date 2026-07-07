@@ -172,6 +172,35 @@ async def test_image_service_delete_image_rejects_pulling_state(db_session):
 
 
 @pytest.mark.asyncio
+async def test_image_service_delete_image_removes_failed_record_without_docker(
+    db_session, monkeypatch
+):
+    image = DockerImage(
+        name="bioinfoflow/bwa",
+        tag="v2.2.1",
+        full_name="bioinfoflow/bwa:v2.2.1",
+        status=ImageStatus.FAILED,
+        registry="docker.io",
+    )
+    db_session.add(image)
+    await db_session.commit()
+    image_id = str(image.id)
+
+    class FakeDockerService:
+        async def get_image_usage(self, full_name: str):
+            raise AssertionError("failed image deletion should not inspect Docker")
+
+    monkeypatch.setattr(image_service, "DockerService", FakeDockerService)
+
+    service = ImageService(db_session)
+
+    deleted = await service.delete_image(image)
+
+    assert deleted is True
+    assert await ImageRepository(db_session).get(image_id) is None
+
+
+@pytest.mark.asyncio
 async def test_image_service_delete_image_rejects_images_in_use(
     db_session, monkeypatch
 ):
