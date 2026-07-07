@@ -18,8 +18,8 @@ const STATUS_STYLES: Record<
   { number: string; pill: string }
 > = {
   healthy: {
-    number: "text-success",
-    pill: "bg-success-muted border-success-border text-success",
+    number: "text-foreground",
+    pill: "bg-muted border-border text-muted-foreground",
   },
   moderate: {
     number: "text-warning",
@@ -37,14 +37,14 @@ export function PressureHero({ pressure, factors }: PressureHeroProps) {
   const lit = Math.round(pressure.score / 10)
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div>
         <div className="text-sm font-medium text-muted-foreground">
           {t("pressure.label")}
         </div>
         <div className="mt-2 flex flex-wrap items-baseline gap-3">
           <span
-            className={`font-mono text-4xl font-medium tracking-tight transition-colors ${styles.number}`}
+            className={`font-mono text-3xl font-medium tracking-tight transition-colors ${styles.number}`}
           >
             {pressure.score}%
           </span>

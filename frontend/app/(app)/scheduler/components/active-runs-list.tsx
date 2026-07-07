@@ -62,16 +62,12 @@ export function ActiveRunsList({
             type="button"
             onClick={() => onToggleHighlight(r.run_id)}
             aria-pressed={active}
-            className={`grid w-full grid-cols-[8px_minmax(0,1fr)_64px] items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+            className={`grid w-full grid-cols-[minmax(0,1fr)_64px] items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
               active
-                ? "border-success-border bg-success-muted"
+                ? "border-foreground/20 bg-muted/45"
                 : "border-border/70 bg-card"
             }`}
           >
-            <span
-              className="h-2 w-2 rounded-full bg-success ring-[3px] ring-success-muted"
-              aria-hidden="true"
-            />
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium text-foreground">
                 {r.workflow_name ?? t("activeRuns.unknownWorkflow")}
@@ -81,7 +77,7 @@ export function ActiveRunsList({
               </span>
               <span className="mt-2 block h-1 rounded-full bg-muted">
                 <span
-                  className="block h-full rounded-full bg-success transition-[width] duration-300"
+                  className="block h-full rounded-full bg-muted-foreground/50 transition-[width] duration-300"
                   style={{ width: `${barPct}%` }}
                 />
               </span>

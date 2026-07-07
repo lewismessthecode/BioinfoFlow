@@ -1,9 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
-import type { ReactNode } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
-import { ChevronsRight, Database, MonitorSmartphone } from "lucide-react"
+import { ChevronsRight } from "lucide-react"
 import {
   CardContent,
   CardHeader,
@@ -15,10 +14,8 @@ import type {
   SchedulerStatus,
 } from "@/lib/types"
 import { useResourceStream } from "@/hooks/use-resource-stream"
-import { PrimaryChart } from "./primary-chart"
 import { PressureHero } from "./pressure-hero"
 import { ActiveRunsList } from "./active-runs-list"
-import { MiniMetric } from "./mini-metric"
 import { AdvancedDrawer } from "./advanced-drawer"
 import { computePressure } from "./scoring"
 
@@ -54,7 +51,7 @@ export function ResourceMonitor({
   schedulerStatus = null,
 }: ResourceMonitorProps) {
   const t = useTranslations("scheduler")
-  const { connectionState, frame, samples, events } = useResourceStream({
+  const { connectionState, frame, samples } = useResourceStream({
     maxSamples: 60,
   })
   const [highlightedRunId, setHighlightedRunId] = useState<string | null>(null)
@@ -83,31 +80,6 @@ export function ResourceMonitor({
     cores: current?.cpuCores ?? 0,
     queue: queueDepth,
   })
-
-  const timestamps = useMemo(() => samples.map((s) => s.t), [samples])
-  const cpuValues = useMemo(() => samples.map((s) => s.cpu), [samples])
-  const memValues = useMemo(() => samples.map((s) => s.memUsedGb), [samples])
-  const diskValues = useMemo(
-    () => samples.map((s) => s.diskUsedGb ?? 0),
-    [samples],
-  )
-  const gpuValues = useMemo(
-    () => samples.map((s) => Math.max(0, s.gpuCount > 0 ? s.gpuFreeGb : 0)),
-    [samples],
-  )
-
-  const diskMax =
-    samples.at(-1)?.diskTotalGb ?? Math.max(10, Math.max(...diskValues, 0))
-  const gpuMax = Math.max(
-    1,
-    samples.reduce((acc, s) => Math.max(acc, s.gpuFreeGb), 0) || 12,
-  )
-
-  const memThresholds: [number, number] =
-    memTotalGb > 0
-      ? [memTotalGb * 0.6, memTotalGb * 0.85]
-      : [19.2, 27.2]
-  const memMax = memTotalGb > 0 ? memTotalGb : 32
 
   const cpuCur = cpuPercent == null ? "—" : `${cpuPercent.toFixed(1)}%`
   const memCur =
@@ -141,13 +113,26 @@ export function ResourceMonitor({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <CardRoot className="lg:col-span-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <CardRoot variant="workbench">
           <CardHeader
             title={t("resources")}
             badge={<LiveStatus connectionState={connectionState} label={trustText} />}
+            action={
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
+                {t("advanced.button")}
+                <kbd className="ml-0.5 rounded border border-border bg-muted px-1.5 py-[1px] font-mono text-[10px] text-muted-foreground">
+                  t
+                </kbd>
+              </button>
+            }
           />
-          <CardContent className="p-5">
+          <CardContent className="grid gap-4 !pt-0">
             {capacityState === "ready" ? (
               <PressureHero
                 pressure={pressure}
@@ -156,87 +141,25 @@ export function ResourceMonitor({
             ) : (
               <CapacityNotice state={capacityState} />
             )}
-          </CardContent>
-        </CardRoot>
-
-        <CardRoot className="lg:col-span-7 lg:row-span-2">
-          <CardHeader
-            title={t("charts.trendsTitle")}
-            badge={
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                {t("legend.last60s")}
-              </span>
-            }
-            action={
-              <button
-                type="button"
-                onClick={() => setDrawerOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              >
-                <ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
-                {t("advanced.button")}
-                <kbd className="ml-1 rounded border border-border bg-muted px-1.5 py-[1px] font-mono text-[10px] text-muted-foreground">
-                  t
-                </kbd>
-              </button>
-            }
-          />
-          <CardContent className="space-y-5 p-5">
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <ChartPanel label={t("charts.cpuUtil")} value={cpuCur}>
-                <PrimaryChart
-                  timestamps={timestamps}
-                  values={cpuValues}
-                  thresholds={[60, 85]}
-                  maxScale={100}
-                  unit="%"
-                  events={events}
-                  className="h-full w-full"
-                />
-              </ChartPanel>
-              <ChartPanel label={t("charts.memory")} value={memCur}>
-                <PrimaryChart
-                  timestamps={timestamps}
-                  values={memValues}
-                  thresholds={memThresholds}
-                  maxScale={memMax}
-                  unit=" GB"
-                  events={events}
-                  className="h-full w-full"
-                />
-              </ChartPanel>
-            </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <MiniMetric
-                label={t("charts.diskIo")}
-                value={diskCur}
-                icon={<Database className="h-3.5 w-3.5" aria-hidden="true" />}
-                timestamps={timestamps}
-                values={diskValues}
-                maxScale={diskMax}
-              />
-              <MiniMetric
-                label={t("charts.gpuFree")}
-                value={gpuCur}
-                icon={<MonitorSmartphone className="h-3.5 w-3.5" aria-hidden="true" />}
-                timestamps={timestamps}
-                values={gpuValues}
-                maxScale={gpuMax}
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <SnapshotMetric label={t("charts.cpuUtil")} value={cpuCur} />
+              <SnapshotMetric label={t("charts.memory")} value={memCur} />
+              <SnapshotMetric label={t("charts.diskIo")} value={diskCur} />
+              <SnapshotMetric label={t("charts.gpuFree")} value={gpuCur} />
             </div>
           </CardContent>
         </CardRoot>
 
-        <CardRoot className="lg:col-span-5">
+        <CardRoot variant="workbench">
           <CardHeader
             title={t("activeRuns.title")}
             badge={
-              <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground">
+              <span className="rounded-lg border border-border bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground">
                 {t("activeRuns.count", { count: latestFrame?.active_runs.length ?? 0 })}
               </span>
             }
           />
-          <CardContent className="p-5">
+          <CardContent className="!pt-0">
             <ActiveRunsList
               runs={latestFrame?.active_runs ?? []}
               cpuPercent={cpuPercent}
@@ -249,19 +172,6 @@ export function ResourceMonitor({
             />
           </CardContent>
         </CardRoot>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-[11.5px] text-muted-foreground">
-        <div className="flex flex-wrap items-center gap-4">
-          <LegendBand tone="success" label={t("legend.safe")} />
-          <LegendBand tone="warning" label={t("legend.warn")} />
-          <LegendBand tone="destructive" label={t("legend.danger")} />
-          <LegendMarker tone="success" label={t("legend.dispatch")} />
-          <LegendMarker tone="muted" label={t("legend.complete")} />
-        </div>
-        <div className="font-mono text-muted-foreground/80">
-          {t("legend.window")}
-        </div>
       </div>
 
       <AdvancedDrawer open={drawerOpen} onOpenChange={setDrawerOpen} />
@@ -298,46 +208,13 @@ function CapacityNotice({ state }: { state: "pending" | "unavailable" }) {
   )
 }
 
-function ChartPanel({
-  label,
-  value,
-  children,
-}: {
-  label: string
-  value: string
-  children: ReactNode
-}) {
+function SnapshotMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <ChartHeader label={label} value={value} />
-      <div className="relative -mx-1 h-[120px]">
-        {children}
-      </div>
-      <AxisTicks />
-    </div>
-  )
-}
-
-function ChartHeader({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="mb-2 flex items-baseline justify-between gap-3">
-      <span className="text-xs font-medium text-muted-foreground">
-        {label}
-      </span>
-      <span className="font-mono text-base font-medium -tracking-[0.015em] text-foreground">
+    <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+      <p className="truncate text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate font-mono text-sm font-medium text-foreground">
         {value}
-      </span>
-    </div>
-  )
-}
-
-function AxisTicks() {
-  const t = useTranslations("scheduler")
-  return (
-    <div className="mt-2 flex justify-between px-1 font-mono text-[10.5px] text-muted-foreground/70">
-      <span>{t("legend.minus60s")}</span>
-      <span>{t("legend.minus30s")}</span>
-      <span>{t("legend.now")}</span>
+      </p>
     </div>
   )
 }
@@ -371,52 +248,6 @@ function LiveDot({ connected }: { connected: boolean }) {
           aria-hidden="true"
         />
       )}
-    </span>
-  )
-}
-
-const BAND_TONES = {
-  success: "bg-success/35",
-  warning: "bg-warning/45",
-  destructive: "bg-destructive/50",
-} as const
-const MARKER_TONES = {
-  success: "bg-success",
-  muted: "bg-muted-foreground",
-} as const
-
-function LegendBand({
-  tone,
-  label,
-}: {
-  tone: keyof typeof BAND_TONES
-  label: string
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span
-        className={`inline-block h-1.5 w-3.5 rounded-sm ${BAND_TONES[tone]}`}
-        aria-hidden="true"
-      />
-      {label}
-    </span>
-  )
-}
-
-function LegendMarker({
-  tone,
-  label,
-}: {
-  tone: keyof typeof MARKER_TONES
-  label: string
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span
-        className={`inline-block h-1.5 w-1.5 rounded-full ${MARKER_TONES[tone]}`}
-        aria-hidden="true"
-      />
-      {label}
     </span>
   )
 }
