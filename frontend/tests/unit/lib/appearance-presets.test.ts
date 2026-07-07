@@ -47,11 +47,13 @@ describe("appearance preset registry", () => {
     }
   })
 
-  it("keeps the classic palette anchors for the curated presets", () => {
+  it("keeps the curated palette anchors", () => {
     expect(appearancePresets.codex.light).toMatchObject({
-      background: "#fdfdff",
-      sidebar: "#f8f8fa",
-      "sidebar-accent": "#eeeeef",
+      background: "#fbfbfa",
+      foreground: "#242321",
+      sidebar: "#f1f0ed",
+      "sidebar-accent": "#e4e1dc",
+      "bg-surface": "#f3f2ef",
     })
 
     expect(appearancePresets.ayu.light).toMatchObject({
