@@ -65,8 +65,6 @@ export function ProjectList({
   } | null>(null)
   const [dropTargetProjectId, setDropTargetProjectId] = useState<string | null>(null)
 
-  const showRecentEmptyState = inboxConversations.length === 0 && projects.length === 0
-
   const handleConversationDragStart = (conversation: AgentCoreSession, projectId: string) => {
     setDraggingConversation({ id: conversation.id, projectId })
   }
@@ -143,7 +141,8 @@ export function ProjectList({
         <div
           data-testid="sidebar-recent-section"
           className={cn(
-            "py-0.5 transition-colors duration-150",
+            "space-y-0.5 transition-colors duration-150",
+            inboxConversations.length === 0 && "h-0 overflow-hidden",
             dropTargetProjectId === defaultProjectId && "rounded-[8px] bg-sidebar-foreground/[0.04] ring-1 ring-sidebar-border/45"
           )}
           onDragOver={(event) => {
@@ -156,44 +155,24 @@ export function ProjectList({
             handleConversationDrop(defaultProjectId)
           }}
         >
-          <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-sidebar-foreground/58">
-            {tSidebar("recent")}
-          </div>
-          <div className="space-y-0.5">
-            {showRecentEmptyState ? (
-              <div className="px-2 py-1 text-[11px] text-muted-foreground">
-                {tSidebar("noConversations")}
-              </div>
-            ) : (
-              inboxConversations.map((conversation, index) => (
-                <ConversationItem
-                  key={conversation.id}
-                  conversation={conversation}
-                  projectId={defaultProjectId}
-                  index={index}
-                  isActive={activeConversationId === conversation.id}
-                  isDragging={draggingConversation?.id === conversation.id}
-                  onDragStart={handleConversationDragStart}
-                  onDragEnd={handleConversationDragEnd}
-                  onSelect={onSelectConversation}
-                  onRename={onRenameConversation}
-                  onDelete={onDeleteConversation}
-                  canDelete={canDeleteWorkspaceResources}
-                  tSidebar={tSidebar}
-                  tCommon={tCommon}
-                />
-              ))
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      {projects.length === 0 ? (
-        <div className="px-2.5 py-1.5">
-          <p className="text-[12px] font-medium text-sidebar-foreground/72">{tSidebar("noProjects")}</p>
-          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-            {tSidebar("noProjectsDescription")}
-          </p>
+          {inboxConversations.map((conversation, index) => (
+            <ConversationItem
+              key={conversation.id}
+              conversation={conversation}
+              projectId={defaultProjectId}
+              index={index}
+              isActive={activeConversationId === conversation.id}
+              isDragging={draggingConversation?.id === conversation.id}
+              onDragStart={handleConversationDragStart}
+              onDragEnd={handleConversationDragEnd}
+              onSelect={onSelectConversation}
+              onRename={onRenameConversation}
+              onDelete={onDeleteConversation}
+              canDelete={canDeleteWorkspaceResources}
+              tSidebar={tSidebar}
+              tCommon={tCommon}
+            />
+          ))}
         </div>
       ) : null}
 
@@ -227,19 +206,6 @@ export function ProjectList({
           tCommon={tCommon}
         />
       ))}
-
-      {/* New Project button */}
-      <button
-        onClick={onOpenCreateDialog}
-        className={cn(
-          "flex h-[28px] w-full items-center gap-2 rounded-[7px] px-2.5 text-[12px] font-medium text-sidebar-foreground/78 transition-colors hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground",
-        )}
-      >
-        <span className="flex h-4 w-4 items-center justify-center rounded-[5px] text-sidebar-foreground/72">
-          <Plus className="h-3.5 w-3.5" />
-        </span>
-        <span>{tSidebar("newProject")}</span>
-      </button>
     </div>
   )
 }

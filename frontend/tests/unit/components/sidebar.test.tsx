@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi, beforeEach } from "vitest"
 
 const useWorkspaceShellMock = vi.fn()
@@ -128,6 +128,26 @@ describe("Sidebar", () => {
     render(<Sidebar collapsed={false} />)
 
     expect(screen.queryByText("Start your first analysis")).not.toBeInTheDocument()
+  })
+
+  it("collapses the workspace tree from the section header", () => {
+    render(<Sidebar collapsed={false} />)
+
+    expect(screen.getByTestId("project-list")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }))
+
+    expect(screen.queryByTestId("project-list")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Workspace" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    )
+  })
+
+  it("puts project creation in the workspace header", () => {
+    render(<Sidebar collapsed={false} />)
+
+    expect(screen.getByRole("button", { name: "newProject" })).toBeInTheDocument()
   })
 
   it("keeps the footer visually continuous with the sidebar shell", () => {
