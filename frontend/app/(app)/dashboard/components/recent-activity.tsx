@@ -20,7 +20,7 @@ const statusDotColor: Record<string, string> = {
   failed: "bg-destructive",
   running: "bg-info animate-pulse motion-reduce:animate-none",
   cancelled: "bg-muted-foreground/50",
-  queued: "bg-warning",
+  queued: "bg-muted-foreground/50",
   pending: "bg-muted-foreground/50",
 };
 
@@ -69,6 +69,9 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
             {recentRuns.map((run) => {
               const config = runStatusLabel[run.status];
               const isFailed = run.status === "failed";
+              const badgeVariant = run.status === "queued"
+                ? "neutral"
+                : runStatusVariant[run.status];
               return (
                 <Link
                   key={run.run_id}
@@ -94,7 +97,7 @@ export function RecentActivity({ recentRuns }: RecentActivityProps) {
 
                   {/* Status label */}
                   <StatusBadge
-                    variant={runStatusVariant[run.status]}
+                    variant={badgeVariant}
                     className="shrink-0"
                   >
                     {tStatus(config ?? run.status)}
