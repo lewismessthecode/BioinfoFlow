@@ -11,7 +11,7 @@ from app.auth.session import AuthUser
 from app.config import settings
 from app.models.agent_core import AgentEvent, AgentTurn
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
-from app.path_layout import project_home
+from app.path_layout import project_home, skills_root
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
@@ -58,6 +58,24 @@ async def _wait_for_turn(async_client, turn_id: str) -> dict:
 
 def _event_types(events: list[dict]) -> list[str]:
     return [item["type"] for item in events]
+
+
+def _write_skill(name: str, description: str, body: str) -> None:
+    skill_dir = skills_root() / name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                f"name: {name}",
+                f"description: {description}",
+                "tags: [agent, test]",
+                "---",
+                body,
+            ]
+        ),
+        encoding="utf-8",
+    )
 
 
 async def _create_llm_model(async_client) -> dict:
@@ -140,6 +158,71 @@ async def _create_scoped_llm_model(
     await db_session.commit()
     await db_session.refresh(model)
     return model
+
+
+@pytest.mark.asyncio
+async def test_agent_skills_api_lists_and_loads_local_manifests(async_client):
+    _write_skill(
+        "nextflow-debugging",
+        "Diagnose failed Nextflow runs.",
+        "Use logs and audit events before explaining failures.",
+    )
+
+    listed = await async_client.get("/api/v1/agent/skills")
+    assert listed.status_code == 200
+    skills = listed.json()["data"]["skills"]
+    assert skills == [
+        {
+            "name": "nextflow-debugging",
+            "version": "0.1.0",
+            "description": "Diagnose failed Nextflow runs.",
+            "tags": ["agent", "test"],
+            "path": str(skills_root() / "nextflow-debugging" / "SKILL.md"),
+        }
+    ]
+    assert "body" not in skills[0]
+
+    loaded = await async_client.get("/api/v1/agent/skills/nextflow-debugging")
+    assert loaded.status_code == 200
+    assert loaded.json()["data"]["body"] == "Use logs and audit events before explaining failures."
+
+    missing = await async_client.get("/api/v1/agent/skills/missing-skill")
+    assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_agent_turn_create_accepts_valid_active_skills(async_client):
+    _write_skill(
+        "run-failure-triage",
+        "Triage failed workflow runs.",
+        "Gather run logs before proposing fixes.",
+    )
+    create_session = await async_client.post("/api/v1/agent/sessions", json={})
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+
+    create_turn = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={
+            "input_text": "Analyze this failed run.",
+            "active_skill_names": ["run-failure-triage", "run-failure-triage"],
+        },
+    )
+    assert create_turn.status_code == 202
+    turn = create_turn.json()["data"]
+    assert turn["active_skill_names"] == ["run-failure-triage"]
+    assert turn["model_profile_snapshot"]["metadata"]["active_skill_names"] == [
+        "run-failure-triage"
+    ]
+
+    rejected = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={
+            "input_text": "Use a missing skill.",
+            "active_skill_names": ["missing-skill"],
+        },
+    )
+    assert rejected.status_code == 400
 
 
 @pytest.mark.asyncio

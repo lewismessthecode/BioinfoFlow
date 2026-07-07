@@ -31,9 +31,11 @@ def test_agent_skill_registry_discovers_versioned_manifests(tmp_path: Path):
         "\n".join(
             [
                 "name: rna-qc",
+                "title: RNA QC",
                 "version: 1.2.0",
                 "description: Summarize RNA-seq QC signals.",
-                "tags: rnaseq, qc",
+                "category: workflow",
+                "tags: [rnaseq, qc]",
             ]
         ),
         "# RNA QC\nUse MultiQC and count matrix summaries.",
@@ -50,13 +52,54 @@ def test_agent_skill_registry_discovers_versioned_manifests(tmp_path: Path):
     assert [skill.name for skill in registry.list()] == ["rna-qc"]
     skill = registry.get("rna-qc")
     assert skill.version == "1.2.0"
+    assert skill.title == "RNA QC"
     assert skill.description == "Summarize RNA-seq QC signals."
+    assert skill.category == "workflow"
     assert skill.tags == ["rnaseq", "qc"]
     assert "MultiQC" in skill.body
     assert registry.describe_for_prompt() == "- rna-qc (1.2.0): Summarize RNA-seq QC signals."
 
 
-def test_agent_plugin_registry_discovers_versioned_plugin_manifests(tmp_path: Path):
+def test_agent_skill_registry_skips_unsafe_and_support_paths(tmp_path: Path):
+    _write_skill(
+        tmp_path,
+        "valid-skill",
+        "\n".join(
+            [
+                "name: valid-skill",
+                "description: Safe manifest.",
+            ]
+        ),
+        "# Valid",
+    )
+    _write_skill(
+        tmp_path,
+        "unsafe-skill",
+        "\n".join(
+            [
+                "name: ../unsafe",
+                "description: Unsafe manifest.",
+            ]
+        ),
+        "# Unsafe",
+    )
+    _write_skill(
+        tmp_path,
+        "references",
+        "\n".join(
+            [
+                "name: reference-note",
+                "description: Should not be discovered as an active skill.",
+            ]
+        ),
+        "# Reference",
+    )
+
+    registry = AgentSkillRegistry.from_directory(tmp_path)
+
+    assert [skill.name for skill in registry.list()] == ["valid-skill"]
+
+
     plugin_dir = tmp_path / "variant-plugin" / ".bioinfoflow-plugin"
     plugin_dir.mkdir(parents=True)
     (plugin_dir / "plugin.json").write_text(

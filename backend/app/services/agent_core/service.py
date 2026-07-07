@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.path_layout import skills_root
 from app.models.agent_core import AgentActionStatus, AgentSessionStatus, AgentTurnStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
@@ -30,6 +31,12 @@ from app.services.agent_core.runner import (
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.context import default_system_prompt_snapshot
 from app.services.agent_core.sandbox import FilesystemPolicy
+from app.services.agent_core.skills import (
+    ActiveSkillResolutionError,
+    AgentSkillRegistry,
+    normalize_skill_names,
+    resolve_active_skills,
+)
 from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part
 from app.utils.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
@@ -191,6 +198,7 @@ class AgentCoreService:
         user_id: str,
         input_text: str,
         input_parts: list[dict] | None = None,
+        active_skill_names: list[str] | None = None,
         model_profile_id: str | None = None,
         model_selection: dict | None = None,
         metadata: dict | None = None,
@@ -199,6 +207,11 @@ class AgentCoreService:
             session_id=session_id,
             workspace_id=workspace_id,
             user_id=user_id,
+        )
+        normalized_active_skill_names = _validated_active_skill_names(active_skill_names)
+        turn_metadata = _metadata_with_active_skill_names(
+            metadata,
+            normalized_active_skill_names,
         )
         transcript_parts = _transcript_parts_for_turn(
             input_text=input_text,
@@ -221,7 +234,7 @@ class AgentCoreService:
             model_profile_snapshot={
                 "requested_model_profile_id": model_profile_id,
                 "requested_model_selection": normalized_model_selection,
-                "metadata": metadata or {},
+                "metadata": turn_metadata,
             },
             budget_snapshot={"max_iterations": 0, "used_iterations": 0},
             loop_state={"state": "queued"},
@@ -249,6 +262,7 @@ class AgentCoreService:
         user_id: str,
         input_text: str,
         input_parts: list[dict] | None = None,
+        active_skill_names: list[str] | None = None,
         model_profile_id: str | None = None,
         model_selection: dict | None = None,
         metadata: dict | None = None,
@@ -259,6 +273,7 @@ class AgentCoreService:
             user_id=user_id,
             input_text=input_text,
             input_parts=input_parts,
+            active_skill_names=active_skill_names,
             model_profile_id=model_profile_id,
             model_selection=model_selection,
             metadata=metadata,
@@ -669,6 +684,31 @@ def _metadata_with_remote_project(metadata: dict | None, project) -> dict | None
     merged["remote_project_id"] = str(project.id)
     merged["remote_project_root"] = str(remote_root_path)
     return merged
+
+
+def _metadata_with_active_skill_names(
+    metadata: dict | None,
+    active_skill_names: list[str],
+) -> dict:
+    merged = dict(metadata or {})
+    if active_skill_names:
+        merged["active_skill_names"] = active_skill_names
+    else:
+        merged.pop("active_skill_names", None)
+    return merged
+
+
+def _validated_active_skill_names(values: list[str] | None) -> list[str]:
+    try:
+        names = normalize_skill_names(values)
+        if not names:
+            return []
+        resolve_active_skills(AgentSkillRegistry.from_directory(skills_root()), names)
+        return names
+    except ActiveSkillResolutionError as exc:
+        raise BadRequestError(str(exc)) from exc
+    except ValueError as exc:
+        raise BadRequestError(str(exc)) from exc
 
 
 def _generated_session_title(input_text: str) -> str:

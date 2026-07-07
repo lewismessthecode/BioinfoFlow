@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     debug: bool = False
     repo_root: str = str(REPO_ROOT)
     bioinfoflow_home: str = "data"
+    bioinfoflow_skills_root: str = ""
     # Path Contract v3: identity-mount invariant. When the backend runs in a
     # container, BIOINFOFLOW_HOME_HOST must equal BIOINFOFLOW_HOME (the compose
     # volume must be `-v ${BIOINFOFLOW_HOME}:${BIOINFOFLOW_HOME}`). Leave empty
@@ -57,6 +58,16 @@ class Settings(BaseSettings):
         if not candidate.is_absolute():
             candidate = REPO_ROOT / candidate
         return str(candidate.expanduser().resolve())
+
+    @field_validator("bioinfoflow_skills_root", mode="before")
+    @classmethod
+    def normalize_bioinfoflow_skills_root(cls, value: Any) -> str:
+        if value is None or not str(value).strip():
+            return ""
+        candidate = Path(str(value).strip()).expanduser()
+        if not candidate.is_absolute():
+            candidate = REPO_ROOT / candidate
+        return str(candidate.resolve())
 
     # Auth (Better Auth shared DB)
     better_auth_db_path: str = ""
@@ -253,6 +264,12 @@ class Settings(BaseSettings):
     @property
     def state_root(self) -> Path:
         return Path(self.bioinfoflow_home) / "state"
+
+    @property
+    def skills_root(self) -> Path:
+        if self.bioinfoflow_skills_root:
+            return Path(self.bioinfoflow_skills_root)
+        return Path(self.bioinfoflow_home) / "skills"
 
     @property
     def projects_root(self) -> Path:
