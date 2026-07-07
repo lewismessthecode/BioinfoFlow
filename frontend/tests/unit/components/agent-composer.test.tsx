@@ -139,7 +139,7 @@ describe("AgentComposer", () => {
       />,
     )
 
-    const textarea = screen.getByPlaceholderText("Message Bioinfoflow...")
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
     let nextHeight = 132
     Object.defineProperty(textarea, "scrollHeight", {
       configurable: true,
@@ -156,6 +156,25 @@ describe("AgentComposer", () => {
 
     expect(textarea).toHaveStyle({ height: "160px" })
     expect(textarea).toHaveStyle({ overflowY: "auto" })
+  })
+
+  it("names the textarea independently from the visible placeholder", () => {
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.getByRole("textbox", { name: "Message Bioinfoflow..." }),
+    ).toBeInTheDocument()
   })
 
   it("toggles plan and act modes with Shift+Tab", () => {
@@ -228,7 +247,7 @@ describe("AgentComposer", () => {
       "data-presentation",
       "center",
     )
-    expect(screen.getByText("Cancer Cohort")).toBeInTheDocument()
+    expect(screen.getByText("Cancer Cohort")).toHaveClass("min-w-0", "truncate")
   })
 
   it("changes permission mode from the composer dropdown", async () => {

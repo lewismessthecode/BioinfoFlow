@@ -73,7 +73,7 @@ export function ConversationItem({
       }}
       onDragEnd={() => onDragEnd?.()}
       className={cn(
-        "group flex items-center gap-2 rounded-full border border-transparent px-3 py-1.5 text-sm transition-colors duration-150",
+        "group flex items-center gap-2 rounded-[8px] border border-transparent px-3 py-1.5 text-sm transition-colors duration-150",
         isActive
           ? "bg-sidebar-accent text-sidebar-foreground font-semibold"
           : "text-sidebar-foreground/78 font-medium hover:bg-sidebar-accent/55 hover:text-sidebar-foreground",
@@ -115,7 +115,7 @@ export function ConversationItem({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 rounded-full opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity hover:bg-white/70 dark:hover:bg-white/10"
+            className="h-7 w-7 rounded-[7px] opacity-0 transition-opacity hover:bg-sidebar-accent/70 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
             aria-label={tCommon("actions")}
           >
             <MoreVertical className="h-3 w-3" />

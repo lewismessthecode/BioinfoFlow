@@ -129,7 +129,7 @@ export function ProjectList({
         <button
           onClick={onOpenCreateDialog}
           aria-label={tSidebar("newProject")}
-          className="flex h-9 w-full items-center justify-center rounded-full text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+          className="flex h-9 w-full items-center justify-center rounded-[8px] text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
         >
           <Plus className="h-4 w-4" />
         </button>
@@ -143,7 +143,7 @@ export function ProjectList({
         <div
           data-testid="sidebar-recent-section"
           className={cn(
-            "rounded-2xl px-1 py-1 transition-colors duration-150",
+            "rounded-[10px] px-1 py-1 transition-colors duration-150",
             dropTargetProjectId === defaultProjectId && "bg-sidebar-accent/20 ring-1 ring-sidebar-border/45"
           )}
           onDragOver={(event) => {
@@ -189,7 +189,7 @@ export function ProjectList({
       ) : null}
 
       {projects.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-border/70 bg-white/55 px-4 py-4 dark:bg-white/[0.03]">
+        <div className="rounded-[10px] border border-dashed border-sidebar-border/70 bg-sidebar-accent/35 px-4 py-4">
           <p className="text-sm font-semibold text-foreground">{tSidebar("noProjects")}</p>
           <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
             {tSidebar("noProjectsDescription")}
@@ -232,7 +232,7 @@ export function ProjectList({
       <button
         onClick={onOpenCreateDialog}
         className={cn(
-          "flex w-full items-center gap-3 rounded-full px-4 py-2 text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/65 hover:text-sidebar-foreground",
+          "flex w-full items-center gap-3 rounded-[8px] px-4 py-2 text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/65 hover:text-sidebar-foreground",
         )}
       >
         <span className="flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/76">

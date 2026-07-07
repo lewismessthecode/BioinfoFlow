@@ -22,7 +22,7 @@ export function AgentTodoDock({ items }: { items: AgentTodoDisplayItem[] }) {
   return (
     <section
       className={cn(
-        "absolute right-4 top-4 z-20 w-[min(360px,calc(100%-32px))] rounded-2xl border border-border/70 bg-background/95 shadow-xl shadow-foreground/10 backdrop-blur transition-all",
+        "absolute right-4 top-4 z-20 w-[min(360px,calc(100%-32px))] rounded-[12px] border border-border/70 bg-card shadow-[0_10px_28px_rgba(36,35,33,0.07)] transition-all",
         !expanded && "w-[min(280px,calc(100%-32px))]",
       )}
       data-testid="agent-todo-dock"
@@ -40,7 +40,7 @@ export function AgentTodoDock({ items }: { items: AgentTodoDisplayItem[] }) {
             ? t("progress.tasks")
             : active?.activeForm || active?.content || t("todoDock.summary", { count: incompleteCount })}
         </span>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+        <span className="rounded-[6px] bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
           {items.filter((item) => item.displayStatus === "completed").length}/{items.length}
         </span>
         {expanded ? (

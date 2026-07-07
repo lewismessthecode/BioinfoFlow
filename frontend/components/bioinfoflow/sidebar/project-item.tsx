@@ -80,7 +80,7 @@ export function ProjectItem({
             onClick={() => onSelectProject(project)}
             aria-label={project.name}
             className={cn(
-              "flex h-9 w-full items-center justify-center rounded-full transition-colors",
+              "flex h-9 w-full items-center justify-center rounded-[8px] transition-colors",
               isActive
                 ? "bg-sidebar-accent text-sidebar-foreground"
                 : "text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
@@ -97,7 +97,7 @@ export function ProjectItem({
   return (
     <div
       className={cn(
-        "rounded-2xl transition-colors duration-150",
+        "rounded-[10px] transition-colors duration-150",
         isDropTarget && "bg-sidebar-accent/20 ring-1 ring-sidebar-border/45"
       )}
       onDragOver={(event) => {
@@ -113,7 +113,7 @@ export function ProjectItem({
       {/* Project Header */}
       <div
         className={cn(
-          "group flex items-center gap-1 rounded-full border border-transparent px-2 py-1.5 text-[13px] transition-colors duration-150",
+          "group flex items-center gap-1 rounded-[8px] border border-transparent px-2 py-1.5 text-[13px] transition-colors duration-150",
           isActive
             ? "bg-sidebar-accent text-sidebar-foreground"
             : "text-sidebar-foreground/82 hover:bg-sidebar-accent/65 hover:text-sidebar-foreground"
@@ -147,7 +147,7 @@ export function ProjectItem({
           </span>
           <span className={cn("truncate text-[13px] font-semibold", !isActive && "font-medium")}>{project.name}</span>
           {isRemoteProject ? (
-            <span className="shrink-0 rounded-full border border-sidebar-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/60">
+            <span className="shrink-0 rounded-[6px] border border-sidebar-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/64">
               {tSidebar("remoteProjectBadge")}
             </span>
           ) : null}
@@ -157,7 +157,7 @@ export function ProjectItem({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 rounded-full opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0 hover:bg-white/70 dark:hover:bg-white/10"
+              className="h-7 w-7 shrink-0 rounded-[7px] opacity-0 transition-opacity hover:bg-sidebar-accent/70 group-hover:opacity-100 focus-visible:opacity-100"
               aria-label={tCommon("actions")}
             >
               <MoreVertical className="h-3 w-3" />
@@ -224,7 +224,7 @@ export function ProjectItem({
           )}
           <button
             onClick={() => onCreateConversation(project.id)}
-            className="flex w-full items-center gap-2 rounded-full px-2 py-1 text-xs font-medium text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-foreground"
+            className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1 text-xs font-medium text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-foreground"
           >
             <Plus className="h-3 w-3" />
             <span>{tSidebar("newConversation")}</span>

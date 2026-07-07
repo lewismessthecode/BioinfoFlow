@@ -150,8 +150,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
         data-compact-controls={compactControls ? "true" : "false"}
       >
         {contextTitle ? (
-          <div className="flex min-h-7 items-center gap-2 px-3 pt-1 text-xs font-medium text-muted-foreground">
-            <span className="truncate text-foreground/76">{contextTitle}</span>
+          <div className="flex min-h-7 min-w-0 items-center gap-2 px-3 pt-1 text-xs font-medium text-muted-foreground">
+            <span className="min-w-0 truncate text-foreground/76">{contextTitle}</span>
           </div>
         ) : null}
         <ContextAttachments
@@ -178,8 +178,9 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             }
           }}
           placeholder={t("composerPlaceholder")}
+          aria-label={t("composerPlaceholder")}
           className={cn(
-            "w-full resize-none bg-transparent px-4 py-3 text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/72",
+            "w-full resize-none bg-transparent px-4 py-3 text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/88",
             isCenterPresentation ? "min-h-[76px]" : "min-h-11",
           )}
           rows={1}

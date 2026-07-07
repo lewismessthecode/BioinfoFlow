@@ -188,7 +188,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
       {/* Divider + Section Label */}
       {!collapsed && (
         <div className="px-5 pb-1 pt-5">
-          <span className="block px-0 text-[13px] font-medium text-sidebar-foreground/52">
+          <span className="block px-0 text-[13px] font-medium text-sidebar-foreground/68">
             {tSidebar("workspace")}
           </span>
         </div>
