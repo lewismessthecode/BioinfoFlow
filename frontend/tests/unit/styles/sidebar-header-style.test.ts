@@ -51,14 +51,20 @@ describe("sidebar header styling", () => {
     expect(source).not.toContain("h-screen")
   })
 
-  it("keeps the desktop sidebar pinned while page content scrolls", () => {
+  it("keeps a fixed desktop sidebar surface while reserving layout width", () => {
     const source = readFileSync(
       resolve(process.cwd(), "app/(app)/app-layout.tsx"),
       "utf8",
     )
 
     expect(source).toContain(
-      'className="sticky top-0 h-[100dvh] flex-shrink-0 self-start transition-[width,opacity] duration-200"',
+      'className="relative flex-shrink-0 transition-[width,opacity] duration-200"',
+    )
+    expect(source).toContain(
+      'className="fixed inset-y-0 left-0 z-20 h-[100dvh] transition-[width,opacity] duration-200"',
+    )
+    expect(source).toContain(
+      "style={{ opacity: 1, width: effectiveLeftWidth }}",
     )
   })
 })
