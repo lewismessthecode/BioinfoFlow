@@ -112,6 +112,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     } | null>(null)
     const workspaceShell = useOptionalWorkspaceShell()
     const setNavbarActions = workspaceShell?.setNavbarActions
+    const activeProjectName = useMemo(() => {
+      if (!projectId) return null
+      return workspaceShell?.projects.find((project) => project.id === projectId)?.name ?? null
+    }, [projectId, workspaceShell?.projects])
     const { models, selectedModel, isLoading: modelsLoading, setSelectedModel } =
       useLlmSettings()
     const {
@@ -691,6 +695,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         selectedRemoteConnectionId={selectedRemoteConnectionId}
         onRemoteConnectionChange={handleRemoteConnectionChange}
         compactControls={desktopSidecarVisible}
+        presentation={hasConversation ? "dock" : "center"}
+        contextTitle={!hasConversation ? activeProjectName : null}
       />
     )
 
@@ -721,9 +727,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               </div>
             </>
           ) : (
-            <div className="flex min-h-0 flex-1 items-center justify-center px-4">
-              <div className="w-full max-w-3xl -translate-y-10">
-                <h1 className="mb-7 text-center text-2xl font-semibold tracking-normal text-foreground sm:text-3xl">
+            <div className="agent-halo-surface flex min-h-0 flex-1 items-center justify-center px-4">
+              <div className="agent-center-stage w-full max-w-[46rem] -translate-y-8">
+                <h1 className="mb-5 text-center text-[15px] font-medium tracking-normal text-muted-foreground">
                   {t("welcomeTitle")}
                 </h1>
                 <div data-testid="agent-composer-shell" data-placement="center">
@@ -761,8 +767,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               ? cn(
                   "translate-x-0 opacity-100",
                   activeSidecarTab === "browser"
-                    ? "w-[clamp(360px,32vw,500px)]"
-                    : "w-[clamp(600px,50vw,860px)]",
+                    ? "w-[clamp(380px,32vw,520px)]"
+                    : "w-[clamp(440px,36vw,620px)]",
                 )
               : "w-0 translate-x-4 opacity-0",
           )}
@@ -812,7 +818,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               onClose={closeSidecar}
               onAddContext={addContextAttachment}
               variant="mobile"
-              className="flex h-full w-full flex-col rounded-xl border border-border/70 shadow-[0_18px_48px_rgba(60,64,67,0.12)]"
+              className="flex h-full w-full flex-col rounded-xl border border-border/70 shadow-[0_18px_48px_rgba(36,35,33,0.10)]"
             />
           </div>
         ) : null}

@@ -55,13 +55,13 @@
 - Modify tests if stable class expectations change.
 
 **Steps:**
-- [ ] Give the new-chat agent page the screenshot-like empty canvas and centered command composer.
-- [ ] Make the composer larger, flatter, and more command-palette-like with bottom-row chips.
-- [ ] Keep compact side-panel controls accessible at constrained widths.
-- [ ] Restyle agent sidecar and LiveDeck as right-side tool panels with thin dividers and compact tab chrome.
-- [ ] Preserve submit, stop, mode toggle, permission mode, model selector, remote target, token usage, attachments, and sidecar behavior.
-- [ ] Verify targeted tests: `rtk bun run test frontend/tests/unit/components/agent-composer.test.tsx frontend/tests/unit/components/agent-workbench.test.tsx frontend/tests/unit/pages/agent-page.test.tsx`.
-- [ ] Commit as `style: center agent composer workspace`.
+- [x] Give the new-chat agent page the screenshot-like empty canvas and centered command composer.
+- [x] Make the composer larger, flatter, and more command-palette-like with bottom-row chips.
+- [x] Keep compact side-panel controls accessible at constrained widths.
+- [x] Restyle agent sidecar and LiveDeck as right-side tool panels with thin dividers and compact tab chrome.
+- [x] Preserve submit, stop, mode toggle, permission mode, model selector, remote target, token usage, attachments, and sidecar behavior.
+- [x] Verify targeted tests: `rtk bun run test tests/unit/components/agent-composer.test.tsx tests/unit/components/agent-workbench.test.tsx tests/integration/pages/agent-page.test.tsx`.
+- [x] Commit as `style: center agent composer workspace`.
 
 ## Phase 4: Full validation and visual check
 

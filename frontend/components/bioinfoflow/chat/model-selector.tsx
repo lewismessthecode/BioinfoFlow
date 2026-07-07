@@ -39,10 +39,10 @@ export function ModelSelector({
   const [open, setOpen] = useState(false)
   const isComposer = variant === "composer"
   const triggerClassName = isComposer
-    ? "h-9 max-w-[196px] gap-1 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+    ? "h-9 max-w-[196px] gap-1 rounded-[8px] px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
     : "h-9 max-w-[196px] gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
   const configureClassName = isComposer
-    ? "h-9 gap-1 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+    ? "h-9 gap-1 rounded-[8px] px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
     : "h-9 gap-1.5 rounded-full border border-border/55 bg-background/72 px-3 text-xs font-medium text-muted-foreground/80 shadow-lg shadow-foreground/5 backdrop-blur transition-colors hover:bg-background hover:text-foreground"
 
   // Find the display name for the current selection
@@ -112,7 +112,7 @@ export function ModelSelector({
       <PopoverContent
         align="start"
         side="top"
-        className="w-[280px] overflow-hidden rounded-[22px] border border-border/70 bg-background/96 p-0 shadow-2xl shadow-foreground/10 backdrop-blur-xl"
+        className="w-[280px] overflow-hidden rounded-xl border border-border/70 bg-background/96 p-0 shadow-[0_14px_34px_rgba(36,35,33,0.08)]"
       >
         <Command>
           <CommandInput placeholder={t("searchModels")} className="h-9" />

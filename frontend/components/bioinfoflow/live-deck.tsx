@@ -35,18 +35,18 @@ export function LiveDeck({
   const tAccessibility = useTranslations("accessibility")
 
   return (
-    <aside className="w-full h-full border-l border-border bg-background flex flex-col" role="complementary" aria-label="Live information panel">
+    <aside className="flex h-full w-full flex-col border-l border-border/70 bg-background/95" role="complementary" aria-label="Live information panel">
       <Tabs
         value={activeTab}
         onValueChange={(v) => onTabChange(v as "workspace" | "dag" | "monitor")}
         className="flex flex-col h-full"
       >
-        <div className="border-b border-border px-2 pt-2 pb-0 flex items-center gap-2">
+        <div className="flex h-11 items-center gap-2 border-b border-border/60 px-2.5">
           {onCollapse && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+              className="h-8 w-8 shrink-0 rounded-[8px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
               onClick={onCollapse}
               title={tAccessibility("hidePanel")}
               aria-label={tAccessibility("hidePanel")}
@@ -54,24 +54,24 @@ export function LiveDeck({
               <PanelRightClose className="h-4 w-4" />
             </Button>
           )}
-          <TabsList className="flex-1 grid grid-cols-3 bg-secondary/50 p-1 h-auto">
+          <TabsList className="grid h-8 flex-1 grid-cols-3 rounded-[8px] bg-muted/55 p-0.5">
             <TabsTrigger
               value="workspace"
-              className="gap-1.5 text-xs py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              className="gap-1.5 rounded-[6px] py-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-none"
             >
               <FolderOpen className="h-3.5 w-3.5" />
               {tWorkspace("liveDeck.files")}
             </TabsTrigger>
             <TabsTrigger
               value="dag"
-              className="gap-1.5 text-xs py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              className="gap-1.5 rounded-[6px] py-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-none"
             >
               <GitBranch className="h-3.5 w-3.5" />
               {tWorkspace("liveDeck.pipeline")}
             </TabsTrigger>
             <TabsTrigger
               value="monitor"
-              className="gap-1.5 text-xs py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              className="gap-1.5 rounded-[6px] py-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-none"
             >
               <Activity className="h-3.5 w-3.5" />
               {tWorkspace("liveDeck.monitor")}
