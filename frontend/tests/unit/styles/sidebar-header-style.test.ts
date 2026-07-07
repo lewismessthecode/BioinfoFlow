@@ -11,7 +11,8 @@ describe("sidebar header styling", () => {
 
     expect(source).not.toContain("bg-white/80")
     expect(source).not.toContain("bg-white/90")
-    expect(source).toContain("hover:bg-sidebar-accent/75")
+    expect(source).toContain("hover:bg-sidebar-foreground/[0.055]")
+    expect(source).not.toContain("bg-sidebar-accent")
   })
 
   it("aligns the sidebar header controls with the compact top navbar row", () => {

@@ -129,4 +129,15 @@ describe("Sidebar", () => {
 
     expect(screen.queryByText("Start your first analysis")).not.toBeInTheDocument()
   })
+
+  it("keeps the footer visually continuous with the sidebar shell", () => {
+    render(<Sidebar collapsed={false} />)
+
+    const footer = screen.getByTestId("user-menu").parentElement
+
+    expect(footer?.className).toContain("shrink-0")
+    expect(footer?.className).toContain("bg-sidebar")
+    expect(footer?.className).toContain("py-2.5")
+    expect(footer?.className).not.toContain("py-3")
+  })
 })
