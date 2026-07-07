@@ -19,11 +19,25 @@ describe("sidebar header styling", () => {
       resolve(process.cwd(), "components/bioinfoflow/sidebar/sidebar.tsx"),
       "utf8"
     )
+    const headerSource = source.slice(
+      source.indexOf("<aside"),
+      source.indexOf("{!collapsed ? ("),
+    )
 
-    expect(source).toContain('"flex h-11 shrink-0 items-center"')
-    expect(source).toContain("h-8 w-8 rounded-[8px]")
-    expect(source).toContain("rounded-[8px]")
-    expect(source).not.toContain("rounded-full")
+    expect(headerSource).toContain('"flex h-11 shrink-0 items-center"')
+    expect(headerSource).toContain("h-8 w-8 rounded-[8px]")
+    expect(headerSource).toContain("rounded-[8px]")
+    expect(headerSource).not.toContain("rounded-full")
+  })
+
+  it("keeps the workspace section label readable on the warm sidebar", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "components/bioinfoflow/sidebar/sidebar.tsx"),
+      "utf8",
+    )
+
+    expect(source).toContain("text-sidebar-foreground/68")
+    expect(source).not.toContain("text-sidebar-foreground/52")
   })
 
   it("keeps the protected app shell on the mobile-safe viewport unit", () => {

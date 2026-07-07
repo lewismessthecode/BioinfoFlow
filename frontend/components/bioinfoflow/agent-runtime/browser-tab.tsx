@@ -75,13 +75,13 @@ export function BrowserTab({
             if (event.key === "Enter") go()
           }}
           placeholder={t("browser.urlPlaceholder")}
-          className="min-w-0 flex-1 rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground outline-none focus:border-border"
+          className="min-w-0 flex-1 rounded-[8px] border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground outline-none focus:border-border"
         />
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0 rounded-full text-muted-foreground"
+          className="h-7 w-7 shrink-0 rounded-[7px] text-muted-foreground"
           onClick={go}
           aria-label={t("browser.go")}
         >
@@ -91,14 +91,14 @@ export function BrowserTab({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0 rounded-full text-muted-foreground"
+          className="h-7 w-7 shrink-0 rounded-[7px] text-muted-foreground"
           onClick={() => setReloadKey((key) => key + 1)}
           aria-label={t("browser.reload")}
         >
           <RotateCw className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border/70 bg-card">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-[12px] border border-border/70 bg-card">
         {src ? (
           <iframe
             key={`${src}-${reloadKey}`}

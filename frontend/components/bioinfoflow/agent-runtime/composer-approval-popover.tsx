@@ -29,7 +29,7 @@ export function ComposerApprovalPopover({
     <div className="mb-2 flex justify-center" data-testid="composer-approval-popover">
       <button
         type="button"
-        className="inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-background/95 px-3 py-1.5 text-xs font-medium text-amber-800 shadow-sm backdrop-blur hover:bg-amber-500/10 dark:text-amber-200"
+        className="inline-flex items-center gap-2 rounded-[8px] border border-[#FBF3DB] bg-[#FBF3DB]/70 px-3 py-1.5 text-xs font-medium text-[#956400] shadow-none hover:bg-[#FBF3DB] dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-100"
         data-testid="composer-decision-jump"
         onClick={jumpToDecision}
       >

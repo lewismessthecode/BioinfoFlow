@@ -45,7 +45,7 @@ export function AgentEnvironmentCard({
 
   return (
     <section
-      className="w-full max-w-[440px] rounded-[22px] border border-border/70 bg-card px-4 py-4 shadow-lg shadow-foreground/5"
+      className="w-full max-w-[440px] rounded-[12px] border border-border/70 bg-card px-4 py-4 shadow-[0_10px_26px_rgba(36,35,33,0.06)]"
       data-testid="agent-environment-card"
     >
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -144,7 +144,7 @@ export function AgentEnvironmentCard({
             {sources.map((source) => (
               <span
                 key={source}
-                className="max-w-full truncate rounded-full border border-border/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+                className="max-w-full truncate rounded-[6px] border border-border/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
                 title={source}
               >
                 {source}

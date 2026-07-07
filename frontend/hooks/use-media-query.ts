@@ -1,15 +1,9 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 
 function useMediaQuery(query: string): boolean {
-  const getMatches = useCallback(() => {
-    if (typeof window === "undefined") return false
-    if (typeof window.matchMedia !== "function") return false
-    return window.matchMedia(query).matches
-  }, [query])
-
-  const [matches, setMatches] = useState(getMatches)
+  const [matches, setMatches] = useState(false)
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return

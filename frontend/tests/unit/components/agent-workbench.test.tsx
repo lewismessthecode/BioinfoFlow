@@ -312,6 +312,24 @@ describe("AgentWorkbench", () => {
     )
   })
 
+  it("shows the active project context in the centered composer", () => {
+    workspaceProjectsMock = [
+      {
+        id: "project-1",
+        name: "Mitochondrial variant review",
+        storage_mode: "managed",
+      },
+    ]
+
+    render(<AgentWorkbench projectId="project-1" />)
+
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-presentation",
+      "center",
+    )
+    expect(screen.getByText("Mitochondrial variant review")).toBeInTheDocument()
+  })
+
   it("registers the runtime sidecar toggle with the navbar action group", () => {
     render(<AgentWorkbench />)
 
@@ -338,6 +356,9 @@ describe("AgentWorkbench", () => {
 
     const drawer = screen.getByTestId("artifact-panel")
     expect(drawer).toBeInTheDocument()
+    expect(screen.getByTestId("agent-sidecar-column")).toHaveClass(
+      "w-[clamp(360px,32vw,540px)]",
+    )
     expect(within(drawer).getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
       "data-active",
       "true",
@@ -636,9 +657,16 @@ describe("AgentWorkbench", () => {
   })
 
   it("moves the composer to the bottom after a turn exists", () => {
+    workspaceProjectsMock = [
+      {
+        id: "project-1",
+        name: "Mitochondrial variant review",
+        storage_mode: "managed",
+      },
+    ]
     setupRuntime({ turns: [baseTurn] })
 
-    render(<AgentWorkbench />)
+    render(<AgentWorkbench projectId="project-1" />)
 
     expect(screen.getByText("Analyze these FASTQ files.")).toBeInTheDocument()
     expect(screen.getByText("The files look ready.")).toBeInTheDocument()
@@ -646,6 +674,13 @@ describe("AgentWorkbench", () => {
       "data-placement",
       "bottom",
     )
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-presentation",
+      "dock",
+    )
+    expect(
+      screen.queryByText("Mitochondrial variant review"),
+    ).not.toBeInTheDocument()
   })
 
   it("shows cumulative token usage from the loaded session state", async () => {

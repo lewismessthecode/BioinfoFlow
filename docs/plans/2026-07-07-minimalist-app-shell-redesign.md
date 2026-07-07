@@ -69,11 +69,17 @@
 - Modify `.env` only if local visual verification needs `AUTH_MODE=dev`; do not commit unrelated environment changes.
 
 **Steps:**
-- [ ] Run `rtk bun run lint` from `frontend/`.
-- [ ] Run `rtk bun run test` from `frontend/`.
-- [ ] Run `rtk bun run lint:i18n` if any messages change.
-- [ ] If feasible, start dev services with `AUTH_MODE=dev`, capture desktop and mobile views of `/agent`, and fix obvious layout overlap.
-- [ ] Spawn parallel review agents for code, tests, and visual/design risks.
-- [ ] Fix actionable findings and rerun affected checks.
-- [ ] Commit review fixes if any.
+- [x] Run `rtk bun run lint` from `frontend/`.
+- [x] Run `rtk bun run test` from `frontend/`.
+- [x] Run `rtk bun run lint:i18n` if any messages change.
+- [x] If feasible, start dev services with `AUTH_MODE=dev`, capture desktop and mobile views of `/agent`, and fix obvious layout overlap.
+- [x] Spawn parallel review agents for code, tests, and visual/design risks.
+- [x] Fix actionable findings and rerun affected checks.
+- [x] Commit review fixes if any.
 - [ ] Push branch and open a draft PR.
+
+**Review fix notes:**
+- Added composer accessibility and context-title truncation coverage.
+- Added workbench coverage for project context handoff into the centered composer.
+- Tightened sidebar second-level item and agent overlay styling to match the warm minimalist shell.
+- Fixed mobile hydration mismatch caused by reading `matchMedia` during the first client render.

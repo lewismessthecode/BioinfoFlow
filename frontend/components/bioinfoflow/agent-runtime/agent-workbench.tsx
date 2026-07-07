@@ -767,8 +767,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               ? cn(
                   "translate-x-0 opacity-100",
                   activeSidecarTab === "browser"
-                    ? "w-[clamp(380px,32vw,520px)]"
-                    : "w-[clamp(440px,36vw,620px)]",
+                    ? "w-[clamp(340px,30vw,480px)]"
+                    : "w-[clamp(360px,32vw,540px)]",
                 )
               : "w-0 translate-x-4 opacity-0",
           )}

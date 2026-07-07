@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { act, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -94,5 +96,15 @@ describe("useIsMobile (useMediaQuery)", () => {
     renderHook(() => useIsMobile())
 
     expect(window.matchMedia).toHaveBeenCalledWith("(max-width: 1023px)")
+  })
+
+  it("keeps the first client render aligned with the server snapshot", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "hooks/use-media-query.ts"),
+      "utf8",
+    )
+
+    expect(source).not.toContain("useState(getMatches)")
+    expect(source).toContain("useState(false)")
   })
 })
