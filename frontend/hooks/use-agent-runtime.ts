@@ -269,6 +269,7 @@ export function useAgentRuntime(
       options?: {
         modelSelection?: AgentModelSelection | null
         inputParts?: AgentRuntimeInputPart[] | null
+        activeSkillNames?: string[] | null
         remoteConnectionId?: string | null
       },
     ) => {
@@ -290,6 +291,7 @@ export function useAgentRuntime(
           sessionId: session.id,
           inputText: text,
           inputParts: options?.inputParts,
+          activeSkillNames: options?.activeSkillNames,
           modelSelection: options?.modelSelection,
         })
         dispatch({ type: "turn.upsert", turn })

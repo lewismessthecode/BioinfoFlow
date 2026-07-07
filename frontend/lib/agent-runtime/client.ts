@@ -10,6 +10,7 @@ import type {
   AgentRuntimeArtifact,
   AgentRuntimeInputPart,
   AgentRuntimeSession,
+  AgentRuntimeSkill,
   AgentRuntimeStatePayload,
   AgentRuntimeTurn,
 } from "./types"
@@ -35,6 +36,11 @@ export const listAgentRuntimeSessions = async (
     params: Object.keys(params).length ? params : undefined,
   })
   return response.data
+}
+
+export const listAgentRuntimeSkills = async () => {
+  const response = await apiRequest<{ skills: AgentRuntimeSkill[] }>("/agent/skills")
+  return response.data.skills
 }
 
 export const createAgentRuntimeSession = async (
@@ -99,6 +105,7 @@ export const createAgentRuntimeTurn = async (input: {
   sessionId: string
   inputText: string
   inputParts?: AgentRuntimeInputPart[] | null
+  activeSkillNames?: string[] | null
   modelSelection?: AgentModelSelection | null
 }) => {
   const response = await apiRequest<AgentRuntimeTurn>(
@@ -108,6 +115,9 @@ export const createAgentRuntimeTurn = async (input: {
       body: JSON.stringify({
         input_text: input.inputText,
         input_parts: input.inputParts,
+        ...(input.activeSkillNames?.length
+          ? { active_skill_names: input.activeSkillNames }
+          : {}),
         model_selection: input.modelSelection,
       }),
     },

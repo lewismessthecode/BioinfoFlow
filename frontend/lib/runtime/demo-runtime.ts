@@ -33,6 +33,7 @@ import type {
   AgentCoreEvent,
   AgentCoreMemory,
   AgentCoreSession,
+  AgentCoreSkill,
   AgentCoreTurn,
   AgentPermissionMode,
   AgentSessionStatus,
@@ -50,6 +51,24 @@ import type {
   LlmProviderTemplate,
   LlmProviderTestResult,
 } from "@/lib/llm"
+
+const DEMO_AGENT_SKILLS: AgentCoreSkill[] = [
+  {
+    name: "nextflow-debugging",
+    version: "0.1.0",
+    description: "Diagnose failed Nextflow runs using logs, DAGs, and audit events.",
+    category: "workflow",
+    tags: ["nextflow", "debugging"],
+  },
+  {
+    name: "run-failure-triage",
+    version: "0.1.0",
+    description: "Collect Bioinfoflow run evidence before explaining a failure.",
+    category: "runs",
+    tags: ["runs", "logs"],
+  },
+]
+
 
 type DemoRuntimeState = {
   scenario: DemoScenario
@@ -803,6 +822,7 @@ function createAgentCoreTurn(
   state: DemoRuntimeState,
   sessionId: string,
   inputText: string,
+  activeSkillNames: string[] = [],
 ) {
   const session = findAgentCoreSession(state, sessionId)
   if (!session) throw new ApiError("Agent session not found", { status: 404 })
@@ -844,6 +864,7 @@ function createAgentCoreTurn(
     user_id: session.user_id,
     input_text: inputText,
     input_parts: [{ type: "text", text: inputText }],
+    active_skill_names: activeSkillNames,
     status: "completed",
     model_profile_snapshot: {
       provider: "demo",
@@ -1967,6 +1988,10 @@ function createDemoRuntimeInternal(): AppRuntime {
       return { data: clone(state.scenario.dashboard.scheduler) as T }
     }
 
+    if (path === "/agent/skills" && method === "GET") {
+      return { data: { skills: clone(DEMO_AGENT_SKILLS) } as T }
+    }
+
     if (path === "/agent/sessions" && method === "GET") {
       const projectId =
         typeof params.project_id === "string" ? params.project_id : undefined
@@ -2098,7 +2123,10 @@ function createDemoRuntimeInternal(): AppRuntime {
       const [sessionId] = agentSessionTurnsMatch
       const inputText =
         typeof bodyJson?.input_text === "string" ? bodyJson.input_text : ""
-      const turn = createAgentCoreTurn(state, sessionId, inputText)
+      const activeSkillNames = Array.isArray(bodyJson?.active_skill_names)
+        ? bodyJson.active_skill_names.filter((name): name is string => typeof name === "string")
+        : []
+      const turn = createAgentCoreTurn(state, sessionId, inputText, activeSkillNames)
       return { data: clone(turn) as T }
     }
 

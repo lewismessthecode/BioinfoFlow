@@ -126,6 +126,13 @@ vi.mock("next-intl", () => ({
       "tokenUsage.reasoning": "Reasoning",
       "tokenUsage.window": "Window",
       "tokenUsage.maxOutput": "Max output",
+      "skills.menuTitle": "Skills",
+      "skills.loading": "Loading skills...",
+      "skills.empty": "No skills found.",
+      "skills.noMatches": "No matching skills.",
+      "skills.loadFailed": "Could not load skills.",
+      "skills.remove": `Remove ${values?.name ?? ""}`,
+      "skills.activeForNextTurn": "Skills",
       auto: "Auto",
       configure: "Configure providers",
       noProviders: "No model available",
@@ -278,6 +285,7 @@ describe("AgentWorkbench", () => {
     apiRequestMock.mockReset()
     apiRequestMock.mockImplementation((path: string) => {
       if (path === "/connections") return new Promise(() => {})
+      if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
       if (path.startsWith("/agent/fs/tree")) {
         return Promise.resolve({ path: "/workspace/project-1", entries: [] })
       }
@@ -805,6 +813,46 @@ describe("AgentWorkbench", () => {
     )
     expect(screen.getByText("Plan RNA-seq QC")).toBeInTheDocument()
     expect(screen.getByText("Working on it...")).toBeInTheDocument()
+  })
+
+  it("sends selected slash skills with the next turn", async () => {
+    const send = vi.fn(async () => undefined)
+    setupRuntime({ send })
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/agent/skills") {
+        return Promise.resolve({
+          data: {
+            skills: [
+              {
+                name: "nextflow-debugging",
+                version: "0.1.0",
+                description: "Diagnose failed Nextflow runs.",
+                tags: ["nextflow"],
+              },
+            ],
+          },
+        })
+      }
+      if (path === "/connections") return new Promise(() => {})
+      return Promise.resolve({ data: [] })
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "/next" } })
+    await waitFor(() => expect(screen.getByTestId("agent-skill-option")).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId("agent-skill-option"))
+    fireEvent.change(input, { target: { value: "Analyze this failed run" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Analyze this failed run",
+        expect.objectContaining({ activeSkillNames: ["nextflow-debugging"] }),
+      ),
+    )
+    expect(screen.queryByText("/nextflow-debugging")).not.toBeInTheDocument()
   })
 
   it("interrupts the active turn before sending when the turn policy is interrupt", async () => {

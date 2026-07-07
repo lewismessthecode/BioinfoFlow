@@ -79,6 +79,13 @@ vi.mock("next-intl", () => ({
       "tokenUsage.reasoning": "Reasoning",
       "tokenUsage.window": "Window",
       "tokenUsage.maxOutput": "Max output",
+      "skills.menuTitle": "Skills",
+      "skills.loading": "Loading skills...",
+      "skills.empty": "No skills found.",
+      "skills.noMatches": "No matching skills.",
+      "skills.loadFailed": "Could not load skills.",
+      "skills.remove": `Remove ${values?.name ?? ""}`,
+      "skills.activeForNextTurn": "Skills",
     }
     return labels[key] ?? key
   },
@@ -173,6 +180,71 @@ describe("AgentComposer", () => {
 
     expect(textarea).toHaveStyle({ height: "160px" })
     expect(textarea).toHaveStyle({ overflowY: "auto" })
+  })
+
+  it("selects a slash skill without submitting the slash token", () => {
+    const onChange = vi.fn()
+    const onAddActiveSkill = vi.fn()
+    render(
+      <AgentComposer
+        value="/next"
+        onChange={onChange}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        availableSkills={[
+          {
+            name: "nextflow-debugging",
+            version: "0.1.0",
+            description: "Diagnose failed Nextflow runs.",
+            tags: ["nextflow"],
+          },
+        ]}
+        onAddActiveSkill={onAddActiveSkill}
+      />,
+    )
+
+    const textarea = screen.getByRole("textbox", { name: "Message Bioinfoflow..." })
+    textarea.setSelectionRange(5, 5)
+    fireEvent.click(textarea)
+    fireEvent.click(screen.getByTestId("agent-skill-option"))
+
+    expect(onAddActiveSkill).toHaveBeenCalledWith("nextflow-debugging")
+    expect(onChange).toHaveBeenCalledWith("")
+  })
+
+  it("renders active skill chips and removes them", () => {
+    const onRemoveActiveSkill = vi.fn()
+    render(
+      <AgentComposer
+        value="Analyze this run"
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+        availableSkills={[
+          {
+            name: "run-failure-triage",
+            version: "0.1.0",
+            description: "Collect run evidence.",
+            tags: ["runs"],
+          },
+        ]}
+        activeSkillNames={["run-failure-triage"]}
+        onRemoveActiveSkill={onRemoveActiveSkill}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove run-failure-triage" }))
+
+    expect(screen.getByText("/run-failure-triage")).toBeInTheDocument()
+    expect(onRemoveActiveSkill).toHaveBeenCalledWith("run-failure-triage")
   })
 
   it("names the textarea independently from the visible placeholder", () => {

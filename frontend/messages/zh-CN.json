@@ -2518,6 +2518,15 @@
       "window": "窗口",
       "maxOutput": "最大输出"
     },
+    "skills": {
+      "menuTitle": "技能",
+      "loading": "正在加载技能...",
+      "empty": "暂无技能。",
+      "noMatches": "没有匹配的技能。",
+      "loadFailed": "无法加载技能。",
+      "remove": "移除 {name}",
+      "activeForNextTurn": "技能"
+    },
     "activity": {
       "groups": {
         "search": "已搜索网页",

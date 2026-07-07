@@ -2518,6 +2518,15 @@
       "window": "Window",
       "maxOutput": "Max output"
     },
+    "skills": {
+      "menuTitle": "Skills",
+      "loading": "Loading skills...",
+      "empty": "No skills found.",
+      "noMatches": "No matching skills.",
+      "loadFailed": "Could not load skills.",
+      "remove": "Remove {name}",
+      "activeForNextTurn": "Skills"
+    },
     "activity": {
       "groups": {
         "search": "Searched web",

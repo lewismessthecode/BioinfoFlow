@@ -27,6 +27,7 @@ type CreateAgentTurnInput = {
   sessionId: string
   inputText: string
   inputParts?: Array<Record<string, unknown>>
+  activeSkillNames?: string[] | null
   modelProfileId?: string
   modelSelection?: AgentModelSelection | null
   metadata?: Record<string, unknown>
@@ -106,6 +107,9 @@ export const createAgentTurn = async (input: CreateAgentTurnInput) => {
       body: JSON.stringify({
         input_text: input.inputText,
         input_parts: input.inputParts,
+        ...(input.activeSkillNames?.length
+          ? { active_skill_names: input.activeSkillNames }
+          : {}),
         model_profile_id: input.modelProfileId,
         model_selection: input.modelSelection,
         metadata: input.metadata,

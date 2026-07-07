@@ -30,9 +30,11 @@ import {
   buildAgentRuntimeTimeline,
   deriveTodoDisplayItems,
   listAgentRuntimeSessionArtifacts,
+  listAgentRuntimeSkills,
   type AgentRuntimeArtifact,
   type AgentRuntimeFileRefPart,
   type AgentRuntimeInputPart,
+  type AgentRuntimeSkill,
   type AgentModelSelection,
   type AgentRuntimeTurn,
 } from "@/lib/agent-runtime"
@@ -52,6 +54,7 @@ const ACTIVE_TURN_STATUSES = new Set<AgentRuntimeTurn["status"]>([
 type PendingSubmission = {
   text: string
   inputParts: AgentRuntimeInputPart[]
+  activeSkillNames: string[]
   modelSelection: AgentModelSelection | null
   optimisticTurn: AgentRuntimeTurn
   sessionId: string
@@ -90,6 +93,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const isMobile = useIsMobile()
     const [input, setInput] = useState("")
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
+    const [availableSkills, setAvailableSkills] = useState<AgentRuntimeSkill[]>([])
+    const [activeSkillNames, setActiveSkillNames] = useState<string[]>([])
+    const [skillsLoading, setSkillsLoading] = useState(true)
+    const [skillsError, setSkillsError] = useState<string | null>(null)
     const [remoteConnectionOverride, setRemoteConnectionOverride] = useState<{
       sessionId: string
       value: string
@@ -235,6 +242,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const environmentLabel = environmentOpen
       ? t("environment.close")
       : t("environment.open")
+    const skillsLoadFailedLabel = t("skills.loadFailed")
 
     const clearLocalPendingSubmissions = useCallback(() => {
       setQueuedSubmissions([])
@@ -258,6 +266,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setActiveSessionId(null)
           setInput("")
           setContextAttachments([])
+          setActiveSkillNames([])
           setRemoteConnectionOverride(null)
           setHasSubmittedDraft(false)
           setOptimisticTurns([])
@@ -273,6 +282,26 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       }),
       [setActiveSessionId, stopCurrentTurn],
     )
+
+    useEffect(() => {
+      let cancelled = false
+      void listAgentRuntimeSkills()
+        .then((skills) => {
+          if (!cancelled) setAvailableSkills(skills)
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setAvailableSkills([])
+            setSkillsError(error instanceof Error ? error.message : skillsLoadFailedLabel)
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setSkillsLoading(false)
+        })
+      return () => {
+        cancelled = true
+      }
+    }, [skillsLoadFailedLabel])
 
     useEffect(() => {
       const sessionId = state.session?.id
@@ -347,6 +376,16 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       )
     }, [])
 
+    const addActiveSkill = useCallback((name: string) => {
+      setActiveSkillNames((current) =>
+        current.includes(name) ? current : [...current, name],
+      )
+    }, [])
+
+    const removeActiveSkill = useCallback((name: string) => {
+      setActiveSkillNames((current) => current.filter((item) => item !== name))
+    }, [])
+
     const handleRemoteConnectionChange = useCallback(
       (connectionId: string) => {
         setRemoteConnectionOverride({ sessionId, value: connectionId })
@@ -358,6 +397,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       (
         text: string,
         inputParts: AgentRuntimeInputPart[],
+        activeSkillNamesSnapshot: string[],
         modelSelection = selectedModel,
         optimisticTurnOverride?: AgentRuntimeTurn,
       ) => {
@@ -369,6 +409,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           createOptimisticTurn({
             text: trimmedText,
             inputParts,
+            activeSkillNames: activeSkillNamesSnapshot,
             sessionId: submissionSessionId,
             projectId,
           })
@@ -385,6 +426,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         void send(trimmedText, {
           modelSelection,
           inputParts,
+          activeSkillNames: activeSkillNamesSnapshot,
           ...(hasRemoteConnectionOverride || selectedRemoteConnectionId || state.session
             ? { remoteConnectionId: selectedRemoteConnectionId }
             : {}),
@@ -412,12 +454,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       (
         text: string,
         inputParts: AgentRuntimeInputPart[],
+        activeSkillNamesSnapshot: string[],
         modelSelection = selectedModel,
       ) => {
         const trimmedText = text.trim()
         if (!trimmedText) return
         if (!hasActiveTurn) {
-          sendTurn(trimmedText, inputParts, modelSelection)
+          sendTurn(trimmedText, inputParts, activeSkillNamesSnapshot, modelSelection)
           return
         }
 
@@ -425,6 +468,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           const nextOptimisticTurn = createOptimisticTurn({
             text: trimmedText,
             inputParts,
+            activeSkillNames: activeSkillNamesSnapshot,
             sessionId: submissionSessionId,
             projectId,
             localQueue: true,
@@ -436,6 +480,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             {
               text: trimmedText,
               inputParts,
+              activeSkillNames: activeSkillNamesSnapshot,
               modelSelection,
               optimisticTurn: nextOptimisticTurn,
               sessionId: submissionSessionId,
@@ -448,6 +493,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           const nextOptimisticTurn = createOptimisticTurn({
             text: trimmedText,
             inputParts,
+            activeSkillNames: activeSkillNamesSnapshot,
             sessionId: submissionSessionId,
             projectId,
             localPendingInterrupt: true,
@@ -462,6 +508,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setPendingInterruptSubmission({
             text: trimmedText,
             inputParts,
+            activeSkillNames: activeSkillNamesSnapshot,
             modelSelection,
             optimisticTurn: nextOptimisticTurn,
             sessionId: submissionSessionId,
@@ -471,7 +518,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
         void (async () => {
           await interrupt()
-          sendTurn(trimmedText, inputParts, modelSelection)
+          sendTurn(trimmedText, inputParts, activeSkillNamesSnapshot, modelSelection)
         })()
       },
       [
@@ -504,7 +551,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         setQueuedSubmissions((current) =>
           current[0] === next ? current.slice(1) : current,
         )
-        sendTurn(next.text, next.inputParts, next.modelSelection, next.optimisticTurn)
+        sendTurn(next.text, next.inputParts, next.activeSkillNames, next.modelSelection, next.optimisticTurn)
       }, 0)
       return () => window.clearTimeout(timer)
     }, [hasActiveTurn, queuedSubmissions, sendTurn, submissionSessionId])
@@ -528,7 +575,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         setPendingInterruptSubmission((current) => (current === next ? null : current))
         void (async () => {
           if (hasInterruptibleBackendTurn) await interrupt()
-          sendTurn(next.text, next.inputParts, next.modelSelection, next.optimisticTurn)
+          sendTurn(next.text, next.inputParts, next.activeSkillNames, next.modelSelection, next.optimisticTurn)
         })()
       }, 0)
       return () => window.clearTimeout(timer)
@@ -548,9 +595,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         { type: "text", text },
         ...contextAttachments,
       ]
-      submitTurn(text, inputParts, selectedModel)
+      const activeSkillNamesSnapshot = [...activeSkillNames]
+      submitTurn(text, inputParts, activeSkillNamesSnapshot, selectedModel)
       setInput("")
       setContextAttachments([])
+      setActiveSkillNames([])
     }
 
     const retryTurn = useCallback(
@@ -561,7 +610,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           turn.input_parts && turn.input_parts.length
             ? turn.input_parts
             : [{ type: "text" as const, text }]
-        submitTurn(text, inputParts, turn.model_selection ?? null)
+        submitTurn(text, inputParts, turn.active_skill_names ?? [], turn.model_selection ?? null)
       },
       [submitTurn],
     )
@@ -708,6 +757,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onSelectModel={(model) => void setSelectedModel(model)}
         contextAttachments={contextAttachments}
         onRemoveContextAttachment={removeContextAttachment}
+        availableSkills={availableSkills}
+        activeSkillNames={activeSkillNames}
+        skillsLoading={skillsLoading}
+        skillsError={skillsError}
+        onAddActiveSkill={addActiveSkill}
+        onRemoveActiveSkill={removeActiveSkill}
         tokenUsageSummary={state.session?.token_usage_summary}
         selectedRemoteConnectionId={selectedRemoteConnectionId}
         onRemoteConnectionChange={handleRemoteConnectionChange}
@@ -855,6 +910,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 function createOptimisticTurn({
   text,
   inputParts,
+  activeSkillNames,
   sessionId,
   projectId,
   localQueue = false,
@@ -862,6 +918,7 @@ function createOptimisticTurn({
 }: {
   text: string
   inputParts: AgentRuntimeInputPart[]
+  activeSkillNames: string[]
   sessionId: string
   projectId?: string | null
   localQueue?: boolean
@@ -876,6 +933,7 @@ function createOptimisticTurn({
     user_id: "pending",
     input_text: text,
     input_parts: inputParts,
+    active_skill_names: activeSkillNames,
     status: "queued",
     model_selection: null,
     model_profile_snapshot: null,
