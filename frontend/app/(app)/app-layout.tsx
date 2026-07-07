@@ -191,14 +191,14 @@ export default function AppLayout({
                 {/* Left Sidebar - Desktop */}
                 {!isMobile && (
                   <nav
-                    className="sticky top-0 h-[100dvh] flex-shrink-0 self-start transition-[width,opacity] duration-200"
+                    className="relative flex-shrink-0 transition-[width,opacity] duration-200"
                     style={{ width: effectiveLeftWidth }}
                     role="navigation"
                     aria-label="Project navigation"
                   >
                     <div
-                      className="h-[100dvh] transition-opacity duration-200"
-                      style={{ opacity: 1 }}
+                      className="fixed inset-y-0 left-0 z-20 h-[100dvh] transition-[width,opacity] duration-200"
+                      style={{ opacity: 1, width: effectiveLeftWidth }}
                     >
                       <Sidebar
                         collapsed={leftSidebarCollapsed}
@@ -207,10 +207,10 @@ export default function AppLayout({
                         viewer={viewer}
                         runtimeMode={runtimeMode}
                       />
+                      {!leftSidebarCollapsed && (
+                        <ResizeHandle side="left" onResize={handleLeftResize} />
+                      )}
                     </div>
-                    {!leftSidebarCollapsed && (
-                      <ResizeHandle side="left" onResize={handleLeftResize} />
-                    )}
                   </nav>
                 )}
 
