@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { formatSize } from "@/lib/format-utils"
-import { getDockerImageReference, getDockerPullCommand } from "@/lib/docker-image-utils"
+import { canDeleteDockerImage, getDockerImageReference, getDockerPullCommand } from "@/lib/docker-image-utils"
 import type { DockerImage } from "@/lib/types"
 import { statusLabelKeys } from "./image-views"
 
@@ -179,7 +179,7 @@ export function ImageDetailsSheet({
                       : tImages("actions.pull")}
                 </Button>
               </div>
-              {onDeleteLocal && image.status === "local" ? (
+              {onDeleteLocal && canDeleteDockerImage(image) ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -188,7 +188,7 @@ export function ImageDetailsSheet({
                   onClick={() => onDeleteLocal(image)}
                 >
                   <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                  {tImages("actions.deleteLocal")}
+                  {tImages(image.status === "failed" ? "actions.deleteFailedRecord" : "actions.deleteLocal")}
                 </Button>
               ) : null}
             </section>

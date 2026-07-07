@@ -11,7 +11,7 @@ import {
   resolveTeamRole,
 } from "@/lib/auth-config"
 import { formatSize } from "@/lib/format-utils"
-import { getDockerImageReference, getDockerPullCommand } from "@/lib/docker-image-utils"
+import { canDeleteDockerImage, getDockerImageReference, getDockerPullCommand } from "@/lib/docker-image-utils"
 import {
   getContainerRegistrySelectValue,
   getContainerRegistryValue,
@@ -290,12 +290,15 @@ export function useImagesPage() {
       toast.error(tImages("errors.deleteForbidden"))
       return
     }
-    if (image.status !== "local") {
+    if (!canDeleteDockerImage(image)) {
       toast.error(tImages("errors.deleteFailed"))
       return
     }
-    toast.warning(tImages("toasts.deleteConfirmTitle", { name: image.name }), {
-      description: tImages("toasts.deleteConfirmDescription", { size: formatSize(image.size_bytes) }),
+    const isFailedRecord = image.status === "failed"
+    toast.warning(tImages(isFailedRecord ? "toasts.deleteFailedConfirmTitle" : "toasts.deleteConfirmTitle", { name: image.name }), {
+      description: isFailedRecord
+        ? tImages("toasts.deleteFailedConfirmDescription")
+        : tImages("toasts.deleteConfirmDescription", { size: formatSize(image.size_bytes) }),
       action: {
         label: tCommon("confirm"),
         onClick: async () => {
@@ -312,7 +315,9 @@ export function useImagesPage() {
             })
             setDetailsImage((current) => current?.id === image.id ? null : current)
             toast.success(tImages("toasts.removedTitle", { name: image.name }), {
-              description: tImages("toasts.removedDescription"),
+              description: tImages(
+                isFailedRecord ? "toasts.failedRecordRemovedDescription" : "toasts.removedDescription",
+              ),
             })
           } catch (error) {
             const message =

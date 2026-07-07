@@ -376,6 +376,55 @@ describe("useImagesPage", () => {
     })
   })
 
+  it("deletes failed image records after confirmation", async () => {
+    const deleteActions: Array<() => Promise<void>> = []
+    const failedImage = makeImage({
+      id: "img-failed",
+      name: "demo/failed",
+      full_name: "ghcr.io/demo/failed:1.0.0",
+      status: "failed",
+    })
+
+    toastWarningMock.mockImplementation((_message, options) => {
+      if (options?.action?.onClick) {
+        deleteActions.push(options.action.onClick)
+      }
+    })
+    apiRequestMock.mockImplementation(async (path, options) => {
+      if (path === "/images") {
+        return {
+          data: [failedImage],
+          meta: { status: imageStatus() },
+        }
+      }
+      if (path === "/images/img-failed" && options?.method === "DELETE") {
+        return { data: null, meta: undefined }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const Wrapper = createAppWrapper()
+    const { result } = renderHook(() => useImagesPage(), { wrapper: Wrapper })
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    act(() => {
+      result.current.handleDeleteLocal(failedImage)
+    })
+
+    expect(toastErrorMock).not.toHaveBeenCalledWith("images.errors.deleteFailed")
+    expect(deleteActions).toHaveLength(1)
+
+    await act(async () => {
+      await deleteActions[0]()
+    })
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/images/img-failed", { method: "DELETE" })
+      expect(result.current.images).toHaveLength(0)
+    })
+  })
+
   it("forces a silent refresh on window focus when docker is available", async () => {
     apiRequestMock
       .mockResolvedValueOnce({
