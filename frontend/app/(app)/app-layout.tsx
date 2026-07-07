@@ -187,7 +187,7 @@ export default function AppLayout({
                 Skip to content
               </a>
 
-              <div className="flex h-screen bg-background text-foreground">
+              <div className="flex min-h-[100dvh] bg-background text-foreground">
                 {/* Left Sidebar - Desktop */}
                 {!isMobile && (
                   <nav
@@ -197,7 +197,7 @@ export default function AppLayout({
                     aria-label="Project navigation"
                   >
                     <div
-                      className="h-full transition-opacity duration-200"
+                      className="h-[100dvh] transition-opacity duration-200"
                       style={{ opacity: 1 }}
                     >
                       <Sidebar
@@ -228,7 +228,7 @@ export default function AppLayout({
 
                 {/* Main Content Area */}
                 <div
-                  className="flex-1 flex flex-col min-w-0 bg-background"
+                  className="flex min-h-[100dvh] min-w-0 flex-1 flex-col bg-background"
                   style={{
                     "--left-rail-compensation":
                       !isMobile && leftSidebarCollapsed

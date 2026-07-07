@@ -89,7 +89,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
 
   return (
     <aside
-      className="flex h-full w-full flex-col border-r border-sidebar-border/80 bg-sidebar/96 backdrop-blur-2xl supports-[backdrop-filter]:bg-sidebar/90"
+      className="flex h-full w-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
       aria-label="Project navigation"
     >
       {/* Header: Logo + Toggle */}
@@ -104,7 +104,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
                 variant="ghost"
                 size="icon"
                 onClick={() => onCollapsedChange?.(false)}
-                className="group relative h-8 w-8 rounded-lg text-sidebar-foreground/86 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:bg-sidebar-accent"
+                className="group relative h-8 w-8 rounded-[8px] text-sidebar-foreground/82 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:bg-sidebar-accent"
                 aria-label={tSidebar("openSidebar")}
               >
                 <Logo
@@ -121,9 +121,9 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
             <Link
               href="/agent"
               aria-label="Bioinfoflow"
-              className="flex min-w-0 items-center gap-3 overflow-hidden rounded-lg"
+              className="flex min-w-0 items-center gap-3 overflow-hidden rounded-[8px]"
             >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sidebar-foreground transition-colors duration-200 hover:bg-sidebar-accent/75">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-sidebar-foreground transition-colors duration-200 hover:bg-sidebar-accent/75">
                 <Logo size={21} className="text-sidebar-foreground" />
               </div>
               <span className="truncate text-[15px] font-semibold tracking-tight text-sidebar-foreground">
@@ -134,7 +134,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
               variant="ghost"
               size="icon"
               onClick={() => onCollapsedChange?.(true)}
-              className="h-8 w-8 rounded-lg text-sidebar-foreground/72 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground shrink-0"
+              className="h-8 w-8 shrink-0 rounded-[8px] text-sidebar-foreground/68 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
               aria-label={tSidebar("closeSidebar")}
             >
               <PanelLeftClose className="h-4 w-4" />
@@ -162,7 +162,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
         ) : (
           <div className="space-y-1">
             <Button
-              className="h-[38px] w-full justify-start gap-3 rounded-full border border-transparent bg-sidebar-accent px-4 text-[13px] font-semibold text-foreground shadow-none transition-colors duration-200 hover:bg-sidebar-accent/80"
+              className="h-[36px] w-full justify-start gap-3 rounded-[8px] border border-transparent bg-sidebar-accent px-3 text-[13px] font-medium text-foreground shadow-none transition-colors duration-200 hover:bg-sidebar-accent/80"
               onClick={handleNewConversation}
             >
               <SquarePen className="h-4 w-4 shrink-0" />
@@ -170,7 +170,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
             </Button>
             <Button
               variant="ghost"
-              className="h-[34px] w-full justify-start gap-3 rounded-full px-4 text-[13px] font-medium text-sidebar-foreground/82 transition-colors hover:bg-sidebar-accent/65 hover:text-sidebar-foreground"
+              className="h-[34px] w-full justify-start gap-3 rounded-[8px] px-3 text-[13px] font-medium text-sidebar-foreground/76 transition-colors hover:bg-sidebar-accent/65 hover:text-sidebar-foreground"
               onClick={onCommandOpen}
             >
               <Search className="h-4 w-4 shrink-0" />
@@ -188,7 +188,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
       {/* Divider + Section Label */}
       {!collapsed && (
         <div className="px-5 pb-1 pt-5">
-          <span className="block px-0 text-[13px] font-medium text-sidebar-foreground/58">
+          <span className="block px-0 text-[13px] font-medium text-sidebar-foreground/52">
             {tSidebar("workspace")}
           </span>
         </div>
@@ -237,7 +237,7 @@ export function Sidebar({ collapsed, onCollapsedChange, onCommandOpen, viewer }:
       </div>
 
       {/* Bottom Section: Settings + User Menu */}
-      <div className={cn("mt-auto", collapsed ? "px-2 py-3" : "px-4 py-4")}>
+      <div className={cn("mt-auto border-t border-sidebar-border/70", collapsed ? "px-2 py-3" : "px-3 py-3")}>
         <UserMenu collapsed={collapsed} viewer={viewer} />
       </div>
 
@@ -270,10 +270,10 @@ function RailButton({
           type="button"
           onClick={onClick}
           className={cn(
-            "flex h-9 w-full items-center justify-center rounded-full text-sidebar-foreground transition-colors",
+            "flex h-9 w-full items-center justify-center rounded-[8px] text-sidebar-foreground transition-colors",
             active
               ? "bg-sidebar-accent text-sidebar-foreground"
-              : "text-sidebar-foreground/82 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+              : "text-sidebar-foreground/76 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
           )}
           aria-label={label}
         >

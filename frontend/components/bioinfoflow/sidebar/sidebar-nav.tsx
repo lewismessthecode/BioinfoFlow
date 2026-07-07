@@ -32,7 +32,7 @@ export function SidebarNav({ collapsed }: SidebarNavProps) {
                   href={item.href}
                   aria-label={tNav(item.key)}
                   className={cn(
-                    "flex h-9 w-full items-center justify-center rounded-full border border-transparent transition-colors duration-150",
+                    "flex h-9 w-full items-center justify-center rounded-[8px] border border-transparent transition-colors duration-150",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-foreground"
                       : "text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
@@ -52,7 +52,7 @@ export function SidebarNav({ collapsed }: SidebarNavProps) {
             href={item.href}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "group relative flex h-[34px] items-center gap-3 rounded-full border border-transparent px-4 text-[13px] font-medium transition-colors duration-150",
+              "group relative flex h-[34px] items-center gap-3 rounded-[8px] border border-transparent px-3 text-[13px] font-medium transition-colors duration-150",
               isActive
                 ? "bg-sidebar-accent text-sidebar-foreground"
                 : "text-sidebar-foreground/82 hover:bg-sidebar-accent/65 hover:text-sidebar-foreground"
