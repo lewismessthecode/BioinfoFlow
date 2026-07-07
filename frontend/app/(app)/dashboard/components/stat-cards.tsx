@@ -61,7 +61,7 @@ export function StatCards({ stats }: StatCardsProps) {
 
   return (
     <div
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
       data-testid="dashboard-metric-grid"
     >
       {statCards.map((card) => {
@@ -74,27 +74,27 @@ export function StatCards({ stats }: StatCardsProps) {
             <CardRoot variant="workbench" className="h-full">
               <Link
                 href={card.href}
-                className="group block h-full rounded-[inherit] transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-inset"
+                className="group block h-full rounded-[inherit] transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-inset"
               >
-                <CardContent className="flex min-h-[7rem] flex-col justify-between gap-4 !p-5">
+                <CardContent className="flex min-h-[6.75rem] flex-col justify-between gap-3 !p-4">
                   <span className="flex items-start justify-between gap-3">
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                      <span className="block truncate text-[13px] font-medium text-muted-foreground transition-colors group-hover:text-foreground">
                         {tDashboard(card.key)}
                       </span>
-                      <span className="mt-2 block font-mono text-3xl font-semibold tracking-tight text-foreground tabular-nums">
+                      <span className="mt-2 block font-mono text-2xl font-medium tracking-tight text-foreground tabular-nums">
                         {card.getValue()}
                       </span>
                       {card.key === "runs" && (stats?.runs.running ?? 0) > 0 ? (
-                        <span className="mt-2 flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse motion-reduce:animate-none" />
-                          <span className="text-xs font-medium text-info">
+                        <span className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+                          <span>
                             {stats?.runs.running} {tStatus("running")}
                           </span>
                         </span>
                       ) : null}
                     </span>
-                    <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" aria-hidden="true" />
+                    <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" aria-hidden="true" />
                   </span>
                   <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     {card.getDetails().map((detail) => (
