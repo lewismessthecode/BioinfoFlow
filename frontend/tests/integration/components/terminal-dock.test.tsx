@@ -9,7 +9,7 @@ import { renderAppPage } from "@/tests/app-test-utils"
 
 const appearanceState = {
   resolvedMode: "light" as const,
-  activePreset: "codex",
+  activePreset: "workbench",
 }
 
 const resizeMock = vi.fn()
@@ -85,8 +85,8 @@ vi.mock("@/lib/appearance/use-appearance", () => ({
   useAppearance: () => ({
     mode: appearanceState.resolvedMode,
     resolvedMode: appearanceState.resolvedMode,
-    lightPreset: "codex",
-    darkPreset: "codex",
+    lightPreset: "workbench",
+    darkPreset: "workbench",
     activePreset: appearanceState.activePreset,
     setMode: vi.fn(),
     setLightPreset: vi.fn(),
@@ -138,7 +138,7 @@ function renderDock() {
 describe("TerminalDock", () => {
   beforeEach(() => {
     appearanceState.resolvedMode = "light"
-    appearanceState.activePreset = "codex"
+    appearanceState.activePreset = "workbench"
     terminalInstances.length = 0
     resizeObserverInstances.length = 0
     fitCallCount = 0
@@ -223,7 +223,7 @@ describe("TerminalDock", () => {
     expect(focusCallCount).toBeGreaterThan(0)
 
     appearanceState.resolvedMode = "dark"
-    appearanceState.activePreset = "gruvbox"
+    appearanceState.activePreset = "linear"
     view.rerender(
       <TerminalDockProvider projectId="project-1" enabled isMobile={false}>
         <TerminalDock />

@@ -2166,7 +2166,7 @@
     },
     "appearance": {
       "title": "Appearance",
-      "description": "Tune app shell colors and mode.",
+      "description": "Choose a focused theme and mode for the app shell.",
       "mode": "Mode",
       "activePreset": "Current preset: {preset}",
       "modes": {

@@ -40,9 +40,9 @@ vi.mock("@/lib/appearance/use-appearance", () => ({
   useAppearance: () => ({
     mode: "light",
     resolvedMode: "light",
-    lightPreset: "codex",
-    darkPreset: "codex",
-    activePreset: "codex",
+    lightPreset: "workbench",
+    darkPreset: "workbench",
+    activePreset: "workbench",
     setMode: setModeMock,
     setLightPreset: vi.fn(),
     setDarkPreset: vi.fn(),

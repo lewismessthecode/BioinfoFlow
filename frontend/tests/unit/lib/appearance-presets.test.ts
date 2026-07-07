@@ -9,26 +9,12 @@ import {
 describe("appearance preset registry", () => {
   it("registers all supported preset ids", () => {
     expect(appearancePresetIds).toEqual([
-      "codex",
-      "linear",
-      "github",
+      "workbench",
       "notion",
-      "catppuccin",
-      "everforest",
-      "gruvbox",
+      "github",
+      "linear",
       "one",
-      "proof",
-      "raycast",
-      "dracula",
-      "ayu",
-      "material",
-      "matrix",
-      "monokai",
-      "rose-pine",
-      "solarized",
-      "tokyo-night",
       "vercel",
-      "vscode-plus",
     ])
   })
 
@@ -48,65 +34,21 @@ describe("appearance preset registry", () => {
   })
 
   it("keeps the curated palette anchors", () => {
-    expect(appearancePresets.codex.light).toMatchObject({
-      background: "#fbfbfa",
-      foreground: "#242321",
-      sidebar: "#f1f0ed",
-      "sidebar-accent": "#e4e1dc",
-      "bg-surface": "#f3f2ef",
+    expect(appearancePresets.workbench.label).toBe("Workbench")
+    expect(appearancePresets.workbench.light).toMatchObject({
+      background: "#fbfaf7",
+      foreground: "#201f1b",
+      primary: "#201f1b",
+      sidebar: "#f2f0eb",
+      "sidebar-accent": "#e7e2da",
+      "bg-surface": "#f4f1eb",
     })
-
-    expect(appearancePresets.ayu.light).toMatchObject({
-      background: "#fcfcfc",
-      primary: "#ff9940",
-    })
-    expect(appearancePresets.ayu.dark).toMatchObject({
-      background: "#1f2430",
-      primary: "#ffcc66",
-    })
-
-    expect(appearancePresets.material.light).toMatchObject({
-      background: "#fafafa",
-    })
-    expect(appearancePresets.material.dark).toMatchObject({
-      background: "#0f111a",
-      primary: "#82aaff",
-    })
-
-    expect(appearancePresets["rose-pine"].light).toMatchObject({
-      background: "#faf4ed",
-      "bg-surface": "#f2e9e1",
-    })
-    expect(appearancePresets["rose-pine"].dark).toMatchObject({
-      background: "#191724",
-      "bg-surface": "#26233a",
-    })
-
-    expect(appearancePresets.solarized.light).toMatchObject({
-      background: "#fdf6e3",
-      "bg-surface": "#eee8d5",
-    })
-    expect(appearancePresets.solarized.dark).toMatchObject({
-      background: "#002b36",
-      "bg-surface": "#073642",
-    })
-
-    expect(appearancePresets["tokyo-night"].light).toMatchObject({
-      background: "#e6e7ed",
-      sidebar: "#d6d8df",
-    })
-    expect(appearancePresets["tokyo-night"].dark).toMatchObject({
-      background: "#1a1b26",
-      sidebar: "#16161e",
-    })
-
-    expect(appearancePresets["vscode-plus"].light).toMatchObject({
-      background: "#ffffff",
-      sidebar: "#f3f3f3",
-    })
-    expect(appearancePresets["vscode-plus"].dark).toMatchObject({
-      background: "#1e1e1e",
-      "bg-surface": "#252526",
+    expect(appearancePresets.workbench.dark).toMatchObject({
+      background: "#0d0c0a",
+      foreground: "#f2eee8",
+      primary: "#f2eee8",
+      sidebar: "#0b0a08",
+      "bg-surface": "#181613",
     })
   })
 })

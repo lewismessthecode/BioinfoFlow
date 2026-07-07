@@ -30,7 +30,7 @@ vi.mock("next-intl", () => ({
       "nav.providers": "AI Providers",
       "nav.members": "Members",
       "appearance.title": "Appearance",
-      "appearance.description": "Tune app shell colors and mode.",
+      "appearance.description": "Choose a focused theme and mode for the app shell.",
       "appearance.mode": "Mode",
       "appearance.modes.light": "Light",
       "appearance.modes.dark": "Dark",
@@ -158,9 +158,9 @@ describe("Settings page flow", () => {
     useAppearanceMock.mockReturnValue({
       mode: "system",
       resolvedMode: "light",
-      lightPreset: "codex",
-      darkPreset: "codex",
-      activePreset: "codex",
+      lightPreset: "workbench",
+      darkPreset: "workbench",
+      activePreset: "workbench",
       setMode: vi.fn(),
       setLightPreset: vi.fn(),
       setDarkPreset: vi.fn(),
@@ -421,8 +421,8 @@ describe("Settings page flow", () => {
 
     await user.click(screen.getByRole("button", { name: "Appearance" }))
 
-    expect(screen.getByText("Tune app shell colors and mode.")).toBeInTheDocument()
-    expect(screen.getByText("Current preset: Codex")).toBeInTheDocument()
+    expect(screen.getByText("Choose a focused theme and mode for the app shell.")).toBeInTheDocument()
+    expect(screen.getByText("Current preset: Workbench")).toBeInTheDocument()
     expect(screen.getByText("Light preview")).toBeInTheDocument()
     expect(screen.getByText("Dark preview")).toBeInTheDocument()
     expect(screen.getAllByTestId("appearance-preview-shell")).toHaveLength(2)

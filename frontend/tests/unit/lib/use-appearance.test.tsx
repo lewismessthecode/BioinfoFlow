@@ -73,26 +73,26 @@ describe("useAppearance", () => {
     })))
   })
 
-  it("falls back to codex presets when no saved config exists", async () => {
+  it("falls back to workbench presets when no saved config exists", async () => {
     const { result } = renderHook(() => useAppearance(), { wrapper: Wrapper })
 
     await waitFor(() => {
-      expect(result.current.lightPreset).toBe("codex")
+      expect(result.current.lightPreset).toBe("workbench")
     })
 
-    expect(result.current.darkPreset).toBe("codex")
-    expect(result.current.activePreset).toBe("codex")
+    expect(result.current.darkPreset).toBe("workbench")
+    expect(result.current.activePreset).toBe("workbench")
     expect(result.current.mode).toBe("system")
     expect(result.current.resolvedMode).toBe("light")
     expect(document.documentElement.dataset.appearanceMode).toBe("light")
-    expect(document.documentElement.dataset.appearancePreset).toBe("codex")
+    expect(document.documentElement.dataset.appearancePreset).toBe("workbench")
   })
 
-  it("ignores corrupt or unknown local storage and restores codex defaults", async () => {
+  it("ignores corrupt, unknown, or legacy local storage and restores workbench defaults", async () => {
     localStorage.setItem(
       APPEARANCE_STORAGE_KEY,
       JSON.stringify({
-        lightPreset: "unknown",
+        lightPreset: "codex",
         darkPreset: "broken",
       }),
     )
@@ -102,7 +102,7 @@ describe("useAppearance", () => {
     })
 
     await waitFor(() => {
-      expect(result.current.lightPreset).toBe("codex")
+      expect(result.current.lightPreset).toBe("workbench")
     })
 
     unmount()
@@ -113,7 +113,7 @@ describe("useAppearance", () => {
     })
 
     await waitFor(() => {
-      expect(nextResult.current.darkPreset).toBe("codex")
+      expect(nextResult.current.darkPreset).toBe("workbench")
     })
   })
 
@@ -121,19 +121,19 @@ describe("useAppearance", () => {
     const { result } = renderHook(() => useAppearance(), { wrapper: Wrapper })
 
     await waitFor(() => {
-      expect(result.current.lightPreset).toBe("codex")
+      expect(result.current.lightPreset).toBe("workbench")
     })
 
     act(() => {
       result.current.setLightPreset("github")
-      result.current.setDarkPreset("gruvbox")
+      result.current.setDarkPreset("linear")
       result.current.setMode("dark")
     })
 
     expect(localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe(
       JSON.stringify({
         lightPreset: "github",
-        darkPreset: "gruvbox",
+        darkPreset: "linear",
       }),
     )
     expect(setThemeMock).toHaveBeenCalledWith("dark")
@@ -156,9 +156,9 @@ describe("useAppearance", () => {
 
     expect(result.current.mode).toBe("system")
     expect(document.documentElement.dataset.appearanceMode).toBe("dark")
-    expect(document.documentElement.dataset.appearancePreset).toBe("codex")
+    expect(document.documentElement.dataset.appearancePreset).toBe("workbench")
     expect(
       document.querySelector('meta[name="theme-color"]')?.getAttribute("content"),
-    ).toBe("#09090b")
+    ).toBe("#0d0c0a")
   })
 })

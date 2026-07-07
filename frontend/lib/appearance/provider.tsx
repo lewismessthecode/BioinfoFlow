@@ -36,8 +36,11 @@ type AppearanceContextValue = {
 }
 
 const DEFAULT_APPEARANCE_CONFIG: AppearanceConfig = {
-  lightPreset: "codex",
-  darkPreset: "codex",
+  lightPreset: "workbench",
+  darkPreset: "workbench",
+}
+const LEGACY_PRESET_ALIASES: Partial<Record<string, ThemePresetId>> = {
+  codex: "workbench",
 }
 const SYSTEM_COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)"
 
@@ -49,6 +52,12 @@ function isThemePresetId(value: string): value is ThemePresetId {
   return appearancePresetIds.includes(value as ThemePresetId)
 }
 
+function normalizePresetId(value: string | undefined, fallback: ThemePresetId): ThemePresetId {
+  if (!value) return fallback
+  if (isThemePresetId(value)) return value
+  return LEGACY_PRESET_ALIASES[value] ?? fallback
+}
+
 function sanitizeConfig(value: unknown): AppearanceConfig {
   if (!value || typeof value !== "object") {
     return DEFAULT_APPEARANCE_CONFIG
@@ -57,12 +66,14 @@ function sanitizeConfig(value: unknown): AppearanceConfig {
   const config = value as Partial<Record<keyof AppearanceConfig, string>>
 
   return {
-    lightPreset: isThemePresetId(config.lightPreset ?? "")
-      ? config.lightPreset
-      : DEFAULT_APPEARANCE_CONFIG.lightPreset,
-    darkPreset: isThemePresetId(config.darkPreset ?? "")
-      ? config.darkPreset
-      : DEFAULT_APPEARANCE_CONFIG.darkPreset,
+    lightPreset: normalizePresetId(
+      config.lightPreset,
+      DEFAULT_APPEARANCE_CONFIG.lightPreset,
+    ),
+    darkPreset: normalizePresetId(
+      config.darkPreset,
+      DEFAULT_APPEARANCE_CONFIG.darkPreset,
+    ),
   }
 }
 

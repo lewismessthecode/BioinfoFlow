@@ -2166,7 +2166,7 @@
     },
     "appearance": {
       "title": "外观",
-      "description": "调整应用主界面的颜色与模式。",
+      "description": "为应用主界面选择一组精简主题和显示模式。",
       "mode": "模式",
       "activePreset": "当前预设：{preset}",
       "modes": {
