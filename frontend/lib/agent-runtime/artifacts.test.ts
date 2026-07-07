@@ -26,13 +26,11 @@ function artifact(
 
 describe("Agent runtime deliverable artifact semantics", () => {
   it("counts only deliverable artifacts for review surfaces", () => {
-    const { isDeliverableArtifact, countDeliverableArtifacts } = agentRuntime as {
-      isDeliverableArtifact?: (artifact: AgentRuntimeArtifact) => boolean
-      countDeliverableArtifacts?: (artifacts: AgentRuntimeArtifact[]) => number
+    const { deliverableArtifacts } = agentRuntime as {
+      deliverableArtifacts?: (artifacts: AgentRuntimeArtifact[]) => AgentRuntimeArtifact[]
     }
 
-    expect(isDeliverableArtifact).toBeTypeOf("function")
-    expect(countDeliverableArtifacts).toBeTypeOf("function")
+    expect(deliverableArtifacts).toBeTypeOf("function")
 
     const artifacts = [
       artifact("command"),
@@ -43,14 +41,6 @@ describe("Agent runtime deliverable artifact semantics", () => {
       artifact("unknown", { file_path: "results/table.tsv" }),
     ]
 
-    expect(artifacts.map((item) => isDeliverableArtifact(item))).toEqual([
-      false,
-      false,
-      false,
-      true,
-      true,
-      true,
-    ])
-    expect(countDeliverableArtifacts(artifacts)).toBe(3)
+    expect(deliverableArtifacts(artifacts)).toEqual(artifacts.slice(3))
   })
 })
