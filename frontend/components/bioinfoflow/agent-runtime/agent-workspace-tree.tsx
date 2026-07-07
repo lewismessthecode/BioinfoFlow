@@ -307,7 +307,7 @@ function fileIconClassName(kind: string) {
     case "markdown":
       return "text-emerald-600"
     case "data":
-      return "text-amber-600"
+      return "text-violet-600"
     case "table":
       return "text-green-600"
     case "shell":

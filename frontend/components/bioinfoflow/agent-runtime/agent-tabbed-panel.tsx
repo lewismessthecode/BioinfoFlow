@@ -252,7 +252,7 @@ export function AgentTabbedPanel({
         <div className="border-b border-border/60 px-3 py-2" data-testid="sidecar-decision-indicator">
           <button
             type="button"
-            className="w-full rounded-[8px] bg-[#FBF3DB] px-3 py-1.5 text-left text-xs font-medium text-[#956400] hover:bg-[#FBF3DB]/80 dark:bg-amber-500/10 dark:text-amber-200"
+            className="w-full rounded-[8px] border border-foreground/10 bg-foreground/[0.045] px-3 py-1.5 text-left text-xs font-medium text-foreground/72 hover:bg-foreground/[0.07] dark:border-border dark:bg-muted/35 dark:text-foreground/76"
             onClick={jumpToPendingDecision}
           >
             {t("approval.jumpToDecision")}

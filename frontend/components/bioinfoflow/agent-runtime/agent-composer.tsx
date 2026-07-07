@@ -418,7 +418,7 @@ function AgentTokenUsageBadge({
     view.status === "critical"
       ? "border-[#FDEBEC] bg-[#FDEBEC]/70 text-[#9F2F2D]"
       : view.status === "warning"
-        ? "border-[#FBF3DB] bg-[#FBF3DB]/70 text-[#956400]"
+        ? "border-foreground/12 bg-foreground/[0.045] text-foreground/72"
         : ""
 
   return (
@@ -462,7 +462,7 @@ function AgentTokenUsageBadge({
                     view.status === "critical"
                       ? "bg-[#9F2F2D]"
                       : view.status === "warning"
-                        ? "bg-[#956400]"
+                        ? "bg-foreground/45"
                         : "bg-foreground/55",
                   )}
                   style={{ width: `${view.percentUsed}%` }}

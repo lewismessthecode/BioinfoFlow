@@ -55,7 +55,7 @@ export function TodoChecklist({ todos, compact = false }: { todos: TodoChecklist
 function statusFrame(status: AgentTodoDisplayStatus) {
   if (status === "in_progress") return "border-primary/40 bg-primary/5"
   if (status === "failed") return "border-destructive/30 bg-destructive/5"
-  if (status === "cancelled" || status === "stopped") return "border-amber-500/30 bg-amber-500/5"
+  if (status === "cancelled" || status === "stopped") return "border-muted-foreground/20 bg-muted/35"
   return "border-border/60 bg-card"
 }
 
@@ -75,7 +75,7 @@ function TodoStatusIcon({ status }: { status: AgentTodoDisplayStatus }) {
     return <AlertTriangle className={cn(className, "text-destructive")} />
   }
   if (status === "cancelled" || status === "stopped") {
-    return <CircleSlash2 className={cn(className, "text-amber-600")} />
+    return <CircleSlash2 className={cn(className, "text-muted-foreground")} />
   }
   return <Circle className={cn(className, "text-muted-foreground/50")} />
 }
