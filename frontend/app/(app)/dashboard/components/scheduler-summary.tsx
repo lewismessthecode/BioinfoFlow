@@ -8,7 +8,6 @@ import {
   CardContent,
   CardHeader,
 } from "@/components/bioinfoflow/card";
-import { Button } from "@/components/ui/button";
 import type { SchedulerStatus } from "@/lib/types";
 
 type SchedulerSummaryProps = {
@@ -19,59 +18,61 @@ export function SchedulerSummary({ schedulerStatus }: SchedulerSummaryProps) {
   const tDashboard = useTranslations("dashboard");
 
   return (
-    <CardRoot variant="workbench" className="flex h-full flex-1 flex-col">
-      <CardHeader
-        title={tDashboard("schedulerCard.title")}
-        icon={Gauge}
-        className="border-b-0 !pb-2"
-        action={
-          <Button variant="ghost" size="icon-sm" asChild>
-            <Link
-              href="/scheduler"
-              aria-label={tDashboard("schedulerCard.title")}
-              className="text-muted-foreground hover:text-foreground"
+    <Link
+      href="/scheduler"
+      className="group block h-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2"
+    >
+      <CardRoot variant="workbench" className="flex h-full flex-1 flex-col transition-colors group-hover:bg-muted/20">
+        <CardHeader
+          title={tDashboard("schedulerCard.title")}
+          icon={Gauge}
+          className="border-b-0 !pb-2"
+          action={
+            <span
+              className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors group-hover:text-foreground"
+              aria-hidden="true"
             >
-              <ArrowRight className="size-3.5" aria-hidden="true" />
-            </Link>
-          </Button>
-        }
-      />
-      <CardContent className="flex flex-1 flex-col justify-between gap-5 !pt-0">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">
-            {tDashboard("schedulerCard.queueDepth")}
-          </p>
-          <p className="mt-1 font-mono text-3xl font-semibold tracking-tight text-foreground tabular-nums">
-            {schedulerStatus.queue_depth}
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-3 text-xs text-muted-foreground">
-          <span className="min-w-0">
-            <span className="block font-mono font-medium text-foreground tabular-nums">
-              {schedulerStatus.states.queued}
+              <ArrowRight className="size-3.5" />
             </span>
-            <span className="block truncate">
-              {tDashboard("schedulerCard.states.queued")}
+          }
+        />
+        <CardContent className="flex flex-1 flex-col justify-between gap-5 !pt-0">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">
+              {tDashboard("schedulerCard.queueDepth")}
+            </p>
+            <p className="mt-1 font-mono text-3xl font-semibold tracking-tight text-foreground tabular-nums">
+              {schedulerStatus.queue_depth}
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-xs text-muted-foreground">
+            <span className="min-w-0">
+              <span className="block font-mono font-medium text-foreground tabular-nums">
+                {schedulerStatus.states.queued}
+              </span>
+              <span className="block truncate">
+                {tDashboard("schedulerCard.states.queued")}
+              </span>
             </span>
-          </span>
-          <span className="min-w-0">
-            <span className="block font-mono font-medium text-foreground tabular-nums">
-              {schedulerStatus.states.dispatched}
+            <span className="min-w-0">
+              <span className="block font-mono font-medium text-foreground tabular-nums">
+                {schedulerStatus.states.dispatched}
+              </span>
+              <span className="block truncate">
+                {tDashboard("schedulerCard.states.dispatched")}
+              </span>
             </span>
-            <span className="block truncate">
-              {tDashboard("schedulerCard.states.dispatched")}
+            <span className="min-w-0">
+              <span className="block font-mono font-medium text-foreground tabular-nums">
+                {schedulerStatus.states.completed}
+              </span>
+              <span className="block truncate">
+                {tDashboard("schedulerCard.states.completed")}
+              </span>
             </span>
-          </span>
-          <span className="min-w-0">
-            <span className="block font-mono font-medium text-foreground tabular-nums">
-              {schedulerStatus.states.completed}
-            </span>
-            <span className="block truncate">
-              {tDashboard("schedulerCard.states.completed")}
-            </span>
-          </span>
-        </div>
-      </CardContent>
-    </CardRoot>
+          </div>
+        </CardContent>
+      </CardRoot>
+    </Link>
   );
 }

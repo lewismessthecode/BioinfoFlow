@@ -173,8 +173,8 @@ function SetupItem({
             "flex shrink-0 items-center justify-center rounded-full border",
             isComplete ? "size-4" : "mt-0.5 size-5",
             check.status === "pass" && "border-border bg-muted text-muted-foreground",
-            check.status === "warn" && "border-warning-border bg-warning-muted text-warning",
-            check.status === "fail" && "border-warning-border bg-warning-muted text-warning",
+            check.status === "warn" && "border-border bg-muted text-muted-foreground",
+            check.status === "fail" && "border-destructive/25 bg-destructive/10 text-destructive",
             check.status === "skip" && "border-border bg-muted text-muted-foreground",
           )}
         >
@@ -194,8 +194,8 @@ function SetupItem({
               <span
                 className={cn(
                   "text-xs font-medium",
-                  check.status === "fail" && "text-warning",
-                  check.status === "warn" && "text-warning",
+                  check.status === "fail" && "text-destructive",
+                  check.status === "warn" && "text-muted-foreground",
                   check.status === "skip" && "text-muted-foreground",
                 )}
               >
