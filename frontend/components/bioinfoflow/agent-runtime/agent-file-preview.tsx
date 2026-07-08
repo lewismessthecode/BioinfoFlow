@@ -33,7 +33,6 @@ export function AgentFilePreview({
   const openLabel = t("files.openDefault")
   const addLabel = t("files.addToContext")
   const copyLabel = t("files.copyPath")
-  const breadcrumb = compactPath(file.path)
 
   return (
     <div
@@ -52,8 +51,8 @@ export function AgentFilePreview({
         >
           <X className="h-3.5 w-3.5" />
         </button>
-        <div className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground" title={file.path}>
-          {breadcrumb}
+        <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground" title={file.path}>
+          {filename}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           <Tooltip>
@@ -120,11 +119,4 @@ export function AgentFilePreview({
       ) : null}
     </div>
   )
-}
-
-function compactPath(path: string) {
-  const segments = path.split("/").filter(Boolean)
-  const tail = segments.slice(-3)
-  const prefix = segments.length > tail.length ? "... / " : ""
-  return `${prefix}${tail.join(" / ")}`
 }
