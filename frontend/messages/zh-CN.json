@@ -2549,15 +2549,11 @@
       },
       "skills": {
         "prefix": "输入",
-        "suffix": "为下一轮选择一个专注技能"
+        "suffix": "选择一个或多个 skills"
       },
       "mode": {
         "prefix": "按",
         "suffix": "在计划和执行模式之间切换"
-      },
-      "inputs": {
-        "prefix": "提到",
-        "suffix": "让助手帮你整理运行参数"
       }
     },
     "workflowContext": {

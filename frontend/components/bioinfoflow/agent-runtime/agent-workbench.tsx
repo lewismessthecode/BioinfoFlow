@@ -88,7 +88,6 @@ const COMMAND_DISCOVERY_HINTS = [
   { key: "workflow", token: "@workflow" },
   { key: "skills", token: "/" },
   { key: "mode", token: "Shift+Tab" },
-  { key: "inputs", token: "inputs" },
 ] as const
 
 const WORKFLOW_MENTION_PATTERN = /(^|\s)@workflow(?=\s|$|[,.!?;:])/gi
@@ -890,7 +889,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       return () => setNavbarActions(null)
     }, [agentActionButtons, desktopSidecarVisible, setNavbarActions])
 
-    const composerDocked = hasConversation || desktopSidecarVisible
+    const composerDocked = hasConversation
     const composer = (
       <AgentComposer
         ref={textareaRef}
@@ -994,7 +993,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 ) : null}
                 {!composerDocked && !input.trim() ? (
                   <StarterSuggestionList
-                    suggestions={STARTER_SUGGESTIONS.map((suggestion) => ({
+                    suggestions={STARTER_SUGGESTIONS.slice(
+                      0,
+                      desktopSidecarVisible ? 3 : STARTER_SUGGESTIONS.length,
+                    ).map((suggestion) => ({
                       key: suggestion.key,
                       icon: suggestion.icon,
                       prompt: t(`starterSuggestions.${suggestion.key}.prompt`),
@@ -1283,13 +1285,13 @@ function CommandDiscoveryHints({
     >
       <p
         className={cn(
-          "t-text-swap inline-flex max-w-[calc(100vw-2rem)] items-center justify-center gap-1.5 truncate text-center text-[14px] font-normal leading-6 tracking-normal text-muted-foreground/75 sm:text-[15px]",
+          "t-text-swap inline-flex max-w-[calc(100vw-2rem)] items-center justify-center gap-1.5 truncate text-center text-[12px] font-normal leading-5 tracking-normal text-muted-foreground/75 sm:text-[13px]",
           swapState,
         )}
         aria-label={`${currentHint.prefix} ${currentHint.token} ${currentHint.suffix}`}
       >
         <span className="truncate">{currentHint.prefix}</span>
-        <kbd className="rounded-[5px] border border-border/35 bg-foreground/[0.055] px-1.5 py-px font-mono text-[12px] font-normal leading-none text-muted-foreground/85">
+        <kbd className="rounded-[5px] border border-border/35 bg-foreground/[0.055] px-1.5 py-px font-mono text-[11px] font-normal leading-none text-muted-foreground/85">
           {currentHint.token}
         </kbd>
         <span className="truncate">{currentHint.suffix}</span>
