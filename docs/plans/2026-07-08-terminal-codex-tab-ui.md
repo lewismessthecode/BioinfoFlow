@@ -10,24 +10,24 @@
 
 ## Phase 1: Behavior Fix
 
-- [ ] Stop restoring terminal open state from local storage.
-- [ ] Keep height persistence only.
-- [ ] Ensure `chdir()` does not open the terminal implicitly.
-- [ ] Add integration coverage proving stored `open=true` no longer auto-opens.
-- [ ] Commit behavior fix.
+- [x] Stop restoring terminal open state from local storage.
+- [x] Keep height persistence only.
+- [x] Ensure `chdir()` does not open the terminal implicitly.
+- [x] Add integration coverage proving stored `open=true` no longer auto-opens.
+- [x] Commit behavior fix.
 
 ## Phase 2: Codex-like Terminal Surface
 
-- [ ] Replace the old header-chip treatment with a Codex-like tab strip.
-- [ ] Add a compact light-grey terminal tab plus a nearby `+` affordance.
-- [ ] Increase top/left terminal viewport padding so prompt text no longer hugs the panel edge.
-- [ ] Keep remote/local target labels readable without making the header busy.
-- [ ] Update focused terminal dock tests.
-- [ ] Commit UI redesign.
+- [x] Replace the old header-chip treatment with a Codex-like tab strip.
+- [x] Add a compact light-grey terminal tab plus a nearby `+` affordance.
+- [x] Increase top/left terminal viewport padding so prompt text no longer hugs the panel edge.
+- [x] Keep remote/local target labels readable without making the header busy.
+- [x] Update focused terminal dock tests.
+- [x] Commit UI redesign.
 
 ## Phase 3: Review, Verification, PR
 
-- [ ] Run targeted frontend tests and lint.
+- [x] Run targeted frontend tests and lint.
 - [ ] Run parallel review agents after implementation.
 - [ ] Fix review findings.
 - [ ] Run final verification.
