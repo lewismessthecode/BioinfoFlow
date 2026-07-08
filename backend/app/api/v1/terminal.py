@@ -17,6 +17,7 @@ from app.schemas.terminal import (
     TerminalSessionRead,
 )
 from app.services.remote_connection_service import RemoteConnectionService
+from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.project_service import ProjectService
 from app.services.terminal_service import (
     TerminalNotInteractiveError,
@@ -64,10 +65,10 @@ async def create_terminal_session(
         )
         if connection is None:
             raise NotFoundError("Remote connection not found")
-        session = await terminal_manager.create_or_get_unsupported_remote(
+        session = await terminal_manager.create_or_get_remote(
             project_id=str(project.id),
+            connection=remote_connection_config_from_model(connection),
             remote_root_path=str(remote_root_path),
-            remote_connection_id=str(remote_connection_id),
             target_label=f"remote · {connection.name}",
         )
     else:

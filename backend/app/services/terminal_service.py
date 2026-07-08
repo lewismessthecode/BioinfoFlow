@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import os
+import posixpath
 import pty
 import re
 import shlex
@@ -13,12 +15,173 @@ import termios
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Any, Awaitable, Callable, Protocol
 
 from app.path_layout import safe_join
+from app.services.remote_execution import (
+    AsyncSshRemoteExecutor,
+    RemoteConnectionConfig,
+    SshRemoteExecutor,
+)
 
 
 class TerminalNotInteractiveError(RuntimeError):
     """Raised when a terminal session exists but has no interactive PTY."""
+
+
+class TerminalTransport(Protocol):
+    async def read(self, max_bytes: int) -> bytes: ...
+
+    async def write(self, data: bytes) -> None: ...
+
+    async def resize(self, *, cols: int, rows: int) -> None: ...
+
+    async def wait(self) -> int: ...
+
+    async def terminate(self) -> None: ...
+
+
+RemoteTerminalFactory = Callable[..., Awaitable[TerminalTransport]]
+
+
+@dataclass(slots=True)
+class _LocalPtyTerminalTransport:
+    master_fd: int
+    process: subprocess.Popen[bytes]
+    closed: bool = False
+
+    async def read(self, max_bytes: int) -> bytes:
+        return await asyncio.to_thread(os.read, self.master_fd, max_bytes)
+
+    async def write(self, data: bytes) -> None:
+        await asyncio.to_thread(os.write, self.master_fd, data)
+
+    async def resize(self, *, cols: int, rows: int) -> None:
+        packed = struct.pack("HHHH", rows, cols, 0, 0)
+        await asyncio.to_thread(_set_window_size, self.master_fd, packed)
+
+    async def wait(self) -> int:
+        return int(await asyncio.to_thread(self.process.wait))
+
+    async def terminate(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            await asyncio.to_thread(self.process.wait, 1)
+        if self.process.poll() is None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+        with contextlib.suppress(OSError):
+            os.close(self.master_fd)
+
+
+@dataclass(slots=True)
+class _AsyncSshTerminalTransport:
+    client: Any
+    process: Any
+    client_cm: Any
+    closed: bool = False
+
+    async def read(self, max_bytes: int) -> bytes:
+        chunk = await self.process.stdout.read(max_bytes)
+        if isinstance(chunk, str):
+            return chunk.encode("utf-8")
+        return chunk or b""
+
+    async def write(self, data: bytes) -> None:
+        self.process.stdin.write(data)
+        drain = getattr(self.process.stdin, "drain", None)
+        if drain is not None:
+            result = drain()
+            if inspect.isawaitable(result):
+                await result
+
+    async def resize(self, *, cols: int, rows: int) -> None:
+        self.process.change_terminal_size(cols, rows)
+
+    async def wait(self) -> int:
+        await self.process.wait()
+        return _asyncssh_exit_code(self.process)
+
+    async def terminate(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        with contextlib.suppress(Exception):
+            self.process.kill()
+        close = getattr(self.client, "close", None)
+        if close is not None:
+            close()
+        wait_closed = getattr(self.client, "wait_closed", None)
+        if wait_closed is not None:
+            with contextlib.suppress(Exception):
+                await wait_closed()
+        with contextlib.suppress(Exception):
+            await self.client_cm.__aexit__(None, None, None)
+
+
+class DefaultRemoteTerminalFactory:
+    def __init__(
+        self,
+        *,
+        ssh_executor: SshRemoteExecutor | None = None,
+        async_executor: AsyncSshRemoteExecutor | None = None,
+        connect_timeout_seconds: int = 10,
+    ) -> None:
+        self.ssh_executor = ssh_executor or SshRemoteExecutor()
+        self.async_executor = async_executor or AsyncSshRemoteExecutor()
+        self.connect_timeout_seconds = connect_timeout_seconds
+
+    async def __call__(
+        self,
+        *,
+        connection: RemoteConnectionConfig,
+        remote_root_path: str,
+        cols: int,
+        rows: int,
+        env: dict[str, str],
+    ) -> TerminalTransport:
+        command = _remote_shell_command(remote_root_path)
+        if connection.password or connection.private_key:
+            client_cm = self.async_executor._connect(
+                connection,
+                self.connect_timeout_seconds,
+            )
+            client = await client_cm.__aenter__()
+            try:
+                process = await client.create_process(
+                    command,
+                    request_pty=True,
+                    term_type="xterm-256color",
+                    term_size=(cols, rows),
+                    encoding=None,
+                )
+            except Exception:
+                with contextlib.suppress(Exception):
+                    await client_cm.__aexit__(None, None, None)
+                raise
+            return _AsyncSshTerminalTransport(
+                client=client,
+                process=process,
+                client_cm=client_cm,
+            )
+
+        argv = self.ssh_executor.build_interactive_argv(
+            connection,
+            command,
+            connect_timeout_seconds=self.connect_timeout_seconds,
+        )
+        return await asyncio.to_thread(
+            _spawn_pty_process,
+            command=argv,
+            env=env,
+            cwd=None,
+            cols=cols,
+            rows=rows,
+        )
 
 
 @dataclass(slots=True)
@@ -39,14 +202,13 @@ class _TerminalSession:
     project_id: str
     shell: str
     root_path: Path | None
+    remote_root_path: str | None
     cwd: str
-    master_fd: int | None
-    process: subprocess.Popen[bytes] | None
+    transport: TerminalTransport | None
     target_type: str = "local"
     target_label: str = "local"
     remote_connection_id: str | None = None
     status: str = "running"
-    unsupported_message: str | None = None
     exit_code: int | None = None
     subscribers: set[asyncio.Queue[dict]] = field(default_factory=set)
     output_backlog: list[str] = field(default_factory=list)
@@ -63,10 +225,14 @@ class TerminalSessionManager:
         shell: str | None = None,
         idle_timeout_seconds: int = 1800,
         cleanup_interval_seconds: int = 60,
+        remote_terminal_factory: RemoteTerminalFactory | None = None,
     ) -> None:
         self._default_shell = shell or os.environ.get("SHELL") or "/bin/bash"
         self._idle_timeout_seconds = idle_timeout_seconds
         self._cleanup_interval_seconds = cleanup_interval_seconds
+        self._remote_terminal_factory = (
+            remote_terminal_factory or DefaultRemoteTerminalFactory()
+        )
         self._sessions_by_id: dict[str, _TerminalSession] = {}
         self._project_index: dict[str, str] = {}
         self._lock = asyncio.Lock()
@@ -127,15 +293,16 @@ class TerminalSessionManager:
             self._ensure_cleanup_task()
             return self._snapshot(session)
 
-    async def create_or_get_unsupported_remote(
+    async def create_or_get_remote(
         self,
         *,
         project_id: str,
+        connection: RemoteConnectionConfig,
         remote_root_path: str,
-        remote_connection_id: str,
         target_label: str,
         shell: str | None = None,
-        message: str = "Remote interactive terminals are not supported yet.",
+        cols: int = 80,
+        rows: int = 24,
     ) -> TerminalSessionSnapshot:
         async with self._lock:
             existing_id = self._project_index.get(project_id)
@@ -146,21 +313,29 @@ class TerminalSessionManager:
             if existing:
                 self._evict_session_locked(existing)
 
+            remote_root = _normalize_remote_root(remote_root_path)
+            resolved_shell = shell or self._default_shell
+            transport = await self._remote_terminal_factory(
+                connection=connection,
+                remote_root_path=remote_root,
+                cols=cols,
+                rows=rows,
+                env=self._build_terminal_environment(shell=resolved_shell),
+            )
             session = _TerminalSession(
                 id=str(uuid.uuid4()),
                 project_id=project_id,
-                shell=shell or self._default_shell,
+                shell=resolved_shell,
                 root_path=None,
-                cwd=remote_root_path,
-                master_fd=None,
-                process=None,
+                remote_root_path=remote_root,
+                cwd=remote_root,
+                transport=transport,
                 target_type="remote",
                 target_label=target_label,
-                remote_connection_id=remote_connection_id,
-                status="unsupported",
-                unsupported_message=message,
+                remote_connection_id=connection.id,
             )
             session.last_touched = asyncio.get_running_loop().time()
+            session.reader_task = asyncio.create_task(self._read_output(session))
             self._sessions_by_id[session.id] = session
             self._project_index[project_id] = session.id
             self._ensure_cleanup_task()
@@ -176,8 +351,6 @@ class TerminalSessionManager:
                 {"type": "ready", "session": asdict(self._snapshot(session))}
             )
             queue.put_nowait({"type": "cwd", "cwd": session.cwd})
-            if session.unsupported_message:
-                queue.put_nowait({"type": "error", "message": session.unsupported_message})
             for chunk in session.output_backlog:
                 queue.put_nowait({"type": "output", "data": chunk})
             return queue
@@ -194,20 +367,30 @@ class TerminalSessionManager:
         if not data:
             return
         session = await self._interactive_session(session_id)
-        await asyncio.to_thread(os.write, session.master_fd, data.encode())
+        if session.transport is None:
+            raise TerminalNotInteractiveError(session_id)
+        await session.transport.write(data.encode())
         session.last_touched = asyncio.get_running_loop().time()
 
     async def resize(self, session_id: str, *, cols: int, rows: int) -> None:
         session = await self._interactive_session(session_id)
-        packed = struct.pack("HHHH", rows, cols, 0, 0)
-        await asyncio.to_thread(self._set_window_size, session.master_fd, packed)
+        if session.transport is None:
+            raise TerminalNotInteractiveError(session_id)
+        await session.transport.resize(cols=cols, rows=rows)
         session.last_touched = asyncio.get_running_loop().time()
 
     async def change_directory(self, session_id: str, relative_path: str) -> str:
         session = await self._interactive_session(session_id)
-        candidate = self._resolve_safe_directory(
-            session.root_path, relative_path or "."
-        )
+        if session.target_type == "remote":
+            candidate = self._resolve_safe_remote_directory(
+                session.remote_root_path, relative_path or "."
+            )
+        else:
+            candidate = str(
+                self._resolve_safe_directory(
+                    session.root_path, relative_path or "."
+                )
+            )
         session.cwd = str(candidate)
         await self.send_input(session_id, f"cd {shlex.quote(str(candidate))}\n")
         await self._broadcast(session, {"type": "cwd", "cwd": session.cwd})
@@ -247,25 +430,23 @@ class TerminalSessionManager:
         master_fd, slave_fd = pty.openpty()
         env = self._build_terminal_environment(shell=shell)
         command = self._build_shell_command(shell)
-        process = subprocess.Popen(
-            command,
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            cwd=str(root_path),
+        transport = _spawn_pty_process(
+            command=command,
             env=env,
-            preexec_fn=os.setsid,
-            close_fds=True,
+            cwd=str(root_path),
+            cols=80,
+            rows=24,
+            master_fd=master_fd,
+            slave_fd=slave_fd,
         )
-        os.close(slave_fd)
         return _TerminalSession(
             id=str(uuid.uuid4()),
             project_id=project_id,
             shell=shell,
             root_path=root_path,
+            remote_root_path=None,
             cwd=str(root_path),
-            master_fd=master_fd,
-            process=process,
+            transport=transport,
         )
 
     # Patterns for sensitive environment variable names to exclude
@@ -330,11 +511,11 @@ class TerminalSessionManager:
         return Path(os.getenv("TMPDIR", "/tmp")).resolve() / "bioinfoflow-terminal"
 
     async def _read_output(self, session: _TerminalSession) -> None:
-        if session.master_fd is None or session.process is None:
+        if session.transport is None:
             return
         try:
             while True:
-                chunk = await asyncio.to_thread(os.read, session.master_fd, 4096)
+                chunk = await session.transport.read(4096)
                 if not chunk:
                     break
                 session.last_touched = asyncio.get_running_loop().time()
@@ -351,8 +532,9 @@ class TerminalSessionManager:
         except OSError:
             pass
         finally:
-            exit_code = await asyncio.to_thread(session.process.wait)
+            exit_code = await session.transport.wait()
             session.exit_code = exit_code
+            await session.transport.terminate()
             if session.status != "closed":
                 session.status = "exited"
                 await self._broadcast(
@@ -361,9 +543,6 @@ class TerminalSessionManager:
                 )
                 async with self._lock:
                     self._evict_session_locked(session)
-                with contextlib.suppress(OSError):
-                    if session.master_fd is not None:
-                        os.close(session.master_fd)
 
     async def _running_session(self, session_id: str) -> _TerminalSession:
         async with self._lock:
@@ -375,11 +554,7 @@ class TerminalSessionManager:
     async def _interactive_session(self, session_id: str) -> _TerminalSession:
         async with self._lock:
             session = self._require_session(session_id)
-            if (
-                session.status != "running"
-                or session.master_fd is None
-                or session.root_path is None
-            ):
+            if session.status != "running" or session.transport is None:
                 raise TerminalNotInteractiveError(session_id)
             return session
 
@@ -402,18 +577,9 @@ class TerminalSessionManager:
                     session.subscribers.discard(queue)
 
     async def _terminate_session(self, session: _TerminalSession) -> None:
-        if session.process is None:
+        if session.transport is None:
             return
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(os.getpgid(session.process.pid), signal.SIGTERM)
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            await asyncio.to_thread(session.process.wait, 1)
-        if session.process.poll() is None:
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(os.getpgid(session.process.pid), signal.SIGKILL)
-        with contextlib.suppress(OSError):
-            if session.master_fd is not None:
-                os.close(session.master_fd)
+        await session.transport.terminate()
         if session.reader_task:
             session.reader_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -440,6 +606,8 @@ class TerminalSessionManager:
             raise
 
     def _resolve_safe_directory(self, root: Path, candidate: str) -> Path:
+        if root is None:
+            raise PermissionError(candidate)
         raw = str(candidate or ".").strip() or "."
         if (
             raw.startswith("~")
@@ -456,6 +624,25 @@ class TerminalSessionManager:
             raise FileNotFoundError(str(target))
         return target
 
+    def _resolve_safe_remote_directory(
+        self, remote_root: str | None, candidate: str
+    ) -> str:
+        if not remote_root:
+            raise PermissionError(candidate)
+        raw = str(candidate or ".").strip() or "."
+        if (
+            raw.startswith("~")
+            or PurePosixPath(raw).is_absolute()
+            or PureWindowsPath(raw).is_absolute()
+        ):
+            raise PermissionError(raw)
+        root = _normalize_remote_root(remote_root)
+        target = posixpath.normpath(posixpath.join(root, raw))
+        root_prefix = root if root.endswith("/") else f"{root}/"
+        if target != root and not target.startswith(root_prefix):
+            raise PermissionError(raw)
+        return target
+
     def _snapshot(self, session: _TerminalSession) -> TerminalSessionSnapshot:
         return TerminalSessionSnapshot(
             id=session.id,
@@ -469,7 +656,7 @@ class TerminalSessionManager:
         )
 
     def _is_live_session(self, session: _TerminalSession) -> bool:
-        return session.status in {"running", "unsupported"}
+        return session.status == "running"
 
     def _evict_session_locked(self, session: _TerminalSession) -> None:
         current_id = self._project_index.get(session.project_id)
@@ -477,11 +664,61 @@ class TerminalSessionManager:
             self._project_index.pop(session.project_id, None)
         self._sessions_by_id.pop(session.id, None)
 
-    @staticmethod
-    def _set_window_size(master_fd: int, packed: bytes) -> None:
-        import fcntl
 
-        fcntl.ioctl(master_fd, termios.TIOCSWINSZ, packed)
+def _spawn_pty_process(
+    *,
+    command: list[str],
+    env: dict[str, str],
+    cwd: str | None,
+    cols: int,
+    rows: int,
+    master_fd: int | None = None,
+    slave_fd: int | None = None,
+) -> _LocalPtyTerminalTransport:
+    if master_fd is None or slave_fd is None:
+        master_fd, slave_fd = pty.openpty()
+    with contextlib.suppress(OSError):
+        _set_window_size(master_fd, struct.pack("HHHH", rows, cols, 0, 0))
+    process = subprocess.Popen(
+        command,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        cwd=cwd,
+        env=env,
+        preexec_fn=os.setsid,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+    return _LocalPtyTerminalTransport(master_fd=master_fd, process=process)
+
+
+def _remote_shell_command(remote_root_path: str) -> str:
+    return (
+        f"cd {shlex.quote(_normalize_remote_root(remote_root_path))} "
+        '&& exec "${SHELL:-/bin/sh}" -i'
+    )
+
+
+def _normalize_remote_root(remote_root_path: str) -> str:
+    normalized = posixpath.normpath(str(remote_root_path or "").strip())
+    if not normalized or not PurePosixPath(normalized).is_absolute():
+        raise PermissionError(remote_root_path)
+    return normalized
+
+
+def _asyncssh_exit_code(process: Any) -> int:
+    for attr in ("exit_status", "returncode"):
+        value = getattr(process, attr, None)
+        if value is not None:
+            return int(value)
+    return -9
+
+
+def _set_window_size(master_fd: int, packed: bytes) -> None:
+    import fcntl
+
+    fcntl.ioctl(master_fd, termios.TIOCSWINSZ, packed)
 
 
 terminal_manager = TerminalSessionManager()

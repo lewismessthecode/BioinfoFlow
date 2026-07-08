@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from app.services.remote_execution import RemoteConnectionConfig
 from app.services.terminal_service import TerminalSessionManager
 
 
@@ -21,6 +22,34 @@ async def _next_message(
             contains is None or contains in str(message.get("data", ""))
         ):
             return message
+
+
+class FakeRemoteTerminalTransport:
+    def __init__(self) -> None:
+        self.output: asyncio.Queue[bytes] = asyncio.Queue()
+        self.writes: list[bytes] = []
+        self.resizes: list[tuple[int, int]] = []
+        self.terminated = False
+        self.exit_code = 0
+
+    async def read(self, _max_bytes: int) -> bytes:
+        return await self.output.get()
+
+    async def write(self, data: bytes) -> None:
+        self.writes.append(data)
+
+    async def resize(self, *, cols: int, rows: int) -> None:
+        self.resizes.append((cols, rows))
+
+    async def wait(self) -> int:
+        return self.exit_code
+
+    async def terminate(self) -> None:
+        self.terminated = True
+        self.output.put_nowait(b"")
+
+    def feed(self, data: bytes) -> None:
+        self.output.put_nowait(data)
 
 
 @pytest.mark.asyncio
@@ -57,6 +86,104 @@ async def test_terminal_session_manager_streams_output_and_reports_cwd(tmp_path:
         await manager.change_directory(session.id, "nested")
         cwd = await _next_message(queue, "cwd")
         assert cwd["cwd"] == str(nested.resolve())
+    finally:
+        await manager.close_session(session.id)
+        await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_terminal_session_manager_streams_remote_output_and_controls_remote_pty():
+    transport = FakeRemoteTerminalTransport()
+    created: list[dict] = []
+
+    async def fake_remote_factory(**kwargs):
+        created.append(kwargs)
+        return transport
+
+    manager = TerminalSessionManager(
+        shell="/bin/sh",
+        idle_timeout_seconds=30,
+        remote_terminal_factory=fake_remote_factory,
+    )
+    connection = RemoteConnectionConfig(
+        id="conn-1",
+        name="Phoenix login",
+        host="login.example.org",
+        username="alice",
+    )
+    session = await manager.create_or_get_remote(
+        project_id="project-remote",
+        connection=connection,
+        remote_root_path="/data/phoenix",
+        target_label="remote · Phoenix login",
+    )
+
+    try:
+        assert session.status == "running"
+        assert session.target_type == "remote"
+        assert session.target_label == "remote · Phoenix login"
+        assert session.remote_connection_id == "conn-1"
+        assert session.cwd == "/data/phoenix"
+        assert created[0]["connection"] == connection
+        assert created[0]["remote_root_path"] == "/data/phoenix"
+
+        queue = await manager.attach(session.id)
+        ready = await _next_message(queue, "ready")
+        assert ready["session"]["status"] == "running"
+        cwd = await _next_message(queue, "cwd")
+        assert cwd == {"type": "cwd", "cwd": "/data/phoenix"}
+
+        transport.feed(b"hello-remote\n")
+        output = await _next_message(queue, "output", contains="hello-remote")
+        assert output["data"] == "hello-remote\n"
+
+        await manager.send_input(session.id, "pwd\n")
+        await manager.resize(session.id, cols=100, rows=30)
+        await manager.change_directory(session.id, "runs/run-1")
+        changed = await _next_message(queue, "cwd")
+
+        assert transport.writes == [
+            b"pwd\n",
+            b"cd /data/phoenix/runs/run-1\n",
+        ]
+        assert transport.resizes == [(100, 30)]
+        assert changed == {"type": "cwd", "cwd": "/data/phoenix/runs/run-1"}
+    finally:
+        await manager.close_session(session.id)
+        await manager.shutdown()
+
+    assert transport.terminated is True
+
+
+@pytest.mark.asyncio
+async def test_terminal_session_manager_rejects_remote_chdir_outside_root():
+    transport = FakeRemoteTerminalTransport()
+
+    async def fake_remote_factory(**_kwargs):
+        return transport
+
+    manager = TerminalSessionManager(
+        shell="/bin/sh",
+        idle_timeout_seconds=30,
+        remote_terminal_factory=fake_remote_factory,
+    )
+    session = await manager.create_or_get_remote(
+        project_id="project-remote-escape",
+        connection=RemoteConnectionConfig(
+            id="conn-1",
+            name="Phoenix login",
+            host="login.example.org",
+            username="alice",
+        ),
+        remote_root_path="/data/phoenix",
+        target_label="remote · Phoenix login",
+    )
+
+    try:
+        with pytest.raises(PermissionError):
+            await manager.change_directory(session.id, "../escape")
+        with pytest.raises(PermissionError):
+            await manager.change_directory(session.id, "/data/phoenix/runs")
     finally:
         await manager.close_session(session.id)
         await manager.shutdown()

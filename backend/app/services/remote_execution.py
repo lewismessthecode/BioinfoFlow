@@ -147,6 +147,34 @@ class SshRemoteExecutor:
         argv.extend(["--", target, command])
         return argv
 
+    def build_interactive_argv(
+        self,
+        connection: RemoteConnectionConfig,
+        command: str,
+        *,
+        connect_timeout_seconds: int,
+    ) -> list[str]:
+        if not command.strip():
+            raise BadRequestError("remote command must be a non-empty string")
+        target = connection.ssh_target
+        if not target.strip():
+            raise BadRequestError("remote connection target must be configured")
+
+        argv = [self.ssh_bin]
+        if connection.ssh_config_path:
+            argv.extend(["-F", connection.ssh_config_path])
+        if connection.key_path:
+            argv.extend(["-i", connection.key_path])
+        if connection.port is not None and not connection.ssh_alias:
+            argv.extend(["-p", str(connection.port)])
+        argv.extend(["-tt"])
+        argv.extend(["-o", "BatchMode=yes"])
+        argv.extend(["-o", f"ConnectTimeout={connect_timeout_seconds}"])
+        for key, value in sorted(connection.extra_ssh_options.items()):
+            argv.extend(["-o", f"{key}={value}"])
+        argv.extend(["--", target, command])
+        return argv
+
     async def run(
         self,
         connection: RemoteConnectionConfig,
