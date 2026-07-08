@@ -154,18 +154,22 @@ function ArtifactEmptyState({
   const descriptionId = useId()
   return (
     <div
-      className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-border/80 bg-muted/20 p-6 text-center"
+      className="flex h-full min-h-0 items-center justify-center p-6 text-center"
       data-testid="artifact-preview-drawer"
       role={kind === "error" ? "alert" : undefined}
       aria-labelledby={kind === "error" ? titleId : undefined}
       aria-describedby={kind === "error" ? descriptionId : undefined}
     >
-      <div className="max-w-sm">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground">
+      <div className="max-w-[20rem]">
+        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-muted/45 text-muted-foreground">
           {icon}
         </div>
         <p id={titleId} className="mt-3 text-sm font-medium text-foreground">{title}</p>
-        <p id={descriptionId} className="mt-1.5 text-xs leading-5 text-muted-foreground">{description}</p>
+        {kind === "error" ? (
+          <p id={descriptionId} className="mt-1.5 text-xs leading-5 text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
         {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
       </div>
     </div>

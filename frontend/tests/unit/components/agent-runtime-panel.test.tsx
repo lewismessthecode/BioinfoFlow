@@ -137,6 +137,15 @@ describe("ArtifactPreviewDrawer", () => {
     expect(screen.queryByText("artifacts.toolLogs")).not.toBeInTheDocument()
   })
 
+  it("uses a light empty state instead of a dashed drop zone", () => {
+    render(<ArtifactPreviewDrawer artifacts={[]} status="ready" hasSession />)
+
+    const drawer = screen.getByTestId("artifact-preview-drawer")
+    expect(screen.getByText("artifacts.empty")).toBeInTheDocument()
+    expect(drawer.className).not.toContain("border-dashed")
+    expect(drawer.className).not.toContain("min-h-[280px]")
+  })
+
   it("keeps selected artifact previews on a full-height layout chain", async () => {
     render(
       <ArtifactPreviewDrawer
