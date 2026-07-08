@@ -54,6 +54,10 @@ class MockWebSocket {
       data: JSON.stringify({ type, ...payload }),
     } as MessageEvent)
   }
+
+  emitRaw(data: string) {
+    this.onmessage?.({ data } as MessageEvent)
+  }
 }
 
 describe("useTerminalSession", () => {
@@ -130,13 +134,13 @@ describe("useTerminalSession", () => {
     act(() => {
       expect(result.current.sendInput("pwd")).toBe(true)
       expect(result.current.resize(120, 40)).toBe(true)
-      expect(result.current.chdir("/workspace/logs")).toBe(true)
+      expect(result.current.chdir("logs")).toBe(true)
     })
 
     expect(socket.sent).toEqual([
       JSON.stringify({ type: "input", data: "pwd" }),
       JSON.stringify({ type: "resize", cols: 120, rows: 40 }),
-      JSON.stringify({ type: "chdir", path: "/workspace/logs" }),
+      JSON.stringify({ type: "chdir", path: "logs" }),
     ])
 
     act(() => {
@@ -150,5 +154,44 @@ describe("useTerminalSession", () => {
 
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2))
     expect(apiRequestMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("clears websocket readiness after malformed terminal messages", async () => {
+    const initialSession: TerminalSession = {
+      id: "session-1",
+      project_id: "project-1",
+      shell: "/bin/zsh",
+      cwd: "/workspace",
+      status: "starting",
+      target_type: "local",
+      target_label: "local",
+      remote_connection_id: null,
+    }
+    apiRequestMock.mockResolvedValue({ data: initialSession })
+
+    const { result } = renderHook(() =>
+      useTerminalSession({ projectId: "project-1", enabled: true })
+    )
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
+    const socket = MockWebSocket.instances[0]
+
+    act(() => {
+      socket.readyState = MockWebSocket.OPEN
+      socket.emit("ready", {
+        session: { ...initialSession, status: "ready" },
+      })
+    })
+
+    await waitFor(() => expect(result.current.connectionState).toBe("connected"))
+    expect(result.current.sendInput("before-error")).toBe(true)
+
+    act(() => {
+      socket.emitRaw("{not-json")
+    })
+
+    expect(result.current.connectionState).toBe("error")
+    expect(result.current.error).toBe("Failed to parse terminal event")
+    expect(result.current.sendInput("after-error")).toBe(false)
   })
 })

@@ -93,6 +93,7 @@ export function useTerminalSession({
             }
             onMessageRef.current?.(message)
           } catch {
+            readyRef.current = false
             setError("Failed to parse terminal event")
             setConnectionState("error")
           }

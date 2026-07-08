@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,11 @@ class FakeRemoteTerminalTransport:
         self.output.put_nowait(data)
 
 
+class HangingTerminateRemoteTerminalTransport(FakeRemoteTerminalTransport):
+    async def terminate(self) -> None:
+        await asyncio.Event().wait()
+
+
 @pytest.mark.asyncio
 async def test_terminal_session_manager_reuses_project_session(tmp_path: Path):
     manager = TerminalSessionManager(shell="/bin/sh", idle_timeout_seconds=30)
@@ -88,6 +94,57 @@ async def test_terminal_session_manager_streams_output_and_reports_cwd(tmp_path:
         assert cwd["cwd"] == str(nested.resolve())
     finally:
         await manager.close_session(session.id)
+        await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_remote_session_creation_does_not_block_existing_session_attach(
+    tmp_path: Path,
+):
+    factory_started = asyncio.Event()
+    release_factory = asyncio.Event()
+    transport = FakeRemoteTerminalTransport()
+
+    async def slow_remote_factory(**_kwargs):
+        factory_started.set()
+        await release_factory.wait()
+        return transport
+
+    manager = TerminalSessionManager(
+        shell="/bin/sh",
+        idle_timeout_seconds=30,
+        remote_terminal_factory=slow_remote_factory,
+    )
+    local_session = await manager.create_or_get(
+        project_id="project-local", root_path=tmp_path
+    )
+    remote_task = asyncio.create_task(
+        manager.create_or_get_remote(
+            project_id="project-remote-slow",
+            connection=RemoteConnectionConfig(
+                id="conn-1",
+                name="Phoenix login",
+                host="login.example.org",
+                username="alice",
+            ),
+            remote_root_path="/data/phoenix",
+            target_label="remote · Phoenix login",
+        )
+    )
+
+    try:
+        await asyncio.wait_for(factory_started.wait(), timeout=1)
+        queue = await asyncio.wait_for(manager.attach(local_session.id), timeout=0.2)
+        ready = await _next_message(queue, "ready")
+        assert ready["session"]["id"] == local_session.id
+
+        release_factory.set()
+        await asyncio.wait_for(remote_task, timeout=1)
+    finally:
+        if not remote_task.done():
+            remote_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await remote_task
         await manager.shutdown()
 
 
@@ -153,6 +210,97 @@ async def test_terminal_session_manager_streams_remote_output_and_controls_remot
         await manager.shutdown()
 
     assert transport.terminated is True
+
+
+@pytest.mark.asyncio
+async def test_remote_session_creation_closes_losing_race_transport():
+    release_factory = asyncio.Event()
+    transports: list[FakeRemoteTerminalTransport] = []
+
+    async def racing_remote_factory(**_kwargs):
+        transport = FakeRemoteTerminalTransport()
+        transports.append(transport)
+        await release_factory.wait()
+        return transport
+
+    manager = TerminalSessionManager(
+        shell="/bin/sh",
+        idle_timeout_seconds=30,
+        remote_terminal_factory=racing_remote_factory,
+        transport_shutdown_timeout_seconds=0.05,
+    )
+    connection = RemoteConnectionConfig(
+        id="conn-1",
+        name="Phoenix login",
+        host="login.example.org",
+        username="alice",
+    )
+    first_task = asyncio.create_task(
+        manager.create_or_get_remote(
+            project_id="project-remote-race",
+            connection=connection,
+            remote_root_path="/data/phoenix",
+            target_label="remote · Phoenix login",
+        )
+    )
+    second_task = asyncio.create_task(
+        manager.create_or_get_remote(
+            project_id="project-remote-race",
+            connection=connection,
+            remote_root_path="/data/phoenix",
+            target_label="remote · Phoenix login",
+        )
+    )
+
+    try:
+        deadline = asyncio.get_running_loop().time() + 1
+        while len(transports) < 2 and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0)
+        assert len(transports) == 2
+
+        release_factory.set()
+        first, second = await asyncio.gather(first_task, second_task)
+
+        assert second.id == first.id
+        assert sum(transport.terminated for transport in transports) == 1
+    finally:
+        for task in (first_task, second_task):
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+        await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_terminal_session_manager_close_bounds_hung_remote_terminate():
+    transport = HangingTerminateRemoteTerminalTransport()
+
+    async def fake_remote_factory(**_kwargs):
+        return transport
+
+    manager = TerminalSessionManager(
+        shell="/bin/sh",
+        idle_timeout_seconds=30,
+        remote_terminal_factory=fake_remote_factory,
+        transport_shutdown_timeout_seconds=0.01,
+    )
+    session = await manager.create_or_get_remote(
+        project_id="project-remote-hung-close",
+        connection=RemoteConnectionConfig(
+            id="conn-1",
+            name="Phoenix login",
+            host="login.example.org",
+            username="alice",
+        ),
+        remote_root_path="/data/phoenix",
+        target_label="remote · Phoenix login",
+    )
+
+    closed = await asyncio.wait_for(manager.close_session(session.id), timeout=0.5)
+
+    assert closed is True
+    await manager.shutdown()
 
 
 @pytest.mark.asyncio

@@ -96,9 +96,10 @@ the approval service before side effects are executed.
 ### Remote Connection
 
 A workspace-scoped SSH profile stored by Bioinfoflow. It can use an SSH config
-alias, a backend-visible key file path, or the backend user's SSH agent. Remote
-Connections support backend tests, streamed probes, interactive project
-terminals, and selected AgentCore remote tools.
+alias, a backend-visible key file path, the backend user's SSH agent, a stored
+password, or a stored private key. Remote Connections support backend tests,
+streamed probes, interactive project terminals, and selected AgentCore remote
+tools. See `docs/guides/remote-connections.md` for the full setup model.
 
 ### Agent Skill
 
