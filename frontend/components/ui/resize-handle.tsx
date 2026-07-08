@@ -8,9 +8,22 @@ interface ResizeHandleProps {
   onResize: (delta: number) => void
   onResizeEnd?: () => void
   className?: string
+  ariaLabel?: string
+  valueNow?: number
+  valueMin?: number
+  valueMax?: number
 }
 
-export function ResizeHandle({ side, onResize, onResizeEnd, className }: ResizeHandleProps) {
+export function ResizeHandle({
+  side,
+  onResize,
+  onResizeEnd,
+  className,
+  ariaLabel,
+  valueNow,
+  valueMin,
+  valueMax,
+}: ResizeHandleProps) {
   const [isDragging, setIsDragging] = useState(false)
   const startX = useRef(0)
   const startY = useRef(0)
@@ -78,8 +91,8 @@ export function ResizeHandle({ side, onResize, onResizeEnd, className }: ResizeH
     <div
       className={cn(
         side === "top"
-          ? "absolute left-0 right-0 top-0 h-1 cursor-row-resize z-10 group"
-          : "absolute top-0 bottom-0 w-1 cursor-col-resize z-10 group",
+          ? "absolute left-0 right-0 top-0 z-10 h-2 cursor-row-resize group"
+          : "absolute top-0 bottom-0 z-10 w-2 cursor-col-resize group",
         side === "left" ? "right-0" : side === "right" ? "left-0" : "",
         className
       )}
@@ -87,17 +100,17 @@ export function ResizeHandle({ side, onResize, onResizeEnd, className }: ResizeH
       onKeyDown={handleKeyDown}
       role="separator"
       aria-orientation={side === "top" ? "horizontal" : "vertical"}
-      aria-valuenow={50}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-label={`Resize ${side} sidebar`}
+      aria-valuenow={valueNow}
+      aria-valuemin={valueNow === undefined ? undefined : valueMin}
+      aria-valuemax={valueNow === undefined ? undefined : valueMax}
+      aria-label={ariaLabel ?? `Resize ${side} sidebar`}
       tabIndex={0}
     >
       <div
         className={cn(
           side === "top"
-            ? "absolute inset-x-0 top-0 h-1 transition-colors"
-            : "absolute inset-y-0 w-1 transition-colors",
+            ? "absolute inset-x-0 top-0 h-px transition-colors"
+            : "absolute inset-y-0 w-px transition-colors",
           side === "left" ? "right-0" : side === "right" ? "left-0" : "",
           isDragging
             ? "bg-primary"

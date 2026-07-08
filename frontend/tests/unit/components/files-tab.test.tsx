@@ -170,6 +170,8 @@ describe("FilesTab", () => {
     const previewToolbar = screen.getByTestId("agent-file-preview-toolbar")
     expect(within(previewToolbar).queryByText("Add to context")).not.toBeInTheDocument()
     expect(within(previewToolbar).queryByText("Copy path")).not.toBeInTheDocument()
+    expect(previewToolbar).toHaveTextContent("main.nf")
+    expect(previewToolbar).not.toHaveTextContent("/ src / main.nf")
     fireEvent.click(within(previewToolbar).getByRole("button", { name: "Add to context" }))
     expect(onAddContext).toHaveBeenCalledWith(scriptPath)
   })
@@ -311,6 +313,9 @@ describe("FilesTab", () => {
 
     expect(await screen.findByText("workflow.wdl")).toBeInTheDocument()
     const split = screen.getByTestId("files-tab-split")
+    expect(split).toHaveStyle({
+      "--files-split-columns": "minmax(0,1fr) 8px minmax(240px, 280px)",
+    })
     vi.spyOn(split, "getBoundingClientRect").mockReturnValue({
       x: 0,
       y: 0,
@@ -360,11 +365,11 @@ describe("FilesTab", () => {
 
     const resizer = screen.getByRole("separator", { name: "Resize file tree" })
     await waitFor(() => {
-      expect(resizer).toHaveAttribute("aria-valuenow", "318")
+      expect(resizer).toHaveAttribute("aria-valuenow", "312")
     })
 
     fireEvent.keyDown(resizer, { key: "End" })
-    expect(resizer).toHaveAttribute("aria-valuenow", "318")
+    expect(resizer).toHaveAttribute("aria-valuenow", "312")
   })
 
   it("filters only loaded nodes and reveals collapsed matching descendants", async () => {
@@ -419,6 +424,8 @@ describe("FilesTab", () => {
     expect(row).toHaveAttribute("data-selected", "true")
     expect(row).toHaveAttribute("data-file-kind", "workflow")
     expect(row?.className).not.toContain("ring-1")
+    expect(row?.className).toContain("relative")
+    expect(rowActions.className).toContain("absolute")
     expect(rowActions.className).toContain("opacity-0")
   })
 

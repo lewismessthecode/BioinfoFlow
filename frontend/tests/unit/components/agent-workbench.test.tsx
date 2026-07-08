@@ -463,9 +463,15 @@ describe("AgentWorkbench", () => {
 
     const sidecar = screen.getByTestId("agent-sidecar-column")
     const resizer = screen.getByRole("separator", { name: "Resize right sidebar" })
+    expect(resizer).toHaveAttribute("aria-valuemin", "380")
+    expect(resizer).toHaveAttribute("aria-valuemax", "760")
+    expect(resizer).toHaveAttribute("aria-valuenow", "600")
+    expect(resizer).toHaveClass("w-2")
+    expect(resizer.firstElementChild).toHaveClass("w-px")
 
     fireEvent.keyDown(resizer, { key: "ArrowLeft" })
     expect(sidecar).toHaveStyle({ width: "616px" })
+    expect(resizer).toHaveAttribute("aria-valuenow", "616")
     expect(window.localStorage.getItem("agent-sidecar-width")).toBe("616")
 
     fireEvent.mouseDown(resizer, { clientX: 500 })

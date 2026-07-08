@@ -880,6 +880,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const constrainedSidecarWidth = desktopSidecarVisible
       ? clampSidecarWidth(sidecarWidth, sidecarMaxWidth)
       : 0
+    const sidecarResizeMax = Math.min(Math.max(sidecarMaxWidth, 0), SIDECAR_MAX_WIDTH)
+    const sidecarResizeMin = sidecarResizeMax > 0
+      ? Math.min(SIDECAR_MIN_WIDTH, sidecarResizeMax)
+      : 0
 
     return (
       <div
@@ -1005,7 +1009,13 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           data-testid="agent-sidecar-column"
         >
           {desktopSidecarVisible ? (
-            <ResizeHandle side="right" onResize={resizeSidecar} />
+            <ResizeHandle
+              side="right"
+              onResize={resizeSidecar}
+              valueNow={constrainedSidecarWidth}
+              valueMin={sidecarResizeMin}
+              valueMax={sidecarResizeMax}
+            />
           ) : null}
           <div className="flex h-full w-full shrink-0 items-stretch">
             {desktopSidecarVisible ? (

@@ -189,7 +189,7 @@ function TreeRows({
           data-selected={isSelected ? "true" : undefined}
           data-file-kind={fileKind}
           className={cn(
-            "group flex min-h-7 min-w-0 items-center gap-1 rounded-[6px] py-1 pr-1 text-sm transition-colors hover:bg-muted/45",
+            "group relative flex min-h-7 min-w-0 items-center gap-1 rounded-[6px] py-1 pr-1 text-sm transition-colors hover:bg-muted/45",
             isSelected && "bg-muted/60 text-foreground",
           )}
           style={{ paddingLeft: `${depth * 14 + 8}px` }}
@@ -221,7 +221,7 @@ function TreeRows({
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
           </button>
           <div
-            className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+            className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 bg-muted/95 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
             data-testid="agent-workspace-tree-row-actions"
           >
             <button
