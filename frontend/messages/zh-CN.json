@@ -2549,7 +2549,7 @@
       "workflow": "附加工作流上下文",
       "skills": "选择工作流、运行或调试技能",
       "mode": "在计划和执行之间切换",
-      "preflight": "启动运行前验证输入"
+      "preflight": "从添加菜单运行预检查"
     },
     "workflowContext": {
       "label": "工作流上下文"

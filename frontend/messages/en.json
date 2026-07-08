@@ -2549,7 +2549,7 @@
       "workflow": "attach workflow context",
       "skills": "choose a workflow, run, or debugging skill",
       "mode": "switch between Plan and Act",
-      "preflight": "validate inputs before launching a run"
+      "preflight": "run preflight from the attach menu"
     },
     "workflowContext": {
       "label": "Workflow context"

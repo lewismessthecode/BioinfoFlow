@@ -27,7 +27,7 @@ from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.agent_core.tools.toolsets import ToolsetExposure
-from app.utils.exceptions import PermissionDeniedError
+from app.utils.exceptions import BadRequestError, PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -212,6 +212,61 @@ async def test_invalid_file_ref_does_not_commit_queued_turn(db_session, tmp_path
         )
 
     assert await service.turn_repo.list_for_session(str(session.id)) == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_workflow_ref_does_not_commit_queued_turn(db_session):
+    await _workspace(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    with pytest.raises(BadRequestError):
+        await service.create_turn_record(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Draft a run plan.",
+            input_parts=[
+                {"type": "text", "text": "Draft a run plan."},
+                {"kind": "workflow_ref", "scope": "admin"},
+            ],
+        )
+
+    assert await service.turn_repo.list_for_session(str(session.id)) == []
+
+
+@pytest.mark.asyncio
+async def test_workflow_ref_writes_canonical_user_message(db_session):
+    await _workspace(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Draft a run plan.",
+        input_parts=[
+            {"type": "text", "text": "Draft a run plan."},
+            {"kind": "workflow_ref", "scope": "global"},
+        ],
+    )
+
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    assert str(messages[0].turn_id) == str(turn.id)
+    text = "\n".join(part["text"] for part in messages[0].content_parts)
+    assert "Draft a run plan." in text
+    assert "Workflow context: All registered workflows" in text
+    assert "Scope: all registered workflows" in text
 
 
 @pytest.mark.asyncio
