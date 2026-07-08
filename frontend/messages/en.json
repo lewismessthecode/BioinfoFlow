@@ -2533,7 +2533,7 @@
         "prompt": "Check this workflow before I run it"
       },
       "chooseInputs": {
-        "prompt": "Help me choose inputs for this analysis"
+        "prompt": "Help me choose analysis inputs"
       },
       "reviewFailure": {
         "prompt": "Review the latest failed run"

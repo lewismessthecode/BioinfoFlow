@@ -134,7 +134,7 @@ vi.mock("next-intl", () => ({
       "skills.remove": `Remove ${values?.name ?? ""}`,
       "skills.activeForNextTurn": "Skills",
       "starterSuggestions.checkWorkflow.prompt": "Check this workflow before I run it",
-      "starterSuggestions.chooseInputs.prompt": "Help me choose inputs for this analysis",
+      "starterSuggestions.chooseInputs.prompt": "Help me choose analysis inputs",
       "starterSuggestions.reviewFailure.prompt": "Review the latest failed run",
       "starterSuggestions.prepareRun.prompt": "Prepare a run from @workflow",
       "commandHints.workflow.prefix": "Use",
@@ -339,9 +339,9 @@ describe("AgentWorkbench", () => {
     expect(screen.getByTestId("agent-starter-suggestions")).toBeInTheDocument()
     expect(
       screen.getByRole("button", { name: "Check this workflow before I run it" }),
-    ).toBeInTheDocument()
+    ).toHaveClass("focus-visible:ring-1")
     expect(
-      screen.getByRole("button", { name: "Help me choose inputs for this analysis" }),
+      screen.getByRole("button", { name: "Help me choose analysis inputs" }),
     ).toBeInTheDocument()
     expect(screen.queryByText("Validate workflow inputs")).not.toBeInTheDocument()
     const hints = screen.getByTestId("agent-command-discovery-hints")
@@ -349,6 +349,9 @@ describe("AgentWorkbench", () => {
     expect(within(hints).getByText("@workflow").tagName).toBe("KBD")
     expect(within(hints).getByText("Use")).toBeInTheDocument()
     expect(within(hints).getByText("to attach workflow context")).toBeInTheDocument()
+    expect(within(hints).getByLabelText("Use @workflow to attach workflow context")).toBe(
+      within(hints).getByText("Use").parentElement,
+    )
     expect(within(hints).queryByText("/")).not.toBeInTheDocument()
   })
 
