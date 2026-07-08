@@ -74,10 +74,11 @@
   --accent-muted: rgba(25, 25, 25, 0.05);
   --accent-subtle: rgba(25, 25, 25, 0.03);
   --accent-hover: rgba(25, 25, 25, 0.08);
-  --agent-halo: rgba(25, 25, 25, 0.055);
-  --agent-halo-soft: rgba(251, 251, 250, 0.92);
+  --agent-halo: color-mix(in srgb, var(--foreground) 4.5%, transparent);
+  --agent-halo-soft: color-mix(in srgb, var(--accent) 56%, transparent);
   --agent-halo-edge: rgba(255, 255, 255, 0);
-  --composer-shadow: 0 1px 2px rgba(15, 15, 15, 0.035), 0 14px 34px rgba(15, 15, 15, 0.04);
+  --agent-halo-opacity: 0.72;
+  --composer-shadow: 0 1px 2px rgba(15, 15, 15, 0.032), 0 10px 24px rgba(15, 15, 15, 0.028);
 
   /* Semantic border/muted — light-mode counterparts to .dark vars */
   --success-border: rgba(79, 125, 88, 0.22);
@@ -192,10 +193,11 @@
   --divider: var(--border-subtle);
   --announcement-bg: var(--accent);
   --announcement-fg: var(--bg);
-  --agent-halo: rgba(74, 144, 226, 0.22);
-  --agent-halo-soft: rgba(27, 38, 59, 0.72);
+  --agent-halo: color-mix(in srgb, var(--foreground) 5.5%, transparent);
+  --agent-halo-soft: color-mix(in srgb, var(--accent) 34%, transparent);
   --agent-halo-edge: rgba(9, 9, 11, 0);
-  --composer-shadow: 0 2px 10px rgba(0, 0, 0, 0.28), 0 18px 48px rgba(0, 0, 0, 0.30);
+  --agent-halo-opacity: 0.86;
+  --composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 14px 38px rgba(0, 0, 0, 0.20);
 }
 
 @theme inline {
@@ -297,15 +299,16 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
+    opacity: var(--agent-halo-opacity);
     background:
       radial-gradient(
-        ellipse 54% 40% at calc(50% - var(--left-rail-compensation, 0px)) 49%,
+        ellipse 48% 32% at calc(50% - var(--left-rail-compensation, 0px)) 51%,
         var(--agent-halo) 0%,
-        var(--agent-halo-soft) 36%,
-        color-mix(in srgb, var(--background) 74%, transparent) 58%,
-        var(--agent-halo-edge) 80%
+        color-mix(in srgb, var(--agent-halo) 58%, transparent) 28%,
+        color-mix(in srgb, var(--agent-halo-soft) 68%, transparent) 48%,
+        var(--agent-halo-edge) 78%
       );
-    filter: blur(1px);
+    filter: blur(2px);
   }
 
   .agent-halo-surface > * {
