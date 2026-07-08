@@ -1125,7 +1125,7 @@ function StarterSuggestionList({
 }) {
   return (
     <div
-      className="mt-7 w-full overflow-hidden"
+      className="mt-4 w-full overflow-hidden"
       data-testid="agent-starter-suggestions"
     >
       {suggestions.map((suggestion, index) => (
@@ -1133,16 +1133,16 @@ function StarterSuggestionList({
           key={suggestion.key}
           type="button"
           className={cn(
-            "group grid min-h-[56px] w-full grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-3 rounded-[6px] px-6 text-left transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:relative focus-visible:z-10 focus-visible:bg-foreground/[0.035] focus-visible:outline-none",
-            index > 0 && "border-t border-border/55",
+            "group grid min-h-[52px] w-full grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-3 rounded-[6px] px-6 text-left transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:relative focus-visible:z-10 focus-visible:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/18 focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:min-h-[56px]",
+            index > 0 && "border-t border-border/75",
           )}
           onClick={() => onSelect(suggestion.prompt)}
         >
           <suggestion.icon
-            className="h-5 w-5 text-muted-foreground/60 transition-colors duration-150 group-hover:text-muted-foreground/80"
+            className="h-5 w-5 text-muted-foreground/70 transition-colors duration-150 group-hover:text-muted-foreground/85"
             aria-hidden={true}
           />
-          <span className="min-w-0 truncate text-[16px] font-normal leading-6 tracking-normal text-muted-foreground/85 transition-colors duration-150 group-hover:text-muted-foreground">
+          <span className="min-w-0 truncate text-[16px] font-normal leading-6 tracking-normal text-muted-foreground transition-colors duration-150 group-hover:text-foreground/70">
             {suggestion.prompt}
           </span>
         </button>
@@ -1193,19 +1193,18 @@ function CommandDiscoveryHints({
 
   return (
     <div
-      className="agent-center-stage pointer-events-none absolute inset-x-14 bottom-20 flex justify-center sm:inset-x-4 sm:bottom-12"
+      className="agent-center-stage pointer-events-none absolute inset-x-14 bottom-24 flex justify-center sm:inset-x-4 sm:bottom-12"
       data-testid="agent-command-discovery-hints"
     >
       <p
         className={cn(
-          "t-text-swap inline-flex max-w-[calc(100vw-2rem)] items-center justify-center gap-1.5 truncate text-center text-[14px] font-normal leading-6 tracking-normal text-muted-foreground/80 sm:text-[15px]",
+          "t-text-swap inline-flex max-w-[calc(100vw-2rem)] items-center justify-center gap-1.5 truncate text-center text-[14px] font-normal leading-6 tracking-normal text-muted-foreground/75 sm:text-[15px]",
           swapState,
         )}
         aria-label={`${currentHint.prefix} ${currentHint.token} ${currentHint.suffix}`}
-        aria-live="polite"
       >
         <span className="truncate">{currentHint.prefix}</span>
-        <kbd className="rounded-[5px] border border-border/65 bg-muted/80 px-1.5 py-0.5 font-mono text-[12px] font-medium leading-none text-muted-foreground/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+        <kbd className="rounded-[5px] border border-border/55 bg-muted/65 px-1.5 py-0.5 font-mono text-[12px] font-medium leading-none text-muted-foreground/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.62)]">
           {currentHint.token}
         </kbd>
         <span className="truncate">{currentHint.suffix}</span>
