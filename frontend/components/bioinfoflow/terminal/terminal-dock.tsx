@@ -298,13 +298,13 @@ export function TerminalDock() {
     : connectionLabel
 
   const header = (
-    <div className="flex h-10 items-center justify-between gap-3 border-b border-border/45 bg-background px-3">
+    <div className="flex h-8 items-center justify-between gap-2 border-b border-border/45 bg-background px-2">
       <div
         className="flex min-w-0 flex-1 items-center gap-1"
         data-testid="terminal-dock-tab-strip"
       >
         <div
-          className="inline-flex h-8 min-w-0 max-w-[320px] items-center gap-2 rounded-[8px] bg-muted/60 px-2.5 text-xs dark:bg-muted/35"
+          className="inline-flex h-6 min-w-0 max-w-[320px] items-center gap-1.5 rounded-md bg-muted/55 px-2 text-xs dark:bg-muted/35"
           data-testid="terminal-dock-tab"
           title={sessionMeta}
         >
@@ -334,7 +334,7 @@ export function TerminalDock() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 rounded-[8px] text-muted-foreground/60 transition-colors disabled:cursor-default disabled:opacity-60"
+          className="h-7 w-7 rounded-md text-muted-foreground/60 transition-colors disabled:cursor-default disabled:opacity-60"
           disabled
           aria-label={tTerminal("newTerminal")}
           title={tTerminal("newTerminal")}
@@ -346,7 +346,7 @@ export function TerminalDock() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 rounded-[8px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/55 hover:text-foreground"
           onClick={closeTerminal}
           aria-label={tAccessibility("closeTerminal")}
         >
@@ -365,7 +365,7 @@ export function TerminalDock() {
       ) : null}
       <div
         ref={terminalBodyRef}
-        className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)] px-5 pb-3 pt-4"
+        className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)] px-5 pb-3 pt-2"
         onClick={() => terminalRef.current?.focus()}
       >
         <div
