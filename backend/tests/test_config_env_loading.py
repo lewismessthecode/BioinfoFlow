@@ -81,6 +81,7 @@ def test_skills_root_can_be_overridden(tmp_path, monkeypatch):
     assert settings.skills_root == skills
 
 
+def test_scheduler_worker_heartbeat_grace_seconds_binds_from_env(tmp_path, monkeypatch):
     root_home = (tmp_path / "root-home").resolve()
     root_env = tmp_path / "root.env"
     backend_env = tmp_path / "backend.env"

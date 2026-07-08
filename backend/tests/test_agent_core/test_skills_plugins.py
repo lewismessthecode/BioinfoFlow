@@ -100,6 +100,7 @@ def test_agent_skill_registry_skips_unsafe_and_support_paths(tmp_path: Path):
     assert [skill.name for skill in registry.list()] == ["valid-skill"]
 
 
+def test_agent_plugin_registry_discovers_versioned_plugin_manifests(tmp_path: Path):
     plugin_dir = tmp_path / "variant-plugin" / ".bioinfoflow-plugin"
     plugin_dir.mkdir(parents=True)
     (plugin_dir / "plugin.json").write_text(

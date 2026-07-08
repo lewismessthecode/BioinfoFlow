@@ -72,6 +72,7 @@ def _bioinfoflow_home(tmp_path, monkeypatch):
     home = tmp_path / "bioinfoflow-home"
     home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(settings, "bioinfoflow_home", str(home))
+    monkeypatch.setattr(settings, "bioinfoflow_skills_root", "")
 
 
 @pytest_asyncio.fixture
