@@ -28,7 +28,12 @@
 ## Phase 3: Review, Verification, PR
 
 - [x] Run targeted frontend tests and lint.
-- [ ] Run parallel review agents after implementation.
-- [ ] Fix review findings.
+- [x] Run parallel review agents after implementation.
+- [x] Fix review findings.
+  - [x] Make closed-dock `chdir()` a no-op so hidden terminal actions cannot queue.
+  - [x] Clear queued commands on project changes and validate command project ownership before execution.
+  - [x] Hide run-directory terminal actions until the dock is already open.
+  - [x] Make the `+` affordance truly disabled until multi-session terminals exist.
+  - [x] Refine the active tab to a restrained grey surface and add reduced-motion coverage.
 - [ ] Run final verification.
 - [ ] Push branch and open PR.

@@ -1,5 +1,6 @@
 import * as React from "react"
 import { screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { TerminalDock } from "@/components/bioinfoflow/terminal/terminal-dock"
@@ -150,6 +151,39 @@ function renderDock({ open = true }: { open?: boolean } = {}) {
   )
 }
 
+function PendingCommandProjectSwitchHarness() {
+  const [projectId, setProjectId] = React.useState("project-1")
+
+  return (
+    <TerminalDockProvider projectId={projectId} enabled isMobile={false}>
+      <PendingCommandControls onSwitchProject={() => setProjectId("project-2")} />
+      <TerminalDock />
+    </TerminalDockProvider>
+  )
+}
+
+function PendingCommandControls({
+  onSwitchProject,
+}: {
+  onSwitchProject: () => void
+}) {
+  const { chdir, openTerminal } = useTerminalDock()
+
+  return (
+    <>
+      <button type="button" onClick={() => chdir("runs/run-1")}>
+        request chdir
+      </button>
+      <button type="button" onClick={onSwitchProject}>
+        switch project
+      </button>
+      <button type="button" onClick={openTerminal}>
+        open terminal
+      </button>
+    </>
+  )
+}
+
 describe("TerminalDock", () => {
   beforeEach(() => {
     appearanceState.resolvedMode = "light"
@@ -230,6 +264,18 @@ describe("TerminalDock", () => {
     expect(localStorage.getItem("terminal-dock:project-1:open")).toBeNull()
   })
 
+  it("clears queued directory changes when the project changes before opening", async () => {
+    const user = userEvent.setup()
+    renderAppPage(<PendingCommandProjectSwitchHarness />)
+
+    await user.click(screen.getByRole("button", { name: "request chdir" }))
+    await user.click(screen.getByRole("button", { name: "switch project" }))
+    await user.click(screen.getByRole("button", { name: "open terminal" }))
+
+    await screen.findByText("title")
+    expect(chdirMock).not.toHaveBeenCalled()
+  })
+
   it("updates the xterm theme without recreating the terminal instance", async () => {
     const view = renderDock()
 
@@ -303,10 +349,7 @@ describe("TerminalDock", () => {
     expect(screen.getByText("local")).toBeInTheDocument()
     expect(screen.queryByText("sh • /workspace/project-1")).not.toBeInTheDocument()
     expect(screen.getByTitle("local • sh • /workspace/project-1")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "newTerminal" })).toHaveAttribute(
-      "aria-disabled",
-      "true"
-    )
+    expect(screen.getByRole("button", { name: "newTerminal" })).toBeDisabled()
     expect(screen.queryByRole("button", { name: "clearTerminal" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "reconnectTerminal" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "closeTerminal" })).toBeInTheDocument()
@@ -317,7 +360,7 @@ describe("TerminalDock", () => {
     expect(terminalTab).toHaveAttribute("data-testid", "terminal-dock-tab")
     expect(terminalTab.className).toContain("rounded-t-md")
     expect(terminalTab.className).toContain("border")
-    expect(terminalTab.className).toContain("bg-background")
+    expect(terminalTab.className).toContain("bg-muted")
   })
 
   it("labels remote terminal targets with the node name", async () => {
@@ -389,5 +432,6 @@ describe("TerminalDock", () => {
     expect(section).toBeTruthy()
     expect(section?.className).toContain("animate-in")
     expect(section?.className).toContain("slide-in-from-bottom-2")
+    expect(section?.className).toContain("motion-reduce:animate-none")
   })
 })

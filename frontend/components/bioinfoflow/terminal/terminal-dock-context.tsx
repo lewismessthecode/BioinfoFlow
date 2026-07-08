@@ -11,6 +11,7 @@ import {
 
 type TerminalDockCommand = {
   id: number
+  projectId: string
   type: "chdir"
   path: string
 }
@@ -63,6 +64,7 @@ export function TerminalDockProvider({
       /* eslint-disable react-hooks/set-state-in-effect */
       setIsOpen(false)
       setDockHeightState(DEFAULT_DOCK_HEIGHT)
+      setPendingCommand(null)
       /* eslint-enable react-hooks/set-state-in-effect */
       return
     }
@@ -70,6 +72,7 @@ export function TerminalDockProvider({
     const parsedHeight = storedHeight ? Number(storedHeight) : Number.NaN
     localStorage.removeItem(storageKey(projectId, "open"))
     setIsOpen(false)
+    setPendingCommand(null)
     setDockHeightState(
       Number.isFinite(parsedHeight)
         ? clampDockHeight(parsedHeight)
@@ -115,14 +118,15 @@ export function TerminalDockProvider({
 
   const chdir = useCallback(
     (path: string) => {
-      if (!enabled || !projectId) return
+      if (!enabled || !projectId || !isOpen) return
       setPendingCommand({
         id: Date.now(),
+        projectId,
         type: "chdir",
         path,
       })
     },
-    [enabled, projectId]
+    [enabled, isOpen, projectId]
   )
 
   const value = useMemo(

@@ -271,11 +271,15 @@ export function TerminalDock() {
 
   useEffect(() => {
     if (!pendingCommand || connectionState !== "connected") return
+    if (pendingCommand.projectId !== projectId) {
+      clearPendingCommand(pendingCommand.id)
+      return
+    }
     if (pendingCommand.type === "chdir") {
       chdir(pendingCommand.path)
       clearPendingCommand(pendingCommand.id)
     }
-  }, [chdir, clearPendingCommand, connectionState, pendingCommand])
+  }, [chdir, clearPendingCommand, connectionState, pendingCommand, projectId])
 
   if (!enabled || !projectId) return null
 
@@ -300,7 +304,7 @@ export function TerminalDock() {
         data-testid="terminal-dock-tab-strip"
       >
         <div
-          className="inline-flex h-8 min-w-0 max-w-[320px] items-center gap-2 rounded-t-md border border-border/60 border-b-background bg-background px-3 text-xs shadow-[0_-1px_0_rgba(0,0,0,0.02)]"
+          className="inline-flex h-8 min-w-0 max-w-[320px] items-center gap-2 rounded-t-md border border-border/60 border-b-[var(--terminal-background)] bg-muted/55 px-3 text-xs shadow-[0_-1px_0_rgba(0,0,0,0.02)] dark:bg-muted/35"
           data-testid="terminal-dock-tab"
           title={sessionMeta}
         >
@@ -330,11 +334,10 @@ export function TerminalDock() {
         <Button
           variant="ghost"
           size="icon"
-          className="mb-0.5 h-7 w-7 rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-          aria-disabled="true"
+          className="mb-0.5 h-7 w-7 rounded-md text-muted-foreground/60 transition-colors disabled:cursor-default disabled:opacity-60"
+          disabled
           aria-label={tTerminal("newTerminal")}
           title={tTerminal("newTerminal")}
-          onClick={(event) => event.preventDefault()}
         >
           <Plus className="h-3.5 w-3.5" />
         </Button>
@@ -397,7 +400,7 @@ export function TerminalDock() {
     <section
       className={cn(
         "relative border-t border-border/60 bg-background",
-        isOpen && "animate-in slide-in-from-bottom-2 fade-in duration-200"
+        isOpen && "animate-in slide-in-from-bottom-2 fade-in duration-200 motion-reduce:animate-none"
       )}
       style={{ height: isOpen ? dockHeight : 0 }}
       aria-hidden={!isOpen}

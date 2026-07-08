@@ -1,5 +1,6 @@
 import { screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import userEvent from "@testing-library/user-event"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { RunDetailContent } from "@/app/(app)/runs/components/run-detail-content"
 import type { DagData, Run } from "@/lib/types"
@@ -21,9 +22,11 @@ vi.mock("@/components/bioinfoflow/dag", () => ({
 
 const openTerminalMock = vi.fn()
 const chdirMock = vi.fn()
+let terminalIsOpen = false
 
 vi.mock("@/components/bioinfoflow/terminal/terminal-dock-context", () => ({
   useTerminalDock: () => ({
+    isOpen: terminalIsOpen,
     openTerminal: openTerminalMock,
     chdir: chdirMock,
   }),
@@ -62,6 +65,12 @@ const dag: DagData = {
 }
 
 describe("RunDetailContent", () => {
+  beforeEach(() => {
+    terminalIsOpen = false
+    openTerminalMock.mockClear()
+    chdirMock.mockClear()
+  })
+
   it("keeps the active DAG tab in normal layout flow for the full-page variant", () => {
     renderAppPage(
       <div className="h-[640px]">
@@ -114,7 +123,8 @@ describe("RunDetailContent", () => {
     expect(screen.getByTestId("dag-panel")).toHaveTextContent("run-1:viral-mini-nf")
   })
 
-  it("exposes terminal actions for the current run", () => {
+  it("keeps terminal directory actions hidden until the dock is open", async () => {
+    const user = userEvent.setup()
     renderAppPage(
       <RunDetailContent
         run={{ ...run, workspace: "runs/run-1" }}
@@ -135,8 +145,38 @@ describe("RunDetailContent", () => {
     expect(screen.getByRole("button", { name: "runs.rerunPipeline" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "runs.downloadResults" })).toBeInTheDocument()
 
-    // Secondary actions (terminal, run dir, delete) are behind an overflow dropdown
+    // Terminal actions must not open or queue commands while the dock is closed.
     const overflowTrigger = screen.getByRole("button", { name: "" })
     expect(overflowTrigger).toHaveAttribute("aria-haspopup", "menu")
+    await user.click(overflowTrigger)
+    expect(screen.queryByText("runs.goToRunDir")).not.toBeInTheDocument()
+    expect(openTerminalMock).not.toHaveBeenCalled()
+    expect(chdirMock).not.toHaveBeenCalled()
+  })
+
+  it("changes to the run directory from the menu when the terminal is already open", async () => {
+    terminalIsOpen = true
+    const user = userEvent.setup()
+    renderAppPage(
+      <RunDetailContent
+        run={{ ...run, workspace: "runs/run-1" }}
+        logs={{ logs: [] }}
+        outputs={{ files: [] }}
+        dag={dag}
+        workflowName="viral-mini-nf"
+        projectId="project-1"
+        variant="fullpage"
+        onDownloadResults={vi.fn()}
+        onRerun={vi.fn()}
+        onDelete={vi.fn()}
+        onDownloadFile={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole("button", { name: "" }))
+    await user.click(screen.getByText("runs.goToRunDir"))
+
+    expect(chdirMock).toHaveBeenCalledWith("runs/run-1")
+    expect(openTerminalMock).not.toHaveBeenCalled()
   })
 })
