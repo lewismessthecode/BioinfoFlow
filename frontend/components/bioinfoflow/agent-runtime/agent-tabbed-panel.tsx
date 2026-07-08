@@ -124,12 +124,6 @@ export function AgentTabbedPanel({
       : "loading"
   const effectiveArtifactError =
     sessionId && artifactStateMatchesRequest ? artifactLoadState.error : null
-  const artifactSubtitle =
-    effectiveArtifactStatus === "loading"
-      ? t("artifacts.loading")
-      : effectiveArtifactStatus === "error"
-        ? t("artifacts.loadFailed")
-        : t("artifacts.count", { count: visibleArtifacts.length })
   const pendingDecision = useMemo(() => getPendingActions(events)[0] ?? null, [events])
   const pendingDecisionActionId = pendingDecision
     ? String(pendingDecision.payload.action_id || "")
@@ -186,45 +180,38 @@ export function AgentTabbedPanel({
       )}
       data-testid="artifact-panel"
     >
-      <div className="flex h-11 min-h-11 items-center justify-between border-b border-border/60 px-2.5">
-        <div className="min-w-0">
-          <div className="truncate text-[13px] font-medium text-foreground/78">
-            {activeTab === "preview"
-              ? t("artifacts.title")
-              : activeTab === "files"
-                ? t("files.title")
-                : t("browser.title")}
-          </div>
-          <div className="truncate text-[11px] text-muted-foreground/82">
-            {activeTab === "preview" ? artifactSubtitle : t("sidecar.title")}
-          </div>
+      <div className="flex h-11 min-h-11 items-center justify-between gap-2 border-b border-border/60 px-2">
+        <div
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+          role="tablist"
+          aria-label={t("sidecar.title")}
+        >
+          {TABS.map(({ key, labelKey, Icon }, index) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              id={`agent-sidecar-tab-${key}`}
+              aria-controls={`agent-sidecar-panel-${key}`}
+              aria-selected={activeTab === key}
+              tabIndex={activeTab === key ? 0 : -1}
+              onClick={() => onActiveTabChange(key)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+              aria-label={t(labelKey)}
+              className={cn(
+                "flex h-8 min-w-0 items-center gap-1.5 rounded-[8px] px-2.5 text-[12px] font-medium transition-colors",
+                activeTab === key
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+              )}
+              data-active={activeTab === key}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{t(labelKey)}</span>
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-1">
-          <div className="flex items-center gap-1" role="tablist" aria-label={t("sidecar.title")}>
-            {TABS.map(({ key, labelKey, Icon }, index) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                id={`agent-sidecar-tab-${key}`}
-                aria-controls={`agent-sidecar-panel-${key}`}
-                aria-selected={activeTab === key}
-                tabIndex={activeTab === key ? 0 : -1}
-                onClick={() => onActiveTabChange(key)}
-                onKeyDown={(event) => onTabKeyDown(event, index)}
-                aria-label={t(labelKey)}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors",
-                  activeTab === key
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                )}
-                data-active={activeTab === key}
-              >
-                <Icon className="h-4 w-4" />
-              </button>
-            ))}
-          </div>
+        <div className="flex shrink-0 items-center gap-1">
           {activeTab === "preview" && effectiveArtifactStatus === "error" ? (
             <button
               type="button"
@@ -263,7 +250,11 @@ export function AgentTabbedPanel({
       <div
         className={cn(
           "min-h-0 flex-1",
-          activeTab === "browser" ? "overflow-y-auto p-3" : "overflow-hidden p-3",
+          activeTab === "browser"
+            ? "overflow-y-auto p-3"
+            : activeTab === "files"
+              ? "overflow-hidden"
+              : "overflow-hidden p-3",
         )}
         role="tabpanel"
         id={`agent-sidecar-panel-${activeTab}`}

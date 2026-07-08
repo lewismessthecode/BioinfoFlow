@@ -295,6 +295,9 @@ describe("FilesTab", () => {
 
     expect(await screen.findByText("workflow.wdl")).toBeInTheDocument()
     expect(screen.getByTestId("files-tab-split")).toBeInTheDocument()
+    expect(screen.queryByText("Project files")).not.toBeInTheDocument()
+    expect(screen.getByTestId("files-tab-split").className).not.toContain("rounded-xl")
+    expect(screen.getByTestId("files-tab-split").className).not.toContain("border")
     expect(screen.getByTestId("file-preview-pane")).toHaveTextContent(
       "Select a file to preview",
     )

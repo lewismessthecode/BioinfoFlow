@@ -243,21 +243,16 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   }, [])
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3" data-testid="files-tab">
-      <div className="flex shrink-0 items-center justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-foreground">{t("files.title")}</div>
-          {rootPath ? (
-            <div className="truncate font-mono text-[11px] text-muted-foreground" title={rootPath}>
-              {rootPath}
-            </div>
-          ) : null}
+    <div className="flex h-full min-h-0 min-w-0 flex-col" data-testid="files-tab">
+      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border/55 px-3">
+        <div className="min-w-0 truncate font-mono text-[11px] text-muted-foreground" title={rootPath ?? undefined}>
+          {rootPath ?? t("files.loading")}
         </div>
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7 rounded-full text-muted-foreground"
+          className="h-7 w-7 shrink-0 rounded-[7px] text-muted-foreground hover:bg-muted hover:text-foreground"
           onClick={() => void refresh()}
           aria-label={t("files.refresh")}
         >
@@ -268,7 +263,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
       {rootError ? <p className="text-sm text-destructive">{rootError}</p> : null}
       <div
         ref={splitRef}
-        className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-hidden rounded-xl border border-border/65 bg-background lg:grid-cols-[var(--files-split-columns)] lg:gap-0"
+        className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-hidden bg-background lg:grid-cols-[var(--files-split-columns)]"
         style={splitStyle}
         data-testid="files-tab-split"
       >
@@ -326,7 +321,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
           <span className="my-3 block w-px rounded-full bg-border group-hover:bg-foreground/30" />
         </div>
         <section
-          className="min-h-[260px] min-w-0 overflow-hidden border-t border-border/60 bg-muted/20 p-2 lg:min-h-0 lg:border-l lg:border-t-0"
+          className="min-h-[260px] min-w-0 overflow-hidden border-t border-border/55 bg-background p-2 lg:min-h-0 lg:border-l lg:border-t-0"
           data-testid="file-tree-pane"
         >
           <AgentWorkspaceTree

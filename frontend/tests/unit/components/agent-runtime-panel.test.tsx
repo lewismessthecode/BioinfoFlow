@@ -325,6 +325,12 @@ describe("AgentTabbedPanel", () => {
     )
 
     expect(screen.getByRole("tablist", { name: "sidecar.title" })).toBeInTheDocument()
+    expect(screen.getByText("tabs.artifacts")).toBeInTheDocument()
+    expect(screen.getByText("tabs.files")).toBeInTheDocument()
+    expect(screen.getByText("tabs.browser")).toBeInTheDocument()
+    expect(screen.queryByText("artifacts.title")).not.toBeInTheDocument()
+    expect(screen.queryByText("sidecar.title")).not.toBeInTheDocument()
+    expect(screen.queryByText("artifacts.count")).not.toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "tabs.artifacts" })).toHaveAttribute(
       "aria-selected",
       "true",
