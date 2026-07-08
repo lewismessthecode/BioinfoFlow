@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
-import { TerminalSquare, X } from "lucide-react"
+import { Plus, TerminalSquare, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
@@ -294,10 +294,14 @@ export function TerminalDock() {
     : connectionLabel
 
   const header = (
-    <div className="flex items-center justify-between gap-2 border-b border-border/35 bg-background px-4 py-2.5">
-      <div className="flex min-w-0 flex-1 items-center">
+    <div className="flex h-10 items-end justify-between gap-3 border-b border-border/45 bg-muted/20 px-4 pt-1.5">
+      <div
+        className="flex min-w-0 flex-1 items-end gap-1"
+        data-testid="terminal-dock-tab-strip"
+      >
         <div
-          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5"
+          className="inline-flex h-8 min-w-0 max-w-[320px] items-center gap-2 rounded-t-md border border-border/60 border-b-background bg-background px-3 text-xs shadow-[0_-1px_0_rgba(0,0,0,0.02)]"
+          data-testid="terminal-dock-tab"
           title={sessionMeta}
         >
           <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -323,12 +327,23 @@ export function TerminalDock() {
             </span>
           ) : null}
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="mb-0.5 h-7 w-7 rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          aria-disabled="true"
+          aria-label={tTerminal("newTerminal")}
+          title={tTerminal("newTerminal")}
+          onClick={(event) => event.preventDefault()}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
       </div>
       <div className="flex items-center gap-0.5">
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          className="mb-0.5 h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
           onClick={closeTerminal}
           aria-label={tAccessibility("closeTerminal")}
         >
@@ -339,7 +354,7 @@ export function TerminalDock() {
   )
 
   const body = (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--terminal-background)]">
       {error ? (
         <div className="border-b border-destructive/15 bg-destructive/4 px-4 py-2 text-xs text-destructive">
           {error}
@@ -347,13 +362,13 @@ export function TerminalDock() {
       ) : null}
       <div
         ref={terminalBodyRef}
-        className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
+        className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)] px-5 pb-3 pt-4"
         onClick={() => terminalRef.current?.focus()}
       >
         <div
           ref={terminalViewportRef}
           data-testid="terminal-dock-viewport"
-          className="terminal-dock-scroll h-full min-h-0 w-full overflow-hidden bg-background"
+          className="terminal-dock-scroll h-full min-h-0 w-full overflow-hidden bg-transparent"
         />
       </div>
     </div>
