@@ -1159,16 +1159,16 @@ function StarterSuggestionList({
           key={suggestion.key}
           type="button"
           className={cn(
-            "group grid min-h-[38px] w-full grid-cols-[1rem_minmax(0,1fr)] items-center gap-2.5 rounded-[6px] px-5 text-left transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:relative focus-visible:z-10 focus-visible:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/18 focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:min-h-[42px]",
+            "group grid min-h-[32px] w-full grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2 rounded-[5px] px-4 text-left transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:relative focus-visible:z-10 focus-visible:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/18 focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:min-h-[35px]",
             index > 0 && "border-t border-border/75",
           )}
           onClick={() => onSelect(suggestion.prompt)}
         >
           <suggestion.icon
-            className="h-4 w-4 text-muted-foreground/65 transition-colors duration-150 group-hover:text-muted-foreground/85"
+            className="h-3.5 w-3.5 text-muted-foreground/65 transition-colors duration-150 group-hover:text-muted-foreground/85"
             aria-hidden={true}
           />
-          <span className="min-w-0 truncate text-[13px] font-normal leading-5 tracking-normal text-muted-foreground transition-colors duration-150 group-hover:text-foreground/70 sm:text-[14px]">
+          <span className="min-w-0 truncate text-[12px] font-normal leading-[18px] tracking-normal text-muted-foreground transition-colors duration-150 group-hover:text-foreground/70 sm:text-[13px]">
             {suggestion.prompt}
           </span>
         </button>
