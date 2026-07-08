@@ -140,11 +140,9 @@ vi.mock("next-intl", () => ({
       "commandHints.workflow.prefix": "Use",
       "commandHints.workflow.suffix": "to attach workflow context",
       "commandHints.skills.prefix": "Type",
-      "commandHints.skills.suffix": "to choose a focused skill",
+      "commandHints.skills.suffix": "to choose one or more skills",
       "commandHints.mode.prefix": "Press",
       "commandHints.mode.suffix": "to switch plan and act mode",
-      "commandHints.inputs.prefix": "Mention",
-      "commandHints.inputs.suffix": "to shape run parameters",
       "workflowContext.label": "Workflow context",
       auto: "Auto",
       configure: "Configure providers",
@@ -372,7 +370,7 @@ describe("AgentWorkbench", () => {
 
     expect(within(hints).getByText("/")).toBeInTheDocument()
     expect(within(hints).getByText("Type")).toBeInTheDocument()
-    expect(within(hints).getByLabelText("Type / to choose a focused skill")).toBe(
+    expect(within(hints).getByLabelText("Type / to choose one or more skills")).toBe(
       within(hints).getByText("Type").parentElement,
     )
   })
@@ -546,7 +544,7 @@ describe("AgentWorkbench", () => {
     })
   })
 
-  it("docks the draft composer when the desktop workspace drawer is open", async () => {
+  it("keeps the draft composer centered when the desktop workspace drawer is open", async () => {
     render(<AgentWorkbench projectId="project-1" />)
     const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
     render(<>{navbarActions}</>)
@@ -564,12 +562,18 @@ describe("AgentWorkbench", () => {
     expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
     expect(screen.getByTestId("agent-composer-shell")).toHaveAttribute(
       "data-placement",
-      "bottom",
+      "center",
     )
     expect(screen.getByTestId("agent-composer")).toHaveAttribute(
       "data-presentation",
-      "dock",
+      "center",
     )
+    const suggestions = within(screen.getByTestId("agent-starter-suggestions")).getAllByRole(
+      "button",
+    )
+    expect(suggestions).toHaveLength(3)
+    expect(screen.queryByRole("button", { name: "Prepare a run from @workflow" }))
+      .not.toBeInTheDocument()
   })
 
   it("resizes the desktop workspace drawer and stores the preferred width", async () => {

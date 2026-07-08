@@ -2549,15 +2549,11 @@
       },
       "skills": {
         "prefix": "Type",
-        "suffix": "to choose a focused skill"
+        "suffix": "to choose one or more skills"
       },
       "mode": {
         "prefix": "Press",
         "suffix": "to switch plan and act mode"
-      },
-      "inputs": {
-        "prefix": "Mention",
-        "suffix": "to shape run parameters"
       }
     },
     "workflowContext": {
