@@ -424,6 +424,32 @@ describe("AgentWorkbench", () => {
     expect(within(drawer).queryByRole("tab", { name: "Tools" })).not.toBeInTheDocument()
   })
 
+  it("docks the draft composer when the desktop workspace drawer is open", async () => {
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    expect(screen.getByTestId("agent-composer-shell")).toHaveAttribute(
+      "data-placement",
+      "center",
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    expect(screen.getByTestId("artifact-panel")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-composer-shell")).toHaveAttribute(
+      "data-placement",
+      "bottom",
+    )
+    expect(screen.getByTestId("agent-composer")).toHaveAttribute(
+      "data-presentation",
+      "dock",
+    )
+  })
+
   it("resizes the desktop workspace drawer and stores the preferred width", async () => {
     setupRuntime({ session: baseSession })
     render(<AgentWorkbench projectId="project-1" />)
