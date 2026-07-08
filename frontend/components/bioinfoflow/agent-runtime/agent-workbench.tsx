@@ -840,6 +840,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       toggleSidecar,
     ])
 
+    const composerDocked = hasConversation || desktopSidecarVisible
     const composer = (
       <AgentComposer
         ref={textareaRef}
@@ -871,7 +872,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         selectedRemoteConnectionId={selectedRemoteConnectionId}
         onRemoteConnectionChange={handleRemoteConnectionChange}
         compactControls={desktopSidecarVisible}
-        presentation={hasConversation ? "dock" : "center"}
+        presentation={composerDocked ? "dock" : "center"}
         contextTitle={null}
       />
     )
@@ -890,7 +891,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           className="relative flex min-w-0 flex-1 flex-col overflow-hidden transition-[padding,width] duration-300 ease-out"
           data-testid="agent-workbench-main"
           style={
-            hasConversation
+            composerDocked
               ? ({
                   "--agent-composer-bottom-space": `${composerBottomSpace}px`,
                 } as CSSProperties)
@@ -906,27 +907,28 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 onRetryTurn={retryTurn}
                 eventWindowLimited={eventWindowLimited}
               />
-              <div
-                ref={composerShellRef}
-                className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-4 pt-10 sm:px-6"
-                data-testid="agent-composer-shell"
-                data-placement="bottom"
-              >
-                <div className="pointer-events-auto">
-                  <ComposerApprovalPopover events={state.events} />
-                  {composer}
-                </div>
-              </div>
             </>
           ) : (
-            <div className="agent-halo-surface flex min-h-0 flex-1 items-center justify-center px-4 py-8">
-              <div className="agent-center-stage w-full max-w-[42rem] -translate-y-8">
+            <div
+              className={cn(
+                "agent-halo-surface flex min-h-0 flex-1 items-center justify-center px-4 py-8",
+                composerDocked && "items-start pt-[22vh]",
+              )}
+            >
+              <div
+                className={cn(
+                  "agent-center-stage w-full",
+                  composerDocked ? "max-w-[36rem]" : "max-w-[42rem] -translate-y-8",
+                )}
+              >
                 <h1 className="mb-4 text-center text-[15px] font-medium tracking-normal text-muted-foreground">
                   {t("welcomeTitle")}
                 </h1>
-                <div data-testid="agent-composer-shell" data-placement="center">
-                  {composer}
-                </div>
+                {!composerDocked ? (
+                  <div data-testid="agent-composer-shell" data-placement="center">
+                    {composer}
+                  </div>
+                ) : null}
                 {!input.trim() ? (
                   <StarterSuggestionList
                     suggestions={STARTER_SUGGESTIONS.map((suggestion) => ({
@@ -950,6 +952,20 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               ) : null}
             </div>
           )}
+
+          {composerDocked ? (
+            <div
+              ref={composerShellRef}
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-4 pt-10 sm:px-6"
+              data-testid="agent-composer-shell"
+              data-placement="bottom"
+            >
+              <div className="pointer-events-auto">
+                <ComposerApprovalPopover events={state.events} />
+                {composer}
+              </div>
+            </div>
+          ) : null}
 
           {state.error ? (
             <div className="absolute inset-x-4 bottom-24 mx-auto max-w-3xl rounded-2xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive shadow-sm sm:bottom-28">

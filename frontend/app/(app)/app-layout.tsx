@@ -240,7 +240,7 @@ export default function AppLayout({
                 Skip to content
               </a>
 
-              <div className="flex min-h-[100dvh] bg-background text-foreground">
+              <div className="flex h-[100dvh] overflow-hidden bg-background text-foreground">
                 {/* Left Sidebar - Desktop */}
                 {!isMobile && (
                   <nav
@@ -269,8 +269,8 @@ export default function AppLayout({
                 )}
 
                 {/* Main Content Area */}
-                <div
-                  className="flex min-h-[100dvh] min-w-0 flex-1 flex-col bg-background"
+                  <div
+                    className="flex h-[100dvh] min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
                   style={{
                     "--left-rail-compensation":
                       !isMobile && !isSettingsRoute && leftSidebarCollapsed

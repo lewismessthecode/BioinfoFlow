@@ -41,13 +41,15 @@ describe("sidebar header styling", () => {
     expect(source).not.toContain("text-sidebar-foreground/52")
   })
 
-  it("keeps the protected app shell on the mobile-safe viewport unit", () => {
+  it("keeps the protected app shell height-contained on the mobile-safe viewport unit", () => {
     const source = readFileSync(
       resolve(process.cwd(), "app/(app)/app-layout.tsx"),
       "utf8",
     )
 
-    expect(source).toContain("min-h-[100dvh]")
+    expect(source).toContain("h-[100dvh]")
+    expect(source).toContain("overflow-hidden")
+    expect(source).not.toContain("min-h-[100dvh]")
     expect(source).not.toContain("h-screen")
   })
 
