@@ -306,6 +306,11 @@ describe("FilesTab", () => {
     expect(screen.getByTestId("agent-workspace-tree-scroll").className).toContain(
       "bioflow-transient-scrollbar",
     )
+    fireEvent.scroll(screen.getByTestId("agent-workspace-tree-scroll"))
+    expect(screen.getByTestId("agent-workspace-tree-scroll")).toHaveAttribute(
+      "data-scrolling",
+      "true",
+    )
     expect(screen.getByTestId("file-preview-pane")).toHaveTextContent(
       "Select a file to preview",
     )

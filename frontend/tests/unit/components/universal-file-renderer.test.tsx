@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -215,18 +215,24 @@ describe("UniversalFileRenderer", () => {
     ).toBeInTheDocument()
   })
 
-  it("renders code previews with a neutral line gutter and transient scrollbars", () => {
+  it("renders code previews with a flush neutral line gutter and transient scrollbars", () => {
     const { container } = render(
       <UniversalFileRenderer file={{ path: "summary.txt", content: "alpha\nbeta" }} />,
     )
 
     const scrollViewport = container.querySelector("[data-testid='code-preview-scroll']")
+    const pre = scrollViewport?.querySelector("pre")
     const lineNumber = container.querySelector("[data-testid='code-preview-line-number']")
     expect(scrollViewport).toBeTruthy()
     expect(scrollViewport?.className).toContain("bioflow-transient-scrollbar")
+    expect(pre?.className).not.toContain("p-3")
     expect(lineNumber).toBeTruthy()
     expect(lineNumber?.className).not.toContain("bg-muted")
-    expect(lineNumber?.className).toContain("bg-transparent")
+    expect(lineNumber?.className).toContain("bg-background")
+    expect(lineNumber?.className).toContain("min-w-")
+
+    fireEvent.scroll(scrollViewport!)
+    expect(scrollViewport).toHaveAttribute("data-scrolling", "true")
   })
 
   it("aborts pending text preview fetches on unmount", () => {

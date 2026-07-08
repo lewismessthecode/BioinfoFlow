@@ -22,6 +22,7 @@ import { useTranslations } from "next-intl"
 
 import type { AgentFsEntry } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
+import { useTransientScrollbar } from "./use-transient-scrollbar"
 
 export function AgentWorkspaceTree({
   entries,
@@ -61,6 +62,7 @@ export function AgentWorkspaceTree({
   onCopyPath: (path: string) => void
 }) {
   const t = useTranslations("agentRuntime")
+  const transientScrollbar = useTransientScrollbar()
   const normalized = filter.trim().toLowerCase()
   const visibleEntries = filterEntries(entries, normalized, childrenByPath)
 
@@ -117,6 +119,7 @@ export function AgentWorkspaceTree({
       <div
         className="bioflow-transient-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 py-2"
         data-testid="agent-workspace-tree-scroll"
+        {...transientScrollbar}
       >
         <div className="grid min-w-0 gap-0.5">
         <TreeRows
