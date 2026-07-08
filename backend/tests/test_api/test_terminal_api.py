@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from uuid import uuid4
 
@@ -7,6 +9,24 @@ from app.config import settings
 from app.services.terminal_service import terminal_manager
 from tests.support.path_contract import create_project
 from tests.support.auth import TEST_SESSION_COOKIE, create_better_auth_db
+
+
+class _BlockingRemoteTerminalTransport:
+    async def read(self, _max_bytes: int) -> bytes:
+        await asyncio.Event().wait()
+        return b""
+
+    async def write(self, _data: bytes) -> None:
+        return None
+
+    async def resize(self, *, cols: int, rows: int) -> None:
+        del cols, rows
+
+    async def wait(self) -> int:
+        return 0
+
+    async def terminate(self) -> None:
+        return None
 
 
 async def _create_project(db_session, *, name: str):
@@ -57,7 +77,18 @@ async def test_terminal_session_api_returns_local_target_metadata(
 @pytest.mark.asyncio
 async def test_terminal_session_api_returns_remote_target_without_local_fallback(
     async_client,
+    monkeypatch: pytest.MonkeyPatch,
 ):
+    async def fake_remote_factory(**_kwargs):
+        return _BlockingRemoteTerminalTransport()
+
+    monkeypatch.setattr(
+        terminal_manager,
+        "_remote_terminal_factory",
+        fake_remote_factory,
+        raising=False,
+    )
+
     connection_resp = await async_client.post(
         "/api/v1/connections",
         json={
@@ -92,7 +123,7 @@ async def test_terminal_session_api_returns_remote_target_without_local_fallback
     assert data["target_label"] == "remote · Phoenix login"
     assert data["remote_connection_id"] == connection_id
     assert data["cwd"] == "/data/phoenix"
-    assert data["status"] == "unsupported"
+    assert data["status"] == "running"
 
 
 @pytest.mark.asyncio

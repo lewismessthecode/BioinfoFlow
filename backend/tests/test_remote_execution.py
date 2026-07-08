@@ -261,6 +261,40 @@ async def test_ssh_config_alias_is_used_as_exact_target_without_user_or_port():
     ]
 
 
+def test_ssh_executor_builds_interactive_pty_argv():
+    executor = SshRemoteExecutor()
+    connection = RemoteConnectionConfig(
+        id="conn-1",
+        name="Cluster",
+        host="cluster.example.org",
+        username="alice",
+        port=2222,
+        key_path="/Users/alice/.ssh/id_ed25519",
+    )
+
+    argv = executor.build_interactive_argv(
+        connection,
+        'cd /data/project && exec "${SHELL:-/bin/sh}" -i',
+        connect_timeout_seconds=10,
+    )
+
+    assert argv == [
+        "ssh",
+        "-i",
+        "/Users/alice/.ssh/id_ed25519",
+        "-p",
+        "2222",
+        "-tt",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "--",
+        "alice@cluster.example.org",
+        'cd /data/project && exec "${SHELL:-/bin/sh}" -i',
+    ]
+
+
 @pytest.mark.asyncio
 async def test_ssh_executor_truncates_streams_and_marks_result():
     async def process_factory(*_argv, **_kwargs):

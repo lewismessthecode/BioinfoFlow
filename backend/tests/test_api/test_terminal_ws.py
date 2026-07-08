@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Generator
 from pathlib import Path
 from uuid import uuid4
@@ -53,6 +54,44 @@ def _receive_until(websocket, kind: str, *, contains: str | None = None) -> dict
         if contains is None or contains in str(payload):
             return message
     raise AssertionError(f"Timed out waiting for websocket message: {kind}")
+
+
+class _ThreadsafeRemoteTerminalTransport:
+    def __init__(self) -> None:
+        self.ready = threading.Event()
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.output: asyncio.Queue[bytes] | None = None
+        self.writes: list[bytes] = []
+        self.resizes: list[tuple[int, int]] = []
+        self.terminated = False
+
+    async def read(self, _max_bytes: int) -> bytes:
+        if self.output is None:
+            self.loop = asyncio.get_running_loop()
+            self.output = asyncio.Queue()
+            self.ready.set()
+        return await self.output.get()
+
+    async def write(self, data: bytes) -> None:
+        self.writes.append(data)
+
+    async def resize(self, *, cols: int, rows: int) -> None:
+        self.resizes.append((cols, rows))
+
+    async def wait(self) -> int:
+        return 0
+
+    async def terminate(self) -> None:
+        self.terminated = True
+        if self.loop and self.output:
+            self.loop.call_soon_threadsafe(self.output.put_nowait, b"")
+
+    def feed(self, data: bytes) -> None:
+        if not self.ready.wait(timeout=5):
+            raise AssertionError("remote terminal transport never started reading")
+        assert self.loop is not None
+        assert self.output is not None
+        self.loop.call_soon_threadsafe(self.output.put_nowait, data)
 
 
 @pytest.fixture
@@ -147,10 +186,25 @@ def test_terminal_websocket_streams_io_and_single_cwd_event(
         assert cwd_count == 1
 
 
-def test_unsupported_remote_terminal_websocket_stays_alive_for_client_actions(
+def test_remote_terminal_websocket_streams_io_and_client_actions(
     terminal_test_client,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     client, _ = terminal_test_client
+    transports: list[_ThreadsafeRemoteTerminalTransport] = []
+
+    async def fake_remote_factory(**_kwargs):
+        transport = _ThreadsafeRemoteTerminalTransport()
+        transports.append(transport)
+        return transport
+
+    monkeypatch.setattr(
+        terminal_manager,
+        "_remote_terminal_factory",
+        fake_remote_factory,
+        raising=False,
+    )
+
     connection_resp = client.post(
         "/api/v1/connections",
         json={
@@ -187,36 +241,33 @@ def test_unsupported_remote_terminal_websocket_stays_alive_for_client_actions(
     ) as websocket:
         ready = websocket.receive_json()
         assert ready["type"] == "ready"
-        assert ready["session"]["status"] == "unsupported"
+        assert ready["session"]["status"] == "running"
+        assert ready["session"]["target_type"] == "remote"
 
         initial_cwd = websocket.receive_json()
         assert initial_cwd == {"type": "cwd", "cwd": "/data/phoenix"}
 
-        initial_error = websocket.receive_json()
-        assert initial_error == {
-            "type": "error",
-            "message": "Remote interactive terminals are not supported yet.",
-        }
+        transport = transports[0]
+        transport.feed(b"remote-ready\n")
+        output = _receive_until(websocket, "output", contains="remote-ready")
+        assert output["data"] == "remote-ready\n"
 
         websocket.send_json({"type": "resize", "cols": 100, "rows": 30})
-        websocket.send_json({"type": "input", "data": "echo should-not-run\n"})
+        websocket.send_json({"type": "input", "data": "echo remote\n"})
         websocket.send_json({"type": "chdir", "path": "runs"})
         websocket.send_json({"type": "ping"})
 
-        errors: list[str] = []
         for _ in range(8):
             message = websocket.receive_json()
             if message["type"] == "pong":
                 break
-            if message["type"] == "error":
-                errors.append(message["message"])
         else:
             raise AssertionError("Timed out waiting for pong")
 
-        assert errors == [
-            "Terminal target is not interactive yet.",
-            "Terminal target is not interactive yet.",
-            "Terminal target is not interactive yet.",
+        assert transport.resizes == [(100, 30)]
+        assert transport.writes == [
+            b"echo remote\n",
+            b"cd /data/phoenix/runs\n",
         ]
 
 
