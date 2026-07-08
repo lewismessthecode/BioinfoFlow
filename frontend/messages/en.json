@@ -2527,6 +2527,33 @@
       "remove": "Remove {name}",
       "activeForNextTurn": "Skills"
     },
+    "starterSuggestions": {
+      "validateInputs": {
+        "title": "Validate workflow inputs",
+        "prompt": "Validate inputs before launching this workflow."
+      },
+      "draftRunPlan": {
+        "title": "Draft a run plan",
+        "prompt": "Use @workflow to draft a Nextflow or WDL run plan."
+      },
+      "triageFailure": {
+        "title": "Triage a failed run",
+        "prompt": "Summarize a failed run and suggest the next command."
+      },
+      "checkMounts": {
+        "title": "Check workflow mounts",
+        "prompt": "Check mounts, outputs, and MiniWDL glob() paths."
+      }
+    },
+    "commandHints": {
+      "workflow": "attach workflow context",
+      "skills": "choose a workflow, run, or debugging skill",
+      "mode": "switch between Plan and Act",
+      "preflight": "validate inputs before launching a run"
+    },
+    "workflowContext": {
+      "label": "Workflow context"
+    },
     "activity": {
       "groups": {
         "search": "Searched web",

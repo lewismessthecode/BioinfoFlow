@@ -317,6 +317,10 @@
     transform: translateX(calc(var(--left-rail-compensation, 0px) * -1));
   }
 
+  .agent-command-hint-track {
+    animation: agent-command-hints 28s linear infinite;
+  }
+
   .quiet-card-icon-shell {
     position: relative;
     display: inline-flex;
@@ -376,6 +380,23 @@
 
   .metadata-pill--version {
     background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-command-hint-track {
+    animation: none;
+  }
+}
+
+@keyframes agent-command-hints {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  88%,
+  100% {
+    transform: translateX(min(0px, calc(42rem - 100%)));
   }
 }
 

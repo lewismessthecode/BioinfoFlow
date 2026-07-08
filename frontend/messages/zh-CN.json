@@ -2527,6 +2527,33 @@
       "remove": "移除 {name}",
       "activeForNextTurn": "技能"
     },
+    "starterSuggestions": {
+      "validateInputs": {
+        "title": "验证工作流输入",
+        "prompt": "在启动这个工作流前验证输入。"
+      },
+      "draftRunPlan": {
+        "title": "起草运行计划",
+        "prompt": "使用 @workflow 起草 Nextflow 或 WDL 运行计划。"
+      },
+      "triageFailure": {
+        "title": "诊断失败运行",
+        "prompt": "总结失败运行，并建议下一条命令。"
+      },
+      "checkMounts": {
+        "title": "检查工作流挂载",
+        "prompt": "检查挂载、输出和 MiniWDL glob() 路径。"
+      }
+    },
+    "commandHints": {
+      "workflow": "附加工作流上下文",
+      "skills": "选择工作流、运行或调试技能",
+      "mode": "在计划和执行之间切换",
+      "preflight": "启动运行前验证输入"
+    },
+    "workflowContext": {
+      "label": "工作流上下文"
+    },
     "activity": {
       "groups": {
         "search": "已搜索网页",

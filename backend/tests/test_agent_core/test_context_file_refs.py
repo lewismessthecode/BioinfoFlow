@@ -1,6 +1,9 @@
 from pathlib import Path
 
+import pytest
+
 from app.services.agent_core import service as service_module
+from app.utils.exceptions import BadRequestError
 
 
 class _FakeFilesystemPolicy:
@@ -35,3 +38,39 @@ def test_file_ref_input_parts_expand_into_bounded_transcript_text(tmp_path, monk
     assert "Use the attached workflow." in text
     assert "Attached file: workflow.wdl" in text
     assert "workflow demo" in text
+
+
+def test_workflow_ref_input_parts_expand_into_workflow_context():
+    parts = service_module._transcript_parts_for_turn(
+        input_text="Draft a run plan.",
+        input_parts=[
+            {"type": "text", "text": "Draft a run plan."},
+            {
+                "kind": "workflow_ref",
+                "workflow_id": "workflow-123",
+                "project_id": "project-9",
+                "label": "rnaseq-quant-mini",
+                "name": "rnaseq-quant-mini",
+                "source": "local",
+                "engine": "nextflow",
+            },
+        ],
+    )
+
+    text = "\n".join(part["text"] for part in parts)
+    assert "Draft a run plan." in text
+    assert "Workflow context: rnaseq-quant-mini" in text
+    assert "Workflow ID: workflow-123" in text
+    assert "Project ID: project-9" in text
+    assert "Use workflow tools such as workflows.get" in text
+
+
+def test_workflow_ref_requires_scope_or_workflow_id():
+    with pytest.raises(BadRequestError, match="workflow_ref input part requires"):
+        service_module._transcript_parts_for_turn(
+            input_text="Draft a run plan.",
+            input_parts=[
+                {"type": "text", "text": "Draft a run plan."},
+                {"kind": "workflow_ref"},
+            ],
+        )

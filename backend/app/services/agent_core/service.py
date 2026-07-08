@@ -756,6 +756,9 @@ def _transcript_parts_for_turn(*, input_text: str, input_parts: list[dict] | Non
             continue
         if part.get("kind") == "file_ref" or part.get("type") == "file_ref":
             parts.append(text_part(_file_ref_text(part)))
+            continue
+        if part.get("kind") == "workflow_ref" or part.get("type") == "workflow_ref":
+            parts.append(text_part(_workflow_ref_text(part)))
     if not has_text_part and input_text.strip():
         parts.insert(0, text_part(input_text))
     return parts or [text_part(input_text)]
@@ -787,6 +790,46 @@ def _file_ref_text(part: dict) -> str:
 
     suffix = "\n[File truncated]" if truncated else ""
     return f"Attached file: {label}\nPath: {target}\n\n{content}{suffix}"
+
+
+def _workflow_ref_text(part: dict) -> str:
+    workflow_id = _optional_part_string(part, "workflow_id")
+    project_id = _optional_part_string(part, "project_id")
+    scope = _optional_part_string(part, "scope")
+    name = _optional_part_string(part, "name")
+    source = _optional_part_string(part, "source")
+    engine = _optional_part_string(part, "engine")
+    label = _optional_part_string(part, "label") or name or "Workflow context"
+
+    if not any([workflow_id, project_id, scope, name]):
+        raise BadRequestError(
+            "workflow_ref input part requires a workflow_id, project_id, scope, or name"
+        )
+
+    lines = [f"Workflow context: {label}"]
+    if workflow_id:
+        lines.append(f"Workflow ID: {workflow_id}")
+    if project_id:
+        lines.append(f"Project ID: {project_id}")
+    elif scope == "global":
+        lines.append("Scope: all registered workflows")
+    if name and name != label:
+        lines.append(f"Name: {name}")
+    if source:
+        lines.append(f"Source: {source}")
+    if engine:
+        lines.append(f"Engine: {engine}")
+    lines.append(
+        "Use workflow tools such as workflows.get, workflows.form_spec, "
+        "workflows.dag, workflows.source, runs.list, and runs.submit as needed "
+        "before acting."
+    )
+    return "\n".join(lines)
+
+
+def _optional_part_string(part: dict, key: str) -> str:
+    value = part.get(key)
+    return value.strip() if isinstance(value, str) else ""
 
 
 def _is_sensitive_context_path(path) -> bool:

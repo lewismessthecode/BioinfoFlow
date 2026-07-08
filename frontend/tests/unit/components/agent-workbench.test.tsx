@@ -133,6 +133,19 @@ vi.mock("next-intl", () => ({
       "skills.loadFailed": "Could not load skills.",
       "skills.remove": `Remove ${values?.name ?? ""}`,
       "skills.activeForNextTurn": "Skills",
+      "starterSuggestions.validateInputs.title": "Validate workflow inputs",
+      "starterSuggestions.validateInputs.prompt": "Validate inputs before launching this workflow.",
+      "starterSuggestions.draftRunPlan.title": "Draft a run plan",
+      "starterSuggestions.draftRunPlan.prompt": "Use @workflow to draft a Nextflow or WDL run plan.",
+      "starterSuggestions.triageFailure.title": "Triage a failed run",
+      "starterSuggestions.triageFailure.prompt": "Summarize a failed run and suggest the next command.",
+      "starterSuggestions.checkMounts.title": "Check workflow mounts",
+      "starterSuggestions.checkMounts.prompt": "Check mounts, outputs, and MiniWDL glob() paths.",
+      "commandHints.workflow": "attach workflow context",
+      "commandHints.skills": "choose a workflow, run, or debugging skill",
+      "commandHints.mode": "switch between Plan and Act",
+      "commandHints.preflight": "validate inputs before launching a run",
+      "workflowContext.label": "Workflow context",
       auto: "Auto",
       configure: "Configure providers",
       noProviders: "No model available",
@@ -317,6 +330,28 @@ describe("AgentWorkbench", () => {
     expect(screen.getByTestId("agent-sidecar-column")).toHaveAttribute(
       "aria-hidden",
       "true",
+    )
+  })
+
+  it("renders restrained starter suggestions and command discovery hints in the empty composer", () => {
+    render(<AgentWorkbench />)
+
+    expect(screen.getByTestId("agent-starter-suggestions")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Validate workflow inputs/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Draft a run plan/ })).toBeInTheDocument()
+    expect(screen.getAllByText("@workflow").length).toBeGreaterThan(0)
+    expect(screen.getByText("/")).toBeInTheDocument()
+    expect(screen.getByText("Shift+Tab")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-command-discovery-hints")).toBeInTheDocument()
+  })
+
+  it("fills the centered composer from a starter suggestion", () => {
+    render(<AgentWorkbench />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Validate workflow inputs/ }))
+
+    expect(screen.getByPlaceholderText("Message Bioinfoflow...")).toHaveValue(
+      "Validate inputs before launching this workflow.",
     )
   })
 
@@ -848,6 +883,8 @@ describe("AgentWorkbench", () => {
       "data-placement",
       "bottom",
     )
+    expect(screen.queryByTestId("agent-starter-suggestions")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("agent-command-discovery-hints")).not.toBeInTheDocument()
   })
 
   it("shows an optimistic pending response immediately after submitting the centered composer", () => {
@@ -919,6 +956,34 @@ describe("AgentWorkbench", () => {
       ),
     )
     expect(screen.queryByText("/nextflow-debugging")).not.toBeInTheDocument()
+  })
+
+  it("turns @workflow into workflow context for the next turn", async () => {
+    const send = vi.fn(async () => undefined)
+    setupRuntime({ send })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "@workflow Draft a run plan" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Draft a run plan",
+        expect.objectContaining({
+          inputParts: [
+            { type: "text", text: "Draft a run plan" },
+            {
+              kind: "workflow_ref",
+              label: "Workflow context",
+              project_id: null,
+              scope: "global",
+            },
+          ],
+        }),
+      ),
+    )
   })
 
   it("interrupts the active turn before sending when the turn policy is interrupt", async () => {

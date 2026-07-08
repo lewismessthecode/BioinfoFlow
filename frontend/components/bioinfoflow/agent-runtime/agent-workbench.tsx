@@ -57,6 +57,34 @@ const SIDECAR_DEFAULT_WIDTH = 600
 const SIDECAR_MAX_WIDTH = 760
 const SIDECAR_MAIN_MIN_WIDTH = 420
 
+const STARTER_SUGGESTIONS = [
+  {
+    key: "validateInputs",
+    marker: "01",
+  },
+  {
+    key: "draftRunPlan",
+    marker: "02",
+  },
+  {
+    key: "triageFailure",
+    marker: "03",
+  },
+  {
+    key: "checkMounts",
+    marker: "04",
+  },
+] as const
+
+const COMMAND_DISCOVERY_HINTS = [
+  { key: "workflow", token: "@workflow" },
+  { key: "skills", token: "/" },
+  { key: "mode", token: "Shift+Tab" },
+  { key: "preflight", token: "preflight" },
+] as const
+
+const WORKFLOW_MENTION_PATTERN = /(^|\s)@workflow(?=\s|$|[,.!?;:])/gi
+
 type PendingSubmission = {
   text: string
   inputParts: AgentRuntimeInputPart[]
@@ -433,6 +461,14 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       setActiveSkillNames((current) => current.filter((item) => item !== name))
     }, [])
 
+    const fillStarterSuggestion = useCallback((prompt: string) => {
+      setInput(prompt)
+      window.requestAnimationFrame(() => {
+        textareaRef.current?.focus()
+        textareaRef.current?.setSelectionRange(prompt.length, prompt.length)
+      })
+    }, [])
+
     const handleRemoteConnectionChange = useCallback(
       (connectionId: string) => {
         setRemoteConnectionOverride({ sessionId, value: connectionId })
@@ -636,10 +672,16 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     ])
 
     const submit = () => {
-      const text = input.trim()
+      const workflowInput = workflowContextInputFromComposerValue({
+        value: input,
+        projectId,
+        label: t("workflowContext.label"),
+      })
+      const text = workflowInput.text
       if (!text) return
       const inputParts: AgentRuntimeInputPart[] = [
         { type: "text", text },
+        ...workflowInput.workflowParts,
         ...contextAttachments,
       ]
       const activeSkillNamesSnapshot = [...activeSkillNames]
@@ -869,7 +911,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               </div>
             </>
           ) : (
-            <div className="agent-halo-surface flex min-h-0 flex-1 items-center justify-center px-4">
+            <div className="agent-halo-surface flex min-h-0 flex-1 items-center justify-center px-4 py-8">
               <div className="agent-center-stage w-full max-w-[42rem] -translate-y-8">
                 <h1 className="mb-4 text-center text-[15px] font-medium tracking-normal text-muted-foreground">
                   {t("welcomeTitle")}
@@ -877,7 +919,27 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 <div data-testid="agent-composer-shell" data-placement="center">
                   {composer}
                 </div>
+                {!input.trim() ? (
+                  <StarterSuggestionList
+                    suggestions={STARTER_SUGGESTIONS.map((suggestion) => ({
+                      key: suggestion.key,
+                      marker: suggestion.marker,
+                      title: t(`starterSuggestions.${suggestion.key}.title`),
+                      prompt: t(`starterSuggestions.${suggestion.key}.prompt`),
+                    }))}
+                    onSelect={fillStarterSuggestion}
+                  />
+                ) : null}
               </div>
+              {!input.trim() ? (
+                <CommandDiscoveryHints
+                  hints={COMMAND_DISCOVERY_HINTS.map((hint) => ({
+                    key: hint.key,
+                    token: hint.token,
+                    label: t(`commandHints.${hint.key}`),
+                  }))}
+                />
+              ) : null}
             </div>
           )}
 
@@ -1039,6 +1101,113 @@ function reassignPendingSubmission(
     ...submission,
     sessionId,
     optimisticTurn: { ...submission.optimisticTurn, session_id: sessionId },
+  }
+}
+
+function StarterSuggestionList({
+  suggestions,
+  onSelect,
+}: {
+  suggestions: Array<{
+    key: string
+    marker: string
+    title: string
+    prompt: string
+  }>
+  onSelect: (prompt: string) => void
+}) {
+  return (
+    <div
+      className="mt-3 overflow-hidden rounded-[10px] border border-border bg-card shadow-[0_12px_32px_rgba(15,15,15,0.035)]"
+      data-testid="agent-starter-suggestions"
+    >
+      {suggestions.map((suggestion, index) => (
+        <button
+          key={suggestion.key}
+          type="button"
+          className={cn(
+            "group grid min-h-12 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 px-4 text-left transition-colors duration-150 hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none",
+            index > 0 && "border-t border-border/75",
+          )}
+          onClick={() => onSelect(suggestion.prompt)}
+        >
+          <span
+            className="font-mono text-[11px] leading-none text-muted-foreground/70"
+            aria-hidden="true"
+          >
+            {suggestion.marker}
+          </span>
+          <span className="grid min-w-0 gap-0.5">
+            <span className="truncate text-[14px] font-medium text-foreground/74 group-hover:text-foreground">
+              {suggestion.title}
+            </span>
+            <span className="line-clamp-1 text-[13px] leading-5 text-muted-foreground">
+              {suggestion.prompt}
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function CommandDiscoveryHints({
+  hints,
+}: {
+  hints: Array<{ key: string; token: string; label: string }>
+}) {
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-3 bottom-5 flex justify-center sm:bottom-6"
+      data-testid="agent-command-discovery-hints"
+    >
+      <div className="w-full max-w-[42rem] overflow-hidden rounded-[10px] border border-border bg-card/95 px-3 py-2 shadow-[0_12px_32px_rgba(15,15,15,0.035)]">
+        <div className="agent-command-hint-track flex w-max items-center gap-6 text-[13px] leading-5 text-muted-foreground">
+          {hints.map((hint) => (
+            <span key={hint.key} className="inline-flex shrink-0 items-center gap-2">
+              <kbd className="rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium leading-none text-foreground/68">
+                {hint.token}
+              </kbd>
+              <span>{hint.label}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function workflowContextInputFromComposerValue({
+  value,
+  projectId,
+  label,
+}: {
+  value: string
+  projectId?: string | null
+  label: string
+}): { text: string; workflowParts: AgentRuntimeInputPart[] } {
+  let hasWorkflowMention = false
+  const text = value
+    .replace(WORKFLOW_MENTION_PATTERN, (_match, prefix: string) => {
+      hasWorkflowMention = true
+      return prefix
+    })
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  if (!hasWorkflowMention) return { text: value.trim(), workflowParts: [] }
+
+  return {
+    text: text || label,
+    workflowParts: [
+      {
+        kind: "workflow_ref",
+        label,
+        project_id: projectId || null,
+        scope: projectId ? "project" : "global",
+      },
+    ],
   }
 }
 
