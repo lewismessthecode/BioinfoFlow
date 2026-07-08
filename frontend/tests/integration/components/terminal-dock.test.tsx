@@ -3,7 +3,10 @@ import { screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { TerminalDock } from "@/components/bioinfoflow/terminal/terminal-dock"
-import { TerminalDockProvider } from "@/components/bioinfoflow/terminal/terminal-dock-context"
+import {
+  TerminalDockProvider,
+  useTerminalDock,
+} from "@/components/bioinfoflow/terminal/terminal-dock-context"
 import type { TerminalSession } from "@/lib/types"
 import { renderAppPage } from "@/tests/app-test-utils"
 
@@ -127,9 +130,21 @@ function createSession(): TerminalSession {
   }
 }
 
-function renderDock() {
+function TerminalDockTestOpener() {
+  const { openTerminal } = useTerminalDock()
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(openTerminal, 0)
+    return () => window.clearTimeout(timer)
+  }, [openTerminal])
+
+  return null
+}
+
+function renderDock({ open = true }: { open?: boolean } = {}) {
   return renderAppPage(
     <TerminalDockProvider projectId="project-1" enabled isMobile={false}>
+      {open ? <TerminalDockTestOpener /> : null}
       <TerminalDock />
     </TerminalDockProvider>
   )
@@ -149,7 +164,6 @@ describe("TerminalDock", () => {
     chdirMock.mockReset()
     reconnectMock.mockReset()
     localStorage.clear()
-    localStorage.setItem("terminal-dock:project-1:open", "true")
 
     Object.defineProperty(document, "fonts", {
       configurable: true,
@@ -204,6 +218,18 @@ describe("TerminalDock", () => {
     getBoundingClientRectMock = null
   })
 
+  it("does not auto-open from stored terminal state", async () => {
+    localStorage.setItem("terminal-dock:project-1:open", "true")
+    const view = renderDock({ open: false })
+
+    await waitFor(() => {
+      const section = view.container.querySelector("section")
+      expect(section).toHaveAttribute("aria-hidden", "true")
+    })
+    expect(terminalInstances).toHaveLength(0)
+    expect(localStorage.getItem("terminal-dock:project-1:open")).toBeNull()
+  })
+
   it("updates the xterm theme without recreating the terminal instance", async () => {
     const view = renderDock()
 
@@ -224,17 +250,18 @@ describe("TerminalDock", () => {
 
     appearanceState.resolvedMode = "dark"
     appearanceState.activePreset = "linear"
-    view.rerender(
-      <TerminalDockProvider projectId="project-1" enabled isMobile={false}>
-        <TerminalDock />
-      </TerminalDockProvider>
-    )
     document.documentElement.style.setProperty("--terminal-background", "#32302f")
     document.documentElement.style.setProperty("--terminal-foreground", "#ebdbb2")
     document.documentElement.style.setProperty("--terminal-cursor", "#ebdbb2")
     document.documentElement.style.setProperty(
       "--terminal-selection",
       "rgba(250, 189, 47, 0.35)"
+    )
+    view.rerender(
+      <TerminalDockProvider projectId="project-1" enabled isMobile={false}>
+        <TerminalDockTestOpener />
+        <TerminalDock />
+      </TerminalDockProvider>
     )
 
     await waitFor(() => {

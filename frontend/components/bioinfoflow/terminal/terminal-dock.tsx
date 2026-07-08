@@ -83,8 +83,7 @@ export function TerminalDock() {
   const fitAddonRef = useRef<FitAddonInstance | null>(null)
   const outputBufferRef = useRef<string[]>([])
   const animationFrameRef = useRef<number | null>(null)
-  const shouldConnect =
-    enabled && Boolean(projectId) && (isOpen || pendingCommand !== null)
+  const shouldConnect = enabled && Boolean(projectId) && isOpen
 
   const terminalTheme = readTerminalTheme(resolvedMode, activePreset)
   const terminalThemeRef = useRef(terminalTheme)

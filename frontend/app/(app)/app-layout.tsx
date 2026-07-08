@@ -232,7 +232,6 @@ export default function AppLayout({
               enabled={terminalEnabled}
               isMobile={isMobile}
             >
-              <TerminalHotkeys enabled={terminalEnabled} />
               {/* Skip-to-content link */}
               <a
                 href="#main-content"
@@ -328,24 +327,4 @@ function TerminalNavbarAction({ label }: { label: string }) {
       <TerminalSquare className="h-4 w-4" />
     </Button>
   )
-}
-
-function TerminalHotkeys({ enabled }: { enabled: boolean }) {
-  const { toggleTerminal } = useTerminalDock()
-
-  useEffect(() => {
-    if (!enabled) return
-
-    const handler = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "j") {
-        event.preventDefault()
-        toggleTerminal()
-      }
-    }
-
-    window.addEventListener("keydown", handler)
-    return () => window.removeEventListener("keydown", handler)
-  }, [enabled, toggleTerminal])
-
-  return null
 }
