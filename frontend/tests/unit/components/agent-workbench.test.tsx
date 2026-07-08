@@ -144,7 +144,7 @@ vi.mock("next-intl", () => ({
       "commandHints.workflow": "attach workflow context",
       "commandHints.skills": "choose a workflow, run, or debugging skill",
       "commandHints.mode": "switch between Plan and Act",
-      "commandHints.preflight": "validate inputs before launching a run",
+      "commandHints.preflight": "run preflight from the attach menu",
       "workflowContext.label": "Workflow context",
       auto: "Auto",
       configure: "Configure providers",
@@ -337,12 +337,19 @@ describe("AgentWorkbench", () => {
     render(<AgentWorkbench />)
 
     expect(screen.getByTestId("agent-starter-suggestions")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /Validate workflow inputs/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Validate workflow inputs/ })).toHaveClass(
+      "focus-visible:ring-2",
+    )
     expect(screen.getByRole("button", { name: /Draft a run plan/ })).toBeInTheDocument()
-    expect(screen.getAllByText("@workflow").length).toBeGreaterThan(0)
-    expect(screen.getByText("/")).toBeInTheDocument()
-    expect(screen.getByText("Shift+Tab")).toBeInTheDocument()
-    expect(screen.getByTestId("agent-command-discovery-hints")).toBeInTheDocument()
+    const hints = screen.getByTestId("agent-command-discovery-hints")
+    expect(hints).toHaveClass("agent-center-stage")
+    expect(within(hints).getByText("@workflow").tagName).toBe("KBD")
+    expect(within(hints).getByText("/").tagName).toBe("KBD")
+    expect(within(hints).getByText("Shift+Tab").tagName).toBe("KBD")
+    expect(within(hints).queryByText("preflight")).not.toBeInTheDocument()
+    expect(within(hints).getByText("run preflight from the attach menu").tagName).toBe(
+      "SPAN",
+    )
   })
 
   it("fills the centered composer from a starter suggestion", () => {
@@ -976,7 +983,6 @@ describe("AgentWorkbench", () => {
             { type: "text", text: "Draft a run plan" },
             {
               kind: "workflow_ref",
-              label: "Workflow context",
               project_id: null,
               scope: "global",
             },

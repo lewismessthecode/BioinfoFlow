@@ -80,7 +80,7 @@ const COMMAND_DISCOVERY_HINTS = [
   { key: "workflow", token: "@workflow" },
   { key: "skills", token: "/" },
   { key: "mode", token: "Shift+Tab" },
-  { key: "preflight", token: "preflight" },
+  { key: "preflight" },
 ] as const
 
 const WORKFLOW_MENTION_PATTERN = /(^|\s)@workflow(?=\s|$|[,.!?;:])/gi
@@ -1126,7 +1126,7 @@ function StarterSuggestionList({
           key={suggestion.key}
           type="button"
           className={cn(
-            "group grid min-h-12 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 px-4 text-left transition-colors duration-150 hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none",
+            "group grid min-h-12 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 px-4 text-left transition-colors duration-150 hover:bg-muted/70 focus-visible:relative focus-visible:z-10 focus-visible:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 focus-visible:ring-offset-card",
             index > 0 && "border-t border-border/75",
           )}
           onClick={() => onSelect(suggestion.prompt)}
@@ -1154,20 +1154,22 @@ function StarterSuggestionList({
 function CommandDiscoveryHints({
   hints,
 }: {
-  hints: Array<{ key: string; token: string; label: string }>
+  hints: Array<{ key: string; token?: string; label: string }>
 }) {
   return (
     <div
-      className="pointer-events-none absolute inset-x-3 bottom-5 flex justify-center sm:bottom-6"
+      className="agent-center-stage pointer-events-none absolute inset-x-3 bottom-5 flex justify-center sm:bottom-6"
       data-testid="agent-command-discovery-hints"
     >
-      <div className="w-full max-w-[42rem] overflow-hidden rounded-[10px] border border-border bg-card/95 px-3 py-2 shadow-[0_12px_32px_rgba(15,15,15,0.035)]">
+      <div className="agent-command-hint-viewport w-full max-w-[42rem] overflow-hidden rounded-[10px] border border-border bg-card/95 px-3 py-2 shadow-[0_12px_32px_rgba(15,15,15,0.035)]">
         <div className="agent-command-hint-track flex w-max items-center gap-6 text-[13px] leading-5 text-muted-foreground">
           {hints.map((hint) => (
             <span key={hint.key} className="inline-flex shrink-0 items-center gap-2">
-              <kbd className="rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium leading-none text-foreground/68">
-                {hint.token}
-              </kbd>
+              {hint.token ? (
+                <kbd className="rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium leading-none text-foreground/68">
+                  {hint.token}
+                </kbd>
+              ) : null}
               <span>{hint.label}</span>
             </span>
           ))}
@@ -1203,7 +1205,6 @@ function workflowContextInputFromComposerValue({
     workflowParts: [
       {
         kind: "workflow_ref",
-        label,
         project_id: projectId || null,
         scope: projectId ? "project" : "global",
       },

@@ -739,6 +739,17 @@ _DENIED_CONTEXT_NAMES = {
     "id_rsa",
 }
 _DENIED_CONTEXT_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
+_WORKFLOW_REF_ALLOWED_KEYS = frozenset(
+    {
+        "kind",
+        "type",
+        "workflow_id",
+        "project_id",
+        "scope",
+    }
+)
+_WORKFLOW_REF_SCOPES = frozenset({"project", "global"})
+_WORKFLOW_REF_MAX_FIELD_LENGTH = 256
 
 
 def _transcript_parts_for_turn(*, input_text: str, input_parts: list[dict] | None) -> list[dict]:
@@ -793,32 +804,25 @@ def _file_ref_text(part: dict) -> str:
 
 
 def _workflow_ref_text(part: dict) -> str:
-    workflow_id = _optional_part_string(part, "workflow_id")
-    project_id = _optional_part_string(part, "project_id")
-    scope = _optional_part_string(part, "scope")
-    name = _optional_part_string(part, "name")
-    source = _optional_part_string(part, "source")
-    engine = _optional_part_string(part, "engine")
-    label = _optional_part_string(part, "label") or name or "Workflow context"
+    _validate_workflow_ref_keys(part)
+    workflow_id = _optional_workflow_ref_string(part, "workflow_id")
+    project_id = _optional_workflow_ref_string(part, "project_id")
+    scope = _optional_workflow_ref_string(part, "scope")
 
-    if not any([workflow_id, project_id, scope, name]):
+    if not any([workflow_id, project_id, scope]):
         raise BadRequestError(
-            "workflow_ref input part requires a workflow_id, project_id, scope, or name"
+            "workflow_ref input part requires a workflow_id, project_id, or scope"
         )
+    if scope and scope not in _WORKFLOW_REF_SCOPES:
+        raise BadRequestError("workflow_ref scope must be project or global")
 
-    lines = [f"Workflow context: {label}"]
+    lines = [f"Workflow context: {_workflow_ref_label(scope=scope, project_id=project_id)}"]
     if workflow_id:
         lines.append(f"Workflow ID: {workflow_id}")
     if project_id:
         lines.append(f"Project ID: {project_id}")
     elif scope == "global":
         lines.append("Scope: all registered workflows")
-    if name and name != label:
-        lines.append(f"Name: {name}")
-    if source:
-        lines.append(f"Source: {source}")
-    if engine:
-        lines.append(f"Engine: {engine}")
     lines.append(
         "Use workflow tools such as workflows.get, workflows.form_spec, "
         "workflows.dag, workflows.source, runs.list, and runs.submit as needed "
@@ -827,9 +831,44 @@ def _workflow_ref_text(part: dict) -> str:
     return "\n".join(lines)
 
 
-def _optional_part_string(part: dict, key: str) -> str:
+def _workflow_ref_label(*, scope: str, project_id: str) -> str:
+    if project_id or scope == "project":
+        return "Project workflows"
+    if scope == "global":
+        return "All registered workflows"
+    return "Workflow context"
+
+
+def _validate_workflow_ref_keys(part: dict) -> None:
+    unsupported = sorted(set(part) - _WORKFLOW_REF_ALLOWED_KEYS)
+    if unsupported:
+        raise BadRequestError(
+            "workflow_ref input part has unsupported fields: "
+            + ", ".join(unsupported)
+        )
+    for discriminator in ("kind", "type"):
+        value = part.get(discriminator)
+        if value is not None and value != "workflow_ref":
+            raise BadRequestError(f"workflow_ref {discriminator} must be workflow_ref")
+
+
+def _optional_workflow_ref_string(part: dict, key: str) -> str:
     value = part.get(key)
-    return value.strip() if isinstance(value, str) else ""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise BadRequestError(f"workflow_ref {key} must be a string")
+    normalized = value.strip()
+    if not normalized:
+        return ""
+    if "\n" in normalized or "\r" in normalized:
+        raise BadRequestError(f"workflow_ref {key} must be a single line")
+    if len(normalized) > _WORKFLOW_REF_MAX_FIELD_LENGTH:
+        raise BadRequestError(
+            f"workflow_ref {key} must be at most "
+            f"{_WORKFLOW_REF_MAX_FIELD_LENGTH} characters"
+        )
+    return normalized
 
 
 def _is_sensitive_context_path(path) -> bool:
