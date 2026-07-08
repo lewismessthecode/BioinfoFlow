@@ -110,6 +110,13 @@ describe("useTerminalSession", () => {
     act(() => {
       socket.readyState = MockWebSocket.OPEN
       socket.onopen?.()
+    })
+
+    expect(result.current.connectionState).toBe("connecting")
+    expect(result.current.sendInput("before-ready")).toBe(false)
+    expect(socket.sent).toEqual([])
+
+    act(() => {
       socket.emit("ready", {
         session: { ...initialSession, status: "ready" },
       })

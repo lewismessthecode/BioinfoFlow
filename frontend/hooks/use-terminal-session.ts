@@ -25,6 +25,7 @@ export function useTerminalSession({
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
   const socketRef = useRef<WebSocket | null>(null)
+  const readyRef = useRef(false)
   const onMessageRef = useRef(onMessage)
 
   useEffect(() => {
@@ -32,6 +33,7 @@ export function useTerminalSession({
   }, [onMessage])
 
   const closeSocket = useCallback(() => {
+    readyRef.current = false
     socketRef.current?.close()
     socketRef.current = null
   }, [])
@@ -68,7 +70,7 @@ export function useTerminalSession({
 
         socket.onopen = () => {
           if (cancelled) return
-          setConnectionState("connected")
+          setConnectionState("connecting")
         }
 
         socket.onmessage = (event) => {
@@ -76,12 +78,15 @@ export function useTerminalSession({
           try {
             const message = JSON.parse(event.data) as TerminalServerMessage
             if (message.type === "ready") {
+              readyRef.current = true
               setSession(message.session)
+              setConnectionState("connected")
             } else if (message.type === "cwd") {
               setSession((prev) =>
                 prev ? { ...prev, cwd: message.cwd } : prev
               )
             } else if (message.type === "exit") {
+              readyRef.current = false
               setConnectionState("exited")
             } else if (message.type === "error") {
               setError(message.message)
@@ -95,12 +100,14 @@ export function useTerminalSession({
 
         socket.onerror = () => {
           if (cancelled) return
+          readyRef.current = false
           setConnectionState("error")
           setError("Terminal connection failed")
         }
 
         socket.onclose = () => {
           if (cancelled) return
+          readyRef.current = false
           setConnectionState((prev) =>
             prev === "exited" ? "exited" : "disconnected"
           )
@@ -122,7 +129,9 @@ export function useTerminalSession({
   }, [closeSocket, enabled, nonce, projectId])
 
   const send = useCallback((payload: Record<string, unknown>) => {
-    if (socketRef.current?.readyState !== WebSocket.OPEN) return false
+    if (socketRef.current?.readyState !== WebSocket.OPEN || !readyRef.current) {
+      return false
+    }
     socketRef.current.send(JSON.stringify(payload))
     return true
   }, [])
