@@ -133,18 +133,18 @@ vi.mock("next-intl", () => ({
       "skills.loadFailed": "Could not load skills.",
       "skills.remove": `Remove ${values?.name ?? ""}`,
       "skills.activeForNextTurn": "Skills",
-      "starterSuggestions.validateInputs.title": "Validate workflow inputs",
-      "starterSuggestions.validateInputs.prompt": "Validate inputs before launching this workflow.",
-      "starterSuggestions.draftRunPlan.title": "Draft a run plan",
-      "starterSuggestions.draftRunPlan.prompt": "Use @workflow to draft a Nextflow or WDL run plan.",
-      "starterSuggestions.triageFailure.title": "Triage a failed run",
-      "starterSuggestions.triageFailure.prompt": "Summarize a failed run and suggest the next command.",
-      "starterSuggestions.checkMounts.title": "Check workflow mounts",
-      "starterSuggestions.checkMounts.prompt": "Check mounts, outputs, and MiniWDL glob() paths.",
-      "commandHints.workflow": "attach workflow context",
-      "commandHints.skills": "choose a workflow, run, or debugging skill",
-      "commandHints.mode": "switch between Plan and Act",
-      "commandHints.preflight": "run preflight from the attach menu",
+      "starterSuggestions.checkWorkflow.prompt": "Check this workflow before I run it",
+      "starterSuggestions.chooseInputs.prompt": "Help me choose analysis inputs",
+      "starterSuggestions.reviewFailure.prompt": "Review the latest failed run",
+      "starterSuggestions.prepareRun.prompt": "Prepare a run from @workflow",
+      "commandHints.workflow.prefix": "Use",
+      "commandHints.workflow.suffix": "to attach workflow context",
+      "commandHints.skills.prefix": "Type",
+      "commandHints.skills.suffix": "to choose a focused skill",
+      "commandHints.mode.prefix": "Press",
+      "commandHints.mode.suffix": "to switch plan and act mode",
+      "commandHints.inputs.prefix": "Mention",
+      "commandHints.inputs.suffix": "to shape run parameters",
       "workflowContext.label": "Workflow context",
       auto: "Auto",
       configure: "Configure providers",
@@ -337,28 +337,33 @@ describe("AgentWorkbench", () => {
     render(<AgentWorkbench />)
 
     expect(screen.getByTestId("agent-starter-suggestions")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /Validate workflow inputs/ })).toHaveClass(
-      "focus-visible:ring-2",
-    )
-    expect(screen.getByRole("button", { name: /Draft a run plan/ })).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Check this workflow before I run it" }),
+    ).toHaveClass("focus-visible:ring-1")
+    expect(
+      screen.getByRole("button", { name: "Help me choose analysis inputs" }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText("Validate workflow inputs")).not.toBeInTheDocument()
     const hints = screen.getByTestId("agent-command-discovery-hints")
     expect(hints).toHaveClass("agent-center-stage")
     expect(within(hints).getByText("@workflow").tagName).toBe("KBD")
-    expect(within(hints).getByText("/").tagName).toBe("KBD")
-    expect(within(hints).getByText("Shift+Tab").tagName).toBe("KBD")
-    expect(within(hints).queryByText("preflight")).not.toBeInTheDocument()
-    expect(within(hints).getByText("run preflight from the attach menu").tagName).toBe(
-      "SPAN",
+    expect(within(hints).getByText("Use")).toBeInTheDocument()
+    expect(within(hints).getByText("to attach workflow context")).toBeInTheDocument()
+    expect(within(hints).getByLabelText("Use @workflow to attach workflow context")).toBe(
+      within(hints).getByText("Use").parentElement,
     )
+    expect(within(hints).queryByText("/")).not.toBeInTheDocument()
   })
 
   it("fills the centered composer from a starter suggestion", () => {
     render(<AgentWorkbench />)
 
-    fireEvent.click(screen.getByRole("button", { name: /Validate workflow inputs/ }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check this workflow before I run it" }),
+    )
 
     expect(screen.getByPlaceholderText("Message Bioinfoflow...")).toHaveValue(
-      "Validate inputs before launching this workflow.",
+      "Check this workflow before I run it",
     )
   })
 

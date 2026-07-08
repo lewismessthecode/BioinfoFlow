@@ -5,13 +5,21 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  type ComponentType,
   type CSSProperties,
   type KeyboardEvent,
   useMemo,
   useRef,
   useState,
 } from "react"
-import { PanelRightClose, PanelRightOpen, SlidersHorizontal } from "lucide-react"
+import {
+  CircleCheck,
+  MessageCircle,
+  PanelRightClose,
+  PanelRightOpen,
+  RotateCcw,
+  SlidersHorizontal,
+} from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { AgentComposer } from "./agent-composer"
@@ -59,20 +67,20 @@ const SIDECAR_MAIN_MIN_WIDTH = 420
 
 const STARTER_SUGGESTIONS = [
   {
-    key: "validateInputs",
-    marker: "01",
+    key: "checkWorkflow",
+    icon: MessageCircle,
   },
   {
-    key: "draftRunPlan",
-    marker: "02",
+    key: "chooseInputs",
+    icon: MessageCircle,
   },
   {
-    key: "triageFailure",
-    marker: "03",
+    key: "reviewFailure",
+    icon: RotateCcw,
   },
   {
-    key: "checkMounts",
-    marker: "04",
+    key: "prepareRun",
+    icon: CircleCheck,
   },
 ] as const
 
@@ -80,7 +88,7 @@ const COMMAND_DISCOVERY_HINTS = [
   { key: "workflow", token: "@workflow" },
   { key: "skills", token: "/" },
   { key: "mode", token: "Shift+Tab" },
-  { key: "preflight" },
+  { key: "inputs", token: "inputs" },
 ] as const
 
 const WORKFLOW_MENTION_PATTERN = /(^|\s)@workflow(?=\s|$|[,.!?;:])/gi
@@ -923,8 +931,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                   <StarterSuggestionList
                     suggestions={STARTER_SUGGESTIONS.map((suggestion) => ({
                       key: suggestion.key,
-                      marker: suggestion.marker,
-                      title: t(`starterSuggestions.${suggestion.key}.title`),
+                      icon: suggestion.icon,
                       prompt: t(`starterSuggestions.${suggestion.key}.prompt`),
                     }))}
                     onSelect={fillStarterSuggestion}
@@ -936,7 +943,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                   hints={COMMAND_DISCOVERY_HINTS.map((hint) => ({
                     key: hint.key,
                     token: hint.token,
-                    label: t(`commandHints.${hint.key}`),
+                    prefix: t(`commandHints.${hint.key}.prefix`),
+                    suffix: t(`commandHints.${hint.key}.suffix`),
                   }))}
                 />
               ) : null}
@@ -1110,15 +1118,14 @@ function StarterSuggestionList({
 }: {
   suggestions: Array<{
     key: string
-    marker: string
-    title: string
+    icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>
     prompt: string
   }>
   onSelect: (prompt: string) => void
 }) {
   return (
     <div
-      className="mt-3 overflow-hidden rounded-[10px] border border-border bg-card shadow-[0_12px_32px_rgba(15,15,15,0.035)]"
+      className="mt-4 w-full overflow-hidden"
       data-testid="agent-starter-suggestions"
     >
       {suggestions.map((suggestion, index) => (
@@ -1126,24 +1133,17 @@ function StarterSuggestionList({
           key={suggestion.key}
           type="button"
           className={cn(
-            "group grid min-h-12 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 px-4 text-left transition-colors duration-150 hover:bg-muted/70 focus-visible:relative focus-visible:z-10 focus-visible:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 focus-visible:ring-offset-card",
+            "group grid min-h-[52px] w-full grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-3 rounded-[6px] px-6 text-left transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:relative focus-visible:z-10 focus-visible:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/18 focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:min-h-[56px]",
             index > 0 && "border-t border-border/75",
           )}
           onClick={() => onSelect(suggestion.prompt)}
         >
-          <span
-            className="font-mono text-[11px] leading-none text-muted-foreground/70"
-            aria-hidden="true"
-          >
-            {suggestion.marker}
-          </span>
-          <span className="grid min-w-0 gap-0.5">
-            <span className="truncate text-[14px] font-medium text-foreground/74 group-hover:text-foreground">
-              {suggestion.title}
-            </span>
-            <span className="line-clamp-1 text-[13px] leading-5 text-muted-foreground">
-              {suggestion.prompt}
-            </span>
+          <suggestion.icon
+            className="h-5 w-5 text-muted-foreground/70 transition-colors duration-150 group-hover:text-muted-foreground/85"
+            aria-hidden={true}
+          />
+          <span className="min-w-0 truncate text-[16px] font-normal leading-6 tracking-normal text-muted-foreground transition-colors duration-150 group-hover:text-foreground/70">
+            {suggestion.prompt}
           </span>
         </button>
       ))}
@@ -1154,27 +1154,61 @@ function StarterSuggestionList({
 function CommandDiscoveryHints({
   hints,
 }: {
-  hints: Array<{ key: string; token?: string; label: string }>
+  hints: Array<{ key: string; token: string; prefix: string; suffix: string }>
 }) {
+  const [displayIndex, setDisplayIndex] = useState(0)
+  const [swapState, setSwapState] = useState<"" | "is-exit" | "is-enter-start">("")
+  const currentHint = hints[displayIndex] ?? hints[0]
+
+  useEffect(() => {
+    if (hints.length <= 1) return
+
+    let nextIndex = 0
+    const timers = new Set<ReturnType<typeof setTimeout>>()
+    const addTimer = (callback: () => void, delay: number) => {
+      const timer = setTimeout(() => {
+        timers.delete(timer)
+        callback()
+      }, delay)
+      timers.add(timer)
+    }
+
+    const interval = setInterval(() => {
+      nextIndex = (displayIndex + 1) % hints.length
+      setSwapState("is-exit")
+      addTimer(() => {
+        setDisplayIndex(nextIndex)
+        setSwapState("is-enter-start")
+        addTimer(() => setSwapState(""), 16)
+      }, 150)
+    }, 5200)
+
+    return () => {
+      clearInterval(interval)
+      timers.forEach((timer) => clearTimeout(timer))
+    }
+  }, [displayIndex, hints.length])
+
+  if (!currentHint) return null
+
   return (
     <div
-      className="agent-center-stage pointer-events-none absolute inset-x-3 bottom-5 flex justify-center sm:bottom-6"
+      className="agent-center-stage pointer-events-none absolute inset-x-14 bottom-24 flex justify-center sm:inset-x-4 sm:bottom-12"
       data-testid="agent-command-discovery-hints"
     >
-      <div className="agent-command-hint-viewport w-full max-w-[42rem] overflow-hidden rounded-[10px] border border-border bg-card/95 px-3 py-2 shadow-[0_12px_32px_rgba(15,15,15,0.035)]">
-        <div className="agent-command-hint-track flex w-max items-center gap-6 text-[13px] leading-5 text-muted-foreground">
-          {hints.map((hint) => (
-            <span key={hint.key} className="inline-flex shrink-0 items-center gap-2">
-              {hint.token ? (
-                <kbd className="rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium leading-none text-foreground/68">
-                  {hint.token}
-                </kbd>
-              ) : null}
-              <span>{hint.label}</span>
-            </span>
-          ))}
-        </div>
-      </div>
+      <p
+        className={cn(
+          "t-text-swap inline-flex max-w-[calc(100vw-2rem)] items-center justify-center gap-1.5 truncate text-center text-[14px] font-normal leading-6 tracking-normal text-muted-foreground/75 sm:text-[15px]",
+          swapState,
+        )}
+        aria-label={`${currentHint.prefix} ${currentHint.token} ${currentHint.suffix}`}
+      >
+        <span className="truncate">{currentHint.prefix}</span>
+        <kbd className="rounded-[5px] border border-border/55 bg-muted/65 px-1.5 py-0.5 font-mono text-[12px] font-medium leading-none text-muted-foreground/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.62)]">
+          {currentHint.token}
+        </kbd>
+        <span className="truncate">{currentHint.suffix}</span>
+      </p>
     </div>
   )
 }

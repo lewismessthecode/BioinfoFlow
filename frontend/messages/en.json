@@ -2529,28 +2529,36 @@
       "activeForNextTurn": "Skills"
     },
     "starterSuggestions": {
-      "validateInputs": {
-        "title": "Validate workflow inputs",
-        "prompt": "Validate inputs before launching this workflow."
+      "checkWorkflow": {
+        "prompt": "Check this workflow before I run it"
       },
-      "draftRunPlan": {
-        "title": "Draft a run plan",
-        "prompt": "Use @workflow to draft a Nextflow or WDL run plan."
+      "chooseInputs": {
+        "prompt": "Help me choose analysis inputs"
       },
-      "triageFailure": {
-        "title": "Triage a failed run",
-        "prompt": "Summarize a failed run and suggest the next command."
+      "reviewFailure": {
+        "prompt": "Review the latest failed run"
       },
-      "checkMounts": {
-        "title": "Check workflow mounts",
-        "prompt": "Check mounts, outputs, and MiniWDL glob() paths."
+      "prepareRun": {
+        "prompt": "Prepare a run from @workflow"
       }
     },
     "commandHints": {
-      "workflow": "attach workflow context",
-      "skills": "choose a workflow, run, or debugging skill",
-      "mode": "switch between Plan and Act",
-      "preflight": "run preflight from the attach menu"
+      "workflow": {
+        "prefix": "Use",
+        "suffix": "to attach workflow context"
+      },
+      "skills": {
+        "prefix": "Type",
+        "suffix": "to choose a focused skill"
+      },
+      "mode": {
+        "prefix": "Press",
+        "suffix": "to switch plan and act mode"
+      },
+      "inputs": {
+        "prefix": "Mention",
+        "suffix": "to shape run parameters"
+      }
     },
     "workflowContext": {
       "label": "Workflow context"
