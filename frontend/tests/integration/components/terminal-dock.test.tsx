@@ -281,6 +281,9 @@ describe("TerminalDock", () => {
     expect(screen.queryByRole("button", { name: "reconnectTerminal" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "closeTerminal" })).toBeInTheDocument()
     expect(screen.queryByText("startingSession")).not.toBeInTheDocument()
+    expect(screen.getByTitle("local • sh • /workspace/project-1").className).toContain(
+      "bg-muted/55"
+    )
   })
 
   it("labels remote terminal targets with the node name", async () => {
@@ -291,10 +294,10 @@ describe("TerminalDock", () => {
         target_label: "remote · Phoenix login",
         remote_connection_id: "connection-1",
         cwd: "/data/phoenix",
-        status: "unsupported",
+        status: "running",
       },
-      connectionState: "error",
-      error: "Remote interactive terminals are not supported yet.",
+      connectionState: "connected",
+      error: null,
       sendInput: sendInputMock,
       resize: resizeMock,
       chdir: chdirMock,
@@ -306,8 +309,8 @@ describe("TerminalDock", () => {
     expect(await screen.findByText("remote · Phoenix login")).toBeInTheDocument()
     expect(screen.getByTitle("remote · Phoenix login • sh • /data/phoenix")).toBeInTheDocument()
     expect(
-      screen.getByText("Remote interactive terminals are not supported yet.")
-    ).toBeInTheDocument()
+      screen.queryByText("Remote interactive terminals are not supported yet.")
+    ).not.toBeInTheDocument()
   })
 
   it("shows inline error message without overlaying the terminal body", async () => {

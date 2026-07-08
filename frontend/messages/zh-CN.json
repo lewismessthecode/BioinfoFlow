@@ -2403,11 +2403,12 @@
     "newTerminal": "新建终端",
     "startingSession": "正在启动终端...",
     "targets": {
-      "local": "local"
+      "local": "本地"
     },
     "connectionStates": {
       "idle": "空闲",
       "connecting": "连接中",
+      "connected": "已连接",
       "disconnected": "已断开",
       "error": "错误",
       "exited": "已退出"

@@ -24,7 +24,7 @@ const TERMINAL_FONT_FAMILY =
 const CONNECTION_LABELS: Record<string, string> = {
   idle: "Idle",
   connecting: "Connecting",
-  connected: "",
+  connected: "Connected",
   disconnected: "Disconnected",
   error: "Error",
   exited: "Exited",
@@ -284,15 +284,21 @@ export function TerminalDock() {
   const sessionMeta = `${targetLabel} • ${getShellLabel(session?.shell)} • ${
     session?.cwd ?? tTerminal("startingSession")
   }`
+  const translatedConnectionState = tTerminal(
+    `connectionStates.${connectionState}`
+  )
   const connectionLabel = connectionState === "connected"
     ? ""
-    : (CONNECTION_LABELS[connectionState] ?? connectionState)
+    : (translatedConnectionState || CONNECTION_LABELS[connectionState] || connectionState)
+  const connectionAriaLabel = connectionState === "connected"
+    ? translatedConnectionState
+    : connectionLabel
 
   const header = (
-    <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-background px-2 py-1.5">
+    <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-background px-3 py-2">
       <div className="flex min-w-0 flex-1 items-center">
         <div
-          className="inline-flex min-w-0 max-w-full items-center gap-2 px-2 py-1"
+          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border border-border/35 bg-muted/55 px-2.5 py-1.5"
           title={sessionMeta}
         >
           <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -305,7 +311,7 @@ export function TerminalDock() {
               "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
               connectionDotClassName(connectionState),
             )}
-            aria-label={connectionLabel || "Connected"}
+            aria-label={connectionAriaLabel}
           />
           {connectionLabel ? (
             <span

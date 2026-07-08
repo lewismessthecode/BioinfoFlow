@@ -2408,6 +2408,7 @@
     "connectionStates": {
       "idle": "Idle",
       "connecting": "Connecting",
+      "connected": "Connected",
       "disconnected": "Disconnected",
       "error": "Error",
       "exited": "Exited"
