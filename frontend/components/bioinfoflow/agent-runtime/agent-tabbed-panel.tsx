@@ -34,6 +34,7 @@ type AgentTabbedPanelProps = {
   onClose: () => void
   onAddContext?: (path: string) => void
   variant?: "desktop" | "mobile"
+  hideHeader?: boolean
   className?: string
 }
 
@@ -61,6 +62,7 @@ export function AgentTabbedPanel({
   onClose,
   onAddContext,
   variant = "desktop",
+  hideHeader = false,
   className,
 }: AgentTabbedPanelProps) {
   const t = useTranslations("agentRuntime")
@@ -186,67 +188,69 @@ export function AgentTabbedPanel({
       )}
       data-testid="artifact-panel"
     >
-      <div className="flex h-11 min-h-11 items-center justify-between border-b border-border/55 bg-background px-2">
-        <div
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
-          role="tablist"
-          aria-label={t("sidecar.title")}
-          data-testid="agent-sidecar-tab-strip"
-        >
-          {TABS.map(({ key, labelKey, iconName, Icon }, index) => (
-            <Tooltip key={key}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  role="tab"
-                  id={`agent-sidecar-tab-${key}`}
-                  aria-controls={`agent-sidecar-panel-${key}`}
-                  aria-selected={activeTab === key}
-                  tabIndex={activeTab === key ? 0 : -1}
-                  onClick={() => onActiveTabChange(key)}
-                  onKeyDown={(event) => onTabKeyDown(event, index)}
-                  aria-label={t(labelKey)}
-                  className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                    activeTab === key && "bg-muted/60 text-foreground",
-                  )}
-                  data-active={activeTab === key}
-                >
-                  <Icon
-                    className="h-4 w-4 shrink-0"
-                    data-icon={iconName}
-                    data-testid={`agent-sidecar-tab-icon-${key}`}
-                    aria-hidden="true"
-                  />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">{t(labelKey)}</TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {activeTab === "preview" && effectiveArtifactStatus === "error" ? (
-            <button
-              type="button"
-              onClick={() => setArtifactReloadNonce((value) => value + 1)}
-              aria-label={t("artifacts.retry")}
-              className="flex h-8 w-8 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-            >
-              <RotateCw className="h-4 w-4" />
-            </button>
-          ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-[8px] text-muted-foreground hover:bg-muted/45 hover:text-foreground"
-            onClick={onClose}
-            aria-label={t("sidecar.close")}
+      {hideHeader ? null : (
+        <div className="flex h-11 min-h-11 items-center justify-between border-b border-border/55 bg-background px-2">
+          <div
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+            role="tablist"
+            aria-label={t("sidecar.title")}
+            data-testid="agent-sidecar-tab-strip"
           >
-            <X className="h-4 w-4" />
-          </Button>
+            {TABS.map(({ key, labelKey, iconName, Icon }, index) => (
+              <Tooltip key={key}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    role="tab"
+                    id={`agent-sidecar-tab-${key}`}
+                    aria-controls={`agent-sidecar-panel-${key}`}
+                    aria-selected={activeTab === key}
+                    tabIndex={activeTab === key ? 0 : -1}
+                    onClick={() => onActiveTabChange(key)}
+                    onKeyDown={(event) => onTabKeyDown(event, index)}
+                    aria-label={t(labelKey)}
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+                      activeTab === key && "bg-muted/60 text-foreground",
+                    )}
+                    data-active={activeTab === key}
+                  >
+                    <Icon
+                      className="h-4 w-4 shrink-0"
+                      data-icon={iconName}
+                      data-testid={`agent-sidecar-tab-icon-${key}`}
+                      aria-hidden="true"
+                    />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{t(labelKey)}</TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {activeTab === "preview" && effectiveArtifactStatus === "error" ? (
+              <button
+                type="button"
+                onClick={() => setArtifactReloadNonce((value) => value + 1)}
+                aria-label={t("artifacts.retry")}
+                className="flex h-8 w-8 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+              >
+                <RotateCw className="h-4 w-4" />
+              </button>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-[8px] text-muted-foreground hover:bg-muted/45 hover:text-foreground"
+              onClick={onClose}
+              aria-label={t("sidecar.close")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {pendingDecisionActionId ? (
         <div className="border-b border-border/60 px-3 py-2" data-testid="sidecar-decision-indicator">

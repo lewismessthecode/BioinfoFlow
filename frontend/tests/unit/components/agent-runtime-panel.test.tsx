@@ -364,6 +364,33 @@ describe("AgentTabbedPanel", () => {
     expect(onActiveTabChange).toHaveBeenCalledWith("files")
   })
 
+  it("can render desktop sidecar content without local toolbar chrome", () => {
+    render(
+      <AgentTabbedPanel
+        projectId="project-1"
+        sessionId={null}
+        events={[]}
+        activeTab="preview"
+        onActiveTabChange={vi.fn()}
+        browserInput=""
+        browserSrc=""
+        onBrowserInputChange={vi.fn()}
+        onBrowserSrcChange={vi.fn()}
+        onClose={vi.fn()}
+        hideHeader
+      />,
+    )
+
+    expect(screen.queryByTestId("agent-sidecar-tab-strip")).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "sidecar.close" }),
+    ).not.toBeInTheDocument()
+    const panel = screen.getByRole("tabpanel")
+    expect(panel).toHaveAttribute("id", "agent-sidecar-panel-preview")
+    expect(panel).toHaveAttribute("aria-labelledby", "agent-sidecar-tab-preview")
+    expect(screen.getByText("artifacts.emptyNoSession")).toBeInTheDocument()
+  })
+
   it("labels the artifact panel as loading instead of reporting zero artifacts", () => {
     listAgentRuntimeSessionArtifactsMock.mockReturnValue(new Promise(() => {}))
 

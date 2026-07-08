@@ -14,11 +14,15 @@ import {
 } from "react"
 import {
   CircleCheck,
+  FileBox,
+  FolderTree,
+  Globe,
   MessageCircle,
   PanelRightClose,
   PanelRightOpen,
   RotateCcw,
   SlidersHorizontal,
+  type LucideIcon,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -31,6 +35,7 @@ import { ComposerApprovalPopover } from "./composer-approval-popover"
 import { todosFromArtifact } from "./artifact-viewers"
 import { Button } from "@/components/ui/button"
 import { ResizeHandle } from "@/components/ui/resize-handle"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
@@ -91,6 +96,17 @@ const COMMAND_DISCOVERY_HINTS = [
 ] as const
 
 const WORKFLOW_MENTION_PATTERN = /(^|\s)@workflow(?=\s|$|[,.!?;:])/gi
+
+const SIDECAR_TABS: Array<{
+  key: AgentTabbedPanelTab
+  labelKey: string
+  iconName: string
+  Icon: LucideIcon
+}> = [
+  { key: "preview", labelKey: "tabs.artifacts", iconName: "file-box", Icon: FileBox },
+  { key: "files", labelKey: "tabs.files", iconName: "folder-tree", Icon: FolderTree },
+  { key: "browser", labelKey: "tabs.browser", iconName: "globe", Icon: Globe },
+]
 
 type PendingSubmission = {
   text: string
@@ -831,9 +847,82 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       })
     }, [sidecarMaxWidth])
 
+    const onSidecarTabKeyDown = useCallback(
+      (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+        const lastIndex = SIDECAR_TABS.length - 1
+        let nextIndex: number | null = null
+        switch (event.key) {
+          case "ArrowRight":
+          case "ArrowDown":
+            nextIndex = currentIndex === lastIndex ? 0 : currentIndex + 1
+            break
+          case "ArrowLeft":
+          case "ArrowUp":
+            nextIndex = currentIndex === 0 ? lastIndex : currentIndex - 1
+            break
+          case "Home":
+            nextIndex = 0
+            break
+          case "End":
+            nextIndex = lastIndex
+            break
+          default:
+            break
+        }
+        if (nextIndex === null) return
+        event.preventDefault()
+        const nextTab = SIDECAR_TABS[nextIndex]?.key
+        if (!nextTab) return
+        setActiveSidecarTab(nextTab)
+        window.requestAnimationFrame(() => {
+          document.getElementById(`agent-sidecar-tab-${nextTab}`)?.focus()
+        })
+      },
+      [],
+    )
+
     const agentActionButtons = useMemo(
       () => (
         <>
+          {desktopSidecarVisible ? (
+            <div
+              className="mr-1 flex min-w-0 items-center gap-1 border-r border-border/55 pr-1.5"
+              role="tablist"
+              aria-label={t("sidecar.title")}
+              data-testid="agent-sidecar-tab-strip"
+            >
+              {SIDECAR_TABS.map(({ key, labelKey, iconName, Icon }, index) => (
+                <Tooltip key={key}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      role="tab"
+                      id={`agent-sidecar-tab-${key}`}
+                      aria-controls={`agent-sidecar-panel-${key}`}
+                      aria-selected={activeSidecarTab === key}
+                      tabIndex={activeSidecarTab === key ? 0 : -1}
+                      onClick={() => setActiveSidecarTab(key)}
+                      onKeyDown={(event) => onSidecarTabKeyDown(event, index)}
+                      aria-label={t(labelKey)}
+                      className={cn(
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+                        activeSidecarTab === key && "bg-muted/60 text-foreground",
+                      )}
+                      data-active={activeSidecarTab === key}
+                    >
+                      <Icon
+                        className="h-4 w-4 shrink-0"
+                        data-icon={iconName}
+                        data-testid={`agent-sidecar-tab-icon-${key}`}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{t(labelKey)}</TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          ) : null}
           <Button
             type="button"
             variant="ghost"
@@ -866,11 +955,14 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         </>
       ),
       [
+        activeSidecarTab,
         desktopSidecarVisible,
         environmentLabel,
         environmentOpen,
         mobileSidecarVisible,
+        onSidecarTabKeyDown,
         sidecarLabel,
+        t,
         toggleEnvironment,
         toggleSidecar,
       ],
@@ -879,15 +971,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     useEffect(() => {
       if (!setNavbarActions) return
 
-      if (desktopSidecarVisible) {
-        setNavbarActions(null)
-        return () => setNavbarActions(null)
-      }
-
       setNavbarActions(agentActionButtons)
 
       return () => setNavbarActions(null)
-    }, [agentActionButtons, desktopSidecarVisible, setNavbarActions])
+    }, [agentActionButtons, setNavbarActions])
 
     const composerDocked = hasConversation
     const composer = (
@@ -951,15 +1038,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               : undefined
           }
         >
-          {desktopSidecarVisible ? (
-            <div
-              className="flex h-11 min-h-11 shrink-0 items-center justify-end border-b border-border/55 bg-background px-3"
-              data-testid="agent-workbench-top-actions"
-            >
-              <div className="flex items-center gap-1">{agentActionButtons}</div>
-            </div>
-          ) : null}
-
           {hasConversation ? (
             <>
               <AgentTodoDock items={todoDisplayItems} />
@@ -1094,6 +1172,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                 onBrowserSrcChange={setBrowserSrc}
                 onClose={() => closeSidecar("navbar")}
                 onAddContext={addContextAttachment}
+                hideHeader
               />
             ) : null}
           </div>
