@@ -180,11 +180,12 @@ export function AgentTabbedPanel({
       )}
       data-testid="artifact-panel"
     >
-      <div className="flex h-11 min-h-11 items-center justify-between gap-2 border-b border-border/60 px-2">
+      <div className="flex h-10 min-h-10 items-stretch justify-between border-b border-border/60 bg-background">
         <div
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+          className="flex min-w-0 flex-1 items-stretch overflow-x-auto"
           role="tablist"
           aria-label={t("sidecar.title")}
+          data-testid="agent-sidecar-tab-strip"
         >
           {TABS.map(({ key, labelKey, Icon }, index) => (
             <button
@@ -199,10 +200,10 @@ export function AgentTabbedPanel({
               onKeyDown={(event) => onTabKeyDown(event, index)}
               aria-label={t(labelKey)}
               className={cn(
-                "flex h-8 min-w-0 items-center gap-1.5 rounded-[8px] px-2.5 text-[12px] font-medium transition-colors",
+                "relative flex h-10 min-w-0 items-center gap-1.5 border-r border-border/55 px-3 text-[12px] font-medium transition-colors",
                 activeTab === key
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                  ? "bg-background text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-foreground/60"
+                  : "bg-muted/20 text-muted-foreground hover:bg-muted/35 hover:text-foreground",
               )}
               data-active={activeTab === key}
             >
@@ -211,13 +212,13 @@ export function AgentTabbedPanel({
             </button>
           ))}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5 border-l border-border/55 px-1">
           {activeTab === "preview" && effectiveArtifactStatus === "error" ? (
             <button
               type="button"
               onClick={() => setArtifactReloadNonce((value) => value + 1)}
               aria-label={t("artifacts.retry")}
-              className="flex h-8 w-8 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground"
             >
               <RotateCw className="h-4 w-4" />
             </button>
@@ -226,7 +227,7 @@ export function AgentTabbedPanel({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-[8px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="h-8 w-8 rounded-none text-muted-foreground hover:bg-muted/45 hover:text-foreground"
             onClick={onClose}
             aria-label={t("sidecar.close")}
           >

@@ -337,6 +337,7 @@ describe("AgentTabbedPanel", () => {
     expect(screen.getByText("tabs.artifacts")).toBeInTheDocument()
     expect(screen.getByText("tabs.files")).toBeInTheDocument()
     expect(screen.getByText("tabs.browser")).toBeInTheDocument()
+    expect(screen.getByTestId("agent-sidecar-tab-strip")).toBeInTheDocument()
     expect(screen.queryByText("artifacts.title")).not.toBeInTheDocument()
     expect(screen.queryByText("sidecar.title")).not.toBeInTheDocument()
     expect(screen.queryByText("artifacts.count")).not.toBeInTheDocument()
@@ -347,6 +348,9 @@ describe("AgentTabbedPanel", () => {
     expect(screen.getByRole("tab", { name: "tabs.files" })).toHaveAttribute(
       "aria-selected",
       "false",
+    )
+    expect(screen.getByRole("tab", { name: "tabs.artifacts" }).className).not.toContain(
+      "rounded-[8px]",
     )
     fireEvent.keyDown(screen.getByRole("tab", { name: "tabs.artifacts" }), {
       key: "ArrowRight",

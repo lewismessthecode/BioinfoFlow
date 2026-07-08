@@ -2,17 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react"
-import { RefreshCw } from "lucide-react"
 import { useTranslations } from "next-intl"
 
-import { Button } from "@/components/ui/button"
 import {
   getAgentFsFile,
   getAgentFsTree,
   type AgentFsEntry,
   type AgentFsFile,
 } from "@/lib/agent-runtime"
-import { cn } from "@/lib/utils"
 import { AgentFilePreview } from "./agent-file-preview"
 import { AgentWorkspaceTree } from "./agent-workspace-tree"
 
@@ -27,11 +24,10 @@ const DEFAULT_TREE_WIDTH = 280
 const MIN_TREE_WIDTH = 240
 const MAX_TREE_WIDTH = 400
 const MIN_PREVIEW_WIDTH = 360
-const RESIZER_WIDTH = 8
+const RESIZER_WIDTH = 2
 
 export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
   const t = useTranslations("agentRuntime")
-  const [rootPath, setRootPath] = useState<string | null>(null)
   const [rootEntries, setRootEntries] = useState<AgentFsEntry[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
   const [childrenByPath, setChildrenByPath] = useState<Record<string, AgentFsEntry[]>>({})
@@ -52,7 +48,6 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
     fileRequestId.current += 1
     fileRequestByPath.current = {}
     treeRequestByPath.current = {}
-    setRootPath(null)
     setRootEntries([])
     setExpandedPaths(new Set())
     setChildrenByPath({})
@@ -69,7 +64,6 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
     try {
       const tree = await getAgentFsTree(null, projectId)
       if (isCurrentTreeRequest(ROOT_LOADING_KEY, requestId)) {
-        setRootPath(tree.path)
         setRootEntries(tree.entries)
       }
     } catch (err) {
@@ -182,7 +176,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
     [childrenByPath, rootEntries],
   )
   const splitStyle = {
-    "--files-split-columns": `minmax(0,1fr) 8px minmax(${MIN_TREE_WIDTH}px, ${treeWidth}px)`,
+    "--files-split-columns": `minmax(0,1fr) ${RESIZER_WIDTH}px minmax(${MIN_TREE_WIDTH}px, ${treeWidth}px)`,
   } as CSSProperties
 
   useEffect(() => {
@@ -244,23 +238,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col" data-testid="files-tab">
-      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border/55 px-3">
-        <div className="min-w-0 truncate font-mono text-[11px] text-muted-foreground" title={rootPath ?? undefined}>
-          {rootPath ?? t("files.loading")}
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 shrink-0 rounded-[7px] text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={() => void refresh()}
-          aria-label={t("files.refresh")}
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", rootLoading && "animate-spin")} />
-        </Button>
-      </div>
-
-      {rootError ? <p className="text-sm text-destructive">{rootError}</p> : null}
+      {rootError ? <p className="border-b border-border/55 px-3 py-2 text-sm text-destructive">{rootError}</p> : null}
       <div
         ref={splitRef}
         className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-hidden bg-background lg:grid-cols-[var(--files-split-columns)]"
@@ -318,10 +296,10 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
             }
           }}
         >
-          <span className="my-3 block w-px rounded-full bg-border group-hover:bg-foreground/30" />
+          <span className="my-3 block w-px bg-border group-hover:bg-foreground/30" />
         </div>
         <section
-          className="min-h-[260px] min-w-0 overflow-hidden border-t border-border/55 bg-background p-2 lg:min-h-0 lg:border-l lg:border-t-0"
+          className="min-h-[260px] min-w-0 overflow-hidden border-t border-border/55 bg-background lg:min-h-0 lg:border-l lg:border-t-0"
           data-testid="file-tree-pane"
         >
           <AgentWorkspaceTree
@@ -329,12 +307,14 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
             className="h-full"
             filter={filter}
             onFilterChange={setFilter}
+            rootLoading={rootLoading}
             expandedPaths={expandedPaths}
             childrenByPath={childrenByPath}
             loadingPaths={loadingPaths}
             errorByPath={errorByPath}
             selectedPath={selectedPath}
             loadedNodeCount={loadedNodeCount}
+            onRefresh={() => void refresh()}
             onCollapseAll={collapseAll}
             onToggleDirectory={toggleDirectory}
             onOpenFile={openFile}
