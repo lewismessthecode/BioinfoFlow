@@ -389,7 +389,7 @@ describe("WorkspaceShell sidebar integration", () => {
     const alphaHeader = (await screen.findByRole("button", { name: "Alpha" })).parentElement
     expect(alphaHeader).not.toBeNull()
 
-    fireEvent.click(within(alphaHeader as HTMLElement).getByRole("button", { name: "Expand" }))
+    fireEvent.click(within(alphaHeader as HTMLElement).getByRole("button", { name: "Alpha" }))
 
     const conversationButton = await screen.findByRole("button", { name: "Alpha thread" })
     fireEvent.click(conversationButton)
