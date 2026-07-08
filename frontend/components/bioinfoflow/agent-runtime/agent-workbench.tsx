@@ -818,7 +818,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               />
               <div
                 ref={composerShellRef}
-                className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-4 pt-10 sm:px-6"
+                className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-4 pt-10 sm:px-6"
                 data-testid="agent-composer-shell"
                 data-placement="bottom"
               >

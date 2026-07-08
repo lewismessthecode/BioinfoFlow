@@ -46,12 +46,14 @@ vi.mock("@/components/bioinfoflow/agent-runtime/agent-workbench", () => ({
     projectId,
     activeSessionId,
     workspaceEnabled,
+    className,
   }: {
     projectId?: string
     activeSessionId?: string
     workspaceEnabled?: boolean
+    className?: string
   }) => (
-    <div data-testid="agent-core-chat">
+    <div data-testid="agent-core-chat" className={className}>
       agent-core:{projectId || "none"}|session:{activeSessionId || "draft"}|workspace:{workspaceEnabled ? "on" : "off"}
     </div>
   ),
@@ -224,6 +226,22 @@ describe("AgentPage", () => {
 
     expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-default|session:draft|workspace:on")
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
+  })
+
+  it("uses min-width-safe shell classes so the composer survives right-side panels", () => {
+    renderAppPage(
+      <AgentPageContent
+        selectedProjectId="project-1"
+        conversationProjectId="project-1"
+        activeConversationId=""
+      />,
+    )
+
+    expect(screen.getByTestId("agent-page-shell").className).toContain("min-w-0")
+    expect(screen.getByTestId("agent-page-shell").className).toContain("min-h-0")
+    expect(screen.getByTestId("agent-page-shell").className).toContain("overflow-hidden")
+    expect(screen.getByTestId("agent-core-chat").className).toContain("min-w-0")
+    expect(screen.getByTestId("agent-core-chat").className).toContain("flex-1")
   })
 
   it("moves from project selection into workspace mode and back out without leaking the live deck state", async () => {
