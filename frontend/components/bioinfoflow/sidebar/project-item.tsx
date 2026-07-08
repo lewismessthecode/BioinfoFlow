@@ -72,6 +72,10 @@ export function ProjectItem({
 }: ProjectItemProps) {
   const isRemoteProject = project.storage_mode === "remote"
   const handleProjectRowClick = () => {
+    if (isActive && activeConversationId) {
+      onSelectProject(project)
+      return
+    }
     if (isActive) {
       onToggleExpand(project.id)
       return
