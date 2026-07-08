@@ -303,14 +303,21 @@ describe("TerminalDock", () => {
     expect(screen.getByText("local")).toBeInTheDocument()
     expect(screen.queryByText("sh • /workspace/project-1")).not.toBeInTheDocument()
     expect(screen.getByTitle("local • sh • /workspace/project-1")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "newTerminal" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "newTerminal" })).toHaveAttribute(
+      "aria-disabled",
+      "true"
+    )
     expect(screen.queryByRole("button", { name: "clearTerminal" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "reconnectTerminal" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "closeTerminal" })).toBeInTheDocument()
     expect(screen.queryByText("startingSession")).not.toBeInTheDocument()
     const terminalTab = screen.getByTitle("local • sh • /workspace/project-1")
-    expect(terminalTab.className).not.toContain("border")
-    expect(terminalTab.className).not.toContain("bg-muted/55")
+    const tabStrip = screen.getByTestId("terminal-dock-tab-strip")
+    expect(tabStrip.className).toContain("items-end")
+    expect(terminalTab).toHaveAttribute("data-testid", "terminal-dock-tab")
+    expect(terminalTab.className).toContain("rounded-t-md")
+    expect(terminalTab.className).toContain("border")
+    expect(terminalTab.className).toContain("bg-background")
   })
 
   it("labels remote terminal targets with the node name", async () => {
@@ -364,8 +371,12 @@ describe("TerminalDock", () => {
     await screen.findByText("title")
 
     const viewport = view.container.querySelector("[data-testid='terminal-dock-viewport']")
+    const body = viewport?.parentElement
     expect(viewport).toBeTruthy()
     expect(viewport?.className).toContain("terminal-dock-scroll")
+    expect(viewport?.className).toContain("bg-transparent")
+    expect(body?.className).toContain("px-5")
+    expect(body?.className).toContain("pt-4")
     expect(view.container.innerHTML).not.toContain("rounded-[18px]")
   })
 
