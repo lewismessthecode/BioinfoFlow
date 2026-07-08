@@ -72,12 +72,26 @@ export type AgentRuntimeFileRefPart = {
   includeContent?: boolean
 }
 
+export type AgentRuntimeWorkflowRefPart = {
+  kind: "workflow_ref"
+  workflow_id?: string | null
+  project_id?: string | null
+  scope?: "project" | "global"
+  label?: string
+  name?: string | null
+  source?: string | null
+  engine?: string | null
+}
+
 export type AgentRuntimeTextInputPart = {
   type: "text"
   text: string
 }
 
-export type AgentRuntimeInputPart = AgentRuntimeTextInputPart | AgentRuntimeFileRefPart
+export type AgentRuntimeInputPart =
+  | AgentRuntimeTextInputPart
+  | AgentRuntimeFileRefPart
+  | AgentRuntimeWorkflowRefPart
 
 export type AgentRuntimeTurn = {
   id: string
