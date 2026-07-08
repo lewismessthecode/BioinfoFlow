@@ -9,14 +9,12 @@ import {
   ListChecks,
   type LucideIcon,
   Play,
-  SquareTerminal,
   Workflow,
   X,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
-import { useOptionalTerminalDock } from "@/components/bioinfoflow/terminal/terminal-dock-context"
 import {
   decisionScrollTargetId,
   deliverableArtifacts,
@@ -59,7 +57,6 @@ export function AgentSideDrawer({
   const t = useTranslations("agentRuntime")
   const [activeTab, setActiveTab] = useState<AgentSideDrawerTab>("tools")
   const [artifacts, setArtifacts] = useState<AgentRuntimeArtifact[]>([])
-  const terminalDock = useOptionalTerminalDock()
 
   const artifactEventCount = useMemo(
     () => events.filter((event) => event.type === "artifact.created").length,
@@ -162,7 +159,6 @@ export function AgentSideDrawer({
             onOpenPreview={() => setActiveTab("preview")}
             onOpenFiles={() => setActiveTab("files")}
             onOpenBrowser={() => setActiveTab("browser")}
-            onOpenTerminal={() => terminalDock?.toggleTerminal()}
           />
         ) : null}
         {activeTab === "preview" ? <ArtifactPreviewDrawer artifacts={visibleArtifacts} /> : null}
@@ -180,13 +176,11 @@ function AgentToolsPanel({
   onOpenPreview,
   onOpenFiles,
   onOpenBrowser,
-  onOpenTerminal,
 }: {
   artifactCount: number
   onOpenPreview: () => void
   onOpenFiles: () => void
   onOpenBrowser: () => void
-  onOpenTerminal: () => void
 }) {
   const t = useTranslations("agentRuntime")
 
@@ -210,12 +204,6 @@ function AgentToolsPanel({
           }
           Icon={FileSearch}
           onClick={onOpenPreview}
-        />
-        <ToolButton
-          label={t("toolsPanel.terminal")}
-          description={t("toolsPanel.terminalDescription")}
-          Icon={SquareTerminal}
-          onClick={onOpenTerminal}
         />
         <ToolButton
           label={t("toolsPanel.browser")}

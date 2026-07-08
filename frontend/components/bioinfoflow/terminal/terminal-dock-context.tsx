@@ -66,10 +66,10 @@ export function TerminalDockProvider({
       /* eslint-enable react-hooks/set-state-in-effect */
       return
     }
-    const storedOpen = localStorage.getItem(storageKey(projectId, "open"))
     const storedHeight = localStorage.getItem(storageKey(projectId, "height"))
     const parsedHeight = storedHeight ? Number(storedHeight) : Number.NaN
-    setIsOpen(storedOpen === "true")
+    localStorage.removeItem(storageKey(projectId, "open"))
+    setIsOpen(false)
     setDockHeightState(
       Number.isFinite(parsedHeight)
         ? clampDockHeight(parsedHeight)
@@ -79,9 +79,8 @@ export function TerminalDockProvider({
 
   useEffect(() => {
     if (!projectId) return
-    localStorage.setItem(storageKey(projectId, "open"), String(isOpen))
     localStorage.setItem(storageKey(projectId, "height"), String(dockHeight))
-  }, [dockHeight, isOpen, projectId])
+  }, [dockHeight, projectId])
 
   useEffect(() => {
     if (!enabled) {
@@ -117,7 +116,6 @@ export function TerminalDockProvider({
   const chdir = useCallback(
     (path: string) => {
       if (!enabled || !projectId) return
-      setIsOpen(true)
       setPendingCommand({
         id: Date.now(),
         type: "chdir",

@@ -108,6 +108,7 @@ describe("AppLayout terminal integration", () => {
   beforeEach(() => {
     workspaceNavbarActions = null
     searchParamsState.value = new URLSearchParams()
+    localStorage.clear()
   })
 
   it("shows the terminal toggle on terminal-enabled routes when a project is active", async () => {
@@ -141,6 +142,36 @@ describe("AppLayout terminal integration", () => {
     await waitFor(() => {
       expect(screen.getByTestId("terminal-dock")).toHaveTextContent("open")
     })
+  })
+
+  it("does not restore a previously open terminal dock automatically", async () => {
+    pathnameState.value = "/agent"
+    localStorage.setItem("terminal-dock:project-1:open", "true")
+
+    renderAppPage(
+      <AppLayout>
+        <ProjectSeeder projectId="project-1" />
+      </AppLayout>
+    )
+
+    await screen.findByRole("button", { name: "accessibility.openTerminal" })
+    expect(screen.getByTestId("terminal-dock")).toHaveTextContent("closed")
+    expect(localStorage.getItem("terminal-dock:project-1:open")).toBeNull()
+  })
+
+  it("does not open the terminal dock from the old keyboard shortcut", async () => {
+    pathnameState.value = "/agent"
+
+    renderAppPage(
+      <AppLayout>
+        <ProjectSeeder projectId="project-1" />
+      </AppLayout>
+    )
+
+    await screen.findByRole("button", { name: "accessibility.openTerminal" })
+    fireEvent.keyDown(window, { key: "j", metaKey: true })
+
+    expect(screen.getByTestId("terminal-dock")).toHaveTextContent("closed")
   })
 
   it("keeps the right-side panel toggle as the far-right navbar action", async () => {

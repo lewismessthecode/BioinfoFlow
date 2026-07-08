@@ -90,9 +90,8 @@ export function RunDetailContent({
   const tRuns = useTranslations("runs");
   const tCommon = useTranslations("common");
   const { data: session } = authClient.useSession();
-  const { openTerminal, chdir } = useTerminalDock();
+  const { chdir } = useTerminalDock();
   const runtime = getCurrentRuntime();
-  const terminalEnabled = runtime.capabilities.terminal;
   const destructiveActionsEnabled =
     runtime.capabilities.destructiveActions &&
     canManageDestructiveBusinessActions(
@@ -298,12 +297,6 @@ export function RunDetailContent({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {terminalEnabled ? (
-                  <DropdownMenuItem onClick={openTerminal}>
-                    <Terminal className="w-3.5 h-3.5 mr-2" />
-                    {tRuns("openTerminal")}
-                  </DropdownMenuItem>
-                ) : null}
                 <DropdownMenuItem onClick={() => chdir(`runs/${run.run_id}`)}>
                   <FolderOpen className="w-3.5 h-3.5 mr-2" />
                   {tRuns("goToRunDir")}
