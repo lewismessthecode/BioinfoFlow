@@ -4,16 +4,20 @@ Remote Connections let Bioinfoflow store SSH connection profiles and Host Skills
 for use from the web UI and AgentCore runtime.
 
 Use this feature when you want Bioinfoflow to diagnose or inspect a remote
-server, run existing commands, read or write files, or give the agent access to a
-selected host. The browser never opens an SSH session directly. The frontend
-calls the Bioinfoflow backend, and the backend performs the SSH operation with
-bounded timeouts and output limits.
+server, open a project terminal, run existing commands, read or write files, or
+give the agent access to a selected host. The browser never opens an SSH session
+directly. The frontend calls the Bioinfoflow backend, and the backend performs
+the SSH operation. Command-style probes and AgentCore tools stay bounded by
+timeouts and output limits; project terminals use backend-managed SSH PTY
+sessions.
 
 ## What You Can Do
 
 - Save SSH profiles and Host Skill instructions per workspace.
 - Test a connection from the Connections page.
 - Run a short streamed probe command and see output in the UI.
+- Open an interactive terminal for a remote project in its configured remote
+  root path.
 - Select a connection in the Agent composer.
 - Let AgentCore use `remote.connections.list`, `remote.read_file`, `remote.list_dir`, and `remote.exec` against the selected connection.
 
@@ -152,6 +156,19 @@ Choose **Run probe** to stream a short command over WebSocket.
 
 The probe verifies that remote stdout and stderr can return to the local UI in real time. It is intended for diagnostics, not long-running interactive work.
 
+## Open A Remote Project Terminal
+
+When a project is bound to a Remote Connection and a `remote_root_path`,
+Bioinfoflow opens the browser terminal as an interactive SSH PTY on that host.
+The backend connects through the saved connection profile, requests a terminal,
+changes into the project's remote root path, and streams input, output, resize,
+and exit events through the existing terminal WebSocket.
+
+Password and pasted private-key connections use Bioinfoflow's in-process SSH
+client. SSH config aliases, backend key-file paths, and backend ssh-agent
+connections use the backend's system `ssh` binary so they inherit the backend
+host or container SSH environment.
+
 ## Use A Connection With AgentCore
 
 Select a remote connection in the Agent composer before sending a message. Bioinfoflow stores the selected connection id in the Agent session metadata.
@@ -169,10 +186,10 @@ When a connection is selected, AgentCore receives remote context and can use the
 
 ## Current Limits
 
-Remote Connections currently provide bounded command execution, file access, and
-streamed probe output. They are not a full interactive SSH terminal or PTY
-session. A terminal-style xterm experience can be layered on top of the same
-connection model in a later release.
+Remote Connections provide interactive project terminals, bounded command
+execution, file access, and streamed probe output. They still do not dispatch
+workflow runs to remote schedulers; workflow execution remains managed by the
+Bioinfoflow scheduler and registered workflow engines.
 
 ## Troubleshooting
 
@@ -190,4 +207,5 @@ If a test fails, check the backend environment first:
   backend process.
 - For Advanced backend ssh-agent auth, `SSH_AUTH_SOCK` must be set and mounted.
 - Advanced backend SSH methods use system `ssh` and require the target host to
-  accept non-interactive `BatchMode=yes` SSH commands.
+  accept `BatchMode=yes` SSH commands. Remote project terminals also require
+  PTY allocation on the target host.

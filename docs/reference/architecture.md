@@ -60,8 +60,8 @@ frontend/app/api/auth/[...all]/
 ```
 
 The frontend talks to the backend through REST for normal API calls, SSE for
-long-running run and agent events, and WebSocket for terminal sessions and
-remote connection probes.
+long-running run and agent events, and WebSocket for local terminal sessions,
+remote project SSH PTY terminal sessions, and remote connection probes.
 
 ## Configuration
 
@@ -111,7 +111,8 @@ Workflow execution uses a thin run service facade plus dedicated submission, DAG
 Workflow runs execute from the backend scheduler through registered engine
 adapters. The current engine registry supports Nextflow and WDL/MiniWDL. SSH
 Remote Connections are used for diagnostics and agent-assisted inspection; they
-do not dispatch workflow runs.
+can also back interactive project terminals, but they do not dispatch workflow
+runs.
 
 ## AgentCore Runtime
 
@@ -173,8 +174,11 @@ Authentication methods:
 Stored password and private-key methods use an in-process SSH transport so users
 do not need backend-visible `~/.ssh/...` paths. Advanced backend SSH methods
 continue to execute the system `ssh` binary with argv-based subprocess calls,
-`BatchMode=yes`, connect timeouts, and bounded stdout/stderr. The Connections
-page supports CRUD, testing, and a streamed WebSocket probe.
+`BatchMode=yes`, connect timeouts, bounded stdout/stderr for command-style
+operations, and PTY allocation for remote project terminals. The Connections
+page supports CRUD, testing, and a streamed WebSocket probe. The project
+terminal WebSocket can also bind to a remote project root through the saved
+connection profile.
 
 AgentCore remote tools only resolve connections explicitly selected in the
 current agent session. `remote.read_file` and `remote.list_dir` are read tools;

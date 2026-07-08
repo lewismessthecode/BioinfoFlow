@@ -10,7 +10,7 @@ Source-of-truth documentation for the Bioinfoflow platform, written against the 
 
 ## Guides
 
-- [Remote Connections](guides/remote-connections.md): save SSH profiles, test backend SSH access, stream probes, and use selected hosts with AgentCore.
+- [Remote Connections](guides/remote-connections.md): save SSH profiles, test backend SSH access, open remote project terminals, stream probes, and use selected hosts with AgentCore.
 - [Storage And Data Layout](concepts/storage.md): use managed project storage, external project roots, shared references, and run outputs.
 - [Parabricks WGS Workflows](workflows/parabricks-wgs.md): run the included NVIDIA Parabricks v4.7.0 Nextflow and WDL examples.
 

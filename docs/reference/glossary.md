@@ -97,8 +97,8 @@ the approval service before side effects are executed.
 
 A workspace-scoped SSH profile stored by Bioinfoflow. It can use an SSH config
 alias, a backend-visible key file path, or the backend user's SSH agent. Remote
-Connections support backend tests, streamed probes, and selected AgentCore
-remote tools.
+Connections support backend tests, streamed probes, interactive project
+terminals, and selected AgentCore remote tools.
 
 ### Agent Skill
 

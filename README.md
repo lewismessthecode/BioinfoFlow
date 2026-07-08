@@ -49,7 +49,7 @@ Bioinfoflow sits above Nextflow and WDL/MiniWDL. It adds a persistent scheduler,
 - **Run Workspace**: Configure inputs, submit runs, watch the DAG, follow logs, and inspect outputs from one page.
 - **Persistent Scheduler**: Queue runs with concurrency slots, resource checks, retry policy, timeout handling, cleanup, and restart recovery.
 - **AgentCore Runtime**: Use chat to inspect files, manage projects and workflows, run approved platform actions, and operate selected SSH connections.
-- **Remote Connections**: Save SSH profiles, test them through the backend, stream short probe commands, and expose selected hosts to AgentCore tools.
+- **Remote Connections**: Save SSH profiles, test them through the backend, open remote project terminals, stream short probe commands, and expose selected hosts to AgentCore tools.
 - **Browser Terminal and `bif` CLI**: Use the web UI for interactive work and the CLI for scripting against a running backend.
 - **Local Auth and Team Roles**: Run in personal, team, or development auth modes with Better Auth-backed sessions.
 
