@@ -71,6 +71,13 @@ export function ProjectItem({
   tCommon,
 }: ProjectItemProps) {
   const isRemoteProject = project.storage_mode === "remote"
+  const handleProjectRowClick = () => {
+    if (isActive) {
+      onToggleExpand(project.id)
+      return
+    }
+    onSelectProject(project)
+  }
 
   if (collapsed) {
     return (
@@ -109,8 +116,8 @@ export function ProjectItem({
         event.preventDefault()
         onConversationDrop(project.id)
       }}
-    >
-      {/* Project Header */}
+      >
+        {/* Project Header */}
       <div
         className={cn(
           "group flex min-h-[28px] items-center gap-1 rounded-[7px] border border-transparent px-1.5 py-1 text-[12px] transition-colors duration-150",
@@ -120,21 +127,16 @@ export function ProjectItem({
         )}
       >
         <button
-          onClick={() => onToggleExpand(project.id)}
-          className="flex shrink-0 items-center rounded-[5px] p-0.5 transition-colors hover:bg-sidebar-foreground/[0.045]"
-          aria-label={isExpanded ? "Collapse" : "Expand"}
+          onClick={handleProjectRowClick}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          aria-expanded={isExpanded}
         >
           <ChevronRight
             className={cn(
-              "h-3 w-3 transition-transform duration-150",
+              "h-3 w-3 shrink-0 text-sidebar-foreground/62 transition-transform duration-150",
               isExpanded && "rotate-90"
             )}
           />
-        </button>
-        <button
-          onClick={() => onSelectProject(project)}
-          className="flex min-w-0 flex-1 items-center gap-2"
-        >
           <span
             className={cn(
               "flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] transition-colors duration-150",
@@ -157,7 +159,10 @@ export function ProjectItem({
           size="icon"
           className="h-5 w-5 shrink-0 rounded-[5px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100"
           aria-label={tSidebar("newConversation")}
-          onClick={() => onCreateConversation(project.id)}
+          onClick={(event) => {
+            event.stopPropagation()
+            onCreateConversation(project.id)
+          }}
         >
           <Plus className="h-3 w-3" />
         </Button>
@@ -168,6 +173,7 @@ export function ProjectItem({
               size="icon"
               className="h-5 w-5 shrink-0 rounded-[5px] opacity-0 transition-opacity hover:bg-sidebar-foreground/[0.055] group-hover:opacity-100 focus-visible:opacity-100"
               aria-label={tCommon("actions")}
+              onClick={(event) => event.stopPropagation()}
             >
               <MoreVertical className="h-3 w-3" />
             </Button>
@@ -203,7 +209,7 @@ export function ProjectItem({
 
       {/* Expanded Conversations */}
       {isExpanded && (isLoadingConversations || conversations.length > 0) ? (
-        <div className="ml-4 mt-1 space-y-0.5 border-l border-border/35 pb-1 pl-2">
+        <div className="mt-1 space-y-0.5 pb-1 pl-6">
           {isLoadingConversations ? (
             <div className="px-2 py-1 text-[11px] text-muted-foreground">
               {tCommon("loading")}
