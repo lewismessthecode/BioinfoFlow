@@ -39,13 +39,13 @@ function connectionDotClassName(state: string): string {
 
 function connectionBadgeClassName(state: string): string {
   if (state === "error") {
-    return "border-destructive/25 bg-destructive/10 text-destructive"
+    return "bg-destructive/10 text-destructive"
   }
   if (state === "disconnected" || state === "exited") {
-    return "border-border/60 bg-muted/60 text-muted-foreground"
+    return "bg-muted/55 text-muted-foreground"
   }
   if (state === "connecting") {
-    return "border-warning/25 bg-warning/10 text-warning"
+    return "bg-warning/10 text-warning"
   }
   return ""
 }
@@ -295,10 +295,10 @@ export function TerminalDock() {
     : connectionLabel
 
   const header = (
-    <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-background px-3 py-2">
+    <div className="flex items-center justify-between gap-2 border-b border-border/35 bg-background px-4 py-2.5">
       <div className="flex min-w-0 flex-1 items-center">
         <div
-          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border border-border/35 bg-muted/55 px-2.5 py-1.5"
+          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5"
           title={sessionMeta}
         >
           <TerminalSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -316,7 +316,7 @@ export function TerminalDock() {
           {connectionLabel ? (
             <span
               className={cn(
-                "inline-flex shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium",
+                "inline-flex shrink-0 rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium",
                 connectionBadgeClassName(connectionState),
               )}
             >

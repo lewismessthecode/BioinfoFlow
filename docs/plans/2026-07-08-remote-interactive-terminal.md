@@ -68,13 +68,13 @@
   - `rtk bun run lint`
   - `rtk bun run test`
 - [x] Visual verification not needed for this phase; backend PTY behavior and terminal dock state are covered by automated tests.
-- [ ] Commit as `docs: document remote terminal support`.
+- [x] Commit as `docs: document remote terminal support`.
 
 ## Phase 4: Parallel Review And PR
 
-- [ ] Spawn parallel review agents for backend security/lifecycle, frontend UI/UX, and test/doc coverage.
-- [ ] Fix Critical and Important findings.
-- [ ] Re-run the relevant backend/frontend verification commands after fixes.
-- [ ] Commit review fixes if any.
+- [x] Spawn parallel review agents for backend security/lifecycle, frontend UI/UX, and test/doc coverage.
+- [x] Fix Critical and Important findings.
+- [x] Re-run the relevant backend/frontend verification commands after fixes.
+- [x] Commit review fixes if any.
 - [ ] Push `codex/remote-interactive-terminal`.
 - [ ] Open a draft PR with summary and verification evidence.

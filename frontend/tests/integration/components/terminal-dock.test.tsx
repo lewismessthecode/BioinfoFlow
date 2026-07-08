@@ -281,9 +281,9 @@ describe("TerminalDock", () => {
     expect(screen.queryByRole("button", { name: "reconnectTerminal" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "closeTerminal" })).toBeInTheDocument()
     expect(screen.queryByText("startingSession")).not.toBeInTheDocument()
-    expect(screen.getByTitle("local • sh • /workspace/project-1").className).toContain(
-      "bg-muted/55"
-    )
+    const terminalTab = screen.getByTitle("local • sh • /workspace/project-1")
+    expect(terminalTab.className).not.toContain("border")
+    expect(terminalTab.className).not.toContain("bg-muted/55")
   })
 
   it("labels remote terminal targets with the node name", async () => {

@@ -226,10 +226,12 @@ class TerminalSessionManager:
         idle_timeout_seconds: int = 1800,
         cleanup_interval_seconds: int = 60,
         remote_terminal_factory: RemoteTerminalFactory | None = None,
+        transport_shutdown_timeout_seconds: float = 2.0,
     ) -> None:
         self._default_shell = shell or os.environ.get("SHELL") or "/bin/bash"
         self._idle_timeout_seconds = idle_timeout_seconds
         self._cleanup_interval_seconds = cleanup_interval_seconds
+        self._transport_shutdown_timeout_seconds = transport_shutdown_timeout_seconds
         self._remote_terminal_factory = (
             remote_terminal_factory or DefaultRemoteTerminalFactory()
         )
@@ -313,8 +315,10 @@ class TerminalSessionManager:
             if existing:
                 self._evict_session_locked(existing)
 
-            remote_root = _normalize_remote_root(remote_root_path)
-            resolved_shell = shell or self._default_shell
+        remote_root = _normalize_remote_root(remote_root_path)
+        resolved_shell = shell or self._default_shell
+        transport: TerminalTransport | None = None
+        try:
             transport = await self._remote_terminal_factory(
                 connection=connection,
                 remote_root_path=remote_root,
@@ -335,11 +339,30 @@ class TerminalSessionManager:
                 remote_connection_id=connection.id,
             )
             session.last_touched = asyncio.get_running_loop().time()
-            session.reader_task = asyncio.create_task(self._read_output(session))
-            self._sessions_by_id[session.id] = session
-            self._project_index[project_id] = session.id
-            self._ensure_cleanup_task()
-            return self._snapshot(session)
+
+            async with self._lock:
+                existing_id = self._project_index.get(project_id)
+                existing = self._sessions_by_id.get(existing_id) if existing_id else None
+                if existing and self._is_live_session(existing):
+                    existing.last_touched = asyncio.get_running_loop().time()
+                    snapshot = self._snapshot(existing)
+                    transport_to_close = transport
+                    transport = None
+                else:
+                    if existing:
+                        self._evict_session_locked(existing)
+                    session.reader_task = asyncio.create_task(self._read_output(session))
+                    self._sessions_by_id[session.id] = session
+                    self._project_index[project_id] = session.id
+                    self._ensure_cleanup_task()
+                    return self._snapshot(session)
+
+            await self._terminate_transport(transport_to_close)
+            return snapshot
+        except BaseException:
+            if transport is not None:
+                await self._terminate_transport(transport)
+            raise
 
     async def attach(self, session_id: str) -> asyncio.Queue[dict]:
         async with self._lock:
@@ -532,9 +555,9 @@ class TerminalSessionManager:
         except OSError:
             pass
         finally:
-            exit_code = await session.transport.wait()
+            exit_code = await self._wait_transport(session.transport)
             session.exit_code = exit_code
-            await session.transport.terminate()
+            await self._terminate_transport(session.transport)
             if session.status != "closed":
                 session.status = "exited"
                 await self._broadcast(
@@ -579,11 +602,42 @@ class TerminalSessionManager:
     async def _terminate_session(self, session: _TerminalSession) -> None:
         if session.transport is None:
             return
-        await session.transport.terminate()
         if session.reader_task:
             session.reader_task.cancel()
+        await self._terminate_transport(session.transport)
+        if session.reader_task:
             with contextlib.suppress(asyncio.CancelledError):
-                await session.reader_task
+                await self._await_task_with_timeout(session.reader_task)
+
+    async def _wait_transport(self, transport: TerminalTransport) -> int:
+        return await self._await_task_with_timeout(transport.wait(), default=-9)
+
+    async def _terminate_transport(self, transport: TerminalTransport) -> None:
+        await self._await_task_with_timeout(transport.terminate(), default=None)
+
+    async def _await_task_with_timeout(
+        self,
+        awaitable: Awaitable[Any] | asyncio.Task[Any],
+        *,
+        default: Any = None,
+    ) -> Any:
+        task = (
+            awaitable
+            if isinstance(awaitable, asyncio.Task)
+            else asyncio.create_task(awaitable)
+        )
+        done, _pending = await asyncio.wait(
+            {task},
+            timeout=self._transport_shutdown_timeout_seconds,
+        )
+        if task not in done:
+            task.cancel()
+            task.add_done_callback(_consume_task_exception)
+            return default
+        try:
+            return await task
+        except Exception:
+            return default
 
     def _ensure_cleanup_task(self) -> None:
         if self._cleanup_task and not self._cleanup_task.done():
@@ -719,6 +773,11 @@ def _set_window_size(master_fd: int, packed: bytes) -> None:
     import fcntl
 
     fcntl.ioctl(master_fd, termios.TIOCSWINSZ, packed)
+
+
+def _consume_task_exception(task: asyncio.Task[Any]) -> None:
+    with contextlib.suppress(BaseException):
+        task.exception()
 
 
 terminal_manager = TerminalSessionManager()
