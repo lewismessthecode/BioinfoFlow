@@ -1193,7 +1193,7 @@ function CommandDiscoveryHints({
 
   return (
     <div
-      className="agent-center-stage pointer-events-none absolute inset-x-4 bottom-10 flex justify-center sm:bottom-12"
+      className="agent-center-stage pointer-events-none absolute inset-x-14 bottom-20 flex justify-center sm:inset-x-4 sm:bottom-12"
       data-testid="agent-command-discovery-hints"
     >
       <p
@@ -1201,6 +1201,7 @@ function CommandDiscoveryHints({
           "t-text-swap inline-flex max-w-[calc(100vw-2rem)] items-center justify-center gap-1.5 truncate text-center text-[14px] font-normal leading-6 tracking-normal text-muted-foreground/80 sm:text-[15px]",
           swapState,
         )}
+        aria-label={`${currentHint.prefix} ${currentHint.token} ${currentHint.suffix}`}
         aria-live="polite"
       >
         <span className="truncate">{currentHint.prefix}</span>
