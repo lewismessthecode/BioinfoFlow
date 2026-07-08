@@ -356,11 +356,13 @@ describe("TerminalDock", () => {
     expect(screen.queryByText("startingSession")).not.toBeInTheDocument()
     const terminalTab = screen.getByTitle("local • sh • /workspace/project-1")
     const tabStrip = screen.getByTestId("terminal-dock-tab-strip")
-    expect(tabStrip.className).toContain("items-end")
+    expect(tabStrip.className).toContain("items-center")
     expect(terminalTab).toHaveAttribute("data-testid", "terminal-dock-tab")
-    expect(terminalTab.className).toContain("rounded-t-md")
-    expect(terminalTab.className).toContain("border")
-    expect(terminalTab.className).toContain("bg-muted")
+    expect(terminalTab).toHaveClass("rounded-[8px]")
+    expect(terminalTab.className).not.toContain("rounded-t-md")
+    expect(terminalTab.className).not.toContain("shadow")
+    expect(terminalTab.className).not.toContain("border-b-[var(--terminal-background)]")
+    expect(terminalTab.className).toContain("bg-muted/60")
   })
 
   it("labels remote terminal targets with the node name", async () => {
