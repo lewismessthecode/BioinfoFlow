@@ -34,6 +34,7 @@ import {
   type SpreadsheetRows,
   type UniversalFileKind,
 } from "./file-renderer-utils"
+import { useTransientScrollbar } from "./use-transient-scrollbar"
 
 export type UniversalFileResource = {
   path: string
@@ -737,18 +738,20 @@ function CodePreview({
   truncatedNotice?: string | null
 }) {
   const lines = content.split(/\r?\n/)
+  const transientScrollbar = useTransientScrollbar()
   return (
     <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-background">
       <div
         className="bioflow-transient-scrollbar min-h-0 overflow-auto"
         data-testid="code-preview-scroll"
+        {...transientScrollbar}
       >
-        <pre className="min-w-max p-3 font-mono text-xs leading-5 text-foreground tabular-nums">
+        <pre className="min-w-max py-3 pr-3 font-mono text-xs leading-5 text-foreground tabular-nums">
           <code>
             {lines.map((line, index) => (
               <span key={index} className="table-row">
                 <span
-                  className="sticky left-0 table-cell select-none border-r border-border/45 bg-transparent pr-3 text-right text-muted-foreground"
+                  className="sticky left-0 table-cell min-w-10 select-none border-r border-border/45 bg-background px-2 text-right text-muted-foreground"
                   data-testid="code-preview-line-number"
                 >
                   {index + 1}

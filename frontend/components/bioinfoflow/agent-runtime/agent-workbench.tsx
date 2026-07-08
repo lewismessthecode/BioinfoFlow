@@ -131,6 +131,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const mobileSidecarDialogRef = useRef<HTMLDivElement>(null)
     const mobileSidecarRestoreFocusRef = useRef<HTMLElement | null>(null)
+    const desktopSidecarFocusTargetRef = useRef<"navbar" | null>(null)
+    const environmentPanelRef = useRef<HTMLDivElement>(null)
     const composerShellRef = useRef<HTMLDivElement>(null)
     const workbenchRootRef = useRef<HTMLDivElement>(null)
     const isMobile = useIsMobile()
@@ -712,9 +714,44 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       [submitTurn],
     )
 
-    const closeSidecar = useCallback(() => {
+    const focusNavbarSidecarToggle = useCallback(() => {
+      let attempts = 0
+      const tryFocus = () => {
+        const target = document.querySelector<HTMLElement>(
+          '[data-agent-workbench-action="sidecar-toggle"]',
+        )
+        if (target) {
+          target.focus()
+          return
+        }
+        attempts += 1
+        if (attempts < 10) {
+          window.setTimeout(tryFocus, 16)
+        }
+      }
+      window.setTimeout(tryFocus, 0)
+    }, [])
+
+    const closeSidecar = useCallback((focusTarget?: "navbar") => {
+      if (focusTarget) {
+        desktopSidecarFocusTargetRef.current = focusTarget
+      }
       setSidecarOpen(false)
     }, [])
+
+    useEffect(() => {
+      if (desktopSidecarVisible || mobileSidecarVisible) return
+      if (desktopSidecarFocusTargetRef.current !== "navbar") return
+      desktopSidecarFocusTargetRef.current = null
+      focusNavbarSidecarToggle()
+    }, [desktopSidecarVisible, focusNavbarSidecarToggle, mobileSidecarVisible])
+
+    useEffect(() => {
+      if (!environmentOpen || desktopSidecarVisible) return
+      window.requestAnimationFrame(() => {
+        environmentPanelRef.current?.focus()
+      })
+    }, [desktopSidecarVisible, environmentOpen])
 
     useEffect(() => {
       if (!mobileSidecarVisible) return
@@ -771,7 +808,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
     const toggleSidecar = useCallback(() => {
       if (desktopSidecarVisible || mobileSidecarVisible) {
-        closeSidecar()
+        closeSidecar(desktopSidecarVisible ? "navbar" : undefined)
         return
       }
       setEnvironmentOpen(false)
@@ -781,7 +818,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const toggleEnvironment = useCallback(() => {
       setEnvironmentOpen((current) => {
         const next = !current
-        if (next) setSidecarOpen(false)
+        if (next) {
+          setSidecarOpen(false)
+        }
         return next
       })
     }, [])
@@ -806,6 +845,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             )}
             onClick={toggleEnvironment}
             aria-label={environmentLabel}
+            data-agent-workbench-action="environment"
           >
             <SlidersHorizontal className="h-4 w-4" />
           </Button>
@@ -816,6 +856,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             className="h-8 w-8 rounded-[8px] border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
             onClick={toggleSidecar}
             aria-label={sidecarLabel}
+            data-agent-workbench-action="sidecar-toggle"
           >
             {desktopSidecarVisible || mobileSidecarVisible ? (
               <PanelRightClose className="h-4 w-4" />
@@ -911,6 +952,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               : undefined
           }
         >
+          {desktopSidecarVisible ? (
+            <div
+              className="flex h-11 min-h-11 shrink-0 items-center justify-end border-b border-border/55 bg-background px-3"
+              data-testid="agent-workbench-top-actions"
+            >
+              <div className="flex items-center gap-1">{agentActionButtons}</div>
+            </div>
+          ) : null}
+
           {hasConversation ? (
             <>
               <AgentTodoDock items={todoDisplayItems} />
@@ -966,15 +1016,6 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             </div>
           )}
 
-          {desktopSidecarVisible ? (
-            <div
-              className="pointer-events-auto absolute right-3 top-3 z-30 flex items-center gap-1 rounded-[10px] border border-border/55 bg-background/95 p-1"
-              data-testid="agent-workbench-top-actions"
-            >
-              {agentActionButtons}
-            </div>
-          ) : null}
-
           {composerDocked ? (
             <div
               ref={composerShellRef}
@@ -997,8 +1038,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
           {environmentOpen && !desktopSidecarVisible ? (
             <div
+              ref={environmentPanelRef}
               className="pointer-events-auto absolute right-3 top-3 z-20 w-[min(440px,calc(100%-1.5rem))] sm:right-5 sm:top-5"
               data-testid="agent-environment-floating-panel"
+              tabIndex={-1}
             >
               <AgentEnvironmentCard
                 projectId={projectId}
@@ -1037,18 +1080,18 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           ) : null}
           <div className="flex h-full w-full shrink-0 items-stretch">
             {desktopSidecarVisible ? (
-                <AgentTabbedPanel
-                  projectId={projectId}
-                  sessionId={state.session?.id}
-                  events={state.events}
-                  activeTab={activeSidecarTab}
-                  onActiveTabChange={setActiveSidecarTab}
-                  browserInput={browserInput}
-                  browserSrc={browserSrc}
-                  onBrowserInputChange={setBrowserInput}
-                  onBrowserSrcChange={setBrowserSrc}
-                  onClose={closeSidecar}
-                  onAddContext={addContextAttachment}
+              <AgentTabbedPanel
+                projectId={projectId}
+                sessionId={state.session?.id}
+                events={state.events}
+                activeTab={activeSidecarTab}
+                onActiveTabChange={setActiveSidecarTab}
+                browserInput={browserInput}
+                browserSrc={browserSrc}
+                onBrowserInputChange={setBrowserInput}
+                onBrowserSrcChange={setBrowserSrc}
+                onClose={() => closeSidecar("navbar")}
+                onAddContext={addContextAttachment}
               />
             ) : null}
           </div>
@@ -1075,7 +1118,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               browserSrc={browserSrc}
               onBrowserInputChange={setBrowserInput}
               onBrowserSrcChange={setBrowserSrc}
-              onClose={closeSidecar}
+              onClose={() => closeSidecar()}
               onAddContext={addContextAttachment}
               variant="mobile"
               className="flex h-full w-full flex-col rounded-xl border border-border/70 shadow-[0_18px_48px_rgba(36,35,33,0.10)]"

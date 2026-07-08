@@ -470,6 +470,10 @@ describe("AgentWorkbench", () => {
     )
 
     const localActions = screen.getByTestId("agent-workbench-top-actions")
+    expect(localActions.className).toContain("h-11")
+    expect(localActions.className).not.toContain("absolute")
+    expect(localActions.className).not.toContain("rounded")
+    expect(localActions.className).not.toContain("p-1")
     expect(
       within(localActions).getByRole("button", { name: "Open environment" }),
     ).toBeInTheDocument()
@@ -479,6 +483,67 @@ describe("AgentWorkbench", () => {
     expect(
       within(screen.getByTestId("agent-navbar-actions")).queryByRole("button"),
     ).not.toBeInTheDocument()
+  })
+
+  it("returns focus to the navbar workspace toggle after collapsing the desktop drawer", async () => {
+    setupRuntime({ session: baseSession })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarRender = render(
+      <div data-testid="agent-navbar-actions">
+        {setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}
+      </div>,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    const localActions = screen.getByTestId("agent-workbench-top-actions")
+    await act(async () => {
+      fireEvent.click(
+        within(localActions).getByRole("button", { name: "Collapse workspace panel" }),
+      )
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(setNavbarActionsMock.mock.calls.at(-1)?.[0]).toBeTruthy()
+    })
+    navbarRender.rerender(
+      <div data-testid="agent-navbar-actions">
+        {setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement}
+      </div>,
+    )
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId("agent-navbar-actions")).getByRole("button", {
+          name: "Open workspace panel",
+        }),
+      ).toHaveFocus()
+    })
+  })
+
+  it("moves focus to the environment panel when opening it from the local top actions", async () => {
+    setupRuntime({ session: baseSession })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    const localActions = screen.getByTestId("agent-workbench-top-actions")
+    fireEvent.click(within(localActions).getByRole("button", { name: "Open environment" }))
+
+    const floatingPanel = await screen.findByTestId("agent-environment-floating-panel")
+    expect(screen.queryByTestId("artifact-panel")).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(floatingPanel).toHaveFocus()
+    })
   })
 
   it("docks the draft composer when the desktop workspace drawer is open", async () => {
