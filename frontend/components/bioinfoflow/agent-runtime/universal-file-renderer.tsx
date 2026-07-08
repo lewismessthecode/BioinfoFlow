@@ -738,13 +738,19 @@ function CodePreview({
 }) {
   const lines = content.split(/\r?\n/)
   return (
-    <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-muted/20">
-      <div className="min-h-0 overflow-auto">
+    <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-background">
+      <div
+        className="bioflow-transient-scrollbar min-h-0 overflow-auto"
+        data-testid="code-preview-scroll"
+      >
         <pre className="min-w-max p-3 font-mono text-xs leading-5 text-foreground tabular-nums">
           <code>
             {lines.map((line, index) => (
               <span key={index} className="table-row">
-                <span className="sticky left-0 table-cell select-none border-r border-border/60 bg-muted pr-3 text-right text-muted-foreground">
+                <span
+                  className="sticky left-0 table-cell select-none border-r border-border/45 bg-transparent pr-3 text-right text-muted-foreground"
+                  data-testid="code-preview-line-number"
+                >
                   {index + 1}
                 </span>
                 <span className="table-cell whitespace-pre pl-3">

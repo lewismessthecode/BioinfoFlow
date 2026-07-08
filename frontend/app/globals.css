@@ -456,6 +456,27 @@ html {
   background: var(--muted-foreground);
 }
 
+.bioflow-transient-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.bioflow-transient-scrollbar:hover,
+.bioflow-transient-scrollbar:focus-within,
+.bioflow-transient-scrollbar[data-scrolling="true"] {
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 32%, transparent) transparent;
+}
+
+.bioflow-transient-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.bioflow-transient-scrollbar:hover::-webkit-scrollbar-thumb,
+.bioflow-transient-scrollbar:focus-within::-webkit-scrollbar-thumb,
+.bioflow-transient-scrollbar[data-scrolling="true"]::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted-foreground) 32%, transparent);
+}
+
 /* Animation utilities */
 @media (prefers-reduced-motion: no-preference) {
   .animate-fade-in {

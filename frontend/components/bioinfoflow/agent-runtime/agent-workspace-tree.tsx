@@ -114,7 +114,10 @@ export function AgentWorkspaceTree({
           {t("files.loadedOnly", { count: loadedNodeCount })}
         </div>
       ) : null}
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 py-2">
+      <div
+        className="bioflow-transient-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 py-2"
+        data-testid="agent-workspace-tree-scroll"
+      >
         <div className="grid min-w-0 gap-0.5">
         <TreeRows
           entries={visibleEntries}
