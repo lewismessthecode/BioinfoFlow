@@ -90,7 +90,7 @@ export function RunDetailContent({
   const tRuns = useTranslations("runs");
   const tCommon = useTranslations("common");
   const { data: session } = authClient.useSession();
-  const { chdir } = useTerminalDock();
+  const { chdir, isOpen: isTerminalOpen } = useTerminalDock();
   const runtime = getCurrentRuntime();
   const destructiveActionsEnabled =
     runtime.capabilities.destructiveActions &&
@@ -297,10 +297,12 @@ export function RunDetailContent({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => chdir(`runs/${run.run_id}`)}>
-                  <FolderOpen className="w-3.5 h-3.5 mr-2" />
-                  {tRuns("goToRunDir")}
-                </DropdownMenuItem>
+                {isTerminalOpen ? (
+                  <DropdownMenuItem onClick={() => chdir(`runs/${run.run_id}`)}>
+                    <FolderOpen className="w-3.5 h-3.5 mr-2" />
+                    {tRuns("goToRunDir")}
+                  </DropdownMenuItem>
+                ) : null}
                 {destructiveActionsEnabled &&
                   onCleanup &&
                   (run.status === "completed" || run.status === "failed" || run.status === "cancelled") && (
