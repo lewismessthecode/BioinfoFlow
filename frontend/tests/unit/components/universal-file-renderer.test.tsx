@@ -215,6 +215,20 @@ describe("UniversalFileRenderer", () => {
     ).toBeInTheDocument()
   })
 
+  it("renders code previews with a neutral line gutter and transient scrollbars", () => {
+    const { container } = render(
+      <UniversalFileRenderer file={{ path: "summary.txt", content: "alpha\nbeta" }} />,
+    )
+
+    const scrollViewport = container.querySelector("[data-testid='code-preview-scroll']")
+    const lineNumber = container.querySelector("[data-testid='code-preview-line-number']")
+    expect(scrollViewport).toBeTruthy()
+    expect(scrollViewport?.className).toContain("bioflow-transient-scrollbar")
+    expect(lineNumber).toBeTruthy()
+    expect(lineNumber?.className).not.toContain("bg-muted")
+    expect(lineNumber?.className).toContain("bg-transparent")
+  })
+
   it("aborts pending text preview fetches on unmount", () => {
     const signals: AbortSignal[] = []
     vi.spyOn(globalThis, "fetch").mockImplementation((_, init) => {

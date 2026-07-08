@@ -300,6 +300,12 @@ describe("FilesTab", () => {
     expect(screen.queryByText("Project files")).not.toBeInTheDocument()
     expect(screen.getByTestId("files-tab-split").className).not.toContain("rounded-xl")
     expect(screen.getByTestId("files-tab-split").className).not.toContain("border")
+    expect(screen.getByTestId("files-split-resizer").className).not.toContain("bg-border/40")
+    expect(screen.getByTestId("files-split-resizer").querySelector("span")?.className).toContain("w-px")
+    expect(screen.getByTestId("file-tree-pane").className).not.toContain("lg:border-l")
+    expect(screen.getByTestId("agent-workspace-tree-scroll").className).toContain(
+      "bioflow-transient-scrollbar",
+    )
     expect(screen.getByTestId("file-preview-pane")).toHaveTextContent(
       "Select a file to preview",
     )

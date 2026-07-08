@@ -274,7 +274,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
           aria-valuemax={MAX_TREE_WIDTH}
           aria-valuenow={treeWidth}
           tabIndex={0}
-          className="group hidden cursor-col-resize items-stretch justify-center bg-border/40 outline-none transition-colors hover:bg-border/70 focus-visible:bg-ring/45 lg:flex"
+          className="group hidden cursor-col-resize items-stretch justify-center bg-transparent outline-none transition-colors focus-visible:bg-ring/10 lg:flex"
           data-testid="files-split-resizer"
           onPointerDown={beginResize}
           onKeyDown={(event) => {
@@ -299,7 +299,7 @@ export function FilesTab({ projectId, onAddContext }: FilesTabProps) {
           <span className="my-3 block w-px bg-border group-hover:bg-foreground/30" />
         </div>
         <section
-          className="min-h-[260px] min-w-0 overflow-hidden border-t border-border/55 bg-background lg:min-h-0 lg:border-l lg:border-t-0"
+          className="min-h-[260px] min-w-0 overflow-hidden border-t border-border/55 bg-background lg:min-h-0 lg:border-t-0"
           data-testid="file-tree-pane"
         >
           <AgentWorkspaceTree
