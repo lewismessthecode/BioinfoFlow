@@ -298,13 +298,13 @@ export function TerminalDock() {
     : connectionLabel
 
   const header = (
-    <div className="flex h-10 items-end justify-between gap-3 border-b border-border/45 bg-muted/20 px-4 pt-1.5">
+    <div className="flex h-10 items-center justify-between gap-3 border-b border-border/45 bg-background px-3">
       <div
-        className="flex min-w-0 flex-1 items-end gap-1"
+        className="flex min-w-0 flex-1 items-center gap-1"
         data-testid="terminal-dock-tab-strip"
       >
         <div
-          className="inline-flex h-8 min-w-0 max-w-[320px] items-center gap-2 rounded-t-md border border-border/60 border-b-[var(--terminal-background)] bg-muted/55 px-3 text-xs shadow-[0_-1px_0_rgba(0,0,0,0.02)] dark:bg-muted/35"
+          className="inline-flex h-8 min-w-0 max-w-[320px] items-center gap-2 rounded-[8px] bg-muted/60 px-2.5 text-xs dark:bg-muted/35"
           data-testid="terminal-dock-tab"
           title={sessionMeta}
         >
@@ -334,7 +334,7 @@ export function TerminalDock() {
         <Button
           variant="ghost"
           size="icon"
-          className="mb-0.5 h-7 w-7 rounded-md text-muted-foreground/60 transition-colors disabled:cursor-default disabled:opacity-60"
+          className="h-8 w-8 rounded-[8px] text-muted-foreground/60 transition-colors disabled:cursor-default disabled:opacity-60"
           disabled
           aria-label={tTerminal("newTerminal")}
           title={tTerminal("newTerminal")}
@@ -346,7 +346,7 @@ export function TerminalDock() {
         <Button
           variant="ghost"
           size="icon"
-          className="mb-0.5 h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          className="h-8 w-8 rounded-[8px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
           onClick={closeTerminal}
           aria-label={tAccessibility("closeTerminal")}
         >
