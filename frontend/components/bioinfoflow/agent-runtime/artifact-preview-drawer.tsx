@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
-import { AlertCircle, ChevronLeft, FileSearch, RotateCw } from "lucide-react"
+import { AlertCircle, ChevronLeft, FileBox, RotateCw } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -99,7 +99,7 @@ export function ArtifactPreviewDrawer({
   if (!previewArtifacts.length) {
     return (
       <ArtifactEmptyState
-        icon={<FileSearch className="h-8 w-8" />}
+        icon={<FileBox className="h-8 w-8" />}
         title={hasSession ? t("artifacts.empty") : t("artifacts.emptyNoSession")}
         description={
           hasSession

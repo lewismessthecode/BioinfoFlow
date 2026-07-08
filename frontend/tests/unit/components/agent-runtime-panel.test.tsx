@@ -334,25 +334,31 @@ describe("AgentTabbedPanel", () => {
     )
 
     expect(screen.getByRole("tablist", { name: "sidecar.title" })).toBeInTheDocument()
-    expect(screen.getByText("tabs.artifacts")).toBeInTheDocument()
-    expect(screen.getByText("tabs.files")).toBeInTheDocument()
-    expect(screen.getByText("tabs.browser")).toBeInTheDocument()
     expect(screen.getByTestId("agent-sidecar-tab-strip")).toBeInTheDocument()
     expect(screen.queryByText("artifacts.title")).not.toBeInTheDocument()
     expect(screen.queryByText("sidecar.title")).not.toBeInTheDocument()
     expect(screen.queryByText("artifacts.count")).not.toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: "tabs.artifacts" })).toHaveAttribute(
+    const artifactsTab = screen.getByRole("tab", { name: "tabs.artifacts" })
+    const filesTab = screen.getByRole("tab", { name: "tabs.files" })
+    const browserTab = screen.getByRole("tab", { name: "tabs.browser" })
+    expect(within(artifactsTab).queryByText("tabs.artifacts")).not.toBeInTheDocument()
+    expect(within(filesTab).queryByText("tabs.files")).not.toBeInTheDocument()
+    expect(within(browserTab).queryByText("tabs.browser")).not.toBeInTheDocument()
+    expect(artifactsTab).toHaveAttribute(
       "aria-selected",
       "true",
     )
-    expect(screen.getByRole("tab", { name: "tabs.files" })).toHaveAttribute(
+    expect(filesTab).toHaveAttribute(
       "aria-selected",
       "false",
     )
-    expect(screen.getByRole("tab", { name: "tabs.artifacts" }).className).not.toContain(
-      "rounded-[8px]",
+    expect(artifactsTab).toHaveClass("rounded-[8px]")
+    expect(artifactsTab.className).not.toContain("border-r")
+    expect(screen.getByTestId("agent-sidecar-tab-icon-preview")).toHaveAttribute(
+      "data-icon",
+      "file-box",
     )
-    fireEvent.keyDown(screen.getByRole("tab", { name: "tabs.artifacts" }), {
+    fireEvent.keyDown(artifactsTab, {
       key: "ArrowRight",
     })
     expect(onActiveTabChange).toHaveBeenCalledWith("files")

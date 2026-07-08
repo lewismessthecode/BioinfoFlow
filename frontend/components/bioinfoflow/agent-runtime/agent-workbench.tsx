@@ -793,17 +793,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       })
     }, [sidecarMaxWidth])
 
-    useEffect(() => {
-      if (!setNavbarActions) return
-
-      setNavbarActions(
+    const agentActionButtons = useMemo(
+      () => (
         <>
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className={cn(
-              "h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground",
+              "h-8 w-8 rounded-[8px] border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground",
               environmentOpen && "bg-accent text-foreground",
             )}
             onClick={toggleEnvironment}
@@ -815,7 +813,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-lg border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
+            className="h-8 w-8 rounded-[8px] border border-transparent text-foreground/78 transition-colors hover:bg-accent hover:text-foreground"
             onClick={toggleSidecar}
             aria-label={sidecarLabel}
           >
@@ -825,20 +823,31 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               <PanelRightOpen className="h-4 w-4" />
             )}
           </Button>
-        </>,
-      )
+        </>
+      ),
+      [
+        desktopSidecarVisible,
+        environmentLabel,
+        environmentOpen,
+        mobileSidecarVisible,
+        sidecarLabel,
+        toggleEnvironment,
+        toggleSidecar,
+      ],
+    )
+
+    useEffect(() => {
+      if (!setNavbarActions) return
+
+      if (desktopSidecarVisible) {
+        setNavbarActions(null)
+        return () => setNavbarActions(null)
+      }
+
+      setNavbarActions(agentActionButtons)
 
       return () => setNavbarActions(null)
-    }, [
-      environmentLabel,
-      environmentOpen,
-      setNavbarActions,
-      sidecarLabel,
-      desktopSidecarVisible,
-      mobileSidecarVisible,
-      toggleEnvironment,
-      toggleSidecar,
-    ])
+    }, [agentActionButtons, desktopSidecarVisible, setNavbarActions])
 
     const composerDocked = hasConversation || desktopSidecarVisible
     const composer = (
@@ -956,6 +965,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               ) : null}
             </div>
           )}
+
+          {desktopSidecarVisible ? (
+            <div
+              className="pointer-events-auto absolute right-3 top-3 z-30 flex items-center gap-1 rounded-[10px] border border-border/55 bg-background/95 p-1"
+              data-testid="agent-workbench-top-actions"
+            >
+              {agentActionButtons}
+            </div>
+          ) : null}
 
           {composerDocked ? (
             <div
