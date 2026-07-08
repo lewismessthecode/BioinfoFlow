@@ -2529,28 +2529,36 @@
       "activeForNextTurn": "技能"
     },
     "starterSuggestions": {
-      "validateInputs": {
-        "title": "验证工作流输入",
-        "prompt": "在启动这个工作流前验证输入。"
+      "checkWorkflow": {
+        "prompt": "运行前帮我检查这个工作流"
       },
-      "draftRunPlan": {
-        "title": "起草运行计划",
-        "prompt": "使用 @workflow 起草 Nextflow 或 WDL 运行计划。"
+      "chooseInputs": {
+        "prompt": "帮我选择这次分析的输入"
       },
-      "triageFailure": {
-        "title": "诊断失败运行",
-        "prompt": "总结失败运行，并建议下一条命令。"
+      "reviewFailure": {
+        "prompt": "查看最近失败的运行"
       },
-      "checkMounts": {
-        "title": "检查工作流挂载",
-        "prompt": "检查挂载、输出和 MiniWDL glob() 路径。"
+      "prepareRun": {
+        "prompt": "基于 @workflow 准备一次运行"
       }
     },
     "commandHints": {
-      "workflow": "附加工作流上下文",
-      "skills": "选择工作流、运行或调试技能",
-      "mode": "在计划和执行之间切换",
-      "preflight": "从添加菜单运行预检查"
+      "workflow": {
+        "prefix": "输入",
+        "suffix": "把工作流加入下一次请求"
+      },
+      "skills": {
+        "prefix": "输入",
+        "suffix": "为下一轮选择一个专注技能"
+      },
+      "mode": {
+        "prefix": "按",
+        "suffix": "在计划和执行模式之间切换"
+      },
+      "inputs": {
+        "prefix": "提到",
+        "suffix": "让助手帮你整理运行参数"
+      }
     },
     "workflowContext": {
       "label": "工作流上下文"
