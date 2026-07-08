@@ -22,6 +22,7 @@ import { AgentTranscript } from "./agent-transcript"
 import { ComposerApprovalPopover } from "./composer-approval-popover"
 import { todosFromArtifact } from "./artifact-viewers"
 import { Button } from "@/components/ui/button"
+import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
 import { useAgentRuntime } from "@/hooks/use-agent-runtime"
 import { useLlmSettings } from "@/hooks/use-llm-settings"
@@ -50,6 +51,10 @@ const ACTIVE_TURN_STATUSES = new Set<AgentRuntimeTurn["status"]>([
   "waiting_user",
   "waiting_approval",
 ])
+const SIDECAR_WIDTH_STORAGE_KEY = "agent-sidecar-width"
+const SIDECAR_MIN_WIDTH = 380
+const SIDECAR_DEFAULT_WIDTH = 600
+const SIDECAR_MAX_WIDTH = 760
 
 type PendingSubmission = {
   text: string
@@ -112,6 +117,15 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       useState<PendingSubmission | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
+    const [sidecarWidth, setSidecarWidth] = useState(() => {
+      if (typeof window === "undefined") return SIDECAR_DEFAULT_WIDTH
+      const storedValue = window.localStorage.getItem(SIDECAR_WIDTH_STORAGE_KEY)
+      if (!storedValue) return SIDECAR_DEFAULT_WIDTH
+      const storedWidth = Number(storedValue)
+      return Number.isFinite(storedWidth)
+        ? clampSidecarWidth(storedWidth)
+        : SIDECAR_DEFAULT_WIDTH
+    })
     const [activeSidecarTab, setActiveSidecarTab] = useState<AgentTabbedPanelTab>("preview")
     const [composerBottomSpace, setComposerBottomSpace] = useState(176)
     const [browserInput, setBrowserInput] = useState("")
@@ -217,6 +231,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     // The side panel is now secondary detail. Approvals surface inline and above
     // the composer, so pending decisions no longer force the drawer open.
     const desktopSidecarVisible = sidecarOpen && !isMobile
+
+    useEffect(() => {
+      window.localStorage.setItem(SIDECAR_WIDTH_STORAGE_KEY, String(sidecarWidth))
+    }, [sidecarWidth])
 
     useEffect(() => {
       if (!hasConversation) return
@@ -689,6 +707,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       })
     }, [])
 
+    const resizeSidecar = useCallback((delta: number) => {
+      setSidecarWidth((current) => clampSidecarWidth(current + delta))
+    }, [])
+
     useEffect(() => {
       if (!setNavbarActions) return
 
@@ -842,19 +864,18 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
 
         <div
           className={cn(
-            "hidden shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-out lg:flex",
+            "relative hidden shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-out lg:flex",
             desktopSidecarVisible
-              ? cn(
-                  "translate-x-0 opacity-100",
-                  activeSidecarTab === "browser"
-                    ? "w-[clamp(340px,30vw,480px)]"
-                    : "w-[clamp(360px,32vw,540px)]",
-                )
-              : "w-0 translate-x-4 opacity-0",
+              ? "translate-x-0 opacity-100"
+              : "pointer-events-none translate-x-4 opacity-0",
           )}
+          style={{ width: desktopSidecarVisible ? sidecarWidth : 0 }}
           aria-hidden={!desktopSidecarVisible}
           data-testid="agent-sidecar-column"
         >
+          {desktopSidecarVisible ? (
+            <ResizeHandle side="right" onResize={resizeSidecar} />
+          ) : null}
           <div className="flex h-full w-full shrink-0 items-stretch">
             {desktopSidecarVisible ? (
                 <AgentTabbedPanel
@@ -979,4 +1000,8 @@ function reassignPendingSubmission(
 function getSessionRemoteConnectionId(metadata: Record<string, unknown> | null | undefined): string {
   const value = metadata?.remote_connection_id
   return typeof value === "string" ? value : ""
+}
+
+function clampSidecarWidth(width: number) {
+  return Math.min(Math.max(width, SIDECAR_MIN_WIDTH), SIDECAR_MAX_WIDTH)
 }

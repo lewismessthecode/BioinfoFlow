@@ -364,14 +364,45 @@ describe("AgentWorkbench", () => {
 
     const drawer = screen.getByTestId("artifact-panel")
     expect(drawer).toBeInTheDocument()
-    expect(screen.getByTestId("agent-sidecar-column")).toHaveClass(
-      "w-[clamp(360px,32vw,540px)]",
-    )
+    expect(screen.getByTestId("agent-sidecar-column")).toHaveStyle({
+      width: "600px",
+    })
+    expect(
+      screen.getByRole("separator", { name: "Resize right sidebar" }),
+    ).toBeInTheDocument()
     expect(within(drawer).getByRole("tab", { name: "Artifacts" })).toHaveAttribute(
       "data-active",
       "true",
     )
     expect(within(drawer).queryByRole("tab", { name: "Tools" })).not.toBeInTheDocument()
+  })
+
+  it("resizes the desktop workspace drawer and stores the preferred width", async () => {
+    setupRuntime({ session: baseSession })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+      await Promise.resolve()
+    })
+
+    const sidecar = screen.getByTestId("agent-sidecar-column")
+    const resizer = screen.getByRole("separator", { name: "Resize right sidebar" })
+
+    fireEvent.keyDown(resizer, { key: "ArrowLeft" })
+    expect(sidecar).toHaveStyle({ width: "616px" })
+    expect(window.localStorage.getItem("agent-sidecar-width")).toBe("616")
+
+    fireEvent.mouseDown(resizer, { clientX: 500 })
+    fireEvent.mouseMove(document, { clientX: 460 })
+    fireEvent.mouseUp(document)
+
+    await waitFor(() => {
+      expect(sidecar).toHaveStyle({ width: "656px" })
+    })
+    expect(window.localStorage.getItem("agent-sidecar-width")).toBe("656")
   })
 
   it("does not reopen the right drawer when starting a new conversation", async () => {
