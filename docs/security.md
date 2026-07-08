@@ -63,9 +63,12 @@ Security expectations:
 - treat `remote.exec` as an elevated agent action; it runs a remote shell command
   on the selected host
 - use `remote.read_file` and `remote.list_dir` for read-only inspection
+- remember that remote project terminals are backend-mediated SSH PTY sessions;
+  the browser still does not connect to SSH hosts directly
 
 Remote Connections are intended for diagnostics and agent-assisted operation of
-existing remote commands. They are not a general workflow dispatch backend.
+existing remote commands, plus interactive access to configured remote project
+roots. They are not a general workflow dispatch backend.
 
 ## Public Origins And Hosts
 

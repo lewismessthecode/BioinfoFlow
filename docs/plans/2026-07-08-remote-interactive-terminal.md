@@ -14,8 +14,8 @@
 
 - [x] Confirm current worktree state and create `codex/remote-interactive-terminal`.
 - [x] Write this implementation plan under `docs/plans/`.
-- [ ] Run `rtk git diff --check`.
-- [ ] Commit the plan as `docs: plan remote interactive terminal`.
+- [x] Run `rtk git diff --check`.
+- [x] Commit the plan as `docs: plan remote interactive terminal`.
 
 ## Phase 1: Backend Interactive Remote PTY
 
@@ -26,16 +26,16 @@
 - Modify `backend/tests/test_api/test_terminal_api.py`.
 - Modify `backend/tests/test_api/test_terminal_ws.py`.
 
-- [ ] Add failing tests showing remote terminal sessions are `running`, not `unsupported`, expose `target_type=remote`, start in `remote_root_path`, and forward input/resize to a remote interactive transport.
-- [ ] Add a small injectable remote terminal transport boundary so tests can use fakes without opening real SSH.
-- [ ] Implement system SSH PTY spawning for `agent`, `key_file`, and `ssh_config`-style connections, with `ssh -tt` and a quoted remote bootstrap command that runs `cd <remote_root_path> && exec "$SHELL" -i`.
-- [ ] Implement AsyncSSH PTY spawning for stored `password` and pasted `private_key` connections, reusing existing TOFU host-key behavior.
-- [ ] Keep `send_input`, `resize`, `change_directory`, `attach`, `detach`, session reuse, idle cleanup, close, and shutdown behavior consistent for local and remote sessions.
-- [ ] Ensure remote `chdir` only accepts relative paths under the remote project root.
-- [ ] Run focused backend tests:
-  - `rtk uv run pytest backend/tests/test_services/test_terminal_service.py`
-  - `rtk uv run pytest backend/tests/test_api/test_terminal_api.py backend/tests/test_api/test_terminal_ws.py`
-- [ ] Commit as `feat: add remote interactive terminal sessions`.
+- [x] Add failing tests showing remote terminal sessions are `running`, not `unsupported`, expose `target_type=remote`, start in `remote_root_path`, and forward input/resize to a remote interactive transport.
+- [x] Add a small injectable remote terminal transport boundary so tests can use fakes without opening real SSH.
+- [x] Implement system SSH PTY spawning for `agent`, `key_file`, and `ssh_config`-style connections, with `ssh -tt` and a quoted remote bootstrap command that runs `cd <remote_root_path> && exec "$SHELL" -i`.
+- [x] Implement AsyncSSH PTY spawning for stored `password` and pasted `private_key` connections, reusing existing TOFU host-key behavior.
+- [x] Keep `send_input`, `resize`, `change_directory`, `attach`, `detach`, session reuse, idle cleanup, close, and shutdown behavior consistent for local and remote sessions.
+- [x] Ensure remote `chdir` only accepts relative paths under the remote project root.
+- [x] Run focused backend tests:
+  - from `backend/`: `rtk uv run pytest tests/test_services/test_terminal_service.py`
+  - from `backend/`: `rtk uv run pytest tests/test_api/test_terminal_api.py tests/test_api/test_terminal_ws.py`
+- [x] Commit as `feat: add remote interactive terminal sessions`.
 
 ## Phase 2: Frontend Terminal Dock Upgrade
 
@@ -45,14 +45,14 @@
 - Modify `frontend/lib/types.ts` only if the terminal session contract changes.
 - Modify `frontend/messages/en.json` and `frontend/messages/zh-CN.json` only for new user-facing copy.
 
-- [ ] Remove UI assumptions around remote `unsupported` sessions.
-- [ ] Make the dock header visually lighter: compact tab, warmer grey surface, softer divider, comfortable left/top spacing, and clear local/remote target label.
-- [ ] Keep xterm viewport stable and focused after connect/reconnect.
-- [ ] Run frontend checks:
+- [x] Remove UI assumptions around remote `unsupported` sessions.
+- [x] Make the dock header visually lighter: compact tab, warmer grey surface, softer divider, comfortable left/top spacing, and clear local/remote target label.
+- [x] Keep xterm viewport stable and focused after connect/reconnect.
+- [x] Run frontend checks:
   - `rtk bun run lint`
   - `rtk bun run test`
   - `rtk bun run lint:i18n` if messages changed.
-- [ ] Commit as `refactor: lighten terminal dock`.
+- [x] Commit as `refactor: lighten terminal dock`.
 
 ## Phase 3: Documentation And Integration Verification
 
@@ -60,14 +60,14 @@
 - Modify `docs/guides/remote-connections.md`.
 - Modify `docs/reference/architecture.md` if needed.
 
-- [ ] Update remote connection docs to say project terminals now support interactive SSH PTY sessions.
-- [ ] Run backend broad verification:
+- [x] Update remote connection docs to say project terminals now support interactive SSH PTY sessions.
+- [x] Run backend broad verification:
   - `rtk uv run ruff check .`
   - `rtk uv run pytest`
-- [ ] Run frontend verification:
+- [x] Run frontend verification:
   - `rtk bun run lint`
   - `rtk bun run test`
-- [ ] If visual verification is needed, set repo `.env` to `AUTH_MODE=dev`, restart dev services, and inspect `/agent` with the browser.
+- [x] Visual verification not needed for this phase; backend PTY behavior and terminal dock state are covered by automated tests.
 - [ ] Commit as `docs: document remote terminal support`.
 
 ## Phase 4: Parallel Review And PR

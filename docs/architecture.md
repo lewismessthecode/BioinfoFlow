@@ -15,8 +15,9 @@ bioinformatics workflows on infrastructure you control.
   timeouts, cleanup, and run completion hooks.
 - AgentCore provides durable agent sessions, streamed turns, tool actions,
   artifacts, approvals, skills, subagents, and bounded tool execution.
-- Remote Connections store SSH metadata for diagnostics and agent-assisted
-  inspection. SSH is not the workflow dispatch backend.
+- Remote Connections store SSH metadata for diagnostics, remote project
+  terminals, and agent-assisted inspection. SSH is not the workflow dispatch
+  backend.
 - `BIOINFOFLOW_HOME` is the shared platform root for state, inputs, references,
   caches, and outputs.
 
@@ -85,9 +86,10 @@ For the simple Termius-style path, Bioinfoflow stores encrypted passwords or
 private key contents and uses an in-process SSH client with bounded output. Host
 keys are trusted on first use by the backend and must remain stable on later
 connections. Advanced backend SSH methods store aliases or file paths instead
-and run the system `ssh` binary with `BatchMode=yes`, timeouts, and bounded
-output. The UI can test a connection and stream a short probe command over
-WebSocket.
+and run the system `ssh` binary with `BatchMode=yes`, timeouts, bounded output,
+and PTY allocation for project terminals. The UI can test a connection, stream a
+short probe command over WebSocket, and open an interactive terminal for remote
+projects.
 
 When a user selects a connection in the Agent composer, AgentCore can expose
 read-only remote file and directory inspection tools plus an approval-gated
