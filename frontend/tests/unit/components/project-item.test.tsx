@@ -143,6 +143,46 @@ describe("ProjectItem", () => {
     expect(screen.queryByRole("button", { name: "Collapse" })).not.toBeInTheDocument()
   })
 
+  it("returns to the active project draft when a conversation is selected", () => {
+    const onToggleExpand = vi.fn()
+    const onSelectProject = vi.fn()
+    const project = { id: "demo-project", name: "Demo", project_root: "asset://project" }
+
+    render(
+      <ProjectItem
+        project={project}
+        isActive
+        isExpanded
+        collapsed={false}
+        conversations={[]}
+        isLoadingConversations={false}
+        activeConversationId="conversation-1"
+        onToggleExpand={onToggleExpand}
+        onSelectProject={onSelectProject}
+        onSelectConversation={noop}
+        onConversationDragStart={noop}
+        onConversationDragEnd={noop}
+        onConversationDrop={noop}
+        onConversationDragOver={noop}
+        onConversationDragLeave={noop}
+        onCreateConversation={noop}
+        onRenameConversation={noop}
+        onTogglePin={noop}
+        onDeleteConversation={noop}
+        onRenameProject={noop}
+        onDuplicateProject={noop}
+        onDeleteProject={noop}
+        tSidebar={(key) => key}
+        tCommon={(key) => key}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Demo" }))
+
+    expect(onSelectProject).toHaveBeenCalledWith(project)
+    expect(onToggleExpand).not.toHaveBeenCalled()
+  })
+
   it("keeps project row action buttons independent from row selection", () => {
     const onToggleExpand = vi.fn()
     const onSelectProject = vi.fn()

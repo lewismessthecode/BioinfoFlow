@@ -405,6 +405,41 @@ describe("AgentWorkbench", () => {
     expect(window.localStorage.getItem("agent-sidecar-width")).toBe("656")
   })
 
+  it("clamps the desktop workspace drawer to preserve the chat column on narrow desktop widths", async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 724,
+      height: 0,
+      top: 0,
+      right: 724,
+      bottom: 0,
+      left: 0,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    try {
+      window.localStorage.setItem("agent-sidecar-width", "760")
+      setupRuntime({ session: baseSession })
+      render(<AgentWorkbench projectId="project-1" />)
+      const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+      render(<>{navbarActions}</>)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+        await Promise.resolve()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId("agent-sidecar-column")).toHaveStyle({
+          width: "304px",
+        })
+      })
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
+
   it("does not reopen the right drawer when starting a new conversation", async () => {
     const workbenchRef = { current: null as React.ElementRef<typeof AgentWorkbench> | null }
     render(<AgentWorkbench ref={workbenchRef} projectId="project-1" />)

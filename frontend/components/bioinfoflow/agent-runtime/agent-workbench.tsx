@@ -55,6 +55,7 @@ const SIDECAR_WIDTH_STORAGE_KEY = "agent-sidecar-width"
 const SIDECAR_MIN_WIDTH = 380
 const SIDECAR_DEFAULT_WIDTH = 600
 const SIDECAR_MAX_WIDTH = 760
+const SIDECAR_MAIN_MIN_WIDTH = 420
 
 type PendingSubmission = {
   text: string
@@ -95,6 +96,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const mobileSidecarDialogRef = useRef<HTMLDivElement>(null)
     const mobileSidecarRestoreFocusRef = useRef<HTMLElement | null>(null)
     const composerShellRef = useRef<HTMLDivElement>(null)
+    const workbenchRootRef = useRef<HTMLDivElement>(null)
     const isMobile = useIsMobile()
     const [input, setInput] = useState("")
     const [contextAttachments, setContextAttachments] = useState<AgentRuntimeFileRefPart[]>([])
@@ -117,6 +119,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       useState<PendingSubmission | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
+    const [sidecarMaxWidth, setSidecarMaxWidth] = useState(SIDECAR_MAX_WIDTH)
     const [sidecarWidth, setSidecarWidth] = useState(() => {
       if (typeof window === "undefined") return SIDECAR_DEFAULT_WIDTH
       const storedValue = window.localStorage.getItem(SIDECAR_WIDTH_STORAGE_KEY)
@@ -231,6 +234,32 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     // The side panel is now secondary detail. Approvals surface inline and above
     // the composer, so pending decisions no longer force the drawer open.
     const desktopSidecarVisible = sidecarOpen && !isMobile
+
+    useEffect(() => {
+      const updateSidecarConstraints = () => {
+        const rootWidth = workbenchRootRef.current?.getBoundingClientRect().width ?? 0
+        const nextMaxWidth = maxSidecarWidthForWorkbench(rootWidth)
+        setSidecarMaxWidth((current) =>
+          current === nextMaxWidth ? current : nextMaxWidth,
+        )
+      }
+
+      updateSidecarConstraints()
+      window.addEventListener("resize", updateSidecarConstraints)
+
+      if (typeof ResizeObserver === "undefined") {
+        return () => window.removeEventListener("resize", updateSidecarConstraints)
+      }
+
+      const resizeObserver = new ResizeObserver(updateSidecarConstraints)
+      const root = workbenchRootRef.current
+      if (root) resizeObserver.observe(root)
+
+      return () => {
+        window.removeEventListener("resize", updateSidecarConstraints)
+        resizeObserver.disconnect()
+      }
+    }, [])
 
     useEffect(() => {
       window.localStorage.setItem(SIDECAR_WIDTH_STORAGE_KEY, String(sidecarWidth))
@@ -708,8 +737,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     }, [])
 
     const resizeSidecar = useCallback((delta: number) => {
-      setSidecarWidth((current) => clampSidecarWidth(current + delta))
-    }, [])
+      setSidecarWidth((current) => {
+        const visibleWidth = clampSidecarWidth(current, sidecarMaxWidth)
+        return clampSidecarWidth(visibleWidth + delta, sidecarMaxWidth)
+      })
+    }, [sidecarMaxWidth])
 
     useEffect(() => {
       if (!setNavbarActions) return
@@ -794,8 +826,16 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       />
     )
 
+    const constrainedSidecarWidth = desktopSidecarVisible
+      ? clampSidecarWidth(sidecarWidth, sidecarMaxWidth)
+      : 0
+
     return (
-      <div className={cn("relative flex h-full min-w-0 flex-1 bg-background", className)}>
+      <div
+        ref={workbenchRootRef}
+        className={cn("relative flex h-full min-w-0 flex-1 bg-background", className)}
+        data-testid="agent-workbench-root"
+      >
         <main
           className="relative flex min-w-0 flex-1 flex-col overflow-hidden transition-[padding,width] duration-300 ease-out"
           data-testid="agent-workbench-main"
@@ -869,7 +909,12 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               ? "translate-x-0 opacity-100"
               : "pointer-events-none translate-x-4 opacity-0",
           )}
-          style={{ width: desktopSidecarVisible ? sidecarWidth : 0 }}
+          style={{
+            width: constrainedSidecarWidth,
+            maxWidth: desktopSidecarVisible
+              ? `calc(100% - ${SIDECAR_MAIN_MIN_WIDTH}px)`
+              : undefined,
+          }}
           aria-hidden={!desktopSidecarVisible}
           data-testid="agent-sidecar-column"
         >
@@ -1002,6 +1047,17 @@ function getSessionRemoteConnectionId(metadata: Record<string, unknown> | null |
   return typeof value === "string" ? value : ""
 }
 
-function clampSidecarWidth(width: number) {
-  return Math.min(Math.max(width, SIDECAR_MIN_WIDTH), SIDECAR_MAX_WIDTH)
+function maxSidecarWidthForWorkbench(width: number) {
+  if (!Number.isFinite(width) || width <= 0) return SIDECAR_MAX_WIDTH
+  return Math.min(
+    SIDECAR_MAX_WIDTH,
+    Math.max(0, Math.floor(width - SIDECAR_MAIN_MIN_WIDTH)),
+  )
+}
+
+function clampSidecarWidth(width: number, maxWidth = SIDECAR_MAX_WIDTH) {
+  const effectiveMax = Math.min(Math.max(maxWidth, 0), SIDECAR_MAX_WIDTH)
+  if (effectiveMax <= 0) return 0
+  const effectiveMin = Math.min(SIDECAR_MIN_WIDTH, effectiveMax)
+  return Math.min(Math.max(width, effectiveMin), effectiveMax)
 }
