@@ -13,6 +13,7 @@ import {
   Folder,
   Loader2,
   Paperclip,
+  RefreshCw,
   Search,
   TerminalSquare,
   X,
@@ -27,12 +28,14 @@ export function AgentWorkspaceTree({
   className,
   filter,
   onFilterChange,
+  rootLoading = false,
   expandedPaths,
   childrenByPath,
   loadingPaths,
   errorByPath,
   selectedPath,
   loadedNodeCount,
+  onRefresh,
   onCollapseAll,
   onToggleDirectory,
   onOpenFile,
@@ -43,12 +46,14 @@ export function AgentWorkspaceTree({
   className?: string
   filter: string
   onFilterChange: (value: string) => void
+  rootLoading?: boolean
   expandedPaths: Set<string>
   childrenByPath: Record<string, AgentFsEntry[]>
   loadingPaths: Set<string>
   errorByPath: Record<string, string>
   selectedPath: string | null
   loadedNodeCount: number
+  onRefresh: () => void
   onCollapseAll: () => void
   onToggleDirectory: (entry: AgentFsEntry) => void
   onOpenFile: (entry: AgentFsEntry) => void
@@ -61,25 +66,25 @@ export function AgentWorkspaceTree({
 
   return (
     <div
-      className={cn("flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden", className)}
+      className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden", className)}
       data-testid="agent-workspace-tree"
     >
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1 border-b border-border/55 px-2 py-2">
         <label className="relative min-w-0 flex-1">
           <span className="sr-only">{t("files.search")}</span>
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="search"
             value={filter}
             onChange={(event) => onFilterChange(event.target.value)}
             placeholder={t("files.search")}
             aria-label={t("files.search")}
-            className="h-9 w-full rounded-full border border-border/70 bg-background px-8 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
+            className="h-8 w-full rounded-[6px] border border-border/65 bg-background px-7 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring"
           />
           {filter ? (
             <button
               type="button"
-              className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-[5px] text-muted-foreground hover:bg-muted/55 hover:text-foreground"
               onClick={() => onFilterChange("")}
               aria-label={t("files.clearSearch")}
             >
@@ -89,7 +94,15 @@ export function AgentWorkspaceTree({
         </label>
         <button
           type="button"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          onClick={onRefresh}
+          aria-label={t("files.refresh")}
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", rootLoading && "animate-spin")} />
+        </button>
+        <button
+          type="button"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
           onClick={onCollapseAll}
           aria-label={t("files.collapseAll")}
         >
@@ -97,11 +110,11 @@ export function AgentWorkspaceTree({
         </button>
       </div>
       {normalized ? (
-        <div className="shrink-0 text-[11px] text-muted-foreground">
+        <div className="shrink-0 border-b border-border/55 px-3 py-1.5 text-[11px] text-muted-foreground">
           {t("files.loadedOnly", { count: loadedNodeCount })}
         </div>
       ) : null}
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 py-2">
         <div className="grid min-w-0 gap-0.5">
         <TreeRows
           entries={visibleEntries}
@@ -176,8 +189,8 @@ function TreeRows({
           data-selected={isSelected ? "true" : undefined}
           data-file-kind={fileKind}
           className={cn(
-            "group flex min-h-7 min-w-0 items-center gap-1 rounded-md py-1 pr-1.5 text-sm transition-colors hover:bg-muted/55",
-            isSelected && "bg-muted text-foreground ring-1 ring-border/70",
+            "group flex min-h-7 min-w-0 items-center gap-1 rounded-[6px] py-1 pr-1 text-sm transition-colors hover:bg-muted/45",
+            isSelected && "bg-muted/60 text-foreground",
           )}
           style={{ paddingLeft: `${depth * 14 + 8}px` }}
         >
@@ -196,7 +209,7 @@ function TreeRows({
                 ) : (
                   <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 )}
-                <Folder className="h-4 w-4 shrink-0 text-sky-500" />
+                <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
               </>
             ) : (
               <>
@@ -207,24 +220,29 @@ function TreeRows({
             <span className="min-w-0 flex-1 truncate text-foreground">{entry.name}</span>
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
           </button>
-          <button
-            type="button"
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-background hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-            onClick={() => onCopyPath(entry.path)}
-            aria-label={t("files.copyPath")}
+          <div
+            className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+            data-testid="agent-workspace-tree-row-actions"
           >
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-          {entry.type === "file" ? (
             <button
               type="button"
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-background hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-              onClick={() => onAddFile(entry.path)}
-              aria-label={t("files.addToContext")}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              onClick={() => onCopyPath(entry.path)}
+              aria-label={t("files.copyPath")}
             >
-              <Paperclip className="h-3.5 w-3.5" />
+              <Copy className="h-3.5 w-3.5" />
             </button>
-          ) : null}
+            {entry.type === "file" ? (
+              <button
+                type="button"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                onClick={() => onAddFile(entry.path)}
+                aria-label={t("files.addToContext")}
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
         </div>
         {error ? (
           <p className="px-2 text-xs text-destructive" style={{ paddingLeft: `${(depth + 1) * 14 + 8}px` }}>
@@ -303,19 +321,12 @@ function fileIconForKind(kind: string) {
 function fileIconClassName(kind: string) {
   switch (kind) {
     case "workflow":
-      return "text-cyan-600"
     case "markdown":
-      return "text-emerald-600"
     case "data":
-      return "text-violet-600"
     case "table":
-      return "text-green-600"
     case "shell":
-      return "text-foreground/75"
     case "code":
-      return "text-blue-600"
     case "document":
-      return "text-muted-foreground"
     default:
       return "text-muted-foreground"
   }

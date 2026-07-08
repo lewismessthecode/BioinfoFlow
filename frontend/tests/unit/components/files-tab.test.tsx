@@ -119,7 +119,7 @@ describe("FilesTab", () => {
       expect(getAgentFsTree).toHaveBeenCalledWith(null, "project-1")
     })
     expect(await screen.findByText("workflow.wdl")).toBeInTheDocument()
-    expect(screen.getByText(rootPath)).toBeInTheDocument()
+    expect(screen.queryByText(rootPath)).not.toBeInTheDocument()
   })
 
   it("expands and collapses directories without discarding cached children", async () => {
@@ -167,10 +167,10 @@ describe("FilesTab", () => {
     expect(screen.getByText("src")).toBeInTheDocument()
     expect(within(screen.getByTestId("file-tree-pane")).getByText("main.nf")).toBeInTheDocument()
 
-    const addButtons = within(screen.getByTestId("file-preview-pane")).getAllByRole("button", {
-      name: "Add to context",
-    })
-    fireEvent.click(addButtons.at(-1)!)
+    const previewToolbar = screen.getByTestId("agent-file-preview-toolbar")
+    expect(within(previewToolbar).queryByText("Add to context")).not.toBeInTheDocument()
+    expect(within(previewToolbar).queryByText("Copy path")).not.toBeInTheDocument()
+    fireEvent.click(within(previewToolbar).getByRole("button", { name: "Add to context" }))
     expect(onAddContext).toHaveBeenCalledWith(scriptPath)
   })
 
@@ -360,11 +360,11 @@ describe("FilesTab", () => {
 
     const resizer = screen.getByRole("separator", { name: "Resize file tree" })
     await waitFor(() => {
-      expect(resizer).toHaveAttribute("aria-valuenow", "312")
+      expect(resizer).toHaveAttribute("aria-valuenow", "318")
     })
 
     fireEvent.keyDown(resizer, { key: "End" })
-    expect(resizer).toHaveAttribute("aria-valuenow", "312")
+    expect(resizer).toHaveAttribute("aria-valuenow", "318")
   })
 
   it("filters only loaded nodes and reveals collapsed matching descendants", async () => {
@@ -414,9 +414,12 @@ describe("FilesTab", () => {
 
     const rowButton = screen.getByRole("button", { name: "workflow.wdl" })
     const row = rowButton.closest("[data-file-kind='workflow']")
+    const rowActions = within(row as HTMLElement).getByTestId("agent-workspace-tree-row-actions")
     expect(rowButton).toHaveAttribute("aria-current", "true")
     expect(row).toHaveAttribute("data-selected", "true")
     expect(row).toHaveAttribute("data-file-kind", "workflow")
+    expect(row?.className).not.toContain("ring-1")
+    expect(rowActions.className).toContain("opacity-0")
   })
 
   it("collapses all expanded directories without clearing cached children", async () => {
@@ -493,7 +496,8 @@ describe("FilesTab", () => {
     })
 
     expect(screen.queryByText("stale.wdl")).not.toBeInTheDocument()
-    expect(screen.getByText("/data/projects/project-2")).toBeInTheDocument()
+    expect(screen.getByText("other.wdl")).toBeInTheDocument()
+    expect(screen.queryByText(rootPath)).not.toBeInTheDocument()
   })
 
   it("ignores older same-project tree responses after a newer refresh", async () => {
