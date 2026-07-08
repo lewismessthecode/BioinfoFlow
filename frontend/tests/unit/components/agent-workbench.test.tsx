@@ -1,6 +1,6 @@
 import type * as React from "react"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentWorkbench } from "@/components/bioinfoflow/agent-runtime/agent-workbench"
 import type {
@@ -314,6 +314,10 @@ describe("AgentWorkbench", () => {
     window.localStorage.clear()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it("renders the new chat welcome with a centered composer", () => {
     render(<AgentWorkbench />)
 
@@ -353,6 +357,24 @@ describe("AgentWorkbench", () => {
       within(hints).getByText("Use").parentElement,
     )
     expect(within(hints).queryByText("/")).not.toBeInTheDocument()
+  })
+
+  it("keeps rotating command discovery hints visible after the text swap", () => {
+    vi.useFakeTimers()
+    render(<AgentWorkbench />)
+
+    const hints = screen.getByTestId("agent-command-discovery-hints")
+    expect(within(hints).getByText("@workflow")).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(5200 + 150 + 16)
+    })
+
+    expect(within(hints).getByText("/")).toBeInTheDocument()
+    expect(within(hints).getByText("Type")).toBeInTheDocument()
+    expect(within(hints).getByLabelText("Type / to choose a focused skill")).toBe(
+      within(hints).getByText("Type").parentElement,
+    )
   })
 
   it("fills the centered composer from a starter suggestion", () => {

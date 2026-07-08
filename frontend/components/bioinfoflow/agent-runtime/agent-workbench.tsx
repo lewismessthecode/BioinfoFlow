@@ -921,7 +921,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
             >
               <div
                 className={cn(
-                  "agent-center-stage w-full",
+                  "agent-center-stage relative w-full",
                   composerDocked ? "max-w-[36rem]" : "max-w-[42rem] -translate-y-8",
                 )}
               >
@@ -933,7 +933,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
                     {composer}
                   </div>
                 ) : null}
-                {!input.trim() ? (
+                {!composerDocked && !input.trim() ? (
                   <StarterSuggestionList
                     suggestions={STARTER_SUGGESTIONS.map((suggestion) => ({
                       key: suggestion.key,
@@ -1151,7 +1151,7 @@ function StarterSuggestionList({
 }) {
   return (
     <div
-      className="mt-4 w-full overflow-hidden"
+      className="absolute inset-x-0 top-full mt-5 w-full overflow-hidden"
       data-testid="agent-starter-suggestions"
     >
       {suggestions.map((suggestion, index) => (
@@ -1159,16 +1159,16 @@ function StarterSuggestionList({
           key={suggestion.key}
           type="button"
           className={cn(
-            "group grid min-h-[52px] w-full grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-3 rounded-[6px] px-6 text-left transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:relative focus-visible:z-10 focus-visible:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/18 focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:min-h-[56px]",
+            "group grid min-h-[38px] w-full grid-cols-[1rem_minmax(0,1fr)] items-center gap-2.5 rounded-[6px] px-5 text-left transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:relative focus-visible:z-10 focus-visible:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/18 focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:min-h-[42px]",
             index > 0 && "border-t border-border/75",
           )}
           onClick={() => onSelect(suggestion.prompt)}
         >
           <suggestion.icon
-            className="h-5 w-5 text-muted-foreground/70 transition-colors duration-150 group-hover:text-muted-foreground/85"
+            className="h-4 w-4 text-muted-foreground/65 transition-colors duration-150 group-hover:text-muted-foreground/85"
             aria-hidden={true}
           />
-          <span className="min-w-0 truncate text-[16px] font-normal leading-6 tracking-normal text-muted-foreground transition-colors duration-150 group-hover:text-foreground/70">
+          <span className="min-w-0 truncate text-[13px] font-normal leading-5 tracking-normal text-muted-foreground transition-colors duration-150 group-hover:text-foreground/70 sm:text-[14px]">
             {suggestion.prompt}
           </span>
         </button>
@@ -1189,7 +1189,6 @@ function CommandDiscoveryHints({
   useEffect(() => {
     if (hints.length <= 1) return
 
-    let nextIndex = 0
     const timers = new Set<ReturnType<typeof setTimeout>>()
     const addTimer = (callback: () => void, delay: number) => {
       const timer = setTimeout(() => {
@@ -1200,10 +1199,9 @@ function CommandDiscoveryHints({
     }
 
     const interval = setInterval(() => {
-      nextIndex = (displayIndex + 1) % hints.length
       setSwapState("is-exit")
       addTimer(() => {
-        setDisplayIndex(nextIndex)
+        setDisplayIndex((index) => (index + 1) % hints.length)
         setSwapState("is-enter-start")
         addTimer(() => setSwapState(""), 16)
       }, 150)
@@ -1213,7 +1211,7 @@ function CommandDiscoveryHints({
       clearInterval(interval)
       timers.forEach((timer) => clearTimeout(timer))
     }
-  }, [displayIndex, hints.length])
+  }, [hints.length])
 
   if (!currentHint) return null
 
@@ -1230,7 +1228,7 @@ function CommandDiscoveryHints({
         aria-label={`${currentHint.prefix} ${currentHint.token} ${currentHint.suffix}`}
       >
         <span className="truncate">{currentHint.prefix}</span>
-        <kbd className="rounded-[5px] border border-border/55 bg-muted/65 px-1.5 py-0.5 font-mono text-[12px] font-medium leading-none text-muted-foreground/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.62)]">
+        <kbd className="rounded-[5px] border border-border/35 bg-foreground/[0.055] px-1.5 py-px font-mono text-[12px] font-normal leading-none text-muted-foreground/85">
           {currentHint.token}
         </kbd>
         <span className="truncate">{currentHint.suffix}</span>
