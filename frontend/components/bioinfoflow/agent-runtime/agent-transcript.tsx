@@ -9,7 +9,7 @@ import {
   CircleDashed,
   Copy,
   RotateCcw,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { ScrollToBottom } from "@/components/bioinfoflow/chat/scroll-to-bottom"

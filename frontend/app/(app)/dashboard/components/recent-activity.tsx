@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Play, ArrowRight } from "lucide-react";
+import { Play, ArrowRight } from "@/lib/icons";
 import {
   CardRoot,
   CardContent,

@@ -5,7 +5,7 @@ import {
   ExternalLink,
   Paperclip,
   X,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Copy, ExternalLink, FileCode, GitCompare, Rows3 } from "lucide-react"
+import { Copy, ExternalLink, FileCode, GitCompare, Rows3 } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"

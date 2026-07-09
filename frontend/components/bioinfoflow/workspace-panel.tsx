@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { ChevronRight, ChevronDown, Folder, FileText, RefreshCw, Download, Trash2, Eye, Loader2 } from "lucide-react"
+import { ChevronRight, ChevronDown, Folder, FileText, RefreshCw, Download, Trash2, Eye, Loader2 } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { formatSize } from "@/lib/format-utils"

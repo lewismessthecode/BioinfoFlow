@@ -1,0 +1,200 @@
+<testsuites id="" name="" tests="33" failures="0" skipped="33" errors="0" time="0.17915699999999993">
+<testsuite name="agent-first-analysis.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Agent first analysis journey › creates a project and completes the first analysis turn with the deterministic agent runtime" classname="agent-first-analysis.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="agent-workflow-run.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Agent workflow-run journey › registers a project workflow, approves the agent run, and sees the queued run in Runs" classname="agent-workflow-run.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="core-navigation.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Core navigation journey › Agent -&gt; Runs -&gt; Workflows -&gt; Images" classname="core-navigation.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="images-registry-pull.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Images registry pull journey › pulls an image from the registry and makes it reusable from Images" classname="images-registry-pull.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="images-tarball-import.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Images tarball import journey › imports a tarball and makes the image reusable from Images" classname="images-tarball-import.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="run-detail-path.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Run detail journey › opens a run from Runs and shows DAG, logs, and outputs" classname="run-detail-path.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="run-lifecycle.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Run lifecycle journey › resumes a failed run and cancels the queued retry from the Runs page" classname="run-lifecycle.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="settings-provider-flow.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Settings provider journey › saves provider settings and surfaces successful and failed test feedback" classname="settings-provider-flow.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="sidebar-layout.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Sidebar layout › keeps the desktop sidebar pinned during document-level scroll" classname="sidebar-layout.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="workflow-run-path.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Workflow registration and run journey › registers a local workflow and surfaces the new run in Runs" classname="workflow-run-path.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="workspace-project-flow.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Workspace project journey › creates a project from the empty workspace and switches page context to it" classname="workspace-project-flow.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="agent-first-analysis.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Agent first analysis journey › creates a project and completes the first analysis turn with the deterministic agent runtime" classname="agent-first-analysis.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="agent-workflow-run.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Agent workflow-run journey › registers a project workflow, approves the agent run, and sees the queued run in Runs" classname="agent-workflow-run.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="core-navigation.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Core navigation journey › Agent -&gt; Runs -&gt; Workflows -&gt; Images" classname="core-navigation.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="images-registry-pull.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Images registry pull journey › pulls an image from the registry and makes it reusable from Images" classname="images-registry-pull.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="images-tarball-import.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Images tarball import journey › imports a tarball and makes the image reusable from Images" classname="images-tarball-import.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="run-detail-path.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Run detail journey › opens a run from Runs and shows DAG, logs, and outputs" classname="run-detail-path.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="run-lifecycle.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Run lifecycle journey › resumes a failed run and cancels the queued retry from the Runs page" classname="run-lifecycle.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="settings-provider-flow.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Settings provider journey › saves provider settings and surfaces successful and failed test feedback" classname="settings-provider-flow.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="sidebar-layout.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Sidebar layout › keeps the desktop sidebar pinned during document-level scroll" classname="sidebar-layout.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="workflow-run-path.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Workflow registration and run journey › registers a local workflow and surfaces the new run in Runs" classname="workflow-run-path.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="workspace-project-flow.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Workspace project journey › creates a project from the empty workspace and switches page context to it" classname="workspace-project-flow.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="agent-first-analysis.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Agent first analysis journey › creates a project and completes the first analysis turn with the deterministic agent runtime" classname="agent-first-analysis.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="agent-workflow-run.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Agent workflow-run journey › registers a project workflow, approves the agent run, and sees the queued run in Runs" classname="agent-workflow-run.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="core-navigation.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Core navigation journey › Agent -&gt; Runs -&gt; Workflows -&gt; Images" classname="core-navigation.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="images-registry-pull.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Images registry pull journey › pulls an image from the registry and makes it reusable from Images" classname="images-registry-pull.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="images-tarball-import.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Images tarball import journey › imports a tarball and makes the image reusable from Images" classname="images-tarball-import.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="run-detail-path.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Run detail journey › opens a run from Runs and shows DAG, logs, and outputs" classname="run-detail-path.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="run-lifecycle.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Run lifecycle journey › resumes a failed run and cancels the queued retry from the Runs page" classname="run-lifecycle.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="settings-provider-flow.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Settings provider journey › saves provider settings and surfaces successful and failed test feedback" classname="settings-provider-flow.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="sidebar-layout.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Sidebar layout › keeps the desktop sidebar pinned during document-level scroll" classname="sidebar-layout.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="workflow-run-path.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Workflow registration and run journey › registers a local workflow and surfaces the new run in Runs" classname="workflow-run-path.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="workspace-project-flow.spec.ts" timestamp="2026-07-09T01:46:22.025Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Workspace project journey › creates a project from the empty workspace and switches page context to it" classname="workspace-project-flow.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+</testsuites>

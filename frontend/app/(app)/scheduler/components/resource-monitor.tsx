@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
-import { ChevronsRight } from "lucide-react"
+import { ChevronsRight } from "@/lib/icons"
 import {
   CardContent,
   CardHeader,

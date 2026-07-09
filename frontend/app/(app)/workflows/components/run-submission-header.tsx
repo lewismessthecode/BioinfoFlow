@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowLeftRight, GitBranch, Workflow as WorkflowIcon, X } from "lucide-react"
+import { ArrowLeftRight, GitBranch, Workflow as WorkflowIcon, X } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { engineStyleFor } from "./workflow-pills"

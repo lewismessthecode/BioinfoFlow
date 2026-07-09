@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useTranslations } from "next-intl"
-import { ChevronDown, ChevronRight, Box } from "lucide-react"
+import { ChevronDown, ChevronRight, Box } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { IconBox } from "@/components/ui/icon-box"
 import { Button } from "@/components/ui/button"

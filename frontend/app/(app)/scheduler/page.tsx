@@ -10,7 +10,7 @@ import {
   Gauge,
   RefreshCw,
   ShieldAlert,
-} from "lucide-react"
+} from "@/lib/icons"
 import {
   CardContent,
   CardRoot,

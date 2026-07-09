@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Check, CircleHelp, Edit3 } from "lucide-react"
+import { Check, CircleHelp, Edit3 } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Badge } from "@/components/ui/badge"

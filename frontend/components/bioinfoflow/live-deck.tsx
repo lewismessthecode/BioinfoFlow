@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { FolderOpen, GitBranch, Activity, PanelRightClose } from "lucide-react"
+import { FolderOpen, GitBranch, Activity, PanelRightClose } from "@/lib/icons"
 import { WorkspacePanel } from "./workspace-panel"
 import { DagPanel } from "./dag"
 import { MonitorPanel } from "./monitor-panel"

@@ -8,7 +8,7 @@ import {
   ListTree,
   Package,
   Sparkles,
-} from "lucide-react"
+} from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,

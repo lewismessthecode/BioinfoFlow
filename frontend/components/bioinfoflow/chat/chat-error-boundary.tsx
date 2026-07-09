@@ -2,7 +2,7 @@
 
 import { Component, type ReactNode } from "react"
 import { useTranslations } from "next-intl"
-import { AlertTriangle, RefreshCw } from "lucide-react"
+import { AlertTriangle, RefreshCw } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import { logger } from "@/lib/logger"
 

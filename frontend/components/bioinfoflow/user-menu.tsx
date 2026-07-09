@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
-import { ChevronsUpDown, Moon, Settings } from "lucide-react"
+import { ChevronsUpDown, Moon, Settings } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { getNextAppearanceMode, useAppearance } from "@/lib/appearance/use-appearance"
 import {

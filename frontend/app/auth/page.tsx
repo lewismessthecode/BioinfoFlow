@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { Shield } from "lucide-react"
+import { Shield } from "@/lib/icons"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { getTranslations } from "next-intl/server"
 import { AuthActions } from "@/components/auth/auth-actions"

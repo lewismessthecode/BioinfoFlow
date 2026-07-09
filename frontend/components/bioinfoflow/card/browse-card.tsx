@@ -1,7 +1,7 @@
 "use client"
 
 import type { ElementType, ReactNode } from "react"
-import type { LucideIcon } from "lucide-react"
+import type { LucideIcon } from "@/lib/icons"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 

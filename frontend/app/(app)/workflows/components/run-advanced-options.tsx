@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"

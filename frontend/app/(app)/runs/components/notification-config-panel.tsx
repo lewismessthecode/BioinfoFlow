@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Trash2, Plus, Bell } from "lucide-react"
+import { Trash2, Plus, Bell } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import { apiRequest, ApiError } from "@/lib/api"

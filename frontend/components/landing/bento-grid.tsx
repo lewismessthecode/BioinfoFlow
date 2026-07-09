@@ -10,7 +10,7 @@ import {
   Lock,
   Cpu,
   BarChart3,
-} from "lucide-react";
+} from "@/lib/icons";
 import {
   FadeInOnScroll,
   StaggerContainer,

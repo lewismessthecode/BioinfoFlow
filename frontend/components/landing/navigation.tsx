@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition } from "react"
 import Link from "next/link"
-import { Menu, X, Moon, Sun, Globe, Github } from "lucide-react"
+import { Menu, X, Moon, Sun, Globe, Github } from "@/lib/icons"
 import { useTheme } from "next-themes"
 import { useLocale, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"

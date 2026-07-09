@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from "lucide-react"
+import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 

@@ -5,7 +5,7 @@ import dynamic from "next/dynamic"
 import Link from "next/link"
 import { AnimatePresence } from "framer-motion"
 import { useTranslations } from "next-intl"
-import { Search, Filter, Eye, FileText, RotateCcw, XCircle, Trash2, ChevronLeft, ChevronRight, ChevronDown, Play, Layers, Bell } from "lucide-react"
+import { Search, Filter, Eye, FileText, RotateCcw, XCircle, Trash2, ChevronLeft, ChevronRight, ChevronDown, Play, Layers, Bell } from "@/lib/icons"
 import { authClient } from "@/lib/auth-client"
 import {
   canManageDestructiveBusinessActions,

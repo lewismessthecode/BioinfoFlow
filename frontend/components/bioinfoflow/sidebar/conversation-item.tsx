@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { MessageSquare, MoreVertical, Trash2 } from "lucide-react"
+import { MessageSquare, MoreVertical, Trash2 } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

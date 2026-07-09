@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useTranslations } from "next-intl"
-import { Activity, CheckCircle2, XCircle, Clock } from "lucide-react"
+import { Activity, CheckCircle2, XCircle, Clock } from "@/lib/icons"
 import { useProjectContext } from "@/components/bioinfoflow/project-context"
 import { useEvents } from "@/hooks/use-events"
 import { Progress } from "@/components/ui/progress"

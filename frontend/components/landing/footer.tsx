@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Github, Twitter, Linkedin } from "lucide-react"
+import { Github, Twitter, Linkedin } from "@/lib/icons"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { useTranslations } from "next-intl"
 

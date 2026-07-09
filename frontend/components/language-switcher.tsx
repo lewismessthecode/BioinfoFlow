@@ -2,7 +2,7 @@
 
 import { useTransition } from "react"
 import { useLocale, useTranslations } from "next-intl"
-import { Globe } from "lucide-react"
+import { Globe } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

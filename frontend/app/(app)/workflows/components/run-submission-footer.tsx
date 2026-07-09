@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronLeft, Eye, Loader2, Play } from "lucide-react"
+import { ChevronLeft, Eye, Loader2, Play } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 

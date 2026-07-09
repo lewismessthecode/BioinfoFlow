@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { ChevronDown, ChevronUp, ListChecks } from "lucide-react"
+import { ChevronDown, ChevronUp, ListChecks } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import type { AgentTodoDisplayItem } from "@/lib/agent-runtime"

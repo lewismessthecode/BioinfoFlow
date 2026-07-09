@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import type { AgentRuntimeEvent } from "@/lib/agent-runtime"

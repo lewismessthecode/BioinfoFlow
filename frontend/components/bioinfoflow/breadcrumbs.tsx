@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
-import { ChevronRight, FolderOpen, MessageSquare } from "lucide-react"
+import { ChevronRight, FolderOpen, MessageSquare } from "@/lib/icons"
 import { NAV_ROUTES } from "@/lib/nav-routes"
 import { useBreadcrumbDetail } from "./breadcrumb-context"
 

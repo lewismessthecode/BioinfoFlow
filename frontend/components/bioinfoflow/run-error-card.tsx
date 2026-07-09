@@ -1,7 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { RunError } from "@/lib/types"

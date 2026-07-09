@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react"
-import { FileBox, FolderTree, Globe, RotateCw, type LucideIcon, X } from "lucide-react"
+import { FileBox, FolderTree, Globe, RotateCw, type LucideIcon, X } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"

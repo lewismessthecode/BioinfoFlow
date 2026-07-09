@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Shield, Sparkles } from "lucide-react"
+import { Shield, Sparkles } from "@/lib/icons"
 
 import { Logo } from "@/components/bioinfoflow/logo"
 import { Button } from "@/components/ui/button"

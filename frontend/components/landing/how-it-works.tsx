@@ -1,6 +1,6 @@
 "use client"
 
-import { Folder, MessageSquare, GitBranch, Play, ChevronRight } from "lucide-react"
+import { Folder, MessageSquare, GitBranch, Play, ChevronRight } from "@/lib/icons"
 import { FadeInOnScroll, StaggerContainer, StaggerItem } from "@/components/ui/scroll-animations"
 import { useTranslations } from "next-intl"
 

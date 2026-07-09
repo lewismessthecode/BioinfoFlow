@@ -19,7 +19,7 @@ import {
   TerminalSquare,
   Trash2,
   X,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"

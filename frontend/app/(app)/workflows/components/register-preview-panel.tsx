@@ -3,7 +3,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
-} from "lucide-react"
+} from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import {
   getContainerRegistryLabel,

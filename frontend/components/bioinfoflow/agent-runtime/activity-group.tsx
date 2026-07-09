@@ -13,7 +13,7 @@ import {
   Play,
   TerminalSquare,
   Wrench,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import type { AgentRuntimeActivityGroup } from "@/lib/agent-runtime"

@@ -2,7 +2,7 @@
 
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
-import { Loader2 } from "lucide-react"
+import { Loader2 } from "@/lib/icons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {

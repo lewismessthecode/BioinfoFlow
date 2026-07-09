@@ -1,5 +1,5 @@
 import { useTranslations } from "next-intl"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle } from "@/lib/icons"
 import { cn } from "@/lib/utils"
 import type { WorkflowValidationError } from "@/lib/types"
 import type { RegistrationStep } from "./register-form-hook"

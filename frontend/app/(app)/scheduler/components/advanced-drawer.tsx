@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
-import { RotateCcw, Terminal as TerminalIcon } from "lucide-react"
+import { RotateCcw, Terminal as TerminalIcon } from "@/lib/icons"
 
 import { Button } from "@/components/ui/button"
 import { readTerminalTheme } from "@/lib/appearance/terminal-theme"

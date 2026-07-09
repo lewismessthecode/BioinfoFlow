@@ -12,7 +12,7 @@ import {
 } from "@/lib/storage-source-policy"
 import { apiRequest, getApiErrorMessage } from "@/lib/api"
 import { toast } from "sonner"
-import { FolderOpen, Loader2, Upload, X } from "lucide-react"
+import { FolderOpen, Loader2, Upload, X } from "@/lib/icons"
 
 interface FileFieldProps {
   field: FormField

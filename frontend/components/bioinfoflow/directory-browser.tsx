@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
-import { ArrowUp, Folder, FolderOpen, Loader2 } from "lucide-react"
+import { ArrowUp, Folder, FolderOpen, Loader2 } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,

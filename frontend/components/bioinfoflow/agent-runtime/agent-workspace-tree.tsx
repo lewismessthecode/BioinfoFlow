@@ -17,7 +17,7 @@ import {
   Search,
   TerminalSquare,
   X,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import type { AgentFsEntry } from "@/lib/agent-runtime"

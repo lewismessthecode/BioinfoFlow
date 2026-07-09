@@ -1,6 +1,6 @@
 "use client"
 
-import { Pencil, Search, Server } from "lucide-react"
+import { Pencil, Search, Server } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
