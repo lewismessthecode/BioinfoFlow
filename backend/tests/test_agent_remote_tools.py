@@ -303,6 +303,108 @@ async def test_remote_exec_uses_persisted_selected_connection(db_session):
 
 
 @pytest.mark.asyncio
+async def test_remote_exec_uses_single_execution_target_connection_when_omitted(db_session):
+    service = RemoteConnectionService(db_session)
+    selected = await service.create_connection(
+        {
+            "name": "Selected HPC",
+            "host": "selected.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "selected-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    agent_session = await _create_agent_session(
+        db_session,
+        session_metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(selected.id),
+            }
+        },
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="selected.cluster.example.org\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    tool = RemoteExecTool(executor=executor)
+
+    result = await tool.run(
+        {"command": "hostname"},
+        _tool_context(db_session, session_id=str(agent_session.id)),
+    )
+
+    assert result["connection"]["id"] == str(selected.id)
+    assert executor.calls[0]["connection"].id == str(selected.id)
+
+
+@pytest.mark.asyncio
+async def test_remote_exec_rejects_explicit_connection_outside_execution_target(
+    db_session,
+):
+    service = RemoteConnectionService(db_session)
+    selected = await service.create_connection(
+        {
+            "name": "Selected HPC",
+            "host": "selected.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "selected-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    other = await service.create_connection(
+        {
+            "name": "Other HPC",
+            "host": "other.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "other-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    agent_session = await _create_agent_session(
+        db_session,
+        session_metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(selected.id),
+            }
+        },
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="other.cluster.example.org\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    tool = RemoteExecTool(executor=executor)
+
+    with pytest.raises(NotFoundError):
+        await tool.run(
+            {"connection_id": str(other.id), "command": "hostname"},
+            _tool_context(db_session, session_id=str(agent_session.id)),
+        )
+    assert executor.calls == []
+
+
+@pytest.mark.asyncio
 async def test_remote_project_session_sets_connection_and_working_directory(db_session):
     connection = await RemoteConnectionService(db_session).create_connection(
         {
@@ -896,6 +998,52 @@ def test_default_registry_registers_remote_tools_with_expected_exposure():
     assert registry.get("remote.read_file").spec.write_scope == []
     assert registry.get("remote.list_dir").spec.risk_level == "read"
     assert registry.get("remote.list_dir").spec.write_scope == []
+
+
+def test_remote_ssh_toolset_exposure_hides_local_and_platform_tools():
+    registry = build_default_tool_registry()
+    exposure = ToolsetExposure(registry)
+    execution_target = {"type": "remote_ssh", "connection_id": "conn-1"}
+
+    execution_tools = exposure.exposed_names(
+        policy={"name": "execution"},
+        execution_target=execution_target,
+    )
+    plan_tools = exposure.exposed_names(
+        policy={"name": "plan"},
+        execution_target=execution_target,
+    )
+    worker_tools = exposure.exposed_names(
+        policy={"name": "execution"},
+        role="worker",
+        execution_target=execution_target,
+    )
+
+    hidden_prefixes = (
+        "files.",
+        "projects.",
+        "workflows.",
+        "runs.",
+        "images.",
+        "scheduler.",
+    )
+    assert "bash" not in execution_tools
+    assert "grep" not in execution_tools
+    assert "glob" not in execution_tools
+    assert not any(name.startswith(hidden_prefixes) for name in execution_tools)
+    assert {"remote.connections.list", "remote.exec", "remote.read_file", "remote.list_dir"} <= execution_tools
+    assert {"skills.list", "skills.load", "plugins.list", "web.search", "web.fetch"} <= execution_tools
+    assert {"todo_write", "ask_user"} <= execution_tools
+
+    assert "remote.exec" not in plan_tools
+    assert {"remote.read_file", "todo_write", "ask_user", "exit_plan_mode"} <= plan_tools
+    assert "bash" not in plan_tools
+
+    assert {"remote.connections.list", "remote.read_file", "remote.list_dir"} <= worker_tools
+    assert "remote.exec" not in worker_tools
+    assert "ask_user" not in worker_tools
+    assert "todo_write" not in worker_tools
+    assert "projects.list" not in worker_tools
 
 
 @pytest.mark.asyncio

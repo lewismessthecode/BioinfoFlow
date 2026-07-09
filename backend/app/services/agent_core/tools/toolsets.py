@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
+from app.services.agent_core.execution_target import is_remote_ssh_execution_target
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.specs import AgentToolSpec
 
@@ -20,6 +21,16 @@ PLAN_TOOLSET_POLICY = {"name": "plan"}
 
 # Planning helpers exposed on top of the read-only set in plan mode.
 _PLAN_EXTRA_TOOLS = frozenset({"todo_write", "ask_user", "exit_plan_mode"})
+_REMOTE_SSH_TARGET_NEUTRAL_TOOLS = frozenset(
+    {
+        "ask_user",
+        "exit_plan_mode",
+        "memory.list",
+        "plugins.list",
+        "todo_write",
+    }
+)
+_REMOTE_SSH_TARGET_PREFIXES = ("remote.", "skills.", "web.")
 
 
 @dataclass(frozen=True)
@@ -38,11 +49,22 @@ class ToolsetExposure:
         *,
         policy: dict | None,
         role: str = "orchestrator",
+        execution_target: dict | str | None = None,
     ) -> list[AgentToolSpec]:
-        names = self.exposed_names(policy=policy, role=role)
+        names = self.exposed_names(
+            policy=policy,
+            role=role,
+            execution_target=execution_target,
+        )
         return [self.registry.get(name).spec for name in sorted(names)]
 
-    def exposed_names(self, *, policy: dict | None, role: str = "orchestrator") -> set[str]:
+    def exposed_names(
+        self,
+        *,
+        policy: dict | None,
+        role: str = "orchestrator",
+        execution_target: dict | str | None = None,
+    ) -> set[str]:
         policy = policy or DEFAULT_TOOLSET_POLICY
         policy_name = str(policy.get("name") or "default")
         specs = self.registry.list_specs()
@@ -78,6 +100,12 @@ class ToolsetExposure:
         allowed_tools = policy.get("allowed_tools")
         if isinstance(allowed_tools, list) and allowed_tools:
             names &= {str(name) for name in allowed_tools}
+        if is_remote_ssh_execution_target(execution_target):
+            names &= {
+                spec.name
+                for spec in specs
+                if _is_remote_ssh_compatible_tool(spec)
+            }
         return names
 
     def decide(
@@ -86,8 +114,13 @@ class ToolsetExposure:
         tool_name: str,
         policy: dict | None,
         role: str = "orchestrator",
+        execution_target: dict | str | None = None,
     ) -> ToolExposureDecision:
-        names = self.exposed_names(policy=policy, role=role)
+        names = self.exposed_names(
+            policy=policy,
+            role=role,
+            execution_target=execution_target,
+        )
         if tool_name in names:
             return ToolExposureDecision(
                 allowed=True,
@@ -99,6 +132,12 @@ class ToolsetExposure:
             reasons=["tool is registered but not exposed for this session"],
             policy=policy or DEFAULT_TOOLSET_POLICY,
         )
+
+
+def _is_remote_ssh_compatible_tool(spec: AgentToolSpec) -> bool:
+    if spec.name in _REMOTE_SSH_TARGET_NEUTRAL_TOOLS:
+        return True
+    return spec.name.startswith(_REMOTE_SSH_TARGET_PREFIXES)
 
 
 def provider_tool_specs(specs: Iterable[AgentToolSpec]) -> list[dict]:

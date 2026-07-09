@@ -5,10 +5,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.config import settings
 from app.utils.exceptions import NotFoundError
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - fallback parser remains available
+    yaml = None
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(?P<frontmatter>.*?)\n---\s*\n(?P<body>.*)", re.DOTALL)
 _SAFE_SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+SKILL_PROMPT_SUMMARY_BUDGET_CHARS = 8000
 _EXCLUDED_SKILL_DIRS = frozenset(
     {
         ".git",
@@ -40,6 +47,8 @@ class AgentSkillManifest:
     path: Path
     title: str | None = None
     category: str | None = None
+    source: str = "configured"
+    root: Path | None = None
 
 
 class AgentSkillRegistry:
@@ -49,25 +58,39 @@ class AgentSkillRegistry:
             self._skills.setdefault(skill.name, skill)
 
     @classmethod
-    def from_directory(cls, root: Path | str) -> "AgentSkillRegistry":
-        root_path = Path(root).expanduser()
-        skills: list[AgentSkillManifest] = []
-        if not root_path.is_dir():
-            return cls(skills)
+    def from_directory(
+        cls,
+        root: Path | str,
+        *,
+        source: str = "configured",
+    ) -> "AgentSkillRegistry":
+        return cls(_discover_skills(root, source=source))
 
-        root_resolved = root_path.resolve()
-        for skill_file in sorted(root_path.glob("*/SKILL.md")):
-            if _is_excluded_skill_path(skill_file):
-                continue
-            try:
-                if not skill_file.resolve().is_relative_to(root_resolved):
-                    continue
-            except OSError:
-                continue
-            skill = _parse_skill_file(skill_file)
-            if skill is not None:
-                skills.append(skill)
+    @classmethod
+    def from_roots(
+        cls,
+        *,
+        repo_root: Path | str | None = None,
+        configured_root: Path | str | None = None,
+    ) -> "AgentSkillRegistry":
+        skills: list[AgentSkillManifest] = []
+        if repo_root is not None:
+            skills.extend(
+                _discover_skills(
+                    Path(repo_root).expanduser() / ".agents" / "skills",
+                    source="repo",
+                )
+            )
+        if configured_root is not None:
+            skills.extend(_discover_skills(configured_root, source="configured"))
         return cls(skills)
+
+    @classmethod
+    def from_default_roots(cls) -> "AgentSkillRegistry":
+        return cls.from_roots(
+            repo_root=settings.repo_root,
+            configured_root=settings.skills_root,
+        )
 
     def list(self) -> list[AgentSkillManifest]:
         return sorted(self._skills.values(), key=lambda skill: skill.name)
@@ -78,17 +101,49 @@ class AgentSkillRegistry:
             raise NotFoundError(f"Agent skill not found: {name}")
         return skill
 
-    def describe_for_prompt(self) -> str:
-        return "\n".join(
+    def describe_for_prompt(self, *, max_chars: int | None = None) -> str:
+        lines = [
             f"- {skill.name} ({skill.version}): {skill.description}"
             for skill in self.list()
-        )
+        ]
+        if max_chars is None:
+            return "\n".join(lines)
+        return _join_lines_with_budget(lines, max_chars=max_chars)
 
 
 class ActiveSkillResolutionError(ValueError):
     def __init__(self, missing: list[str]):
         self.missing = missing
         super().__init__(f"Unknown agent skill(s): {', '.join(missing)}")
+
+
+def _discover_skills(
+    root: Path | str,
+    *,
+    source: str,
+) -> list[AgentSkillManifest]:
+    root_path = Path(root).expanduser()
+    skills: list[AgentSkillManifest] = []
+    if not root_path.is_dir():
+        return skills
+
+    root_resolved = root_path.resolve()
+    for skill_file in sorted(root_path.glob("*/SKILL.md")):
+        if _is_excluded_skill_path(skill_file):
+            continue
+        try:
+            if not skill_file.resolve().is_relative_to(root_resolved):
+                continue
+        except OSError:
+            continue
+        skill = _parse_skill_file(
+            skill_file,
+            source=source,
+            root=root_resolved,
+        )
+        if skill is not None:
+            skills.append(skill)
+    return skills
 
 
 def is_safe_skill_name(value: str) -> bool:
@@ -127,7 +182,29 @@ def resolve_active_skills(
     return skills
 
 
-def _parse_skill_file(path: Path) -> AgentSkillManifest | None:
+def _join_lines_with_budget(lines: list[str], *, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    accepted: list[str] = []
+    used_chars = 0
+    for line in lines:
+        separator_chars = 1 if accepted else 0
+        next_chars = separator_chars + len(line)
+        if used_chars + next_chars > max_chars:
+            if not accepted:
+                return line[:max_chars]
+            break
+        accepted.append(line)
+        used_chars += next_chars
+    return "\n".join(accepted)
+
+
+def _parse_skill_file(
+    path: Path,
+    *,
+    source: str,
+    root: Path,
+) -> AgentSkillManifest | None:
     raw = path.read_text(encoding="utf-8")
     match = _FRONTMATTER_RE.match(raw)
     if not match:
@@ -145,11 +222,24 @@ def _parse_skill_file(path: Path) -> AgentSkillManifest | None:
         category=_as_str(frontmatter.get("category")),
         tags=_parse_tags(frontmatter.get("tags")),
         body=match.group("body").strip(),
-        path=path,
+        path=path.resolve(),
+        source=source,
+        root=root,
     )
 
 
 def _parse_frontmatter(text: str) -> dict[str, Any]:
+    if yaml is not None:
+        try:
+            loaded = yaml.safe_load(text)
+        except yaml.YAMLError:
+            loaded = None
+        if isinstance(loaded, dict):
+            return loaded
+    return _parse_simple_frontmatter(text)
+
+
+def _parse_simple_frontmatter(text: str) -> dict[str, Any]:
     values: dict[str, Any] = {}
     current_key: str | None = None
     current_items: list[str] = []
@@ -193,8 +283,16 @@ def _clean_tag(value: Any) -> str:
 
 
 def _as_str(value: Any) -> str | None:
-    if isinstance(value, str) and value.strip():
-        return value.strip().strip('"\'')
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value
+    elif isinstance(value, int | float):
+        text = str(value)
+    else:
+        return None
+    if text.strip():
+        return text.strip().strip('"\'')
     return None
 
 

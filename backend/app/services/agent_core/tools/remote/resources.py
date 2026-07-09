@@ -12,6 +12,7 @@ from app.repositories.agent_core_repo import AgentSessionRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.authorization_service import AuthorizationService
+from app.services.agent_core.execution_target import selected_remote_connection_ids_from_policy
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.remote_execution import (
@@ -193,7 +194,7 @@ class RemoteExecTool:
                 "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 60},
                 "output_limit": {"type": "integer", "minimum": 100, "maximum": 50000},
             },
-            "required": ["connection_id", "command"],
+            "required": ["command"],
             "additionalProperties": False,
         },
         output_schema={
@@ -258,7 +259,7 @@ class RemoteReadFileTool:
                 "max_bytes": {"type": "integer", "minimum": 1, "maximum": 65536},
                 "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 30},
             },
-            "required": ["connection_id", "path"],
+            "required": ["path"],
             "additionalProperties": False,
         },
         output_schema={
@@ -331,7 +332,7 @@ class RemoteListDirTool:
                 "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 30},
                 "output_limit": {"type": "integer", "minimum": 100, "maximum": 50000},
             },
-            "required": ["connection_id", "path"],
+            "required": ["path"],
             "additionalProperties": False,
         },
         output_schema={
@@ -389,11 +390,25 @@ async def _resolve_connection(
     resolver_factory: ResolverFactory,
 ) -> RemoteConnectionConfig:
     resolver = resolver_factory(context.db)
-    return await resolver.get(
-        _required_string(input, "connection_id"),
+    connection_id = input.get("connection_id")
+    if isinstance(connection_id, str) and connection_id.strip():
+        return await resolver.get(
+            connection_id.strip(),
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+            session_id=context.session_id,
+        )
+    connections = await resolver.list(
         workspace_id=context.workspace_id,
         user_id=context.user_id,
         session_id=context.session_id,
+    )
+    if len(connections) == 1:
+        return connections[0]
+    if not connections:
+        raise NotFoundError("Remote connection not found")
+    raise BadRequestError(
+        "connection_id is required when multiple remote connections are selected"
     )
 
 
@@ -509,24 +524,7 @@ def _remote_path_for_context(path: str, working_directory: str | None) -> str:
 
 
 def _selected_ids_from_policy(policy: Any) -> list[str]:
-    if not isinstance(policy, dict):
-        return []
-    ids: list[str] = []
-    for key in (
-        "remote_connection_id",
-        "selected_remote_connection_id",
-        "current_remote_connection_id",
-    ):
-        value = policy.get(key)
-        if isinstance(value, str) and value:
-            ids.append(value)
-    for key in ("remote_connection", "selected_remote_connection", "remote"):
-        value = policy.get(key)
-        if isinstance(value, dict):
-            nested = value.get("id") or value.get("connection_id")
-            if isinstance(nested, str) and nested:
-                ids.append(nested)
-    return ids
+    return selected_remote_connection_ids_from_policy(policy)
 
 
 def _is_uuid_string(value: str) -> bool:

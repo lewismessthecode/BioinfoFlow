@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -70,6 +71,29 @@ def _write_skill(name: str, description: str, body: str) -> None:
                 f"name: {name}",
                 f"description: {description}",
                 "tags: [agent, test]",
+                "---",
+                body,
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_repo_skill(
+    repo_root: Path,
+    name: str,
+    description: str,
+    body: str,
+) -> None:
+    skill_dir = repo_root / ".agents" / "skills" / name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                f"name: {name}",
+                f"description: {description}",
+                "tags: [repo, test]",
                 "---",
                 body,
             ]
@@ -161,7 +185,12 @@ async def _create_scoped_llm_model(
 
 
 @pytest.mark.asyncio
-async def test_agent_skills_api_lists_and_loads_local_manifests(async_client):
+async def test_agent_skills_api_lists_and_loads_local_manifests(
+    async_client,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "repo_root", str(tmp_path / "empty-repo"))
     _write_skill(
         "nextflow-debugging",
         "Diagnose failed Nextflow runs.",
@@ -177,6 +206,8 @@ async def test_agent_skills_api_lists_and_loads_local_manifests(async_client):
             "version": "0.1.0",
             "description": "Diagnose failed Nextflow runs.",
             "tags": ["agent", "test"],
+            "source": "configured",
+            "root": str(skills_root()),
             "path": str(skills_root() / "nextflow-debugging" / "SKILL.md"),
         }
     ]
@@ -188,6 +219,49 @@ async def test_agent_skills_api_lists_and_loads_local_manifests(async_client):
 
     missing = await async_client.get("/api/v1/agent/skills/missing-skill")
     assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_agent_skills_api_prefers_repo_skill_over_configured_duplicate(
+    async_client,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo_root = tmp_path / "repo"
+    repo_skills_root = repo_root / ".agents" / "skills"
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    _write_skill(
+        "shared-qc",
+        "Configured duplicate guidance.",
+        "Configured body should not be loaded.",
+    )
+    _write_repo_skill(
+        repo_root,
+        "shared-qc",
+        "Repo duplicate guidance.",
+        "Repo body should be loaded.",
+    )
+
+    listed = await async_client.get("/api/v1/agent/skills")
+
+    assert listed.status_code == 200
+    assert listed.json()["data"]["skills"] == [
+        {
+            "name": "shared-qc",
+            "version": "0.1.0",
+            "description": "Repo duplicate guidance.",
+            "tags": ["repo", "test"],
+            "source": "repo",
+            "root": str(repo_skills_root.resolve()),
+            "path": str(repo_skills_root / "shared-qc" / "SKILL.md"),
+        }
+    ]
+
+    loaded = await async_client.get("/api/v1/agent/skills/shared-qc")
+    assert loaded.status_code == 200
+    assert loaded.json()["data"]["source"] == "repo"
+    assert loaded.json()["data"]["root"] == str(repo_skills_root.resolve())
+    assert loaded.json()["data"]["body"] == "Repo body should be loaded."
 
 
 @pytest.mark.asyncio
@@ -223,6 +297,37 @@ async def test_agent_turn_create_accepts_valid_active_skills(async_client):
         },
     )
     assert rejected.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_agent_turn_create_accepts_repo_scoped_active_skills(
+    async_client,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo_root = tmp_path / "repo"
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    _write_repo_skill(
+        repo_root,
+        "repo-run-triage",
+        "Triage failed runs from this repository.",
+        "Repo-local turn guidance.",
+    )
+    create_session = await async_client.post("/api/v1/agent/sessions", json={})
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+
+    create_turn = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={
+            "input_text": "Analyze this failed run.",
+            "active_skill_names": ["repo-run-triage"],
+        },
+    )
+
+    assert create_turn.status_code == 202
+    turn = create_turn.json()["data"]
+    assert turn["active_skill_names"] == ["repo-run-triage"]
 
 
 @pytest.mark.asyncio
@@ -593,6 +698,100 @@ async def test_agent_core_metadata_patch_preserves_model_selection(async_client)
         "model_selection": {"model_id": model["id"]},
     }
     assert updated["model_selection"] == {"model_id": model["id"]}
+
+
+@pytest.mark.asyncio
+async def test_agent_core_session_execution_target_contract(async_client):
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "title": "Remote target",
+            "metadata": {"batch": "b001"},
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "connection-1",
+            },
+        },
+    )
+
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+    assert session["execution_target"] == {
+        "type": "remote_ssh",
+        "connection_id": "connection-1",
+    }
+    assert session["metadata"] == {
+        "batch": "b001",
+        "execution_target": {
+            "type": "remote_ssh",
+            "connection_id": "connection-1",
+        },
+    }
+
+    fetched = await async_client.get(f"/api/v1/agent/sessions/{session['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["data"]["execution_target"] == {
+        "type": "remote_ssh",
+        "connection_id": "connection-1",
+    }
+
+    updated = await async_client.patch(
+        f"/api/v1/agent/sessions/{session['id']}",
+        json={"execution_target": {"type": "local"}},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["data"]["execution_target"] == {"type": "local"}
+    assert updated.json()["data"]["metadata"]["execution_target"] == {"type": "local"}
+
+    legacy = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"metadata": {"remote_connection_id": "connection-2"}},
+    )
+    assert legacy.status_code == 201
+    assert legacy.json()["data"]["execution_target"] == {
+        "type": "remote_ssh",
+        "connection_id": "connection-2",
+    }
+    assert legacy.json()["data"]["metadata"] == {"remote_connection_id": "connection-2"}
+
+    alias_session_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "execution_target": {
+                "kind": "remote_ssh",
+                "remote_connection_id": "connection-3",
+            },
+        },
+    )
+    assert alias_session_response.status_code == 201
+    alias_session = alias_session_response.json()["data"]
+    assert alias_session["execution_target"] == {
+        "type": "remote_ssh",
+        "connection_id": "connection-3",
+    }
+
+    turn_response = await async_client.post(
+        f"/api/v1/agent/sessions/{alias_session['id']}/turns",
+        json={
+            "input_text": "Run this turn locally.",
+            "execution_target": {"kind": "local"},
+        },
+    )
+    assert turn_response.status_code == 202
+    assert turn_response.json()["data"]["model_profile_snapshot"]["metadata"][
+        "execution_target"
+    ] == {"type": "local"}
+
+    refetched_alias_session = await async_client.get(
+        f"/api/v1/agent/sessions/{alias_session['id']}"
+    )
+    assert refetched_alias_session.status_code == 200
+    assert refetched_alias_session.json()["data"]["execution_target"] == {
+        "type": "local"
+    }
+    assert refetched_alias_session.json()["data"]["metadata"]["execution_target"] == {
+        "type": "local"
+    }
 
 
 @pytest.mark.asyncio

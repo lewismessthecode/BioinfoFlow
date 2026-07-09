@@ -4,13 +4,19 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_core import AgentActionStatus
-from app.repositories.agent_core_repo import AgentActionRepository, AgentArtifactRepository
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentArtifactRepository,
+    AgentSessionRepository,
+)
 from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.execution_target import execution_target_from_session
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.tools.approval import action_requires_resume
@@ -116,6 +122,12 @@ def _resolve_requested_risk(tool: AgentTool, normalized_input: dict[str, Any]):
     return tool.spec.risk_level
 
 
+def _tool_role(session) -> str:
+    if session is not None and str(getattr(session, "role_profile", "")) == "worker":
+        return "worker"
+    return "orchestrator"
+
+
 @dataclass(frozen=True)
 class ToolExecutionResult:
     action_id: str
@@ -147,12 +159,18 @@ class AgentToolExecutor:
         automation_mode: str = "assisted",
         tool_call_id: str | None = None,
         role: str = "orchestrator",
+        execution_target: dict | str | None = None,
     ) -> ToolExecutionResult:
         tool = self.registry.get(tool_name)
+        if execution_target is None:
+            session = await self._session_for_context(context)
+            if session is not None:
+                execution_target = execution_target_from_session(session)
         exposure = self.exposure.decide(
             tool_name=tool_name,
             policy=toolset_policy,
             role=role,
+            execution_target=execution_target,
         )
         if not exposure.allowed:
             raise PermissionDeniedError("; ".join(exposure.reasons))
@@ -272,7 +290,40 @@ class AgentToolExecutor:
         if decision.get("decision") not in {"allow", "approve", "modify", "answer"}:
             raise PermissionDeniedError("Agent action has not been approved")
         tool = self.registry.get(action.name)
+        session = await self._session_for_context(context)
+        exposure = self.exposure.decide(
+            tool_name=tool.spec.name,
+            policy=(
+                getattr(session, "toolset_policy", None)
+                if session is not None
+                else action.exposure_policy
+            ),
+            role=_tool_role(session),
+            execution_target=(
+                execution_target_from_session(session) if session is not None else None
+            ),
+        )
+        if not exposure.allowed:
+            raise PermissionDeniedError("; ".join(exposure.reasons))
         return await self._run_action(action=action, tool=tool, context=context)
+
+    async def _session_for_context(self, context: AgentToolContext):
+        session_id = getattr(context, "session_id", None)
+        if not session_id:
+            return None
+        try:
+            UUID(str(session_id))
+        except (TypeError, ValueError):
+            return None
+        session = await AgentSessionRepository(self.session).get(str(session_id))
+        if session is None:
+            return None
+        if (
+            str(session.workspace_id) != str(context.workspace_id)
+            or str(session.user_id) != str(context.user_id)
+        ):
+            return None
+        return session
 
     async def _run_action(
         self,

@@ -4,19 +4,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.agent_core import AgentMemoryStatus
-from app.path_layout import skills_root, state_root
+from app.path_layout import state_root
 from app.repositories.agent_core_repo import AgentMemoryRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.run_repo import RunRepository
 from app.repositories.workflow_repo import WorkflowRepository
 from app.services.agent_core.context.remote import render_remote_connection_context
+from app.services.agent_core.context.instructions import ProjectInstructionResolver
 from app.services.agent_core.context.system_prompt import resolve_system_prompt_prefix
 from app.services.agent_core.plugins import AgentPluginRegistry
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.skills import (
     ActiveSkillResolutionError,
     AgentSkillRegistry,
+    SKILL_PROMPT_SUMMARY_BUDGET_CHARS,
     resolve_active_skills,
 )
 from app.services.agent_core.metrics import agent_metrics
@@ -31,6 +33,7 @@ class AgentContextAssembler:
         self.db = session
         self.transcript = AgentTranscriptStore(session)
         self.memories = AgentMemoryRepository(session)
+        self.project_instructions = ProjectInstructionResolver(session)
 
     async def provider_messages(
         self,
@@ -43,6 +46,12 @@ class AgentContextAssembler:
         # Stable, cache-friendly identity prefix comes first; everything that
         # changes per session/turn is appended after it.
         system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
+        project_instruction_context = await self.project_instructions.resolve(
+            agent_session,
+            turn=turn,
+        )
+        if project_instruction_context:
+            system_sections.append(project_instruction_context)
         environment_context = await self._environment_context(
             agent_session, exposed_tools
         )
@@ -184,7 +193,7 @@ class AgentContextAssembler:
         return "\n".join(lines)
 
     def _skills_context(self, turn) -> str | None:
-        skills = AgentSkillRegistry.from_directory(skills_root())
+        skills = AgentSkillRegistry.from_default_roots()
         plugins = AgentPluginRegistry.from_directory(state_root() / "agent_core" / "plugins")
         lines: list[str] = []
         if skills.list():
@@ -193,7 +202,11 @@ class AgentContextAssembler:
                 "Skill summaries are available every turn. Load full skill bodies only "
                 "when the skill is relevant or explicitly requested."
             )
-            lines.extend(f"- {line}" for line in skills.describe_for_prompt().splitlines())
+            summary = skills.describe_for_prompt(
+                max_chars=SKILL_PROMPT_SUMMARY_BUDGET_CHARS
+            )
+            if summary:
+                lines.extend(summary.splitlines())
 
         active_skill_names = _active_skill_names_for_turn(turn)
         if active_skill_names:
@@ -222,6 +235,7 @@ class AgentContextAssembler:
                     f"- {plugin.id} ({plugin.version}): tools={plugin.tools}, skills={plugin.skills}"
                 )
         return "\n".join(lines) if lines else None
+
 
 def _active_skill_names_for_turn(turn) -> list[str]:
     snapshot = getattr(turn, "model_profile_snapshot", None) or {}

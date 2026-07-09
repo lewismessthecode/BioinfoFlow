@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.project_repo import ProjectRepository
+from app.services.agent_core.execution_target import selected_remote_connection_ids_from_policy
 from app.services.agent_core.tools.remote import (
     RemoteConnectionResolver,
     SessionMetadataRemoteConnectionResolver,
@@ -89,20 +90,6 @@ def selected_remote_connection_id(agent_session) -> str | None:
 
 
 def _selected_id_from_policy(policy: Any) -> str | None:
-    if not isinstance(policy, dict):
-        return None
-    for key in (
-        "remote_connection_id",
-        "selected_remote_connection_id",
-        "current_remote_connection_id",
-    ):
-        value = policy.get(key)
-        if isinstance(value, str) and value:
-            return value
-    for key in ("remote_connection", "selected_remote_connection", "remote"):
-        value = policy.get(key)
-        if isinstance(value, dict):
-            nested = value.get("id") or value.get("connection_id")
-            if isinstance(nested, str) and nested:
-                return nested
+    for connection_id in selected_remote_connection_ids_from_policy(policy):
+        return connection_id
     return None
