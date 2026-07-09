@@ -1,7 +1,9 @@
 import { apiRequest, buildApiUrl } from "@/lib/api"
+import { agentExecutionTargetForRequest } from "./execution-target"
 import type {
   AgentActionDecision,
   AgentAnswer,
+  AgentExecutionTarget,
   AgentFsFile,
   AgentFsTree,
   AgentMode,
@@ -21,6 +23,7 @@ type CreateAgentRuntimeSessionInput = {
   permissionMode?: AgentPermissionMode
   mode?: AgentMode
   modelSelection?: AgentModelSelection | null
+  executionTarget?: AgentExecutionTarget | null
   metadata?: Record<string, unknown> | null
 }
 
@@ -55,6 +58,7 @@ export const createAgentRuntimeSession = async (
       automation_mode: "assisted",
       mode: input.mode,
       model_selection: input.modelSelection,
+      execution_target: agentExecutionTargetForRequest(input.executionTarget),
       metadata: input.metadata,
     }),
   })
@@ -93,10 +97,19 @@ export const updateAgentRuntimeSessionPermissionMode = async (
 export const updateAgentRuntimeSessionMetadata = async (
   sessionId: string,
   metadata: Record<string, unknown> | null,
+  executionTarget?: AgentExecutionTarget | null,
 ) => {
   const response = await apiRequest<AgentRuntimeSession>(
     `/agent/sessions/${sessionId}`,
-    { method: "PATCH", body: JSON.stringify({ metadata }) },
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        metadata,
+        ...(executionTarget !== undefined
+          ? { execution_target: agentExecutionTargetForRequest(executionTarget) }
+          : {}),
+      }),
+    },
   )
   return response.data
 }
@@ -107,6 +120,7 @@ export const createAgentRuntimeTurn = async (input: {
   inputParts?: AgentRuntimeInputPart[] | null
   activeSkillNames?: string[] | null
   modelSelection?: AgentModelSelection | null
+  executionTarget?: AgentExecutionTarget | null
 }) => {
   const response = await apiRequest<AgentRuntimeTurn>(
     `/agent/sessions/${input.sessionId}/turns`,
@@ -119,6 +133,7 @@ export const createAgentRuntimeTurn = async (input: {
           ? { active_skill_names: input.activeSkillNames }
           : {}),
         model_selection: input.modelSelection,
+        execution_target: agentExecutionTargetForRequest(input.executionTarget),
       }),
     },
   )

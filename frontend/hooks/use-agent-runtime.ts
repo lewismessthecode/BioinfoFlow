@@ -17,6 +17,7 @@ import {
   updateAgentRuntimeSessionPermissionMode,
   type AgentActionDecision,
   type AgentAnswer,
+  type AgentExecutionTarget,
   type AgentMode,
   type AgentModelSelection,
   type AgentPermissionMode,
@@ -221,6 +222,7 @@ export function useAgentRuntime(
     async (
       modelSelection?: AgentModelSelection | null,
       metadata?: Record<string, unknown>,
+      executionTarget?: AgentExecutionTarget,
     ) => {
       if (activeSession) return activeSession
       const created = await createAgentRuntimeSession({
@@ -228,6 +230,7 @@ export function useAgentRuntime(
         permissionMode: draftPermissionMode,
         mode: draftMode,
         modelSelection,
+        executionTarget,
         metadata,
       })
       setSessions((current) => [created, ...current])
@@ -242,8 +245,30 @@ export function useAgentRuntime(
   const ensureSessionRemoteConnection = useCallback(
     async (session: AgentRuntimeSession, remoteConnectionId?: string | null) => {
       if (remoteConnectionId === undefined) return session
-      if (session.metadata?.remote_connection_id === remoteConnectionId) return session
-      if (!remoteConnectionId && !session.metadata?.remote_connection_id) return session
+      const executionTarget = executionTargetForRemoteConnectionId(remoteConnectionId)
+      const currentRemoteConnectionId =
+        typeof session.metadata?.remote_connection_id === "string"
+          ? session.metadata.remote_connection_id
+          : null
+      const currentTarget = session.execution_target
+      const currentTargetKind = currentTarget?.kind ?? currentTarget?.type
+      const currentTargetConnectionId =
+        currentTarget?.remote_connection_id ?? currentTarget?.connection_id ?? null
+      if (
+        remoteConnectionId &&
+        currentRemoteConnectionId === remoteConnectionId &&
+        currentTargetKind === "remote_ssh" &&
+        currentTargetConnectionId === remoteConnectionId
+      ) {
+        return session
+      }
+      if (
+        !remoteConnectionId &&
+        !currentRemoteConnectionId &&
+        currentTargetKind !== "remote_ssh"
+      ) {
+        return session
+      }
       const metadata = { ...(session.metadata ?? {}) }
       if (remoteConnectionId) {
         metadata.remote_connection_id = remoteConnectionId
@@ -252,7 +277,7 @@ export function useAgentRuntime(
       }
       const updated = await updateAgentRuntimeSessionMetadata(session.id, {
         ...metadata,
-      })
+      }, executionTarget)
       setSessions((current) => mergeSessionList(current, updated))
       if (activeSessionIdRef.current === updated.id) {
         dispatch({ type: "session.selected", session: updated })
@@ -283,8 +308,14 @@ export function useAgentRuntime(
         const metadata = remoteConnectionId
           ? { remote_connection_id: remoteConnectionId }
           : undefined
+        const executionTarget =
+          executionTargetForRemoteConnectionId(remoteConnectionId)
         const session = await ensureSessionRemoteConnection(
-          await ensureSessionWithMetadata(options?.modelSelection, metadata),
+          await ensureSessionWithMetadata(
+            options?.modelSelection,
+            metadata,
+            executionTarget,
+          ),
           remoteConnectionId,
         )
         const turn = await createAgentRuntimeTurn({
@@ -293,6 +324,7 @@ export function useAgentRuntime(
           inputParts: options?.inputParts,
           activeSkillNames: options?.activeSkillNames,
           modelSelection: options?.modelSelection,
+          executionTarget,
         })
         dispatch({ type: "turn.upsert", turn })
         await refreshState(session.id)
@@ -469,6 +501,21 @@ function eventTriggersStateRefresh(type: string) {
 
 function isPermissionMode(value: unknown): value is AgentPermissionMode {
   return value === "ask_each_action" || value === "guarded_auto" || value === "bypass"
+}
+
+function executionTargetForRemoteConnectionId(
+  remoteConnectionId: string | null | undefined,
+): AgentExecutionTarget | undefined {
+  if (remoteConnectionId === undefined) return undefined
+  if (remoteConnectionId) {
+    return {
+      kind: "remote_ssh",
+      type: "remote_ssh",
+      remote_connection_id: remoteConnectionId,
+      connection_id: remoteConnectionId,
+    }
+  }
+  return { kind: "local", type: "local" }
 }
 
 function timestamp(value?: string | null) {

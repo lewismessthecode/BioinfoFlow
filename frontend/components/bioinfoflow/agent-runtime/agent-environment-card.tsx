@@ -1,11 +1,21 @@
 "use client"
 
 import type React from "react"
-import { CheckCircle2, Circle, GitBranch, GitCompare, Settings, Waypoints } from "@/lib/icons"
+import {
+  CheckCircle2,
+  Circle,
+  GitBranch,
+  GitCompare,
+  Monitor,
+  Server,
+  Settings,
+  Waypoints,
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import {
   buildAgentRuntimeToolActivities,
+  resolveAgentExecutionTarget,
   type AgentRuntimeArtifact,
   type AgentRuntimeEvent,
   type AgentRuntimeSession,
@@ -41,7 +51,18 @@ export function AgentEnvironmentCard({
     ...artifacts.flatMap((artifact) => artifactPaths(artifact)),
   ]).slice(0, 5)
   const remoteProjectRoot = remoteMetadataValue(session?.metadata, "remote_project_root")
-  const remoteConnectionId = remoteMetadataValue(session?.metadata, "remote_connection_id")
+  const executionTarget = resolveAgentExecutionTarget(session)
+  const remoteConnectionId =
+    executionTarget.kind === "remote_ssh" ? executionTarget.remoteConnectionId : null
+  const hasNormalizedExecutionTarget = executionTarget.source === "normalized"
+  const visibleRemoteProjectRoot =
+    !hasNormalizedExecutionTarget || executionTarget.kind === "remote_ssh"
+      ? remoteProjectRoot
+      : null
+  const executionTargetValue =
+    executionTarget.kind === "remote_ssh"
+      ? `${t("runtimeLocation.remote.label")} · ${executionTarget.remoteConnectionId}`
+      : t("runtimeLocation.local.label")
 
   return (
     <section
@@ -72,11 +93,22 @@ export function AgentEnvironmentCard({
           label={t("environment.worktree")}
           value={projectId || t("environment.none")}
         />
-        {remoteProjectRoot ? (
+        <EnvironmentRow
+          icon={
+            executionTarget.kind === "remote_ssh" ? (
+              <Server className="h-4 w-4" />
+            ) : (
+              <Monitor className="h-4 w-4" />
+            )
+          }
+          label={t("environment.executionTarget")}
+          value={executionTargetValue}
+        />
+        {visibleRemoteProjectRoot ? (
           <EnvironmentRow
             icon={<Waypoints className="h-4 w-4" />}
             label={t("environment.remoteProject")}
-            value={remoteConnectionId ? `${remoteProjectRoot} · ${remoteConnectionId}` : remoteProjectRoot}
+            value={remoteConnectionId ? `${visibleRemoteProjectRoot} · ${remoteConnectionId}` : visibleRemoteProjectRoot}
           />
         ) : null}
         <EnvironmentRow

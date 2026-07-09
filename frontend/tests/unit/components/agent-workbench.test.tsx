@@ -1625,6 +1625,66 @@ describe("AgentWorkbench", () => {
     )
   })
 
+  it("prefers a normalized session execution target over legacy remote metadata", async () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({
+      session: {
+        ...baseSession,
+        execution_target: {
+          kind: "remote_ssh",
+          remote_connection_id: "normalized-connection",
+        },
+        metadata: { remote_connection_id: "legacy-connection" },
+      } as AgentRuntimeSession,
+      send,
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Check the normalized host" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Check the normalized host",
+        expect.objectContaining({
+          remoteConnectionId: "normalized-connection",
+        }),
+      ),
+    )
+  })
+
+  it("reads backend-normalized type and connection id execution targets", async () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    setupRuntime({
+      session: {
+        ...baseSession,
+        execution_target: {
+          type: "remote_ssh",
+          connection_id: "backend-normalized-connection",
+        },
+        metadata: { remote_connection_id: "legacy-connection" },
+      } as AgentRuntimeSession,
+      send,
+    })
+
+    render(<AgentWorkbench />)
+
+    const input = screen.getByPlaceholderText("Message Bioinfoflow...")
+    fireEvent.change(input, { target: { value: "Check the backend host" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "Check the backend host",
+        expect.objectContaining({
+          remoteConnectionId: "backend-normalized-connection",
+        }),
+      ),
+    )
+  })
+
   it("does not send a null remote connection override before a session exists", async () => {
     const send = vi.fn().mockResolvedValue(undefined)
     setupRuntime({
