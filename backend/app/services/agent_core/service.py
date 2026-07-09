@@ -172,9 +172,14 @@ class AgentCoreService:
                 session.session_metadata if hasattr(session, "session_metadata") else None
             )
             metadata = updates["metadata"] if "metadata" in updates else current_metadata
+            execution_target = (
+                updates["execution_target"]
+                if "execution_target" in updates
+                else (current_metadata or {}).get("execution_target")
+            )
             metadata = session_metadata_with_execution_target(
                 metadata,
-                updates.get("execution_target") if "execution_target" in updates else None,
+                execution_target,
             )
             model_selection = (
                 updates["model_selection"]

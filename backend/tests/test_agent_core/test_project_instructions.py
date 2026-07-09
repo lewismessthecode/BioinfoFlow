@@ -8,6 +8,9 @@ from app.config import settings
 from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
+from app.services.agent_core.context.instructions import (
+    _remote_read_first_existing_command,
+)
 import app.services.agent_core.context as context_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -238,6 +241,117 @@ async def test_remote_project_instruction_resolver_uses_remote_reader_seam():
             "remote_root": "/srv/project",
         },
     ]
+
+
+def test_remote_instruction_read_command_skips_symlink_escapes():
+    command = _remote_read_first_existing_command(
+        directory="/srv/project",
+        filenames=("AGENTS.md",),
+        max_bytes=1024,
+        remote_root="/srv/project",
+    )
+
+    assert 'file_real=$(realpath -- "$path") || continue' in command
+    assert 'case "$file_real" in "$root_real"|"$root_real"/*) ;; *) continue;; esac' in command
+    assert 'head -c 1025 -- "$path"' in command
+
+
+@pytest.mark.asyncio
+async def test_remote_project_instruction_resolver_accepts_canonical_connection_id():
+    resolver_cls, instruction_file_cls = _instruction_classes()
+
+    class FakeRemoteReader:
+        async def read_first_existing(
+            self,
+            *,
+            agent_session,
+            connection_id: str,
+            directory: str,
+            filenames,
+            max_bytes: int,
+            remote_root: str,
+        ):
+            del agent_session, filenames, max_bytes, remote_root
+            if connection_id == "canonical-conn" and directory == "/srv/project":
+                return instruction_file_cls(
+                    source="ssh://canonical-conn/srv/project/AGENTS.md",
+                    content="canonical target",
+                    truncated=False,
+                )
+            return None
+
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "remote_project_root": "/srv/project",
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "canonical-conn",
+                "cwd": "/srv/project",
+            },
+        },
+    )
+
+    context = await resolver_cls(
+        max_bytes=32768,
+        remote_reader=FakeRemoteReader(),
+    ).resolve(session)
+
+    assert context is not None
+    assert "canonical target" in context
+    assert "Project instructions unavailable" not in context
+
+
+@pytest.mark.asyncio
+async def test_remote_project_instruction_partial_failure_keeps_prior_files():
+    resolver_cls, instruction_file_cls = _instruction_classes()
+
+    class PartiallyFailingRemoteReader:
+        async def read_first_existing(
+            self,
+            *,
+            agent_session,
+            connection_id: str,
+            directory: str,
+            filenames,
+            max_bytes: int,
+            remote_root: str,
+        ):
+            del agent_session, connection_id, filenames, max_bytes, remote_root
+            if directory == "/srv/project":
+                return instruction_file_cls(
+                    source="ssh://conn-1/srv/project/AGENTS.md",
+                    content="remote root survives",
+                    truncated=False,
+                )
+            raise RuntimeError("leaf disappeared")
+
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "remote_connection_id": "conn-1",
+            "remote_project_root": "/srv/project",
+            "execution_target": {
+                "kind": "remote_ssh",
+                "cwd": "/srv/project/analysis",
+            },
+        },
+    )
+
+    context = await resolver_cls(
+        max_bytes=32768,
+        remote_reader=PartiallyFailingRemoteReader(),
+    ).resolve(session)
+
+    assert context is not None
+    assert "remote root survives" in context
+    assert "## Project instruction diagnostics" in context
+    assert "Skipped /srv/project/analysis" in context
+    assert "Project instructions unavailable" not in context
 
 
 @pytest.mark.asyncio

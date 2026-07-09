@@ -735,6 +735,23 @@ async def test_agent_core_session_execution_target_contract(async_client):
         "connection_id": "connection-1",
     }
 
+    metadata_only_update = await async_client.patch(
+        f"/api/v1/agent/sessions/{session['id']}",
+        json={"metadata": {"batch": "b002"}},
+    )
+    assert metadata_only_update.status_code == 200
+    assert metadata_only_update.json()["data"]["execution_target"] == {
+        "type": "remote_ssh",
+        "connection_id": "connection-1",
+    }
+    assert metadata_only_update.json()["data"]["metadata"] == {
+        "batch": "b002",
+        "execution_target": {
+            "type": "remote_ssh",
+            "connection_id": "connection-1",
+        },
+    }
+
     updated = await async_client.patch(
         f"/api/v1/agent/sessions/{session['id']}",
         json={"execution_target": {"type": "local"}},

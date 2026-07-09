@@ -86,12 +86,25 @@ def is_remote_ssh_execution_target(execution_target: Any) -> bool:
 def selected_remote_connection_ids_from_policy(policy: Any) -> list[str]:
     if not isinstance(policy, dict):
         return []
-    ids: list[str] = []
     execution_target = policy.get("execution_target")
     if isinstance(execution_target, dict):
-        ids.extend(_selected_ids_from_mapping(execution_target))
-    ids.extend(_selected_ids_from_mapping(policy))
-    return ids
+        target_ids = _selected_ids_from_mapping(execution_target)
+        if target_ids:
+            return _dedupe(target_ids)
+        target_type = str(
+            execution_target.get("type") or execution_target.get("kind") or ""
+        ).strip().lower()
+        if target_type in {"", "local"}:
+            return []
+        if target_type in {"remote", "remote_ssh", "ssh"}:
+            return _dedupe(_selected_ids_from_mapping(policy))
+    elif isinstance(execution_target, str):
+        target_type = execution_target.strip().lower()
+        if target_type in {"", "local"}:
+            return []
+        if target_type in {"remote", "remote_ssh", "ssh"}:
+            return _dedupe(_selected_ids_from_mapping(policy))
+    return _dedupe(_selected_ids_from_mapping(policy))
 
 
 def _execution_target_from_metadata(metadata: dict[str, Any] | None) -> Any:
@@ -130,3 +143,13 @@ def _selected_ids_from_mapping(policy: dict[str, Any]) -> list[str]:
                 ids.append(nested.strip())
     return ids
 
+
+def _dedupe(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped

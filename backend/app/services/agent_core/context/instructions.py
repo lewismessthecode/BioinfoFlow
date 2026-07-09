@@ -172,12 +172,13 @@ class ProjectInstructionResolver:
 
         current = _remote_current(remote_root, _first_string(target, _CWD_KEYS))
         files: list[ProjectInstructionFile] = []
+        diagnostics: list[str] = []
         used_bytes = 0
-        try:
-            for directory in _remote_directories(remote_root, current):
-                remaining = self.max_bytes - used_bytes
-                if remaining <= 0:
-                    break
+        for directory in _remote_directories(remote_root, current):
+            remaining = self.max_bytes - used_bytes
+            if remaining <= 0:
+                break
+            try:
                 instruction = await self.remote_reader.read_first_existing(
                     agent_session=agent_session,
                     connection_id=connection_id,
@@ -186,15 +187,20 @@ class ProjectInstructionResolver:
                     max_bytes=remaining,
                     remote_root=remote_root,
                 )
-                if instruction is None:
-                    continue
-                files.append(instruction)
-                used_bytes += _content_size(instruction.content)
-                if instruction.truncated:
-                    break
-        except Exception:  # noqa: BLE001 - remote reads must never break a turn
+            except Exception:  # noqa: BLE001 - remote reads must never break a turn
+                diagnostics.append(
+                    f"Skipped {directory}: remote instruction files could not be read."
+                )
+                continue
+            if instruction is None:
+                continue
+            files.append(instruction)
+            used_bytes += _content_size(instruction.content)
+            if instruction.truncated:
+                break
+        if not files and diagnostics:
             return _unavailable_marker("remote instruction files could not be read")
-        return _render(files)
+        return _render(files, diagnostics=diagnostics)
 
 
 _CWD_KEYS = (
@@ -249,6 +255,7 @@ def _remote_connection_id(target: dict[str, Any]) -> str:
     direct = _first_string(
         target,
         (
+            "connection_id",
             "remote_connection_id",
             "selected_remote_connection_id",
             "current_remote_connection_id",
@@ -375,6 +382,8 @@ def _remote_read_first_existing_command(
         f"for name in {quoted_names}; do "
         'path="$dir/$name"; '
         'if [ -f "$path" ]; then '
+        'file_real=$(realpath -- "$path") || continue; '
+        'case "$file_real" in "$root_real"|"$root_real"/*) ;; *) continue;; esac; '
         'printf "%s\\n" "$path"; '
         f'head -c {read_bytes} -- "$path"; '
         "exit 0; "
@@ -384,7 +393,11 @@ def _remote_read_first_existing_command(
     )
 
 
-def _render(files: list[ProjectInstructionFile]) -> str | None:
+def _render(
+    files: list[ProjectInstructionFile],
+    *,
+    diagnostics: list[str] | None = None,
+) -> str | None:
     if not files:
         return None
     lines = ["## Project instructions"]
@@ -395,6 +408,10 @@ def _render(files: list[ProjectInstructionFile]) -> str | None:
         if file.truncated:
             limit = file.limit_bytes or settings.agent_project_instructions_max_bytes
             lines.append(f"[Truncated to {limit} bytes.]")
+    if diagnostics:
+        lines.append("")
+        lines.append("## Project instruction diagnostics")
+        lines.extend(f"- {diagnostic}" for diagnostic in diagnostics)
     return "\n".join(lines)
 
 
