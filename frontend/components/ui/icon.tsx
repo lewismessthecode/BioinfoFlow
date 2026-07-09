@@ -31,6 +31,7 @@ export function Icon({
 }: IconProps) {
   return (
     <Glyph
+      data-slot="app-icon"
       aria-hidden={decorative ? "true" : undefined}
       className={cn("shrink-0", iconSizes[size], className)}
       strokeWidth={strokeWidth}
@@ -40,7 +41,7 @@ export function Icon({
 }
 
 const iconButtonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center rounded-md text-muted-foreground transition-[background-color,border-color,box-shadow,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none",
+  "inline-flex shrink-0 items-center justify-center rounded-md text-muted-foreground transition-[background-color,border-color,box-shadow,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground motion-safe:active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none",
   {
     variants: {
       size: {

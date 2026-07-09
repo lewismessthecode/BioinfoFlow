@@ -8,7 +8,7 @@ vi.mock("next-intl", () => ({
 import { WorkflowCardBase } from "@/app/(app)/workflows/components/workflow-card-base"
 
 describe("WorkflowCardBase", () => {
-  it("uses a flow-oriented lucide glyph for the quiet workflow tile", () => {
+  it("uses the shared app icon primitive for the quiet workflow tile", () => {
     const { container } = render(
       <WorkflowCardBase
         displayName="flaky-retry-mini"
@@ -19,7 +19,8 @@ describe("WorkflowCardBase", () => {
       </WorkflowCardBase>,
     )
 
-    expect(container.querySelector("svg.lucide-workflow")).not.toBeNull()
+    expect(container.querySelector("[data-slot='app-icon']")).not.toBeNull()
+    expect(container.querySelector(".quiet-card-icon-shell")).not.toBeNull()
   })
 
   it("keeps long workflow names from covering the actions menu", () => {

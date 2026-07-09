@@ -170,5 +170,10 @@ export {
   Zap,
 } from "lucide-react"
 
-export type { LucideIcon } from "lucide-react"
-export type { LucideIcon as AppIcon } from "lucide-react"
+export interface AppIconProps extends React.SVGAttributes<SVGSVGElement> {
+  size?: number | string
+  strokeWidth?: number | string
+}
+
+export type AppIcon = React.ComponentType<AppIconProps>
+import type * as React from "react"

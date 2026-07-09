@@ -22,7 +22,7 @@ import {
   PanelRightOpen,
   RotateCcw,
   SlidersHorizontal,
-  type LucideIcon,
+  type AppIcon,
 } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
@@ -101,7 +101,7 @@ const SIDECAR_TABS: Array<{
   key: AgentTabbedPanelTab
   labelKey: string
   iconName: string
-  Icon: LucideIcon
+  Icon: AppIcon
 }> = [
   { key: "preview", labelKey: "tabs.artifacts", iconName: "file-box", Icon: FileBox },
   { key: "files", labelKey: "tabs.files", iconName: "folder-tree", Icon: FolderTree },

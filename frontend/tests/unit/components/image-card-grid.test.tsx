@@ -245,7 +245,7 @@ describe("ImageCardsGrid", () => {
     expect(localBadge.className).not.toContain("bg-success")
     expect(localBadge.className).not.toContain("text-success")
     expect(screen.getByRole("button", { name: /actions.repull/i })).toBeInTheDocument()
-    expect(container.querySelector("svg.lucide-package2")).not.toBeNull()
+    expect(container.querySelector("[data-slot='app-icon']")).not.toBeNull()
   })
 
   it("keeps long image names from covering the actions menu", () => {

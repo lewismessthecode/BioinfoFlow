@@ -286,7 +286,8 @@
     @apply bg-background text-foreground;
   }
 
-  .lucide {
+  .lucide,
+  [data-slot="app-icon"] {
     stroke-width: 1.75;
     transition-duration: var(--duration-fast);
     transition-property: color, opacity, transform;

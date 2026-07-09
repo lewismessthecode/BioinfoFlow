@@ -1,4 +1,4 @@
-import type { LucideIcon } from "@/lib/icons"
+import type { AppIcon } from "@/lib/icons"
 import {
   Bot,
   Container,
@@ -14,7 +14,7 @@ import {
 type NavRoute = {
   key: string
   href: string
-  icon: LucideIcon
+  icon: AppIcon
 }
 
 export const NAV_ROUTES: readonly NavRoute[] = [
