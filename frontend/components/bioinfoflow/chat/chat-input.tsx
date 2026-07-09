@@ -107,7 +107,7 @@ export function ChatInput({
     <div className={cn("mx-auto w-full", visualVariant === "home" ? "max-w-[720px]" : "max-w-3xl")}>
       <div
         className={cn(
-          "group relative border bg-card transition-all duration-300 focus-within:border-foreground/30",
+          "group relative border bg-card transition-[background-color,border-color,box-shadow] duration-150 focus-within:border-foreground/30",
           visualVariant === "home"
             ? "rounded-[28px] px-2.5 py-1 shadow-[var(--composer-shadow)]"
             : "rounded-[24px] px-2.5 py-1 shadow-[0_2px_7px_rgba(60,64,67,0.08),0_12px_28px_rgba(60,64,67,0.10)]",

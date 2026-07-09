@@ -100,7 +100,7 @@ export function ConversationItem({
         <button
           onClick={() => onSelect(conversation, projectId)}
           onDoubleClick={startRename}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[12px]"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[6px] text-left text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring/45"
         >
           {isActive ? (
             <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-sidebar-foreground" />

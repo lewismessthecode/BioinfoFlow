@@ -66,8 +66,8 @@ export function UserMenu({ collapsed, viewer }: UserMenuProps) {
         <button
           className={
             collapsed
-              ? "group mx-auto flex h-9 w-9 items-center justify-center rounded-[8px] border border-border/70 bg-card/90 p-0 transition-colors hover:bg-sidebar-accent/70"
-              : "group flex w-full items-center gap-2 rounded-[8px] border border-transparent px-2 py-1.5 transition-colors hover:bg-sidebar-accent"
+              ? "group mx-auto flex h-9 w-9 items-center justify-center rounded-[8px] border border-border/70 bg-card/90 p-0 transition-[background-color,border-color,box-shadow,transform] duration-150 hover:bg-sidebar-accent/70 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-sidebar-ring/45 focus-visible:outline-none"
+              : "group flex w-full items-center gap-2 rounded-[8px] border border-transparent px-2 py-1.5 transition-[background-color,border-color,box-shadow,transform] duration-150 hover:bg-sidebar-accent active:scale-[0.98] focus-visible:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring/45 focus-visible:outline-none"
           }
           aria-label={`${userName} — ${tAccessibility("userMenu")}`}
         >

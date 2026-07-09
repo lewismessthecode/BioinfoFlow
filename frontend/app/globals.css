@@ -285,6 +285,13 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  .lucide {
+    stroke-width: 1.75;
+    transition-duration: var(--duration-fast);
+    transition-property: color, opacity, transform;
+    transition-timing-function: var(--ease-out);
+  }
 }
 
 @layer components {
