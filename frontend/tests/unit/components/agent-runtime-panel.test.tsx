@@ -2,13 +2,18 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
+import { AgentEnvironmentCard } from "@/components/bioinfoflow/agent-runtime/agent-environment-card"
 import { AgentTabbedPanel } from "@/components/bioinfoflow/agent-runtime/agent-tabbed-panel"
 import { ArtifactPreviewDrawer } from "@/components/bioinfoflow/agent-runtime/artifact-preview-drawer"
 import { ArtifactViewer } from "@/components/bioinfoflow/agent-runtime/artifact-viewers"
 import { BrowserTab, resolveBrowserUrl } from "@/components/bioinfoflow/agent-runtime/browser-tab"
 import { PendingDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-decision-cards"
 import { ProgressTab } from "@/components/bioinfoflow/agent-runtime/progress-tab"
-import type { AgentRuntimeArtifact, AgentRuntimeEvent } from "@/lib/agent-runtime"
+import type {
+  AgentRuntimeArtifact,
+  AgentRuntimeEvent,
+  AgentRuntimeSession,
+} from "@/lib/agent-runtime"
 
 const listAgentRuntimeSessionArtifactsMock = vi.hoisted(() => vi.fn())
 
@@ -82,6 +87,76 @@ describe("ProgressTab", () => {
     expect(screen.getByText("Read the code")).toBeInTheDocument()
     // in_progress uses activeForm
     expect(screen.getByText("Editing")).toBeInTheDocument()
+  })
+})
+
+describe("AgentEnvironmentCard", () => {
+  it("shows the normalized remote execution target without implying every tool is remote", () => {
+    const session: AgentRuntimeSession = {
+      id: "session-1",
+      workspace_id: "workspace-1",
+      user_id: "dev",
+      role_profile: "bioinformatician",
+      permission_mode: "guarded_auto",
+      automation_mode: "assisted",
+      runtime_mode: "api",
+      execution_target: {
+        kind: "remote_ssh",
+        remote_connection_id: "connection-1",
+      },
+      status: "active",
+      created_at: "2026-06-08T00:00:00Z",
+      updated_at: "2026-06-08T00:00:00Z",
+    }
+
+    render(
+      <AgentEnvironmentCard
+        projectId="project-1"
+        session={session}
+        events={[]}
+        artifacts={[]}
+      />,
+    )
+
+    expect(screen.getByText("environment.executionTarget")).toBeInTheDocument()
+    expect(
+      screen.getByText("runtimeLocation.remote.label · connection-1"),
+    ).toBeInTheDocument()
+    expect(screen.getByText("environment.worktree")).toBeInTheDocument()
+    expect(screen.getByText("project-1")).toBeInTheDocument()
+  })
+
+  it("shows backend-normalized remote execution targets", () => {
+    const session: AgentRuntimeSession = {
+      id: "session-1",
+      workspace_id: "workspace-1",
+      user_id: "dev",
+      role_profile: "bioinformatician",
+      permission_mode: "guarded_auto",
+      automation_mode: "assisted",
+      runtime_mode: "api",
+      execution_target: {
+        type: "remote_ssh",
+        connection_id: "connection-backend",
+      },
+      metadata: { remote_connection_id: "connection-legacy" },
+      status: "active",
+      created_at: "2026-06-08T00:00:00Z",
+      updated_at: "2026-06-08T00:00:00Z",
+    }
+
+    render(
+      <AgentEnvironmentCard
+        projectId="project-1"
+        session={session}
+        events={[]}
+        artifacts={[]}
+      />,
+    )
+
+    expect(
+      screen.getByText("runtimeLocation.remote.label · connection-backend"),
+    ).toBeInTheDocument()
   })
 })
 

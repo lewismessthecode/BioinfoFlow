@@ -337,6 +337,22 @@ describe("useAgentRuntime", () => {
     expect(mocks.createAgentRuntimeSession).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: { remote_connection_id: "connection-1" },
+        executionTarget: expect.objectContaining({
+          kind: "remote_ssh",
+          type: "remote_ssh",
+          remote_connection_id: "connection-1",
+          connection_id: "connection-1",
+        }),
+      }),
+    )
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionTarget: expect.objectContaining({
+          kind: "remote_ssh",
+          type: "remote_ssh",
+          remote_connection_id: "connection-1",
+          connection_id: "connection-1",
+        }),
       }),
     )
   })
@@ -399,9 +415,23 @@ describe("useAgentRuntime", () => {
     expect(mocks.updateAgentRuntimeSessionMetadata).toHaveBeenCalledWith(
       "session-1",
       { remote_connection_id: "connection-2" },
+      expect.objectContaining({
+        kind: "remote_ssh",
+        type: "remote_ssh",
+        remote_connection_id: "connection-2",
+        connection_id: "connection-2",
+      }),
     )
     expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "session-1" }),
+      expect.objectContaining({
+        sessionId: "session-1",
+        executionTarget: expect.objectContaining({
+          kind: "remote_ssh",
+          type: "remote_ssh",
+          remote_connection_id: "connection-2",
+          connection_id: "connection-2",
+        }),
+      }),
     )
   })
 
@@ -415,12 +445,20 @@ describe("useAgentRuntime", () => {
       {
         ...session,
         metadata: { batch: "b001", remote_connection_id: "connection-1" },
+        execution_target: {
+          type: "remote_ssh",
+          connection_id: "connection-1",
+        },
       },
     ])
     mocks.getAgentRuntimeState.mockResolvedValue({
       session: {
         ...session,
         metadata: { batch: "b001", remote_connection_id: "connection-1" },
+        execution_target: {
+          type: "remote_ssh",
+          connection_id: "connection-1",
+        },
       },
       turns: [],
       events: [],
@@ -444,6 +482,18 @@ describe("useAgentRuntime", () => {
     expect(mocks.updateAgentRuntimeSessionMetadata).toHaveBeenCalledWith(
       "session-1",
       { batch: "b001" },
+      expect.objectContaining({
+        kind: "local",
+        type: "local",
+      }),
+    )
+    expect(mocks.createAgentRuntimeTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionTarget: expect.objectContaining({
+          kind: "local",
+          type: "local",
+        }),
+      }),
     )
   })
 

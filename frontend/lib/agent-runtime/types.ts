@@ -19,6 +19,15 @@ export type AgentModelSelection = {
   profile_id?: string | null
 }
 
+export type AgentExecutionTargetKind = "local" | "remote_ssh"
+
+export type AgentExecutionTarget = {
+  kind?: AgentExecutionTargetKind
+  type?: AgentExecutionTargetKind
+  remote_connection_id?: string | null
+  connection_id?: string | null
+}
+
 export type AgentTokenUsageSummary = {
   has_token_usage: boolean
   input_tokens: number
@@ -39,6 +48,9 @@ export type AgentRuntimeSkill = {
   description: string
   category?: string | null
   tags: string[]
+  source?: string | null
+  root?: string | null
+  path?: string | null
 }
 
 export type AgentRuntimeSession = {
@@ -58,6 +70,7 @@ export type AgentRuntimeSession = {
   compression_state?: Record<string, unknown> | null
   lineage?: Record<string, unknown> | null
   model_selection?: AgentModelSelection | null
+  execution_target?: AgentExecutionTarget | null
   token_usage_summary?: AgentTokenUsageSummary | null
   status: AgentSessionStatus
   metadata?: Record<string, unknown> | null

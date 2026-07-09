@@ -51,6 +51,7 @@ import {
   type AgentRuntimeSkill,
   type AgentModelSelection,
   type AgentRuntimeTurn,
+  resolveAgentExecutionTarget,
 } from "@/lib/agent-runtime"
 import {
   readAgentTurnPolicy,
@@ -212,7 +213,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const agentMode = mode ?? "execution"
     const sessionId = state.session?.id ?? ""
     const submissionSessionId = activeSessionId || sessionId || "pending-session"
-    const sessionRemoteConnectionId = getSessionRemoteConnectionId(state.session?.metadata)
+    const sessionRemoteConnectionId = getSessionRemoteConnectionId(state.session)
     const projectRemoteConnectionId = useMemo(() => {
       if (!projectId) return ""
       const project = workspaceShell?.projects.find((item) => item.id === projectId)
@@ -1412,9 +1413,11 @@ function workflowContextInputFromComposerValue({
   }
 }
 
-function getSessionRemoteConnectionId(metadata: Record<string, unknown> | null | undefined): string {
-  const value = metadata?.remote_connection_id
-  return typeof value === "string" ? value : ""
+function getSessionRemoteConnectionId(
+  session: Parameters<typeof resolveAgentExecutionTarget>[0],
+): string {
+  const target = resolveAgentExecutionTarget(session)
+  return target.kind === "remote_ssh" ? target.remoteConnectionId : ""
 }
 
 function maxSidecarWidthForWorkbench(width: number) {

@@ -2794,6 +2794,7 @@
       "changes": "变更",
       "filesChanged": "已变更 {count} 个文件",
       "worktree": "工作树",
+      "executionTarget": "执行位置",
       "remoteProject": "远程项目",
       "session": "会话",
       "pendingSession": "会话待创建",

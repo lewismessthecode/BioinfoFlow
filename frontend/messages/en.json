@@ -2794,6 +2794,7 @@
       "changes": "Changes",
       "filesChanged": "{count, plural, one {# file changed} other {# files changed}}",
       "worktree": "Worktree",
+      "executionTarget": "Execution target",
       "remoteProject": "Remote project",
       "session": "Session",
       "pendingSession": "Session pending",
