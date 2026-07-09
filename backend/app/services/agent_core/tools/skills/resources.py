@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.path_layout import skills_root, state_root
+from app.config import settings
+from app.path_layout import state_root
 from app.services.agent_core.plugins import AgentPluginRegistry
 from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
@@ -26,7 +27,7 @@ class ListSkillsTool:
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         del input, context
-        registry = AgentSkillRegistry.from_directory(_skills_root())
+        registry = _skill_registry()
         return {"skills": [_skill_payload(skill) for skill in registry.list()]}
 
 
@@ -52,7 +53,7 @@ class LoadSkillTool:
 
     async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         del context
-        registry = AgentSkillRegistry.from_directory(_skills_root())
+        registry = _skill_registry()
         skill = registry.get(input["name"])
         return {"skill": _skill_payload(skill, include_body=True)}
 
@@ -89,8 +90,19 @@ class ListPluginsTool:
         }
 
 
+def _skill_registry() -> AgentSkillRegistry:
+    return AgentSkillRegistry.from_roots(
+        repo_root=_repo_root(),
+        configured_root=_skills_root(),
+    )
+
+
+def _repo_root() -> Path:
+    return Path(settings.repo_root).expanduser().resolve()
+
+
 def _skills_root() -> Path:
-    return skills_root()
+    return settings.skills_root.resolve()
 
 
 def _plugins_root() -> Path:
@@ -105,6 +117,8 @@ def _skill_payload(skill, *, include_body: bool = False) -> dict[str, Any]:
         "description": skill.description,
         "category": skill.category,
         "tags": skill.tags,
+        "source": skill.source,
+        "root": str(skill.root) if skill.root else None,
         "path": str(skill.path),
     }
     if include_body:

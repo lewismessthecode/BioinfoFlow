@@ -4,12 +4,13 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 PermissionMode = Literal["ask_each_action", "guarded_auto", "bypass"]
 AutomationMode = Literal["advise_only", "assisted", "autonomous"]
 AgentMode = Literal["plan", "execution"]
+ExecutionTargetType = Literal["local", "remote_ssh"]
 SessionStatus = Literal["active", "archived", "deleted"]
 TurnStatus = Literal[
     "queued",
@@ -53,6 +54,17 @@ class AgentModelSelection(BaseModel):
     profile_id: UUID | None = None
 
 
+class AgentExecutionTarget(BaseModel):
+    type: ExecutionTargetType = Field(
+        default="local",
+        validation_alias=AliasChoices("type", "kind"),
+    )
+    connection_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("connection_id", "remote_connection_id"),
+    )
+
+
 class AgentTokenUsageSummary(BaseModel):
     has_token_usage: bool
     input_tokens: int = 0
@@ -73,6 +85,8 @@ class AgentSkillRead(BaseModel):
     description: str
     category: str | None = None
     tags: list[str] = Field(default_factory=list)
+    source: str
+    root: str | None = None
     path: str
     body: str | None = None
 
@@ -86,6 +100,7 @@ class AgentSessionCreate(BaseModel):
     mode: AgentMode = "execution"
     default_model_profile_id: UUID | None = None
     model_selection: AgentModelSelection | None = None
+    execution_target: AgentExecutionTarget | None = None
     metadata: dict | None = None
 
 
@@ -97,6 +112,7 @@ class AgentSessionUpdate(BaseModel):
     mode: AgentMode | None = None
     default_model_profile_id: UUID | None = None
     model_selection: AgentModelSelection | None = None
+    execution_target: AgentExecutionTarget | None = None
     status: SessionStatus | None = None
     metadata: dict | None = None
 
@@ -120,6 +136,9 @@ class AgentSessionRead(BaseModel):
     compression_state: dict | None = None
     lineage: dict | None = None
     model_selection: AgentModelSelection | None = None
+    execution_target: AgentExecutionTarget = Field(
+        default_factory=lambda: AgentExecutionTarget(type="local")
+    )
     token_usage_summary: AgentTokenUsageSummary | None = None
     status: SessionStatus
     metadata: dict | None = Field(default=None, validation_alias="session_metadata")
@@ -133,6 +152,7 @@ class AgentTurnCreate(BaseModel):
     active_skill_names: list[str] | None = None
     model_profile_id: UUID | None = None
     model_selection: AgentModelSelection | None = None
+    execution_target: AgentExecutionTarget | None = None
     metadata: dict | None = None
 
 

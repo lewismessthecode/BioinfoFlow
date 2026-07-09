@@ -6,7 +6,6 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.path_layout import skills_root
 from app.models.agent_core import AgentActionStatus, AgentSessionStatus, AgentTurnStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
@@ -17,6 +16,7 @@ from app.repositories.agent_core_repo import (
 )
 from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.execution_target import session_metadata_with_execution_target
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.model_selection import (
     normalize_model_selection,
@@ -66,6 +66,7 @@ class AgentCoreService:
         automation_mode: str = "assisted",
         default_model_profile_id: str | None = None,
         model_selection: dict | None = None,
+        execution_target: dict | None = None,
         metadata: dict | None = None,
         lineage: dict | None = None,
         toolset_policy: dict | None = None,
@@ -79,6 +80,7 @@ class AgentCoreService:
                 raise PermissionDeniedError("Project is not in the current workspace")
 
         metadata = _metadata_with_remote_project(metadata, project)
+        metadata = session_metadata_with_execution_target(metadata, execution_target)
 
         return await self.session_repo.create(
             project_id=str(project_id) if project_id else None,
@@ -161,11 +163,19 @@ class AgentCoreService:
                 update_data[key] = updates[key]
         if "mode" in updates and updates["mode"]:
             update_data["toolset_policy"] = {"name": updates["mode"]}
-        if "metadata" in updates or "model_selection" in updates:
+        if (
+            "metadata" in updates
+            or "model_selection" in updates
+            or "execution_target" in updates
+        ):
             current_metadata = (
                 session.session_metadata if hasattr(session, "session_metadata") else None
             )
             metadata = updates["metadata"] if "metadata" in updates else current_metadata
+            metadata = session_metadata_with_execution_target(
+                metadata,
+                updates.get("execution_target") if "execution_target" in updates else None,
+            )
             model_selection = (
                 updates["model_selection"]
                 if "model_selection" in updates
@@ -201,6 +211,7 @@ class AgentCoreService:
         active_skill_names: list[str] | None = None,
         model_profile_id: str | None = None,
         model_selection: dict | None = None,
+        execution_target: dict | None = None,
         metadata: dict | None = None,
     ):
         session = await self.require_session(
@@ -208,11 +219,24 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        if execution_target is not None:
+            session = await self.session_repo.update_all(
+                session,
+                session_metadata=session_metadata_with_execution_target(
+                    getattr(session, "session_metadata", None),
+                    execution_target,
+                ),
+            )
         normalized_active_skill_names = _validated_active_skill_names(active_skill_names)
         turn_metadata = _metadata_with_active_skill_names(
             metadata,
             normalized_active_skill_names,
         )
+        if execution_target is not None:
+            turn_metadata = session_metadata_with_execution_target(
+                turn_metadata,
+                execution_target,
+            )
         transcript_parts = _transcript_parts_for_turn(
             input_text=input_text,
             input_parts=input_parts,
@@ -265,6 +289,7 @@ class AgentCoreService:
         active_skill_names: list[str] | None = None,
         model_profile_id: str | None = None,
         model_selection: dict | None = None,
+        execution_target: dict | None = None,
         metadata: dict | None = None,
     ):
         turn = await self.create_turn_record(
@@ -276,6 +301,7 @@ class AgentCoreService:
             active_skill_names=active_skill_names,
             model_profile_id=model_profile_id,
             model_selection=model_selection,
+            execution_target=execution_target,
             metadata=metadata,
         )
         enqueue_turn_run(str(turn.id), str(turn.session_id))
@@ -703,7 +729,7 @@ def _validated_active_skill_names(values: list[str] | None) -> list[str]:
         names = normalize_skill_names(values)
         if not names:
             return []
-        resolve_active_skills(AgentSkillRegistry.from_directory(skills_root()), names)
+        resolve_active_skills(AgentSkillRegistry.from_default_roots(), names)
         return names
     except ActiveSkillResolutionError as exc:
         raise BadRequestError(str(exc)) from exc

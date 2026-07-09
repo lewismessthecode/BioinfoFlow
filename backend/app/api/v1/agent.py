@@ -16,13 +16,14 @@ import app.database as app_database
 from app.api.deps import get_current_user, get_db
 from app.auth.session import AuthUser
 from app.config import settings
-from app.path_layout import project_home, skills_root
+from app.path_layout import project_home
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.schemas.agent_core import (
     AgentActionDecisionRequest,
     AgentActionRead,
     AgentArtifactRead,
+    AgentExecutionTarget,
     AgentEventRead,
     AgentModelSelection,
     AgentMemoryDecisionRequest,
@@ -38,6 +39,7 @@ from app.schemas.agent_core import (
 )
 from app.repositories.llm_repo import LlmModelRepository
 from app.services.agent_core import AgentCoreService, AgentMemoryService
+from app.services.agent_core.execution_target import session_execution_target_from_metadata
 from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.metrics import agent_metrics
 from app.utils.logging import get_logger
@@ -60,11 +62,15 @@ def _dump(model) -> dict:
 
 
 def _session_read(session) -> AgentSessionRead:
+    execution_target = session_execution_target_from_metadata(
+        getattr(session, "session_metadata", None)
+    )
     model_selection = session_model_selection_from_metadata(
         getattr(session, "session_metadata", None)
     )
     return AgentSessionRead.model_validate(session).model_copy(
         update={
+            "execution_target": AgentExecutionTarget.model_validate(execution_target),
             "model_selection": (
                 AgentModelSelection.model_validate(model_selection)
                 if model_selection
@@ -128,6 +134,8 @@ def _skill_read(skill, *, include_body: bool = False) -> AgentSkillRead:
         description=skill.description,
         category=skill.category,
         tags=skill.tags,
+        source=skill.source,
+        root=str(skill.root) if skill.root else None,
         path=str(skill.path),
         body=skill.body if include_body else None,
     )
@@ -139,7 +147,7 @@ async def list_skills(
     user: AuthUser = Depends(get_current_user),
 ):
     del user
-    registry = AgentSkillRegistry.from_directory(skills_root())
+    registry = AgentSkillRegistry.from_default_roots()
     return success_response(
         {"skills": [_dump(_skill_read(skill)) for skill in registry.list()]},
         request=request,
@@ -153,7 +161,7 @@ async def get_skill(
     user: AuthUser = Depends(get_current_user),
 ):
     del user
-    registry = AgentSkillRegistry.from_directory(skills_root())
+    registry = AgentSkillRegistry.from_default_roots()
     skill = registry.get(skill_name)
     return success_response(_dump(_skill_read(skill, include_body=True)), request=request)
 
@@ -182,6 +190,11 @@ async def create_session(
         model_selection=(
             payload.model_selection.model_dump(mode="json", exclude_none=True)
             if payload.model_selection
+            else None
+        ),
+        execution_target=(
+            payload.execution_target.model_dump(mode="json", exclude_none=True)
+            if payload.execution_target
             else None
         ),
         metadata=payload.metadata,
@@ -288,6 +301,11 @@ async def create_turn(
         model_selection=(
             payload.model_selection.model_dump(mode="json", exclude_none=True)
             if payload.model_selection
+            else None
+        ),
+        execution_target=(
+            payload.execution_target.model_dump(mode="json", exclude_none=True)
+            if payload.execution_target
             else None
         ),
         metadata=payload.metadata,

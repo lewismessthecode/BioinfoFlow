@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     agent_retry_max_delay_seconds: float = 2.0
     agent_turn_lease_seconds: int = 300
     agent_compact_threshold: int = 50000  # Auto-compact token threshold
+    agent_project_instructions_max_bytes: int = 32768
 
     # Provider API keys used by LLM catalog bootstrap.
     # UI-configured providers are stored in the LLM catalog and take precedence.

@@ -670,6 +670,47 @@ async def test_unexposed_tool_is_denied_before_argument_validation(db_session):
 
 
 @pytest.mark.asyncio
+async def test_remote_ssh_executor_rejects_stale_local_tool_call(db_session):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-1",
+            }
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Try stale local shell.",
+    )
+
+    executor = AgentToolExecutor(db_session, build_default_tool_registry())
+    with pytest.raises(PermissionDeniedError, match="not exposed"):
+        await executor.execute(
+            tool_name="bash",
+            input={"command": "pwd"},
+            context=AgentToolContext(
+                db=db_session,
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                session_id=str(session.id),
+                turn_id=str(turn.id),
+            ),
+            toolset_policy={"name": "execution"},
+            execution_target={"type": "remote_ssh", "connection_id": "conn-1"},
+        )
+
+    assert await AgentActionRepository(db_session).list_for_turn(str(turn.id)) == []
+
+
+@pytest.mark.asyncio
 async def test_approval_resume_executes_tool_and_continues_turn(db_session, monkeypatch):
     calls = 0
 

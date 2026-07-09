@@ -32,6 +32,7 @@ from app.services.agent_core.core.stream_adapter import (
 )
 from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.execution_target import execution_target_from_session
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.observability import truncate_log_value
@@ -99,10 +100,12 @@ class AgentLoopController:
             if str(getattr(agent_session, "role_profile", "orchestrator")) == "worker"
             else "orchestrator"
         )
+        execution_target = execution_target_from_session(agent_session)
         visible_tools = (
             self.executor.exposure.exposed_specs(
                 policy=agent_session.toolset_policy,
                 role=role,
+                execution_target=execution_target,
             )
             if tools_enabled
             else []
@@ -375,6 +378,7 @@ class AgentLoopController:
                 automation_mode=agent_session.automation_mode,
                 tool_call_id=tool_call.get("id"),
                 role=_tool_role(agent_session),
+                execution_target=execution_target_from_session(agent_session),
             )
             if result.requires_resume:
                 waiting = True
@@ -548,6 +552,7 @@ class AgentLoopController:
                 automation_mode=agent_session.automation_mode,
                 tool_call_id=tool_call.get("id"),
                 role=_tool_role(agent_session),
+                execution_target=execution_target_from_session(agent_session),
             )
 
     def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:

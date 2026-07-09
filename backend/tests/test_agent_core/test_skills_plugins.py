@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from app.config import settings
 from app.services.agent_core.plugins import AgentPluginRegistry, register_plugin_tools
 from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.tools.registry import AgentToolRegistry
@@ -58,6 +59,106 @@ def test_agent_skill_registry_discovers_versioned_manifests(tmp_path: Path):
     assert skill.tags == ["rnaseq", "qc"]
     assert "MultiQC" in skill.body
     assert registry.describe_for_prompt() == "- rna-qc (1.2.0): Summarize RNA-seq QC signals."
+
+
+def test_agent_skill_registry_discovers_repo_and_configured_roots_with_repo_precedence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo_root = tmp_path / "repo"
+    configured_root = tmp_path / "configured-skills"
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_skills_root", str(configured_root))
+    _write_skill(
+        repo_root / ".agents" / "skills",
+        "shared-qc",
+        "\n".join(
+            [
+                "name: shared-qc",
+                "description: Repo-local QC guidance.",
+            ]
+        ),
+        "# Repo skill\nPrefer the repo body.",
+    )
+    _write_skill(
+        configured_root,
+        "shared-qc",
+        "\n".join(
+            [
+                "name: shared-qc",
+                "description: Configured QC guidance.",
+            ]
+        ),
+        "# Configured skill\nThis should lose precedence.",
+    )
+    _write_skill(
+        configured_root,
+        "configured-only",
+        "\n".join(
+            [
+                "name: configured-only",
+                "description: Configured-only guidance.",
+            ]
+        ),
+        "# Configured only\nThis should still be discoverable.",
+    )
+
+    registry = AgentSkillRegistry.from_default_roots()
+
+    assert [skill.name for skill in registry.list()] == ["configured-only", "shared-qc"]
+    shared = registry.get("shared-qc")
+    assert shared.source == "repo"
+    assert shared.root == (repo_root / ".agents" / "skills").resolve()
+    assert shared.path == (repo_root / ".agents" / "skills" / "shared-qc" / "SKILL.md").resolve()
+    assert shared.description == "Repo-local QC guidance."
+    assert shared.body == "# Repo skill\nPrefer the repo body."
+    configured = registry.get("configured-only")
+    assert configured.source == "configured"
+    assert configured.root == configured_root.resolve()
+
+
+def test_agent_skill_registry_prefers_yaml_frontmatter_and_keeps_simple_fallback(
+    tmp_path: Path,
+):
+    _write_skill(
+        tmp_path,
+        "yaml-skill",
+        "\n".join(
+            [
+                "name: yaml-skill",
+                "title: YAML Skill",
+                "version: '2.0'",
+                "description: >",
+                "  Summarize RNA-seq QC signals.",
+                "tags:",
+                "  - rnaseq",
+                "  - qc",
+            ]
+        ),
+        "# YAML\nUse folded frontmatter fields.",
+    )
+    _write_skill(
+        tmp_path,
+        "fallback-skill",
+        "\n".join(
+            [
+                "name: fallback-skill",
+                "description: Interpret samples: tumor and normal pairs.",
+            ]
+        ),
+        "# Fallback\nUse the simple parser when YAML parsing fails.",
+    )
+
+    registry = AgentSkillRegistry.from_directory(tmp_path)
+
+    assert [skill.name for skill in registry.list()] == ["fallback-skill", "yaml-skill"]
+    yaml_skill = registry.get("yaml-skill")
+    assert yaml_skill.title == "YAML Skill"
+    assert yaml_skill.version == "2.0"
+    assert yaml_skill.description == "Summarize RNA-seq QC signals."
+    assert yaml_skill.tags == ["rnaseq", "qc"]
+    fallback_skill = registry.get("fallback-skill")
+    assert fallback_skill.description == "Interpret samples: tumor and normal pairs."
 
 
 def test_agent_skill_registry_skips_unsafe_and_support_paths(tmp_path: Path):
@@ -216,3 +317,88 @@ async def test_skill_and_plugin_tools_use_default_registry_roots(tmp_path: Path,
 
     listed_plugins = await ListPluginsTool().run({}, context)
     assert listed_plugins["plugins"][0]["id"] == "qc-plugin"
+
+
+@pytest.mark.asyncio
+async def test_skill_tools_use_repo_scoped_registry_with_debug_payloads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo_root = tmp_path / "repo"
+    configured_root = tmp_path / "configured-skills"
+    repo_skills_root = repo_root / ".agents" / "skills"
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    monkeypatch.setattr(settings, "bioinfoflow_skills_root", str(configured_root))
+    _write_skill(
+        repo_skills_root,
+        "shared-qc",
+        "\n".join(
+            [
+                "name: shared-qc",
+                "description: Repo scoped QC guidance.",
+            ]
+        ),
+        "# Repo\nUse this body.",
+    )
+    _write_skill(
+        configured_root,
+        "shared-qc",
+        "\n".join(
+            [
+                "name: shared-qc",
+                "description: Configured QC guidance.",
+            ]
+        ),
+        "# Configured\nThis body loses precedence.",
+    )
+    _write_skill(
+        configured_root,
+        "configured-only",
+        "\n".join(
+            [
+                "name: configured-only",
+                "description: Configured-only guidance.",
+            ]
+        ),
+        "# Configured only",
+    )
+
+    context = AgentToolContext(
+        db=None,  # type: ignore[arg-type]
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        session_id="session-1",
+        turn_id="turn-1",
+    )
+
+    listed = await ListSkillsTool().run({}, context)
+
+    assert listed["skills"] == [
+        {
+            "name": "configured-only",
+            "title": None,
+            "version": "0.1.0",
+            "description": "Configured-only guidance.",
+            "category": None,
+            "tags": [],
+            "source": "configured",
+            "root": str(configured_root.resolve()),
+            "path": str(configured_root / "configured-only" / "SKILL.md"),
+        },
+        {
+            "name": "shared-qc",
+            "title": None,
+            "version": "0.1.0",
+            "description": "Repo scoped QC guidance.",
+            "category": None,
+            "tags": [],
+            "source": "repo",
+            "root": str(repo_skills_root.resolve()),
+            "path": str(repo_skills_root / "shared-qc" / "SKILL.md"),
+        },
+    ]
+
+    loaded = await LoadSkillTool().run({"name": "shared-qc"}, context)
+    assert loaded["skill"]["source"] == "repo"
+    assert loaded["skill"]["root"] == str(repo_skills_root.resolve())
+    assert loaded["skill"]["body"] == "# Repo\nUse this body."
