@@ -10,7 +10,7 @@ import {
   Globe2,
   Loader2,
   TerminalSquare,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import type { AgentRuntimeToolActivity } from "@/lib/agent-runtime"

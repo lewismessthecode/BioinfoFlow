@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Play, MessageSquare, GitBranch, ChevronRight, Cpu } from "lucide-react"
+import { ArrowRight, Play, MessageSquare, GitBranch, ChevronRight, Cpu } from "@/lib/icons"
 import { FadeInOnScroll } from "@/components/ui/scroll-animations"
 import { useTranslations } from "next-intl"
 

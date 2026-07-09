@@ -9,7 +9,7 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { MarkdownRenderer } from "@/components/bioinfoflow/markdown-renderer"

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
-import { AlertCircle, ChevronLeft, FileBox, RotateCw } from "lucide-react"
+import { AlertCircle, ChevronLeft, FileBox, RotateCw } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"

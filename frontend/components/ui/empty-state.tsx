@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import type { LucideIcon } from "lucide-react"
+import type { LucideIcon } from "@/lib/icons"
 
 export interface EmptyStateProps {
   icon: LucideIcon

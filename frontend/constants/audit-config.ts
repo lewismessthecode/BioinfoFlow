@@ -17,7 +17,7 @@ import {
   RotateCw,
   Trash2,
   type LucideIcon,
-} from "lucide-react"
+} from "@/lib/icons"
 import type { StatusBadgeProps } from "@/components/ui/status-badge"
 
 type AuditVariant = NonNullable<StatusBadgeProps["variant"]>

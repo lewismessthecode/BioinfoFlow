@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowDown } from "lucide-react"
+import { ArrowDown } from "@/lib/icons"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 

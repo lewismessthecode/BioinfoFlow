@@ -15,7 +15,7 @@ import {
   Stethoscope,
   Unlock,
   X,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useLocale, useTranslations } from "next-intl"
 import { toast } from "sonner"
 

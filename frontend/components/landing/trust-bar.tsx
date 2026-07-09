@@ -1,6 +1,6 @@
 "use client"
 
-import { Dna, FlaskConical, Microscope, Layers, Bug } from "lucide-react"
+import { Dna, FlaskConical, Microscope, Layers, Bug } from "@/lib/icons"
 import { FadeInOnScroll, StaggerContainer, StaggerItem } from "@/components/ui/scroll-animations"
 import { useTranslations } from "next-intl"
 

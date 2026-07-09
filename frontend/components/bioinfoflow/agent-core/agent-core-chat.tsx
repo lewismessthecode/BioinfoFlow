@@ -21,7 +21,7 @@ import {
   Upload,
   X,
   Zap,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 

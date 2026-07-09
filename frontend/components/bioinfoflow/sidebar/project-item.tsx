@@ -1,7 +1,7 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { ChevronRight, FolderKanban, MoreVertical, Plus, Copy, Trash2 } from "lucide-react"
+import { ChevronRight, FolderKanban, MoreVertical, Plus, Copy, Trash2 } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

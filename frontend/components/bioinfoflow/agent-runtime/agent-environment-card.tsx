@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { CheckCircle2, Circle, GitBranch, GitCompare, Settings, Waypoints } from "lucide-react"
+import { CheckCircle2, Circle, GitBranch, GitCompare, Settings, Waypoints } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import {

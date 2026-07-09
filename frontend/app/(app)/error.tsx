@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle } from "@/lib/icons"
 import { EmptyState } from "@/components/ui/empty-state"
 
 export default function AppError({

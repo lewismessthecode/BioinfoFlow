@@ -1,6 +1,6 @@
 "use client"
 
-import { Check } from "lucide-react"
+import { Check } from "@/lib/icons"
 import { FadeInOnScroll, StaggerContainer, StaggerItem } from "@/components/ui/scroll-animations"
 import { useTranslations } from "next-intl"
 

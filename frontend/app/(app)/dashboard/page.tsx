@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "@/lib/icons";
 import { apiRequest, getApiErrorMessage } from "@/lib/api";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import type { SchedulerStatus } from "@/lib/types";

@@ -1,6 +1,6 @@
 "use client"
 
-import { List, LayoutGrid } from "lucide-react"
+import { List, LayoutGrid } from "@/lib/icons"
 import { cn } from "@/lib/utils"
 
 export type ViewMode = "cards" | "list"

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { ChevronLeft } from "lucide-react"
+import { ChevronLeft } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import type { AgentRuntimeArtifact } from "@/lib/agent-runtime"

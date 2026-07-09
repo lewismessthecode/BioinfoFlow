@@ -14,7 +14,7 @@ import {
   Play,
   TerminalSquare,
   Workflow,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"

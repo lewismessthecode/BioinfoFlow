@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState, type ChangeEvent } from "react"
-import { FileJson, Loader2, Upload } from "lucide-react"
+import { FileJson, Loader2, Upload } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"

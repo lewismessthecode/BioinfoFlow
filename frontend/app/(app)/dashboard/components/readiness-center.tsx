@@ -10,7 +10,7 @@ import {
   CircleX,
   ListChecks,
   RefreshCw,
-} from "lucide-react";
+} from "@/lib/icons";
 import { useTranslations } from "next-intl";
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context";
 import { Button } from "@/components/ui/button";

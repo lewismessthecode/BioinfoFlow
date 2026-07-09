@@ -23,7 +23,7 @@ import {
   RotateCcw,
   SlidersHorizontal,
   type LucideIcon,
-} from "lucide-react"
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { AgentComposer } from "./agent-composer"

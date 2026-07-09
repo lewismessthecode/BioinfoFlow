@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
-import { ChevronRight, Info, ScrollText } from "lucide-react"
+import { ChevronRight, Info, ScrollText } from "@/lib/icons"
 import { toast } from "sonner"
 import { apiRequest, ApiError } from "@/lib/api"
 import { formatDateTime } from "@/lib/format-utils"

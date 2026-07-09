@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowRight, RotateCw } from "lucide-react"
+import { ArrowRight, RotateCw } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"

@@ -6,7 +6,7 @@ import {
   HardDrive,
   CheckCircle2,
   AlertCircle,
-} from "lucide-react";
+} from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import {
   FadeInOnScroll,

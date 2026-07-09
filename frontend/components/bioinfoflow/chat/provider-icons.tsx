@@ -28,7 +28,7 @@ import {
   Qwen,
   XAI,
 } from "@lobehub/icons"
-import { Server } from "lucide-react"
+import { Server } from "@/lib/icons"
 import { cn } from "@/lib/utils"
 import {
   resolveProviderIconKey,

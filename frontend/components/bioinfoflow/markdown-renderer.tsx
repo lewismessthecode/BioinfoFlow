@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { Copy } from "lucide-react"
+import { Copy } from "@/lib/icons"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"

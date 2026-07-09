@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Folder, FileIcon, ChevronRight, ArrowUp, Home, Loader2, Upload, FolderOpen, FolderSearch, Package, BookOpen, Database, PlayCircle } from "lucide-react"
+import { Folder, FileIcon, ChevronRight, ArrowUp, Home, Loader2, Upload, FolderOpen, FolderSearch, Package, BookOpen, Database, PlayCircle } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"

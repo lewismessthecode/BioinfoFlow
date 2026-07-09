@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react"
-import { Plus } from "lucide-react"
+import { Plus } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 

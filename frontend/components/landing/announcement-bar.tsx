@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { X, ArrowRight } from "lucide-react"
+import { X, ArrowRight } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 export function AnnouncementBar() {

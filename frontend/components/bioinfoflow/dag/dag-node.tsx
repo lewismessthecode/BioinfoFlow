@@ -13,7 +13,7 @@ import type React from "react"
 import type { NodeProps } from "reactflow"
 import { Handle, Position } from "reactflow"
 import { cn } from "@/lib/utils"
-import { CheckCircle2, Loader2, Clock, Circle, XCircle } from "lucide-react"
+import { CheckCircle2, Loader2, Clock, Circle, XCircle } from "@/lib/icons"
 
 export type NodeStatus = "pending" | "queued" | "running" | "success" | "failed"
 

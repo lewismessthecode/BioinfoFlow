@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertTriangle, Check, Circle, CircleSlash2, Loader2 } from "lucide-react"
+import { AlertTriangle, Check, Circle, CircleSlash2, Loader2 } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import type { AgentTodoDisplayItem, AgentTodoDisplayStatus, AgentTodoItem } from "@/lib/agent-runtime"

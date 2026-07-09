@@ -10,7 +10,7 @@ import {
   allowedSourceKindsFromRoots,
   preferredSourceKindFromRoots,
 } from "@/lib/storage-source-policy"
-import { FolderOpen, Plus, X } from "lucide-react"
+import { FolderOpen, Plus, X } from "@/lib/icons"
 
 interface FileListFieldProps {
   field: FormField

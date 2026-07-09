@@ -1,7 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { MoreHorizontal, Clock, Workflow } from "lucide-react"
+import { MoreHorizontal, Clock, Workflow } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

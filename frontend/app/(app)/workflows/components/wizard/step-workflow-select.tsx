@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { Search, Check, Clock } from "lucide-react"
+import { Search, Check, Clock } from "@/lib/icons"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"

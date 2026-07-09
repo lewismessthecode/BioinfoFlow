@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react"
+import type { LucideIcon } from "@/lib/icons"
 import {
   Bot,
   Container,
@@ -8,7 +8,7 @@ import {
   Play,
   Server,
   Settings,
-} from "lucide-react"
+} from "@/lib/icons"
 
 /** Single source of truth for top-level app navigation routes. */
 type NavRoute = {

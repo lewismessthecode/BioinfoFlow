@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
-import { Plus, TerminalSquare, X } from "lucide-react"
+import { Plus, TerminalSquare, X } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent } from "@/components/ui/sheet"

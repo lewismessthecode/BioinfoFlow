@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertTriangle, Check, CheckCircle2, XCircle } from "lucide-react"
+import { AlertTriangle, Check, CheckCircle2, XCircle } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"

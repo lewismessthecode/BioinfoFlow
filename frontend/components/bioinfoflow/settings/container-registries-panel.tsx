@@ -9,7 +9,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react"
-import { Loader2, PlayCircle, Plus, Star, Trash2 } from "lucide-react"
+import { Loader2, PlayCircle, Plus, Star, Trash2 } from "@/lib/icons"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"

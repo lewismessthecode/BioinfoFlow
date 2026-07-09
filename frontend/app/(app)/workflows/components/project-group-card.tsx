@@ -1,7 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { Play, Trash2 } from "lucide-react"
+import { Play, Trash2 } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenuItem,

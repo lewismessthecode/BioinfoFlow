@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useRef, useEffect, useCallback, useState } from "react"
-import { ArrowUp, Plus, Square, Upload } from "lucide-react"
+import { ArrowUp, Plus, Square, Upload } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"

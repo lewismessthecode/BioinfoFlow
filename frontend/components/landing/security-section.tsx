@@ -1,6 +1,6 @@
 "use client"
 
-import { Lock, Folder, Shield, FileCheck, Server, Eye } from "lucide-react"
+import { Lock, Folder, Shield, FileCheck, Server, Eye } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 export function SecuritySection() {

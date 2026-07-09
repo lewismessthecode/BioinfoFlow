@@ -3,7 +3,7 @@
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import type { RunStatus } from "@/lib/types"
-import { Check, Circle, CircleDashed, Loader2, XCircle } from "lucide-react"
+import { Check, Circle, CircleDashed, Loader2, XCircle } from "@/lib/icons"
 
 const STAGES: RunStatus[] = ["pending", "queued", "preparing", "running"]
 

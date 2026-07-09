@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react"
+import type { LucideIcon } from "@/lib/icons"
 import {
   Bot,
   Container,
@@ -6,7 +6,7 @@ import {
   Server,
   User as UserIcon,
   Users,
-} from "lucide-react"
+} from "@/lib/icons"
 
 export type SettingsSectionKey =
   | "account"

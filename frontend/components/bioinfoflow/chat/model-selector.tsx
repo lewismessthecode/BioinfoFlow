@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useTranslations } from "next-intl"
-import { Check, ChevronDown, Settings as SettingsIcon } from "lucide-react"
+import { Check, ChevronDown, Settings as SettingsIcon } from "@/lib/icons"
 import Link from "next/link"
 import {
   composerSelectorChevronClassName,

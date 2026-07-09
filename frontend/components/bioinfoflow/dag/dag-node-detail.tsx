@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useCallback } from "react"
-import { X, Clock, Container, Terminal } from "lucide-react"
+import { X, Clock, Container, Terminal } from "@/lib/icons"
 import { cn } from "@/lib/utils"
 import type { NodeStatus } from "./dag-node"
 

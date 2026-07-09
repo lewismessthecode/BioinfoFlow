@@ -1,6 +1,6 @@
 "use client"
 
-import { GitBranch } from "lucide-react"
+import { GitBranch } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { Workflow } from "@/lib/types"

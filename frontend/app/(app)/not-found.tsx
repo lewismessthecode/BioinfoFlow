@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { FileQuestion } from "lucide-react"
+import { FileQuestion } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 
 export default function AppNotFound() {

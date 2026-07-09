@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Play, GitBranch, Container, FolderOpen } from "lucide-react";
+import { Play, GitBranch, Container, FolderOpen } from "@/lib/icons";
 import {
   CardRoot,
   CardContent,

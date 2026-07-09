@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowRight } from "lucide-react"
+import { ArrowRight } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 export function FinalCTA() {

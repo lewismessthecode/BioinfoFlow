@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
-import { Loader2, LockKeyhole, Mail } from "lucide-react"
+import { Loader2, LockKeyhole, Mail } from "@/lib/icons"
 import { authClient } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

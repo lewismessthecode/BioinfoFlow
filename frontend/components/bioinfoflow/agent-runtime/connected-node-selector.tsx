@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { Check, ChevronDown, Monitor, Server } from "lucide-react"
+import { Check, ChevronDown, Monitor, Server } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import {

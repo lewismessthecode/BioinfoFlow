@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Gauge, ArrowRight } from "lucide-react";
+import { Gauge, ArrowRight } from "@/lib/icons";
 import {
   CardRoot,
   CardContent,

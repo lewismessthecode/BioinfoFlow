@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo } from "react"
 import { cn } from "@/lib/utils"
-import { MessageSquare, Workflow, Play, Container, ChevronRight, CheckCircle2, Clock, Terminal } from "lucide-react"
+import { MessageSquare, Workflow, Play, Container, ChevronRight, CheckCircle2, Clock, Terminal } from "@/lib/icons"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { FadeInOnScroll } from "@/components/ui/scroll-animations"
 import { useTranslations } from "next-intl"

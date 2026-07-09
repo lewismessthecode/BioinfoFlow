@@ -1,6 +1,6 @@
 "use client"
 
-import { Menu, Moon, PartyPopper, Sun } from "lucide-react"
+import { Menu, Moon, PartyPopper, Sun } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { getNextAppearanceMode, useAppearance } from "@/lib/appearance/use-appearance"

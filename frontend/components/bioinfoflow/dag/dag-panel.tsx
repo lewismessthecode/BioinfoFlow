@@ -22,7 +22,7 @@ import ReactFlow, {
   useNodesState,
 } from "reactflow"
 import "reactflow/dist/style.css"
-import { AlertCircle, MoveHorizontal, MoveVertical, Network, RotateCcw } from "lucide-react"
+import { AlertCircle, MoveHorizontal, MoveVertical, Network, RotateCcw } from "@/lib/icons"
 
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
 import type { DagData, Run } from "@/lib/types"

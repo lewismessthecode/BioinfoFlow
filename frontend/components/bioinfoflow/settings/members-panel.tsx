@@ -9,7 +9,7 @@ import {
   Shield,
   ShieldCheck,
   UserRound,
-} from "lucide-react"
+} from "@/lib/icons"
 import { authClient } from "@/lib/auth-client"
 import type { TeamRole } from "@/lib/auth-config"
 import { Badge } from "@/components/ui/badge"

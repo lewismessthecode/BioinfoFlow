@@ -10,7 +10,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react"
-import { ExternalLink, FileText, Github, Globe2, Search } from "lucide-react"
+import { ExternalLink, FileText, Github, Globe2, Search } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import {

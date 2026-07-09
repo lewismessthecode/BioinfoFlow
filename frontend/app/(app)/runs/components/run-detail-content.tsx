@@ -15,7 +15,7 @@ import {
   Eraser,
   MoreHorizontal,
   FolderOpen,
-} from "lucide-react";
+} from "@/lib/icons";
 import { useTranslations } from "next-intl";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";

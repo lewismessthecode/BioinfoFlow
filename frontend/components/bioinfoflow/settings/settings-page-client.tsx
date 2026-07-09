@@ -9,7 +9,7 @@ import {
   Moon,
   PartyPopper,
   Sun,
-} from "lucide-react"
+} from "@/lib/icons"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { ContainerRegistriesPanel } from "@/components/bioinfoflow/settings/container-registries-panel"
 import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-panel"

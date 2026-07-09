@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useRef } from "react"
-import { Play, RotateCcw, ExternalLink } from "lucide-react"
+import { Play, RotateCcw, ExternalLink } from "@/lib/icons"
 import { useDemoReplay } from "@/lib/demo/demo-context"
 import { AgentCoreTurnBlock } from "@/components/bioinfoflow/agent-core/agent-core-chat"
 import { DagPanel } from "@/components/bioinfoflow/dag/dag-panel"

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { Plus } from "lucide-react"
+import { Plus } from "@/lib/icons"
 import type { AgentCoreSession } from "@/lib/agent-core"
 import type { Project } from "@/lib/types"
 import { ProjectItem } from "./project-item"
