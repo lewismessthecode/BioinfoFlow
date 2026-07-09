@@ -162,10 +162,9 @@ class AgentToolExecutor:
         execution_target: dict | str | None = None,
     ) -> ToolExecutionResult:
         tool = self.registry.get(tool_name)
-        if execution_target is None:
-            session = await self._session_for_context(context)
-            if session is not None:
-                execution_target = execution_target_from_session(session)
+        session = await self._session_for_context(context)
+        if session is not None:
+            execution_target = execution_target_from_session(session)
         exposure = self.exposure.decide(
             tool_name=tool_name,
             policy=toolset_policy,
@@ -304,7 +303,10 @@ class AgentToolExecutor:
             ),
         )
         if not exposure.allowed:
-            raise PermissionDeniedError("; ".join(exposure.reasons))
+            return await self._record_permission_failure(
+                action=action,
+                error_message="; ".join(exposure.reasons),
+            )
         return await self._run_action(action=action, tool=tool, context=context)
 
     async def _session_for_context(self, context: AgentToolContext):
@@ -324,6 +326,33 @@ class AgentToolExecutor:
         ):
             return None
         return session
+
+    async def _record_permission_failure(
+        self,
+        *,
+        action,
+        error_message: str,
+    ) -> ToolExecutionResult:
+        error = {"type": "PermissionDeniedError", "message": error_message}
+        action = await self.action_repo.update_all(
+            action,
+            status=AgentActionStatus.FAILED,
+            error=error,
+            completed_at=datetime.now(timezone.utc),
+            requires_resume=False,
+        )
+        await self.ledger.append(
+            session_id=str(action.session_id),
+            turn_id=str(action.turn_id),
+            type=AgentEventType.ACTION_FAILED,
+            payload={"action_id": str(action.id), "error": error},
+        )
+        agent_metrics.increment("tools.failed")
+        return ToolExecutionResult(
+            action_id=str(action.id),
+            status=action.status,
+            error=error,
+        )
 
     async def _run_action(
         self,

@@ -405,6 +405,70 @@ async def test_remote_exec_rejects_explicit_connection_outside_execution_target(
 
 
 @pytest.mark.asyncio
+async def test_remote_exec_ignores_stale_legacy_connection_when_target_is_canonical(
+    db_session,
+):
+    service = RemoteConnectionService(db_session)
+    selected = await service.create_connection(
+        {
+            "name": "Selected HPC",
+            "host": "selected.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "selected-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    stale = await service.create_connection(
+        {
+            "name": "Stale HPC",
+            "host": "stale.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "stale-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    agent_session = await _create_agent_session(
+        db_session,
+        session_metadata={
+            "remote_connection_id": str(stale.id),
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(selected.id),
+            },
+        },
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="selected.cluster.example.org\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    tool = RemoteExecTool(executor=executor)
+
+    result = await tool.run(
+        {"command": "hostname"},
+        _tool_context(db_session, session_id=str(agent_session.id)),
+    )
+
+    assert result["connection"]["id"] == str(selected.id)
+    assert executor.calls[0]["connection"].id == str(selected.id)
+    with pytest.raises(NotFoundError):
+        await tool.run(
+            {"connection_id": str(stale.id), "command": "hostname"},
+            _tool_context(db_session, session_id=str(agent_session.id)),
+        )
+
+
+@pytest.mark.asyncio
 async def test_remote_project_session_sets_connection_and_working_directory(db_session):
     connection = await RemoteConnectionService(db_session).create_connection(
         {

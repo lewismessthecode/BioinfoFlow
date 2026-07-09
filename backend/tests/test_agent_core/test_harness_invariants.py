@@ -711,6 +711,47 @@ async def test_remote_ssh_executor_rejects_stale_local_tool_call(db_session):
 
 
 @pytest.mark.asyncio
+async def test_executor_prefers_persisted_session_target_over_explicit_argument(
+    db_session,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-1",
+            }
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Try stale local shell with explicit local override.",
+    )
+
+    executor = AgentToolExecutor(db_session, build_default_tool_registry())
+    with pytest.raises(PermissionDeniedError, match="not exposed"):
+        await executor.execute(
+            tool_name="bash",
+            input={"command": "pwd"},
+            context=AgentToolContext(
+                db=db_session,
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                session_id=str(session.id),
+                turn_id=str(turn.id),
+            ),
+            toolset_policy={"name": "execution"},
+            execution_target={"type": "local"},
+        )
+
+
+@pytest.mark.asyncio
 async def test_approval_resume_executes_tool_and_continues_turn(db_session, monkeypatch):
     calls = 0
 
@@ -890,6 +931,97 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(db_session
     resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
     assert resumed_turn.status == "completed"
     assert resumed_turn.final_text == "I will continue without running that tool."
+
+
+@pytest.mark.asyncio
+async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
+    db_session,
+    monkeypatch,
+):
+    async def fake_completion(*args, **kwargs):
+        del args, kwargs
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        class FakeFunction:
+            name = "bash"
+            arguments = json.dumps({"command": "pwd"})
+
+        class FakeToolCall:
+            id = "tool-call-stale"
+            function = FakeFunction()
+
+        message = FakeMessage()
+        message.content = ""
+        message.tool_calls = [FakeToolCall()]
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session)
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="ask_each_action",
+    )
+    session = await service.session_repo.update_all(session, toolset_policy={"name": "execution"})
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Request local shell, then target becomes remote.",
+    )
+
+    waiting_turn = await service.runtime.run_turn(str(turn.id))
+    assert waiting_turn.status == "waiting_approval"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert actions[0].status == "waiting_decision"
+
+    await service.decide_action(
+        action_id=str(actions[0].id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-1",
+            }
+        },
+    )
+
+    resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
+
+    assert resumed_turn.status == "failed"
+    assert resumed_turn.error_code == "tool_resume_failed"
+    updated_actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert updated_actions[0].status == "failed"
+    assert updated_actions[0].error["type"] == "PermissionDeniedError"
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    tool_message = next(message for message in messages if message.role == "tool")
+    tool_payload = json.loads(tool_message.content_parts[0]["text"])
+    assert tool_payload["status"] == "failed"
+    assert tool_payload["error"]["type"] == "PermissionDeniedError"
 
 
 @pytest.mark.asyncio

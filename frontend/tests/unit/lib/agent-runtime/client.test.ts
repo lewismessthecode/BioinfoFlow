@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  createAgentRuntimeSession,
   createAgentRuntimeTurn,
   updateAgentRuntimeSessionMetadata,
 } from "@/lib/agent-runtime/client"
@@ -43,6 +44,27 @@ describe("agent runtime client", () => {
     const body = JSON.parse(apiRequestMock.mock.calls[0][1].body)
     expect(body).toMatchObject({
       input_text: "hello",
+      execution_target: {
+        kind: "remote_ssh",
+        type: "remote_ssh",
+        remote_connection_id: "connection-1",
+        connection_id: "connection-1",
+      },
+    })
+  })
+
+  it("serializes a selected remote execution target when creating a session", async () => {
+    await createAgentRuntimeSession({
+      title: "Remote session",
+      executionTarget: {
+        kind: "remote_ssh",
+        remote_connection_id: "connection-1",
+      },
+    })
+
+    const body = JSON.parse(apiRequestMock.mock.calls[0][1].body)
+    expect(body).toMatchObject({
+      title: "Remote session",
       execution_target: {
         kind: "remote_ssh",
         type: "remote_ssh",
