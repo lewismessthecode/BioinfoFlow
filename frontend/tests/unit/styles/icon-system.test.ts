@@ -38,4 +38,18 @@ describe("icon system boundaries", () => {
 
     expect(offenders).toEqual([])
   })
+
+  it("keeps the global lucide stroke and motion rule centralized", () => {
+    const globals = readFileSync(join(frontendRoot, "app/globals.css"), "utf8")
+
+    expect(globals).toContain(".lucide")
+    expect(globals).toContain("stroke-width: 1.75")
+    expect(globals).toContain("transition-duration: var(--duration-fast)")
+  })
+
+  it("keeps button icons on the shared stroke weight", () => {
+    const button = readFileSync(join(frontendRoot, "components/ui/button.tsx"), "utf8")
+
+    expect(button).toContain("[&_svg]:stroke-[1.75]")
+  })
 })
