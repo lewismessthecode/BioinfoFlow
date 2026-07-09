@@ -91,7 +91,7 @@ export function ProjectItem({
             onClick={() => onSelectProject(project)}
             aria-label={project.name}
             className={cn(
-              "flex h-8 w-full items-center justify-center rounded-[7px] transition-[background-color,box-shadow,color,transform] duration-150 outline-none active:scale-[0.98] focus-visible:bg-sidebar-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-sidebar-ring/45",
+              "flex h-8 w-full items-center justify-center rounded-[7px] transition-[background-color,box-shadow,color,transform] duration-150 outline-none motion-safe:active:scale-[0.98] focus-visible:bg-sidebar-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-sidebar-ring/45",
               isActive
                 ? "bg-sidebar-foreground/[0.08] text-sidebar-foreground"
                 : "text-sidebar-foreground/78 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground"

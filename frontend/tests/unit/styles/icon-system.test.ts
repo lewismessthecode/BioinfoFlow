@@ -43,6 +43,7 @@ describe("icon system boundaries", () => {
     const globals = readFileSync(join(frontendRoot, "app/globals.css"), "utf8")
 
     expect(globals).toContain(".lucide")
+    expect(globals).toContain('[data-slot="app-icon"]')
     expect(globals).toContain("stroke-width: 1.75")
     expect(globals).toContain("transition-duration: var(--duration-fast)")
   })

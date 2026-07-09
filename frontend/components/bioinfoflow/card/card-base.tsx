@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { LucideIcon } from "@/lib/icons"
+import type { AppIcon } from "@/lib/icons"
+import { Icon as AppIconGlyph } from "@/components/ui/icon"
 
 // Card Root
 interface CardRootProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -29,7 +30,7 @@ export function CardRoot({ className, variant = "default", ...props }: CardRootP
 
 // Card Header
 interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
-  icon?: LucideIcon
+  icon?: AppIcon
   iconClassName?: string
   title: string
   badge?: React.ReactNode
@@ -55,7 +56,7 @@ export function CardHeader({
       {...props}
     >
       <div className="flex items-center gap-2">
-        {Icon && <Icon className={cn("h-4 w-4 text-foreground", iconClassName)} />}
+        {Icon && <AppIconGlyph icon={Icon} className={cn("text-foreground", iconClassName)} />}
         <span className="text-sm font-medium text-foreground">{title}</span>
         {badge}
       </div>

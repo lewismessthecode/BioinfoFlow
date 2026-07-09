@@ -1,4 +1,4 @@
-import type { LucideIcon } from "@/lib/icons"
+import type { AppIcon } from "@/lib/icons"
 import {
   Bot,
   Container,
@@ -21,7 +21,7 @@ export type SettingsGroupKey = "personal" | "integrations" | "team"
 export type SettingsNavItem = {
   key: SettingsSectionKey
   group: SettingsGroupKey
-  icon: LucideIcon
+  icon: AppIcon
   requiresRegistryAdmin?: boolean
   requiresMembers?: boolean
 }

@@ -307,7 +307,7 @@ function RailButton({
           type="button"
           onClick={onClick}
           className={cn(
-            "flex h-8 w-full items-center justify-center rounded-[7px] text-sidebar-foreground transition-[background-color,box-shadow,color,transform] duration-150 outline-none active:scale-[0.98] focus-visible:bg-sidebar-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-sidebar-ring/45",
+            "flex h-8 w-full items-center justify-center rounded-[7px] text-sidebar-foreground transition-[background-color,box-shadow,color,transform] duration-150 outline-none motion-safe:active:scale-[0.98] focus-visible:bg-sidebar-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-sidebar-ring/45",
             active
               ? "bg-sidebar-foreground/[0.08] text-sidebar-foreground"
               : "text-sidebar-foreground/76 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground",

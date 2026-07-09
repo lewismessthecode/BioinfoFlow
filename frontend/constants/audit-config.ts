@@ -16,7 +16,7 @@ import {
   PlusCircle,
   RotateCw,
   Trash2,
-  type LucideIcon,
+  type AppIcon,
 } from "@/lib/icons"
 import type { StatusBadgeProps } from "@/components/ui/status-badge"
 
@@ -25,7 +25,7 @@ type AuditVariant = NonNullable<StatusBadgeProps["variant"]>
 type AuditActionConfig = {
   labelKey: string
   variant: AuditVariant
-  icon: LucideIcon
+  icon: AppIcon
 }
 
 export const auditActionConfig: Record<string, AuditActionConfig> = {
@@ -51,7 +51,7 @@ export const DEFAULT_AUDIT_CONFIG: AuditActionConfig = {
  * Resolve the icon for any action slug — falls back via fuzzy match
  * (e.g. unknown "queued" string still maps to Clock).
  */
-const ICON_FALLBACKS: Array<[RegExp, LucideIcon]> = [
+const ICON_FALLBACKS: Array<[RegExp, AppIcon]> = [
   [/queue/i, Clock],
   [/start|run|resume/i, Play],
   [/complete|finish|success|done/i, CheckCircle2],
@@ -63,7 +63,7 @@ const ICON_FALLBACKS: Array<[RegExp, LucideIcon]> = [
   [/clean|delete|remove/i, Trash2],
 ]
 
-export function auditActionIcon(action: string): LucideIcon {
+export function auditActionIcon(action: string): AppIcon {
   const direct = auditActionConfig[action]
   if (direct) return direct.icon
   for (const [pattern, icon] of ICON_FALLBACKS) {

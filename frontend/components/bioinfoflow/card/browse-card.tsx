@@ -1,13 +1,14 @@
 "use client"
 
 import type { ElementType, ReactNode } from "react"
-import type { LucideIcon } from "@/lib/icons"
+import type { AppIcon } from "@/lib/icons"
 import { Card, CardContent } from "@/components/ui/card"
+import { Icon as AppIconGlyph } from "@/components/ui/icon"
 import { cn } from "@/lib/utils"
 
 type BrowseCardProps = {
   title: string
-  icon: LucideIcon
+  icon: AppIcon
   iconVariant?: "default" | "artifact"
   titleAs?: "h2" | "h3"
   titleWrapper?: (children: ReactNode) => ReactNode
@@ -47,7 +48,7 @@ export function BrowseCard({
           iconVariant === "artifact" && "quiet-card-icon-shell--artifact",
         )}
       >
-        <Icon className="quiet-card-icon-glyph h-4 w-4" strokeWidth={1.8} />
+        <AppIconGlyph icon={Icon} className="quiet-card-icon-glyph" />
       </div>
       <TitleTag
         className={cn(

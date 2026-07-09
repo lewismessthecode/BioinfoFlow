@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react"
-import { FileBox, FolderTree, Globe, RotateCw, type LucideIcon, X } from "@/lib/icons"
+import { FileBox, FolderTree, Globe, RotateCw, type AppIcon, X } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -42,7 +42,7 @@ const TABS: Array<{
   key: AgentTabbedPanelTab
   labelKey: string
   iconName: string
-  Icon: LucideIcon
+  Icon: AppIcon
 }> = [
   { key: "preview", labelKey: "tabs.artifacts", iconName: "file-box", Icon: FileBox },
   { key: "files", labelKey: "tabs.files", iconName: "folder-tree", Icon: FolderTree },

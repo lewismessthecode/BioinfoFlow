@@ -8,7 +8,7 @@ export class SettingsPage {
   }
 
   get heading(): Locator {
-    return this.page.getByRole("heading", { name: "Settings", exact: true })
+    return this.page.getByText("Settings", { exact: true }).first()
   }
 
   async expectLoaded() {
@@ -16,7 +16,7 @@ export class SettingsPage {
   }
 
   async openProvidersSection() {
-    await this.page.getByRole("button", { name: "AI Providers", exact: true }).click()
+    await this.page.getByRole("link", { name: "AI Providers", exact: true }).click()
     await expect(
       this.page.getByText("Configure your API keys and select which model powers the agent."),
     ).toBeVisible()
@@ -48,10 +48,10 @@ export class SettingsPage {
   }
 
   async expectSuccessState(providerLabel: string) {
-    await expect(this.testButton(providerLabel).locator("svg.lucide-check")).toBeVisible()
+    await expect(this.providerCard(providerLabel).getByText("Ready", { exact: true })).toBeVisible()
   }
 
   async expectFailureState(providerLabel: string) {
-    await expect(this.testButton(providerLabel).locator("svg.lucide-x")).toBeVisible()
+    await expect(this.providerCard(providerLabel).getByText("Needs setup", { exact: true })).toBeVisible()
   }
 }

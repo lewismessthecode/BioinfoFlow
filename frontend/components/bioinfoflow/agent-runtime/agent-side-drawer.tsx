@@ -7,7 +7,7 @@ import {
   FolderTree,
   Globe,
   ListChecks,
-  type LucideIcon,
+  type AppIcon,
   Play,
   Workflow,
   X,
@@ -39,7 +39,7 @@ type AgentSideDrawerProps = {
   className?: string
 }
 
-const TABS: Array<{ key: AgentSideDrawerTab; labelKey: string; Icon: LucideIcon }> = [
+const TABS: Array<{ key: AgentSideDrawerTab; labelKey: string; Icon: AppIcon }> = [
   { key: "tools", labelKey: "tabs.tools", Icon: ListChecks },
   { key: "preview", labelKey: "tabs.preview", Icon: FileSearch },
   { key: "files", labelKey: "tabs.files", Icon: FolderTree },
@@ -244,7 +244,7 @@ function ToolButton({
   label: string
   description: string
   shortcut?: string
-  Icon: LucideIcon
+  Icon: AppIcon
   onClick: () => void
 }) {
   return (
@@ -276,7 +276,7 @@ function ToolLink({
   href: string
   label: string
   description: string
-  Icon: LucideIcon
+  Icon: AppIcon
 }) {
   return (
     <Link
