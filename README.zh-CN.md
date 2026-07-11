@@ -5,7 +5,7 @@
 <h1 align="center">BioinfoFlow</h1>
 
 <p align="center">
-  <em>面向 Nextflow 与 WDL 生信流程的 Agentic 本地控制台。</em>
+  <em>一个让 Agent 真正参与生物信息分析的工作空间。</em>
 </p>
 
 <p align="center">
@@ -21,63 +21,85 @@
 
 ---
 
-Bioinfoflow 是面向生信流程的本地优先控制平面。它可以运行在工作站或实验室服务器上，把项目数据放在统一的 `BIOINFOFLOW_HOME` 下，并提供共享 Web UI 来注册流程、提交运行、查看日志和检查结果。
+一次生物信息分析，很少只是一条命令。流程文件、样本表、参考数据、容器镜像、运行日志、结果目录，以及解释这次分析为何这样执行的记录，常常散落在不同终端和文件夹里。
 
-Bioinfoflow 位于 Nextflow 与 WDL/MiniWDL 之上，提供持久化调度器、工作流感知的数据布局、浏览器终端、HTTP CLI，以及 AgentCore 运行时。AgentCore 可以帮助准备配置、检查项目文件、操作选中的 SSH 主机，并在审批机制下启动更高影响的操作。
+Bioinfoflow 想做的，是为这些工作提供一个稳定的归处。它把项目、分析流程、运行记录、DAG、日志、结果和终端放进同一套系统，也能同时接入平台管理的数据、已有本地目录和通过 SSH 连接的远程项目。Web 界面、`bif` CLI 与 Agent 使用的是同一个后端，系统则运行在你掌握的基础设施上。
+
+Agent 不是附加在界面旁边的聊天窗口。它与平台共享真实的工作上下文：项目文件、流程定义、运行历史、调度状态、工具、技能，以及经过选择的远程主机。它可以在这些信息之上理解问题、查找证据、准备配置并采取行动；权限与审批机制则把重要操作的最终决定权留给人。
 
 > [!TIP]
-> 三行启动：
+> 使用 Docker 在本机启动：
 >
 > ```bash
-> git clone https://github.com/lewismessthecode/BioinfoFlow.git && cd BioinfoFlow
-> cp .env.example .env   # 设置 owner 账号；provider key 可登录后在 UI 中配置
+> git clone https://github.com/lewismessthecode/BioinfoFlow.git
+> cd BioinfoFlow
+> cp .env.example .env
+> # 编辑 .env，修改初始所有者账号和密码
 > docker compose up -d --build
 > ```
 >
 > 然后打开 <http://localhost:3000>。
 
 <p align="center">
-  <img src="assets/product-preview.gif" alt="Bioinfoflow — 注册流程、配置输入、提交运行、查看实时 DAG" width="100%" />
+  <img src="assets/product-preview.gif" alt="Bioinfoflow — 注册分析流程、选择输入、提交运行并查看 DAG" width="100%" />
 </p>
 
----
+## 它把哪些事情放到了一起
 
-## 功能特性
+### 让项目成为长期上下文
 
-- **流程目录**：注册 Nextflow 和 WDL 流程后，可从 UI、CLI 或 AgentCore 工具提交运行。
-- **统一数据布局**：使用一个 `BIOINFOFLOW_HOME` 管理项目数据、参考、共享数据库、上传、运行输入和输出。
-- **运行工作台**：在一个页面中配置输入、提交运行、查看 DAG、跟踪日志并检查输出。
-- **持久化调度器**：使用并发槽位、资源检查、重试策略、超时处理、清理和重启恢复来调度运行。
-- **AgentCore 运行时**：通过聊天检查文件、管理项目和流程、运行已审批的平台操作，并操作选中的 SSH 连接。
-- **远程连接**：保存 SSH profile，通过后端测试连接，打开远程项目终端，流式运行短探针命令，并将选中的主机暴露给 AgentCore 工具。
-- **浏览器终端和 `bif` CLI**：使用 Web UI 进行交互操作，使用 CLI 针对运行中的后端编写脚本。
-- **本地认证和团队角色**：支持 personal、team 和 dev 三种认证模式，基于 Better Auth 管理会话。
+每个项目都有清楚的文件边界、流程绑定、运行历史和结果目录。项目数据既可以统一放在 `BIOINFOFLOW_HOME` 下由 Bioinfoflow 管理，也可以接入已有的本地目录；远程项目则可以绑定保存过的 SSH 连接。
 
----
+### 让一次运行可以被追溯
+
+分析流程注册一次后，便可以从 Web 界面、CLI 或 Agent 配置输入并提交运行。持久化调度器负责整次运行的并发、资源检查、重试、超时、清理和重启恢复；DAG、日志、事件、输入、审计记录与最终结果则保留在同一个运行工作区中。
+
+目前的流程执行由 Nextflow 和 WDL/MiniWDL 适配器承担。这些引擎位于统一的项目与运行模型之后，是执行层的选择，而不是几套彼此割裂的使用方式。
+
+### 让 Agent 不只回答，也能工作
+
+Agent 使用的不是一段孤立的聊天记录，而是平台本身掌握的项目文件、分析流程、运行记录、调度资源、容器镜像、技能说明和远程连接。它可以从理解需求继续走向检查证据、准备配置、调用工具和提交任务。查看与整理工作可以直接进行；可能产生明显影响的操作，则受到权限和审批策略约束。
+
+### 让本地与远程各守边界
+
+浏览器终端、`bif` CLI 和远程连接覆盖了交互式与脚本化操作，但平台的重心仍然留在自有基础设施上。保存的 SSH 配置可用于连接测试、短命令探测、远程项目终端，以及范围受限的 Agent 工具。
+
+这里所说的“本地优先”，强调的是数据与系统由谁掌握，并不意味着所有文件和计算资源都必须位于同一台机器。平台状态可以留在近处，同时按明确边界接入远程资源。
+
+## 它适合谁
+
+如果你有以下需要，Bioinfoflow 会比较合适：
+
+- 在自己的计算资源上开发或维护生物信息分析流程；
+- 希望终端关闭以后，一次运行仍然可以被理解、复查和复现；
+- 希望项目、输入、日志、DAG 和结果不再分散在不同工具里；
+- 希望 Agent 能依据真实的系统状态开展工作，同时把重要操作的决定权留给人。
+
+Bioinfoflow 首先面向独立研究者、生信开发者，以及管理工作站、实验室服务器或 SSH 计算资源的小型团队。它不是托管式数据分析服务，也不要求把研究数据交给外部平台。
 
 ## 快速开始
 
-### 前置条件
+### 环境要求
 
 - Docker Engine 或 Docker Desktop，并启用 Compose
-- 至少配置一个 AI provider：托管 provider 使用 API key；Ollama、vLLM 或其他 OpenAI-compatible 服务则配置 endpoint 和 model。
+- 只有使用 Agent 时才需要配置 AI 服务：可以使用托管服务的 API key，也可以连接 Ollama、vLLM 或兼容 OpenAI 接口的本地服务
 
-### 用 Docker 启动
+### 从源码启动
 
 ```bash
+git clone https://github.com/lewismessthecode/BioinfoFlow.git
+cd BioinfoFlow
 cp .env.example .env
 ```
 
-编辑 `.env`，至少写入 owner 账号：
+在 `.env` 中设置初始所有者账号：
 
 ```env
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 ```
 
-登录后进入 **Settings -> AI Providers**，OpenAI、Anthropic、Gemini、Grok、Groq、DeepSeek、OpenRouter 只需要粘贴 API key；Ollama、vLLM 和通用 OpenAI-compatible endpoint 也可以在同一页配置。无头部署时可用 `.env` 初始化，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`DEEPSEEK_API_KEY`、`OPENROUTER_API_KEY`、`XAI_API_KEY`、`GROK_API_KEY`、`GROQ_API_KEY`、`OLLAMA_BASE_URL`、`VLLM_BASE_URL`、`VLLM_API_KEY`、`VLLM_MODEL`、`OPENAI_COMPATIBLE_BASE_URL`、`OPENAI_COMPATIBLE_API_KEY` 和 `OPENAI_COMPATIBLE_MODEL`。
-
-启动整套服务：
+启动应用：
 
 ```bash
 docker compose up -d --build
@@ -85,20 +107,18 @@ docker compose up -d --build
 
 打开：
 
-- **UI** — <http://localhost:3000>
-- **API 文档** — <http://localhost:8000/api/v1/docs>
+- Web 界面：<http://localhost:3000>
+- API 文档：<http://localhost:8000/api/v1/docs>
 
-用 `.env` 里的 owner 邮箱和密码登录。
+从源码在本机启动时，数据默认保存在仓库的 `data/` 目录。登录后可以在 **设置 → AI 服务商** 中配置 Agent 使用的模型。发布镜像、GPU、私有镜像仓库和远程部署等内容，请参阅 [Docker 指南](docs/getting-started/docker.md)；环境变量的优先级和常见故障，请参阅 [运行手册](RUNBOOK.md)。
 
-本地源码构建最省心的做法是不要设置 `BIOINFOFLOW_HOME` —— `docker-compose.yml` 会把平台数据写入仓库里的 `data/` 目录，并在容器内挂载到相同绝对路径。已发布镜像使用的 Compose 栈默认写入 `/srv/bioinfoflow`。共享或远程服务器应显式设置绝对数据目录，并在构建前配置 `BETTER_AUTH_SECRET`、`NEXT_PUBLIC_API_BASE_URL`、`BETTER_AUTH_URL`、`CORS_ORIGINS` 和 `TRUSTED_HOSTS`。详细配置见 [Docker Quick Start](docs/getting-started/docker.md) 和 [Runbook](RUNBOOK.md)。
+<details>
+<summary>改用已经发布的镜像</summary>
 
-### 使用已发布镜像启动
-
-如果只是本机快速体验，可以直接拉取 GHCR 上的发布镜像，省掉本地构建：
+已发布的前端镜像主要用于 localhost 下的个人模式体验。
 
 ```bash
 cp .env.example .env
-# 编辑 .env：填 owner credentials；provider key 可登录后在 UI 中配置
 cat >> .env <<'EOF'
 IMAGE_REGISTRY=ghcr.io/lewismessthecode
 IMAGE_TAG=latest
@@ -107,45 +127,32 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-发布镜像会在 `main` 上的后端或前端代码变化后刷新。发布版前端镜像在构建时固定为 localhost API、personal 认证模式、本地邮箱密码认证以及关闭自助注册。如果要使用远程 URL、team 模式或其他公开认证设置，请配置 `.env` 后使用上面的源码构建方式。
+如果需要远程访问地址、团队模式或不同的认证设置，请从源码构建。
 
-`IMAGE_REGISTRY` 可以指向任意已保存 Bioinfoflow 后端/前端镜像的镜像仓库命名空间，例如 Harbor 的 `10.227.4.56:80/pipeline-dev`。工作流容器镜像仓库在 **Settings -> Container Registries** 中配置，owner/admin 可以添加 Harbor、设为全局默认，并选择保存凭据或引用环境变量。Harbor 不是必需项；工作流容器仍可使用 Docker Hub、完整镜像名或 tarball 导入。镜像仓库和 HTTP Harbor 的 insecure registry 配置说明见 [Docker Quick Start](docs/getting-started/docker.md#optional-container-registry)。
+</details>
 
----
+## 工作原理
 
-## 本地开发
-
-后端：
-
-```bash
-cd backend
-uv sync
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --reload-dir app --port 8000
+```text
+Web 界面 / bif CLI / Agent
+        ↓
+FastAPI 服务与持久化状态
+        ↓
+调度器与流程引擎适配器
+        ↓
+运行在自有基础设施上的容器、日志、事件与结果
 ```
 
-前端：
+- 前端使用 Next.js，提供项目、分析流程、运行记录、镜像、远程连接、调度、设置、终端和 Agent 会话等界面。
+- FastAPI 后端负责业务逻辑、持久化状态、存储路径、调度、执行、事件和工具调用。
+- 流程引擎适配器把统一的运行模型转换为具体引擎的执行方式，并负责收集结果。
+- `BIOINFOFLOW_HOME` 是平台状态、托管项目、流程源码、共享输入、缓存和结果的共同根目录。
 
-```bash
-cd frontend
-bun install
-bun run dev
-```
+更完整的实现边界见[架构概览](docs/architecture.md)和[架构参考](docs/reference/architecture.md)。
 
-常用检查：
+## 命令行
 
-```bash
-cd backend  && uv run pytest && uv run ruff check .
-cd frontend && bun run lint && bun run test
-```
-
-前后端默认都读仓库根目录的 `.env`，只在需要机器本地覆盖时才用 `backend/.env` 或 `frontend/.env.local`。
-
----
-
-## CLI
-
-`bif` 是面向运行中后端的 HTTP 客户端：
+`bif` 是面向运行中 Bioinfoflow 后端的 HTTP 客户端：
 
 ```bash
 cd backend
@@ -156,24 +163,44 @@ uv run bif run list
 uv run bif --output json run show <run-id>
 ```
 
-用 `--base-url` 或 `BIOFLOW_API_URL` 指向非默认后端。完整命令见 [CLI Reference](docs/reference/cli.md)。
+可以使用 `--base-url` 或 `BIOFLOW_API_URL` 选择其他后端。完整命令见 [CLI 参考](docs/reference/cli.md)。
 
----
+## 本地开发
+
+```bash
+# 后端
+cd backend
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload --reload-dir app --port 8000
+
+# 在另一个终端中启动前端
+cd frontend
+bun install
+bun run dev
+```
+
+后端检查使用 `uv run pytest && uv run ruff check .`，前端检查使用 `bun run lint && bun run test`。
+
+## 使用边界
+
+- Bioinfoflow 面向可信的机器和网络。Docker 部署会挂载 Docker socket，这意味着后端拥有主机级的容器控制能力。
+- 分析流程使用同路径挂载：主机、后端、流程运行器和任务容器需要以一致的绝对路径看到相关数据。
+- 远程连接用于查看文件、诊断问题、Agent 工具和交互式终端。分析任务仍由本地调度器和流程引擎适配器发起，而不是通过 SSH 调度。
+- 面向团队或互联网开放时，需要显式配置密钥、可信来源、TLS、备份，并做好常规的基础设施加固。
+
+在可信的本地环境之外部署前，请阅读[安全说明](docs/security.md)、[存储模型](docs/concepts/storage.md)和[运维手册](docs/operations/runbook.md)。
 
 ## 文档
 
 - [文档首页](docs/README.md)
 - [Docker 快速开始](docs/getting-started/docker.md)
-- [远程连接](docs/guides/remote-connections.md)
-- [nf-core/rnaseq 启动示例](demo/nfcore-rnaseq/README.md)
+- [运行手册](RUNBOOK.md)
+- [架构说明](docs/architecture.md)
 - [存储与数据布局](docs/concepts/storage.md)
-- [CLI 参考](docs/reference/cli.md)
-- [架构](docs/architecture.md)
-- [安全说明](docs/security.md)
-- [Runbook](RUNBOOK.md)
+- [远程连接](docs/guides/remote-connections.md)
+- [nf-core/rnaseq 示例](demo/nfcore-rnaseq/README.md)
 
----
-
-## License
+## 许可证
 
 Bioinfoflow 以 [MIT License](LICENSE) 发布。

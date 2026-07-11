@@ -20,7 +20,9 @@ The voice should be confident without promotional exaggeration. Claims must rema
 
 ## Product Positioning
 
-Describe Bioinfoflow as a local-first workspace and runtime for bioinformatics analysis. It brings projects, data paths, workflow execution, logs, outputs, terminals, remote hosts, and an approval-aware Agent into one system that runs on infrastructure the user controls.
+Describe Bioinfoflow as an Agent-guided workspace and runtime for bioinformatics analysis. Its defining quality is that the Agent shares real project, run, tool, and remote-host context with the rest of the platform and can act within explicit permission and approval boundaries.
+
+Local-first operation remains an important deployment principle, but not the headline identity. Bioinfoflow can work with managed local data, external local directories, and SSH-backed remote projects while keeping the platform under the user's control.
 
 Nextflow, WDL, and MiniWDL are supported execution engines, not the headline identity of the product. Mention them where implementation compatibility matters, but do not define Bioinfoflow primarily through those engine names.
 
@@ -28,14 +30,14 @@ Use **Agent** consistently in public README prose. Do not use **AgentCore**. The
 
 ## Information Architecture
 
-1. **Identity and proposition** — logo, project name, a concise subtitle, badges, and language switcher.
+1. **Identity and proposition** — logo, project name, an Agent-forward subtitle, badges, and language switcher.
 2. **Opening narrative** — two or three short paragraphs explaining the fragmented work Bioinfoflow brings together and the local-first boundary it preserves.
 3. **Immediate trial path** — a compact clone/configure/start command near the top.
 4. **Product preview** — retain the existing product GIF directly after the initial proposition.
 5. **What comes together** — organize capabilities into four coherent domains rather than a long flat feature list:
    - projects, data, and reproducible run workspaces;
    - workflow execution, scheduling, logs, DAGs, and outputs;
-   - the approval-aware Agent and browser/CLI tools;
+   - the action-capable, approval-aware Agent and browser/CLI tools;
    - remote connections and infrastructure the user controls.
 6. **Who it is for** — a short suitability section for individual researchers, bioinformatics developers, and small teams operating their own compute.
 7. **Quick start** — the shortest source-build Docker path, essential prerequisites, login, and local URLs. Move exhaustive environment-variable and registry details to the Docker guide and runbook.
