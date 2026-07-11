@@ -14,6 +14,7 @@ from app.cli.errors import handle_errors
 from app.cli.helpers import require_project, unpack_ctx
 from app.cli.jsonio import SpecError, read_spec
 from app.cli.render import Renderer
+from app.cli.run_spec import detect_legacy_run_keys
 
 run_app = typer.Typer(name="run", help="Manage pipeline runs.", no_args_is_help=True)
 
@@ -297,21 +298,7 @@ def _normalize_run_payload(
     if workflow_id is not None:
         normalized["workflow_id"] = workflow_id
 
-    legacy_keys = sorted(
-        key
-        for key in normalized
-        if key
-        in {
-            "params",
-            "inputs",
-            "config_overrides",
-            "timeout_seconds",
-            "workspace",
-            "submission_mode",
-            "json_inputs",
-            "table_rows",
-        }
-    )
+    legacy_keys = detect_legacy_run_keys(normalized)
     if legacy_keys:
         joined = ", ".join(legacy_keys)
         raise SpecError(
