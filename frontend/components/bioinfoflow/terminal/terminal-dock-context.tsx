@@ -174,7 +174,3 @@ export function useTerminalDock() {
   }
   return context
 }
-
-export function useOptionalTerminalDock() {
-  return useContext(TerminalDockContext)
-}
