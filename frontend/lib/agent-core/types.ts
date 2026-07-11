@@ -17,7 +17,6 @@ export type AgentActionStatus =
   | "failed"
   | "cancelled"
   | "rejected"
-export type AgentActionDecision = "approve" | "reject" | "modify"
 
 export type AgentModelSelection = {
   provider?: string | null

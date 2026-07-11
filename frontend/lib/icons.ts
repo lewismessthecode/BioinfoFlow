@@ -167,7 +167,6 @@ export {
   X,
   XCircle,
   XIcon,
-  Zap,
 } from "lucide-react"
 
 export interface AppIconProps extends React.SVGAttributes<SVGSVGElement> {
