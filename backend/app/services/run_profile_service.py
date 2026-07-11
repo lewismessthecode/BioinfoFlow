@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import glob
-import re
 from pathlib import Path
 
 from app.models.workflow import WorkflowEngine
+from app.services.run_helpers import expand_brace_glob_patterns
 
 
 class RunProfileService:
@@ -76,7 +76,7 @@ class RunProfileService:
 
     def _path_value_exists(self, value: str, workspace: Path) -> bool:
         if any(char in value for char in "*?[]{}"):
-            patterns = _expand_glob_braces(value)
+            patterns = expand_brace_glob_patterns(value)
             return any(
                 glob.glob(pattern, root_dir=str(workspace), recursive=True)
                 for pattern in patterns
@@ -131,18 +131,3 @@ class RunProfileService:
                 if r1_files and r2_files:
                     return f"{root}/*_{{R1,R2}}{ext}"
         return None
-
-
-def _expand_glob_braces(pattern: str) -> list[str]:
-    match = re.search(r"\{([^{}]+)\}", pattern)
-    if not match:
-        return [pattern]
-    options = [part.strip() for part in match.group(1).split(",") if part.strip()]
-    if not options:
-        return [pattern]
-    prefix = pattern[: match.start()]
-    suffix = pattern[match.end() :]
-    expanded: list[str] = []
-    for option in options:
-        expanded.extend(_expand_glob_braces(f"{prefix}{option}{suffix}"))
-    return expanded
