@@ -36,6 +36,7 @@ export function connectEventSource(options: EventSourceConnectionOptions) {
     nextSource.onerror = (event) => {
       if (disposed) return
       options.onError?.(nextSource, event)
+      if (disposed) return
       if (!options.shouldReconnect(nextSource, event) || reconnectTimer) return
 
       const failedSourcePolicy = options.failedSourcePolicy ?? "retain"

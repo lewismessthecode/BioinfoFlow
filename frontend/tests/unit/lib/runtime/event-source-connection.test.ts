@@ -107,6 +107,27 @@ describe("connectEventSource", () => {
     dispose()
   })
 
+  it("does not reconnect when onError disposes the connection", () => {
+    let dispose = () => {}
+    dispose = connectEventSource({
+      url: () => "https://example.test/events",
+      initialBackoffMs: 1000,
+      maxBackoffMs: 30000,
+      backoffMultiplier: 2,
+      shouldReconnect: () => true,
+      onError: () => dispose(),
+    })
+    const source = MockEventSource.instances[0]
+
+    source.error(MockEventSource.CLOSED)
+
+    expect(source.closed).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+
+    vi.advanceTimersByTime(30000)
+    expect(MockEventSource.instances).toHaveLength(1)
+  })
+
   it.each([
     ["retain", false],
     ["release", false],
