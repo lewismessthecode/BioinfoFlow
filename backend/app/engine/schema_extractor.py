@@ -5,7 +5,14 @@ from typing import Any
 
 from app.engine.registry import get_adapter
 from app.schemas.form_spec import FormField, FormSpec, OptionSpec
-from app.services.run_input_policy import is_managed_run_directory_name
+
+
+# JSON-schema normalization historically treats these three output directory
+# parameters as platform-managed. ``work_dir`` remains a user-controlled
+# workflow input in this caller even though other runtime paths manage it.
+_JSON_SCHEMA_MANAGED_DIRECTORY_NAMES = frozenset(
+    {"outdir", "output_dir", "publish_dir"}
+)
 
 
 class SchemaExtractor:
@@ -241,7 +248,7 @@ def _input_from_json_schema_property(
         payload["enum"] = enum_values
     if section_title:
         payload["section_title"] = section_title
-    if is_managed_run_directory_name(name):
+    if name.lower() in _JSON_SCHEMA_MANAGED_DIRECTORY_NAMES:
         payload["is_internal"] = True
         payload["optional"] = True
     if value_kind in {"file", "file_list", "directory"}:

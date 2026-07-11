@@ -13,6 +13,7 @@ from app.models.run import Run
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.run_repo import RunRepository
 from app.repositories.workflow_repo import WorkflowRepository
+from app.runtime.task_runner import task_runner as runtime_task_runner
 from app.services.run_archive import RunArchiveService
 from app.services.run_compiler import WorkflowNotEnabledError
 from app.services.run_dag_service import RunDagService
@@ -20,7 +21,12 @@ from app.services.run_dispatch import RunDispatcher, get_run_dispatcher
 from app.services.run_lifecycle_service import RunLifecycleService
 
 
-__all__ = ["RunService", "RunLifecycleService", "WorkflowNotEnabledError"]
+# Deprecated compatibility export. Production run dispatch is owned by the
+# injected RunDispatcher collaborator; this alias remains importable for
+# downstream callers that used the former public module surface.
+task_runner = runtime_task_runner
+
+__all__ = ["RunService", "RunLifecycleService", "WorkflowNotEnabledError", "task_runner"]
 
 
 class RunService:

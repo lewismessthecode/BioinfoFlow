@@ -103,7 +103,7 @@ async def test_schema_extractor_keeps_non_dag_schema_content_from_adapter():
 
 @pytest.mark.parametrize(
     "name",
-    ["outdir", "output_dir", "publish_dir", "work_dir"],
+    ["outdir", "output_dir", "publish_dir"],
 )
 def test_json_schema_managed_run_directories_are_internal(name):
     schema = normalize_extracted_schema(
@@ -124,6 +124,31 @@ def test_json_schema_managed_run_directories_are_internal(name):
     inputs = {item["name"]: item for item in schema["inputs"]}
     assert inputs[name].get("is_internal") is True
     assert inputs[name]["optional"] is True
+
+
+def test_json_schema_work_dir_remains_a_required_user_input():
+    schema = normalize_extracted_schema(
+        {
+            "$defs": {},
+            "required": ["work_dir"],
+            "properties": {
+                "work_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                }
+            },
+        },
+        engine="nextflow",
+    )
+
+    assert schema is not None
+    work_dir = next(item for item in schema["inputs"] if item["name"] == "work_dir")
+    assert work_dir.get("is_internal") is None
+    assert work_dir["optional"] is False
+
+    field = derive_form_spec(schema, "nextflow").fields[0]
+    assert field.required is True
+    assert field.platform_managed is False
 
 
 @pytest.mark.asyncio
