@@ -41,16 +41,14 @@ describe("withMinimumDuration", () => {
     await expect(resultPromise).resolves.toBe("slow result")
   })
 
-  it("propagates a rejection only after the minimum duration", async () => {
+  it("propagates a rejection immediately with the original error", async () => {
     const error = new Error("request failed")
     const resultPromise = withMinimumDuration(Promise.reject(error), 100)
     const onRejected = vi.fn()
     void resultPromise.then(undefined, onRejected)
 
-    await vi.advanceTimersByTimeAsync(99)
-    expect(onRejected).not.toHaveBeenCalled()
-
-    await vi.advanceTimersByTimeAsync(1)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onRejected).toHaveBeenCalledWith(error)
     await expect(resultPromise).rejects.toBe(error)
   })
 
