@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 import app.runtime.jobs as runtime_jobs
+from app.runtime.task_runner import task_runner as runtime_task_runner
 from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
 from app.models.run import RunStatus
@@ -82,13 +83,17 @@ class SpyDispatcher:
 @pytest.mark.parametrize(
     ("module", "alias"),
     [
-        (run_service, "task_runner"),
         (runtime_jobs, "async_session_maker"),
         (image_service, "task_runner"),
     ],
 )
 def test_obsolete_backend_test_seams_are_not_exposed(module, alias):
     assert not hasattr(module, alias)
+
+
+def test_run_service_keeps_public_task_runner_compatibility_alias():
+    assert run_service.task_runner is runtime_task_runner
+    assert "task_runner" in run_service.__all__
 
 
 async def _create_run_via_compiler(
@@ -116,6 +121,11 @@ async def _create_run_via_compiler(
 async def test_run_service_dispatches_create_resume_and_retry_via_injected_dispatcher(
     db_session, monkeypatch, tmp_path
 ):
+    def fail_if_legacy_runner_is_used(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("run dispatch must not use the compatibility task runner")
+
+    monkeypatch.setattr(run_service.task_runner, "submit", fail_if_legacy_runner_is_used)
     monkeypatch.setattr(
         RunLifecycleService,
         "_require_engine_binary",
