@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -53,13 +54,21 @@ def _parameter_by_name(command: dict[str, Any], name: str) -> dict[str, Any]:
 def test_openapi_export_is_deterministic_and_preserves_full_schema(
     tmp_path: Path,
 ) -> None:
+    from app.config import Settings
     from app.main import app
 
     output_path = tmp_path / "openapi.json"
     result = _run_exporter("export_openapi_contract.py", str(output_path))
 
     assert result.returncode == 0, result.stderr
-    expected_schema = app.openapi()
+    app_schema = app.openapi()
+    expected_schema = deepcopy(app_schema)
+    app_name = Settings.model_fields["app_name"].get_default()
+    app_version = Settings.model_fields["app_version"].get_default()
+    assert isinstance(app_name, str)
+    assert isinstance(app_version, str)
+    expected_schema["info"]["title"] = f"{app_name} API"
+    expected_schema["info"]["version"] = app_version
     expected_text = json.dumps(
         expected_schema,
         ensure_ascii=False,
@@ -70,14 +79,21 @@ def test_openapi_export_is_deterministic_and_preserves_full_schema(
 
     exported_schema = json.loads(expected_text)
     assert exported_schema == expected_schema
-    operation_ids = {
+    exported_operation_ids = {
         operation["operationId"]
         for path_item in exported_schema["paths"].values()
         for operation in path_item.values()
         if isinstance(operation, dict) and "operationId" in operation
     }
-    assert operation_ids
-    assert exported_schema["components"]["schemas"] == expected_schema["components"][
+    app_operation_ids = {
+        operation["operationId"]
+        for path_item in app_schema["paths"].values()
+        for operation in path_item.values()
+        if isinstance(operation, dict) and "operationId" in operation
+    }
+    assert exported_operation_ids
+    assert exported_operation_ids == app_operation_ids
+    assert exported_schema["components"]["schemas"] == app_schema["components"][
         "schemas"
     ]
 
