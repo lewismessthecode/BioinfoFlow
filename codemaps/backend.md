@@ -1,176 +1,64 @@
 # Backend Codemap
-<!-- Generated: 2026-05-16 | Files scanned: current backend snapshot | Token estimate: ~1000 -->
-**Last Updated:** 2026-05-16
-**Entry Points:** `backend/app/main.py`, `backend/app/api/v1/router.py`, `backend/app/cli/main.py`, `backend/alembic/env.py`
 
-## Architecture
-```
-HTTP /api/v1
-   │
-   ▼
-API Routers (17) → Services → Repositories → SQLite (aiosqlite)
-   │                  │
-   │                  ├─ Workflow adapters (Nextflow / MiniWDL local / MiniWDL container)
-   │                  ├─ Engine abstraction (adapter registry + backends + mounts)
-   │                  ├─ Agent Runtime (async loop + 17 modules)
-   │                  ├─ Planning system (Planner + Executor)
-   │                  ├─ Approval workflow (ACT_HIGH gating)
-   │                  ├─ Scheduler (queue + slots + resources + monitor + retry + timeout)
-   │                  ├─ Run service facade (submission/dag/lifecycle/archive/dispatch)
-   │                  ├─ Storage service (identity-mounted paths)
-   │                  ├─ Batch processing
-   │                  ├─ Terminal sessions (pty + WebSocket)
-   │                  └─ Notifications + audit logging
-   │
-   ├─ SSE EventBus (runtime/events.py)
-   │
-   └─ CLI (`bif` — Typer + Rich)
-        ├─ agent (incl. approvals), project, workflow, run (incl. outputs/batch),
-        │   file, events, system, doctor, config commands
-        ├─ Standard flags: -V/--version, -h/--help, -p/--project, -q/--quiet
-        ├─ SSE streaming + approval resolution (NDJSON in --output json)
-        ├─ JSON envelope on stdout / parseable error envelope on stderr
-        ├─ Confirm-by-default destructive verbs (--force/-f to skip)
-        └─ Config store (~/.config/bioinfoflow/cli.toml) + HTTP RemoteTransport
-```
+**Last Updated:** 2026-07-11
 
-## API Routes (16 routers)
-| Prefix | Module | Notes |
-| --- | --- | --- |
-| `/projects` | `projects.py` | CRUD + search + storage mode |
-| `/projects/{id}/workflows` | `project_workflows.py` | Bind/unbind + pin workflows |
-| `/workflows` | `workflows.py` | Registry + metadata + DAG + source |
-| `/files` | `files.py` | Scan/read/write/upload/download |
-| `/storage` | `storage.py` | Project storage backend + external roots |
-| `/images` | `images.py` | Docker images + pull + load |
-| `/events` | `events.py` | SSE stream (filtered by conversation/run/image) |
-| `/runs` | `runs.py` | Run lifecycle + logs + outputs + DAG + cancel/resume/retry |
-| `/runs/batch` | `batch.py` | Batch run creation + status + cancel |
-| `/notifications` | `notifications.py` | Notification config CRUD |
-| `/scheduler` | `scheduler.py` | Scheduler status + resources + slots |
-| `/agent` | `agent.py` | Conversations + messages + traces + approvals |
-| `/stats` | `stats.py` | Dashboard metrics aggregation |
-| `/system` | `system.py` | Health check + GPU status + metrics |
-| `/terminal` | `terminal.py` | Terminal sessions (create/close + WebSocket I/O) |
-| `/llm` | `llm.py` | Unified LLM provider templates, setup, credentials, models, profiles |
+## Entrypoints
 
-## Services (30+ files, grouped)
-**Run pipeline (RunService facade)**
-| Module | Purpose |
+- `backend/app/main.py`: FastAPI lifecycle, middleware, router mounting, scheduler/resource startup, and recovery.
+- `backend/app/api/v1/router.py`: registers 18 API routers beneath `/api/v1`.
+- `backend/app/cli/main.py`: Typer-based `bif` HTTP client.
+- `backend/app/config.py`: environment loading and runtime settings.
+- `backend/app/path_layout.py`: platform, project, run, asset, and identity-mount paths.
+
+## API Routers
+
+| Prefix | Area |
 | --- | --- |
-| `run_service.py` | Thin facade — delegates only, never holds logic |
-| `run_submission_service.py` | Wizard/table/unified run creation |
-| `run_dag_service.py` | DAG repair + mock variants |
-| `run_lifecycle_service.py` | State transitions (cancel/resume/retry) |
-| `run_dispatch.py` | Engine dispatch coordination (RunDispatcher) |
-| `run_archive.py` | Archive/export of completed runs |
-| `run_profile_service.py` | Profile-based run configuration |
-| `run_helpers.py` | Shared run utilities |
-| `dag_parser.py` | Workflow DAG parsing |
-| `trace_parser.py` | Execution trace parsing |
+| `/connections` | SSH profiles, tests, and probes |
+| `/container-registries` | workflow-image registries and credentials |
+| `/projects` | projects, bindings, and pins |
+| `/workflows` | registration, inspection, and workflow metadata |
+| `/files`, `/storage` | managed files, uploads, assets, and storage roots |
+| `/images` | local image inventory, pulls, and imports |
+| `/events`, `/notifications`, `/stats` | event and summary surfaces |
+| `/runs`, `/runs/batch` | run lifecycle, outputs, and batches |
+| `/scheduler` | status, slots, and resource information |
+| `/agent` | AgentCore sessions, turns, actions, events, artifacts, tools, skills, and targets |
+| `/llm` | provider templates, credentials, models, and profiles |
+| `/system`, `/terminal` | readiness/system data and terminal WebSockets |
 
-**Storage + Workflow**
-| Module | Purpose |
-| --- | --- |
-| `storage_service.py` | Project storage mode (managed/external), external root paths |
-| `project_workflow_service.py` | Workflow binding + pinning |
-| `workflow_service.py` | Workflow registry operations |
-| `workflow_validator.py` | WDL/Nextflow validation |
-| `validators/` | Per-engine validation modules |
+## Service And Persistence Boundaries
 
-**Agent / Approval**
-| Module | Purpose |
-| --- | --- |
-| `agent/agent_service.py` | Agent orchestration with runtime loop + compatibility fallback |
-| `agent/graph.py` | Older LangGraph compatibility path |
-| `agent/planner.py` + `executor.py` | Task decomposition + plan execution |
-| `agent/approval_service.py` | ACT_HIGH tool gating |
-| `agent/conversation_manager.py` | Conversation state |
-| `agent/tools/*.py` | BaseTool + file/code/search/workflow tools + sandbox |
+Business logic belongs under `backend/app/services/` and uses repository methods
+from `backend/app/repositories/` for database access. Run behavior is split into
+submission, DAG, lifecycle, archive, dispatch, scheduler, and engine-focused
+modules; `run_service.py` remains a delegating facade.
 
-**Scheduler-adjacent + infrastructure**
-| Module | Purpose |
-| --- | --- |
-| `audit_service.py` | Action audit trail |
-| `batch_service.py` | Batch run orchestration |
-| `notification_service.py` | Notification delivery |
-| `terminal_service.py` + `terminal_shell/` | Terminal session management |
-| `docker_service.py` / `image_service.py` | Docker + image lifecycle |
-| `miniwdl_service.py` / `nextflow_service.py` | Engine helpers |
-| `file_service.py` | File scan / read / write |
-| `gpu_service.py` | GPU detection |
-| `stats_service.py` | Dashboard metrics |
-| `user_settings_service.py` / `workspace_service.py` / `project_service.py` | Account + workspace ops |
+Current persistence domains include workspaces, projects, workflows, project
+workflow bindings/pins, runs/configs, batches, notifications, images, audit logs,
+container registries, Remote Connections, LLM catalog/profile/credential state,
+and AgentCore sessions/turns/messages/events/actions/artifacts/memory.
 
-## Agent Runtime (backend/app/services/agent/runtime/, 17 modules)
-| Module | Purpose |
-| --- | --- |
-| `loop.py` | Core async agent loop with between-turn hooks |
-| `dispatch.py` | Unified tool dispatch map (BaseTool + legacy + runtime tools) |
-| `llm_client.py` | Provider-agnostic LLM wrapper |
-| `llm_providers.py` | Provider implementations (Anthropic/OpenAI/Gemini/Ollama/...) |
-| `llm_streaming.py` | Streaming response handler |
-| `providers.py` | Provider registry + selection |
-| `messages.py` | Plain dict message helpers (Anthropic Messages API format) |
-| `session_state.py` | Per-session state container |
-| `system_prompt.py` | Dynamic system prompt with todo/skills/tasks injection |
-| `compact.py` | 3-layer context compaction (micro/auto/manual) |
-| `todo.py` | TodoManager with nag reminders |
-| `tasks.py` | TaskManager + persistent DAG in .tasks/ JSON files |
-| `background.py` | BackgroundManager: daemon threads for shell commands |
-| `skills.py` | SkillLoader: two-layer injection from agent-skills/ |
-| `subagent.py` | Context-isolated child agent loop |
-| `stream_events.py` | Stream event schema + SSE bridge |
+## Scheduler And Engines
 
-## Engine Abstraction (backend/app/engine/)
-| Module | Purpose |
-| --- | --- |
-| `adapter.py` | Abstract EngineAdapter interface |
-| `backend.py` | EngineEvent/EngineEventType + abstract ExecutionBackend |
-| `local.py` | LocalBackend: local process execution with event streaming |
-| `miniwdl_container_backend.py` | Containerized MiniWDL execution backend |
-| `miniwdl_mounts.py` | Host↔container mount resolution for identity-mounted paths |
-| `registry.py` | Adapter registry with built-in Nextflow/WDL registration |
-| `schema_extractor.py` | Workflow schema extraction via engine adapters |
-| `adapters/nextflow.py` | NextflowAdapter: GPU detection, resume support |
-| `adapters/wdl.py` | WDLAdapter: MiniWDL binary resolution |
+- `backend/app/scheduler/`: persistent database-backed run scheduling, resource checks, concurrency slots, retry policy, timeout enforcement, cleanup, and completion hooks.
+- `backend/app/engine/`: shared engine contracts plus Nextflow and MiniWDL implementations.
+- `backend/app/runtime/`: runtime-facing support used during workflow execution.
 
-## Scheduler (backend/app/scheduler/)
-| Module | Purpose |
-| --- | --- |
-| `scheduler.py` | Main orchestrator: engine execution, DAG, events, status |
-| `queue.py` | Priority task queue (DB-backed) |
-| `resources.py` | SystemResources dataclass |
-| `slots.py` | Concurrency slot accounting (by engine/project) |
-| `monitor.py` | Background CPU/mem/disk/GPU sampler |
-| `retry.py` | Exponential backoff retry policies |
-| `timeout.py` | Run timeout watcher (default 24h) |
-| `cleanup.py` | Workspace cleanup policies |
-| `hooks.py` | Completion hooks (audit, notifications, batch) |
-| `config.py` | Scheduler configuration (concurrency, polling, resources) |
-| `models.py` | ScheduledTask, TaskPriority, TaskState |
+Bioinfoflow schedules whole runs. Engine-specific task retries and scatter
+execution remain inside Nextflow or MiniWDL unless a run-level scheduler policy
+is explicitly configured.
 
-## CLI (backend/app/cli/)
-| Module | Purpose |
-| --- | --- |
-| `main.py` | Entry point, Typer app registration |
-| `transport.py` | HTTP transport layer (`RemoteTransport`) |
-| `api_helpers.py` | Shared API call patterns |
-| `render.py` | Rich console output formatting |
-| `config_store.py` | Persistent config (TOML file) |
-| `context.py` | CLI context (project/conversation state) |
-| `errors.py` | Error handling + user-friendly messages |
-| `commands/agent.py` + `agent_approvals.py` | Agent chat, streaming, approvals |
-| `commands/project.py` / `workflow.py` / `run.py` / `run_batch.py` / `run_outputs.py` | Core entity commands |
-| `commands/file.py` / `events.py` / `system.py` / `config_cmd.py` / `doctor.py` | File ops, SSE streaming, diagnostics |
+## AgentCore
 
-## External Dependencies
-- FastAPI, Uvicorn, Pydantic + pydantic-settings
-- SQLAlchemy async + aiosqlite, Alembic
-- LangGraph + LangChain (Anthropic/OpenAI/Gemini/OpenRouter/Ollama/DeepSeek/xAI)
-- Docker SDK, MiniWDL, psutil, structlog
-- Typer, Rich (CLI)
+`backend/app/services/agent_core/` contains the durable runtime, prompt/context
+assembly, models/providers, tool registry and dispatcher, permission handling,
+event projection, memory, skills/plugins, execution targets, and subagent
+coordination. Tools implement `AgentTool` and `AgentToolSpec` and are registered
+from `tools/__init__.py`.
 
-## Related Areas
-- [Architecture Codemap](architecture.md)
-- [Data Codemap](data.md)
+## CLI
+
+The CLI is an HTTP-only client. Command groups are `config`, `project`,
+`workflow`, `file`, `system`, `events`, `open`, `run`, `agent`, and `doctor`.
+Use `uv run bif --help` for the authoritative command list.

@@ -4,8 +4,9 @@ Remote Connections let Bioinfoflow store SSH connection profiles and Host Skills
 for use from the web UI and AgentCore runtime.
 
 Use this feature when you want Bioinfoflow to diagnose or inspect a remote
-server, open a project terminal, run existing commands, read or write files, or
-give the agent access to a selected host. The browser never opens an SSH session
+server, open a project terminal, run existing commands, inspect files, or give
+the agent access to a selected host. AgentCore has no dedicated remote file-write
+tool; approval-gated commands can still modify the remote host. The browser never opens an SSH session
 directly. The frontend calls the Bioinfoflow backend, and the backend performs
 the SSH operation. Command-style probes and AgentCore tools stay bounded by
 timeouts and output limits; project terminals use backend-managed SSH PTY

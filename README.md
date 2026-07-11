@@ -29,7 +29,7 @@ Bioinfoflow sits above Nextflow and WDL/MiniWDL. It adds a persistent scheduler,
 > One-line install:
 >
 > ```bash
-> git clone https://github.com/your-org/bioinfoflow && cd bioinfoflow
+> git clone https://github.com/lewismessthecode/BioinfoFlow.git && cd BioinfoFlow
 > cp .env.example .env   # set owner credentials; provider keys can be added in the UI
 > docker compose up -d --build
 > ```
@@ -60,7 +60,7 @@ Bioinfoflow sits above Nextflow and WDL/MiniWDL. It adds a persistent scheduler,
 ### Prerequisites
 
 - Docker Engine or Docker Desktop with Compose
-- One AI provider key for agent use. You can paste it after sign-in under **Settings -> AI Providers**, or bootstrap it in `.env`.
+- At least one AI provider: use an API key for a hosted provider, or configure an endpoint and model for Ollama, vLLM, or another OpenAI-compatible service.
 
 ### Run with Docker
 
@@ -90,7 +90,7 @@ Then open:
 
 Sign in with the bootstrap owner credentials from `.env`.
 
-For local Docker, leaving `BIOINFOFLOW_HOME` unset is the simplest path — Compose stores platform data under this repo's `data/` directory and mounts it at the same absolute path inside containers. For a shared or remote server, set `BETTER_AUTH_SECRET`, `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` before building. See the [Docker Quick Start](docs/getting-started/docker.md) and [Runbook](RUNBOOK.md).
+For a local source build, leaving `BIOINFOFLOW_HOME` unset is the simplest path — `docker-compose.yml` stores platform data under this repo's `data/` directory and mounts it at the same absolute path inside containers. The published-image stack defaults to `/srv/bioinfoflow`. For a shared or remote server, set an absolute data root plus `BETTER_AUTH_SECRET`, `NEXT_PUBLIC_API_BASE_URL`, `BETTER_AUTH_URL`, `CORS_ORIGINS`, and `TRUSTED_HOSTS` before building. See the [Docker Quick Start](docs/getting-started/docker.md) and [Runbook](RUNBOOK.md).
 
 ### Run with published images
 
@@ -107,7 +107,7 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Published images are refreshed from `main` when backend or frontend code changes. The published frontend image is built for localhost; for a remote server, set the public URLs in `.env` and use the source-build command above.
+Published images are refreshed from `main` when backend or frontend code changes. The published frontend image is fixed at build time to the localhost API URL, personal auth mode, local email/password auth, and disabled self-signup. Build from source for remote URLs, team mode, or different public auth settings.
 
 `IMAGE_REGISTRY` can point at any registry namespace that contains the
 Bioinfoflow backend/frontend images, including Harbor, for example

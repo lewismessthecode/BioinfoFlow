@@ -134,7 +134,7 @@ Manifest files may contain:
 - `asset://project/...`
 - `asset://reference/...`
 
-During run submission, Bioinfoflow materializes that manifest into `runs/<run_id>/submission/manifest.materialized/` and rewrites the entries to runtime paths automatically.
+During run submission, Bioinfoflow materializes that manifest under `runs/<run_id>/input/materialized/` and rewrites the entries to runtime paths automatically. Uploaded attachments are stored below `input/materialized/attachments/`.
 
 ## Tests
 

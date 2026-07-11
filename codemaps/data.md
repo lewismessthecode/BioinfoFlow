@@ -1,153 +1,54 @@
 # Data Codemap
-<!-- Generated: 2026-05-16 | Files scanned: 20 models, 20 repos, 14 schemas | Token estimate: ~800 -->
-**Last Updated:** 2026-05-16
-**Entry Points:** `backend/app/models/`, `backend/alembic/versions/*.py`, `backend/app/schemas/`, `frontend/lib/types.ts`
 
-## Architecture
-```
-Pydantic Schemas ↔ FastAPI ↔ Repositories ↔ SQLAlchemy Models ↔ SQLite
-                        │
-                        └─ Frontend types mirror API envelopes
-```
+**Last Updated:** 2026-07-11
 
-## Storage Layout Migrations (0019–0021)
-- `Project` no longer carries `workspace_path` or `data_roots`.
-- New fields: `storage_mode` (`managed` | `external`), `external_root_path`, `workspace_id`, `created_by_user_id`.
-- Run artifacts live under a unified `runs/<run_id>/` layout; the database is the source of truth for locations.
-- `/storage` API + `storage_service.py` expose storage mode + external root CRUD while the identity-mount path model keeps host and container paths aligned.
+## Persistence Stack
 
-## Database Tables (31 Alembic migration files)
-- `projects` (name, description, storage_mode, external_root_path, workspace_id, user_id, created_by_user_id, is_default)
-- `workflows` (source, engine, source_ref, entrypoint_relpath, bundle_kind, version, schema_json, submission_hint, weight, estimated_time)
-- `docker_images` (name, tag, status, pull_failure_reason)
-- `runs` (run_id, status, config, workspace, samples_count, tasks_total/completed)
-- `conversations` (title, pinned, policy_mode, user_id)
-- `messages` (role, type, content, metadata)
-- `agent_traces` (type, payload)
-- `agent_approvals` (tool_name, risk_level, status)
-- `agent_response_handles` + `agent_approval_handles` (Hermes response/approval linkage)
-- `project_workflow_bindings` (project_id, workflow_id)
-- `project_workflow_pins` (project_id, workflow_source, workflow_name, pinned_workflow_id)
-- `scheduled_tasks` (priority, state, run_id, weight)
-- `audit_logs` (action, entity, actor, payload)
-- `batches` + `batch_runs` (batch processing)
-- `notification_configs` (notification rules)
-- `user_settings` (user_id, provider, model, preferences JSON)
-- `workspaces` (name, mode, owner)
-- `workspace_memberships` (workspace_id, user_id, role)
+- SQLAlchemy async with SQLite/aiosqlite
+- Alembic migrations under `backend/alembic/versions/`
+- Repository boundary under `backend/app/repositories/`
+- Pydantic request/response contracts under `backend/app/schemas/`
+- Frontend API types under `frontend/lib/`
 
-## ORM Models (backend/app/models, 20 files)
-| Model | Table | Key Fields |
-| --- | --- | --- |
-| `Project` | projects | name, description, storage_mode, external_root_path, workspace_id, user_id, is_default |
-| `Workflow` | workflows | source, engine, source_ref, entrypoint_relpath, bundle_kind, version, schema_json, submission_hint, weight |
-| `Run` | runs | run_id, status, config, workspace, samples_count |
-| `RunConfigHelper` | — | config parsing utilities (no table) |
-| `DockerImage` | docker_images | name, tag, status, pull_failure_reason |
-| `Conversation` | conversations | title, pinned, policy_mode, user_id |
-| `Message` | messages | role, type, content, metadata |
-| `AgentTrace` | agent_traces | type, payload |
-| `AgentApproval` | agent_approvals | tool_name, risk_level, status |
-| `AgentResponseHandle` | agent_response_handles | Hermes response handle linkage |
-| `AgentApprovalHandle` | agent_approval_handles | Hermes approval handle linkage |
-| `ProjectWorkflowBinding` | project_workflow_bindings | project_id, workflow_id |
-| `ProjectWorkflowPin` | project_workflow_pins | project_id, workflow_source, pinned_workflow_id |
-| `ScheduledTask` | scheduled_tasks | priority, state, run_id, weight |
-| `AuditLog` | audit_logs | action, entity, actor, payload |
-| `Batch` + `BatchRun` | batches, batch_runs | batch lifecycle |
-| `NotificationConfig` | notification_configs | trigger, destination, enabled |
-| `UserSettings` | user_settings | user_id, provider, model, preferences |
-| `Workspace` | workspaces | name, mode, owner |
-| `WorkspaceMembership` | workspace_memberships | workspace_id, user_id, role |
+Services should use repositories instead of adding direct database queries.
 
-## Repositories (backend/app/repositories, 20 repos)
-| Repository | Model | Notes |
-| --- | --- | --- |
-| `BaseRepository[T]` | Generic | CRUD + cursor pagination |
-| `ProjectRepository` | Project | |
-| `WorkflowRepository` | Workflow | |
-| `RunRepository` | Run | Status/project filtering |
-| `ConversationRepository` | Conversation | |
-| `MessageRepository` | Message | |
-| `AgentTraceRepository` | AgentTrace | message_id filtering |
-| `ApprovalRepository` | AgentApproval | Status queries |
-| `AgentResponseHandleRepository` | AgentResponseHandle | Hermes response handle lookup |
-| `AgentApprovalHandleRepository` | AgentApprovalHandle | Hermes approval handle lookup |
-| `ImageRepository` | DockerImage | |
-| `ProjectWorkflowBindingRepository` | ProjectWorkflowBinding | Enable/disable |
-| `ProjectWorkflowPinRepository` | ProjectWorkflowPin | Version pinning |
-| `BatchRepository` | Batch | Batch lifecycle |
-| `NotificationRepository` | NotificationConfig | CRUD + trigger queries |
-| `StatsRepository` | — | Aggregated dashboard metrics |
-| `AuditRepository` | AuditLog | Action history |
-| `UserSettingsRepository` | UserSettings | Per-user preferences |
-| `WorkspaceRepository` | Workspace + WorkspaceMembership | Unified workspace + team membership |
+## Current Model Domains
 
-> Note: services must route DB queries through repositories — `session.execute()` in service code is forbidden (enforced 2026-04-04).
+| Domain | Representative durable state |
+| --- | --- |
+| Workspaces and access | workspace metadata and audit records |
+| Projects | managed, external-local, and remote projects; workflow bindings and pins |
+| Workflows and runs | workflow registration, run configuration/lifecycle, batches, notifications, and images |
+| Registries and connections | container registries and SSH Remote Connections with encrypted credential references |
+| LLM configuration | provider catalog, credentials, model/profile configuration, and runtime strategy |
+| AgentCore | sessions, turns, messages, persisted events, actions, artifacts, memory, execution state, skills/plugins, and targets |
 
-## API Schemas (backend/app/schemas, 14 files)
-- `agent.py`: conversation/message/trace/approval payloads
-- `common.py`: envelope + pagination
-- `demo.py`: demo catalog + seed responses
-- `file.py`: file scan/read/write/upload
-- `image.py`: image read + pull
-- `notification.py`: notification config CRUD
-- `project.py`: project CRUD (storage_mode fields)
-- `project_workflow.py`: workflow binding + pinning
-- `run.py`: run lifecycle + retry/resume + batch
-- `storage.py`: project storage backend + external roots
-- `system.py`: health + GPU metrics
-- `terminal.py`: terminal session create/close
-- `user_settings.py`: user preferences
-- `workflow.py`: workflow registry
+The retired legacy conversation, message, trace, approval, Hermes-handle, and
+user-settings tables were removed by later migrations. Do not build new features
+against those old names.
 
-## Frontend Types (frontend/lib/types.ts)
-- API envelope + meta types
-- Core domain types: `Project`, `Workflow`, `Run`, `DockerImage` (Project includes `storageMode`, `externalRootPath`)
-- Agent types: `AgentMessageRead`, `AgentConversationRead`, `AgentTraceResponse`
-- SSE event shapes: `RunStatusEvent`, `RunLogEvent`, `RunDagEvent`, `ImageProgressEvent`
-- Plan types: `PlanStep`, `ExecutionPlan`
-- DAG types: `DagNode`, `DagEdge`, `DagData`
-- Scheduler types: `SchedulerStatus`, `SystemResources`, slot shapes
-- Batch types: `BatchStatus`, `Batch`, `BatchDetail`, `RetryPolicy`, `TaskPriority`
-- Notification types: `NotificationTrigger`, `NotificationConfig`
-- Terminal types: `TerminalSession`, `TerminalMessage`
-- User settings: `UserSettings`, `LLMProvider`
+## Repositories And Schemas
 
-## Alembic Migrations (31 files)
-| # | Description |
-|---|---|
-| 0001 | Initial schema (projects, workflows, runs, images, conversations, messages) |
-| 0002 | Agent traces + conversation fields |
-| 0003 | Project workflow bindings + pins |
-| 0004 | Agent approvals + policy mode |
-| 0005 | Scheduled tasks + workflow launch defaults (two heads at this revision) |
-| 0006 | Audit logs + retry delay |
-| 0007 | Batches + notifications |
-| 0008 | User IDs on projects + conversations |
-| 0009 | User settings |
-| 0010 | Submission hint on workflows |
-| 0011 | Data roots on projects |
-| 0012 | OpenRouter + Ollama settings |
-| 0013 | Weight on workflows + tasks |
-| 0014 | New provider API keys |
-| 0015 | Provider credentials JSON |
-| 0016 | Project `is_default` flag |
-| 0017 | Image pull failures + workspace/team auth tables (two heads: `0017_image_pull_failures`, `0017_workspace_team_auth`) |
-| 0018 | Merge heads (workspace/team auth + image pull failures) |
-| 0019 | Project storage fields (`storage_mode`, `external_root_path`, `workspace_id`) |
-| 0020 | Unified run layout |
-| 0021 | Remove `data_roots` from projects |
-| 0022 | Project `workspace_id` foreign key |
-| 0023 | Hermes agent handles + workflow form spec (two heads at this revision) |
-| 0024 | Conversation execution policy + run heartbeat/error fields (two heads at this revision) |
-| 0025 | Drop workflow `submission_hint` |
-| 0026 | Merge conversation and workflow form heads |
-| 0027 | Scheduler tasks cascade on run delete |
+Current repositories cover projects, workflows, runs, batches, notifications,
+images, stats, audit records, workspaces, project workflow relationships,
+container registries, Remote Connections, LLM state, and AgentCore state.
 
-## External Dependencies
-- SQLAlchemy async + aiosqlite, Alembic migrations, Pydantic v2.
+Current schemas cover projects, project workflows, workflows, runs, files,
+storage, images, forms, notifications, terminal/system data, container
+registries, Remote Connections, LLM configuration, and AgentCore contracts.
 
-## Related Areas
-- [Backend Codemap](backend.md)
-- [Frontend Codemap](frontend.md)
+## Migration Landmarks
+
+The migration graph currently reaches the `0042` series. Important recent
+landmarks include:
+
+- `0028`–`0030`: AgentCore contracts, legacy agent-table removal, and harness runtime
+- `0031`–`0036`: LLM credentials/profile changes and legacy settings cleanup
+- `0037`–`0038`: Remote Connections and remote projects
+- `0039`–`0040`: container registries and unique global default enforcement
+- `0041`: run-module invariants
+- `0042`: stored Remote Connection credentials
+
+Use `uv run alembic heads`, `uv run alembic current`, and the migration files
+for the authoritative graph; numeric prefixes are not a reliable file count
+because earlier branches include merge points and repeated prefixes.

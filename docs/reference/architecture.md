@@ -13,14 +13,13 @@ Startup lifecycle:
 1. configure logging from `backend/app/config.py`
 2. enforce the `BIOINFOFLOW_HOME` identity-mount invariant with `assert_identity_mount()`
 3. create platform storage roots with `ensure_platform_layout()`
-4. initialize AgentCore state
-5. initialize the database and verify Alembic schema state
-6. ensure the default workspace
-7. reconcile stale agent responses
-8. start the persistent run scheduler and resource monitor
-9. wire run dispatch through `SchedulerDispatcher`
-10. recover stale runs
-11. start task runner and background tasks
+4. initialize the database and verify Alembic schema state
+5. ensure the default workspace and synchronize the LLM catalog
+6. start the persistent run scheduler and resource monitor
+7. wire run dispatch through `SchedulerDispatcher`
+8. recover stale runs
+9. recover orphaned AgentCore turns
+10. start task runners and remaining background tasks
 
 Core backend areas:
 
@@ -146,6 +145,7 @@ Toolsets are:
 
 - `default`: read-oriented tools for inspection
 - `plan`: planning and clarification tools
+- `bio`: read-only bioinformatics and platform inspection tools
 - `execution`: all registered tools, still subject to permission policy
 
 Tool execution can pause for approvals, interaction requests, or plan approval.

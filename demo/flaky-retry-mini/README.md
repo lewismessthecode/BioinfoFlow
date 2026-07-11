@@ -1,8 +1,8 @@
 # flaky-retry-mini
 
-**Engine:** WDL (miniwdl) · **Image:** `alpine:3.19` · **Steps:** 4
+**Engine:** WDL (miniwdl) · **Image:** `ubuntu:22.04` · **Steps:** 4
 
-Purpose: exercise the platform's retry, failure-propagation, and downstream-skip behavior. Scripts are mocks — no real bio tools.
+Purpose: exercise MiniWDL task retries plus workflow failure propagation and downstream skipping inside one Bioinfoflow run. Scripts are mocks — no real bio tools.
 
 ## Pipeline
 
@@ -23,12 +23,11 @@ PREP → FLAKY (maxRetries: 3) → FATAL → CLEANUP
 - FLAKY fails on attempt 1, succeeds on attempt 2.
 - Final: run completed; DAG all green; `summary.txt` contains `flaky_attempts=2`, `fatal_state=skipped`.
 
-### `boundary.inputs.json` → expect **failed**
+### `boundary.inputs.json` → retry-boundary probe
 
-- `flaky_count=4` (exceeds `maxRetries: 3` ceiling).
-- FLAKY fails on attempts 1..3, scheduler gives up.
-- Final: run failed at FLAKY; FATAL and CLEANUP never run.
-- **What to watch:** does the DAG show FLAKY with 3 attempts? Are logs from attempts 1 and 2 preserved, or only the last one?
+- `flaky_count=4` probes the exact `maxRetries: 3` boundary.
+- `maxRetries` is enforced by MiniWDL, not the Bioinfoflow run scheduler. Verify the installed MiniWDL semantics before treating this fixture as a deterministic failure case; implementations may count retries in addition to the initial attempt.
+- **What to watch:** how many FLAKY attempts run, whether the fixture completes or fails, and which retry logs remain available.
 
 ### `failure.inputs.json` → expect **failed at FATAL**
 
@@ -42,4 +41,4 @@ PREP → FLAKY (maxRetries: 3) → FATAL → CLEANUP
 - `maxRetries` semantics — same-container retry vs fresh container (our counter persists via outdir mount, so it works either way).
 - Log capture across retry attempts (both success and boundary variants).
 - Downstream task skipping on upstream failure (failure variant).
-- State transitions in the scheduler: `running → failed → retrying → running → completed` for FLAKY in the happy path.
+- MiniWDL retry behavior inside a Bioinfoflow run. Bioinfoflow's persisted run states do not include a task-level `retrying` state.

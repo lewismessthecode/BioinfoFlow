@@ -29,7 +29,7 @@ Bioinfoflow 位于 Nextflow 与 WDL/MiniWDL 之上，提供持久化调度器、
 > 三行启动：
 >
 > ```bash
-> git clone https://github.com/your-org/bioinfoflow && cd bioinfoflow
+> git clone https://github.com/lewismessthecode/BioinfoFlow.git && cd BioinfoFlow
 > cp .env.example .env   # 设置 owner 账号；provider key 可登录后在 UI 中配置
 > docker compose up -d --build
 > ```
@@ -49,7 +49,7 @@ Bioinfoflow 位于 Nextflow 与 WDL/MiniWDL 之上，提供持久化调度器、
 - **运行工作台**：在一个页面中配置输入、提交运行、查看 DAG、跟踪日志并检查输出。
 - **持久化调度器**：使用并发槽位、资源检查、重试策略、超时处理、清理和重启恢复来调度运行。
 - **AgentCore 运行时**：通过聊天检查文件、管理项目和流程、运行已审批的平台操作，并操作选中的 SSH 连接。
-- **远程连接**：保存 SSH profile，通过后端测试连接，流式运行短探针命令，并将选中的主机暴露给 AgentCore 工具。
+- **远程连接**：保存 SSH profile，通过后端测试连接，打开远程项目终端，流式运行短探针命令，并将选中的主机暴露给 AgentCore 工具。
 - **浏览器终端和 `bif` CLI**：使用 Web UI 进行交互操作，使用 CLI 针对运行中的后端编写脚本。
 - **本地认证和团队角色**：支持 personal、team 和 dev 三种认证模式，基于 Better Auth 管理会话。
 
@@ -60,7 +60,7 @@ Bioinfoflow 位于 Nextflow 与 WDL/MiniWDL 之上，提供持久化调度器、
 ### 前置条件
 
 - Docker Engine 或 Docker Desktop，并启用 Compose
-- 一个用于 Agent 的 AI provider key。你可以登录后在 **Settings -> AI Providers** 里直接粘贴，也可以用 `.env` 做初始化 bootstrap。
+- 至少配置一个 AI provider：托管 provider 使用 API key；Ollama、vLLM 或其他 OpenAI-compatible 服务则配置 endpoint 和 model。
 
 ### 用 Docker 启动
 
@@ -90,7 +90,7 @@ docker compose up -d --build
 
 用 `.env` 里的 owner 邮箱和密码登录。
 
-本地 Docker 部署最省心的做法是不要自己设 `BIOINFOFLOW_HOME` —— Compose 会把平台数据写入仓库里的 `data/` 目录，并在容器内挂载到相同的绝对路径。如果是共享或远程服务器，请在构建前设好 `BETTER_AUTH_SECRET`、`NEXT_PUBLIC_API_BASE_URL`、`BETTER_AUTH_URL`、`CORS_ORIGINS` 和 `TRUSTED_HOSTS`。详细配置见 [Docker Quick Start](docs/getting-started/docker.md) 和 [Runbook](RUNBOOK.md)。
+本地源码构建最省心的做法是不要设置 `BIOINFOFLOW_HOME` —— `docker-compose.yml` 会把平台数据写入仓库里的 `data/` 目录，并在容器内挂载到相同绝对路径。已发布镜像使用的 Compose 栈默认写入 `/srv/bioinfoflow`。共享或远程服务器应显式设置绝对数据目录，并在构建前配置 `BETTER_AUTH_SECRET`、`NEXT_PUBLIC_API_BASE_URL`、`BETTER_AUTH_URL`、`CORS_ORIGINS` 和 `TRUSTED_HOSTS`。详细配置见 [Docker Quick Start](docs/getting-started/docker.md) 和 [Runbook](RUNBOOK.md)。
 
 ### 使用已发布镜像启动
 
@@ -107,7 +107,7 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-发布镜像会在 `main` 上的后端或前端代码变化后刷新。当前发布版前端镜像面向 localhost 构建；如果要部署到远程服务器，请先在 `.env` 里设置公网 URL，再使用上面的源码构建方式。
+发布镜像会在 `main` 上的后端或前端代码变化后刷新。发布版前端镜像在构建时固定为 localhost API、personal 认证模式、本地邮箱密码认证以及关闭自助注册。如果要使用远程 URL、team 模式或其他公开认证设置，请配置 `.env` 后使用上面的源码构建方式。
 
 `IMAGE_REGISTRY` 可以指向任意已保存 Bioinfoflow 后端/前端镜像的镜像仓库命名空间，例如 Harbor 的 `10.227.4.56:80/pipeline-dev`。工作流容器镜像仓库在 **Settings -> Container Registries** 中配置，owner/admin 可以添加 Harbor、设为全局默认，并选择保存凭据或引用环境变量。Harbor 不是必需项；工作流容器仍可使用 Docker Hub、完整镜像名或 tarball 导入。镜像仓库和 HTTP Harbor 的 insecure registry 配置说明见 [Docker Quick Start](docs/getting-started/docker.md#optional-container-registry)。
 
@@ -165,6 +165,7 @@ uv run bif --output json run show <run-id>
 - [文档首页](docs/README.md)
 - [Docker 快速开始](docs/getting-started/docker.md)
 - [远程连接](docs/guides/remote-connections.md)
+- [nf-core/rnaseq 启动示例](demo/nfcore-rnaseq/README.md)
 - [存储与数据布局](docs/concepts/storage.md)
 - [CLI 参考](docs/reference/cli.md)
 - [架构](docs/architecture.md)

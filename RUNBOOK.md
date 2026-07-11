@@ -48,7 +48,8 @@ For almost everyone, this is enough:
 cp .env.example .env
 ```
 
-For local Docker, leave `BIOINFOFLOW_HOME` unset unless you want the data root outside this repo. Then set at least:
+For the local source-build Compose stack, leave `BIOINFOFLOW_HOME` unset unless
+you want the data root outside this repo. Then set at least:
 
 ```env
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
@@ -69,6 +70,11 @@ deployments. UI-saved configuration takes precedence. In `AUTH_MODE=team`,
 provider keys saved through the UI as stored credentials also require
 `BIOINFOFLOW_CREDENTIAL_KEY`; environment bootstrap keys do not.
 
+Bootstrap owner credentials are processed whenever they remain configured: the
+frontend ensures the email is an active owner and updates its password. After
+verifying a long-lived shared deployment, remove the bootstrap password unless
+automatic owner recovery is intentional.
+
 For localhost Docker, `BETTER_AUTH_SECRET` may stay empty. Bioinfoflow creates a persistent local secret under `BIOINFOFLOW_HOME/state/auth` on first startup. For shared or remote deployments, generate one with `openssl rand -base64 32` and set `BETTER_AUTH_SECRET` explicitly.
 
 Optional data-root override:
@@ -88,7 +94,7 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER_IP_OR_DOMAIN"]
 ### Prerequisites
 
 - Docker Desktop or Docker Engine with Compose
-- An LLM provider key for agent use. You can provide it in **Settings -> AI Providers** after sign-in, or bootstrap one with environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `OLLAMA_BASE_URL`, `VLLM_*`, or `OPENAI_COMPATIBLE_*`.
+- At least one AI provider. Hosted providers use an API key; Ollama, vLLM, and OpenAI-compatible services can use an endpoint and model without a key when the service permits it.
 
 ### First run
 
@@ -118,7 +124,7 @@ docker compose up -d --build
 ```
 
 - `BIOINFOFLOW_HOME` is identity-mounted into the same absolute path on host and in containers.
-- If you leave `BIOINFOFLOW_HOME` unset, Docker Compose defaults to this repo's `data/` directory.
+- If you leave `BIOINFOFLOW_HOME` unset, the source-build Compose stack defaults to this repo's `data/` directory; the published-image stack defaults to `/srv/bioinfoflow`.
 - The backend creates the required platform subdirectories on startup.
 - GPU detection is automatic only after the host GPU has been exposed into the backend container. Bioinfoflow will not enable Docker GPU passthrough on its own.
 
@@ -178,7 +184,10 @@ The images are published by `.github/workflows/container-release.yml` after `mai
 
 Available tags are `latest`, `main`, and `sha-<12-char-commit>`.
 
-The published frontend image is built with `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`, so it is intended for localhost. For a shared or remote server, set the public URL values in `.env` and run the source-build command instead:
+The published frontend image is fixed at build time to the localhost API URL,
+personal auth mode, local email/password auth, and disabled self-signup. For a
+shared or remote URL, team mode, or different public auth settings, configure
+`.env` and run the source-build command instead:
 
 ```bash
 docker compose up -d --build
@@ -445,6 +454,10 @@ Before remote builds, set:
 export NEXT_PUBLIC_API_BASE_URL=http://YOUR_SERVER_IP:8000/api/v1
 ```
 
+For access outside a trusted localhost environment, terminate TLS at a reverse
+proxy, use matching `https://` values for public URLs and CORS, and do not expose
+ports 3000 and 8000 directly to untrusted networks.
+
 ## 6. Useful Health Checks
 
 - `http://localhost:8000/api/v1/docs`
@@ -453,7 +466,19 @@ export NEXT_PUBLIC_API_BASE_URL=http://YOUR_SERVER_IP:8000/api/v1
 - `GET /api/v1/scheduler/status`
 - `GET /api/v1/scheduler/resources`
 
-## 7. File Map
+## 7. Backup And Restore
+
+Before filesystem backups, stop or quiesce the services. Prefer backing up the
+complete `BIOINFOFLOW_HOME`. A selective backup must include both SQLite
+databases, `state/credentials/fernet.key` when present, workflow sources,
+projects, and shared sources. Back up every external-local project root outside
+`BIOINFOFLOW_HOME`, and preserve a team deployment's configured
+`BIOINFOFLOW_CREDENTIAL_KEY` securely outside the filesystem snapshot. Restore
+the platform root and external project roots at their recorded absolute paths,
+then apply Alembic migrations before starting a bare-metal backend. See the
+[operations supplement](docs/operations/runbook.md#backup-and-restore).
+
+## 8. File Map
 
 - `README.md`
   Product overview and high-level positioning

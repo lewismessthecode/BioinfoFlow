@@ -70,9 +70,15 @@ The CLI includes these command groups:
 - `agent`
 - `doctor`
 
-The `agent` group includes session, turn, action, and artifact commands for
-AgentCore:
+The `agent` group includes interactive and scripting commands for AgentCore:
 
+- `agent send`
+- `agent chat`
+- `agent events`
+- `agent stream`
+- `agent cancel`
+- `agent interrupt`
+- `agent toolsets`
 - `agent session`
 - `agent turn`
 - `agent action`
