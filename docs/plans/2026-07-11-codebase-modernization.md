@@ -199,6 +199,7 @@ The following must not change in this campaign:
 - Modify: `backend/app/services/run_lifecycle_service.py`
 - Modify: `backend/app/services/run_helpers.py`
 - Modify: `backend/app/engine/adapters/wdl.py`
+- Modify: `backend/app/engine/schema_extractor.py`
 - Modify: `backend/app/services/validators/types.py`
 - Modify focused run/WDL tests.
 
@@ -208,7 +209,7 @@ The following must not change in this campaign:
 - [ ] From `backend/`, run:
 
   ```bash
-  rtk uv run pytest tests/test_services/test_run_compiler.py tests/test_services/test_run_lifecycle_service.py tests/test_services/test_run_helpers.py tests/test_engine/test_wdl_adapter.py tests/test_services/test_workflow_validator.py -q
+  rtk uv run pytest tests/test_services/test_run_input_policy.py tests/test_services/test_run_compiler.py tests/test_services/test_run_lifecycle_service.py tests/test_services/test_run_helpers.py tests/test_engine/test_wdl_adapter.py tests/test_engine/test_schema_extractor.py tests/test_services/test_workflow_validator.py -q
   rtk uv run ruff check .
   rtk uv run pytest
   ```

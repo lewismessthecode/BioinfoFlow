@@ -8,6 +8,7 @@ import pytest
 from app.engine.schema_extractor import (
     SchemaExtractor,
     derive_form_spec,
+    normalize_extracted_schema,
 )
 
 
@@ -98,6 +99,31 @@ async def test_schema_extractor_keeps_non_dag_schema_content_from_adapter():
         schema = await extractor.extract("nextflow", source="nf-core/demo")
 
     assert schema["inputs"] == [{"name": "reads", "type": "string"}]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["outdir", "output_dir", "publish_dir", "work_dir"],
+)
+def test_json_schema_managed_run_directories_are_internal(name):
+    schema = normalize_extracted_schema(
+        {
+            "$defs": {},
+            "required": [name],
+            "properties": {
+                name: {
+                    "type": "string",
+                    "format": "directory-path",
+                }
+            },
+        },
+        engine="nextflow",
+    )
+
+    assert schema is not None
+    inputs = {item["name"]: item for item in schema["inputs"]}
+    assert inputs[name].get("is_internal") is True
+    assert inputs[name]["optional"] is True
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ from typing import Any
 
 from app.engine.registry import get_adapter
 from app.schemas.form_spec import FormField, FormSpec, OptionSpec
+from app.services.run_input_policy import is_managed_run_directory_name
 
 
 class SchemaExtractor:
@@ -240,7 +241,7 @@ def _input_from_json_schema_property(
         payload["enum"] = enum_values
     if section_title:
         payload["section_title"] = section_title
-    if name.lower() in {"outdir", "output_dir", "publish_dir"}:
+    if is_managed_run_directory_name(name):
         payload["is_internal"] = True
         payload["optional"] = True
     if value_kind in {"file", "file_list", "directory"}:
