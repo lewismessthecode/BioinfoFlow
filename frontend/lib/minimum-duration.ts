@@ -5,11 +5,6 @@ export async function withMinimumDuration<T>(
   const minimumDuration = new Promise<void>((resolve) => {
     setTimeout(resolve, minimumDurationMs)
   })
-  const [result] = await Promise.allSettled([work, minimumDuration])
-
-  if (result.status === "rejected") {
-    throw result.reason
-  }
-
-  return result.value
+  const [result] = await Promise.all([work, minimumDuration])
+  return result
 }

@@ -176,8 +176,8 @@ The following must not change in this campaign:
 - Modify: `frontend/app/(app)/workflows/page.tsx`
 - Modify: `frontend/app/(app)/runs/use-runs-page.ts`
 
-- [ ] Write fake-timer tests for immediate work, slow work, rejection, and the
-  unchanged 500 ms minimum.
+- [ ] Write fake-timer tests for fast success, slow success, immediate rejection
+  with the original error, and the unchanged 500 ms minimum.
 - [ ] Extract a helper used by all three callers without changing their loading
   or error semantics.
 - [ ] From `frontend/`, run:
