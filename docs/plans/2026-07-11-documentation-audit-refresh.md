@@ -53,5 +53,5 @@
 - [x] Run `rtk git diff --check`.
 - [x] Run CLI help and relevant frontend i18n checks.
 - [x] Run focused tests needed to prove changed implementation claims.
-- [ ] Review the complete diff against the approved scope.
-- [ ] Fetch and rebase onto `origin/main`, rerun final checks, commit, push, and open a draft PR.
+- [x] Review the complete diff against the approved scope.
+- [x] Fetch and rebase onto `origin/main`, rerun final checks, commit, push, and open a draft PR.
