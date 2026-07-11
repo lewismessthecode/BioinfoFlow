@@ -1,2136 +1,4752 @@
 {
   "command": {
+    "allow_extra_args": true,
+    "allow_interspersed_args": false,
+    "chain": false,
     "commands": [
       {
+        "allow_extra_args": true,
+        "allow_interspersed_args": false,
+        "chain": false,
         "commands": [
           {
+            "allow_extra_args": true,
+            "allow_interspersed_args": false,
+            "chain": false,
             "commands": [
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Approve a waiting AgentCore action.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "approve",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore action ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "ACTION_ID",
+                    "multiple": false,
                     "name": "ACTION_ID",
-                    "python_name": "action_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Decision note",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--note",
-                    "python_name": "note",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent action approve"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Approve a waiting AgentCore action with modified input.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "modify",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore action ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "ACTION_ID",
+                    "multiple": false,
                     "name": "ACTION_ID",
-                    "python_name": "action_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Modified action input as JSON object",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--input-json",
-                    "python_name": "input_json",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Decision note",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--note",
-                    "python_name": "note",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent action modify"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Reject a waiting AgentCore action.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "reject",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore action ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "ACTION_ID",
+                    "multiple": false,
                     "name": "ACTION_ID",
-                    "python_name": "action_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Decision note",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--note",
-                    "python_name": "note",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent action reject"
               }
             ],
             "help": "Approve, reject, or modify AgentCore actions.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "action",
+            "no_args_is_help": true,
             "parameters": [],
             "path": "bif agent action"
           },
           {
+            "allow_extra_args": true,
+            "allow_interspersed_args": false,
+            "chain": false,
             "commands": [
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "List AgentCore artifacts for a turn or session.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "list",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Turn ID by default, or session ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "TARGET_ID",
+                    "multiple": false,
                     "name": "TARGET_ID",
-                    "python_name": "target_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": "turn",
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Artifact scope: turn or session",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--scope",
-                    "python_name": "scope",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent artifacts list"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Open an AgentCore artifact file path with the operating system.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "open",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore artifact ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "ARTIFACT_ID",
+                    "multiple": false,
                     "name": "ARTIFACT_ID",
-                    "python_name": "artifact_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent artifacts open"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Show an AgentCore artifact.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "show",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore artifact ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "ARTIFACT_ID",
+                    "multiple": false,
                     "name": "ARTIFACT_ID",
-                    "python_name": "artifact_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent artifacts show"
               }
             ],
             "help": "List, show, and open AgentCore artifacts.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "artifacts",
+            "no_args_is_help": true,
             "parameters": [],
             "path": "bif agent artifacts"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Cancel an AgentCore turn.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "cancel",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "AgentCore turn ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "TURN_ID",
+                "multiple": false,
                 "name": "TURN_ID",
-                "python_name": "turn_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif agent cancel"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Interactive AgentCore chat REPL.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "chat",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Resume AgentCore session",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--session",
-                "python_name": "session_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Model profile for each turn",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--model-profile",
-                "python_name": "model_profile_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif agent chat"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "List persisted AgentCore events for a turn.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "events",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "AgentCore turn ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "TURN_ID",
+                "multiple": false,
                 "name": "TURN_ID",
-                "python_name": "turn_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": 0,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Replay after seq",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "INTEGER RANGE",
+                "multiple": false,
                 "name": "--after-seq",
-                "python_name": "after_seq",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "clamp": false,
+                  "max": null,
+                  "max_open": false,
+                  "min": 0,
+                  "min_open": false,
+                  "name": "integer range",
+                  "param_type": "IntRange"
+                }
               }
             ],
             "path": "bif agent events"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Interrupt an AgentCore turn.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "interrupt",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "AgentCore turn ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "TURN_ID",
+                "multiple": false,
                 "name": "TURN_ID",
-                "python_name": "turn_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif agent interrupt"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Send a single message as a new AgentCore turn.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "send",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Message to send",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "MESSAGE",
+                "multiple": false,
                 "name": "MESSAGE",
-                "python_name": "message",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Existing AgentCore session ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--session",
-                "python_name": "session_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Model profile for this turn",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--model-profile",
-                "python_name": "model_profile_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif agent send"
           },
           {
+            "allow_extra_args": true,
+            "allow_interspersed_args": false,
+            "chain": false,
             "commands": [
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Create an AgentCore session.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "create",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Project ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--project",
-                    "python_name": "project_id",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Session title",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--title",
-                    "python_name": "title",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": "bioinformatician",
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Agent role profile",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--role-profile",
-                    "python_name": "role_profile",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": "guarded_auto",
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Permission mode",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--permission-mode",
-                    "python_name": "permission_mode",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": "assisted",
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Automation mode",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--automation-mode",
-                    "python_name": "automation_mode",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Default model profile ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--model-profile",
-                    "python_name": "model_profile_id",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent session create"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Delete an AgentCore session.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "delete",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore session ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "SESSION_ID",
+                    "multiple": false,
                     "name": "SESSION_ID",
-                    "python_name": "session_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent session delete"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "List AgentCore sessions.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "list",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Project ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--project",
-                    "python_name": "project_id",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent session list"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Show an AgentCore session.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "show",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore session ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "SESSION_ID",
+                    "multiple": false,
                     "name": "SESSION_ID",
-                    "python_name": "session_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent session show"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Show the durable AgentCore session state projection.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "state",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore session ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "SESSION_ID",
+                    "multiple": false,
                     "name": "SESSION_ID",
-                    "python_name": "session_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent session state"
               }
             ],
             "help": "Manage AgentCore sessions.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "session",
+            "no_args_is_help": true,
             "parameters": [],
             "path": "bif agent session"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Stream AgentCore session events as SSE projections or NDJSON.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "stream",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "AgentCore session ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "SESSION_ID",
+                "multiple": false,
                 "name": "SESSION_ID",
-                "python_name": "session_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": 0,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Replay after seq",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "INTEGER RANGE",
+                "multiple": false,
                 "name": "--after-seq",
-                "python_name": "after_seq",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "clamp": false,
+                  "max": null,
+                  "max_open": false,
+                  "min": 0,
+                  "min_open": false,
+                  "name": "integer range",
+                  "param_type": "IntRange"
+                }
               }
             ],
             "path": "bif agent stream"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "List AgentCore toolsets exposed by the backend.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "toolsets",
+            "no_args_is_help": false,
             "parameters": [],
             "path": "bif agent toolsets"
           },
           {
+            "allow_extra_args": true,
+            "allow_interspersed_args": false,
+            "chain": false,
             "commands": [
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Cancel an AgentCore turn.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "cancel",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore turn ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "TURN_ID",
+                    "multiple": false,
                     "name": "TURN_ID",
-                    "python_name": "turn_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent turn cancel"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Interrupt an AgentCore turn through the harness interrupt path.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "interrupt",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore turn ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "TURN_ID",
+                    "multiple": false,
                     "name": "TURN_ID",
-                    "python_name": "turn_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent turn interrupt"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "List turns for an AgentCore session.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "list",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore session ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "SESSION_ID",
+                    "multiple": false,
                     "name": "SESSION_ID",
-                    "python_name": "session_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent turn list"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Show an AgentCore turn.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "show",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "AgentCore turn ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "TURN_ID",
+                    "multiple": false,
                     "name": "TURN_ID",
-                    "python_name": "turn_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif agent turn show"
               }
             ],
             "help": "Inspect and cancel AgentCore turns.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "turn",
+            "no_args_is_help": true,
             "parameters": [],
             "path": "bif agent turn"
           }
         ],
         "help": "AgentCore session, turn, action, event, and artifact commands.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "agent",
+        "no_args_is_help": true,
         "parameters": [],
         "path": "bif agent"
       },
       {
+        "allow_extra_args": true,
+        "allow_interspersed_args": false,
+        "chain": false,
         "commands": [
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Get a config value.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "get",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Config key to read",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "KEY",
+                "multiple": false,
                 "name": "KEY",
-                "python_name": "key",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif config get"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Create the default config file at ~/.config/bioinfoflow/cli.toml.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "init",
+            "no_args_is_help": false,
             "parameters": [],
             "path": "bif config init"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Set a config value.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "set",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Config key to set",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "KEY",
+                "multiple": false,
                 "name": "KEY",
-                "python_name": "key",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Value to set",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "VALUE",
+                "multiple": false,
                 "name": "VALUE",
-                "python_name": "value",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif config set"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show all config values.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "show",
+            "no_args_is_help": false,
             "parameters": [],
             "path": "bif config show"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Remove a config value.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "unset",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Config key to remove",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "KEY",
+                "multiple": false,
                 "name": "KEY",
-                "python_name": "key",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif config unset"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Set the default project for all commands.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "use-project",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID to set as default",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "PROJECT_ID",
+                "multiple": false,
                 "name": "PROJECT_ID",
-                "python_name": "project_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif config use-project"
           }
         ],
         "help": "Manage CLI configuration.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "config",
+        "no_args_is_help": true,
         "parameters": [],
         "path": "bif config"
       },
       {
+        "allow_extra_args": false,
+        "allow_interspersed_args": true,
+        "chain": false,
         "commands": [],
         "help": "Check backend health, scheduler, GPU, and local tools.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "doctor",
+        "no_args_is_help": false,
         "parameters": [],
         "path": "bif doctor"
       },
       {
+        "allow_extra_args": true,
+        "allow_interspersed_args": false,
+        "chain": false,
         "commands": [
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Stream raw SSE events (NDJSON in json mode, styled in human mode).",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "stream",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Run ID filter",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--run",
-                "python_name": "run_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "AgentCore session ID filter",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--session",
-                "python_name": "session_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "AgentCore turn ID filter",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--turn",
-                "python_name": "turn_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif events stream"
           }
         ],
         "help": "Event streaming.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "events",
+        "no_args_is_help": true,
         "parameters": [],
         "path": "bif events"
       },
       {
+        "allow_extra_args": true,
+        "allow_interspersed_args": false,
+        "chain": false,
         "commands": [
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Read file contents.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "cat",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "File path",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "PATH",
+                "multiple": false,
                 "name": "PATH",
-                "python_name": "path",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": 100,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Number of lines to read",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "INTEGER",
+                "multiple": false,
                 "name": "--lines",
-                "python_name": "lines",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "integer",
+                  "param_type": "Int"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": 0,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Line offset",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "INTEGER",
+                "multiple": false,
                 "name": "--offset",
-                "python_name": "offset",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "integer",
+                  "param_type": "Int"
+                }
               }
             ],
             "path": "bif file cat"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Download a file from the workspace.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "download",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "File path to download",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "PATH",
+                "multiple": false,
                 "name": "PATH",
-                "python_name": "path",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [
                   "-o"
                 ],
+                "count": false,
                 "default": ".",
+                "envvar": null,
+                "flag_value": null,
                 "help": "Destination directory",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--dest",
-                "python_name": "dest",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif file download"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "List files in a project workspace.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "ls",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": ".",
+                "envvar": null,
+                "flag_value": null,
                 "help": "Directory path",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "[PATH]",
+                "multiple": false,
                 "name": "PATH",
-                "python_name": "path",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [
                   "-r"
                 ],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "List recursively",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--recursive",
-                "python_name": "recursive",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Glob pattern filter",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--pattern",
-                "python_name": "pattern",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif file ls"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Delete a file from the workspace.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "rm",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "File path to delete",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "PATH",
+                "multiple": false,
                 "name": "PATH",
-                "python_name": "path",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [
                   "-f"
                 ],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Skip confirmation",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--force",
-                "python_name": "force",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               }
             ],
             "path": "bif file rm"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Scan workspace for samples and file types.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "scan",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": ".",
+                "envvar": null,
+                "flag_value": null,
                 "help": "Directory to scan",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "[PATH]",
+                "multiple": false,
                 "name": "PATH",
-                "python_name": "path",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Comma-separated file types",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--file-types",
-                "python_name": "file_types",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif file scan"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Upload a file to the workspace.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "upload",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Local file to upload",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "LOCAL_PATH",
+                "multiple": false,
                 "name": "LOCAL_PATH",
-                "python_name": "local_path",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Remote destination path",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--path",
-                "python_name": "remote_path",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [
                   "--no-overwrite"
                 ],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Overwrite existing file",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--overwrite",
-                "python_name": "overwrite",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               }
             ],
             "path": "bif file upload"
           }
         ],
         "help": "File operations.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "file",
+        "no_args_is_help": true,
         "parameters": [],
         "path": "bif file"
       },
       {
+        "allow_extra_args": true,
+        "allow_interspersed_args": false,
+        "chain": false,
         "commands": [
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Open the agent chat page.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "agent",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Print the URL instead of launching a browser.",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--no-browser",
-                "python_name": "no_browser",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--web-url",
-                "python_name": "web_url",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif open agent"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Open the dashboard page.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "dashboard",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Print the URL instead of launching a browser.",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--no-browser",
-                "python_name": "no_browser",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--web-url",
-                "python_name": "web_url",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif open dashboard"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Open a run's detail page.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "run",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Run ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "RUN_ID",
+                "multiple": false,
                 "name": "RUN_ID",
-                "python_name": "run_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Print the URL instead of launching a browser.",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--no-browser",
-                "python_name": "no_browser",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--web-url",
-                "python_name": "web_url",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif open run"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Open the scheduler page.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "scheduler",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Print the URL instead of launching a browser.",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--no-browser",
-                "python_name": "no_browser",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--web-url",
-                "python_name": "web_url",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif open scheduler"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Open a workflow's detail page.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "workflow",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Workflow ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "WORKFLOW_ID",
+                "multiple": false,
                 "name": "WORKFLOW_ID",
-                "python_name": "workflow_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Print the URL instead of launching a browser.",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--no-browser",
-                "python_name": "no_browser",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--web-url",
-                "python_name": "web_url",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif open workflow"
           }
         ],
         "help": "Open Bioinfoflow web pages in your browser.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "open",
+        "no_args_is_help": true,
         "parameters": [],
         "path": "bif open"
       },
       {
+        "allow_extra_args": true,
+        "allow_interspersed_args": false,
+        "chain": false,
         "commands": [
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Create a new project.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "create",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project name",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--name",
-                "python_name": "name",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Admin-only external project root",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--external-root",
-                "python_name": "external_root",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Description",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--description",
-                "python_name": "description",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif project create"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Delete a project.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "delete",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID to delete",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "PROJECT_ID",
+                "multiple": false,
                 "name": "PROJECT_ID",
-                "python_name": "project_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [
                   "-f"
                 ],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Skip confirmation",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--force",
-                "python_name": "force",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               }
             ],
             "path": "bif project delete"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "List all projects.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "list",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": 20,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Max results",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "INTEGER",
+                "multiple": false,
                 "name": "--limit",
-                "python_name": "limit",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "integer",
+                  "param_type": "Int"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Pagination cursor",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--cursor",
-                "python_name": "cursor",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Search by name",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--search",
-                "python_name": "search",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif project list"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show project details.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "show",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "PROJECT_ID",
+                "multiple": false,
                 "name": "PROJECT_ID",
-                "python_name": "project_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif project show"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Set a project as the default for all commands.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "use",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID to set as default",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "PROJECT_ID",
+                "multiple": false,
                 "name": "PROJECT_ID",
-                "python_name": "project_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif project use"
           }
         ],
         "help": "Manage projects.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "project",
+        "no_args_is_help": true,
         "parameters": [],
         "path": "bif project"
       },
       {
+        "allow_extra_args": true,
+        "allow_interspersed_args": false,
+        "chain": false,
         "commands": [
           {
+            "allow_extra_args": true,
+            "allow_interspersed_args": false,
+            "chain": false,
             "commands": [
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Cancel all runs in a batch.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "cancel",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Batch ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "BATCH_ID",
+                    "multiple": false,
                     "name": "BATCH_ID",
-                    "python_name": "batch_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [
                       "-f"
                     ],
+                    "count": false,
                     "default": false,
+                    "envvar": null,
+                    "flag_value": true,
                     "help": "Skip confirmation",
+                    "is_eager": false,
+                    "is_flag": true,
                     "kind": "option",
+                    "metavar": "BOOLEAN",
+                    "multiple": false,
                     "name": "--force",
-                    "python_name": "force",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "boolean",
+                      "param_type": "Bool"
+                    }
                   }
                 ],
                 "path": "bif run batch cancel"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Show batch details.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "show",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Batch ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "BATCH_ID",
+                    "multiple": false,
                     "name": "BATCH_ID",
-                    "python_name": "batch_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif run batch show"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Submit a batch of runs from a JSON spec.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "submit",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "JSON spec file or - for stdin",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--spec",
-                    "python_name": "spec",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Project ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--project",
-                    "python_name": "project_id",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif run batch submit"
               }
             ],
             "help": "Manage batch runs.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "batch",
+            "no_args_is_help": true,
             "parameters": [],
             "path": "bif run batch"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Cancel a running pipeline.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "cancel",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Run ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "RUN_ID",
+                "multiple": false,
                 "name": "RUN_ID",
-                "python_name": "run_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [
                   "-f"
                 ],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Skip confirmation",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--force",
-                "python_name": "force",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               }
             ],
             "path": "bif run cancel"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Clean up run resources.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "cleanup",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Run ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "RUN_ID",
+                "multiple": false,
                 "name": "RUN_ID",
-                "python_name": "run_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [
                   "-f"
                 ],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Skip confirmation",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--force",
-                "python_name": "force",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               }
             ],
             "path": "bif run cleanup"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "List runs.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "list",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Filter by workflow",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--workflow",
-                "python_name": "workflow_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Filter by status (comma-separated)",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--status",
-                "python_name": "status",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": 20,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Max results",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "INTEGER",
+                "multiple": false,
                 "name": "--limit",
-                "python_name": "limit",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "integer",
+                  "param_type": "Int"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Pagination cursor",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--cursor",
-                "python_name": "cursor",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif run list"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show run logs. Use --follow to stream.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "logs",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Run ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "RUN_ID",
+                "multiple": false,
                 "name": "RUN_ID",
-                "python_name": "run_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": 100,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Number of log lines",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "INTEGER",
+                "multiple": false,
                 "name": "--tail",
-                "python_name": "tail",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "integer",
+                  "param_type": "Int"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Filter by task name",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--task",
-                "python_name": "task",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [
                   "-f"
                 ],
+                "count": false,
                 "default": false,
+                "envvar": null,
+                "flag_value": true,
                 "help": "Stream new logs",
+                "is_eager": false,
+                "is_flag": true,
                 "kind": "option",
+                "metavar": "BOOLEAN",
+                "multiple": false,
                 "name": "--follow",
-                "python_name": "follow",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "boolean",
+                  "param_type": "Bool"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID (for --follow)",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif run logs"
           },
           {
+            "allow_extra_args": true,
+            "allow_interspersed_args": false,
+            "chain": false,
             "commands": [
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "Download run outputs.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "download",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Run ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "RUN_ID",
+                    "multiple": false,
                     "name": "RUN_ID",
-                    "python_name": "run_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Specific file to download",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--file",
-                    "python_name": "file",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [
                       "-o"
                     ],
+                    "count": false,
                     "default": ".",
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Destination directory",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--dest",
-                    "python_name": "dest",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   },
                   {
                     "aliases": [],
+                    "count": false,
                     "default": "tar.gz",
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Archive format",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "option",
+                    "metavar": "TEXT",
+                    "multiple": false,
                     "name": "--format",
-                    "python_name": "fmt",
-                    "required": false
+                    "nargs": 1,
+                    "required": false,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif run outputs download"
               },
               {
+                "allow_extra_args": false,
+                "allow_interspersed_args": true,
+                "chain": false,
                 "commands": [],
                 "help": "List output files for a run.",
+                "help_option_names": [
+                  "-h",
+                  "--help"
+                ],
+                "ignore_unknown_options": false,
+                "invoke_without_command": false,
                 "name": "list",
+                "no_args_is_help": false,
                 "parameters": [
                   {
                     "aliases": [],
+                    "count": false,
                     "default": null,
+                    "envvar": null,
+                    "flag_value": null,
                     "help": "Run ID",
+                    "is_eager": false,
+                    "is_flag": false,
                     "kind": "argument",
+                    "metavar": "RUN_ID",
+                    "multiple": false,
                     "name": "RUN_ID",
-                    "python_name": "run_id",
-                    "required": true
+                    "nargs": 1,
+                    "required": true,
+                    "type": {
+                      "name": "text",
+                      "param_type": "String"
+                    }
                   }
                 ],
                 "path": "bif run outputs list"
               }
             ],
             "help": "Manage run output files.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "outputs",
+            "no_args_is_help": true,
             "parameters": [],
             "path": "bif run outputs"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Resume a failed run from checkpoint.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "resume",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Run ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "RUN_ID",
+                "multiple": false,
                 "name": "RUN_ID",
-                "python_name": "run_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "JSON config overrides",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--spec",
-                "python_name": "spec",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif run resume"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Retry a failed run.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "retry",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Run ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "RUN_ID",
+                "multiple": false,
                 "name": "RUN_ID",
-                "python_name": "run_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "JSON overrides",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--spec",
-                "python_name": "spec",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif run retry"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show run details.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "show",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Run ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "RUN_ID",
+                "multiple": false,
                 "name": "RUN_ID",
-                "python_name": "run_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif run show"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Submit a new run.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "submit",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Workflow ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--workflow",
-                "python_name": "workflow_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "JSON values object",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--values",
-                "python_name": "values",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "JSON spec file or - for stdin",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--spec",
-                "python_name": "spec",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif run submit"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Watch a run in real-time via SSE events.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "watch",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Run ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "RUN_ID",
+                "multiple": false,
                 "name": "RUN_ID",
-                "python_name": "run_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif run watch"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Submit a run from a complete spec (project, workflow, values, options).",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "wizard",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "JSON spec file or - for stdin",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--spec",
-                "python_name": "spec",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif run wizard"
           }
         ],
         "help": "Manage pipeline runs.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "run",
+        "no_args_is_help": true,
         "parameters": [],
         "path": "bif run"
       },
       {
+        "allow_extra_args": true,
+        "allow_interspersed_args": false,
+        "chain": false,
         "commands": [
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show GPU status.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "gpu",
+            "no_args_is_help": false,
             "parameters": [],
             "path": "bif system gpu"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Check backend health.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "health",
+            "no_args_is_help": false,
             "parameters": [],
             "path": "bif system health"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show scheduler resource availability.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "scheduler-resources",
+            "no_args_is_help": false,
             "parameters": [],
             "path": "bif system scheduler-resources"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show scheduler status.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "scheduler-status",
+            "no_args_is_help": false,
             "parameters": [],
             "path": "bif system scheduler-status"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show platform statistics.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "stats",
+            "no_args_is_help": false,
             "parameters": [],
             "path": "bif system stats"
           }
         ],
         "help": "System information and health.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "system",
+        "no_args_is_help": true,
         "parameters": [],
         "path": "bif system"
       },
       {
+        "allow_extra_args": true,
+        "allow_interspersed_args": false,
+        "chain": false,
         "commands": [
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Bind a workflow to a project.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "bind",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Workflow ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "WORKFLOW_ID",
+                "multiple": false,
                 "name": "WORKFLOW_ID",
-                "python_name": "workflow_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID (uses default if set)",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif workflow bind"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "List registered workflows.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "list",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": 20,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Max results",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "INTEGER",
+                "multiple": false,
                 "name": "--limit",
-                "python_name": "limit",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "integer",
+                  "param_type": "Int"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Pagination cursor",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--cursor",
-                "python_name": "cursor",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Search by name",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--search",
-                "python_name": "search",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Filter by source (nf-core, github, local)",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--source",
-                "python_name": "source",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif workflow list"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Pin a specific workflow version for a project.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "pin",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Workflow ID to pin",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "WORKFLOW_ID",
+                "multiple": false,
                 "name": "WORKFLOW_ID",
-                "python_name": "workflow_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif workflow pin"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Register a new workflow.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "register",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Source: nf-core, github, or local",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--source",
-                "python_name": "source",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Workflow name",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--name",
-                "python_name": "name",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Version tag",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--version",
-                "python_name": "version",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Engine: nextflow or wdl",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--engine",
-                "python_name": "engine",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Remote source ref or local entry file",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--ref",
-                "python_name": "source_ref",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Local workflow bundle directory",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--bundle",
-                "python_name": "bundle_path",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Entrypoint relative path inside bundle",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--entrypoint",
-                "python_name": "entrypoint_relpath",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Description",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--description",
-                "python_name": "description",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "JSON spec file or - for stdin",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--spec",
-                "python_name": "spec",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif workflow register"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show workflow details.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "show",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Workflow ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "WORKFLOW_ID",
+                "multiple": false,
                 "name": "WORKFLOW_ID",
-                "python_name": "workflow_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif workflow show"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Show workflow source code.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "source",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Workflow ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "WORKFLOW_ID",
+                "multiple": false,
                 "name": "WORKFLOW_ID",
-                "python_name": "workflow_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif workflow source"
           },
           {
+            "allow_extra_args": false,
+            "allow_interspersed_args": true,
+            "chain": false,
             "commands": [],
             "help": "Unbind a workflow from a project.",
+            "help_option_names": [
+              "-h",
+              "--help"
+            ],
+            "ignore_unknown_options": false,
+            "invoke_without_command": false,
             "name": "unbind",
+            "no_args_is_help": false,
             "parameters": [
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Workflow ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "argument",
+                "metavar": "WORKFLOW_ID",
+                "multiple": false,
                 "name": "WORKFLOW_ID",
-                "python_name": "workflow_id",
-                "required": true
+                "nargs": 1,
+                "required": true,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               },
               {
                 "aliases": [],
+                "count": false,
                 "default": null,
+                "envvar": null,
+                "flag_value": null,
                 "help": "Project ID",
+                "is_eager": false,
+                "is_flag": false,
                 "kind": "option",
+                "metavar": "TEXT",
+                "multiple": false,
                 "name": "--project",
-                "python_name": "project_id",
-                "required": false
+                "nargs": 1,
+                "required": false,
+                "type": {
+                  "name": "text",
+                  "param_type": "String"
+                }
               }
             ],
             "path": "bif workflow unbind"
           }
         ],
         "help": "Manage workflows.",
+        "help_option_names": [
+          "-h",
+          "--help"
+        ],
+        "ignore_unknown_options": false,
+        "invoke_without_command": false,
         "name": "workflow",
+        "no_args_is_help": true,
         "parameters": [],
         "path": "bif workflow"
       }
     ],
     "help": "Bioinfoflow CLI — manage projects, workflows, and pipeline runs.",
+    "help_option_names": [
+      "-h",
+      "--help"
+    ],
+    "ignore_unknown_options": false,
+    "invoke_without_command": false,
     "name": "bif",
+    "no_args_is_help": true,
     "parameters": [
       {
         "aliases": [],
+        "count": false,
         "default": null,
+        "envvar": null,
+        "flag_value": null,
         "help": "Backend API URL.",
+        "is_eager": false,
+        "is_flag": false,
         "kind": "option",
+        "metavar": "TEXT",
+        "multiple": false,
         "name": "--base-url",
-        "python_name": "base_url",
-        "required": false
+        "nargs": 1,
+        "required": false,
+        "type": {
+          "name": "text",
+          "param_type": "String"
+        }
       },
       {
         "aliases": [
           "-p"
         ],
+        "count": false,
         "default": null,
+        "envvar": null,
+        "flag_value": null,
         "help": "Project ID to use (overrides default from config).",
+        "is_eager": false,
+        "is_flag": false,
         "kind": "option",
+        "metavar": "TEXT",
+        "multiple": false,
         "name": "--project",
-        "python_name": "project",
-        "required": false
+        "nargs": 1,
+        "required": false,
+        "type": {
+          "name": "text",
+          "param_type": "String"
+        }
       },
       {
         "aliases": [],
+        "count": false,
         "default": null,
+        "envvar": null,
+        "flag_value": null,
         "help": "Output format: human or json.",
+        "is_eager": false,
+        "is_flag": false,
         "kind": "option",
+        "metavar": "TEXT",
+        "multiple": false,
         "name": "--output",
-        "python_name": "output",
-        "required": false
+        "nargs": 1,
+        "required": false,
+        "type": {
+          "name": "text",
+          "param_type": "String"
+        }
       },
       {
         "aliases": [],
+        "count": false,
         "default": false,
+        "envvar": null,
+        "flag_value": true,
         "help": "Disable color output.",
+        "is_eager": false,
+        "is_flag": true,
         "kind": "option",
+        "metavar": "BOOLEAN",
+        "multiple": false,
         "name": "--no-color",
-        "python_name": "no_color",
-        "required": false
+        "nargs": 1,
+        "required": false,
+        "type": {
+          "name": "boolean",
+          "param_type": "Bool"
+        }
       },
       {
         "aliases": [
           "-q"
         ],
+        "count": false,
         "default": false,
+        "envvar": null,
+        "flag_value": true,
         "help": "Suppress non-essential output (errors and data still printed).",
+        "is_eager": false,
+        "is_flag": true,
         "kind": "option",
+        "metavar": "BOOLEAN",
+        "multiple": false,
         "name": "--quiet",
-        "python_name": "quiet",
-        "required": false
+        "nargs": 1,
+        "required": false,
+        "type": {
+          "name": "boolean",
+          "param_type": "Bool"
+        }
       },
       {
         "aliases": [
           "-v"
         ],
+        "count": false,
         "default": false,
+        "envvar": null,
+        "flag_value": true,
         "help": "Show debug info (request/response details).",
+        "is_eager": false,
+        "is_flag": true,
         "kind": "option",
+        "metavar": "BOOLEAN",
+        "multiple": false,
         "name": "--verbose",
-        "python_name": "verbose",
-        "required": false
+        "nargs": 1,
+        "required": false,
+        "type": {
+          "name": "boolean",
+          "param_type": "Bool"
+        }
       },
       {
         "aliases": [
           "-V"
         ],
+        "count": false,
         "default": null,
+        "envvar": null,
+        "flag_value": true,
         "help": "Show CLI version and exit.",
+        "is_eager": true,
+        "is_flag": true,
         "kind": "option",
+        "metavar": "BOOLEAN",
+        "multiple": false,
         "name": "--version",
-        "python_name": "show_version",
-        "required": false
+        "nargs": 1,
+        "required": false,
+        "type": {
+          "name": "boolean",
+          "param_type": "Bool"
+        }
       },
       {
         "aliases": [],
+        "count": false,
         "default": null,
+        "envvar": null,
+        "flag_value": true,
         "help": "Install completion for the current shell.",
+        "is_eager": false,
+        "is_flag": true,
         "kind": "option",
+        "metavar": "BOOLEAN",
+        "multiple": false,
         "name": "--install-completion",
-        "python_name": "install_completion",
-        "required": false
+        "nargs": 1,
+        "required": false,
+        "type": {
+          "name": "boolean",
+          "param_type": "Bool"
+        }
       },
       {
         "aliases": [],
+        "count": false,
         "default": null,
+        "envvar": null,
+        "flag_value": true,
         "help": "Show completion for the current shell, to copy it or customize the installation.",
+        "is_eager": false,
+        "is_flag": true,
         "kind": "option",
+        "metavar": "BOOLEAN",
+        "multiple": false,
         "name": "--show-completion",
-        "python_name": "show_completion",
-        "required": false
+        "nargs": 1,
+        "required": false,
+        "type": {
+          "name": "boolean",
+          "param_type": "Bool"
+        }
       }
     ],
     "path": "bif"
