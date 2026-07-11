@@ -137,6 +137,11 @@ def has_glob(value: str) -> bool:
 
 
 def expand_brace_glob_patterns(pattern: str) -> list[str]:
+    """Expand Bioinfoflow's limited legacy brace globs, not general shell syntax.
+
+    Malformed and nested quirks are intentionally preserved and pinned by tests;
+    callers must not reuse this helper as a general-purpose brace parser.
+    """
     match = re.search(r"\{([^{}]+)\}", pattern)
     if not match:
         return [pattern]
