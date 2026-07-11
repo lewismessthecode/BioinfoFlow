@@ -299,13 +299,13 @@ The following must not change in this campaign:
 
 **Files:**
 
-- Modify: `backend/app/repositories/project_repo.py`
 - Modify: `backend/app/services/container_registry_service.py`
-- Modify/add focused repository and service tests.
+- Modify focused service tests.
 
 - [x] Write a failing service test that requires project lookup through the
   repository collaborator.
-- [x] Add the narrow repository method and replace direct `session.get(Project)`.
+- [x] Reuse the repository's inherited `get` method and replace direct
+  `session.get(Project)`.
 - [x] Keep commit/rollback behavior unchanged; unit-of-work redesign is out of
   scope.
 - [x] From `backend/`, run:
