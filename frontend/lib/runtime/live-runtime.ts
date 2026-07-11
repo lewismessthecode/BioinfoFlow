@@ -1,5 +1,6 @@
 import type { AppRuntime, RuntimeEventSubscription } from "./types"
 
+import { connectEventSource } from "./event-source-connection"
 import { buildLiveApiUrl, buildLiveWebSocketUrl, liveRequest } from "./request-core"
 import type {
   EventEnvelope,
@@ -24,11 +25,6 @@ function parseEnvelope<T>(event: MessageEvent): EventEnvelope<T> | null {
 function subscribeLive(options: RuntimeEventSubscription) {
   if (!options.projectId) return () => {}
 
-  let backoff = INITIAL_BACKOFF
-  let disposed = false
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  let source: EventSource | null = null
-
   const bind = <T,>(
     eventSource: EventSource,
     eventName: string,
@@ -43,55 +39,36 @@ function subscribeLive(options: RuntimeEventSubscription) {
     eventSource.addEventListener(eventName, listener)
   }
 
-  const connect = () => {
-    if (disposed) return
-
-    const nextSource = new EventSource(
+  return connectEventSource({
+    url: () =>
       buildLiveApiUrl("/events/stream", {
         project_id: options.projectId,
         run_id: options.runId || undefined,
         image_id: options.imageId || undefined,
       }),
-      { withCredentials: true },
-    )
-    source = nextSource
-
-    nextSource.onopen = () => {
-      if (disposed) return
-      backoff = INITIAL_BACKOFF
+    eventSourceInit: { withCredentials: true },
+    initialBackoffMs: INITIAL_BACKOFF,
+    maxBackoffMs: MAX_BACKOFF,
+    backoffMultiplier: BACKOFF_MULTIPLIER,
+    shouldReconnect: (source) => source.readyState === EventSource.CLOSED,
+    failedSourcePolicy: "retain",
+    onOpen: () => {
       options.onOpen?.()
-    }
-
-    nextSource.onerror = (event) => {
-      if (disposed) return
+    },
+    onError: (_source, event) => {
       options.onError?.(event)
-      if (nextSource.readyState === EventSource.CLOSED && !reconnectTimer) {
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null
-          if (disposed) return
-          backoff = Math.min(backoff * BACKOFF_MULTIPLIER, MAX_BACKOFF)
-          connect()
-        }, backoff)
-      }
-    }
-
-    bind<RunStatusEvent>(nextSource, "run.status", options.onRunStatus)
-    bind<RunLogEvent>(nextSource, "run.log", options.onRunLog)
-    bind<RunDagEvent>(nextSource, "run.dag", options.onRunDag)
-    bind<ImageProgressEvent>(
-      nextSource,
-      "image.progress",
-      options.onImageProgress,
-    )
-  }
-
-  connect()
-
-  return () => {
-    disposed = true
-    if (reconnectTimer) clearTimeout(reconnectTimer)
-    source?.close()
-  }
+    },
+    bindSource: (source) => {
+      bind<RunStatusEvent>(source, "run.status", options.onRunStatus)
+      bind<RunLogEvent>(source, "run.log", options.onRunLog)
+      bind<RunDagEvent>(source, "run.dag", options.onRunDag)
+      bind<ImageProgressEvent>(
+        source,
+        "image.progress",
+        options.onImageProgress,
+      )
+    },
+  })
 }
 
 export function createLiveRuntime(): AppRuntime {
