@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from unittest.mock import AsyncMock, patch
 
@@ -14,6 +15,19 @@ from tests.test_cli.conftest import make_envelope
 _R = "app.cli.commands.run"
 _RO = "app.cli.commands.run_outputs"
 _RB = "app.cli.commands.run_batch"
+
+_LEGACY_RUN_KEYS = frozenset(
+    {
+        "params",
+        "inputs",
+        "config_overrides",
+        "timeout_seconds",
+        "workspace",
+        "submission_mode",
+        "json_inputs",
+        "table_rows",
+    }
+)
 
 
 @pytest.fixture
@@ -30,6 +44,36 @@ def _run(run_id: str = "r-001", **kw) -> dict:
         "current_task": kw.get("current_task", "FASTQC"),
         "created_at": "2025-01-01T00:00:00Z",
     }
+
+
+class TestLegacyRunKeyPolicy:
+    def test_shared_policy_is_immutable_and_complete(self) -> None:
+        run_spec = importlib.import_module("app.cli.run_spec")
+
+        assert isinstance(run_spec.LEGACY_RUN_KEYS, frozenset)
+        assert run_spec.LEGACY_RUN_KEYS == _LEGACY_RUN_KEYS
+
+    def test_detection_is_deterministic_and_ignores_supported_keys(self) -> None:
+        run_spec = importlib.import_module("app.cli.run_spec")
+
+        detected = run_spec.detect_legacy_run_keys(
+            {
+                "workspace": "/tmp/work",
+                "values": {"reads": "reads.fastq.gz"},
+                "params": {"reads": "reads.fastq.gz"},
+                "workflow_id": "wf-1",
+            }
+        )
+
+        assert detected == ("params", "workspace")
+
+    def test_run_commands_use_the_shared_detector(self) -> None:
+        run_spec = importlib.import_module("app.cli.run_spec")
+        run_command = importlib.import_module(_R)
+        batch_command = importlib.import_module(_RB)
+
+        assert run_command.detect_legacy_run_keys is run_spec.detect_legacy_run_keys
+        assert batch_command.detect_legacy_run_keys is run_spec.detect_legacy_run_keys
 
 
 class TestRunList:
@@ -220,8 +264,12 @@ class TestBatchSubmit:
                 {
                     "project_id": "p-1",
                     "runs": [
-                        {"workflow_id": "wf-1", "params": {"reads": "x.fastq.gz"}},
-                        {"workflow_id": "wf-2", "values": {}},
+                        {"workflow_id": "wf-1", "values": {}},
+                        {
+                            "workflow_id": "wf-2",
+                            "workspace": "/tmp/work",
+                            "inputs": {"reads": "x.fastq.gz"},
+                        },
                     ],
                 }
             )
@@ -232,8 +280,11 @@ class TestBatchSubmit:
             ["run", "batch", "submit", "--spec", str(spec)],
         )
 
-        assert result.exit_code != 0
-        assert "legacy run keys are not supported" in result.stdout
+        assert result.exit_code == 2
+        assert result.output == (
+            "[SPEC_ERROR] legacy run keys are not supported in spec.runs[1]: "
+            "inputs, workspace. Use values/options instead.\n"
+        )
 
 
 class TestBatchShow:
@@ -382,6 +433,7 @@ class TestRunSubmitAdvanced:
                 {
                     "workflow_id": "wf-1",
                     "project_id": "p-1",
+                    "workspace": "/tmp/work",
                     "params": {"reads": "asset://project/reads.fastq.gz"},
                 }
             )
@@ -391,8 +443,11 @@ class TestRunSubmitAdvanced:
             app, ["run", "wizard", "--spec", str(spec)]
         )
 
-        assert result.exit_code != 0
-        assert "legacy run keys are not supported" in result.stdout
+        assert result.exit_code == 2
+        assert result.output == (
+            "[SPEC_ERROR] legacy run keys are not supported: params, workspace. "
+            "Use values/options instead.\n"
+        )
 
 
 class TestRunWizard:

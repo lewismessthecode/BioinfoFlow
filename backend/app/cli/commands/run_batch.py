@@ -10,6 +10,7 @@ from app.cli.api_helpers import api_get, api_post
 from app.cli.errors import handle_errors
 from app.cli.helpers import unpack_ctx
 from app.cli.jsonio import SpecError, read_spec
+from app.cli.run_spec import detect_legacy_run_keys
 
 batch_app = typer.Typer(name="batch", help="Manage batch runs.", no_args_is_help=True)
 
@@ -77,18 +78,6 @@ def batch_cancel(
     r.success(f"Batch {batch_id} cancelled.", raw=resp)
 
 
-_LEGACY_RUN_KEYS = {
-    "params",
-    "inputs",
-    "config_overrides",
-    "timeout_seconds",
-    "workspace",
-    "submission_mode",
-    "json_inputs",
-    "table_rows",
-}
-
-
 def _normalize_batch_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(payload)
     runs = normalized.get("runs")
@@ -102,7 +91,7 @@ def _normalize_batch_payload(payload: dict[str, Any]) -> dict[str, Any]:
     for index, run in enumerate(runs):
         if not isinstance(run, dict):
             raise SpecError(f"spec.runs[{index}] must be a JSON object")
-        legacy_keys = sorted(key for key in run if key in _LEGACY_RUN_KEYS)
+        legacy_keys = detect_legacy_run_keys(run)
         if legacy_keys:
             joined = ", ".join(legacy_keys)
             raise SpecError(
