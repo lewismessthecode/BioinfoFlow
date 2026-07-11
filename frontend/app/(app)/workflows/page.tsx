@@ -27,6 +27,7 @@ import { HubWorkflowsTable, ProjectWorkflowsTable } from "./components/workflow-
 import { useWorkflowActions } from "./components/use-workflow-actions"
 import { buildHubWorkflowGroups } from "@/lib/workflow-groups"
 import { celebrateMilestone } from "@/lib/celebrations"
+import { withMinimumDuration } from "@/lib/minimum-duration"
 
 const WorkflowRegisterDialog = dynamic(
   () => import("./components/workflow-register-dialog").then((m) => ({ default: m.WorkflowRegisterDialog })),
@@ -99,14 +100,13 @@ export default function WorkflowsPage() {
     const load = async () => {
       setIsLoading(true)
       try {
-        const minLoadTime = new Promise((resolve) => setTimeout(resolve, 500))
         if (scope === "hub") {
-          await Promise.all([fetchHubWorkflows(), minLoadTime])
+          await withMinimumDuration(fetchHubWorkflows())
         } else if (!activeProjectId) {
           setProjectWorkflows([])
-          await minLoadTime
+          await withMinimumDuration(Promise.resolve())
         } else {
-          await Promise.all([fetchProjectWorkflows(), minLoadTime])
+          await withMinimumDuration(fetchProjectWorkflows())
         }
       } catch (error) {
         toast.error(getApiErrorMessage(error, tWorkflows("errors.loadWorkflowsFailed")))
