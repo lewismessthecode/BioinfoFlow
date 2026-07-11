@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,12 +14,20 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_ROOT = BACKEND_ROOT / "scripts"
 
 
-def _run_exporter(script_name: str, *args: str) -> subprocess.CompletedProcess[str]:
+def _run_exporter(
+    script_name: str,
+    *args: str,
+    env_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env.update(env_overrides or {})
     return subprocess.run(
         [sys.executable, str(SCRIPTS_ROOT / script_name), *args],
         cwd=BACKEND_ROOT,
         capture_output=True,
         check=False,
+        encoding="utf-8",
+        env=env,
         text=True,
     )
 
@@ -33,13 +42,11 @@ def _command_by_path(contract: dict[str, Any], path: str) -> dict[str, Any]:
     raise AssertionError(f"command path not found: {path}")
 
 
-def _parameter_by_python_name(
-    command: dict[str, Any], python_name: str
-) -> dict[str, Any]:
+def _parameter_by_name(command: dict[str, Any], name: str) -> dict[str, Any]:
     return next(
         parameter
         for parameter in command["parameters"]
-        if parameter["python_name"] == python_name
+        if parameter["name"] == name
     )
 
 
@@ -59,7 +66,7 @@ def test_openapi_export_is_deterministic_and_preserves_full_schema(
         indent=2,
         sort_keys=True,
     ) + "\n"
-    assert output_path.read_text() == expected_text
+    assert output_path.read_text(encoding="utf-8") == expected_text
 
     exported_schema = json.loads(expected_text)
     assert exported_schema == expected_schema
@@ -75,6 +82,29 @@ def test_openapi_export_is_deterministic_and_preserves_full_schema(
     ]
 
 
+def test_openapi_export_ignores_app_identity_environment_overrides(
+    tmp_path: Path,
+) -> None:
+    ordinary_path = tmp_path / "ordinary.json"
+    overridden_path = tmp_path / "overridden.json"
+
+    ordinary = _run_exporter("export_openapi_contract.py", str(ordinary_path))
+    overridden = _run_exporter(
+        "export_openapi_contract.py",
+        str(overridden_path),
+        env_overrides={
+            "APP_NAME": "Environment-specific name",
+            "APP_VERSION": "999.999.999",
+        },
+    )
+
+    assert ordinary.returncode == 0, ordinary.stderr
+    assert overridden.returncode == 0, overridden.stderr
+    assert overridden_path.read_text(encoding="utf-8") == ordinary_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_cli_export_is_deterministic_and_captures_visible_command_tree(
     tmp_path: Path,
 ) -> None:
@@ -82,11 +112,11 @@ def test_cli_export_is_deterministic_and_captures_visible_command_tree(
 
     first = _run_exporter("export_cli_contract.py", str(output_path))
     assert first.returncode == 0, first.stderr
-    first_text = output_path.read_text()
+    first_text = output_path.read_text(encoding="utf-8")
 
     second = _run_exporter("export_cli_contract.py", str(output_path))
     assert second.returncode == 0, second.stderr
-    assert output_path.read_text() == first_text
+    assert output_path.read_text(encoding="utf-8") == first_text
 
     contract = json.loads(first_text)
     assert contract["schema_version"] == 1
@@ -103,45 +133,95 @@ def test_cli_export_is_deterministic_and_captures_visible_command_tree(
         "system",
         "workflow",
     ]
+    assert contract["command"]["no_args_is_help"] is True
+    assert contract["command"]["invoke_without_command"] is False
+    assert contract["command"]["chain"] is False
+    assert contract["command"]["help_option_names"] == ["-h", "--help"]
 
-    root_project = _parameter_by_python_name(contract["command"], "project")
-    assert root_project == {
-        "aliases": ["-p"],
-        "default": None,
-        "help": "Project ID to use (overrides default from config).",
-        "kind": "option",
-        "name": "--project",
-        "python_name": "project",
-        "required": False,
-    }
+    pending_commands = [contract["command"]]
+    while pending_commands:
+        command = pending_commands.pop()
+        assert {
+            "chain",
+            "help_option_names",
+            "invoke_without_command",
+            "no_args_is_help",
+        } <= command.keys()
+        for parameter in command["parameters"]:
+            assert {
+                "aliases",
+                "count",
+                "default",
+                "envvar",
+                "flag_value",
+                "help",
+                "is_eager",
+                "is_flag",
+                "kind",
+                "metavar",
+                "multiple",
+                "name",
+                "nargs",
+                "required",
+                "type",
+            } <= parameter.keys()
+            assert "python_name" not in parameter
+        pending_commands.extend(command["commands"])
+
+    root_project = _parameter_by_name(contract["command"], "--project")
+    assert root_project["aliases"] == ["-p"]
+    assert root_project["default"] is None
+    assert root_project["help"] == "Project ID to use (overrides default from config)."
+    assert root_project["kind"] == "option"
+    assert root_project["required"] is False
+    assert root_project["type"] == {"name": "text", "param_type": "String"}
+    assert root_project["nargs"] == 1
+    assert root_project["multiple"] is False
+    assert root_project["metavar"] == "TEXT"
+    assert "python_name" not in root_project
 
     run_submit = _command_by_path(contract, "bif run submit")
     assert run_submit["help"] == "Submit a new run."
-    assert _parameter_by_python_name(run_submit, "workflow_id") == {
-        "aliases": [],
-        "default": None,
-        "help": "Workflow ID",
-        "kind": "option",
-        "name": "--workflow",
-        "python_name": "workflow_id",
-        "required": True,
-    }
+    workflow_option = _parameter_by_name(run_submit, "--workflow")
+    assert workflow_option["aliases"] == []
+    assert workflow_option["default"] is None
+    assert workflow_option["help"] == "Workflow ID"
+    assert workflow_option["kind"] == "option"
+    assert workflow_option["required"] is True
 
     config_set = _command_by_path(contract, "bif config set")
-    assert _parameter_by_python_name(config_set, "key") == {
-        "aliases": [],
-        "default": None,
-        "help": "Config key to set",
-        "kind": "argument",
-        "name": "KEY",
-        "python_name": "key",
-        "required": True,
-    }
+    key_argument = _parameter_by_name(config_set, "KEY")
+    assert key_argument["aliases"] == []
+    assert key_argument["default"] is None
+    assert key_argument["help"] == "Config key to set"
+    assert key_argument["kind"] == "argument"
+    assert key_argument["required"] is True
 
     file_upload = _command_by_path(contract, "bif file upload")
-    assert _parameter_by_python_name(file_upload, "overwrite")["aliases"] == [
+    assert _parameter_by_name(file_upload, "--overwrite")["aliases"] == [
         "--no-overwrite"
     ]
+
+    after_seq = _parameter_by_name(
+        _command_by_path(contract, "bif agent events"),
+        "--after-seq",
+    )
+    assert after_seq["type"] == {
+        "clamp": False,
+        "max": None,
+        "max_open": False,
+        "min": 0,
+        "min_open": False,
+        "name": "integer range",
+        "param_type": "IntRange",
+    }
+
+    version = _parameter_by_name(contract["command"], "--version")
+    assert version["is_eager"] is True
+    assert version["is_flag"] is True
+    assert version["flag_value"] is True
+    assert version["count"] is False
+    assert version["type"] == {"name": "boolean", "param_type": "Bool"}
 
 
 def test_cli_export_does_not_initialize_cli_runtime(
@@ -175,7 +255,7 @@ def test_check_mode_detects_contract_drift(
     matching_result = _run_exporter(script_name, "--check", str(output_path))
     assert matching_result.returncode == 0, matching_result.stderr
 
-    output_path.write_text("{}\n")
+    output_path.write_text("{}\n", encoding="utf-8")
     drift_result = _run_exporter(script_name, "--check", str(output_path))
 
     assert drift_result.returncode != 0

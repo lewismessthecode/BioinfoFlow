@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -11,8 +12,35 @@ from typing import Any, Sequence
 
 def build_contract() -> dict[str, Any]:
     """Return the complete OpenAPI document exposed by the application."""
+    identity_env_names = ("APP_NAME", "APP_VERSION")
+    original_identity_env = {
+        name: os.environ.get(name) for name in identity_env_names
+    }
+    for name in identity_env_names:
+        os.environ[name] = ""
+
+    try:
+        from app.config import Settings, settings
+    finally:
+        for name, value in original_identity_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+    app_name = Settings.model_fields["app_name"].get_default()
+    app_version = Settings.model_fields["app_version"].get_default()
+    if not isinstance(app_name, str) or not isinstance(app_version, str):
+        raise TypeError("application identity settings must have string defaults")
+
+    settings.app_name = app_name
+    settings.app_version = app_version
+
     from app.main import app
 
+    app.title = f"{app_name} API"
+    app.version = app_version
+    app.openapi_schema = None
     return app.openapi()
 
 
@@ -48,7 +76,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 def _check_contract(path: Path, rendered: str) -> int:
     try:
-        committed = path.read_text()
+        committed = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         committed = None
 
@@ -71,7 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _check_contract(args.check, rendered)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(rendered)
+    args.output.write_text(rendered, encoding="utf-8")
     return 0
 
 
