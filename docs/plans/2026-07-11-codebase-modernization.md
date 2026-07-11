@@ -383,7 +383,7 @@ The following must not change in this campaign:
 - [x] Fetch and rebase on `origin/main`.
 - [ ] After the rebase, rerun the exact complete backend, frontend, build,
   Playwright, and manual demo gates above before pushing.
-- [ ] Push and open a draft or ready PR with a Conventional Commit title.
+- [x] Push and open a draft PR with a Conventional Commit title.
 
 ### Phase 9 Validation Record
 
