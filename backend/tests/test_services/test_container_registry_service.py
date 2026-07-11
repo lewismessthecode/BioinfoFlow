@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.models.container_registry import ContainerRegistry
 from app.models.project import Project
+from app.repositories.project_repo import ProjectRepository
+from app.utils.exceptions import NotFoundError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -120,6 +124,24 @@ async def test_registry_service_resolves_project_override_before_global_default(
     fallback = await service.get_effective_registry(project_id=None)
     assert fallback is not None
     assert str(fallback.id) == str(default_registry.id)
+
+
+@pytest.mark.asyncio
+async def test_registry_service_looks_up_project_through_repository(
+    db_session,
+    monkeypatch,
+):
+    from app.services.container_registry_service import ContainerRegistryService
+
+    project_id = "00000000-0000-0000-0000-000000000001"
+    project_get = AsyncMock(return_value=None)
+    monkeypatch.setattr(ProjectRepository, "get", project_get)
+    service = ContainerRegistryService(db_session)
+
+    with pytest.raises(NotFoundError, match=f"Project not found: {project_id}"):
+        await service.get_effective_registry(project_id=project_id)
+
+    project_get.assert_awaited_once_with(project_id)
 
 
 @pytest.mark.asyncio
