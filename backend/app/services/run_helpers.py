@@ -136,6 +136,21 @@ def has_glob(value: str) -> bool:
     return any(char in value for char in "*?[]{}")
 
 
+def expand_brace_glob_patterns(pattern: str) -> list[str]:
+    match = re.search(r"\{([^{}]+)\}", pattern)
+    if not match:
+        return [pattern]
+    options = [part.strip() for part in match.group(1).split(",") if part.strip()]
+    if not options:
+        return [pattern]
+    prefix = pattern[: match.start()]
+    suffix = pattern[match.end() :]
+    expanded: list[str] = []
+    for option in options:
+        expanded.extend(expand_brace_glob_patterns(f"{prefix}{option}{suffix}"))
+    return expanded
+
+
 def iter_string_values(payload, prefix: str = ""):
     if isinstance(payload, dict):
         for key, value in payload.items():

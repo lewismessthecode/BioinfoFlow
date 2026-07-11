@@ -14,7 +14,6 @@ import asyncio
 import glob
 import hashlib
 import json
-import re
 from collections import deque
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -58,6 +57,7 @@ from app.services.run_helpers import (
     build_resolved_runspec,
     config_helper,
     copy_config,
+    expand_brace_glob_patterns,
     generate_run_id,
     has_glob,
     is_external_reference,
@@ -607,7 +607,7 @@ class RunLifecycleService:
                 continue
 
             if has_glob(candidate):
-                patterns = _expand_glob_braces(candidate)
+                patterns = expand_brace_glob_patterns(candidate)
                 has_match = any(
                     glob.glob(pattern, root_dir=str(workspace_path), recursive=True)
                     for pattern in patterns
@@ -989,21 +989,6 @@ def _is_platform_managed_dir_key(key: object) -> bool:
     if not text:
         return False
     return is_managed_run_directory_name(text.split(".")[-1])
-
-
-def _expand_glob_braces(pattern: str) -> list[str]:
-    match = re.search(r"\{([^{}]+)\}", pattern)
-    if not match:
-        return [pattern]
-    options = [part.strip() for part in match.group(1).split(",") if part.strip()]
-    if not options:
-        return [pattern]
-    prefix = pattern[: match.start()]
-    suffix = pattern[match.end() :]
-    expanded: list[str] = []
-    for option in options:
-        expanded.extend(_expand_glob_braces(f"{prefix}{option}{suffix}"))
-    return expanded
 
 
 def _replay_idempotency_key(
