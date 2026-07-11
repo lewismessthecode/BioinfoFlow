@@ -9,13 +9,13 @@ from urllib.parse import urlparse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.project import Project
 from app.models.container_registry import (
     ContainerRegistry,
     ContainerRegistryCredentialSource,
     ContainerRegistryStatus,
 )
 from app.repositories.container_registry_repo import ContainerRegistryRepository
+from app.repositories.project_repo import ProjectRepository
 from app.services.docker_service import normalize_registry
 from app.services.llm.credentials import (
     decrypt_secret,
@@ -50,6 +50,7 @@ class ContainerRegistryService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.registry_repo = ContainerRegistryRepository(session)
+        self.project_repo = ProjectRepository(session)
 
     async def list_registries(self) -> list[ContainerRegistry]:
         return await self.registry_repo.list_all()
@@ -193,7 +194,7 @@ class ContainerRegistryService:
         project_id: str | None = None,
     ) -> ContainerRegistry | None:
         if project_id:
-            project = await self.session.get(Project, project_id)
+            project = await self.project_repo.get(project_id)
             if project is None:
                 raise NotFoundError(f"Project not found: {project_id}")
             if project.container_registry_id:
