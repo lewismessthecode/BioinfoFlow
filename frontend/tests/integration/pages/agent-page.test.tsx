@@ -53,8 +53,8 @@ vi.mock("@/components/bioinfoflow/agent-runtime/agent-workbench", () => ({
     workspaceEnabled?: boolean
     className?: string
   }) => (
-    <div data-testid="agent-core-chat" className={className}>
-      agent-core:{projectId || "none"}|session:{activeSessionId || "draft"}|workspace:{workspaceEnabled ? "on" : "off"}
+    <div data-testid="agent-workbench" className={className}>
+      agent-workbench:{projectId || "none"}|session:{activeSessionId || "draft"}|workspace:{workspaceEnabled ? "on" : "off"}
     </div>
   ),
 }))
@@ -142,7 +142,7 @@ describe("AgentPage", () => {
       projectContext: { activeProjectId: "project-1" },
     })
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-1|session:draft|workspace:on")
+    expect(screen.getByTestId("agent-workbench")).toHaveTextContent("agent-workbench:project-1|session:draft|workspace:on")
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true })
@@ -224,7 +224,7 @@ describe("AgentPage", () => {
       },
     })
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-default|session:draft|workspace:on")
+    expect(screen.getByTestId("agent-workbench")).toHaveTextContent("agent-workbench:project-default|session:draft|workspace:on")
     expect(screen.queryByTestId("live-deck")).not.toBeInTheDocument()
   })
 
@@ -240,8 +240,8 @@ describe("AgentPage", () => {
     expect(screen.getByTestId("agent-page-shell").className).toContain("min-w-0")
     expect(screen.getByTestId("agent-page-shell").className).toContain("min-h-0")
     expect(screen.getByTestId("agent-page-shell").className).toContain("overflow-hidden")
-    expect(screen.getByTestId("agent-core-chat").className).toContain("min-w-0")
-    expect(screen.getByTestId("agent-core-chat").className).toContain("flex-1")
+    expect(screen.getByTestId("agent-workbench").className).toContain("min-w-0")
+    expect(screen.getByTestId("agent-workbench").className).toContain("flex-1")
   })
 
   it("moves from project selection into workspace mode and back out without leaking the live deck state", async () => {
@@ -259,20 +259,20 @@ describe("AgentPage", () => {
       },
     )
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|session:draft|workspace:on")
+    expect(screen.getByTestId("agent-workbench")).toHaveTextContent("agent-workbench:none|session:draft|workspace:on")
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText("select project"))
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:project-9|session:draft|workspace:on")
+      expect(screen.getByTestId("agent-workbench")).toHaveTextContent("agent-workbench:project-9|session:draft|workspace:on")
     })
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText("clear project"))
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|session:draft|workspace:on")
+      expect(screen.getByTestId("agent-workbench")).toHaveTextContent("agent-workbench:none|session:draft|workspace:on")
     })
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
   })
@@ -286,8 +286,8 @@ describe("AgentPage", () => {
       />,
     )
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent(
-      "agent-core:project-1|session:session-9|workspace:on",
+    expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
+      "agent-workbench:project-1|session:session-9|workspace:on",
     )
   })
 
@@ -302,8 +302,8 @@ describe("AgentPage", () => {
     expect(getAgentRuntimeSessionMock).toHaveBeenCalledWith("session-9")
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent(
-        "agent-core:project-2|session:session-9|workspace:on",
+      expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
+        "agent-workbench:project-2|session:session-9|workspace:on",
       )
     })
     expect(localStorage.getItem("bioinfoflow:agent-core-session:project-2")).toBe(
@@ -336,8 +336,8 @@ describe("AgentPage", () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent(
-        "agent-core:project-default|session:session-inbox|workspace:on",
+      expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
+        "agent-workbench:project-default|session:session-inbox|workspace:on",
       )
     })
     expect(screen.queryByText("toggle live deck")).not.toBeInTheDocument()
@@ -358,7 +358,7 @@ describe("AgentPage", () => {
       },
     })
 
-    expect(screen.queryByTestId("agent-core-chat")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("agent-workbench")).not.toBeInTheDocument()
 
     resolveSession!({
       id: "session-9",
@@ -375,8 +375,8 @@ describe("AgentPage", () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-core-chat")).toHaveTextContent(
-        "agent-core:project-2|session:session-9|workspace:on",
+      expect(screen.getByTestId("agent-workbench")).toHaveTextContent(
+        "agent-workbench:project-2|session:session-9|workspace:on",
       )
     })
   })
@@ -399,6 +399,6 @@ describe("AgentPage", () => {
       },
     })
 
-    expect(screen.getByTestId("agent-core-chat")).toHaveTextContent("agent-core:none|session:draft|workspace:on")
+    expect(screen.getByTestId("agent-workbench")).toHaveTextContent("agent-workbench:none|session:draft|workspace:on")
   })
 })

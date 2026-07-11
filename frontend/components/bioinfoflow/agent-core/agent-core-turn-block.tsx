@@ -195,59 +195,62 @@ function ActionTimeline({
         {t("actionTimeline")}
       </div>
       <ol className="grid gap-2">
-        {actions.map((action) => (
-          <li
-            key={action.key}
-            className="border-l border-border/80 pl-3 text-xs text-muted-foreground"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono font-medium text-foreground">{action.name}</span>
-              {action.kind ? <span>{action.kind}</span> : null}
-              {action.riskLevel ? (
-                <span className="border border-border/70 px-1.5 py-0.5 font-mono">
-                  {action.riskLevel}
-                </span>
+        {actions.map((action) => {
+          const actionId = action.actionId
+          return (
+            <li
+              key={action.key}
+              className="border-l border-border/80 pl-3 text-xs text-muted-foreground"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono font-medium text-foreground">{action.name}</span>
+                {action.kind ? <span>{action.kind}</span> : null}
+                {action.riskLevel ? (
+                  <span className="border border-border/70 px-1.5 py-0.5 font-mono">
+                    {action.riskLevel}
+                  </span>
+                ) : null}
+                <span className="font-mono">{action.status}</span>
+              </div>
+              {action.inputPreview ? (
+                <p className="mt-1 whitespace-pre-wrap break-words leading-5">
+                  {action.inputPreview}
+                </p>
               ) : null}
-              <span className="font-mono">{action.status}</span>
-            </div>
-            {action.inputPreview ? (
-              <p className="mt-1 whitespace-pre-wrap break-words leading-5">
-                {action.inputPreview}
-              </p>
-            ) : null}
-            {action.waitingDecision &&
-            action.status === "waiting_decision" &&
-            action.actionId ? (
-              <div className="mt-2 bg-amber-500/5 px-3 py-2 text-amber-700 dark:text-amber-300">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 font-medium">
-                    <ShieldAlert className="h-3.5 w-3.5" />
-                    {t("actionApproval")}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => onApproveAction(action.actionId)}
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                      {t("approveAction")}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onRejectAction(action.actionId)}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      {t("rejectAction")}
-                    </Button>
+              {action.waitingDecision &&
+              action.status === "waiting_decision" &&
+              actionId ? (
+                <div className="mt-2 bg-amber-500/5 px-3 py-2 text-amber-700 dark:text-amber-300">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 font-medium">
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      {t("actionApproval")}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => onApproveAction(actionId)}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        {t("approveAction")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onRejectAction(actionId)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        {t("rejectAction")}
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : null}
-          </li>
-        ))}
+              ) : null}
+            </li>
+          )
+        })}
       </ol>
     </div>
   )
