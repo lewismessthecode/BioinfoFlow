@@ -32,7 +32,6 @@ import {
   truncateRowsAndColumns,
   workbookPreviewReadOptions,
   type SpreadsheetRows,
-  type UniversalFileKind,
 } from "./file-renderer-utils"
 import { useTransientScrollbar } from "./use-transient-scrollbar"
 
@@ -326,10 +325,6 @@ export function UniversalFileRenderer({
       ) : null}
     </div>
   )
-}
-
-export function fileKindLabel(t: ReturnType<typeof useTranslations>, kind: UniversalFileKind) {
-  return t(`renderer.kinds.${kind}`)
 }
 
 function SpreadsheetPreview({ file }: { file: UniversalFileResource }) {
