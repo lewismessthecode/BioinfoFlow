@@ -8,6 +8,7 @@ import { apiRequest, getApiErrorMessage } from "@/lib/api";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import type { SchedulerStatus } from "@/lib/types";
 import { getTimePeriod } from "@/lib/time-greeting";
+import { withMinimumDuration } from "@/lib/minimum-duration";
 import { authClient } from "@/lib/auth-client";
 import {
   buildNarrative,
@@ -50,8 +51,6 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const minLoadTime = new Promise((resolve) => setTimeout(resolve, 500));
-
       const dashboardRequests = Promise.all([
         apiRequest<DashboardStats>("/stats"),
         apiRequest<SystemHealth>("/system/health"),
@@ -59,9 +58,8 @@ export default function DashboardPage() {
         apiRequest<SchedulerStatus>("/scheduler/status").catch(() => null),
         apiRequest<ReadinessStatus>("/system/readiness").catch(() => null),
       ]);
-      const [
-        [statsRes, healthRes, gpuRes, schedulerRes, readinessRes],
-      ] = await Promise.all([dashboardRequests, minLoadTime]);
+      const [statsRes, healthRes, gpuRes, schedulerRes, readinessRes] =
+        await withMinimumDuration(dashboardRequests);
 
       setStats(statsRes.data);
       setHealth(healthRes.data);

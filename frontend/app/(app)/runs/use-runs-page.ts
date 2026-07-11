@@ -10,6 +10,7 @@ import { useEvents } from "@/hooks/use-events"
 import type { DagData, Pagination, Run, RunLogs, RunOutputs, RunStatus, Workflow } from "@/lib/types"
 import { openInNewTab } from "@/lib/window-utils"
 import { celebrateMilestone } from "@/lib/celebrations"
+import { withMinimumDuration } from "@/lib/minimum-duration"
 import { parseContainerImagePreparationMessage } from "./run-log-toast-utils"
 
 type RunsScope = "all" | "project"
@@ -108,10 +109,9 @@ export function useRunsPage() {
   const fetchRuns = useCallback(async (cursorOverride?: string | null) => {
     setIsLoading(true)
     try {
-      const minLoadTime = new Promise((resolve) => setTimeout(resolve, 500))
       const effectiveCursor = cursorOverride === undefined ? cursor : cursorOverride
 
-      const [{ data, meta }] = await Promise.all([
+      const { data, meta } = await withMinimumDuration(
         apiRequest<Run[]>("/runs", {
           params: {
             limit: itemsPerPage,
@@ -120,8 +120,7 @@ export function useRunsPage() {
             status: statusFilter.length ? statusFilter.join(",") : undefined,
           },
         }),
-        minLoadTime
-      ])
+      )
 
       setRuns(data)
       if (data.some((run) => run.status === "completed")) {
