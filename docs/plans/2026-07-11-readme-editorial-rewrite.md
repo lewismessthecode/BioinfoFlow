@@ -111,14 +111,14 @@ Expected: `PASS: i18n coverage check clean`.
 
 Check that the first screen explains the project before listing technology, the Chinese reads as original prose, details link outward instead of sprawling, and all claims are supported by the completed documentation audit.
 
-- [ ] **Step 2: Commit the rewrite**
+- [x] **Step 2: Commit the rewrite**
 
 ```bash
 rtk git add README.md README.zh-CN.md docs/plans/2026-07-11-readme-editorial-rewrite.md
 rtk git commit -m "docs: rewrite bilingual readme narrative"
 ```
 
-- [ ] **Step 3: Synchronize and publish**
+- [x] **Step 3: Synchronize and publish**
 
 ```bash
 rtk git fetch origin --prune
@@ -128,6 +128,6 @@ rtk git push
 
 Expected: the existing draft pull request for `codex/documentation-audit-refresh` includes the new commit.
 
-- [ ] **Step 4: Normalize the pull request**
+- [x] **Step 4: Normalize the pull request**
 
 Set the PR title to `docs: audit and refresh repository documentation` and update the body to mention the bilingual editorial rewrite and its verification results.
