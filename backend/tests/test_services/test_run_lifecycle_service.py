@@ -27,6 +27,23 @@ class _AuditRecorder:
         self.calls.append(payload)
 
 
+def test_legacy_values_filter_managed_directory_leaf_names_only():
+    values = run_lifecycle_service._legacy_values_from_payloads(
+        inputs={
+            "outdir": "ignored",
+            "workflow.output_dir": "ignored",
+            " PUBLISH_DIR ": "ignored",
+            "sample": "S1",
+        },
+        params={
+            "workflow.WORK_DIR": "ignored",
+            "threads": 8,
+        },
+    )
+
+    assert values == {"sample": "S1", "threads": 8}
+
+
 async def _create_run(
     db_session,
     *,

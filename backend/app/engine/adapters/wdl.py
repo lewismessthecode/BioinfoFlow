@@ -17,6 +17,7 @@ from app.engine.adapter import EngineAdapter
 from app.engine.backend import EngineEvent, EngineEventType
 from app.path_layout import normalize_engine_dir
 from app.services.docker_service import DockerService
+from app.services.run_input_policy import is_managed_run_directory_name
 from app.utils.process import terminate_process_tree
 
 _MINIWDL_ENTRY_MODULE = "app.engine._miniwdl_entry"
@@ -334,7 +335,7 @@ def _is_platform_managed_dir_key(key: object) -> bool:
     if not text:
         return False
     leaf = text.split(".")[-1]
-    return leaf in {"outdir", "output_dir", "publish_dir", "work_dir"}
+    return is_managed_run_directory_name(leaf)
 
 
 def _options(config: dict) -> dict:

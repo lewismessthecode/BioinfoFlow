@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.services.validators.types import infer_is_internal
 from app.services.workflow_validator import WorkflowValidator
 
 
@@ -179,6 +180,19 @@ task RESULT {
   }
 }
 """
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["outdir", " OUTPUT_DIR ", "publish_dir", "WORK_DIR"],
+)
+def test_managed_run_directory_names_are_internal(name):
+    assert infer_is_internal(name) is True
+
+
+@pytest.mark.parametrize("name", ["workflow.outdir", "results_dir", ""])
+def test_non_exact_managed_run_directory_names_are_not_internal(name):
+    assert infer_is_internal(name) is False
 
 
 WGS_CLINICAL_WDL_COMPACT = """

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.engine.adapters.wdl import WDLAdapter
+from app.engine.adapters.wdl import WDLAdapter, _prepare_inputs
 from app.engine.backend import EngineEventType
 from app.models.run_config import RunConfigHelper
 
@@ -30,6 +30,40 @@ def _wdl_config(**overrides) -> dict:
     )
     config.update(overrides)
     return config
+
+
+def test_prepare_inputs_absolutizes_managed_directory_leaf_names(tmp_path):
+    workspace = tmp_path / "workspace"
+    prepared = _prepare_inputs(
+        {
+            "outdir": "runs/run-1/results",
+            "workflow.output_dir": "runs/run-1/output",
+            " PUBLISH_DIR ": "runs/run-1/publish",
+            "workflow.WORK_DIR": "runs/run-1/work",
+            "sample_path": "inputs/sample.txt",
+        },
+        str(workspace),
+    )
+
+    assert prepared == {
+        "outdir": str((workspace / "runs/run-1/results").resolve()),
+        "workflow.output_dir": str((workspace / "runs/run-1/output").resolve()),
+        " PUBLISH_DIR ": str((workspace / "runs/run-1/publish").resolve()),
+        "workflow.WORK_DIR": str((workspace / "runs/run-1/work").resolve()),
+        "sample_path": "inputs/sample.txt",
+    }
+
+
+def test_prepare_inputs_preserves_non_relative_managed_values(tmp_path):
+    absolute = str((tmp_path / "absolute-results").resolve())
+    inputs = {
+        "outdir": absolute,
+        "output_dir": " ",
+        "publish_dir": None,
+        "work_dir": 42,
+    }
+
+    assert _prepare_inputs(inputs, str(tmp_path / "workspace")) == inputs
 
 
 def test_wdl_adapter_parse_event_maps_known_lines():
