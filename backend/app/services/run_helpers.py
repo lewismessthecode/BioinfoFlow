@@ -19,6 +19,7 @@ from pathlib import Path
 
 from app.models.run import Run, RunStatus
 from app.models.run_config import RunConfigHelper
+from app.services.run_input_policy import is_managed_run_directory_name
 
 
 # ── regex constants (moved from RunService class body) ──────────────────────
@@ -115,7 +116,7 @@ def is_path_like_key(key: str) -> bool:
     lowered = key.lower()
     if lowered.endswith("_mode"):
         return False
-    if lowered in {"outdir", "output_dir", "publish_dir", "work_dir"}:
+    if is_managed_run_directory_name(lowered):
         return False
     if lowered.endswith("_url") or lowered.endswith("_uri"):
         return False

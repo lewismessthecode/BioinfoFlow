@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.run_input_policy import is_managed_run_directory_name
+
 
 _REFERENCE_HINT_TOKENS = (
     "reference",
@@ -20,9 +22,6 @@ _REFERENCE_HINT_TOKENS = (
     "known_sites",
     "dbsnp",
 )
-
-_INTERNAL_PARAM_NAMES = {"outdir", "output_dir", "publish_dir", "work_dir"}
-
 
 @dataclass
 class ValidationError:
@@ -262,4 +261,4 @@ def infer_source_hint(
 
 
 def infer_is_internal(name: str) -> bool:
-    return str(name or "").strip().lower() in _INTERNAL_PARAM_NAMES
+    return is_managed_run_directory_name(str(name or "").strip())

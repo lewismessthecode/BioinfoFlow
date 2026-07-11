@@ -69,13 +69,11 @@ from app.services.run_helpers import (
     safe_workspace,
     sync_run_config_aliases,
 )
+from app.services.run_input_policy import is_managed_run_directory_name
 from app.services.run_profile_service import RunProfileService
 from app.services.workflow_form_spec import effective_workflow_form_spec
 from app.utils.exceptions import PermissionDeniedError
 from app.utils.project_access import can_access_run_project
-
-
-_PLATFORM_MANAGED_DIR_NAMES = {"outdir", "output_dir", "publish_dir", "work_dir"}
 
 
 class RunLifecycleService:
@@ -990,7 +988,7 @@ def _is_platform_managed_dir_key(key: object) -> bool:
     text = str(key or "").strip().lower()
     if not text:
         return False
-    return text.split(".")[-1] in _PLATFORM_MANAGED_DIR_NAMES
+    return is_managed_run_directory_name(text.split(".")[-1])
 
 
 def _expand_glob_braces(pattern: str) -> list[str]:

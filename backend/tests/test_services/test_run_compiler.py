@@ -114,6 +114,37 @@ def test_build_engine_inputs_uses_absolute_results_dir_for_wdl_outdir(tmp_path):
     assert inputs["resource_stress_mini.outdir"] == str(layout.results.resolve())
 
 
+@pytest.mark.unit
+def test_platform_managed_wdl_inputs_filter_only_internal_unqualified_names():
+    compiler = _make_compiler(storage=SimpleNamespace(resolve_asset=AsyncMock()))
+    workflow = SimpleNamespace(
+        schema_json={
+            "workflow_name": "demo",
+            "inputs": [
+                {"name": "outdir", "is_internal": True},
+                {"name": "OUTPUT_DIR", "is_internal": True},
+                {"name": " publish_dir ", "is_internal": True},
+                {"name": "work_dir", "is_internal": True},
+                {"name": "outdir", "is_internal": False},
+                {"name": "demo.outdir", "is_internal": True},
+                {"name": "results_dir", "is_internal": True},
+            ],
+        }
+    )
+
+    managed = compiler._platform_managed_wdl_inputs(
+        workflow=workflow,
+        outdir="/project/runs/run-1/results",
+    )
+
+    assert managed == {
+        "demo.outdir": "/project/runs/run-1/results",
+        "demo.OUTPUT_DIR": "/project/runs/run-1/results",
+        "demo.publish_dir": "/project/runs/run-1/results",
+        "demo.work_dir": "/project/runs/run-1/results",
+    }
+
+
 @pytest.mark.asyncio
 async def test_resolve_path_cell_passes_absolute_paths_through():
     compiler = _make_compiler(storage=SimpleNamespace(resolve_asset=AsyncMock()))

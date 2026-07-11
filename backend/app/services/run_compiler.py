@@ -70,6 +70,7 @@ from app.services.audit_service import AuditService
 from app.services.run_archive import RunArchiveService
 from app.services.run_dispatch import RunDispatcher, get_run_dispatcher
 from app.services.run_helpers import build_resolved_runspec, generate_run_id
+from app.services.run_input_policy import is_managed_run_directory_name
 from app.services.storage_service import StorageService
 from app.services.workflow_form_spec import effective_workflow_form_spec
 from app.services.container_registry_service import ContainerRegistryService
@@ -934,7 +935,7 @@ class RunCompiler:
             name = str(item.get("name") or "").strip()
             if not name:
                 continue
-            if name.lower() in {"outdir", "output_dir", "publish_dir", "work_dir"}:
+            if is_managed_run_directory_name(name):
                 qualified = (
                     f"{workflow_name}.{name}"
                     if workflow_name and "." not in name
