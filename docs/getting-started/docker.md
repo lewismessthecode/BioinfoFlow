@@ -6,7 +6,7 @@ bootstrap owner, and choose the right settings for local or shared deployments.
 ## Prerequisites
 
 - Docker Engine or Docker Desktop with Compose
-- One AI provider key for agent use. You can paste it after sign-in under **Settings -> AI Providers**, or bootstrap it in `.env`.
+- At least one AI provider: use an API key for a hosted provider, or configure an endpoint and model for Ollama, vLLM, or another OpenAI-compatible service.
 
 ## First Run
 
@@ -86,7 +86,10 @@ The release workflow publishes:
 
 Use `latest`, `main`, or `sha-<12-char-commit>` as the tag. Images are republished from `main` only when backend or frontend code changes; docs-only changes do not create a new image.
 
-The published frontend image is built for localhost with `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`. For a shared or remote server, set the public URLs in `.env` and build from source instead:
+The published frontend image is fixed at build time to
+`NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`, personal auth mode,
+local email/password auth, and disabled self-signup. Build from source for a
+shared or remote URL, team mode, or different public auth settings:
 
 ```bash
 docker compose up -d --build
@@ -207,7 +210,10 @@ preloaded `.tar` image and never uses registry settings.
 
 ## What Happens At Startup
 
-If `BIOINFOFLOW_HOME` is unset, Compose uses `${PWD}/data`, where `${PWD}` is the repo root for normal local startup.
+If `BIOINFOFLOW_HOME` is unset, `docker-compose.yml` uses `${PWD}/data`, where
+`${PWD}` is the repo root. `docker-compose.prod.yml` instead defaults to
+`/srv/bioinfoflow`; set an absolute value explicitly if you want another host
+location.
 
 Compose passes these important values to the backend:
 
@@ -240,7 +246,7 @@ For the standard local quick start, you do not need to run `mkdir` before `docke
 
 ## Choosing `BIOINFOFLOW_HOME`
 
-Leave `BIOINFOFLOW_HOME` unset for the repo-local default:
+Leave `BIOINFOFLOW_HOME` unset for the source-build repo-local default:
 
 ```text
 <repo>/data
@@ -287,6 +293,10 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER"]
 ```bash
 docker compose up -d --build
 ```
+
+Terminate TLS at a reverse proxy for any deployment outside a trusted localhost
+environment, use matching `https://` origins, and avoid exposing ports 3000 and
+8000 directly to untrusted networks.
 
 ## Working With Input Files
 

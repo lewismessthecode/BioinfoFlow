@@ -25,10 +25,29 @@ Source-of-truth documentation for the Bioinfoflow platform, written against the 
 
 - [Operations Supplement](operations/runbook.md): deployment/runtime context after the base setup works.
 - [GitHub CI/CD](development/github-ci-cd.md): CI, container release, and automation notes for maintainers.
+- [Icon System](development/icon-system.md): frontend icon adapter and control-state conventions.
+
+## Runnable Examples
+
+- [nf-core/rnaseq](../demo/nfcore-rnaseq/README.md): onboarding smoke test for a real nf-core Nextflow pipeline; read its verification record before treating acceptance targets as proven.
+- [Parabricks WGS](workflows/parabricks-wgs.md): guide to the included GPU-oriented Nextflow and WDL examples.
+- Focused WDL fixtures under [`demo/`](../demo/) exercise retry boundaries, resource fanout, subworkflow imports, file fanout, and small RNA-seq-shaped flows. Their READMEs describe acceptance checks unless a `VERIFIED.md` file records an actual run.
+
+## Contributor Maps
+
+- [Backend README](../backend/README.md): backend setup, storage inputs, and test commands.
+- [Codemaps](../codemaps/INDEX.md): current source-tree maps for architecture, backend, frontend, data, and dependencies.
+
+## Document Classes
+
+- Public user documentation: the root READMEs and current guides, concepts, workflows, references, and security pages linked above.
+- Operator documentation: the root runbook, Docker quick start, storage model, security notes, and operations supplement.
+- Contributor documentation: `AGENTS.md`, `CLAUDE.md`, `backend/README.md`, development pages, test READMEs, and codemaps.
+- Historical records: existing files under `docs/plans/` and `backend/docs/refactor*`. They may describe proposed or superseded designs and are not evidence of shipped behavior.
 
 ## Maintainer Notes
 
-Historical design notes, old plans, mockups, and local research artifacts live under ignored `docs/_legacy/` paths in development workspaces. The tracked docs above are the current public docs set.
+Historical design notes and refactor records are retained for context but are not part of the current public product contract. The tracked pages listed above are the canonical current documentation set.
 
 Keep docs in sync with implementation changes:
 

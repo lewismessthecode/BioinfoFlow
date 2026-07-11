@@ -1,14 +1,24 @@
 # Codemaps Index
-**Last Updated:** 2026-04-17
+
+**Last Updated:** 2026-07-11
+
+These maps summarize the current source tree. They are contributor orientation,
+not a replacement for the user-facing documentation or generated API schema.
 
 ## Areas
-- [Architecture](architecture.md) - system-level overview and runtime flow.
-- [Backend](backend.md) - FastAPI service layout, APIs, agent runtime, CLI.
-- [Frontend](frontend.md) - Next.js App Router UI, components, and client data flow.
-- [Data](data.md) - database schema, ORM models, migrations, and shared types.
-- [Dependencies](dependencies.md) - external packages, services, and integrations.
 
-## Notes
-- Codemaps are derived from the current repository structure and source files.
-- For setup and ops commands, see `README.md` and `backend/README.md`.
-- Refresh cadence: update after major features or when file counts drift >10%.
+- [Architecture](architecture.md): system boundaries and runtime flows.
+- [Backend](backend.md): FastAPI routers, services, repositories, workflow engines, scheduler, AgentCore, and CLI.
+- [Frontend](frontend.md): Next.js routes, shared UI, AgentCore workbench, auth, and client data flow.
+- [Data](data.md): current ORM domains, repositories, schemas, migrations, and frontend contracts.
+- [Dependencies](dependencies.md): declared runtime packages and external systems.
+
+## Canonical References
+
+- Setup and operations: [`README.md`](../README.md), [`RUNBOOK.md`](../RUNBOOK.md), and [Docker Quick Start](../docs/getting-started/docker.md).
+- Public architecture: [Architecture](../docs/architecture.md) and [Architecture Reference](../docs/reference/architecture.md).
+- Exact API surface: the FastAPI OpenAPI document at `/api/v1/openapi.json` on a running backend.
+- Exact CLI surface: `uv run bif --help` and command-specific help from `backend/`.
+
+Refresh these maps after major source-tree changes. If a map conflicts with
+current code, the implementation and tests win.

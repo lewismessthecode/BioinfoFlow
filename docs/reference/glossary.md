@@ -10,8 +10,9 @@ The absolute platform data root used by the backend, workflow runners, task
 containers, and the UI. It stores state, auth data, project data, shared input
 sources, engine caches, run inputs, and run outputs.
 
-The repo-root `.env` is the default place to configure it. If unset under Docker
-Compose, Bioinfoflow uses the repo-local `data/` directory.
+The repo-root `.env` is the default place to configure it. If unset,
+`docker-compose.yml` uses the repo-local `data/` directory while
+`docker-compose.prod.yml` uses `/srv/bioinfoflow`.
 
 ### Identity-Mount Path Contract
 
@@ -36,6 +37,12 @@ A project whose root is an absolute path supplied at project creation or update
 time. External roots are useful when a lab already has a project directory on a
 shared filesystem. Bioinfoflow still creates the same `data/` and `runs/`
 layout inside that root.
+
+### Remote Project
+
+A project associated with a Remote Connection and an absolute POSIX path on the
+SSH host. Remote projects support browsing and interactive terminals but do not
+dispatch workflow runs over SSH.
 
 ## Workflow Terms
 
@@ -86,7 +93,7 @@ artifact policy.
 ### Toolset
 
 The policy that decides which registered tools are visible to the agent. Current
-toolsets are `default`, `plan`, and `execution`.
+toolsets are `default`, `plan`, the read-only `bio` policy, and `execution`.
 
 ### Approval
 

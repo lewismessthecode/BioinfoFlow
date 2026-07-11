@@ -1,6 +1,6 @@
 # variant-fanout-mini
 
-**Engine:** WDL (miniwdl) · **Image:** `ubuntu:22.04` · **Steps:** 7 tasks (6 pipeline stages; scatter fan-out = 4)
+**Engine:** WDL (miniwdl) · **Image:** `ubuntu:22.04` · **Steps:** 7 task definitions / 7 pipeline stages; scatter fan-out = 4
 
 Purpose: exercise real `File` flow between tasks (not string `FINISHED` markers), `scatter → gather` with `Array[File]`, and DAG rendering of a non-trivial graph. This is the most file-IO-heavy demo.
 
@@ -44,7 +44,7 @@ PREP → scatter [ ALIGN → CALL ] → MERGE → FILTER → ANNOTATE → REPORT
 - `scatter → gather` with `Array[File]` input to MERGE (tests `BioinfoflowSwarmContainer.host_path` rw-mount allowlisting for the gathered paths).
 - WDL `read_tsv` + scatter (same pattern as `Deaf_20.wdl`).
 - Output at a literal path (`report.zip`) after a potentially-renaming command.
-- DAG with 13 nodes across 6 sequential stages.
+- DAG with 13 runtime nodes across 7 pipeline stages.
 
 ## Intentionally avoided
 

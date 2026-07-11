@@ -1,8 +1,8 @@
 # resource-stress-mini
 
-**Engine:** WDL (miniwdl) · **Image:** `alpine:3.19` · **Steps:** 3 tasks, but large scatter fanout
+**Engine:** WDL (miniwdl) · **Image:** `ubuntu:22.04` · **Steps:** 3 task definitions with a large scatter fanout
 
-Purpose: stress the scheduler's concurrency limits, SSE event volume, DAG rendering of wide graphs, and `timeout` enforcement.
+Purpose: stress engine fanout, SSE event volume, and DAG rendering of wide graphs. Bioinfoflow schedules whole runs; MiniWDL owns the scattered task execution inside each run.
 
 ## Pipeline
 
@@ -11,7 +11,7 @@ PREP → scatter × N [ BUSY ] → REDUCE
 ```
 
 - `PREP` — generates `seeds.txt` with N lines.
-- `BUSY` (scatter × N) — `sleep ${sleep_seconds}` then touches `${seed}.done`. Task `timeout: "10m"`.
+- `BUSY` (scatter × N) — `sleep ${sleep_seconds}` then touches `${seed}.done`.
 - `REDUCE` — counts gathered markers, writes `summary.txt`.
 
 ## Input variants
@@ -19,11 +19,11 @@ PREP → scatter × N [ BUSY ] → REDUCE
 ### `happy.inputs.json` → expect **completed**
 
 - `fanout=30`, `sleep_seconds=5`.
-- With scheduler default of 4 concurrent task slots, the 30 BUSY tasks queue and drain in ~40s.
+- Observe how MiniWDL and the available host resources execute the 30 BUSY tasks.
 - **What to watch:**
-  - Scheduler `/scheduler/status` — queue depth climbs to ~26 then drains.
+  - Scheduler `/scheduler/status` — the Bioinfoflow run remains observable while MiniWDL executes the scatter.
   - DAG — 30 BUSY nodes all visible; do they render without the UI stalling?
-  - SSE — live state transitions arrive promptly (no >5s stale).
+  - SSE — live state transitions continue to arrive during the fanout.
 
 ### `boundary.inputs.json` → expect **completed**
 
@@ -31,32 +31,36 @@ PREP → scatter × N [ BUSY ] → REDUCE
 - Scatter degenerates to a single task.
 - **What to watch:** does the DAG still show a scatter group with one child? Any UI weirdness for size-1 arrays?
 
-### `failure.inputs.json` → expect **failed (timeout)**
+### `failure.inputs.json` → long-running timeout fixture
 
-- `fanout=2`, `sleep_seconds=900` (15m) against `timeout: "10m"`.
-- Each BUSY task should be killed by the runtime at ~10m.
+- `fanout=2`, `sleep_seconds=900` (15m).
+- The WDL `meta.timeout` value is descriptive metadata, not an enforced task runtime limit.
+- To test Bioinfoflow timeout handling, submit a complete run spec with `options.timeout_seconds` set to a value such as `600`. That limit applies to the whole run.
 - **What to watch:**
-  - Do tasks actually get killed at the 10m mark, or does the run hang until the request timeout?
+  - Does the run stop at the configured run-level timeout?
   - Does the error message contain "timeout"?
   - Is REDUCE marked skipped/not-run, not green?
 
 ## Platform behaviors this demo exercises
 
-- Scheduler backpressure (queue depth under `scheduler_max_queue_depth`, concurrent slots under `scheduler_max_concurrency`).
+- Scheduler behavior when several copies of the demo are submitted as separate runs.
 - SSE event throughput under simultaneous fanout.
 - DAG node render performance with 30+ nodes.
-- Task `timeout` cut-off path (failure variant).
+- Run-level timeout handling when `options.timeout_seconds` is configured.
 - Scatter → gather with `Array[File]` (REDUCE consumes `BUSY.marker`).
 
 ## Concurrency-test variant
 
-To stress the scheduler further, launch 3 concurrent runs of this demo simultaneously:
+To stress the scheduler further, submit the demo three times. From `backend/`, after registering the workflow and selecting a project:
 
 ```bash
 for i in 1 2 3; do
-  uv run bif run create --demo resource-stress-mini &
+  uv run bif run submit \
+    --project <project-id> \
+    --workflow <workflow-id> \
+    --spec ../demo/resource-stress-mini/inputs/happy.inputs.json &
 done
 wait
 ```
 
-Watch `/scheduler/status` and `/scheduler/resources` — the queue depth should stay bounded, no run should deadlock.
+Watch `/scheduler/status` and `/scheduler/resources`; queue depth should remain bounded and the runs should continue making progress. These are acceptance checks, not recorded verification results.

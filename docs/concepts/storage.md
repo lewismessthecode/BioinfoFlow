@@ -4,7 +4,8 @@
 
 The current backend settings resolve it this way:
 
-- Docker Compose default: `${PWD}/data`
+- source-build Compose default: `${PWD}/data`
+- published-image Compose default: `/srv/bioinfoflow`
 - backend code default for local development: repo-root `data`
 - explicit override: `BIOINFOFLOW_HOME=/absolute/path`
 
@@ -44,7 +45,7 @@ The backend creates the platform roots during application startup. Project and r
 
 ## Project Storage Modes
 
-Bioinfoflow supports managed and external project roots.
+Bioinfoflow supports managed, external-local, and SSH-backed remote projects.
 
 ### Managed Projects
 
@@ -77,6 +78,12 @@ External project roots still use the same internal layout:
 The backend process must be able to create and write this layout. In team mode,
 creating or changing external roots is restricted to roles that can manage
 workspace storage.
+
+### Remote Projects
+
+Remote projects reference a saved Remote Connection and an absolute POSIX path
+on that SSH host. They do not have a local project root. Use them for remote
+browsing and interactive terminals; workflow runs are not dispatched over SSH.
 
 ## Asset URIs
 
@@ -144,7 +151,9 @@ This contract is what lets Nextflow, MiniWDL, backend code, and task containers
 share absolute paths without translation. If a run uses an external project
 root outside `BIOINFOFLOW_HOME`, that external root must also be visible at the
 same absolute path to the backend, workflow runner, and task containers. The
-same rule applies to shared source roots that appear in engine inputs.
+standard Compose files mount only `BIOINFOFLOW_HOME`, so add a matching identity
+bind mount to the backend service for each external root. The same rule applies
+to shared source roots that appear in engine inputs.
 
 For WDL task containers Bioinfoflow adds explicit identity bind mounts for:
 

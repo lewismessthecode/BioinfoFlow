@@ -31,7 +31,8 @@ Identity mount invariant:
 
 Examples:
 
-- local Docker default when unset: `<repo>/data`
+- source-build Compose default when unset: `<repo>/data`
+- published-image Compose default when unset: `/srv/bioinfoflow`
 - Linux server: `/srv/bioinfoflow`
 - HPC: `/lustre/<user>/bioinfoflow`
 - cloud: `/mnt/efs/bioinfoflow`
@@ -48,25 +49,28 @@ That keeps the same absolute path visible on the host and inside containers.
 ## Required Operational Inputs
 
 - Docker daemon
-- `NEXTFLOW_BIN` for Nextflow execution
-- `MINIWDL_BIN` for WDL execution
-- one provider credential for agent use, configured in **Settings -> AI Providers** or bootstrapped with env vars such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `VLLM_BASE_URL` + `VLLM_MODEL`
+- Nextflow and MiniWDL executables; the backend image bundles them, while
+  `NEXTFLOW_BIN` and `MINIWDL_BIN` override their paths
+- one provider configuration for agent use: a hosted-provider credential or a local/compatible endpoint and model, configured in **Settings -> AI Providers** or bootstrapped with environment variables
 
 For Remote Connections, password and pasted-private-key auth are stored
 encrypted by Bioinfoflow and used by the backend directly. If you use advanced
 SSH config aliases, backend key file paths, or `ssh-agent`, SSH access is
 evaluated from the backend environment. Make sure the backend host or backend
 container can see the relevant `~/.ssh/config`, key path, or `SSH_AUTH_SOCK`.
+Stored provider, registry, and Remote Connection credentials use the same
+encryption key. Team deployments must set a stable
+`BIOINFOFLOW_CREDENTIAL_KEY`; personal deployments must preserve
+`state/credentials/fernet.key` with database backups.
 
 ## Scheduler Defaults
 
-- `RUN_SCHEDULER_MODE=persistent`
 - `SCHEDULER_MAX_CONCURRENCY=4`
 - resource checks enabled by default
 
-Operational expectation:
-
-- apply Alembic migrations before backend startup if you want the persistent scheduler path
+Bioinfoflow always starts the persistent database-backed scheduler. Docker
+applies Alembic migrations automatically. Bare-metal deployments must run
+`uv run alembic upgrade head`; an outdated schema prevents backend startup.
 
 ## Useful Health Checks
 
@@ -76,14 +80,6 @@ Operational expectation:
 - `GET /api/v1/stats`
 
 ## Common Operational Failures
-
-### Scheduler falls back unexpectedly
-
-Check:
-
-- migrations are applied
-- `RUN_SCHEDULER_MODE=persistent`
-- backend logs for scheduler fallback warnings
 
 ### Backend starts but schema is behind
 
@@ -116,3 +112,20 @@ Check the backend environment, not the browser machine:
 - Advanced backend ssh-agent auth requires `SSH_AUTH_SOCK` to be mounted and set
 - Advanced backend SSH methods require system `ssh` and a target host that
   accepts non-interactive `BatchMode=yes` SSH commands
+
+## Backup And Restore
+
+Stop or quiesce the services before taking a filesystem copy. The safest backup
+is the complete `BIOINFOFLOW_HOME`, which includes the platform SQLite database,
+Better Auth database, generated credential key, workflow sources, projects, and
+shared source data. Restore it at the same absolute path, then run Alembic
+migrations before starting a bare-metal backend. Also back up every
+external-local project root outside `BIOINFOFLOW_HOME` and restore it at its
+recorded absolute path. Team deployments must preserve the configured
+`BIOINFOFLOW_CREDENTIAL_KEY` securely outside the filesystem snapshot. If you
+back up selected paths, include at minimum:
+
+- `state/bioinfoflow.db`
+- `state/auth/better-auth.db`
+- `state/credentials/fernet.key` when it exists
+- `state/workflows/`, `projects/`, and `sources/`

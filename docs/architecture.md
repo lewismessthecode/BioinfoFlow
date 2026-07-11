@@ -65,9 +65,9 @@ user input
 
 Tools implement the `AgentTool` protocol and describe themselves with
 `AgentToolSpec`. The default registry exposes file, shell, search, memory,
-skills, platform, web, subagent, and SSH remote tools. Toolsets are `default`,
-`plan`, and `execution`; higher-risk actions can pause for approval before they
-run.
+skills, platform, web, subagent, and SSH remote tools. Toolsets include
+`default`, `plan`, the read-only `bio` policy, and `execution`; higher-risk
+actions can pause for approval before they run.
 
 ## Remote Connections
 

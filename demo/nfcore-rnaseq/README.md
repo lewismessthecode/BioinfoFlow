@@ -26,11 +26,15 @@ From the repo root:
 demo/nfcore-rnaseq/run-direct.sh
 ```
 
-The script runs:
+The core command shape is:
 
 ```bash
 nextflow run nf-core/rnaseq -r 3.24.0 -profile test,docker
 ```
+
+The script also supplies its generated config, work directory, local samplesheet,
+reference/index paths, and output directory; inspect `run-direct.sh` for the
+complete invocation.
 
 Before launching Nextflow, the script downloads the official nf-core test
 samplesheet, FASTQs, and reference fixtures into
@@ -45,7 +49,8 @@ Outputs are written under:
 demo/nfcore-rnaseq/runs/direct-test-docker/results/
 ```
 
-Success criteria:
+Acceptance criteria (not yet established by a fresh successful external-machine
+run in `VERIFIED.md`):
 
 - Nextflow exits with code `0`.
 - `multiqc/` and `pipeline_info/` exist under the output directory.

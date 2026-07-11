@@ -20,14 +20,25 @@ That gives the backend container access to the host Docker daemon. Use it only o
 - `team`: multi-user mode with team roles
 - `dev`: auth disabled for development and tests
 
-On first startup with local email/password auth enabled, the frontend auth layer bootstraps the owner account from:
+When both bootstrap variables remain configured, frontend startup ensures that
+the email belongs to an active owner and updates its password from:
 
 ```env
 AUTH_BOOTSTRAP_OWNER_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_OWNER_PASSWORD=change-me
 ```
 
-Change these before exposing a server.
+Change these before exposing a server. After verifying the owner account on a
+long-lived shared deployment, remove the bootstrap password unless automatic
+owner recovery is intentional.
+
+## Stored Credential Encryption
+
+AI provider keys, container-registry credentials, and stored Remote Connection
+passwords or private keys use the same credential-encryption system. Team mode
+requires a stable `BIOINFOFLOW_CREDENTIAL_KEY`. Personal mode generates
+`BIOINFOFLOW_HOME/state/credentials/fernet.key`; back that file up with the
+databases or restored credentials cannot be decrypted.
 
 ## Better Auth Secret
 
@@ -86,6 +97,16 @@ TRUSTED_HOSTS=["localhost","127.0.0.1","YOUR_SERVER"]
 ```bash
 docker compose up -d --build
 ```
+
+For access outside a trusted localhost environment, terminate TLS at a reverse
+proxy and use matching `https://` origins. Do not expose the frontend and backend
+ports directly to untrusted networks.
+
+## Agent Shell Isolation
+
+The OS-level bash sandbox for AgentCore is disabled by default. When enabled it
+is fail-closed by default, with network access and unsandboxed opt-out disabled.
+Docker deployments may require host user-namespace and bubblewrap support.
 
 ## Environment Files
 
