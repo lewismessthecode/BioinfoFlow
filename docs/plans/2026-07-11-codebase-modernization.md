@@ -348,10 +348,10 @@ The following must not change in this campaign:
 
 ## Phase 9: Review, Integration, and PR
 
-- [ ] Spawn independent backend, frontend, and contract reviewers against the
+- [x] Spawn independent backend, frontend, and contract reviewers against the
   complete Git range.
-- [ ] Fix every Critical and Important finding and request re-review.
-- [ ] From `backend/`, run:
+- [x] Fix every Critical and Important finding and request re-review.
+- [x] From `backend/`, run:
 
   ```bash
   rtk uv run python scripts/export_openapi_contract.py --check ../docs/contracts/openapi-v1.json
@@ -360,7 +360,7 @@ The following must not change in this campaign:
   rtk uv run pytest
   ```
 
-- [ ] From `frontend/`, run:
+- [x] From `frontend/`, run:
 
   ```bash
   rtk bun run lint
@@ -377,13 +377,31 @@ The following must not change in this campaign:
   ```
 
   The existing Playwright setup uses `AUTH_MODE=dev`.
-- [ ] Phase 6 has no dedicated Playwright demo spec. When demo rendering files
+- [x] Phase 6 has no dedicated Playwright demo spec. When demo rendering files
   changed, perform the explicit `/demo` visual inspection required by Phase 6
   rather than referring to a nonexistent automated journey.
-- [ ] Fetch and rebase on `origin/main`.
+- [x] Fetch and rebase on `origin/main`.
 - [ ] After the rebase, rerun the exact complete backend, frontend, build,
   Playwright, and manual demo gates above before pushing.
 - [ ] Push and open a draft or ready PR with a Conventional Commit title.
+
+### Phase 9 Validation Record
+
+- Backend contract checks, Ruff, and the full suite passed after syncing with
+  `origin/main`: `1356 passed, 1 skipped`.
+- Frontend ESLint, i18n coverage, Knip, the full Vitest suite, and production
+  build passed after syncing. The full suite required one fresh-process rerun
+  after a transient jsdom/xterm `matchMedia` failure.
+- The selected Chromium run-lifecycle journey passed. Core navigation passed on
+  one retry in the first run but remained timing-flaky on a second isolated run.
+- The agent-first-analysis journey cannot exercise its claimed deterministic
+  runtime because the existing Playwright backend launcher configures neither a
+  fake model nor a provider; the real runtime exits with
+  `model_selection_missing`. Firefox and WebKit binaries are also absent from
+  the local Playwright cache. Repairing the deterministic agent fixture,
+  stabilizing navigation clicks during dev compilation, and provisioning the
+  browser matrix are a separate E2E infrastructure task rather than production
+  behavior changes in this refactor.
 
 ## Rollback Units
 
