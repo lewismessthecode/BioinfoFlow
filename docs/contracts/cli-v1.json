@@ -1,0 +1,2139 @@
+{
+  "command": {
+    "commands": [
+      {
+        "commands": [
+          {
+            "commands": [
+              {
+                "commands": [],
+                "help": "Approve a waiting AgentCore action.",
+                "name": "approve",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore action ID",
+                    "kind": "argument",
+                    "name": "ACTION_ID",
+                    "python_name": "action_id",
+                    "required": true
+                  },
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Decision note",
+                    "kind": "option",
+                    "name": "--note",
+                    "python_name": "note",
+                    "required": false
+                  }
+                ],
+                "path": "bif agent action approve"
+              },
+              {
+                "commands": [],
+                "help": "Approve a waiting AgentCore action with modified input.",
+                "name": "modify",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore action ID",
+                    "kind": "argument",
+                    "name": "ACTION_ID",
+                    "python_name": "action_id",
+                    "required": true
+                  },
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Modified action input as JSON object",
+                    "kind": "option",
+                    "name": "--input-json",
+                    "python_name": "input_json",
+                    "required": true
+                  },
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Decision note",
+                    "kind": "option",
+                    "name": "--note",
+                    "python_name": "note",
+                    "required": false
+                  }
+                ],
+                "path": "bif agent action modify"
+              },
+              {
+                "commands": [],
+                "help": "Reject a waiting AgentCore action.",
+                "name": "reject",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore action ID",
+                    "kind": "argument",
+                    "name": "ACTION_ID",
+                    "python_name": "action_id",
+                    "required": true
+                  },
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Decision note",
+                    "kind": "option",
+                    "name": "--note",
+                    "python_name": "note",
+                    "required": false
+                  }
+                ],
+                "path": "bif agent action reject"
+              }
+            ],
+            "help": "Approve, reject, or modify AgentCore actions.",
+            "name": "action",
+            "parameters": [],
+            "path": "bif agent action"
+          },
+          {
+            "commands": [
+              {
+                "commands": [],
+                "help": "List AgentCore artifacts for a turn or session.",
+                "name": "list",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Turn ID by default, or session ID",
+                    "kind": "argument",
+                    "name": "TARGET_ID",
+                    "python_name": "target_id",
+                    "required": true
+                  },
+                  {
+                    "aliases": [],
+                    "default": "turn",
+                    "help": "Artifact scope: turn or session",
+                    "kind": "option",
+                    "name": "--scope",
+                    "python_name": "scope",
+                    "required": false
+                  }
+                ],
+                "path": "bif agent artifacts list"
+              },
+              {
+                "commands": [],
+                "help": "Open an AgentCore artifact file path with the operating system.",
+                "name": "open",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore artifact ID",
+                    "kind": "argument",
+                    "name": "ARTIFACT_ID",
+                    "python_name": "artifact_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif agent artifacts open"
+              },
+              {
+                "commands": [],
+                "help": "Show an AgentCore artifact.",
+                "name": "show",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore artifact ID",
+                    "kind": "argument",
+                    "name": "ARTIFACT_ID",
+                    "python_name": "artifact_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif agent artifacts show"
+              }
+            ],
+            "help": "List, show, and open AgentCore artifacts.",
+            "name": "artifacts",
+            "parameters": [],
+            "path": "bif agent artifacts"
+          },
+          {
+            "commands": [],
+            "help": "Cancel an AgentCore turn.",
+            "name": "cancel",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "AgentCore turn ID",
+                "kind": "argument",
+                "name": "TURN_ID",
+                "python_name": "turn_id",
+                "required": true
+              }
+            ],
+            "path": "bif agent cancel"
+          },
+          {
+            "commands": [],
+            "help": "Interactive AgentCore chat REPL.",
+            "name": "chat",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Resume AgentCore session",
+                "kind": "option",
+                "name": "--session",
+                "python_name": "session_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Model profile for each turn",
+                "kind": "option",
+                "name": "--model-profile",
+                "python_name": "model_profile_id",
+                "required": false
+              }
+            ],
+            "path": "bif agent chat"
+          },
+          {
+            "commands": [],
+            "help": "List persisted AgentCore events for a turn.",
+            "name": "events",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "AgentCore turn ID",
+                "kind": "argument",
+                "name": "TURN_ID",
+                "python_name": "turn_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": 0,
+                "help": "Replay after seq",
+                "kind": "option",
+                "name": "--after-seq",
+                "python_name": "after_seq",
+                "required": false
+              }
+            ],
+            "path": "bif agent events"
+          },
+          {
+            "commands": [],
+            "help": "Interrupt an AgentCore turn.",
+            "name": "interrupt",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "AgentCore turn ID",
+                "kind": "argument",
+                "name": "TURN_ID",
+                "python_name": "turn_id",
+                "required": true
+              }
+            ],
+            "path": "bif agent interrupt"
+          },
+          {
+            "commands": [],
+            "help": "Send a single message as a new AgentCore turn.",
+            "name": "send",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Message to send",
+                "kind": "argument",
+                "name": "MESSAGE",
+                "python_name": "message",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Existing AgentCore session ID",
+                "kind": "option",
+                "name": "--session",
+                "python_name": "session_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Model profile for this turn",
+                "kind": "option",
+                "name": "--model-profile",
+                "python_name": "model_profile_id",
+                "required": false
+              }
+            ],
+            "path": "bif agent send"
+          },
+          {
+            "commands": [
+              {
+                "commands": [],
+                "help": "Create an AgentCore session.",
+                "name": "create",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Project ID",
+                    "kind": "option",
+                    "name": "--project",
+                    "python_name": "project_id",
+                    "required": false
+                  },
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Session title",
+                    "kind": "option",
+                    "name": "--title",
+                    "python_name": "title",
+                    "required": false
+                  },
+                  {
+                    "aliases": [],
+                    "default": "bioinformatician",
+                    "help": "Agent role profile",
+                    "kind": "option",
+                    "name": "--role-profile",
+                    "python_name": "role_profile",
+                    "required": false
+                  },
+                  {
+                    "aliases": [],
+                    "default": "guarded_auto",
+                    "help": "Permission mode",
+                    "kind": "option",
+                    "name": "--permission-mode",
+                    "python_name": "permission_mode",
+                    "required": false
+                  },
+                  {
+                    "aliases": [],
+                    "default": "assisted",
+                    "help": "Automation mode",
+                    "kind": "option",
+                    "name": "--automation-mode",
+                    "python_name": "automation_mode",
+                    "required": false
+                  },
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Default model profile ID",
+                    "kind": "option",
+                    "name": "--model-profile",
+                    "python_name": "model_profile_id",
+                    "required": false
+                  }
+                ],
+                "path": "bif agent session create"
+              },
+              {
+                "commands": [],
+                "help": "Delete an AgentCore session.",
+                "name": "delete",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore session ID",
+                    "kind": "argument",
+                    "name": "SESSION_ID",
+                    "python_name": "session_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif agent session delete"
+              },
+              {
+                "commands": [],
+                "help": "List AgentCore sessions.",
+                "name": "list",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Project ID",
+                    "kind": "option",
+                    "name": "--project",
+                    "python_name": "project_id",
+                    "required": false
+                  }
+                ],
+                "path": "bif agent session list"
+              },
+              {
+                "commands": [],
+                "help": "Show an AgentCore session.",
+                "name": "show",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore session ID",
+                    "kind": "argument",
+                    "name": "SESSION_ID",
+                    "python_name": "session_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif agent session show"
+              },
+              {
+                "commands": [],
+                "help": "Show the durable AgentCore session state projection.",
+                "name": "state",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore session ID",
+                    "kind": "argument",
+                    "name": "SESSION_ID",
+                    "python_name": "session_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif agent session state"
+              }
+            ],
+            "help": "Manage AgentCore sessions.",
+            "name": "session",
+            "parameters": [],
+            "path": "bif agent session"
+          },
+          {
+            "commands": [],
+            "help": "Stream AgentCore session events as SSE projections or NDJSON.",
+            "name": "stream",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "AgentCore session ID",
+                "kind": "argument",
+                "name": "SESSION_ID",
+                "python_name": "session_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": 0,
+                "help": "Replay after seq",
+                "kind": "option",
+                "name": "--after-seq",
+                "python_name": "after_seq",
+                "required": false
+              }
+            ],
+            "path": "bif agent stream"
+          },
+          {
+            "commands": [],
+            "help": "List AgentCore toolsets exposed by the backend.",
+            "name": "toolsets",
+            "parameters": [],
+            "path": "bif agent toolsets"
+          },
+          {
+            "commands": [
+              {
+                "commands": [],
+                "help": "Cancel an AgentCore turn.",
+                "name": "cancel",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore turn ID",
+                    "kind": "argument",
+                    "name": "TURN_ID",
+                    "python_name": "turn_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif agent turn cancel"
+              },
+              {
+                "commands": [],
+                "help": "Interrupt an AgentCore turn through the harness interrupt path.",
+                "name": "interrupt",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore turn ID",
+                    "kind": "argument",
+                    "name": "TURN_ID",
+                    "python_name": "turn_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif agent turn interrupt"
+              },
+              {
+                "commands": [],
+                "help": "List turns for an AgentCore session.",
+                "name": "list",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore session ID",
+                    "kind": "argument",
+                    "name": "SESSION_ID",
+                    "python_name": "session_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif agent turn list"
+              },
+              {
+                "commands": [],
+                "help": "Show an AgentCore turn.",
+                "name": "show",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "AgentCore turn ID",
+                    "kind": "argument",
+                    "name": "TURN_ID",
+                    "python_name": "turn_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif agent turn show"
+              }
+            ],
+            "help": "Inspect and cancel AgentCore turns.",
+            "name": "turn",
+            "parameters": [],
+            "path": "bif agent turn"
+          }
+        ],
+        "help": "AgentCore session, turn, action, event, and artifact commands.",
+        "name": "agent",
+        "parameters": [],
+        "path": "bif agent"
+      },
+      {
+        "commands": [
+          {
+            "commands": [],
+            "help": "Get a config value.",
+            "name": "get",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Config key to read",
+                "kind": "argument",
+                "name": "KEY",
+                "python_name": "key",
+                "required": true
+              }
+            ],
+            "path": "bif config get"
+          },
+          {
+            "commands": [],
+            "help": "Create the default config file at ~/.config/bioinfoflow/cli.toml.",
+            "name": "init",
+            "parameters": [],
+            "path": "bif config init"
+          },
+          {
+            "commands": [],
+            "help": "Set a config value.",
+            "name": "set",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Config key to set",
+                "kind": "argument",
+                "name": "KEY",
+                "python_name": "key",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Value to set",
+                "kind": "argument",
+                "name": "VALUE",
+                "python_name": "value",
+                "required": true
+              }
+            ],
+            "path": "bif config set"
+          },
+          {
+            "commands": [],
+            "help": "Show all config values.",
+            "name": "show",
+            "parameters": [],
+            "path": "bif config show"
+          },
+          {
+            "commands": [],
+            "help": "Remove a config value.",
+            "name": "unset",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Config key to remove",
+                "kind": "argument",
+                "name": "KEY",
+                "python_name": "key",
+                "required": true
+              }
+            ],
+            "path": "bif config unset"
+          },
+          {
+            "commands": [],
+            "help": "Set the default project for all commands.",
+            "name": "use-project",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID to set as default",
+                "kind": "argument",
+                "name": "PROJECT_ID",
+                "python_name": "project_id",
+                "required": true
+              }
+            ],
+            "path": "bif config use-project"
+          }
+        ],
+        "help": "Manage CLI configuration.",
+        "name": "config",
+        "parameters": [],
+        "path": "bif config"
+      },
+      {
+        "commands": [],
+        "help": "Check backend health, scheduler, GPU, and local tools.",
+        "name": "doctor",
+        "parameters": [],
+        "path": "bif doctor"
+      },
+      {
+        "commands": [
+          {
+            "commands": [],
+            "help": "Stream raw SSE events (NDJSON in json mode, styled in human mode).",
+            "name": "stream",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Run ID filter",
+                "kind": "option",
+                "name": "--run",
+                "python_name": "run_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "AgentCore session ID filter",
+                "kind": "option",
+                "name": "--session",
+                "python_name": "session_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "AgentCore turn ID filter",
+                "kind": "option",
+                "name": "--turn",
+                "python_name": "turn_id",
+                "required": false
+              }
+            ],
+            "path": "bif events stream"
+          }
+        ],
+        "help": "Event streaming.",
+        "name": "events",
+        "parameters": [],
+        "path": "bif events"
+      },
+      {
+        "commands": [
+          {
+            "commands": [],
+            "help": "Read file contents.",
+            "name": "cat",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "File path",
+                "kind": "argument",
+                "name": "PATH",
+                "python_name": "path",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": 100,
+                "help": "Number of lines to read",
+                "kind": "option",
+                "name": "--lines",
+                "python_name": "lines",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": 0,
+                "help": "Line offset",
+                "kind": "option",
+                "name": "--offset",
+                "python_name": "offset",
+                "required": false
+              }
+            ],
+            "path": "bif file cat"
+          },
+          {
+            "commands": [],
+            "help": "Download a file from the workspace.",
+            "name": "download",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "File path to download",
+                "kind": "argument",
+                "name": "PATH",
+                "python_name": "path",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [
+                  "-o"
+                ],
+                "default": ".",
+                "help": "Destination directory",
+                "kind": "option",
+                "name": "--dest",
+                "python_name": "dest",
+                "required": false
+              }
+            ],
+            "path": "bif file download"
+          },
+          {
+            "commands": [],
+            "help": "List files in a project workspace.",
+            "name": "ls",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": ".",
+                "help": "Directory path",
+                "kind": "argument",
+                "name": "PATH",
+                "python_name": "path",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [
+                  "-r"
+                ],
+                "default": false,
+                "help": "List recursively",
+                "kind": "option",
+                "name": "--recursive",
+                "python_name": "recursive",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Glob pattern filter",
+                "kind": "option",
+                "name": "--pattern",
+                "python_name": "pattern",
+                "required": false
+              }
+            ],
+            "path": "bif file ls"
+          },
+          {
+            "commands": [],
+            "help": "Delete a file from the workspace.",
+            "name": "rm",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "File path to delete",
+                "kind": "argument",
+                "name": "PATH",
+                "python_name": "path",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [
+                  "-f"
+                ],
+                "default": false,
+                "help": "Skip confirmation",
+                "kind": "option",
+                "name": "--force",
+                "python_name": "force",
+                "required": false
+              }
+            ],
+            "path": "bif file rm"
+          },
+          {
+            "commands": [],
+            "help": "Scan workspace for samples and file types.",
+            "name": "scan",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": ".",
+                "help": "Directory to scan",
+                "kind": "argument",
+                "name": "PATH",
+                "python_name": "path",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Comma-separated file types",
+                "kind": "option",
+                "name": "--file-types",
+                "python_name": "file_types",
+                "required": false
+              }
+            ],
+            "path": "bif file scan"
+          },
+          {
+            "commands": [],
+            "help": "Upload a file to the workspace.",
+            "name": "upload",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Local file to upload",
+                "kind": "argument",
+                "name": "LOCAL_PATH",
+                "python_name": "local_path",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Remote destination path",
+                "kind": "option",
+                "name": "--path",
+                "python_name": "remote_path",
+                "required": false
+              },
+              {
+                "aliases": [
+                  "--no-overwrite"
+                ],
+                "default": false,
+                "help": "Overwrite existing file",
+                "kind": "option",
+                "name": "--overwrite",
+                "python_name": "overwrite",
+                "required": false
+              }
+            ],
+            "path": "bif file upload"
+          }
+        ],
+        "help": "File operations.",
+        "name": "file",
+        "parameters": [],
+        "path": "bif file"
+      },
+      {
+        "commands": [
+          {
+            "commands": [],
+            "help": "Open the agent chat page.",
+            "name": "agent",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": false,
+                "help": "Print the URL instead of launching a browser.",
+                "kind": "option",
+                "name": "--no-browser",
+                "python_name": "no_browser",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "kind": "option",
+                "name": "--web-url",
+                "python_name": "web_url",
+                "required": false
+              }
+            ],
+            "path": "bif open agent"
+          },
+          {
+            "commands": [],
+            "help": "Open the dashboard page.",
+            "name": "dashboard",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": false,
+                "help": "Print the URL instead of launching a browser.",
+                "kind": "option",
+                "name": "--no-browser",
+                "python_name": "no_browser",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "kind": "option",
+                "name": "--web-url",
+                "python_name": "web_url",
+                "required": false
+              }
+            ],
+            "path": "bif open dashboard"
+          },
+          {
+            "commands": [],
+            "help": "Open a run's detail page.",
+            "name": "run",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Run ID",
+                "kind": "argument",
+                "name": "RUN_ID",
+                "python_name": "run_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": false,
+                "help": "Print the URL instead of launching a browser.",
+                "kind": "option",
+                "name": "--no-browser",
+                "python_name": "no_browser",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "kind": "option",
+                "name": "--web-url",
+                "python_name": "web_url",
+                "required": false
+              }
+            ],
+            "path": "bif open run"
+          },
+          {
+            "commands": [],
+            "help": "Open the scheduler page.",
+            "name": "scheduler",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": false,
+                "help": "Print the URL instead of launching a browser.",
+                "kind": "option",
+                "name": "--no-browser",
+                "python_name": "no_browser",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "kind": "option",
+                "name": "--web-url",
+                "python_name": "web_url",
+                "required": false
+              }
+            ],
+            "path": "bif open scheduler"
+          },
+          {
+            "commands": [],
+            "help": "Open a workflow's detail page.",
+            "name": "workflow",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Workflow ID",
+                "kind": "argument",
+                "name": "WORKFLOW_ID",
+                "python_name": "workflow_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": false,
+                "help": "Print the URL instead of launching a browser.",
+                "kind": "option",
+                "name": "--no-browser",
+                "python_name": "no_browser",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Override the frontend base URL (also $BIOFLOW_WEB_URL / `config set web_url`).",
+                "kind": "option",
+                "name": "--web-url",
+                "python_name": "web_url",
+                "required": false
+              }
+            ],
+            "path": "bif open workflow"
+          }
+        ],
+        "help": "Open Bioinfoflow web pages in your browser.",
+        "name": "open",
+        "parameters": [],
+        "path": "bif open"
+      },
+      {
+        "commands": [
+          {
+            "commands": [],
+            "help": "Create a new project.",
+            "name": "create",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project name",
+                "kind": "option",
+                "name": "--name",
+                "python_name": "name",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Admin-only external project root",
+                "kind": "option",
+                "name": "--external-root",
+                "python_name": "external_root",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Description",
+                "kind": "option",
+                "name": "--description",
+                "python_name": "description",
+                "required": false
+              }
+            ],
+            "path": "bif project create"
+          },
+          {
+            "commands": [],
+            "help": "Delete a project.",
+            "name": "delete",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID to delete",
+                "kind": "argument",
+                "name": "PROJECT_ID",
+                "python_name": "project_id",
+                "required": true
+              },
+              {
+                "aliases": [
+                  "-f"
+                ],
+                "default": false,
+                "help": "Skip confirmation",
+                "kind": "option",
+                "name": "--force",
+                "python_name": "force",
+                "required": false
+              }
+            ],
+            "path": "bif project delete"
+          },
+          {
+            "commands": [],
+            "help": "List all projects.",
+            "name": "list",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": 20,
+                "help": "Max results",
+                "kind": "option",
+                "name": "--limit",
+                "python_name": "limit",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Pagination cursor",
+                "kind": "option",
+                "name": "--cursor",
+                "python_name": "cursor",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Search by name",
+                "kind": "option",
+                "name": "--search",
+                "python_name": "search",
+                "required": false
+              }
+            ],
+            "path": "bif project list"
+          },
+          {
+            "commands": [],
+            "help": "Show project details.",
+            "name": "show",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "argument",
+                "name": "PROJECT_ID",
+                "python_name": "project_id",
+                "required": true
+              }
+            ],
+            "path": "bif project show"
+          },
+          {
+            "commands": [],
+            "help": "Set a project as the default for all commands.",
+            "name": "use",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID to set as default",
+                "kind": "argument",
+                "name": "PROJECT_ID",
+                "python_name": "project_id",
+                "required": true
+              }
+            ],
+            "path": "bif project use"
+          }
+        ],
+        "help": "Manage projects.",
+        "name": "project",
+        "parameters": [],
+        "path": "bif project"
+      },
+      {
+        "commands": [
+          {
+            "commands": [
+              {
+                "commands": [],
+                "help": "Cancel all runs in a batch.",
+                "name": "cancel",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Batch ID",
+                    "kind": "argument",
+                    "name": "BATCH_ID",
+                    "python_name": "batch_id",
+                    "required": true
+                  },
+                  {
+                    "aliases": [
+                      "-f"
+                    ],
+                    "default": false,
+                    "help": "Skip confirmation",
+                    "kind": "option",
+                    "name": "--force",
+                    "python_name": "force",
+                    "required": false
+                  }
+                ],
+                "path": "bif run batch cancel"
+              },
+              {
+                "commands": [],
+                "help": "Show batch details.",
+                "name": "show",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Batch ID",
+                    "kind": "argument",
+                    "name": "BATCH_ID",
+                    "python_name": "batch_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif run batch show"
+              },
+              {
+                "commands": [],
+                "help": "Submit a batch of runs from a JSON spec.",
+                "name": "submit",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "JSON spec file or - for stdin",
+                    "kind": "option",
+                    "name": "--spec",
+                    "python_name": "spec",
+                    "required": true
+                  },
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Project ID",
+                    "kind": "option",
+                    "name": "--project",
+                    "python_name": "project_id",
+                    "required": false
+                  }
+                ],
+                "path": "bif run batch submit"
+              }
+            ],
+            "help": "Manage batch runs.",
+            "name": "batch",
+            "parameters": [],
+            "path": "bif run batch"
+          },
+          {
+            "commands": [],
+            "help": "Cancel a running pipeline.",
+            "name": "cancel",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Run ID",
+                "kind": "argument",
+                "name": "RUN_ID",
+                "python_name": "run_id",
+                "required": true
+              },
+              {
+                "aliases": [
+                  "-f"
+                ],
+                "default": false,
+                "help": "Skip confirmation",
+                "kind": "option",
+                "name": "--force",
+                "python_name": "force",
+                "required": false
+              }
+            ],
+            "path": "bif run cancel"
+          },
+          {
+            "commands": [],
+            "help": "Clean up run resources.",
+            "name": "cleanup",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Run ID",
+                "kind": "argument",
+                "name": "RUN_ID",
+                "python_name": "run_id",
+                "required": true
+              },
+              {
+                "aliases": [
+                  "-f"
+                ],
+                "default": false,
+                "help": "Skip confirmation",
+                "kind": "option",
+                "name": "--force",
+                "python_name": "force",
+                "required": false
+              }
+            ],
+            "path": "bif run cleanup"
+          },
+          {
+            "commands": [],
+            "help": "List runs.",
+            "name": "list",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Filter by workflow",
+                "kind": "option",
+                "name": "--workflow",
+                "python_name": "workflow_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Filter by status (comma-separated)",
+                "kind": "option",
+                "name": "--status",
+                "python_name": "status",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": 20,
+                "help": "Max results",
+                "kind": "option",
+                "name": "--limit",
+                "python_name": "limit",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Pagination cursor",
+                "kind": "option",
+                "name": "--cursor",
+                "python_name": "cursor",
+                "required": false
+              }
+            ],
+            "path": "bif run list"
+          },
+          {
+            "commands": [],
+            "help": "Show run logs. Use --follow to stream.",
+            "name": "logs",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Run ID",
+                "kind": "argument",
+                "name": "RUN_ID",
+                "python_name": "run_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": 100,
+                "help": "Number of log lines",
+                "kind": "option",
+                "name": "--tail",
+                "python_name": "tail",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Filter by task name",
+                "kind": "option",
+                "name": "--task",
+                "python_name": "task",
+                "required": false
+              },
+              {
+                "aliases": [
+                  "-f"
+                ],
+                "default": false,
+                "help": "Stream new logs",
+                "kind": "option",
+                "name": "--follow",
+                "python_name": "follow",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID (for --follow)",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              }
+            ],
+            "path": "bif run logs"
+          },
+          {
+            "commands": [
+              {
+                "commands": [],
+                "help": "Download run outputs.",
+                "name": "download",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Run ID",
+                    "kind": "argument",
+                    "name": "RUN_ID",
+                    "python_name": "run_id",
+                    "required": true
+                  },
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Specific file to download",
+                    "kind": "option",
+                    "name": "--file",
+                    "python_name": "file",
+                    "required": false
+                  },
+                  {
+                    "aliases": [
+                      "-o"
+                    ],
+                    "default": ".",
+                    "help": "Destination directory",
+                    "kind": "option",
+                    "name": "--dest",
+                    "python_name": "dest",
+                    "required": false
+                  },
+                  {
+                    "aliases": [],
+                    "default": "tar.gz",
+                    "help": "Archive format",
+                    "kind": "option",
+                    "name": "--format",
+                    "python_name": "fmt",
+                    "required": false
+                  }
+                ],
+                "path": "bif run outputs download"
+              },
+              {
+                "commands": [],
+                "help": "List output files for a run.",
+                "name": "list",
+                "parameters": [
+                  {
+                    "aliases": [],
+                    "default": null,
+                    "help": "Run ID",
+                    "kind": "argument",
+                    "name": "RUN_ID",
+                    "python_name": "run_id",
+                    "required": true
+                  }
+                ],
+                "path": "bif run outputs list"
+              }
+            ],
+            "help": "Manage run output files.",
+            "name": "outputs",
+            "parameters": [],
+            "path": "bif run outputs"
+          },
+          {
+            "commands": [],
+            "help": "Resume a failed run from checkpoint.",
+            "name": "resume",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Run ID",
+                "kind": "argument",
+                "name": "RUN_ID",
+                "python_name": "run_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "JSON config overrides",
+                "kind": "option",
+                "name": "--spec",
+                "python_name": "spec",
+                "required": false
+              }
+            ],
+            "path": "bif run resume"
+          },
+          {
+            "commands": [],
+            "help": "Retry a failed run.",
+            "name": "retry",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Run ID",
+                "kind": "argument",
+                "name": "RUN_ID",
+                "python_name": "run_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "JSON overrides",
+                "kind": "option",
+                "name": "--spec",
+                "python_name": "spec",
+                "required": false
+              }
+            ],
+            "path": "bif run retry"
+          },
+          {
+            "commands": [],
+            "help": "Show run details.",
+            "name": "show",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Run ID",
+                "kind": "argument",
+                "name": "RUN_ID",
+                "python_name": "run_id",
+                "required": true
+              }
+            ],
+            "path": "bif run show"
+          },
+          {
+            "commands": [],
+            "help": "Submit a new run.",
+            "name": "submit",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Workflow ID",
+                "kind": "option",
+                "name": "--workflow",
+                "python_name": "workflow_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "JSON values object",
+                "kind": "option",
+                "name": "--values",
+                "python_name": "values",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "JSON spec file or - for stdin",
+                "kind": "option",
+                "name": "--spec",
+                "python_name": "spec",
+                "required": false
+              }
+            ],
+            "path": "bif run submit"
+          },
+          {
+            "commands": [],
+            "help": "Watch a run in real-time via SSE events.",
+            "name": "watch",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Run ID",
+                "kind": "argument",
+                "name": "RUN_ID",
+                "python_name": "run_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              }
+            ],
+            "path": "bif run watch"
+          },
+          {
+            "commands": [],
+            "help": "Submit a run from a complete spec (project, workflow, values, options).",
+            "name": "wizard",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "JSON spec file or - for stdin",
+                "kind": "option",
+                "name": "--spec",
+                "python_name": "spec",
+                "required": true
+              }
+            ],
+            "path": "bif run wizard"
+          }
+        ],
+        "help": "Manage pipeline runs.",
+        "name": "run",
+        "parameters": [],
+        "path": "bif run"
+      },
+      {
+        "commands": [
+          {
+            "commands": [],
+            "help": "Show GPU status.",
+            "name": "gpu",
+            "parameters": [],
+            "path": "bif system gpu"
+          },
+          {
+            "commands": [],
+            "help": "Check backend health.",
+            "name": "health",
+            "parameters": [],
+            "path": "bif system health"
+          },
+          {
+            "commands": [],
+            "help": "Show scheduler resource availability.",
+            "name": "scheduler-resources",
+            "parameters": [],
+            "path": "bif system scheduler-resources"
+          },
+          {
+            "commands": [],
+            "help": "Show scheduler status.",
+            "name": "scheduler-status",
+            "parameters": [],
+            "path": "bif system scheduler-status"
+          },
+          {
+            "commands": [],
+            "help": "Show platform statistics.",
+            "name": "stats",
+            "parameters": [],
+            "path": "bif system stats"
+          }
+        ],
+        "help": "System information and health.",
+        "name": "system",
+        "parameters": [],
+        "path": "bif system"
+      },
+      {
+        "commands": [
+          {
+            "commands": [],
+            "help": "Bind a workflow to a project.",
+            "name": "bind",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Workflow ID",
+                "kind": "argument",
+                "name": "WORKFLOW_ID",
+                "python_name": "workflow_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID (uses default if set)",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              }
+            ],
+            "path": "bif workflow bind"
+          },
+          {
+            "commands": [],
+            "help": "List registered workflows.",
+            "name": "list",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": 20,
+                "help": "Max results",
+                "kind": "option",
+                "name": "--limit",
+                "python_name": "limit",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Pagination cursor",
+                "kind": "option",
+                "name": "--cursor",
+                "python_name": "cursor",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Search by name",
+                "kind": "option",
+                "name": "--search",
+                "python_name": "search",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Filter by source (nf-core, github, local)",
+                "kind": "option",
+                "name": "--source",
+                "python_name": "source",
+                "required": false
+              }
+            ],
+            "path": "bif workflow list"
+          },
+          {
+            "commands": [],
+            "help": "Pin a specific workflow version for a project.",
+            "name": "pin",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Workflow ID to pin",
+                "kind": "argument",
+                "name": "WORKFLOW_ID",
+                "python_name": "workflow_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              }
+            ],
+            "path": "bif workflow pin"
+          },
+          {
+            "commands": [],
+            "help": "Register a new workflow.",
+            "name": "register",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Source: nf-core, github, or local",
+                "kind": "option",
+                "name": "--source",
+                "python_name": "source",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Workflow name",
+                "kind": "option",
+                "name": "--name",
+                "python_name": "name",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Version tag",
+                "kind": "option",
+                "name": "--version",
+                "python_name": "version",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Engine: nextflow or wdl",
+                "kind": "option",
+                "name": "--engine",
+                "python_name": "engine",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Remote source ref or local entry file",
+                "kind": "option",
+                "name": "--ref",
+                "python_name": "source_ref",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Local workflow bundle directory",
+                "kind": "option",
+                "name": "--bundle",
+                "python_name": "bundle_path",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Entrypoint relative path inside bundle",
+                "kind": "option",
+                "name": "--entrypoint",
+                "python_name": "entrypoint_relpath",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Description",
+                "kind": "option",
+                "name": "--description",
+                "python_name": "description",
+                "required": false
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "JSON spec file or - for stdin",
+                "kind": "option",
+                "name": "--spec",
+                "python_name": "spec",
+                "required": false
+              }
+            ],
+            "path": "bif workflow register"
+          },
+          {
+            "commands": [],
+            "help": "Show workflow details.",
+            "name": "show",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Workflow ID",
+                "kind": "argument",
+                "name": "WORKFLOW_ID",
+                "python_name": "workflow_id",
+                "required": true
+              }
+            ],
+            "path": "bif workflow show"
+          },
+          {
+            "commands": [],
+            "help": "Show workflow source code.",
+            "name": "source",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Workflow ID",
+                "kind": "argument",
+                "name": "WORKFLOW_ID",
+                "python_name": "workflow_id",
+                "required": true
+              }
+            ],
+            "path": "bif workflow source"
+          },
+          {
+            "commands": [],
+            "help": "Unbind a workflow from a project.",
+            "name": "unbind",
+            "parameters": [
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Workflow ID",
+                "kind": "argument",
+                "name": "WORKFLOW_ID",
+                "python_name": "workflow_id",
+                "required": true
+              },
+              {
+                "aliases": [],
+                "default": null,
+                "help": "Project ID",
+                "kind": "option",
+                "name": "--project",
+                "python_name": "project_id",
+                "required": false
+              }
+            ],
+            "path": "bif workflow unbind"
+          }
+        ],
+        "help": "Manage workflows.",
+        "name": "workflow",
+        "parameters": [],
+        "path": "bif workflow"
+      }
+    ],
+    "help": "Bioinfoflow CLI — manage projects, workflows, and pipeline runs.",
+    "name": "bif",
+    "parameters": [
+      {
+        "aliases": [],
+        "default": null,
+        "help": "Backend API URL.",
+        "kind": "option",
+        "name": "--base-url",
+        "python_name": "base_url",
+        "required": false
+      },
+      {
+        "aliases": [
+          "-p"
+        ],
+        "default": null,
+        "help": "Project ID to use (overrides default from config).",
+        "kind": "option",
+        "name": "--project",
+        "python_name": "project",
+        "required": false
+      },
+      {
+        "aliases": [],
+        "default": null,
+        "help": "Output format: human or json.",
+        "kind": "option",
+        "name": "--output",
+        "python_name": "output",
+        "required": false
+      },
+      {
+        "aliases": [],
+        "default": false,
+        "help": "Disable color output.",
+        "kind": "option",
+        "name": "--no-color",
+        "python_name": "no_color",
+        "required": false
+      },
+      {
+        "aliases": [
+          "-q"
+        ],
+        "default": false,
+        "help": "Suppress non-essential output (errors and data still printed).",
+        "kind": "option",
+        "name": "--quiet",
+        "python_name": "quiet",
+        "required": false
+      },
+      {
+        "aliases": [
+          "-v"
+        ],
+        "default": false,
+        "help": "Show debug info (request/response details).",
+        "kind": "option",
+        "name": "--verbose",
+        "python_name": "verbose",
+        "required": false
+      },
+      {
+        "aliases": [
+          "-V"
+        ],
+        "default": null,
+        "help": "Show CLI version and exit.",
+        "kind": "option",
+        "name": "--version",
+        "python_name": "show_version",
+        "required": false
+      },
+      {
+        "aliases": [],
+        "default": null,
+        "help": "Install completion for the current shell.",
+        "kind": "option",
+        "name": "--install-completion",
+        "python_name": "install_completion",
+        "required": false
+      },
+      {
+        "aliases": [],
+        "default": null,
+        "help": "Show completion for the current shell, to copy it or customize the installation.",
+        "kind": "option",
+        "name": "--show-completion",
+        "python_name": "show_completion",
+        "required": false
+      }
+    ],
+    "path": "bif"
+  },
+  "schema_version": 1
+}
