@@ -22,9 +22,6 @@ from app.services.docker_service import (
 from app.utils.authorization import can_access_project
 from app.utils.exceptions import PermissionDeniedError
 
-# Backward-compatible alias for tests while image work moves off the run queue.
-task_runner = background_tasks
-
 
 class DockerUnavailableError(RuntimeError):
     pass

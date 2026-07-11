@@ -4,7 +4,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import app.database as app_database
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,9 +29,6 @@ from app.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
-
-# Compatibility alias for tests that patch runtime_jobs.async_session_maker.
-async_session_maker = app_database.async_session_maker
 
 if TYPE_CHECKING:
     from app.services.run_service import RunService

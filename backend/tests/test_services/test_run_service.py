@@ -24,7 +24,6 @@ from app.path_layout import (
 from app.schemas.run import RunCreate
 from app.services import run_compiler as run_compiler_module
 from app.services import run_lifecycle_service as run_lifecycle_module
-from app.services import run_service
 from app.services.run_compiler import RunCompiler
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.run_service import RunService
@@ -98,7 +97,6 @@ async def _create_run_via_compiler(
 
 @pytest.mark.asyncio
 async def test_run_service_lifecycle(db_session, monkeypatch, tmp_path):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     # Tests should not require the host to have a real `nextflow` binary.
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
@@ -149,7 +147,6 @@ async def test_run_service_lifecycle(db_session, monkeypatch, tmp_path):
 async def test_create_run_does_not_adopt_existing_run_home(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -176,7 +173,6 @@ async def test_create_run_does_not_adopt_existing_run_home(
 
 @pytest.mark.asyncio
 async def test_create_run_persists_run_archive(db_session, monkeypatch, tmp_path):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -241,7 +237,6 @@ async def test_nfcore_nextflow_run_compiles_revision_profile_and_params(
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     class FakeDockerService:
         async def is_available(self) -> bool:
@@ -320,7 +315,6 @@ async def test_wdl_run_compile_ignores_nextflow_profile_and_revision(
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     class FakeWDLAdapter:
         engine_name = "wdl"
@@ -387,7 +381,6 @@ async def test_wdl_run_compile_ignores_nextflow_profile_and_revision(
 async def test_create_run_succeeds_when_audit_logs_table_is_missing(
     monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     db_path = tmp_path / "auditless.db"
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", future=True)
@@ -427,7 +420,6 @@ async def test_create_run_succeeds_when_audit_logs_table_is_missing(
 async def test_resume_run_supports_wdl_best_effort_and_validates_nextflow_token(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -507,7 +499,6 @@ async def test_resume_run_supports_wdl_best_effort_and_validates_nextflow_token(
 async def test_retry_run_replays_submitted_values_when_original_params_changed(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -563,7 +554,6 @@ async def test_retry_run_replays_submitted_values_when_original_params_changed(
 async def test_retry_run_is_idempotent_for_active_child(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -614,7 +604,6 @@ async def test_retry_run_is_idempotent_for_active_child(
 async def test_retry_run_is_idempotent_after_child_terminal(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -661,7 +650,6 @@ async def test_retry_run_is_idempotent_after_child_terminal(
 async def test_retry_persist_failure_does_not_leave_active_replay_wedge(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -728,7 +716,6 @@ async def test_retry_persist_failure_does_not_leave_active_replay_wedge(
 async def test_retry_replay_row_is_not_visible_before_persist_succeeds(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -794,7 +781,6 @@ async def test_retry_replay_row_is_not_visible_before_persist_succeeds(
 async def test_retry_persist_cancellation_cleans_replay_row_and_layout(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -853,7 +839,6 @@ async def test_retry_persist_cancellation_cleans_replay_row_and_layout(
 async def test_retry_ignores_stored_resume_from_run_id_option(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -896,7 +881,6 @@ async def test_retry_ignores_stored_resume_from_run_id_option(
 async def test_delete_source_run_with_replay_child_refuses_before_output_delete(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -940,7 +924,6 @@ async def test_delete_source_run_with_replay_child_refuses_before_output_delete(
 
 @pytest.mark.asyncio
 async def test_resume_run_persists_lineage(db_session, monkeypatch, tmp_path):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -978,7 +961,6 @@ async def test_resume_run_persists_lineage(db_session, monkeypatch, tmp_path):
 async def test_resume_wdl_fails_when_best_effort_work_dir_is_missing(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -1013,7 +995,6 @@ async def test_resume_wdl_fails_when_best_effort_work_dir_is_missing(
 async def test_resume_wdl_rejects_work_dir_outside_source_run(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -1051,7 +1032,6 @@ async def test_resume_wdl_rejects_work_dir_outside_source_run(
 async def test_resume_wdl_rejects_symlinked_source_work_dir_contents(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -1088,7 +1068,6 @@ async def test_resume_wdl_rejects_symlinked_source_work_dir_contents(
 async def test_retry_legacy_run_without_values_uses_resolved_runspec(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -1150,7 +1129,6 @@ async def test_retry_legacy_run_without_values_uses_resolved_runspec(
 async def test_retry_run_legacy_params_override_preserves_original_inputs(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -1203,7 +1181,6 @@ async def test_retry_run_legacy_params_override_preserves_original_inputs(
 
 @pytest.mark.asyncio
 async def test_retry_logs_lineage_before_dispatch(db_session, monkeypatch, tmp_path):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -1259,7 +1236,6 @@ async def test_retry_logs_lineage_before_dispatch(db_session, monkeypatch, tmp_p
 async def test_retry_wdl_run_rewrites_outdir_to_new_run_results(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )
@@ -1339,7 +1315,6 @@ async def test_retry_wdl_run_rewrites_outdir_to_new_run_results(
 async def test_retry_wdl_archive_manifest_uses_new_run_results(
     db_session, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         RunLifecycleService, "_binary_exists", lambda self, binary: True
     )

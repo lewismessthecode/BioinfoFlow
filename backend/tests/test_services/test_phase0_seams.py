@@ -5,13 +5,14 @@ from uuid import uuid4
 
 import pytest
 
+import app.runtime.jobs as runtime_jobs
 from app.models.project import Project
 from app.models.project_workflow_binding import ProjectWorkflowBinding
 from app.models.run import RunStatus
 from app.models.workflow import Workflow, WorkflowEngine, WorkflowSource
 from app.models.run_config import RunConfigHelper
 from app.schemas.run import RunCreate
-from app.services import image_service
+from app.services import image_service, run_service
 from app.services.image_service import ImageService
 from app.services.run_compiler import RunCompiler
 from app.services.run_service import RunService
@@ -76,6 +77,18 @@ class SpyDispatcher:
     def dispatch(self, run_id: str, *, priority: str = "normal") -> None:
         assert priority == "normal"
         self.dispatched.append(run_id)
+
+
+@pytest.mark.parametrize(
+    ("module", "alias"),
+    [
+        (run_service, "task_runner"),
+        (runtime_jobs, "async_session_maker"),
+        (image_service, "task_runner"),
+    ],
+)
+def test_obsolete_backend_test_seams_are_not_exposed(module, alias):
+    assert not hasattr(module, alias)
 
 
 async def _create_run_via_compiler(

@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import app.database as app_database
 import app.models  # noqa: F401
-import app.runtime.jobs as runtime_jobs
 from app.config import settings
 from app.api.deps import get_db
 from app.database import Base, stamp_database_revision
@@ -110,11 +109,9 @@ def terminal_test_client(
 
     original_engine = app_database.engine
     original_session_maker = app_database.async_session_maker
-    original_jobs_session_maker = runtime_jobs.async_session_maker
 
     app_database.engine = engine
     app_database.async_session_maker = session_maker
-    runtime_jobs.async_session_maker = session_maker
 
     async def override_get_db():
         async with session_maker() as session:
@@ -130,7 +127,6 @@ def terminal_test_client(
         asyncio.run(terminal_manager.shutdown())
         app_database.engine = original_engine
         app_database.async_session_maker = original_session_maker
-        runtime_jobs.async_session_maker = original_jobs_session_maker
         asyncio.run(engine.dispose())
 
 

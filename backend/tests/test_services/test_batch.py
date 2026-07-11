@@ -15,7 +15,6 @@ from tests.support.path_contract import bind_workflow, create_project, create_wo
 
 @pytest.fixture(autouse=True)
 def _phase6_batch_guards(monkeypatch):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         run_service.RunLifecycleService,
         "_require_engine_binary",

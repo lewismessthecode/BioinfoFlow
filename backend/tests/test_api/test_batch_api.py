@@ -12,7 +12,6 @@ from app.services import run_service
 
 @pytest.fixture(autouse=True)
 def _phase6_api_guards(monkeypatch):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         run_service.RunLifecycleService,
         "_require_engine_binary",
