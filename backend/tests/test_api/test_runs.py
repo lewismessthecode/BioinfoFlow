@@ -18,7 +18,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 @pytest.mark.asyncio
 async def test_runs_endpoints(async_client, db_session, monkeypatch):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
     # Resume/retry preflight checks for the engine binary; bypass it under test.
     monkeypatch.setattr(RunLifecycleService, "_binary_exists", lambda self, binary: True)
 
@@ -78,7 +77,6 @@ async def test_runs_endpoints(async_client, db_session, monkeypatch):
 async def test_runs_create_accepts_retry_and_timeout_policy(
     async_client, db_session, monkeypatch
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     project = await create_project(db_session, name="Run Policy Project")
     workflow = await create_workflow(
@@ -114,7 +112,6 @@ async def test_runs_create_accepts_retry_and_timeout_policy(
 async def test_runs_create_rejects_resume_from_run_id_option(
     async_client, db_session, monkeypatch
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     project = await create_project(db_session, name="Unsupported Resume Option Project")
     workflow = await create_workflow(
@@ -159,7 +156,6 @@ async def test_runs_create_rejects_resume_from_run_id_option(
 async def test_runs_create_requires_bound_workflow_for_project(
     async_client, db_session, monkeypatch
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     project = await create_project(db_session, name="Binding Project")
     workflow = await create_workflow(
@@ -199,7 +195,6 @@ async def test_runs_create_returns_validation_error_for_invalid_payload(async_cl
 async def test_runs_create_rejects_missing_required_form_values(
     async_client, db_session, monkeypatch
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     project = await create_project(db_session, name="Required Values Project")
     workflow = await create_workflow(
@@ -240,7 +235,6 @@ async def test_runs_create_rejects_missing_required_form_values(
 async def test_runs_create_rejects_unknown_form_field_ids(
     async_client, db_session, monkeypatch
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     project = await create_project(db_session, name="Unknown Fields Project")
     workflow = await create_workflow(
@@ -281,7 +275,6 @@ async def test_runs_create_rejects_unknown_form_field_ids(
 async def test_runs_create_rejects_paths_outside_field_allow_roots(
     async_client, db_session, monkeypatch
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     project = await create_project(db_session, name="Reference Path Project")
     forbidden = project_data_root(project) / "refs" / "hg38.fa"
@@ -329,7 +322,6 @@ async def test_runs_create_rejects_paths_outside_field_allow_roots(
 async def test_runs_actions_return_conflict_for_illegal_status_transitions(
     async_client, db_session, monkeypatch
 ):
-    monkeypatch.setattr(run_service.task_runner, "submit", lambda *args, **kwargs: None)
 
     project = await create_project(db_session, name="Conflict Project")
     workflow = await create_workflow(

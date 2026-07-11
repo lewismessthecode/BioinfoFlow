@@ -18,13 +18,9 @@ from app.services.run_compiler import WorkflowNotEnabledError
 from app.services.run_dag_service import RunDagService
 from app.services.run_dispatch import RunDispatcher, get_run_dispatcher
 from app.services.run_lifecycle_service import RunLifecycleService
-from app.runtime.task_runner import task_runner as runtime_task_runner
 
 
-# Compatibility alias for older tests that monkeypatch run_service.task_runner.
-task_runner = runtime_task_runner
-
-__all__ = ["RunService", "RunLifecycleService", "WorkflowNotEnabledError", "task_runner"]
+__all__ = ["RunService", "RunLifecycleService", "WorkflowNotEnabledError"]
 
 
 class RunService:

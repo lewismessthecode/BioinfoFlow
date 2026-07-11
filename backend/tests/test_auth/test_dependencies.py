@@ -14,7 +14,6 @@ from app.config import settings
 from app.database import Base, stamp_database_revision
 from app.main import app as fastapi_app
 import app.database as app_database
-import app.runtime.jobs as runtime_jobs
 import app.models  # noqa: F401
 
 
@@ -110,11 +109,9 @@ async def auth_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     original_engine = app_database.engine
     original_session_maker = app_database.async_session_maker
-    original_jobs_session_maker = runtime_jobs.async_session_maker
 
     app_database.engine = engine
     app_database.async_session_maker = session_maker
-    runtime_jobs.async_session_maker = session_maker
 
     async def override_get_db():
         async with session_maker() as session:
@@ -132,7 +129,6 @@ async def auth_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         fastapi_app.dependency_overrides.clear()
         app_database.engine = original_engine
         app_database.async_session_maker = original_session_maker
-        runtime_jobs.async_session_maker = original_jobs_session_maker
         await engine.dispose()
 
 

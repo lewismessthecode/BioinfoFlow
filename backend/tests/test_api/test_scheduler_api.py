@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.database as app_database
-import app.runtime.jobs as runtime_jobs
 from app.models.run import Run, RunStatus
 from app.models.workflow import WorkflowEngine
 from app.scheduler.resources import SystemResources
@@ -98,11 +97,9 @@ async def test_app_lifespan_raises_when_scheduler_storage_is_unavailable(
 
     original_engine = app_database.engine
     original_session_maker = app_database.async_session_maker
-    original_jobs_session_maker = runtime_jobs.async_session_maker
 
     app_database.engine = db_session.bind
     app_database.async_session_maker = session_maker
-    runtime_jobs.async_session_maker = session_maker
 
     async def fail_scheduler_start(self):
         del self
@@ -137,7 +134,6 @@ async def test_app_lifespan_raises_when_scheduler_storage_is_unavailable(
         app.dependency_overrides.clear()
         app_database.engine = original_engine
         app_database.async_session_maker = original_session_maker
-        runtime_jobs.async_session_maker = original_jobs_session_maker
         set_run_scheduler(None)
         set_run_dispatcher(None)
 

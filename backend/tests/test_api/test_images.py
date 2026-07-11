@@ -61,7 +61,7 @@ class FakeDockerService:
 async def test_images_list_pull_delete(async_client, monkeypatch):
     monkeypatch.setattr(image_service, "DockerService", FakeDockerService)
     monkeypatch.setattr(
-        image_service.task_runner, "submit", lambda *args, **kwargs: None
+        image_service.background_tasks, "submit", lambda *args, **kwargs: None
     )
 
     list_resp = await async_client.get("/api/v1/images")
