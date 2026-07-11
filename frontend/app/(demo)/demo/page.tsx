@@ -3,7 +3,7 @@
 import { useMemo, useRef } from "react"
 import { Play, RotateCcw, ExternalLink } from "@/lib/icons"
 import { useDemoReplay } from "@/lib/demo/demo-context"
-import { AgentCoreTurnBlock } from "@/components/bioinfoflow/agent-core/agent-core-chat"
+import { AgentCoreTurnBlock } from "@/components/bioinfoflow/agent-core/agent-core-turn-block"
 import { DagPanel } from "@/components/bioinfoflow/dag/dag-panel"
 import { Logo } from "@/components/bioinfoflow/logo"
 import { Button } from "@/components/ui/button"
