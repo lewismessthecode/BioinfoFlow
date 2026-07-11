@@ -79,13 +79,13 @@ The following must not change in this campaign:
 - Create: `docs/contracts/behavior-contracts.md`
 - Modify: `.gitignore`
 
-- [ ] Track the plan and contract directory through explicit `.gitignore`
+- [x] Track the plan and contract directory through explicit `.gitignore`
   exceptions.
-- [ ] Document the baseline, compatibility invariants, phase boundaries,
+- [x] Document the baseline, compatibility invariants, phase boundaries,
   rollback points, and separate migration backlog.
-- [ ] Stage the files, then validate from the repository root with
+- [x] Stage the files, then validate from the repository root with
   `rtk git diff --cached --check`.
-- [ ] Commit with `docs: plan codebase modernization`.
+- [x] Commit with `docs: plan codebase modernization`.
 
 ## Phase 1: Deterministic API and CLI Contracts
 
@@ -97,14 +97,14 @@ The following must not change in this campaign:
 - Create: `docs/contracts/openapi-v1.json`
 - Create: `docs/contracts/cli-v1.json`
 
-- [ ] Write failing exporter tests that require deterministic output and detect
+- [x] Write failing exporter tests that require deterministic output and detect
   mismatched committed snapshots.
-- [ ] Implement OpenAPI normalization without removing operation IDs or schema
+- [x] Implement OpenAPI normalization without removing operation IDs or schema
   details.
-- [ ] Implement recursive Typer command-tree export covering visible commands,
+- [x] Implement recursive Typer command-tree export covering visible commands,
   parameters, defaults, and required arguments.
-- [ ] Generate both committed contract files.
-- [ ] From `backend/`, run:
+- [x] Generate both committed contract files.
+- [x] From `backend/`, run:
 
   ```bash
   rtk uv run pytest tests/scripts/test_contract_exporters.py -q
@@ -115,7 +115,7 @@ The following must not change in this campaign:
   rtk uv run pytest
   ```
 
-- [ ] Commit with `test: capture api and cli behavior contracts`.
+- [x] Commit with `test: capture api and cli behavior contracts`.
 
 ## Phase 2: Proven Frontend Dead Exports
 
@@ -125,12 +125,12 @@ The following must not change in this campaign:
 - Modify: `frontend/components/bioinfoflow/terminal/terminal-dock-context.tsx`
 - Modify: `frontend/components/ui/card.tsx`
 
-- [ ] Use the existing failing Knip output as the red check.
-- [ ] Remove `fileKindLabel`, `useOptionalTerminalDock`, `CardHeader`,
+- [x] Use the existing failing Knip output as the red check.
+- [x] Remove `fileKindLabel`, `useOptionalTerminalDock`, `CardHeader`,
   `CardTitle`, and `CardDescription` exports/definitions only.
-- [ ] From `frontend/`, run `rtk bun run lint:dead-code`,
+- [x] From `frontend/`, run `rtk bun run lint:dead-code`,
   `rtk bun run lint`, and `rtk bun run test`.
-- [ ] Commit with `refactor: remove unused frontend exports`.
+- [x] Commit with `refactor: remove unused frontend exports`.
 
 ## Phase 3: False Backend Test Seams
 
@@ -148,15 +148,15 @@ The following must not change in this campaign:
 - Modify affected runtime recovery tests that patch
   `runtime_jobs.async_session_maker`.
 
-- [ ] Add or adjust seam tests so they fail when tests patch an ineffective
+- [x] Add or adjust seam tests so they fail when tests patch an ineffective
   alias rather than the real injected collaborator.
-- [ ] Remove patches of `run_service.task_runner` and
+- [x] Remove patches of `run_service.task_runner` and
   `runtime_jobs.async_session_maker` where they do not influence production.
-- [ ] Patch `image_service.background_tasks` directly where isolation is
+- [x] Patch `image_service.background_tasks` directly where isolation is
   required.
-- [ ] Delete `run_service.task_runner`, `runtime_jobs.async_session_maker`, and
+- [x] Delete `run_service.task_runner`, `runtime_jobs.async_session_maker`, and
   `image_service.task_runner` after repository-wide import checks.
-- [ ] From `backend/`, run:
+- [x] From `backend/`, run:
 
   ```bash
   rtk uv run pytest tests/test_services/test_phase0_seams.py tests/test_services/test_run_service.py tests/test_services/test_batch.py tests/test_api/test_runs.py tests/test_api/test_run_lifecycle.py tests/test_api/test_batch_api.py tests/test_api/test_images.py tests/test_runtime/test_run_recovery.py -q
@@ -164,7 +164,7 @@ The following must not change in this campaign:
   rtk uv run pytest
   ```
 
-- [ ] Commit with `refactor: remove obsolete backend test seams`.
+- [x] Commit with `refactor: remove obsolete backend test seams`.
 
 ## Phase 4: Shared Minimum-Duration Helper
 
@@ -176,11 +176,11 @@ The following must not change in this campaign:
 - Modify: `frontend/app/(app)/workflows/page.tsx`
 - Modify: `frontend/app/(app)/runs/use-runs-page.ts`
 
-- [ ] Write fake-timer tests for fast success, slow success, immediate rejection
+- [x] Write fake-timer tests for fast success, slow success, immediate rejection
   with the original error, and the unchanged 500 ms minimum.
-- [ ] Extract a helper used by all three callers without changing their loading
+- [x] Extract a helper used by all three callers without changing their loading
   or error semantics.
-- [ ] From `frontend/`, run:
+- [x] From `frontend/`, run:
 
   ```bash
   rtk bun run test tests/unit/lib/minimum-duration.test.ts tests/integration/pages/dashboard-page.test.tsx tests/integration/pages/workflows-page-hub.test.tsx tests/integration/pages/workflows-page-project.test.tsx tests/integration/pages/workflows-page-scope.test.tsx tests/unit/hooks/use-runs-page.test.tsx
@@ -188,7 +188,7 @@ The following must not change in this campaign:
   rtk bun run test
   ```
 
-- [ ] Commit with `refactor: share minimum loading duration`.
+- [x] Commit with `refactor: share minimum loading duration`.
 
 ## Phase 5a: Managed-Directory Policy
 
@@ -203,10 +203,10 @@ The following must not change in this campaign:
 - Modify: `backend/app/services/validators/types.py`
 - Modify focused run/WDL tests.
 
-- [ ] Characterize the exact managed-directory key set and each caller's
+- [x] Characterize the exact managed-directory key set and each caller's
   filtering behavior.
-- [ ] Move only the shared key policy; keep engine-specific behavior at callers.
-- [ ] From `backend/`, run:
+- [x] Move only the shared key policy; keep engine-specific behavior at callers.
+- [x] From `backend/`, run:
 
   ```bash
   rtk uv run pytest tests/test_services/test_run_input_policy.py tests/test_services/test_run_compiler.py tests/test_services/test_run_lifecycle_service.py tests/test_services/test_run_helpers.py tests/test_engine/test_wdl_adapter.py tests/test_engine/test_schema_extractor.py tests/test_services/test_workflow_validator.py -q
@@ -214,7 +214,7 @@ The following must not change in this campaign:
   rtk uv run pytest
   ```
 
-- [ ] Commit with `refactor: centralize managed run directories`.
+- [x] Commit with `refactor: centralize managed run directories`.
 
 ## Phase 5b: Shared Brace-Glob Expansion
 
@@ -225,11 +225,11 @@ The following must not change in this campaign:
 - Modify: `backend/app/services/run_profile_service.py`
 - Modify focused helper/lifecycle/profile tests.
 
-- [ ] Add characterization tests for nested braces, multiple choices, malformed
+- [x] Add characterization tests for nested braces, multiple choices, malformed
   input, and patterns without braces.
-- [ ] Move the exact recursive algorithm to `run_helpers.py` and delegate both
+- [x] Move the exact recursive algorithm to `run_helpers.py` and delegate both
   callers.
-- [ ] From `backend/`, run:
+- [x] From `backend/`, run:
 
   ```bash
   rtk uv run pytest tests/test_services/test_run_helpers.py tests/test_services/test_run_lifecycle_service.py tests/test_services/test_run_profile_service.py -q
@@ -237,7 +237,7 @@ The following must not change in this campaign:
   rtk uv run pytest
   ```
 
-- [ ] Commit with `refactor: share brace glob expansion`.
+- [x] Commit with `refactor: share brace glob expansion`.
 
 ## Phase 5c: Shared CLI Legacy-Key Detection
 
@@ -248,10 +248,10 @@ The following must not change in this campaign:
 - Modify: `backend/app/cli/commands/run_batch.py`
 - Modify: `backend/tests/test_cli/test_cli_runs.py`
 
-- [ ] Add tests proving identical key detection and unchanged single/batch error
+- [x] Add tests proving identical key detection and unchanged single/batch error
   messages and exit code 2.
-- [ ] Share only detection/constants; keep caller-specific message formatting.
-- [ ] From `backend/`, run:
+- [x] Share only detection/constants; keep caller-specific message formatting.
+- [x] From `backend/`, run:
 
   ```bash
   rtk uv run pytest tests/test_cli/test_cli_runs.py -q
@@ -259,7 +259,7 @@ The following must not change in this campaign:
   rtk uv run pytest
   ```
 
-- [ ] Commit with `refactor: share legacy run key detection`.
+- [x] Commit with `refactor: share legacy run key detection`.
 
 ## Phase 6: Retire the Obsolete Agent Chat Shell
 
@@ -271,13 +271,13 @@ The following must not change in this campaign:
 - Delete, after reachability proof: obsolete chat shell/hook files and their
   shell-only tests.
 
-- [ ] Move `AgentCoreTurnBlock` and its rendering helpers without changing its
+- [x] Move `AgentCoreTurnBlock` and its rendering helpers without changing its
   props or demo output.
-- [ ] Migrate demo and focused tests to the new module.
-- [ ] Confirm production has no remaining `AgentCoreChat` or old-hook consumer.
-- [ ] Delete only unreachable shell code; keep shared AgentCore types/session
+- [x] Migrate demo and focused tests to the new module.
+- [x] Confirm production has no remaining `AgentCoreChat` or old-hook consumer.
+- [x] Delete only unreachable shell code; keep shared AgentCore types/session
   APIs still used by sidebar, command palette, storage, and demo data.
-- [ ] From `frontend/`, run:
+- [x] From `frontend/`, run:
 
   ```bash
   rtk bun run test tests/unit/components/agent-core-turn-block.test.tsx tests/unit/lib/demo/replay-engine.test.ts tests/unit/lib/runtime/demo-runtime.test.ts
@@ -287,11 +287,11 @@ The following must not change in this campaign:
   rtk bun run build
   ```
 
-- [ ] Because the change touches `frontend/app/(demo)/demo/page.tsx`, run the
+- [x] Because the change touches `frontend/app/(demo)/demo/page.tsx`, run the
   local frontend and inspect `/demo` with the browser. Authentication bypass is
   not required for the public demo route; there is no dedicated Playwright demo
   spec in this repository.
-- [ ] Commit extraction first. Delete the shell in a second commit only after
+- [x] Commit extraction first. Delete the shell in a second commit only after
   the extracted renderer is green, so either commit is an independent rollback
   unit.
 
@@ -303,12 +303,12 @@ The following must not change in this campaign:
 - Modify: `backend/app/services/container_registry_service.py`
 - Modify/add focused repository and service tests.
 
-- [ ] Write a failing service test that requires project lookup through the
+- [x] Write a failing service test that requires project lookup through the
   repository collaborator.
-- [ ] Add the narrow repository method and replace direct `session.get(Project)`.
-- [ ] Keep commit/rollback behavior unchanged; unit-of-work redesign is out of
+- [x] Add the narrow repository method and replace direct `session.get(Project)`.
+- [x] Keep commit/rollback behavior unchanged; unit-of-work redesign is out of
   scope.
-- [ ] From `backend/`, run:
+- [x] From `backend/`, run:
 
   ```bash
   rtk uv run pytest tests/test_services/test_container_registry_service.py tests/test_api/test_container_registries.py -q
@@ -316,7 +316,7 @@ The following must not change in this campaign:
   rtk uv run pytest
   ```
 
-- [ ] Commit with `refactor: route registry project access through repository`.
+- [x] Commit with `refactor: route registry project access through repository`.
 
 ## Phase 8: Shared EventSource Lifecycle
 
@@ -329,12 +329,12 @@ The following must not change in this campaign:
 - Modify: `frontend/lib/agent-runtime/event-stream.ts`
 - Modify: `frontend/hooks/use-resource-stream.ts`
 
-- [ ] Characterize exact URL, credentials, named/default event binding, cursor,
+- [x] Characterize exact URL, credentials, named/default event binding, cursor,
   reconnect predicate, source-closing policy, timer sequence, maximum backoff,
   invalid JSON handling, and cleanup for each consumer.
-- [ ] Implement a configurable lifecycle primitive containing no domain parsing.
-- [ ] Migrate one consumer at a time and keep all characterization tests green.
-- [ ] From `frontend/`, run:
+- [x] Implement a configurable lifecycle primitive containing no domain parsing.
+- [x] Migrate one consumer at a time and keep all characterization tests green.
+- [x] From `frontend/`, run:
 
   ```bash
   rtk bun run test tests/unit/hooks/use-events.test.ts tests/unit/hooks/use-resource-stream.test.ts tests/unit/lib/agent-runtime/event-stream.test.ts
@@ -344,7 +344,7 @@ The following must not change in this campaign:
   rtk bun run build
   ```
 
-- [ ] Commit with `refactor: share event source lifecycle`.
+- [x] Commit with `refactor: share event source lifecycle`.
 
 ## Phase 9: Review, Integration, and PR
 
