@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { buildApiUrl } from "@/lib/api"
+import { connectEventSource } from "@/lib/runtime/event-source-connection"
 import type {
   ActiveRun,
   ResourceStreamConnectionState,
@@ -117,76 +118,63 @@ export function useResourceStream({
       return
     }
 
-    let source: EventSource | null = null
-    let backoff = INITIAL_BACKOFF
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-    let disposed = false
-
-    const setup = () => {
-      if (disposed) return
-      setConnectionState((prev) =>
-        prev === "disconnected" ? "connecting" : "reconnecting"
-      )
-      const url = buildApiUrl("/scheduler/resources/stream")
-      source = new EventSource(url)
-
-      source.onopen = () => {
-        if (disposed) return
-        backoff = INITIAL_BACKOFF
-        setConnectionState("connected")
-      }
-
-      source.onerror = () => {
-        if (disposed) return
-        if (source?.readyState === EventSource.CLOSED) {
-          setConnectionState("reconnecting")
-          source = null
-          reconnectTimer = setTimeout(() => {
-            backoff = Math.min(backoff * BACKOFF_MULTIPLIER, MAX_BACKOFF)
-            setup()
-          }, backoff)
-        }
-      }
-
-      source.addEventListener("scheduler.resources", (raw) => {
-        const msg = raw as MessageEvent
-        let parsed: ResourceStreamFrame
-        try {
-          parsed = JSON.parse(msg.data) as ResourceStreamFrame
-        } catch {
-          return
-        }
-
-        const sample = toSample(parsed)
-        const derived = deriveEvents(
-          prevActiveRef.current,
-          parsed.active_runs,
-          sample.t
+    const disconnect = connectEventSource({
+      url: () => buildApiUrl("/scheduler/resources/stream"),
+      initialBackoffMs: INITIAL_BACKOFF,
+      maxBackoffMs: MAX_BACKOFF,
+      backoffMultiplier: BACKOFF_MULTIPLIER,
+      shouldReconnect: (source) => source.readyState === EventSource.CLOSED,
+      failedSourcePolicy: "release",
+      onConnect: () => {
+        setConnectionState((prev) =>
+          prev === "disconnected" ? "connecting" : "reconnecting"
         )
-        prevActiveRef.current = parsed.active_runs
-
-        setFrame(parsed)
-        setSamples((prev) => {
-          const next = [...prev, sample]
-          while (next.length > maxSamples) next.shift()
-          return next
-        })
-        if (derived.length > 0) {
-          setEvents((prev) => {
-            const cutoff = sample.t - EVENT_WINDOW_SECONDS
-            const merged = [...prev, ...derived].filter((e) => e.t >= cutoff)
-            return merged
-          })
+      },
+      onOpen: () => {
+        setConnectionState("connected")
+      },
+      onError: (source) => {
+        if (source.readyState === EventSource.CLOSED) {
+          setConnectionState("reconnecting")
         }
-      })
-    }
+      },
+      bindSource: (source) => {
+        source.addEventListener("scheduler.resources", (raw) => {
+          const msg = raw as MessageEvent
+          let parsed: ResourceStreamFrame
+          try {
+            parsed = JSON.parse(msg.data) as ResourceStreamFrame
+          } catch {
+            return
+          }
 
-    setup()
+          const sample = toSample(parsed)
+          const derived = deriveEvents(
+            prevActiveRef.current,
+            parsed.active_runs,
+            sample.t
+          )
+          prevActiveRef.current = parsed.active_runs
+
+          setFrame(parsed)
+          setSamples((prev) => {
+            const next = [...prev, sample]
+            while (next.length > maxSamples) next.shift()
+            return next
+          })
+          if (derived.length > 0) {
+            setEvents((prev) => {
+              const cutoff = sample.t - EVENT_WINDOW_SECONDS
+              const merged = [...prev, ...derived].filter((e) => e.t >= cutoff)
+              return merged
+            })
+          }
+        })
+      },
+    })
 
     return () => {
-      disposed = true
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      source?.close()
+      disconnect()
       setConnectionState("disconnected")
     }
   }, [enabled, maxSamples])
