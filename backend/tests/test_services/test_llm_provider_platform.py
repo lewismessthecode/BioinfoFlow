@@ -5,7 +5,7 @@ import pytest
 
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.services.llm.bootstrap import sync_environment_llm_catalog
-from app.services.llm.catalog import _validate_provider_base_url
+from app.services.llm.catalog import LlmCatalogService, _validate_provider_base_url
 
 
 async def _noop_discovery(self, provider):
@@ -46,10 +46,64 @@ def test_validate_provider_base_url_rejects_public_http_and_malformed(base_url):
         _validate_provider_base_url(base_url)
 
 
+def test_validate_provider_base_url_allows_public_http_with_explicit_opt_in():
+    _validate_provider_base_url(
+        "http://8.129.13.231:8079/v1",
+        allow_insecure_http=True,
+    )
+
+
 def test_validate_provider_base_url_allows_empty():
     # An unset endpoint is valid (provider may use a template default).
     _validate_provider_base_url(None)
     _validate_provider_base_url("")
+
+
+@pytest.mark.asyncio
+async def test_model_discovery_rejects_unapproved_public_http_before_network(
+    db_session,
+    monkeypatch,
+):
+    network_called = False
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, *args, **kwargs):
+            nonlocal network_called
+            network_called = True
+            return httpx.Response(
+                200,
+                json={"data": []},
+                request=httpx.Request("GET", str(args[0])),
+            )
+
+    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    provider = LlmProvider(
+        name="Unapproved public relay",
+        kind="openai_compatible",
+        base_url="http://8.129.13.231:8079/v1",
+        allow_insecure_http=False,
+        scope="user",
+        workspace_id=None,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    with pytest.raises(ValueError, match="explicitly allow insecure HTTP"):
+        await LlmCatalogService(db_session).discover_models_unchecked(provider)
+
+    assert network_called is False
 
 
 @pytest.mark.asyncio

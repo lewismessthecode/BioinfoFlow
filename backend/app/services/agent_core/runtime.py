@@ -37,7 +37,10 @@ from app.services.agent_core.model_selection import (
 from app.services.agent_core.observability import truncate_log_value
 from app.services.llm.provider_templates import normalize_provider_base_url
 from app.services.llm.credentials import resolve_credential_material
-from app.services.llm.catalog import _provider_requires_credential
+from app.services.llm.catalog import (
+    _provider_requires_credential,
+    validate_provider_transport,
+)
 from app.services.llm.credentials import credential_available, credential_configured
 from app.utils.logging import get_logger
 
@@ -279,6 +282,10 @@ class AgentCoreRuntime:
             enabled_only=True,
         )
         if provider is None:
+            return None
+        try:
+            validate_provider_transport(provider)
+        except ValueError:
             return None
         credential = await self.llm_credentials.get_for_provider(str(provider.id))
         if not credential_available(

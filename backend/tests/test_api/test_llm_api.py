@@ -169,6 +169,73 @@ async def test_llm_provider_setup_creates_vllm_provider_key_and_manual_model(
 
 
 @pytest.mark.asyncio
+async def test_llm_provider_setup_allows_explicit_public_insecure_http(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Public HTTP Relay",
+            "base_url": "http://8.129.13.231:8079/v1",
+            "api_key": "relay-key",
+            "model_ids": ["gpt-5.6-sol"],
+            "allow_insecure_http": True,
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"]["allow_insecure_http"] is True
+    assert payload["provider"]["base_url"] == "http://8.129.13.231:8079/v1"
+    assert payload["models"][0]["model_id"] == "gpt-5.6-sol"
+
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    assert configuration.status_code == 200
+    configured_provider = next(
+        provider
+        for provider in configuration.json()["data"]["providers"]
+        if provider["id"] == payload["provider"]["id"]
+    )
+    assert configured_provider["allow_insecure_http"] is True
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_update_requires_public_insecure_http_opt_in(
+    async_client,
+):
+    setup = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Secure relay",
+            "base_url": "https://relay.example.com/v1",
+            "model_ids": ["relay-model"],
+            "scope": "user",
+        },
+    )
+    assert setup.status_code == 200
+    provider_id = setup.json()["data"]["provider"]["id"]
+
+    rejected = await async_client.patch(
+        f"/api/v1/llm/providers/{provider_id}",
+        json={"base_url": "http://8.129.13.231:8079/v1"},
+    )
+    assert rejected.status_code == 422
+
+    allowed = await async_client.patch(
+        f"/api/v1/llm/providers/{provider_id}",
+        json={
+            "base_url": "http://8.129.13.231:8079/v1",
+            "allow_insecure_http": True,
+        },
+    )
+    assert allowed.status_code == 200
+    assert allowed.json()["data"]["allow_insecure_http"] is True
+
+
+@pytest.mark.asyncio
 async def test_openai_compatible_provider_discovers_models_from_v1_models(
     async_client,
     monkeypatch,
