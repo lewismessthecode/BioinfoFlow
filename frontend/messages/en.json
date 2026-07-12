@@ -2271,7 +2271,15 @@
       "refreshModels": "Refresh models",
       "refreshingModels": "Refreshing...",
       "modelsDiscovered": "{count} models found",
-      "modelRefreshFailed": "Models could not be refreshed"
+      "modelRefreshFailed": "Models could not be refreshed",
+      "allowInsecureHttp": "Allow insecure HTTP",
+      "insecureHttpDescription": "API keys and prompts are sent without TLS.",
+      "insecureHttpEnabled": "Insecure transport allowed",
+      "loadFailed": "Providers could not be loaded",
+      "retry": "Retry",
+      "endpointLabel": "Endpoint",
+      "apiKeyLabel": "API key",
+      "modelIdLabel": "Model ID"
     },
     "registries": {
       "title": "Container Registries",

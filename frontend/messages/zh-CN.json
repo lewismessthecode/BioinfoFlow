@@ -2271,7 +2271,15 @@
       "refreshModels": "刷新模型",
       "refreshingModels": "刷新中...",
       "modelsDiscovered": "已发现 {count} 个模型",
-      "modelRefreshFailed": "模型刷新失败"
+      "modelRefreshFailed": "模型刷新失败",
+      "allowInsecureHttp": "允许不安全的 HTTP",
+      "insecureHttpDescription": "API Key 和提示词将通过未加密连接传输。",
+      "insecureHttpEnabled": "已允许不安全传输",
+      "loadFailed": "无法加载服务商",
+      "retry": "重试",
+      "endpointLabel": "服务地址",
+      "apiKeyLabel": "API Key",
+      "modelIdLabel": "模型 ID"
     },
     "registries": {
       "title": "镜像仓库",

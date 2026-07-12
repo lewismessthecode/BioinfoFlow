@@ -98,6 +98,14 @@ vi.mock("next-intl", () => ({
       "providerCards.modelsRefreshed": "Models refreshed",
       "providerCards.modelRefreshFailed": "Models could not be refreshed",
       "providerCards.modelIdPlaceholder": "Model ID",
+      "providerCards.allowInsecureHttp": "Allow insecure HTTP",
+      "providerCards.insecureHttpDescription": "API keys and prompts are sent without TLS.",
+      "providerCards.insecureHttpEnabled": "Insecure transport allowed",
+      "providerCards.loadFailed": "Providers could not be loaded",
+      "providerCards.retry": "Retry",
+      "providerCards.endpointLabel": "Endpoint",
+      "providerCards.apiKeyLabel": "API key",
+      "providerCards.modelIdLabel": "Model ID",
     }
     if (key === "appearance.activePreset") {
       return `Current preset: ${values?.preset ?? ""}`

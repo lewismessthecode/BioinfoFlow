@@ -26,6 +26,10 @@ import type {
   LlmProviderTestResult,
 } from "@/lib/llm"
 
+export type SetupProviderOutcome =
+  | { ok: true; result: LlmProviderSetupResult }
+  | { ok: false; error: Error }
+
 export function useLlmCatalog() {
   const [providers, setProviders] = useState<LlmProvider[]>([])
   const [configuredProviders, setConfiguredProviders] = useState<LlmConfiguredProvider[]>([])
@@ -81,16 +85,20 @@ export function useLlmCatalog() {
   )
 
   const setupProvider = useCallback(
-    async (input: LlmProviderSetupInput): Promise<LlmProviderSetupResult | null> => {
+    async (input: LlmProviderSetupInput): Promise<SetupProviderOutcome> => {
       setIsMutating(true)
       setError(null)
       try {
         const result = await setupLlmProvider(input)
         await refresh()
-        return result
+        return { ok: true, result }
       } catch (caught) {
-        setError(caught instanceof Error ? caught : new Error("Failed to set up LLM provider"))
-        return null
+        const setupError =
+          caught instanceof Error
+            ? caught
+            : new Error("Failed to set up LLM provider")
+        setError(setupError)
+        return { ok: false, error: setupError }
       } finally {
         setIsMutating(false)
       }

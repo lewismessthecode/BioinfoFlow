@@ -20,6 +20,7 @@ export type CreateLlmProviderInput = {
   apiKeyRef?: string | null
   scope?: LlmProviderScope
   enabled?: boolean
+  allowInsecureHttp?: boolean
   metadata?: Record<string, unknown> | null
 }
 
@@ -58,6 +59,7 @@ export const setupLlmProvider = async (input: LlmProviderSetupInput) => {
         discover: input.discover ?? false,
         scope: input.scope ?? "user",
         enabled: input.enabled ?? true,
+        allow_insecure_http: input.allowInsecureHttp ?? false,
       }),
     },
   )
@@ -74,6 +76,7 @@ export const createLlmProvider = async (input: CreateLlmProviderInput) => {
       api_key_ref: input.apiKeyRef || null,
       scope: input.scope ?? "workspace",
       enabled: input.enabled ?? true,
+      allow_insecure_http: input.allowInsecureHttp ?? false,
       metadata: input.metadata ?? null,
     }),
   })
@@ -93,6 +96,7 @@ export const updateLlmProvider = async (
       api_key_ref: updates.apiKeyRef,
       scope: updates.scope,
       enabled: updates.enabled,
+      allow_insecure_http: updates.allowInsecureHttp,
       metadata: updates.metadata,
     }),
   })

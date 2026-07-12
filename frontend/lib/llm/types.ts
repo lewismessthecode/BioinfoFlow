@@ -25,6 +25,7 @@ export type LlmProvider = {
   workspace_id?: string | null
   user_id?: string | null
   enabled: boolean
+  allow_insecure_http: boolean
   test_status?: Record<string, unknown> | null
   metadata?: Record<string, unknown> | null
   created_at: string
@@ -158,6 +159,7 @@ export type LlmProviderSetupInput = {
   discover?: boolean
   scope?: LlmProviderScope
   enabled?: boolean
+  allowInsecureHttp?: boolean
 }
 
 export type LlmProviderSetupResult = {
