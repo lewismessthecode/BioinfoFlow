@@ -468,6 +468,174 @@ describe("LlmCatalogPanel", () => {
     })
   })
 
+  it("shows the insecure HTTP switch for a public IPv6 endpoint", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible endpoint"), {
+      target: { value: "http://[2001:4860:4860::8888]:8079/v1" },
+    })
+
+    expect(
+      within(card).getByRole("switch", { name: "Allow insecure HTTP" }),
+    ).toBeInTheDocument()
+  })
+
+  it("keeps the insecure HTTP switch hidden for a private IPv6 endpoint", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible endpoint"), {
+      target: { value: "http://[fd00::1]:8079/v1" },
+    })
+
+    expect(
+      within(card).queryByRole("switch", { name: "Allow insecure HTTP" }),
+    ).not.toBeInTheDocument()
+  })
+
+  it("keeps other provider rows interactive while one provider is saving", async () => {
+    let resolveSetup!: (value: unknown) => void
+    const catalog = {
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+    }
+    catalog.setupProvider.mockImplementation(
+      () => new Promise((resolve) => {
+        catalog.isMutating = true
+        resolveSetup = resolve
+      }),
+    )
+    useLlmCatalogMock.mockImplementation(() => catalog)
+
+    render(<LlmCatalogPanel />)
+
+    const openaiCard = screen.getByRole("group", { name: "OpenAI" })
+    const anthropicCard = screen.getByRole("group", { name: "Anthropic" })
+    fireEvent.change(within(openaiCard).getByLabelText("OpenAI API key"), {
+      target: { value: "openai-key" },
+    })
+    fireEvent.change(within(anthropicCard).getByLabelText("Anthropic API key"), {
+      target: { value: "anthropic-key" },
+    })
+    fireEvent.click(within(openaiCard).getByRole("button", { name: "Save" }))
+
+    expect(
+      within(anthropicCard).getByRole("button", { name: "Save" }),
+    ).toBeEnabled()
+
+    catalog.isMutating = false
+    resolveSetup({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai" },
+        models: [],
+        discovered: false,
+      },
+    })
+    await waitFor(() => expect(toastSuccessMock).toHaveBeenCalled())
+  })
+
+  it("tracks concurrent provider saves independently", async () => {
+    const resolvers = new Map<string, (value: unknown) => void>()
+    const setupProvider = vi.fn().mockImplementation(
+      (input: { templateId: string }) => new Promise((resolve) => {
+        resolvers.set(input.templateId, resolve)
+      }),
+    )
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: true,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const openaiCard = screen.getByRole("group", { name: "OpenAI" })
+    const anthropicCard = screen.getByRole("group", { name: "Anthropic" })
+    fireEvent.change(within(openaiCard).getByLabelText("OpenAI API key"), {
+      target: { value: "openai-key" },
+    })
+    fireEvent.change(within(anthropicCard).getByLabelText("Anthropic API key"), {
+      target: { value: "anthropic-key" },
+    })
+    fireEvent.click(within(openaiCard).getByRole("button", { name: "Save" }))
+    fireEvent.click(within(anthropicCard).getByRole("button", { name: "Save" }))
+
+    expect(
+      within(openaiCard).getByRole("button", { name: "Saving..." }),
+    ).toBeDisabled()
+    expect(
+      within(anthropicCard).getByRole("button", { name: "Saving..." }),
+    ).toBeDisabled()
+
+    resolvers.get("openai")?.({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai" },
+        models: [],
+        discovered: false,
+      },
+    })
+    await waitFor(() => {
+      expect(within(openaiCard).getByRole("button", { name: "Save" })).toBeInTheDocument()
+    })
+    expect(
+      within(anthropicCard).getByRole("button", { name: "Saving..." }),
+    ).toBeDisabled()
+
+    resolvers.get("anthropic")?.({
+      ok: true,
+      result: {
+        provider: { id: "provider-anthropic" },
+        models: [],
+        discovered: false,
+      },
+    })
+    await waitFor(() => {
+      expect(
+        within(anthropicCard).getByRole("button", { name: "Save" }),
+      ).toBeInTheDocument()
+    })
+  })
+
   it("renders provider setup errors inside the edited card", async () => {
     const setupProvider = vi.fn().mockResolvedValue({
       ok: false,

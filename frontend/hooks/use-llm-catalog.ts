@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
   createLlmProvider,
@@ -38,17 +38,23 @@ export function useLlmCatalog() {
   const [providerTemplates, setProviderTemplates] = useState<LlmProviderTemplate[]>([])
   const [configuration, setConfiguration] = useState<LlmConfiguration | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isMutating, setIsMutating] = useState(false)
+  const [pendingMutationCount, setPendingMutationCount] = useState(0)
+  const isMutating = pendingMutationCount > 0
   const [error, setError] = useState<Error | null>(null)
+  const refreshGeneration = useRef(0)
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true)
+  const refresh = useCallback(async (options?: { background?: boolean }) => {
+    const generation = refreshGeneration.current + 1
+    refreshGeneration.current = generation
+    const background = options?.background ?? false
+    if (!background) setIsLoading(true)
     setError(null)
     try {
       const [nextConfiguration, nextProviderTemplates] = await Promise.all([
         getLlmConfiguration(),
         getLlmProviderTemplates(),
       ])
+      if (generation !== refreshGeneration.current) return
       setConfiguration(nextConfiguration)
       setConfiguredProviders(nextConfiguration.providers)
       setProviders(nextConfiguration.providers)
@@ -56,9 +62,10 @@ export function useLlmCatalog() {
       setProfiles(nextConfiguration.profiles)
       setProviderTemplates(nextProviderTemplates)
     } catch (caught) {
+      if (generation !== refreshGeneration.current) return
       setError(caught instanceof Error ? caught : new Error("Failed to load LLM catalog"))
     } finally {
-      setIsLoading(false)
+      if (generation === refreshGeneration.current) setIsLoading(false)
     }
   }, [])
 
@@ -68,17 +75,17 @@ export function useLlmCatalog() {
 
   const createProvider = useCallback(
     async (input: CreateLlmProviderInput) => {
-      setIsMutating(true)
+      setPendingMutationCount((count) => count + 1)
       setError(null)
       try {
         const provider = await createLlmProvider(input)
-        await refresh()
+        await refresh({ background: true })
         return provider
       } catch (caught) {
         setError(caught instanceof Error ? caught : new Error("Failed to create LLM provider"))
         return null
       } finally {
-        setIsMutating(false)
+        setPendingMutationCount((count) => Math.max(0, count - 1))
       }
     },
     [refresh],
@@ -86,11 +93,11 @@ export function useLlmCatalog() {
 
   const setupProvider = useCallback(
     async (input: LlmProviderSetupInput): Promise<SetupProviderOutcome> => {
-      setIsMutating(true)
+      setPendingMutationCount((count) => count + 1)
       setError(null)
       try {
         const result = await setupLlmProvider(input)
-        await refresh()
+        await refresh({ background: true })
         return { ok: true, result }
       } catch (caught) {
         const setupError =
@@ -100,7 +107,7 @@ export function useLlmCatalog() {
         setError(setupError)
         return { ok: false, error: setupError }
       } finally {
-        setIsMutating(false)
+        setPendingMutationCount((count) => Math.max(0, count - 1))
       }
     },
     [refresh],
@@ -108,7 +115,7 @@ export function useLlmCatalog() {
 
   const setProviderEnabled = useCallback(
     async (provider: LlmProvider, enabled: boolean) => {
-      setIsMutating(true)
+      setPendingMutationCount((count) => count + 1)
       setError(null)
       try {
         const updated = await updateLlmProvider(provider.id, { enabled })
@@ -118,7 +125,7 @@ export function useLlmCatalog() {
         setError(caught instanceof Error ? caught : new Error("Failed to update LLM provider"))
         return null
       } finally {
-        setIsMutating(false)
+        setPendingMutationCount((count) => Math.max(0, count - 1))
       }
     },
     [refresh],
@@ -126,7 +133,7 @@ export function useLlmCatalog() {
 
   const updateProvider = useCallback(
     async (providerId: string, updates: Parameters<typeof updateLlmProvider>[1]) => {
-      setIsMutating(true)
+      setPendingMutationCount((count) => count + 1)
       setError(null)
       try {
         const updated = await updateLlmProvider(providerId, updates)
@@ -136,7 +143,7 @@ export function useLlmCatalog() {
         setError(caught instanceof Error ? caught : new Error("Failed to update LLM provider"))
         return null
       } finally {
-        setIsMutating(false)
+        setPendingMutationCount((count) => Math.max(0, count - 1))
       }
     },
     [refresh],
@@ -144,7 +151,7 @@ export function useLlmCatalog() {
 
   const testProvider = useCallback(
     async (providerId: string): Promise<LlmProviderTestResult | null> => {
-      setIsMutating(true)
+      setPendingMutationCount((count) => count + 1)
       setError(null)
       try {
         const result = await testLlmProvider(providerId)
@@ -154,7 +161,7 @@ export function useLlmCatalog() {
         setError(caught instanceof Error ? caught : new Error("Failed to test LLM provider"))
         return null
       } finally {
-        setIsMutating(false)
+        setPendingMutationCount((count) => Math.max(0, count - 1))
       }
     },
     [refresh],
@@ -162,7 +169,7 @@ export function useLlmCatalog() {
 
   const discoverModels = useCallback(
     async (providerId: string): Promise<LlmModel[] | null> => {
-      setIsMutating(true)
+      setPendingMutationCount((count) => count + 1)
       setError(null)
       try {
         const discovered = await discoverLlmProviderModels(providerId)
@@ -172,7 +179,7 @@ export function useLlmCatalog() {
         setError(caught instanceof Error ? caught : new Error("Failed to discover LLM models"))
         return null
       } finally {
-        setIsMutating(false)
+        setPendingMutationCount((count) => Math.max(0, count - 1))
       }
     },
     [refresh],
@@ -180,7 +187,7 @@ export function useLlmCatalog() {
 
   const updateCredential = useCallback(
     async (providerId: string, input: UpdateLlmProviderCredentialInput) => {
-      setIsMutating(true)
+      setPendingMutationCount((count) => count + 1)
       setError(null)
       try {
         const credential = await updateLlmProviderCredential(providerId, input)
@@ -190,7 +197,7 @@ export function useLlmCatalog() {
         setError(caught instanceof Error ? caught : new Error("Failed to update LLM provider credential"))
         return null
       } finally {
-        setIsMutating(false)
+        setPendingMutationCount((count) => Math.max(0, count - 1))
       }
     },
     [refresh],

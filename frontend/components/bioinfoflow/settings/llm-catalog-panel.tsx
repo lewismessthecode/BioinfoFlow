@@ -62,7 +62,9 @@ export function LlmCatalogPanel() {
   const [fieldValues, setFieldValues] = useState<FieldValues>({})
   const [insecureHttpValues, setInsecureHttpValues] = useState<ToggleValues>({})
   const [rowErrors, setRowErrors] = useState<RowErrors>({})
-  const [savingTemplateId, setSavingTemplateId] = useState<string | null>(null)
+  const [savingTemplateIds, setSavingTemplateIds] = useState<Set<string>>(
+    () => new Set(),
+  )
   const [refreshingModels, setRefreshingModels] = useState(false)
 
   const providersByTemplate = useMemo(() => {
@@ -170,7 +172,11 @@ export function LlmCatalogPanel() {
   }
 
   const saveProvider = async (template: LlmProviderTemplate) => {
-    setSavingTemplateId(template.id)
+    setSavingTemplateIds((current) => {
+      const next = new Set(current)
+      next.add(template.id)
+      return next
+    })
     clearRowError(template.id)
     try {
       const hadConfiguredProvider = configuredProviders.some(providerIsUsable)
@@ -202,7 +208,11 @@ export function LlmCatalogPanel() {
         celebrateMilestone("first-provider-key")
       }
     } finally {
-      setSavingTemplateId(null)
+      setSavingTemplateIds((current) => {
+        const next = new Set(current)
+        next.delete(template.id)
+        return next
+      })
     }
   }
 
@@ -306,8 +316,7 @@ export function LlmCatalogPanel() {
                 values={values}
                 insecureHttpAllowed={Boolean(insecureHttpValues[template.id])}
                 error={rowErrors[template.id]}
-                saving={savingTemplateId === template.id}
-                mutating={isMutating}
+                saving={savingTemplateIds.has(template.id)}
                 onFieldChange={(fieldName, value) =>
                   setFieldValue(template.id, fieldName, value)
                 }
@@ -332,7 +341,6 @@ type ProviderCardProps = {
   insecureHttpAllowed: boolean
   error?: string
   saving: boolean
-  mutating: boolean
   onFieldChange: (fieldName: string, value: string) => void
   onInsecureHttpChange: (allowed: boolean) => void
   onSave: () => void
@@ -346,7 +354,6 @@ function ProviderCard({
   insecureHttpAllowed,
   error,
   saving,
-  mutating,
   onFieldChange,
   onInsecureHttpChange,
   onSave,
@@ -358,8 +365,7 @@ function ProviderCard({
   const savedInsecureTransport = Boolean(
     provider?.allow_insecure_http && isPublicPlainHttpEndpoint(provider.base_url ?? ""),
   )
-  const canSave =
-    !saving && !mutating && requiredFieldsReady(template, values, configured)
+  const canSave = !saving && requiredFieldsReady(template, values, configured)
 
   return (
     <article
@@ -709,6 +715,7 @@ function isPublicPlainHttpEndpoint(value: string) {
     if (!hostname) return false
     if (hostname === "localhost" || hostname === "::1") return false
     if (hostname.endsWith(".localhost")) return false
+    if (hostname.includes(":")) return !isPrivateIpv6(hostname)
     if (!hostname.includes(".") && !/^\d+$/.test(hostname)) return false
     if (INTERNAL_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix))) {
       return false
@@ -718,6 +725,22 @@ function isPublicPlainHttpEndpoint(value: string) {
   } catch {
     return false
   }
+}
+
+function isPrivateIpv6(hostname: string) {
+  const normalized = hostname.split("%")[0]
+  if (normalized === "::" || normalized === "::1") return true
+
+  const mappedIpv4 = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)
+  if (mappedIpv4) return isPrivateIpv4(mappedIpv4[1])
+
+  const firstHextet = Number.parseInt(normalized.split(":", 1)[0] || "0", 16)
+  if (!Number.isInteger(firstHextet)) return false
+  return (
+    (firstHextet & 0xfe00) === 0xfc00 ||
+    (firstHextet & 0xffc0) === 0xfe80 ||
+    normalized.startsWith("2001:db8:")
+  )
 }
 
 function isPrivateIpv4(hostname: string) {
