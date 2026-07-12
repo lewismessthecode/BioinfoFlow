@@ -366,33 +366,51 @@ function ProviderCard({
     provider?.allow_insecure_http && isPublicPlainHttpEndpoint(provider.base_url ?? ""),
   )
   const canSave = !saving && requiredFieldsReady(template, values, configured)
+  const fieldCount = template.fields.length
 
   return (
     <article
       role="group"
       aria-label={template.name}
-      className="grid gap-4 rounded-[10px] border border-border/70 bg-card px-4 py-4 transition-colors hover:border-border sm:px-5 lg:grid-cols-[minmax(150px,0.72fr)_minmax(0,2fr)_auto] lg:items-start"
+      className="rounded-[10px] border border-border/70 bg-card px-4 py-3.5 transition-colors hover:border-border sm:px-5"
     >
-      <div className="min-w-0 space-y-1.5 lg:pt-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h4 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
-            {template.name}
-          </h4>
-          <ProviderStatus configured={configured} t={t} />
-        </div>
-        {note ? (
-          <p className="text-xs leading-5 text-muted-foreground">{note}</p>
-        ) : null}
-        {savedInsecureTransport ? (
-          <div className="inline-flex items-center gap-1.5 rounded-md bg-[#FBF3DB] px-2 py-1 text-[11px] font-medium text-[#956400]">
-            <ShieldAlert className="size-3.5" />
-            {t("providerCards.insecureHttpEnabled")}
+      <header className="mb-3 flex min-w-0 items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+              {template.name}
+            </h4>
+            <ProviderStatus configured={configured} t={t} />
+            {savedInsecureTransport ? (
+              <div className="inline-flex items-center gap-1.5 rounded-md bg-[#FBF3DB] px-2 py-1 text-[11px] font-medium text-[#7A5A10]">
+                <ShieldAlert className="size-3.5" />
+                {t("providerCards.insecureHttpEnabled")}
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </div>
+          {note ? (
+            <p className="mt-1 text-xs leading-4 text-muted-foreground">{note}</p>
+          ) : null}
+        </div>
+        <a
+          href={template.docs_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          {t("providerCards.getApiKey", { provider: template.name })}
+          <ExternalLink className="size-3 shrink-0" />
+        </a>
+      </header>
 
-      <div className="min-w-0 space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-end">
+        <div
+          className={cn(
+            "grid min-w-0 flex-1 gap-3",
+            fieldCount === 2 && "sm:grid-cols-2",
+            fieldCount >= 3 && "sm:grid-cols-2 xl:grid-cols-3",
+          )}
+        >
           {template.fields.map((field) => (
             <ProviderField
               key={field.name}
@@ -405,46 +423,36 @@ function ProviderCard({
             />
           ))}
         </div>
-
-        {publicPlainHttp ? (
-          <InsecureHttpNotice
-            t={t}
-            checked={insecureHttpAllowed}
-            onCheckedChange={onInsecureHttpChange}
-          />
-        ) : null}
-
-        {error ? (
-          <div
-            role="alert"
-            className="flex items-start gap-2 rounded-lg border border-[#F4D6D7] bg-[#FDEBEC] px-3 py-2.5 text-xs leading-5 text-[#9F2F2D]"
-          >
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            <span className="text-pretty">{error}</span>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="flex items-center justify-end gap-2 lg:min-w-32 lg:flex-col lg:items-stretch">
-        <a
-          href={template.docs_url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex h-8 items-center justify-center gap-1 whitespace-nowrap px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {t("providerCards.getApiKey", { provider: template.name })}
-          <ExternalLink className="size-3 shrink-0" />
-        </a>
         <Button
           type="button"
           size="sm"
-          className="h-9 min-w-24 rounded-md bg-[#111111] px-4 text-white shadow-none hover:bg-[#2F3437]"
+          className="h-9 w-full shrink-0 rounded-md bg-[#111111] px-4 text-white shadow-none hover:bg-[#2F3437] md:w-28"
           disabled={!canSave}
           onClick={onSave}
         >
           {saving ? t("providerCards.saving") : t("providerCards.save")}
         </Button>
       </div>
+
+      {publicPlainHttp ? (
+        <div className="mt-3">
+          <InsecureHttpNotice
+            t={t}
+            checked={insecureHttpAllowed}
+            onCheckedChange={onInsecureHttpChange}
+          />
+        </div>
+      ) : null}
+
+      {error ? (
+        <div
+          role="alert"
+          className="mt-3 flex items-start gap-2 rounded-lg border border-[#F4D6D7] bg-[#FDEBEC] px-3 py-2.5 text-xs leading-5 text-[#9F2F2D]"
+        >
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span className="text-pretty">{error}</span>
+        </div>
+      ) : null}
     </article>
   )
 }
@@ -521,22 +529,51 @@ function InsecureHttpNotice({
 }) {
   const label = t("providerCards.allowInsecureHttp")
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-[#EEDDAA] bg-[#FBF3DB] px-3 py-2.5 text-[#956400]">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5 transition-colors",
+        checked
+          ? "border-[#D8C57E] bg-[#FBF3DB] text-[#694D0B]"
+          : "border-border/70 bg-[#F7F6F3] text-foreground",
+      )}
+    >
       <div className="flex min-w-0 items-start gap-2.5">
-        <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+        <ShieldAlert
+          className={cn(
+            "mt-0.5 size-4 shrink-0",
+            checked ? "text-[#956400]" : "text-muted-foreground",
+          )}
+        />
         <div className="min-w-0">
           <p className="text-xs font-semibold">{label}</p>
-          <p className="mt-0.5 text-pretty text-[11px] leading-4 text-[#7A5A10]">
+          <p
+            className={cn(
+              "mt-0.5 text-pretty text-[11px] leading-4",
+              checked ? "text-[#7A5A10]" : "text-muted-foreground",
+            )}
+          >
             {t("providerCards.insecureHttpDescription")}
           </p>
         </div>
       </div>
-      <Switch
-        aria-label={label}
-        checked={checked}
-        onCheckedChange={onCheckedChange}
-        className="data-[state=checked]:bg-[#956400]"
-      />
+      <div className="flex shrink-0 items-center gap-2.5">
+        <span
+          className={cn(
+            "min-w-8 text-right text-[11px] font-semibold",
+            checked ? "text-[#7A5A10]" : "text-muted-foreground",
+          )}
+        >
+          {checked
+            ? t("providerCards.insecureHttpOn")
+            : t("providerCards.insecureHttpOff")}
+        </span>
+        <Switch
+          aria-label={label}
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          className="h-6 w-11 border border-[#D7D3C8] bg-[#E7E3D8] data-[state=checked]:border-[#956400] data-[state=checked]:bg-[#956400] [&_[data-slot=switch-thumb]]:size-5 [&_[data-slot=switch-thumb]]:bg-white"
+        />
+      </div>
     </div>
   )
 }
@@ -548,17 +585,22 @@ function ProviderCatalogSkeleton() {
         <div
           key={row}
           data-testid="provider-card-skeleton"
-          className="grid gap-4 rounded-[10px] border border-border/60 bg-card px-5 py-4 lg:grid-cols-[minmax(150px,0.72fr)_minmax(0,2fr)_8rem]"
+          className="rounded-[10px] border border-border/60 bg-card px-5 py-3.5"
         >
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-3 w-20" />
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-5 w-12" />
+            </div>
+            <Skeleton className="h-5 w-16" />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
+          <div className="flex flex-col gap-3 md:flex-row md:items-end">
+            <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+            <Skeleton className="h-9 w-full md:w-28" />
           </div>
-          <Skeleton className="h-9 w-24 lg:justify-self-end" />
         </div>
       ))}
     </div>

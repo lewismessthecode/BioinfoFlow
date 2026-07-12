@@ -39,6 +39,8 @@ vi.mock("next-intl", () => ({
       "providerCards.insecureHttpDescription":
         "API keys and prompts are sent without TLS.",
       "providerCards.insecureHttpEnabled": "Insecure transport allowed",
+      "providerCards.insecureHttpOn": "On",
+      "providerCards.insecureHttpOff": "Off",
       "providerCards.loadFailed": "Providers could not be loaded",
       "providerCards.retry": "Retry",
       "providerCards.endpointLabel": "Endpoint",
@@ -450,7 +452,9 @@ describe("LlmCatalogPanel", () => {
       name: "Allow insecure HTTP",
     })
     expect(insecureSwitch).not.toBeChecked()
+    expect(within(card).getByText("Off")).toBeInTheDocument()
     fireEvent.click(insecureSwitch)
+    expect(within(card).getByText("On")).toBeInTheDocument()
     fireEvent.click(within(card).getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
