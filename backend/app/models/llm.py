@@ -57,6 +57,12 @@ class LlmProvider(Base, UUIDMixin, TimestampMixin):
     )
     user_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_insecure_http: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
     test_status: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     provider_metadata: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
 

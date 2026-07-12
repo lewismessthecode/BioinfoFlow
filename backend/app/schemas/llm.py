@@ -50,6 +50,7 @@ class LlmProviderCreate(BaseModel):
     api_key_ref: str | None = None
     scope: ProviderScope = "user"
     enabled: bool = True
+    allow_insecure_http: bool = False
     metadata: dict | None = None
 
 
@@ -60,6 +61,7 @@ class LlmProviderUpdate(BaseModel):
     api_key_ref: str | None = None
     scope: ProviderScope | None = None
     enabled: bool | None = None
+    allow_insecure_http: bool | None = None
     metadata: dict | None = None
 
 
@@ -75,6 +77,7 @@ class LlmProviderRead(BaseModel):
     workspace_id: UUID | None = None
     user_id: str | None = None
     enabled: bool
+    allow_insecure_http: bool = False
     test_status: dict | None = None
     metadata: dict | None = Field(default=None, validation_alias="provider_metadata")
     created_at: datetime
@@ -129,6 +132,7 @@ class LlmProviderSetupRequest(BaseModel):
     discover: bool = False
     scope: ProviderScope = "user"
     enabled: bool = True
+    allow_insecure_http: bool = False
 
 
 class LlmModelCreate(BaseModel):

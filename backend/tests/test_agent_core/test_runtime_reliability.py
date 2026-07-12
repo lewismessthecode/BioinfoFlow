@@ -14,6 +14,7 @@ from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.loop import _max_iterations
 from app.services.agent_core.tools.executor import ToolExecutionResult
+from app.services.agent_core.runtime import AgentCoreRuntime
 import app.services.agent_core.runner as runner_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 from app.models.workspace import Workspace
@@ -63,6 +64,71 @@ def test_agent_max_iterations_prefers_explicit_setting(monkeypatch):
     monkeypatch.setattr(settings, "agent_max_iterations", 120)
 
     assert _max_iterations() == 120
+
+
+@pytest.mark.asyncio
+async def test_runtime_rejects_unapproved_public_http_provider(db_session):
+    await _workspace(db_session)
+    provider = LlmProvider(
+        name="Unapproved public relay",
+        kind="openai_compatible",
+        base_url="http://8.129.13.231:8079/v1",
+        allow_insecure_http=False,
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    model = await _seed_catalog_model(
+        db_session,
+        model_id="gpt-5.6-sol",
+        provider=provider,
+    )
+
+    resolved = await AgentCoreRuntime(db_session)._catalog_selection(
+        {"model_id": str(model.id)},
+        source="test",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert resolved is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_allows_explicit_public_http_provider(db_session):
+    await _workspace(db_session)
+    provider = LlmProvider(
+        name="Approved public relay",
+        kind="openai_compatible",
+        base_url="http://8.129.13.231:8079/v1",
+        allow_insecure_http=True,
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    model = await _seed_catalog_model(
+        db_session,
+        model_id="gpt-5.6-sol",
+        provider=provider,
+    )
+
+    resolved = await AgentCoreRuntime(db_session)._catalog_selection(
+        {"model_id": str(model.id)},
+        source="test",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+
+    assert resolved is not None
+    assert resolved["request_args"]["api_base"] == "http://8.129.13.231:8079/v1"
 
 
 def test_agent_max_rounds_legacy_setting_is_removed(monkeypatch):

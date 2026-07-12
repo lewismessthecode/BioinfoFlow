@@ -58,7 +58,10 @@ class LlmCatalogService:
         )
 
     async def create_provider(self, data: dict[str, Any]):
-        _validate_provider_base_url(data.get("base_url"))
+        _validate_provider_base_url(
+            data.get("base_url"),
+            allow_insecure_http=bool(data.get("allow_insecure_http", False)),
+        )
         workspace_id, user_id = _tenant_fields_for_scope(
             scope=data.get("scope", "user"),
             workspace_id=data["workspace_id"],
@@ -74,6 +77,7 @@ class LlmCatalogService:
             workspace_id=workspace_id,
             user_id=user_id,
             enabled=data.get("enabled", True),
+            allow_insecure_http=bool(data.get("allow_insecure_http", False)),
             provider_metadata=data.get("metadata"),
         )
 
@@ -86,14 +90,23 @@ class LlmCatalogService:
         if template is None:
             raise ValueError(f"Unknown LLM provider template: {template_id}")
 
+        provider = await self._provider_for_setup(template=template, data=data)
+        allow_insecure_http = bool(
+            data.get(
+                "allow_insecure_http",
+                provider.allow_insecure_http if provider is not None else False,
+            )
+        )
         base_url = data.get("base_url")
         if base_url:
             base_url = normalize_provider_base_url(template.kind, str(base_url))
-            _validate_provider_base_url(base_url)
+            _validate_provider_base_url(
+                base_url,
+                allow_insecure_http=allow_insecure_http,
+            )
         elif template.default_base_url:
             base_url = normalize_provider_base_url(template.kind, template.default_base_url)
 
-        provider = await self._provider_for_setup(template=template, data=data)
         metadata = {
             **(provider.provider_metadata if provider is not None else {}),
             "providerTemplate": template.id,
@@ -106,6 +119,7 @@ class LlmCatalogService:
                     "kind": template.kind,
                     "base_url": base_url,
                     "api_key_ref": None,
+                    "allow_insecure_http": allow_insecure_http,
                     "metadata": metadata,
                 }
             )
@@ -119,6 +133,7 @@ class LlmCatalogService:
                     "name": str(data.get("name") or provider.name or template.name),
                     "kind": template.kind,
                     "base_url": base_url,
+                    "allow_insecure_http": allow_insecure_http,
                     "metadata": metadata,
                     "enabled": data.get("enabled", True),
                 },
@@ -177,8 +192,12 @@ class LlmCatalogService:
         )
         updates = _strip_none(data)
         _drop_request_tenant_fields(updates)
-        if "base_url" in updates:
-            _validate_provider_base_url(updates.get("base_url"))
+        _validate_provider_base_url(
+            updates.get("base_url", provider.base_url),
+            allow_insecure_http=bool(
+                updates.get("allow_insecure_http", provider.allow_insecure_http)
+            ),
+        )
         if "scope" in updates:
             workspace_id, user_id = _tenant_fields_for_scope(
                 scope=updates["scope"],
@@ -399,6 +418,7 @@ class LlmCatalogService:
         discovery mode and falls back to any static template models. ``timeout``
         bounds each network call so startup bootstrap can fail fast.
         """
+        validate_provider_transport(provider)
         template = provider_template_for_provider(provider)
         discovery = template.discovery if template else "openai_models"
         if discovery == "ollama_tags":
@@ -831,6 +851,7 @@ _INTERNAL_HOST_SUFFIXES = (
     ".home.arpa",
     ".corp",
     ".svc",
+    ".test",
 )
 
 
@@ -856,7 +877,11 @@ def _is_internal_http_host(host: str) -> bool:
     return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
-def _validate_provider_base_url(base_url: str | None) -> None:
+def _validate_provider_base_url(
+    base_url: str | None,
+    *,
+    allow_insecure_http: bool = False,
+) -> None:
     if not base_url:
         return
     parsed = urlparse(str(base_url).strip())
@@ -866,9 +891,18 @@ def _validate_provider_base_url(base_url: str | None) -> None:
         return
     if _is_internal_http_host(parsed.hostname or ""):
         return
+    if allow_insecure_http:
+        return
     raise ValueError(
         "Plain HTTP endpoints are only allowed for local or internal hosts; "
-        "use HTTPS for public endpoints"
+        "use HTTPS or explicitly allow insecure HTTP for public endpoints"
+    )
+
+
+def validate_provider_transport(provider: LlmProvider) -> None:
+    _validate_provider_base_url(
+        provider.base_url,
+        allow_insecure_http=bool(provider.allow_insecure_http),
     )
 
 
