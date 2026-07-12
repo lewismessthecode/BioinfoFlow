@@ -112,6 +112,8 @@ vi.mock("next-intl", () => ({
       "providerCards.allowInsecureHttp": "Allow insecure HTTP",
       "providerCards.insecureHttpDescription": "API keys and prompts are sent without TLS.",
       "providerCards.insecureHttpEnabled": "Insecure transport allowed",
+      "providerCards.insecureHttpOn": "On",
+      "providerCards.insecureHttpOff": "Off",
       "providerCards.loadFailed": "Providers could not be loaded",
       "providerCards.retry": "Retry",
       "providerCards.endpointLabel": "Endpoint",

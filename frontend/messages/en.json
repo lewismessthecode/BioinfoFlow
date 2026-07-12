@@ -2275,6 +2275,8 @@
       "allowInsecureHttp": "Allow insecure HTTP",
       "insecureHttpDescription": "API keys and prompts are sent without TLS.",
       "insecureHttpEnabled": "Insecure transport allowed",
+      "insecureHttpOn": "On",
+      "insecureHttpOff": "Off",
       "loadFailed": "Providers could not be loaded",
       "retry": "Retry",
       "endpointLabel": "Endpoint",

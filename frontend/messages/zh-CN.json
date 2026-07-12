@@ -2275,6 +2275,8 @@
       "allowInsecureHttp": "允许不安全的 HTTP",
       "insecureHttpDescription": "API Key 和提示词将通过未加密连接传输。",
       "insecureHttpEnabled": "已允许不安全传输",
+      "insecureHttpOn": "已开启",
+      "insecureHttpOff": "关闭",
       "loadFailed": "无法加载服务商",
       "retry": "重试",
       "endpointLabel": "服务地址",
