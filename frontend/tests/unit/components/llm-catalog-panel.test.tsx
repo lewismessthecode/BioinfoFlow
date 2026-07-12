@@ -35,6 +35,15 @@ vi.mock("next-intl", () => ({
       "providerCards.modelsDiscovered": `${values?.count ?? 0} models found`,
       "providerCards.modelRefreshFailed": "Models could not be refreshed",
       "providerCards.modelIdPlaceholder": "Model ID",
+      "providerCards.allowInsecureHttp": "Allow insecure HTTP",
+      "providerCards.insecureHttpDescription":
+        "API keys and prompts are sent without TLS.",
+      "providerCards.insecureHttpEnabled": "Insecure transport allowed",
+      "providerCards.loadFailed": "Providers could not be loaded",
+      "providerCards.retry": "Retry",
+      "providerCards.endpointLabel": "Endpoint",
+      "providerCards.apiKeyLabel": "API key",
+      "providerCards.modelIdLabel": "Model ID",
     }
     return labels[key] ?? key
   },
@@ -142,9 +151,12 @@ describe("LlmCatalogPanel", () => {
 
   it("keeps stored secrets write-only and updates an existing provider through setup", async () => {
     const setupProvider = vi.fn().mockResolvedValue({
-      provider: { id: "provider-openai" },
-      models: [],
-      discovered: false,
+      ok: true,
+      result: {
+        provider: { id: "provider-openai" },
+        models: [],
+        discovered: false,
+      },
     })
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
@@ -194,6 +206,7 @@ describe("LlmCatalogPanel", () => {
         discover: true,
         scope: "user",
         enabled: true,
+        allowInsecureHttp: false,
       })
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
@@ -202,17 +215,20 @@ describe("LlmCatalogPanel", () => {
 
   it("celebrates the first provider key when setup creates the first usable keyed provider", async () => {
     const setupProvider = vi.fn().mockResolvedValue({
-      provider: {
-        id: "provider-openai",
-        name: "OpenAI",
-        kind: "openai",
-        base_url: "https://api.openai.com/v1",
-        metadata: { providerTemplate: "openai" },
-        enabled: true,
-        credential: { source: "stored", configured: true, available: true },
+      ok: true,
+      result: {
+        provider: {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          base_url: "https://api.openai.com/v1",
+          metadata: { providerTemplate: "openai" },
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+        models: [],
+        discovered: false,
       },
-      models: [],
-      discovered: false,
     })
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
@@ -236,6 +252,7 @@ describe("LlmCatalogPanel", () => {
     await waitFor(() => {
       expect(setupProvider).toHaveBeenCalledWith({
         templateId: "openai",
+        providerId: undefined,
         name: "OpenAI",
         apiKey: "sk-first",
         baseUrl: "https://api.openai.com/v1",
@@ -243,13 +260,17 @@ describe("LlmCatalogPanel", () => {
         discover: true,
         scope: "user",
         enabled: true,
+        allowInsecureHttp: false,
       })
     })
     expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-provider-key")
   })
 
   it("sets up a branded provider and does not show success when setup fails", async () => {
-    const setupProvider = vi.fn().mockResolvedValue(null)
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: false,
+      error: new Error("Provider could not be saved"),
+    })
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
       configuredProviders: [],
@@ -272,6 +293,7 @@ describe("LlmCatalogPanel", () => {
     await waitFor(() => {
       expect(setupProvider).toHaveBeenCalledWith({
         templateId: "grok",
+        providerId: undefined,
         name: "Grok",
         baseUrl: "https://api.x.ai/v1",
         apiKey: "xai-key",
@@ -279,6 +301,7 @@ describe("LlmCatalogPanel", () => {
         discover: true,
         scope: "user",
         enabled: true,
+        allowInsecureHttp: false,
       })
     })
     expect(toastErrorMock).toHaveBeenCalledWith("Provider could not be saved")
@@ -288,9 +311,12 @@ describe("LlmCatalogPanel", () => {
 
   it("sets up endpoint-only vLLM with a manual model id in one save", async () => {
     const setupProvider = vi.fn().mockResolvedValue({
-      provider: { id: "provider-vllm" },
-      models: [{ id: "model-vllm", model_id: "deepseek_v4" }],
-      discovered: false,
+      ok: true,
+      result: {
+        provider: { id: "provider-vllm" },
+        models: [{ id: "model-vllm", model_id: "deepseek_v4" }],
+        discovered: false,
+      },
     })
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
@@ -317,6 +343,7 @@ describe("LlmCatalogPanel", () => {
     await waitFor(() => {
       expect(setupProvider).toHaveBeenCalledWith({
         templateId: "vllm",
+        providerId: undefined,
         name: "vLLM",
         baseUrl: "http://localhost:8000/v1",
         apiKey: "",
@@ -324,6 +351,7 @@ describe("LlmCatalogPanel", () => {
         discover: true,
         scope: "user",
         enabled: true,
+        allowInsecureHttp: false,
       })
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
@@ -374,6 +402,139 @@ describe("LlmCatalogPanel", () => {
     })
     expect(setupProvider).not.toHaveBeenCalled()
     expect(toastSuccessMock).toHaveBeenCalledWith("1 models found")
+  })
+
+  it("requires an explicit switch for a public HTTP provider endpoint", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: {
+          id: "provider-relay",
+          name: "OpenAI Compatible",
+          kind: "openai_compatible",
+          base_url: "http://8.129.13.231:8079/v1",
+          allow_insecure_http: true,
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+        models: [{ id: "relay-model", model_id: "gpt-5.6-sol" }],
+        discovered: false,
+      },
+    })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible endpoint"), {
+      target: { value: "http://8.129.13.231:8079/v1" },
+    })
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible API key"), {
+      target: { value: "relay-key" },
+    })
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible model id"), {
+      target: { value: "gpt-5.6-sol" },
+    })
+
+    const insecureSwitch = within(card).getByRole("switch", {
+      name: "Allow insecure HTTP",
+    })
+    expect(insecureSwitch).not.toBeChecked()
+    fireEvent.click(insecureSwitch)
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(setupProvider).toHaveBeenCalledWith({
+        templateId: "openai-compatible",
+        name: "OpenAI Compatible",
+        baseUrl: "http://8.129.13.231:8079/v1",
+        apiKey: "relay-key",
+        modelIds: ["gpt-5.6-sol"],
+        discover: true,
+        scope: "user",
+        enabled: true,
+        allowInsecureHttp: true,
+      })
+    })
+  })
+
+  it("renders provider setup errors inside the edited card", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: false,
+      error: new Error("Explicit insecure HTTP approval is required"),
+    })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible endpoint"), {
+      target: { value: "http://8.129.13.231:8079/v1" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    expect(
+      await within(card).findByText("Explicit insecure HTTP approval is required"),
+    ).toBeInTheDocument()
+  })
+
+  it("shows a retryable catalog error instead of an empty provider list", () => {
+    const refresh = vi.fn()
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: [],
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: new Error("Backend unavailable"),
+      refresh,
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    expect(screen.getByText("Providers could not be loaded")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it("renders provider-shaped skeleton rows while loading", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: [],
+      configuredProviders: [],
+      models: [],
+      isLoading: true,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    expect(screen.getAllByTestId("provider-card-skeleton")).toHaveLength(4)
   })
 })
 

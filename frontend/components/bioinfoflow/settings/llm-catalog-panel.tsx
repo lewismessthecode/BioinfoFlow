@@ -1,13 +1,26 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from "@/lib/icons"
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  ShieldAlert,
+} from "@/lib/icons"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useLlmCatalog } from "@/hooks/use-llm-catalog"
+import { Label } from "@/components/ui/label"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Switch } from "@/components/ui/switch"
+import {
+  useLlmCatalog,
+  type SetupProviderOutcome,
+} from "@/hooks/use-llm-catalog"
 import { celebrateMilestone } from "@/lib/celebrations"
 import type {
   LlmConfiguredProvider,
@@ -17,6 +30,22 @@ import type {
 import { cn } from "@/lib/utils"
 
 type FieldValues = Record<string, Record<string, string>>
+type ToggleValues = Record<string, boolean>
+type RowErrors = Record<string, string>
+type SettingsTranslations = ReturnType<typeof useTranslations>
+
+const SKELETON_ROWS = [0, 1, 2, 3]
+const INTERNAL_HOST_SUFFIXES = [
+  ".local",
+  ".internal",
+  ".intranet",
+  ".lan",
+  ".home",
+  ".home.arpa",
+  ".corp",
+  ".svc",
+  ".test",
+]
 
 export function LlmCatalogPanel() {
   const t = useTranslations("settings")
@@ -25,10 +54,14 @@ export function LlmCatalogPanel() {
     configuredProviders,
     isLoading,
     isMutating,
+    error,
+    refresh,
     discoverModels,
     setupProvider,
   } = useLlmCatalog()
   const [fieldValues, setFieldValues] = useState<FieldValues>({})
+  const [insecureHttpValues, setInsecureHttpValues] = useState<ToggleValues>({})
+  const [rowErrors, setRowErrors] = useState<RowErrors>({})
   const [savingTemplateId, setSavingTemplateId] = useState<string | null>(null)
   const [refreshingModels, setRefreshingModels] = useState(false)
 
@@ -62,26 +95,57 @@ export function LlmCatalogPanel() {
         if (!next[template.id]) {
           next[template.id] = templateValues
           changed = true
-        } else if (templateValues !== currentValues) {
+        } else if (changed) {
           next[template.id] = templateValues
         }
       }
 
       return changed ? next : current
     })
+
+    setInsecureHttpValues((current) => {
+      let changed = false
+      const next = { ...current }
+      for (const template of providerTemplates) {
+        if (next[template.id] !== undefined) continue
+        next[template.id] = Boolean(
+          providersByTemplate.get(template.id)?.allow_insecure_http,
+        )
+        changed = true
+      }
+      return changed ? next : current
+    })
   }, [providerTemplates, providersByTemplate])
+
+  const clearRowError = (templateId: string) => {
+    setRowErrors((current) => {
+      if (!current[templateId]) return current
+      const next = { ...current }
+      delete next[templateId]
+      return next
+    })
+  }
 
   const setFieldValue = (
     templateId: string,
     fieldName: string,
     value: string,
   ) => {
+    clearRowError(templateId)
     setFieldValues((current) => ({
       ...current,
       [templateId]: {
         ...(current[templateId] ?? {}),
         [fieldName]: value,
       },
+    }))
+  }
+
+  const setAllowInsecureHttp = (templateId: string, allowed: boolean) => {
+    clearRowError(templateId)
+    setInsecureHttpValues((current) => ({
+      ...current,
+      [templateId]: allowed,
     }))
   }
 
@@ -101,19 +165,27 @@ export function LlmCatalogPanel() {
       discover,
       scope: "user" as const,
       enabled: true,
+      allowInsecureHttp: Boolean(insecureHttpValues[template.id]),
     }
   }
 
   const saveProvider = async (template: LlmProviderTemplate) => {
     setSavingTemplateId(template.id)
+    clearRowError(template.id)
     try {
       const hadConfiguredProvider = configuredProviders.some(providerIsUsable)
       const setupInput = buildSetupInput(template, true)
-      const result = await setupProvider(setupInput)
-      if (!result) {
-        toast.error(t("providerCards.saveFailed"))
+      const outcome: SetupProviderOutcome = await setupProvider(setupInput)
+      if (!outcome.ok) {
+        setRowErrors((current) => ({
+          ...current,
+          [template.id]: outcome.error.message,
+        }))
+        toast.error(outcome.error.message || t("providerCards.saveFailed"))
         return
       }
+
+      const result = outcome.result
       setFieldValue(template.id, "api_key", "")
       if (result.discovered && result.models.length > 0) {
         toast.success(
@@ -136,13 +208,18 @@ export function LlmCatalogPanel() {
 
   const refreshModels = async () => {
     const providersToRefresh = providerTemplates
-      .filter((template) => template.discovery !== "static")
       .map((template) => ({
         template,
         provider: providersByTemplate.get(template.id),
       }))
       .filter(
-        (item): item is { template: LlmProviderTemplate; provider: LlmConfiguredProvider } =>
+        (
+          item,
+        ): item is {
+          template: LlmProviderTemplate
+          provider: LlmConfiguredProvider
+        } =>
+          item.template.discovery !== "static" &&
           providerConfigured(item.template, item.provider),
       )
 
@@ -169,35 +246,34 @@ export function LlmCatalogPanel() {
     }
   }
 
-  const refreshableProviderCount = providerTemplates.filter((template) => {
+  const refreshableProviderCount = providerTemplates.reduce((count, template) => {
     const provider = providersByTemplate.get(template.id)
     return template.discovery !== "static" && providerConfigured(template, provider)
-  }).length
+      ? count + 1
+      : count
+  }, 0)
+  const configuredCount = configuredProviders.reduce(
+    (count, provider) =>
+      provider.enabled &&
+      (provider.credential?.configured || provider.credential?.available)
+        ? count + 1
+        : count,
+    0,
+  )
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <div className="flex min-h-9 items-center justify-between gap-3">
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            {t("providerCards.loading")}
-          </div>
-        ) : (
-          <div className="text-xs text-muted-foreground">
-            {t("providerCards.summary", {
-              count: configuredProviders.filter(
-                (provider) =>
-                  provider.enabled &&
-                  (provider.credential?.configured || provider.credential?.available),
-              ).length,
-            })}
-          </div>
-        )}
+        <div className="text-xs font-medium text-muted-foreground tabular-nums">
+          {isLoading
+            ? t("providerCards.loading")
+            : t("providerCards.summary", { count: configuredCount })}
+        </div>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="h-9 gap-2 rounded-md"
+          className="h-8 gap-1.5 rounded-md border-border/70 bg-background px-2.5 shadow-none"
           disabled={refreshableProviderCount === 0 || refreshingModels || isMutating}
           onClick={() => void refreshModels()}
         >
@@ -212,90 +288,301 @@ export function LlmCatalogPanel() {
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
-        {providerTemplates.map((template) => {
-          const provider = providersByTemplate.get(template.id)
-          const values = fieldValues[template.id] ?? {}
-          const configured = providerConfigured(template, provider)
-          const note = credentialNote(t, provider)
-          const saving = savingTemplateId === template.id
-          const canSave =
-            !saving && !isMutating && requiredFieldsReady(template, values, configured)
-
-          return (
-            <div
-              key={template.id}
-              role="group"
-              aria-label={template.name}
-              className="grid gap-4 border-b border-border/60 px-4 py-4 last:border-b-0 sm:px-5 lg:grid-cols-[minmax(180px,1fr)_minmax(420px,1.35fr)] lg:items-start"
-            >
-              <div className="min-w-0 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="truncate text-sm font-semibold leading-6 text-foreground">
-                    {template.name}
-                  </h4>
-                  <span
-                    className={cn(
-                      "inline-flex h-6 shrink-0 items-center rounded-md border px-2 text-xs font-medium",
-                      configured
-                        ? "border-border bg-secondary/45 text-foreground"
-                        : "border-border bg-muted text-muted-foreground",
-                    )}
-                  >
-                    {configured ? <CheckCircle2 className="mr-1 size-3.5" /> : null}
-                    {configured ? t("providerCards.ready") : t("providerCards.needsSetup")}
-                  </span>
-                </div>
-                {note ? (
-                  <p className="text-[13px] leading-5 text-muted-foreground">
-                    {note}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="min-w-0 space-y-3 lg:justify-self-end">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {template.fields.map((field) => (
-                    <Input
-                      key={field.name}
-                      aria-label={`${template.name} ${fieldAriaLabel(field)}`}
-                      type={field.secret ? "password" : "text"}
-                      value={values[field.name] ?? ""}
-                      onChange={(event) =>
-                        setFieldValue(template.id, field.name, event.target.value)
-                      }
-                      placeholder={placeholderForField(t, field, configured)}
-                      className="h-10 rounded-md"
-                    />
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 sm:justify-end">
-                  <a
-                    href={template.docs_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {t("providerCards.getApiKey", { provider: template.name })}
-                    <ExternalLink className="size-3 shrink-0" />
-                  </a>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-9 rounded-md px-4"
-                    disabled={!canSave}
-                    onClick={() => void saveProvider(template)}
-                  >
-                    {saving ? t("providerCards.saving") : t("providerCards.save")}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      {isLoading ? <ProviderCatalogSkeleton /> : null}
+      {!isLoading && error && providerTemplates.length === 0 ? (
+        <ProviderCatalogError t={t} onRetry={() => void refresh()} />
+      ) : null}
+      {!isLoading && providerTemplates.length > 0 ? (
+        <div className="space-y-2">
+          {providerTemplates.map((template) => {
+            const provider = providersByTemplate.get(template.id)
+            const values = fieldValues[template.id] ?? {}
+            return (
+              <ProviderCard
+                key={template.id}
+                t={t}
+                template={template}
+                provider={provider}
+                values={values}
+                insecureHttpAllowed={Boolean(insecureHttpValues[template.id])}
+                error={rowErrors[template.id]}
+                saving={savingTemplateId === template.id}
+                mutating={isMutating}
+                onFieldChange={(fieldName, value) =>
+                  setFieldValue(template.id, fieldName, value)
+                }
+                onInsecureHttpChange={(allowed) =>
+                  setAllowInsecureHttp(template.id, allowed)
+                }
+                onSave={() => void saveProvider(template)}
+              />
+            )
+          })}
+        </div>
+      ) : null}
     </section>
+  )
+}
+
+type ProviderCardProps = {
+  t: SettingsTranslations
+  template: LlmProviderTemplate
+  provider?: LlmConfiguredProvider
+  values: Record<string, string>
+  insecureHttpAllowed: boolean
+  error?: string
+  saving: boolean
+  mutating: boolean
+  onFieldChange: (fieldName: string, value: string) => void
+  onInsecureHttpChange: (allowed: boolean) => void
+  onSave: () => void
+}
+
+function ProviderCard({
+  t,
+  template,
+  provider,
+  values,
+  insecureHttpAllowed,
+  error,
+  saving,
+  mutating,
+  onFieldChange,
+  onInsecureHttpChange,
+  onSave,
+}: ProviderCardProps) {
+  const configured = providerConfigured(template, provider)
+  const note = credentialNote(t, provider)
+  const endpoint = readBaseUrl(template, provider, values) ?? ""
+  const publicPlainHttp = isPublicPlainHttpEndpoint(endpoint)
+  const savedInsecureTransport = Boolean(
+    provider?.allow_insecure_http && isPublicPlainHttpEndpoint(provider.base_url ?? ""),
+  )
+  const canSave =
+    !saving && !mutating && requiredFieldsReady(template, values, configured)
+
+  return (
+    <article
+      role="group"
+      aria-label={template.name}
+      className="grid gap-4 rounded-[10px] border border-border/70 bg-card px-4 py-4 transition-colors hover:border-border sm:px-5 lg:grid-cols-[minmax(150px,0.72fr)_minmax(0,2fr)_auto] lg:items-start"
+    >
+      <div className="min-w-0 space-y-1.5 lg:pt-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+            {template.name}
+          </h4>
+          <ProviderStatus configured={configured} t={t} />
+        </div>
+        {note ? (
+          <p className="text-xs leading-5 text-muted-foreground">{note}</p>
+        ) : null}
+        {savedInsecureTransport ? (
+          <div className="inline-flex items-center gap-1.5 rounded-md bg-[#FBF3DB] px-2 py-1 text-[11px] font-medium text-[#956400]">
+            <ShieldAlert className="size-3.5" />
+            {t("providerCards.insecureHttpEnabled")}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="min-w-0 space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {template.fields.map((field) => (
+            <ProviderField
+              key={field.name}
+              t={t}
+              template={template}
+              field={field}
+              configured={configured}
+              value={values[field.name] ?? ""}
+              onChange={(value) => onFieldChange(field.name, value)}
+            />
+          ))}
+        </div>
+
+        {publicPlainHttp ? (
+          <InsecureHttpNotice
+            t={t}
+            checked={insecureHttpAllowed}
+            onCheckedChange={onInsecureHttpChange}
+          />
+        ) : null}
+
+        {error ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-[#F4D6D7] bg-[#FDEBEC] px-3 py-2.5 text-xs leading-5 text-[#9F2F2D]"
+          >
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            <span className="text-pretty">{error}</span>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="flex items-center justify-end gap-2 lg:min-w-32 lg:flex-col lg:items-stretch">
+        <a
+          href={template.docs_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-8 items-center justify-center gap-1 whitespace-nowrap px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {t("providerCards.getApiKey", { provider: template.name })}
+          <ExternalLink className="size-3 shrink-0" />
+        </a>
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 min-w-24 rounded-md bg-[#111111] px-4 text-white shadow-none hover:bg-[#2F3437]"
+          disabled={!canSave}
+          onClick={onSave}
+        >
+          {saving ? t("providerCards.saving") : t("providerCards.save")}
+        </Button>
+      </div>
+    </article>
+  )
+}
+
+function ProviderStatus({
+  configured,
+  t,
+}: {
+  configured: boolean
+  t: SettingsTranslations
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 shrink-0 items-center rounded-md border px-2 text-[11px] font-medium tracking-[0.02em]",
+        configured
+          ? "border-[#DDE8DB] bg-[#EDF3EC] text-[#346538]"
+          : "border-border/70 bg-[#F7F6F3] text-muted-foreground",
+      )}
+    >
+      {configured ? <CheckCircle2 className="mr-1 size-3.5" /> : null}
+      {configured ? t("providerCards.ready") : t("providerCards.needsSetup")}
+    </span>
+  )
+}
+
+type ProviderFieldProps = {
+  t: SettingsTranslations
+  template: LlmProviderTemplate
+  field: LlmProviderTemplateField
+  configured: boolean
+  value: string
+  onChange: (value: string) => void
+}
+
+function ProviderField({
+  t,
+  template,
+  field,
+  configured,
+  value,
+  onChange,
+}: ProviderFieldProps) {
+  const inputId = `provider-${template.id}-${field.name}`
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <Label
+        htmlFor={inputId}
+        className="text-[11px] font-medium tracking-[0.02em] text-muted-foreground"
+      >
+        {fieldLabel(t, field)}
+      </Label>
+      <Input
+        id={inputId}
+        aria-label={`${template.name} ${fieldAriaLabel(field)}`}
+        type={field.secret ? "password" : "text"}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholderForField(t, field, configured)}
+        className="h-9 rounded-md border-border/80 bg-background px-3 text-sm shadow-none"
+      />
+    </div>
+  )
+}
+
+function InsecureHttpNotice({
+  t,
+  checked,
+  onCheckedChange,
+}: {
+  t: SettingsTranslations
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+}) {
+  const label = t("providerCards.allowInsecureHttp")
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-[#EEDDAA] bg-[#FBF3DB] px-3 py-2.5 text-[#956400]">
+      <div className="flex min-w-0 items-start gap-2.5">
+        <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold">{label}</p>
+          <p className="mt-0.5 text-pretty text-[11px] leading-4 text-[#7A5A10]">
+            {t("providerCards.insecureHttpDescription")}
+          </p>
+        </div>
+      </div>
+      <Switch
+        aria-label={label}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        className="data-[state=checked]:bg-[#956400]"
+      />
+    </div>
+  )
+}
+
+function ProviderCatalogSkeleton() {
+  return (
+    <div className="space-y-2" aria-hidden="true">
+      {SKELETON_ROWS.map((row) => (
+        <div
+          key={row}
+          data-testid="provider-card-skeleton"
+          className="grid gap-4 rounded-[10px] border border-border/60 bg-card px-5 py-4 lg:grid-cols-[minmax(150px,0.72fr)_minmax(0,2fr)_8rem]"
+        >
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+          <Skeleton className="h-9 w-24 lg:justify-self-end" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ProviderCatalogError({
+  t,
+  onRetry,
+}: {
+  t: SettingsTranslations
+  onRetry: () => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-[10px] border border-[#F4D6D7] bg-[#FDEBEC] px-4 py-3 text-[#9F2F2D]">
+      <div className="flex items-center gap-2.5">
+        <AlertTriangle className="size-4 shrink-0" />
+        <p className="text-sm font-medium">{t("providerCards.loadFailed")}</p>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 rounded-md border-[#E6BFC0] bg-transparent shadow-none hover:bg-white/45"
+        onClick={onRetry}
+      >
+        <RefreshCw className="size-3.5" />
+        {t("providerCards.retry")}
+      </Button>
+    </div>
   )
 }
 
@@ -342,13 +629,11 @@ function providerIsUsable(provider: LlmConfiguredProvider) {
 }
 
 function credentialNote(
-  t: ReturnType<typeof useTranslations>,
+  t: SettingsTranslations,
   provider?: LlmConfiguredProvider,
 ) {
   const credential = provider?.credential
   if (!credential) return ""
-  // Only annotate a card once the credential is actually usable. An env var
-  // that is recorded but empty/unset must not read as "From .env".
   if (!(credential.configured || credential.available)) return ""
   if (credential.source === "env") return t("providerCards.fromEnv")
   if (credential.source === "stored") return t("providerCards.keySavedShort")
@@ -388,7 +673,7 @@ function cleanModelIds(value: string | undefined) {
 }
 
 function placeholderForField(
-  t: ReturnType<typeof useTranslations>,
+  t: SettingsTranslations,
   field: LlmProviderTemplateField,
   configured: boolean,
 ) {
@@ -402,9 +687,51 @@ function placeholderForField(
   return field.placeholder
 }
 
+function fieldLabel(t: SettingsTranslations, field: LlmProviderTemplateField) {
+  if (field.name === "api_key") return t("providerCards.apiKeyLabel")
+  if (field.name === "base_url") return t("providerCards.endpointLabel")
+  if (field.name === "model_id") return t("providerCards.modelIdLabel")
+  return field.label
+}
+
 function fieldAriaLabel(field: LlmProviderTemplateField) {
   if (field.name === "api_key") return "API key"
   if (field.name === "base_url") return "endpoint"
   if (field.name === "model_id") return "model id"
   return field.label
+}
+
+function isPublicPlainHttpEndpoint(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed.toLowerCase().startsWith("http://")) return false
+  try {
+    const hostname = new URL(trimmed).hostname.replace(/^\[|\]$/g, "").toLowerCase()
+    if (!hostname) return false
+    if (hostname === "localhost" || hostname === "::1") return false
+    if (hostname.endsWith(".localhost")) return false
+    if (!hostname.includes(".") && !/^\d+$/.test(hostname)) return false
+    if (INTERNAL_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix))) {
+      return false
+    }
+    if (isPrivateIpv4(hostname)) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
+function isPrivateIpv4(hostname: string) {
+  const octets = hostname.split(".").map(Number)
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet))) {
+    return false
+  }
+  const [first, second] = octets
+  if (octets.some((octet) => octet < 0 || octet > 255)) return false
+  return (
+    first === 10 ||
+    first === 127 ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  )
 }
