@@ -25,3 +25,18 @@ export function sessionPolicyVersion(
 ) {
   return session?.permission_policy_version ?? 0
 }
+
+export function restorePermissionPolicy(
+  current: AgentRuntimeSession,
+  snapshot: AgentRuntimeSession,
+) {
+  if (current.id !== snapshot.id) return current
+  if (sessionPolicyVersion(current) > sessionPolicyVersion(snapshot)) return current
+  return {
+    ...current,
+    permission_mode: snapshot.permission_mode,
+    permission_policy_version: snapshot.permission_policy_version,
+    pending_strategy: snapshot.pending_strategy,
+    pending_reconciliation: snapshot.pending_reconciliation,
+  }
+}

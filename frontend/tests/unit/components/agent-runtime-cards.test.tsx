@@ -28,7 +28,7 @@ vi.mock("next-intl", () => ({
       "ask.customPlaceholder": "Type an answer",
       "ask.rejectQuestion": "Reject question",
       "ask.submit": "Submit answer",
-      "decision.submitting": "Submitting decision...",
+      "decision.submitting": "Submitting decision…",
       "decision.failed": `Could not submit decision: ${values?.error ?? ""}`,
       "decision.retry": "Retry decision",
       "approval.remoteTarget": `Remote target: ${values?.target ?? ""}`,
@@ -66,7 +66,7 @@ describe("agent decision cards", () => {
     expect(onDecision).toHaveBeenCalledTimes(1)
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled()
-    expect(screen.getByRole("status")).toHaveTextContent("Submitting decision...")
+    expect(screen.getByRole("status")).toHaveTextContent("Submitting decision…")
 
     request.resolve()
     await waitFor(() => expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled())
@@ -191,6 +191,61 @@ describe("agent decision cards", () => {
     render(<InlineApprovalCard decision={decision} onDecision={vi.fn()} />)
 
     expect(screen.getByText("Remote target: bioflow@sz01.example.org")).toBeInTheDocument()
+  })
+
+  it.each(["approved", "rejected"] as const)(
+    "keeps the persisted remote target in the %s decision summary",
+    (state) => {
+      render(
+        <InlineApprovalCard
+          decision={{
+            ...baseDecision,
+            state,
+            target: {
+              kind: "remote_ssh",
+              trustDomain: "sz01.example.org",
+              identity: "bioflow",
+              connectionId: "connection-sz01",
+            },
+          }}
+        />,
+      )
+
+      expect(
+        screen.getByText("Remote target: bioflow@sz01.example.org"),
+      ).toBeInTheDocument()
+    },
+  )
+
+  it("keeps long remote identities responsive and exposes their full value", () => {
+    render(
+      <InlineApprovalCard
+        decision={{
+          ...baseDecision,
+          target: {
+            kind: "remote_ssh",
+            trustDomain: "cluster-with-a-very-long-trust-domain.example.org",
+            identity: "bioinformatics-service-account-with-a-long-name",
+            connectionId: "connection-sz01",
+          },
+        }}
+        onDecision={vi.fn()}
+      />,
+    )
+
+    const badge = screen.getByText(/Remote target:/)
+    expect(badge).toHaveClass("max-w-full", "break-all", "sm:truncate")
+    expect(badge).toHaveAttribute(
+      "title",
+      "Remote target: bioinformatics-service-account-with-a-long-name@cluster-with-a-very-long-trust-domain.example.org",
+    )
+  })
+
+  it("marks approval card icons as decorative", () => {
+    render(<InlineApprovalCard decision={baseDecision} onDecision={vi.fn()} />)
+
+    expect(screen.getByRole("button", { name: "Approve" }).querySelector("svg"))
+      .toHaveAttribute("aria-hidden", "true")
   })
 
   it("associates the latest persisted target with each action in one card pass", () => {

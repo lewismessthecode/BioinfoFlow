@@ -792,6 +792,99 @@ describe("useAgentRuntime", () => {
     })
   })
 
+  it("captures an authoritative rollback snapshot before the initial loading effects settle", async () => {
+    const sessionList = deferred<AgentRuntimeSession[]>()
+    const permissionRequest = deferred<AgentRuntimeSession>()
+    window.localStorage.setItem(
+      "bioinfoflow.agentRuntime.permissionMode:v2",
+      "guarded_auto",
+    )
+    mocks.listAgentRuntimeSessions.mockReturnValue(sessionList.promise)
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(
+      permissionRequest.promise,
+    )
+
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.state.session?.id).toBe("session-1"))
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+
+    expect(result.current.session?.permission_mode).toBe("bypass")
+    expect(result.current.sessions).toContainEqual(
+      expect.objectContaining({ id: "session-1", permission_mode: "bypass" }),
+    )
+
+    await act(async () => {
+      permissionRequest.reject(new Error("Permission service unavailable"))
+      await update
+    })
+
+    expect(result.current.permissionUpdate.status).toBe("error")
+
+    expect(result.current.permissionMode).toBe("guarded_auto")
+    expect(result.current.session).toMatchObject({
+      id: "session-1",
+      permission_mode: "guarded_auto",
+    })
+    expect(result.current.state.session).toMatchObject({
+      id: "session-1",
+      permission_mode: "guarded_auto",
+    })
+    expect(
+      window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2"),
+    ).toBe("guarded_auto")
+  })
+
+  it("rolls back only policy fields when same-version state refreshes add a newer title", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(request.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: {
+        ...session,
+        title: "New server title",
+        updated_at: "2026-06-08T00:00:05Z",
+      },
+      turns: [],
+      events: [],
+    })
+    await act(async () => {
+      await result.current.refreshState("session-1")
+      request.reject(new Error("Permission service unavailable"))
+      await update
+    })
+
+    expect(result.current.session).toMatchObject({
+      title: "New server title",
+      updated_at: "2026-06-08T00:00:05Z",
+      permission_mode: "guarded_auto",
+    })
+    expect(result.current.state.session).toMatchObject({
+      title: "New server title",
+      permission_mode: "guarded_auto",
+    })
+  })
+
   it("suppresses duplicate permission requests and retries the failed transaction", async () => {
     const request = deferred<AgentRuntimeSession>()
     mocks.updateAgentRuntimeSessionPermissionMode
@@ -1198,6 +1291,14 @@ describe("useAgentRuntime", () => {
     expect(
       window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2"),
     ).toBeNull()
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session, turns: [], events: [] })
+    rerender({ activeSessionId: "session-1" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    expect(result.current.permissionMode).toBe("guarded_auto")
+    expect(result.current.sessions.find((item) => item.id === "session-1")).toMatchObject({
+      permission_mode: "guarded_auto",
+    })
   })
 
   it("interrupts paused turns waiting for approval", async () => {

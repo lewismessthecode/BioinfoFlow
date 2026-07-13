@@ -10,9 +10,13 @@ export function DecisionTargetBadge({ target }: { target?: AgentDecisionTarget |
   const authority = [target.identity, target.trustDomain].filter(Boolean).join("@")
   const label = authority || target.connectionId
   if (!label) return null
+  const accessibleLabel = t("approval.remoteTarget", { target: label })
   return (
-    <span className="rounded-md border border-border/60 bg-background/65 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-      {t("approval.remoteTarget", { target: label })}
+    <span
+      className="inline-block min-w-0 max-w-full break-all rounded-md border border-border/60 bg-background/65 px-1.5 py-0.5 text-[10px] text-muted-foreground sm:max-w-64 sm:truncate sm:whitespace-nowrap"
+      title={accessibleLabel}
+    >
+      {accessibleLabel}
     </span>
   )
 }

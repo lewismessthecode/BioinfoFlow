@@ -32,7 +32,9 @@ import { AgentTabbedPanel, type AgentTabbedPanelTab } from "./agent-tabbed-panel
 import { AgentTodoDock } from "./agent-todo-dock"
 import { AgentTranscript } from "./agent-transcript"
 import { ComposerApprovalPopover } from "./composer-approval-popover"
+import { scheduleDecisionFocusHandoff } from "./decision-focus"
 import { getPendingActions, parseWaitingDecision } from "./pending-actions"
+import type { AgentDecisionHandler } from "./types"
 import { todosFromArtifact } from "./artifact-viewers"
 import { Button } from "@/components/ui/button"
 import {
@@ -184,6 +186,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       useState<PendingSubmission | null>(null)
     const [pendingPermissionMode, setPendingPermissionMode] =
       useState<AgentPermissionMode | null>(null)
+    const [decisionFocusAnnouncement, setDecisionFocusAnnouncement] = useState({
+      message: "",
+      sequence: 0,
+    })
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
     const [sidecarMaxWidth, setSidecarMaxWidth] = useState(SIDECAR_MAX_WIDTH)
@@ -225,6 +231,26 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       activeSessionId,
       onActiveSessionIdChange,
     })
+    const decideActionWithFocus = useCallback<AgentDecisionHandler>(
+      async (actionId, decision, options) => {
+        if (options) {
+          await decideAction(actionId, decision, options)
+        } else {
+          await decideAction(actionId, decision)
+        }
+        scheduleDecisionFocusHandoff(actionId, (destination) => {
+          setDecisionFocusAnnouncement((current) => ({
+            message: t(
+              destination === "next"
+                ? "decision.focusedNext"
+                : "decision.focusedComposer",
+            ),
+            sequence: current.sequence + 1,
+          }))
+        })
+      },
+      [decideAction, t],
+    )
     const agentMode = mode ?? "execution"
     const sessionId = state.session?.id ?? ""
     const submissionSessionId = activeSessionId || sessionId || "pending-session"
@@ -1079,6 +1105,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         className={cn("relative flex h-full min-w-0 flex-1 bg-background", className)}
         data-testid="agent-workbench-root"
       >
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          <span key={decisionFocusAnnouncement.sequence}>
+            {decisionFocusAnnouncement.message}
+          </span>
+        </div>
         <Dialog
           open={pendingPermissionMode !== null}
           onOpenChange={(open) => {
@@ -1158,7 +1189,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               <AgentTodoDock items={todoDisplayItems} />
               <AgentTranscript
                 timeline={transcriptTimeline}
-                onDecision={decideAction}
+                onDecision={decideActionWithFocus}
                 onRetryTurn={retryTurn}
                 eventWindowLimited={eventWindowLimited}
               />

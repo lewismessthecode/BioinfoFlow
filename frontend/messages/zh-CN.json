@@ -2632,7 +2632,9 @@
     "decision": {
       "submitting": "正在提交决定…",
       "failed": "无法提交决定：{error}",
-      "retry": "重试决定"
+      "retry": "重试决定",
+      "focusedNext": "决定已提交，焦点已移至下一项请求。",
+      "focusedComposer": "决定已提交，焦点已返回消息输入框。"
     },
     "attachMenu": {
       "attachFiles": "添加文件",

@@ -2630,9 +2630,11 @@
       }
     },
     "decision": {
-      "submitting": "Submitting decision...",
+      "submitting": "Submitting decision…",
       "failed": "Could not submit decision: {error}",
-      "retry": "Retry decision"
+      "retry": "Retry decision",
+      "focusedNext": "Decision submitted. Moved to the next request.",
+      "focusedComposer": "Decision submitted. Focus returned to the composer."
     },
     "attachMenu": {
       "attachFiles": "Attach files",

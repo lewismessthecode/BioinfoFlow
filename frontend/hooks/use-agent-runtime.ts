@@ -29,6 +29,7 @@ import {
 import { emitAgentSessionUpdated } from "@/lib/agent-core/session-storage"
 import {
   mergeSessionByPolicyVersion,
+  restorePermissionPolicy,
   sessionPolicyVersion,
 } from "@/lib/agent-runtime/session-policy"
 import { getCurrentRuntime } from "@/lib/runtime"
@@ -59,6 +60,7 @@ type PermissionUpdateRequest = {
   basePolicyVersion: number
   mode: AgentPermissionMode
   pendingStrategy: AgentPendingStrategy
+  rollbackSession: AgentRuntimeSession | null
 }
 
 const DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode:v2"
@@ -133,6 +135,8 @@ export function useAgentRuntime(
     () => sessions.find((session) => session.id === activeSessionId) ?? state.session,
     [activeSessionId, sessions, state.session],
   )
+  const activeSessionRef = useRef(activeSession)
+  activeSessionRef.current = activeSession
   const streamCanStart =
     !activeSessionId || eventWindow?.sessionId === activeSessionId
 
@@ -502,17 +506,24 @@ export function useAgentRuntime(
       permissionUpdateSequenceRef.current = sequence
       const draftSequence = permissionDraftSequenceRef.current + 1
       permissionDraftSequenceRef.current = draftSequence
+      const rollbackSession = sessionId
+        ? latestSessionsRef.current.find((item) => item.id === sessionId) ??
+          (activeSessionRef.current?.id === sessionId ? activeSessionRef.current : null)
+        : null
       const request: PermissionUpdateRequest = {
         sequence,
         draftSequence,
         sessionId,
-        basePolicyVersion: sessionId
-          ? sessionPolicyVersion(
-              latestSessionsRef.current.find((item) => item.id === sessionId),
-            )
-          : 0,
+        basePolicyVersion: sessionPolicyVersion(rollbackSession ?? undefined),
         mode,
         pendingStrategy,
+        rollbackSession,
+      }
+      if (
+        rollbackSession &&
+        !confirmedSessionsRef.current.has(rollbackSession.id)
+      ) {
+        confirmedSessionsRef.current.set(rollbackSession.id, rollbackSession)
       }
       lastPermissionUpdateRequestRef.current = request
       pendingPermissionIntentRef.current = request
@@ -521,9 +532,7 @@ export function useAgentRuntime(
       writeDraftPermissionMode(mode)
       if (sessionId) {
         updateSessions((current) =>
-          current.map((item) =>
-            item.id === sessionId ? { ...item, permission_mode: mode } : item,
-          ),
+          optimisticPermissionSessions(current, rollbackSession, sessionId, mode),
         )
       }
       setPermissionUpdate({
@@ -601,15 +610,30 @@ export function useAgentRuntime(
             setDraftPermissionModeState(confirmedDraftPermissionModeRef.current)
             restoreStoredDraftPermissionMode(confirmedStorageValueRef.current)
           }
+          const pendingIntent = pendingPermissionIntentRef.current
+          const supersededByNewerIntent =
+            pendingIntent?.sessionId === sessionId && pendingIntent.sequence > sequence
+          const policySnapshot = newestPolicySnapshot(
+            request.rollbackSession,
+            confirmedSessionsRef.current.get(sessionId),
+          )
+          if (!supersededByNewerIntent && policySnapshot) {
+            updateSessions((current) =>
+              current.map((item) =>
+                item.id === sessionId
+                  ? restorePermissionPolicy(item, policySnapshot)
+                  : item,
+              ),
+            )
+            if (activeSessionIdRef.current === sessionId) {
+              dispatch({ type: "session.permission_restored", session: policySnapshot })
+            }
+          }
           if (
             permissionUpdateSequenceRef.current === sequence &&
             activeSessionIdRef.current === sessionId
           ) {
             pendingPermissionIntentRef.current = null
-            const confirmedSession = confirmedSessionsRef.current.get(sessionId)
-            if (confirmedSession) {
-              updateSessions((current) => mergeSessionList(current, confirmedSession))
-            }
             setPermissionUpdate({
               status: "error",
               mode,
@@ -681,6 +705,31 @@ function mergeSessionList(
   return sessions.map((item) =>
     item.id === session.id ? mergeSessionByPolicyVersion(item, session) : item,
   )
+}
+
+function optimisticPermissionSessions(
+  sessions: AgentRuntimeSession[],
+  rollbackSession: AgentRuntimeSession | null,
+  sessionId: string,
+  mode: AgentPermissionMode,
+) {
+  if (sessions.some((item) => item.id === sessionId)) {
+    return sessions.map((item) =>
+      item.id === sessionId ? { ...item, permission_mode: mode } : item,
+    )
+  }
+  return rollbackSession
+    ? [{ ...rollbackSession, permission_mode: mode }, ...sessions]
+    : sessions
+}
+
+function newestPolicySnapshot(
+  first: AgentRuntimeSession | null,
+  second?: AgentRuntimeSession,
+) {
+  if (!first) return second ?? null
+  if (!second) return first
+  return sessionPolicyVersion(second) >= sessionPolicyVersion(first) ? second : first
 }
 
 function applyPendingPermissionIntent(

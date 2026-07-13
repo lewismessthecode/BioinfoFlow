@@ -33,7 +33,7 @@ export function ComposerApprovalPopover({
         data-testid="composer-decision-jump"
         onClick={jumpToDecision}
       >
-        <AlertTriangle className="h-3.5 w-3.5" />
+        <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
         {t("approval.jumpToDecision")}
       </button>
     </div>

@@ -47,6 +47,8 @@ vi.mock("next-intl", () => ({
       reject: "Reject",
       "approval.state.approved": "Approved, resuming",
       "approval.jumpToDecision": "Needs confirmation · Jump",
+      "decision.focusedNext": "Decision submitted. Moved to the next request.",
+      "decision.focusedComposer": "Decision submitted. Focus returned to the composer.",
       "turnStatus.running": "Working",
       "turnStatus.queued": "Queued",
       "turnStatus.completed": "Done",
@@ -2007,6 +2009,131 @@ describe("AgentWorkbench", () => {
     expect(screen.getByText("Needs your decision")).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1)
     expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(1)
+  })
+
+  it("hands inline approval focus to the next request and announces it", async () => {
+    const waitingTurn: AgentRuntimeTurn = {
+      ...baseTurn,
+      status: "waiting_approval",
+      final_text: null,
+    }
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [waitingTurn],
+        events: [
+          waitingDecisionEvent,
+          {
+            ...waitingDecisionEvent,
+            id: "event-2",
+            seq: 2,
+            payload: { action_id: "action-2", name: "remote.exec" },
+          },
+        ],
+        timeline: buildAgentRuntimeTimeline(
+          [waitingTurn],
+          [
+            waitingDecisionEvent,
+            {
+              ...waitingDecisionEvent,
+              id: "event-2",
+              seq: 2,
+              payload: { action_id: "action-2", name: "remote.exec" },
+            },
+          ],
+        ),
+        status: "running" as const,
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send: vi.fn(),
+      interrupt: vi.fn(),
+      decideAction: vi.fn(async (actionId: string) => {
+        runtime.state.events = runtime.state.events.filter(
+          (event) => event.payload.action_id !== actionId,
+        )
+        runtime.state.timeline = buildAgentRuntimeTimeline(
+          runtime.state.turns,
+          runtime.state.events,
+        )
+        view.rerender(<AgentWorkbench />)
+      }),
+      permissionMode: "guarded_auto" as const,
+      setPermissionMode: vi.fn(),
+      permissionUpdate: {
+        status: "idle" as const,
+        mode: null,
+        pendingStrategy: null,
+        reconciliation: null,
+        error: null,
+      },
+      retryPermissionModeUpdate: vi.fn(),
+    }
+    useAgentRuntimeMock.mockImplementation(() => runtime)
+    const view = render(<AgentWorkbench />)
+
+    const cards = screen.getAllByTestId("inline-approval-card")
+    fireEvent.click(within(cards[0]).getByRole("button", { name: "Approve" }))
+
+    await waitFor(() =>
+      expect(screen.getByTestId("inline-approval-card")).toHaveFocus(),
+    )
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Decision submitted. Moved to the next request.",
+    )
+  })
+
+  it("returns inline approval focus to the composer after the last request", async () => {
+    const waitingTurn: AgentRuntimeTurn = {
+      ...baseTurn,
+      status: "waiting_approval",
+      final_text: null,
+    }
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [waitingTurn],
+        events: [waitingDecisionEvent],
+        timeline: buildAgentRuntimeTimeline(
+          [waitingTurn],
+          [waitingDecisionEvent],
+        ),
+        status: "running" as const,
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send: vi.fn(),
+      interrupt: vi.fn(),
+      decideAction: vi.fn(async () => {
+        runtime.state.events = []
+        runtime.state.timeline = buildAgentRuntimeTimeline(
+          runtime.state.turns,
+          runtime.state.events,
+        )
+        view.rerender(<AgentWorkbench />)
+      }),
+      permissionMode: "guarded_auto" as const,
+      setPermissionMode: vi.fn(),
+      permissionUpdate: {
+        status: "idle" as const,
+        mode: null,
+        pendingStrategy: null,
+        reconciliation: null,
+        error: null,
+      },
+      retryPermissionModeUpdate: vi.fn(),
+    }
+    useAgentRuntimeMock.mockImplementation(() => runtime)
+    const view = render(<AgentWorkbench />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Message Bioinfoflow...")).toHaveFocus(),
+    )
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Decision submitted. Focus returned to the composer.",
+    )
   })
 
   it("defaults widening permission changes to future operations and excludes interactions", async () => {

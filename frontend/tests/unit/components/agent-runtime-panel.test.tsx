@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { useState } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
@@ -606,6 +607,64 @@ describe("resolveBrowserUrl", () => {
 })
 
 describe("PendingDecisionCards", () => {
+  it("moves focus to the next pending sidecar card and announces the handoff", async () => {
+    function Fixture() {
+      const [events, setEvents] = useState([
+        waitingEvent({ action_id: "a1", name: "bash" }),
+        waitingEvent({ action_id: "a2", name: "remote.exec" }),
+      ])
+      return (
+        <PendingDecisionCards
+          events={events}
+          onDecision={async (actionId) => {
+            setEvents((current) =>
+              current.filter((event) => event.payload.action_id !== actionId),
+            )
+          }}
+        />
+      )
+    }
+
+    render(<Fixture />)
+    fireEvent.click(within(screen.getAllByTestId("pending-approval-card")[0]).getByText("approve"))
+
+    await waitFor(() =>
+      expect(screen.getByTestId("pending-approval-card")).toHaveFocus(),
+    )
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "decision.focusedNext",
+    )
+  })
+
+  it("returns focus to the composer control when the last sidecar decision resolves", async () => {
+    function Fixture() {
+      const [events, setEvents] = useState([
+        waitingEvent({ action_id: "a1", name: "bash" }),
+      ])
+      return (
+        <>
+          <PendingDecisionCards
+            events={events}
+            onDecision={async () => setEvents([])}
+          />
+          <button type="button" data-testid="agent-composer-control">
+            Composer control
+          </button>
+        </>
+      )
+    }
+
+    render(<Fixture />)
+    fireEvent.click(screen.getByText("approve"))
+
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-composer-control")).toHaveFocus(),
+    )
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "decision.focusedComposer",
+    )
+  })
+
   it("submits an ask_user answer", () => {
     const onDecision = vi.fn(() => new Promise<void>(() => {}))
     render(
