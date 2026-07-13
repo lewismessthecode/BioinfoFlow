@@ -605,7 +605,11 @@ async def test_llm_provider_model_and_profile_contract(async_client):
         f"/api/v1/llm/providers/{provider['id']}/test"
     )
     assert test_provider.status_code == 200
-    assert test_provider.json()["data"]["success"] is True
+    assert test_provider.json()["data"]["success"] is False
+    assert test_provider.json()["data"]["error_code"] == "model_not_configured"
+    assert test_provider.json()["data"]["error"] == (
+        "No model is configured for this provider."
+    )
 
     create_model = await async_client.post(
         "/api/v1/llm/models",
@@ -897,6 +901,347 @@ async def test_llm_mutations_require_authenticated_user(
     response = await getattr(async_client, method)(path, json=json_body)
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_test_selects_model_and_rejects_foreign_model(
+    async_client,
+    monkeypatch,
+) -> None:
+    first_provider = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Probe provider",
+            "kind": "openai_compatible",
+            "base_url": "https://probe.example/v1",
+        },
+    )
+    second_provider = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Other provider",
+            "kind": "openai_compatible",
+            "base_url": "https://other.example/v1",
+        },
+    )
+    assert first_provider.status_code == 201
+    assert second_provider.status_code == 201
+    first_provider_id = first_provider.json()["data"]["id"]
+    second_provider_id = second_provider.json()["data"]["id"]
+
+    model_b = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": first_provider_id,
+            "model_id": "model-b",
+            "display_name": "Zulu model",
+        },
+    )
+    model_a = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": first_provider_id,
+            "model_id": "model-a",
+            "display_name": "Alpha model",
+        },
+    )
+    foreign_model = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": second_provider_id,
+            "model_id": "foreign-model",
+            "display_name": "Foreign model",
+        },
+    )
+    assert model_b.status_code == 201
+    assert model_a.status_code == 201
+    assert foreign_model.status_code == 201
+
+    selected_models: list[str] = []
+
+    class FakeProbeResult:
+        success = True
+        latency_ms = 7
+        wire_protocol = "chat_completions"
+        model_id = "model-a"
+        error_code = None
+        error_message = None
+        retryable = False
+        http_status = None
+        provider_code = None
+
+        def to_public_dict(self) -> dict:
+            return {
+                "success": self.success,
+                "latency_ms": self.latency_ms,
+                "wire_protocol": self.wire_protocol,
+                "model_id": self.model_id,
+                "error_code": self.error_code,
+                "error_message": self.error_message,
+                "retryable": self.retryable,
+                "http_status": self.http_status,
+                "provider_code": self.provider_code,
+            }
+
+    async def fake_probe(self, **kwargs):
+        del self
+        selected_models.append(kwargs["model_id"])
+        return FakeProbeResult()
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
+
+    default_result = await async_client.post(
+        f"/api/v1/llm/providers/{first_provider_id}/test",
+        json={},
+    )
+    assert default_result.status_code == 200
+    assert default_result.json()["data"]["model"] == "model-a"
+    assert selected_models == ["model-a"]
+
+    explicit_result = await async_client.post(
+        f"/api/v1/llm/providers/{first_provider_id}/test",
+        json={"model_id": model_b.json()["data"]["id"]},
+    )
+    assert explicit_result.status_code == 200
+    assert selected_models == ["model-a", "model-b"]
+
+    rejected = await async_client.post(
+        f"/api/v1/llm/providers/{first_provider_id}/test",
+        json={"model_id": foreign_model.json()["data"]["id"]},
+    )
+    assert rejected.status_code == 422
+    assert "foreign-model" not in rejected.text
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_test_without_models_returns_safe_failure(
+    async_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Empty provider",
+            "kind": "openai_compatible",
+            "base_url": "https://empty.example/v1",
+        },
+    )
+    provider_id = provider_response.json()["data"]["id"]
+
+    async def forbidden_probe(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("probe must not run without a configured model")
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", forbidden_probe)
+
+    response = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "provider_id": provider_id,
+        "success": False,
+        "model": None,
+        "wire_protocol": "chat_completions",
+        "error_code": "model_not_configured",
+        "error": "No model is configured for this provider.",
+        "latency_ms": None,
+        "retryable": False,
+        "http_status": None,
+        "provider_code": None,
+    }
+    provider_row = await db_session.get(LlmProvider, provider_id)
+    assert provider_row is not None
+    await db_session.refresh(provider_row)
+    assert "_invocation_fingerprint" in (provider_row.test_status or {})
+    assert "_invocation_fingerprint" not in response.text
+
+    renamed = await async_client.patch(
+        f"/api/v1/llm/providers/{provider_id}",
+        json={"name": "Renamed empty provider"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["data"]["test_status"]["error_code"] == (
+        "model_not_configured"
+    )
+
+    changed = await async_client.patch(
+        f"/api/v1/llm/providers/{provider_id}",
+        json={"base_url": "https://changed-empty.example/v1"},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["data"]["test_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_provider_test_status_preserves_equivalent_and_unrelated_edits(
+    async_client,
+    monkeypatch,
+) -> None:
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Stable probe provider",
+            "kind": "openai_compatible",
+            "base_url": "https://stable.example",
+        },
+    )
+    provider_id = provider_response.json()["data"]["id"]
+    model_response = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": provider_id,
+            "model_id": "stable-model",
+            "display_name": "Stable model",
+        },
+    )
+    assert model_response.status_code == 201
+
+    class FakeProbeResult:
+        def to_public_dict(self) -> dict:
+            return {
+                "success": True,
+                "latency_ms": 4,
+                "wire_protocol": "chat_completions",
+                "model_id": "stable-model",
+                "error_code": None,
+                "error_message": None,
+                "retryable": False,
+                "http_status": None,
+                "provider_code": None,
+            }
+
+    probe_base_urls: list[str | None] = []
+
+    async def fake_probe(*args, **kwargs):
+        del args
+        probe_base_urls.append(kwargs.get("base_url"))
+        return FakeProbeResult()
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
+    tested = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
+    assert tested.status_code == 200
+    assert tested.json()["data"]["success"] is True
+    assert probe_base_urls == ["https://stable.example/v1"]
+    assert "_invocation_fingerprint" not in tested.text
+
+    for update in (
+        {"name": "Renamed stable provider"},
+        {"allow_insecure_http": True},
+        {"metadata": {"note": "unrelated"}},
+        {"base_url": "https://stable.example/v1/"},
+    ):
+        response = await async_client.patch(
+            f"/api/v1/llm/providers/{provider_id}",
+            json=update,
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["test_status"]["success"] is True
+        assert "_invocation_fingerprint" not in response.text
+
+    changed = await async_client.patch(
+        f"/api/v1/llm/providers/{provider_id}",
+        json={"base_url": "https://different.example/v1"},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["data"]["test_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_provider_list_invalidates_test_status_after_env_rotation(
+    async_client,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ROTATING_PROVIDER_KEY", "first-secret-value")
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Rotating env provider",
+            "kind": "openai_compatible",
+            "base_url": "https://rotation.example/v1",
+        },
+    )
+    provider_id = provider_response.json()["data"]["id"]
+    model_response = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": provider_id,
+            "model_id": "rotation-model",
+            "display_name": "Rotation model",
+        },
+    )
+    assert model_response.status_code == 201
+    credential = await async_client.put(
+        f"/api/v1/llm/providers/{provider_id}/credential",
+        json={"source": "env", "env_var_name": "ROTATING_PROVIDER_KEY"},
+    )
+    assert credential.status_code == 200
+
+    class FakeProbeResult:
+        def to_public_dict(self) -> dict:
+            return {
+                "success": True,
+                "latency_ms": 5,
+                "wire_protocol": "chat_completions",
+                "model_id": "rotation-model",
+                "error_code": None,
+                "error_message": None,
+                "retryable": False,
+                "http_status": None,
+                "provider_code": None,
+            }
+
+    async def fake_probe(*args, **kwargs):
+        del args, kwargs
+        return FakeProbeResult()
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
+    tested = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
+    assert tested.status_code == 200
+    assert tested.json()["data"]["success"] is True
+
+    monkeypatch.setenv("ROTATING_PROVIDER_KEY", "second-secret-value")
+    providers = await async_client.get("/api/v1/llm/providers")
+
+    assert providers.status_code == 200
+    provider = next(item for item in providers.json()["data"] if item["id"] == provider_id)
+    assert provider["test_status"] is None
+    assert "first-secret-value" not in providers.text
+    assert "second-secret-value" not in providers.text
+    assert "_invocation_fingerprint" not in providers.text
+
+
+@pytest.mark.asyncio
+async def test_provider_setup_with_manual_model_and_discover_false_never_discovers(
+    async_client,
+    monkeypatch,
+) -> None:
+    async def forbidden_discovery(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("save must not trigger discovery")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmCatalogService.discover_models",
+        forbidden_discovery,
+    )
+
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Manual relay",
+            "base_url": "https://manual.example/v1",
+            "api_key": "manual-secret",
+            "model_ids": ["manual-model"],
+            "discover": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["discovered"] is False
+    assert [model["model_id"] for model in response.json()["data"]["models"]] == [
+        "manual-model"
+    ]
 
 
 @pytest.mark.asyncio

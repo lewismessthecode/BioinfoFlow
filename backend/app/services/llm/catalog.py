@@ -36,6 +36,13 @@ from app.services.llm.provider_templates import (
     normalize_provider_base_url,
     provider_template_for_provider,
 )
+from app.services.llm.probe import LlmProviderProbe
+from app.services.llm.test_status import (
+    attach_provider_test_fingerprint,
+    compute_provider_test_fingerprint,
+    is_provider_test_status_current,
+    sanitize_provider_test_status,
+)
 from app.utils.authorization import ADMIN_ROLES
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
 
@@ -46,6 +53,7 @@ class LlmCatalogService:
         self.model_repo = LlmModelRepository(session)
         self.profile_repo = LlmModelProfileRepository(session)
         self.credential_repo = LlmProviderCredentialRepository(session)
+        self.probe = LlmProviderProbe()
 
     async def list_providers(
         self,
@@ -53,10 +61,11 @@ class LlmCatalogService:
         workspace_id: str | None = None,
         user_id: str | None = None,
     ):
-        return await self.provider_repo.list_available(
+        providers = await self.provider_repo.list_available(
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        return [await self._refresh_provider_test_status(provider) for provider in providers]
 
     async def create_provider(self, data: dict[str, Any]):
         _validate_provider_base_url(
@@ -82,6 +91,41 @@ class LlmCatalogService:
             allow_insecure_http=bool(data.get("allow_insecure_http", False)),
             provider_metadata=data.get("metadata"),
         )
+
+    async def _refresh_provider_test_status(
+        self,
+        provider: LlmProvider,
+    ) -> LlmProvider:
+        status = sanitize_provider_test_status(provider.test_status)
+        if status is None:
+            return provider
+        models = await self.model_repo.list_for_provider(str(provider.id))
+        no_model_status = status.get("error_code") == "model_not_configured"
+        tested_model_id = status.get("model") or status.get("model_id")
+        tested_model = (
+            None
+            if no_model_status
+            else next(
+                (
+                    model
+                    for model in models
+                    if isinstance(tested_model_id, str)
+                    and model.model_id == tested_model_id
+                ),
+                None,
+            )
+        )
+        credential = await self.credential_repo.get_for_provider(str(provider.id))
+        if (no_model_status and models) or (
+            not no_model_status and tested_model is None
+        ) or not is_provider_test_status_current(
+            provider.test_status,
+            provider=provider,
+            credential=credential,
+            tested_model=tested_model,
+        ):
+            return await self.provider_repo.update_all(provider, test_status=None)
+        return provider
 
     def list_provider_templates(self) -> list[ProviderTemplate]:
         return list_provider_templates()
@@ -219,29 +263,75 @@ class LlmCatalogService:
             updates["workspace_id"] = workspace_id
             updates["user_id"] = user_id
         if "metadata" in updates:
-            updates["provider_metadata"] = updates.pop("metadata")
-        return await self.provider_repo.update_all(provider, **updates)
+            next_metadata = updates.pop("metadata")
+            updates["provider_metadata"] = next_metadata
+        provider = await self.provider_repo.update_all(provider, **updates)
+        return await self._refresh_provider_test_status(provider)
 
     async def test_provider(
         self,
         provider_id: str,
         *,
+        model_id: str | None = None,
         workspace_id: str,
         user_id: str,
         role: str | None = None,
-    ):
+    ) -> dict[str, Any]:
         provider = await self._get_writable_provider(
             provider_id,
             workspace_id=workspace_id,
             user_id=user_id,
             role=role,
         )
+        models = await self.model_repo.list_for_provider(str(provider.id))
+        if model_id is not None:
+            model = await self.model_repo.get(model_id)
+            if model is None or str(model.provider_id) != str(provider.id):
+                raise ValueError("The selected model does not belong to this provider")
+        else:
+            model = models[0] if models else None
+        if model is None:
+            status = {
+                "success": False,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "wire_protocol": provider.wire_protocol,
+                "model": None,
+                "latency_ms": None,
+                "error_code": "model_not_configured",
+                "error": "No model is configured for this provider.",
+                "retryable": False,
+                "http_status": None,
+                "provider_code": None,
+                "mode": "live_probe",
+            }
+            credential = await self.credential_repo.get_for_provider(str(provider.id))
+            fingerprint = compute_provider_test_fingerprint(provider, credential, None)
+            internal_status = attach_provider_test_fingerprint(status, fingerprint)
+            await self.provider_repo.update_all(provider, test_status=internal_status)
+            return sanitize_provider_test_status(internal_status) or {}
+
+        credential = await self.credential_repo.get_for_provider(str(provider.id))
+        result = await self.probe.probe(
+            endpoint_id=str(provider.id),
+            provider_kind=provider.kind,
+            model_id=model.model_id,
+            wire_protocol=provider.wire_protocol,
+            base_url=normalize_provider_base_url(provider.kind, provider.base_url),
+            credential=resolve_credential_material(credential),
+            credential_required=_provider_requires_credential(provider),
+        )
+        public_result = result.to_public_dict()
         status = {
-            "success": True,
+            **public_result,
             "checked_at": datetime.now(timezone.utc).isoformat(),
-            "mode": "contract_only",
+            "model": public_result.get("model_id") or model.model_id,
+            "error": public_result.get("error_message"),
+            "mode": "live_probe",
         }
-        return await self.provider_repo.update_all(provider, test_status=status)
+        fingerprint = compute_provider_test_fingerprint(provider, credential, model)
+        internal_status = attach_provider_test_fingerprint(status, fingerprint)
+        await self.provider_repo.update_all(provider, test_status=internal_status)
+        return sanitize_provider_test_status(internal_status) or {}
 
     async def upsert_provider_credential(
         self,
@@ -302,6 +392,8 @@ class LlmCatalogService:
                 provider_id=str(provider.id),
                 **payload,
             )
+        if provider.test_status is not None:
+            provider = await self.provider_repo.update_all(provider, test_status=None)
         return provider, credential
 
     async def get_provider_credential(
@@ -521,13 +613,13 @@ class LlmCatalogService:
         return resolve_credential_material(credential)
 
     async def create_model(self, data: dict[str, Any]):
-        await self._get_writable_provider(
+        provider = await self._get_writable_provider(
             str(data["provider_id"]),
             workspace_id=data["workspace_id"],
             user_id=data["user_id"],
             role=data.get("role"),
         )
-        return await self.model_repo.create(
+        model = await self.model_repo.create(
             provider_id=str(data["provider_id"]),
             model_id=data["model_id"],
             display_name=data["display_name"],
@@ -543,6 +635,9 @@ class LlmCatalogService:
             cost_metadata=data.get("cost_metadata"),
             model_metadata=data.get("metadata"),
         )
+        if provider.test_status is not None:
+            await self.provider_repo.update_all(provider, test_status=None)
+        return model
 
     async def _provider_for_setup(
         self,

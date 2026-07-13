@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import os
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
 
@@ -17,7 +18,7 @@ from app.utils.exceptions import ConfigurationError
 
 @dataclass(frozen=True)
 class CredentialMaterial:
-    api_key: str | None
+    api_key: str | None = field(repr=False)
     source: str
 
 
@@ -63,6 +64,18 @@ def mask_secret(secret: str) -> str:
 
 def generate_credential_fingerprint() -> str:
     return secrets.token_hex(8)
+
+
+def credential_hmac_digest(payload: bytes, *, domain: str) -> str:
+    domain_bytes = domain.strip().encode("utf-8")
+    if not domain_bytes:
+        raise ValueError("HMAC domain must not be empty")
+    derived_key = hmac.new(
+        _credential_key(),
+        b"bioinfoflow-domain-key.v1\x00" + domain_bytes,
+        hashlib.sha256,
+    ).digest()
+    return hmac.new(derived_key, payload, hashlib.sha256).hexdigest()
 
 
 def encrypt_secret(secret: str) -> str:

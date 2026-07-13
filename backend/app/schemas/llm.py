@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.llm import LlmWireProtocol
 
@@ -110,6 +110,13 @@ class LlmProviderRead(BaseModel):
     metadata: dict | None = Field(default=None, validation_alias="provider_metadata")
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("test_status", mode="before")
+    @classmethod
+    def sanitize_test_status(cls, value):
+        from app.services.llm.test_status import sanitize_provider_test_status
+
+        return sanitize_provider_test_status(value)
 
 
 class LlmProviderTemplateFieldRead(BaseModel):
@@ -291,12 +298,21 @@ class LlmModelProfileRead(BaseModel):
     updated_at: datetime
 
 
+class LlmProviderTestRequest(BaseModel):
+    model_id: UUID | None = None
+
+
 class LlmProviderTestResult(BaseModel):
     provider_id: UUID
     success: bool
     model: str | None = None
+    wire_protocol: WireProtocol
+    error_code: str | None = None
     error: str | None = None
     latency_ms: int | None = None
+    retryable: bool = False
+    http_status: int | None = None
+    provider_code: str | None = None
 
 
 class LlmConfigurationSummary(BaseModel):
