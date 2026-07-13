@@ -116,6 +116,11 @@ class ExecuteShellTool:
             process.kill()
             await process.wait()
             raise TimeoutError(f"command timed out after {timeout}s") from exc
+        except asyncio.CancelledError:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            raise
 
         return {
             "exit_code": int(process.returncode or 0),

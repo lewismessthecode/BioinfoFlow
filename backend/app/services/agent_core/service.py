@@ -264,6 +264,10 @@ class AgentCoreService:
             session_id=str(session.id),
             turn_id=turn_id,
             session_updates=session_updates,
+            user_parts=transcript_parts,
+            user_metadata={"turn_id": turn_id},
+            created_event_type=AgentEventType.TURN_CREATED,
+            created_event_payload={"input_text": input_text},
             project_id=str(session.project_id) if session.project_id else None,
             workspace_id=str(session.workspace_id),
             user_id=user_id,
@@ -283,19 +287,6 @@ class AgentCoreService:
                 "Cannot create a new turn while another turn is active in this session"
             )
         await self.db.refresh(session)
-        await AgentTranscriptStore(self.db).append_parts(
-            session_id=str(session.id),
-            turn_id=str(turn.id),
-            role="user",
-            parts=transcript_parts,
-            metadata={"turn_id": str(turn.id)},
-        )
-        await self.ledger.append(
-            session_id=str(session.id),
-            turn_id=str(turn.id),
-            type=AgentEventType.TURN_CREATED,
-            payload={"input_text": input_text},
-        )
         return turn
 
     async def create_turn(
@@ -567,7 +558,7 @@ class AgentCoreService:
     async def recover_orphaned_turns(self) -> dict[str, int]:
         summary = {"enqueued": 0, "failed": 0, "waiting": 0, "skipped": 0}
         for turn in await self.turn_repo.list_recoverable():
-            if is_turn_running(str(turn.id)):
+            if is_turn_running(str(turn.id)) or _turn_lease_is_active(turn):
                 summary["skipped"] += 1
                 continue
             outcome = await self._recover_turn(str(turn.id))
@@ -586,6 +577,8 @@ class AgentCoreService:
             await self.session_repo.release_active_turn(
                 str(turn.session_id), str(turn.id)
             )
+            return "skipped"
+        if _turn_lease_is_active(turn):
             return "skipped"
         if not await self.session_repo.claim_active_turn(
             str(turn.session_id), str(turn.id)
@@ -745,20 +738,34 @@ class AgentCoreService:
             return
         progress = ((getattr(turn, "loop_state", None) or {}).get("progress") or {})
         pending = progress.get("pending_observation")
-        if not isinstance(pending, dict):
-            return
-        for deferred in pending.get("deferred_tool_calls") or []:
-            if not isinstance(deferred, dict):
-                continue
-            await AgentTranscriptStore(self.db).append_tool_result_once(
+        if isinstance(pending, dict):
+            for deferred in pending.get("deferred_tool_calls") or []:
+                if not isinstance(deferred, dict):
+                    continue
+                await AgentTranscriptStore(self.db).append_tool_result_once(
+                    session_id=str(turn.session_id),
+                    turn_id=str(turn.id),
+                    tool_call_id=str(deferred.get("tool_call_id") or ""),
+                    tool_name=str(deferred.get("tool_name") or ""),
+                    status="deferred",
+                    error={
+                        "type": "DeferredToolCall",
+                        "message": "Tool call was deferred because its parent turn was cancelled.",
+                    },
+                )
+        transcript = AgentTranscriptStore(self.db)
+        for unresolved in await transcript.unresolved_tool_calls(
+            str(turn.session_id), turn_id=str(turn.id)
+        ):
+            await transcript.append_tool_result_once(
                 session_id=str(turn.session_id),
                 turn_id=str(turn.id),
-                tool_call_id=str(deferred.get("tool_call_id") or ""),
-                tool_name=str(deferred.get("tool_name") or ""),
-                status="deferred",
+                tool_call_id=unresolved["tool_call_id"],
+                tool_name=unresolved["tool_name"],
+                status=AgentActionStatus.CANCELLED,
                 error={
-                    "type": "DeferredToolCall",
-                    "message": "Tool call was deferred because its parent turn was cancelled.",
+                    "type": "CancelledError",
+                    "message": "Tool call was cancelled with its parent turn.",
                 },
             )
 
@@ -1121,3 +1128,15 @@ def _recovery_loop_state(turn, **updates: Any) -> dict[str, Any]:
     loop_state = dict(getattr(turn, "loop_state", None) or {})
     loop_state.update(updates)
     return loop_state
+
+
+def _turn_lease_is_active(turn) -> bool:
+    if getattr(turn, "status", None) != AgentTurnStatus.RUNNING:
+        return False
+    lease_until = getattr(turn, "lease_until", None)
+    if lease_until is None:
+        return False
+    now = datetime.now(timezone.utc)
+    if lease_until.tzinfo is None:
+        now = now.replace(tzinfo=None)
+    return lease_until > now

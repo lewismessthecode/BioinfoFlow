@@ -673,7 +673,7 @@ class AgentLoopController:
                     completed_tool_results,
                     repeat_count,
                 )
-                turn = await self.turns.update_all(turn, loop_state=loop_state)
+                turn = await self._update_claimed_turn(turn, loop_state=loop_state)
                 if result.status in {
                     "completed",
                     AgentActionStatus.REJECTED,
@@ -867,7 +867,7 @@ class AgentLoopController:
     ):
         loop_state = dict(getattr(turn, "loop_state", None) or {})
         loop_state["progress"] = progress
-        return await self.turns.update_all(
+        return await self._update_claimed_turn(
             turn,
             iteration_count=budget.used_iterations,
             budget_snapshot=budget.snapshot(),
@@ -906,11 +906,23 @@ class AgentLoopController:
 
     async def _renew_turn_lease(self, turn):
         now = datetime.now(timezone.utc)
-        return await self.turns.update_all(
+        return await self._update_claimed_turn(
             turn,
-            claimed_at=turn.claimed_at or now,
             lease_until=now + _turn_lease_duration(),
         )
+
+    async def _update_claimed_turn(self, turn, **values):
+        claim_token = getattr(turn, "claimed_at", None)
+        if claim_token is None:
+            raise asyncio.CancelledError
+        updated = await self.turns.update_if_claimed(
+            str(turn.id),
+            expected_claimed_at=claim_token,
+            **values,
+        )
+        if updated is None:
+            raise asyncio.CancelledError
+        return updated
 
     async def _consume_stream_response(
         self,
@@ -1171,16 +1183,14 @@ class AgentLoopController:
         )
 
     async def complete_turn_from_result(self, *, turn, result: LoopResult):
-        current_turn = await self.turns.get(str(turn.id))
+        claim_token = getattr(turn, "claimed_at", None)
+        current_turn = await self.turns.get_fresh(str(turn.id))
         if current_turn is None:
             return None
         if (
-            current_turn.status == AgentTurnStatus.CANCELLED
-            and result.termination_reason
-            not in {
-                "cancelled",
-                "interrupted",
-            }
+            claim_token is None
+            or current_turn.status != AgentTurnStatus.RUNNING
+            or current_turn.claimed_at != claim_token
         ):
             return current_turn
         turn = current_turn
@@ -1210,8 +1220,9 @@ class AgentLoopController:
         max_iterations = int(
             persisted_budget.get("max_iterations") or _max_iterations()
         )
-        updated = await self.turns.update_all(
-            turn,
+        updated = await self.turns.update_if_claimed(
+            str(turn.id),
+            expected_claimed_at=claim_token,
             status=status,
             final_text=result.final_text,
             token_usage=result.token_usage,
@@ -1235,6 +1246,8 @@ class AgentLoopController:
             }
             else None,
         )
+        if updated is None:
+            return await self.turns.get_fresh(str(turn.id))
         if result.termination_reason == "assistant_final":
             payload = {"final_text": result.final_text}
         elif result.termination_reason in {"interrupted", "cancelled", "no_progress"}:

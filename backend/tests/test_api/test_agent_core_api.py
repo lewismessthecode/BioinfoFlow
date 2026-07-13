@@ -555,18 +555,24 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
         user_id=session["user_id"],
         input_text="first request",
     )
+    await service.turn_repo.update_all(first_turn, status="completed")
+    await service.session_repo.release_active_turn(session["id"], str(first_turn.id))
     second_turn = await service.create_turn_record(
         session_id=session["id"],
         workspace_id=session["workspace_id"],
         user_id=session["user_id"],
         input_text="second request",
     )
+    await service.turn_repo.update_all(second_turn, status="completed")
+    await service.session_repo.release_active_turn(session["id"], str(second_turn.id))
     empty_turn = await service.create_turn_record(
         session_id=session["id"],
         workspace_id=session["workspace_id"],
         user_id=session["user_id"],
         input_text="provider omitted usage",
     )
+    await service.turn_repo.update_all(empty_turn, status="completed")
+    await service.session_repo.release_active_turn(session["id"], str(empty_turn.id))
     first_turn_row = await db_session.get(AgentTurn, str(first_turn.id))
     second_turn_row = await db_session.get(AgentTurn, str(second_turn.id))
     empty_turn_row = await db_session.get(AgentTurn, str(empty_turn.id))
@@ -998,7 +1004,7 @@ async def test_agent_core_emits_tool_call_lifecycle_events(async_client, monkeyp
     tool_completed = next(
         item for item in events if item["type"] == "assistant.tool_call.completed"
     )
-    assert tool_completed["payload"]["call_id"] == "call_projects"
+    assert tool_completed["payload"]["call_id"].startswith("tc_")
     assert tool_completed["payload"]["name"] == "projects__list"
     assert tool_completed["payload"]["arguments"] == {"limit": 1}
 

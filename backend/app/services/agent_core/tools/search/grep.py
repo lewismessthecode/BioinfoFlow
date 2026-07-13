@@ -98,7 +98,13 @@ class GrepTool:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _stderr = await process.communicate()
+        try:
+            stdout, _stderr = await process.communicate()
+        except asyncio.CancelledError:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            raise
         # rg exits 1 when there are no matches — not an error here.
         matches: list[dict[str, Any]] = []
         for raw in stdout.decode("utf-8", errors="replace").splitlines():

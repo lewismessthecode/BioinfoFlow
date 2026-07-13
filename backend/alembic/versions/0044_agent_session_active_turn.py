@@ -19,17 +19,21 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "agent_sessions",
-        sa.Column("active_turn_id", sa.String(length=36), nullable=True),
-    )
-    op.create_index(
-        "ix_agent_sessions_active_turn_id",
-        "agent_sessions",
-        ["active_turn_id"],
-    )
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("agent_sessions"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("agent_sessions")}
+    if "active_turn_id" not in columns:
+        op.add_column(
+            "agent_sessions",
+            sa.Column("active_turn_id", sa.String(length=36), nullable=True),
+        )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_agent_sessions_active_turn_id", table_name="agent_sessions")
-    op.drop_column("agent_sessions", "active_turn_id")
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("agent_sessions"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("agent_sessions")}
+    if "active_turn_id" in columns:
+        op.drop_column("agent_sessions", "active_turn_id")

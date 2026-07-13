@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -146,7 +147,12 @@ class AgentCoreRuntime:
 
         if acompletion is not _ORIGINAL_ACOMPLETION:
             loop_module.acompletion = acompletion
-        result = await self._run_model_attempts(turn=turn, session=session, resolved=resolved)
+        try:
+            result = await self._run_model_attempts(
+                turn=turn, session=session, resolved=resolved
+            )
+        except asyncio.CancelledError:
+            return await self.turn_repo.get_fresh(str(turn.id))
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
             return None
@@ -243,12 +249,15 @@ class AgentCoreRuntime:
             )
         if acompletion is not _ORIGINAL_ACOMPLETION:
             loop_module.acompletion = acompletion
-        result = await self._run_model_attempts(
-            turn=turn,
-            session=session,
-            resolved=resolved,
-            resume_action_id=action_id,
-        )
+        try:
+            result = await self._run_model_attempts(
+                turn=turn,
+                session=session,
+                resolved=resolved,
+                resume_action_id=action_id,
+            )
+        except asyncio.CancelledError:
+            return await self.turn_repo.get_fresh(str(turn.id))
         if result.termination_reason == "action_in_progress":
             return await self.turn_repo.get(str(turn.id))
         fresh_turn = await self.turn_repo.get(str(turn.id))
@@ -520,12 +529,18 @@ class AgentCoreRuntime:
         snapshot["resolved_model_source"] = resolved["source"]
         snapshot["resolved_model_capabilities"] = resolved.get("capabilities", {})
         snapshot["resolved_runtime_strategy"] = resolved.get("runtime_strategy", {})
-        return await self.turn_repo.update_all(
-            turn,
+        claim_token = getattr(turn, "claimed_at", None)
+        if claim_token is None:
+            raise asyncio.CancelledError
+        updated = await self.turn_repo.update_if_claimed(
+            str(turn.id),
+            expected_claimed_at=claim_token,
             model_profile_snapshot=snapshot,
-            claimed_at=turn.claimed_at or datetime.now(timezone.utc),
             lease_until=datetime.now(timezone.utc) + _turn_lease_duration(),
         )
+        if updated is None:
+            raise asyncio.CancelledError
+        return updated
 
     async def _resolve_fallback_candidates(
         self,
@@ -553,17 +568,26 @@ class AgentCoreRuntime:
 
     async def _fail_turn(self, turn, *, error_message: str, error_code: str):
         completed_at = datetime.now(timezone.utc)
-        turn = await self.turn_repo.update_all(
-            turn,
-            status=AgentTurnStatus.FAILED,
-            final_text=None,
-            completed_at=completed_at,
-            termination_reason="model_failed",
-            error_code=error_code,
-            error_message=error_message,
-            claimed_at=None,
-            lease_until=None,
-        )
+        values = {
+            "status": AgentTurnStatus.FAILED,
+            "final_text": None,
+            "completed_at": completed_at,
+            "termination_reason": "model_failed",
+            "error_code": error_code,
+            "error_message": error_message,
+            "claimed_at": None,
+            "lease_until": None,
+        }
+        claim_token = getattr(turn, "claimed_at", None)
+        if claim_token is None:
+            turn = await self.turn_repo.update_all(turn, **values)
+        else:
+            updated = await self.turn_repo.update_if_claimed(
+                str(turn.id), expected_claimed_at=claim_token, **values
+            )
+            if updated is None:
+                return await self.turn_repo.get_fresh(str(turn.id))
+            turn = updated
         await self.session_repo.release_active_turn(
             str(turn.session_id), str(turn.id)
         )

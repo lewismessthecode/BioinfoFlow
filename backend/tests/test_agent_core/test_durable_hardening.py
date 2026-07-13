@@ -4,8 +4,10 @@ import asyncio
 import json
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agent_core import AgentActionStatus
@@ -13,11 +15,14 @@ from app.models.llm import LlmModel, LlmProvider
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
+    AgentArtifactRepository,
+    AgentEventRepository,
     AgentMessageRepository,
 )
 from app.config import settings
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.core import AgentLoopController
+from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools import AgentToolContext, AgentToolSpec
 from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
@@ -128,6 +133,7 @@ class _CountingMutationTool:
 class _BlockingMutationTool:
     started: asyncio.Event
     release: asyncio.Event
+    cancelled: asyncio.Event | None = None
     name: str = "blocking.mutate"
 
     @property
@@ -149,7 +155,12 @@ class _BlockingMutationTool:
     async def run(self, input, context):
         del input, context
         self.started.set()
-        await self.release.wait()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            if self.cancelled is not None:
+                self.cancelled.set()
+            raise
         return {"ok": True}
 
 
@@ -239,7 +250,8 @@ async def test_interrupt_cannot_be_overwritten_after_action_is_claimed(
     await _workspace(db_session)
     started = asyncio.Event()
     release = asyncio.Event()
-    tool = _BlockingMutationTool(started, release)
+    cancelled = asyncio.Event()
+    tool = _BlockingMutationTool(started, release, cancelled)
     _service, session, turn, action = await _session_turn_and_action(
         db_session,
         tool_name=tool.name,
@@ -269,6 +281,7 @@ async def test_interrupt_cannot_be_overwritten_after_action_is_claimed(
             workspace_id=DEFAULT_WORKSPACE_ID,
             user_id="dev",
         )
+    await asyncio.wait_for(cancelled.wait(), timeout=1)
     release.set()
     result = await run_task
 
@@ -328,6 +341,71 @@ async def test_completed_action_cannot_be_cancelled_after_terminal_write_wins(
 
     assert stored.status == AgentActionStatus.COMPLETED
     assert stored.result == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_action_completion_artifact_and_events_commit_atomically(
+    db_session,
+    db_engine,
+):
+    await _workspace(db_session)
+    _service, session, turn, action = await _session_turn_and_action(
+        db_session,
+        tool_name="atomic.artifact",
+    )
+    action_id = str(action.id)
+    session_id = str(session.id)
+    turn_id = str(turn.id)
+    claimed = await AgentActionRepository(db_session).claim_requested(
+        action_id, started_at=datetime.now(timezone.utc)
+    )
+    assert claimed is not None
+    await db_session.execute(
+        text(
+            """
+            CREATE TRIGGER fail_action_completed_event
+            BEFORE INSERT ON agent_events
+            WHEN NEW.type = 'action.completed'
+            BEGIN
+                SELECT RAISE(ABORT, 'forced action event failure');
+            END
+            """
+        )
+    )
+    await db_session.commit()
+
+    with pytest.raises(Exception, match="forced action event failure"):
+        await AgentActionRepository(db_session).complete_running(
+            action_id,
+            result={"ok": True},
+            output_summary="done",
+            completed_at=datetime.now(timezone.utc),
+            artifact_descriptor={
+                "type": "command",
+                "title": "Atomic artifact",
+                "summary": "Must roll back with completion.",
+                "payload": {"ok": True},
+            },
+            artifact_event_type="artifact.created",
+            action_event_type="action.completed",
+        )
+    await db_session.rollback()
+
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as inspect_db:
+        stored = await AgentActionRepository(inspect_db).get(action_id)
+        artifacts = await AgentArtifactRepository(inspect_db).list_for_session(
+            session_id
+        )
+        events = await AgentEventRepository(inspect_db).list_for_turn(
+            turn_id=turn_id, after_seq=0
+        )
+
+    assert stored.status == AgentActionStatus.RUNNING
+    assert stored.result is None
+    assert artifacts == []
+    assert all(event.type != "action.completed" for event in events)
+    assert all(event.type != "artifact.created" for event in events)
 
 
 @pytest.mark.asyncio
@@ -600,6 +678,172 @@ async def test_concurrent_turn_creation_writes_one_turn_and_one_user_message(
 
 
 @pytest.mark.asyncio
+async def test_turn_claim_and_initial_transcript_commit_atomically(
+    db_session,
+    db_engine,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session_id = str(session.id)
+    await db_session.execute(
+        text(
+            """
+            CREATE TRIGGER fail_initial_agent_message
+            BEFORE INSERT ON agent_messages
+            BEGIN
+                SELECT RAISE(ABORT, 'forced initial transcript failure');
+            END
+            """
+        )
+    )
+    await db_session.commit()
+
+    with pytest.raises(Exception, match="forced initial transcript failure"):
+        await service.create_turn_record(
+            session_id=session_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="This turn must roll back as one aggregate.",
+        )
+    await db_session.rollback()
+
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as inspect_db:
+        stored_session = await AgentCoreService(inspect_db).session_repo.get(
+            session_id
+        )
+        turns = await AgentCoreService(inspect_db).turn_repo.list_for_session(
+            session_id
+        )
+        messages = await AgentMessageRepository(inspect_db).list_for_session(
+            session_id
+        )
+
+    assert stored_session.active_turn_id is None
+    assert turns == []
+    assert messages == []
+
+
+@pytest.mark.asyncio
+async def test_recovery_skips_running_turn_with_unexpired_lease(
+    db_session,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="A different worker still owns this turn.",
+    )
+    now = datetime.now(timezone.utc)
+    await service.turn_repo.update_all(
+        turn,
+        status="running",
+        claimed_at=now,
+        lease_until=now + timedelta(minutes=5),
+    )
+    enqueued: list[str] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda turn_id, _session_id=None: enqueued.append(turn_id),
+    )
+
+    summary = await service.recover_orphaned_turns()
+    await db_session.refresh(turn)
+
+    assert summary["skipped"] == 1
+    assert turn.status == "running"
+    assert turn.claimed_at.replace(tzinfo=timezone.utc) == now
+    assert turn.lease_until is not None
+    assert enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_stale_turn_owner_cannot_overwrite_takeover_completion(
+    db_session,
+    db_engine,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Fence stale turn ownership.",
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    first_claim_time = datetime.now(timezone.utc)
+
+    async with maker() as old_worker_db:
+        old_repo = AgentCoreService(old_worker_db).turn_repo
+        old_turn = await old_repo.claim_for_run(
+            str(turn.id),
+            claimed_at=first_claim_time,
+            lease_until=first_claim_time + timedelta(seconds=1),
+        )
+        assert old_turn is not None
+
+        async with maker() as takeover_db:
+            takeover_repo = AgentCoreService(takeover_db).turn_repo
+            await takeover_repo.update_all(
+                await takeover_repo.get(str(turn.id)),
+                lease_until=first_claim_time - timedelta(seconds=1),
+            )
+            takeover_time = first_claim_time + timedelta(seconds=2)
+            takeover_turn = await takeover_repo.claim_for_run(
+                str(turn.id),
+                claimed_at=takeover_time,
+                lease_until=takeover_time + timedelta(minutes=5),
+            )
+            assert takeover_turn is not None
+            completed = await AgentLoopController(
+                takeover_db
+            ).complete_turn_from_result(
+                turn=takeover_turn,
+                result=LoopResult(
+                    termination_reason="assistant_final",
+                    final_text="new owner",
+                    iteration_count=1,
+                ),
+            )
+            assert completed.final_text == "new owner"
+
+        stale_result = await AgentLoopController(
+            old_worker_db
+        ).complete_turn_from_result(
+            turn=old_turn,
+            result=LoopResult(
+                termination_reason="assistant_final",
+                final_text="stale owner",
+                iteration_count=1,
+            ),
+        )
+
+    async with maker() as inspect_db:
+        stored = await AgentCoreService(inspect_db).turn_repo.get(str(turn.id))
+
+    assert stale_result.final_text == "new owner"
+    assert stored.final_text == "new owner"
+
+
+@pytest.mark.asyncio
 async def test_same_turn_is_claimed_by_only_one_runtime_worker(
     db_session,
     db_engine,
@@ -662,10 +906,12 @@ async def test_same_turn_is_claimed_by_only_one_runtime_worker(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("forced_dialect", [None, "legacy"])
 async def test_tool_result_append_is_atomic_across_sessions(
     db_session,
     db_engine,
     monkeypatch,
+    forced_dialect,
 ):
     await _workspace(db_session)
     service = AgentCoreService(db_session)
@@ -697,6 +943,8 @@ async def test_tool_result_append_is_atomic_across_sessions(
         ],
     )
     maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    if forced_dialect is not None:
+        monkeypatch.setattr(db_engine.dialect, "name", forced_dialect)
     original_next_index = AgentMessageRepository.next_ordering_index
     both_read_index = asyncio.Event()
     arrivals = 0

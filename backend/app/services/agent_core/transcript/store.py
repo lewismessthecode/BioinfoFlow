@@ -7,6 +7,7 @@ from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy import insert
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_core import AgentMessage
@@ -126,6 +127,13 @@ class AgentTranscriptStore:
             )
         else:
             statement = insert(AgentMessage).values(**values)
+            try:
+                async with self.session.begin_nested():
+                    inserted = await self.session.execute(statement)
+            except IntegrityError:
+                return False
+            await self.session.commit()
+            return inserted.rowcount == 1
         inserted = await self.session.execute(statement)
         await self.session.commit()
         return inserted.rowcount == 1

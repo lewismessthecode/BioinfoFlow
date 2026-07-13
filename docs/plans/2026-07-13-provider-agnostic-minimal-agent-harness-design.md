@@ -252,7 +252,11 @@ is one nullable `agent_sessions.active_turn_id` column with conditional updates.
 It is not a new orchestration layer: the session claim protects transcript
 ordering, while the existing turn lease protects execution ownership of the
 same turn. Terminal stale claims may be replaced atomically; active or
-approval-waiting claims may not.
+approval-waiting claims may not. The lease's `claimed_at` value is also the
+owner fence: renewals, checkpoints, and terminal writes must match it, and
+recovery must respect an unexpired lease. Aggregate boundaries keep the first
+user transcript atomic with turn creation and keep successful action state
+atomic with its artifact and audit events.
 
 ## Explicit Non-Goals
 

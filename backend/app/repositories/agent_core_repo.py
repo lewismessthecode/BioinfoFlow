@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import desc, func, or_, select, update
 
@@ -100,6 +100,10 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         session_id: str,
         turn_id: str,
         session_updates: dict[str, object] | None = None,
+        user_parts: list[dict],
+        user_metadata: dict,
+        created_event_type: str,
+        created_event_payload: dict,
         **data,
     ) -> AgentTurn | None:
         values = {"active_turn_id": turn_id, **(session_updates or {})}
@@ -134,7 +138,45 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             await self.session.rollback()
             return None
         turn = self.model(id=UUID(turn_id), session_id=session_id, **data)
-        self.session.add(turn)
+        ordering_index = int(
+            await self.session.scalar(
+                select(func.max(AgentMessage.ordering_index)).where(
+                    AgentMessage.session_id == session_id
+                )
+            )
+            or 0
+        ) + 1
+        event_seq = int(
+            await self.session.scalar(
+                select(func.max(AgentEvent.seq)).where(
+                    AgentEvent.session_id == session_id
+                )
+            )
+            or 0
+        ) + 1
+        self.session.add_all(
+            [
+                turn,
+                AgentMessage(
+                    session_id=session_id,
+                    turn_id=UUID(turn_id),
+                    role="user",
+                    content_parts=user_parts,
+                    message_metadata=user_metadata,
+                    status="committed",
+                    ordering_index=ordering_index,
+                ),
+                AgentEvent(
+                    session_id=session_id,
+                    turn_id=UUID(turn_id),
+                    seq=event_seq,
+                    type=created_event_type,
+                    payload=created_event_payload,
+                    visibility="user",
+                    schema_version=1,
+                ),
+            ]
+        )
         try:
             await self.session.commit()
         except Exception:
@@ -150,10 +192,19 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         claimed_at,
         lease_until,
     ) -> AgentTurn | None:
+        running_action_exists = (
+            select(AgentAction.id)
+            .where(
+                AgentAction.turn_id == turn_id,
+                AgentAction.status == AgentActionStatus.RUNNING,
+            )
+            .exists()
+        )
         result = await self.session.execute(
             update(self.model)
             .where(
                 self.model.id == turn_id,
+                ~running_action_exists,
                 or_(
                     self.model.status.in_(
                         [AgentTurnStatus.QUEUED, AgentTurnStatus.WAITING_APPROVAL]
@@ -188,6 +239,36 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             .execution_options(populate_existing=True)
         )
         return refreshed.scalar_one()
+
+    async def update_if_claimed(
+        self,
+        turn_id: str,
+        *,
+        expected_claimed_at,
+        **values,
+    ) -> AgentTurn | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.claimed_at == expected_claimed_at,
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        if result.rowcount != 1:
+            return None
+        return await self.get_fresh(turn_id)
+
+    async def get_fresh(self, turn_id: str) -> AgentTurn | None:
+        result = await self.session.execute(
+            select(self.model)
+            .where(self.model.id == turn_id)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
 
     async def list_for_session(self, session_id: str) -> list[AgentTurn]:
         stmt = (
@@ -381,6 +462,111 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         if result.rowcount != 1:
             return None
         return await self.session.get(self.model, action_id, populate_existing=True)
+
+    async def complete_running(
+        self,
+        action_id: str,
+        *,
+        result: dict,
+        output_summary: str | None,
+        completed_at,
+        artifact_descriptor: dict | None,
+        artifact_event_type: str,
+        action_event_type: str,
+    ) -> tuple[AgentAction, list[str]] | None:
+        transition = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == action_id,
+                self.model.status == AgentActionStatus.RUNNING,
+            )
+            .values(
+                status=AgentActionStatus.COMPLETED,
+                result=result,
+                output_summary=output_summary,
+                completed_at=completed_at,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if transition.rowcount != 1:
+            await self.session.rollback()
+            return None
+        action = await self.session.get(self.model, action_id, populate_existing=True)
+        if action is None:
+            await self.session.rollback()
+            return None
+
+        next_seq = int(
+            await self.session.scalar(
+                select(func.max(AgentEvent.seq)).where(
+                    AgentEvent.session_id == action.session_id
+                )
+            )
+            or 0
+        ) + 1
+        artifact_ids: list[str] = []
+        events: list[AgentEvent] = []
+        if artifact_descriptor is not None:
+            artifact_id = uuid4()
+            artifact = AgentArtifact(
+                id=artifact_id,
+                session_id=action.session_id,
+                turn_id=action.turn_id,
+                action_id=action.id,
+                type=artifact_descriptor["type"],
+                title=artifact_descriptor["title"],
+                summary=artifact_descriptor["summary"],
+                payload=artifact_descriptor["payload"],
+            )
+            self.session.add(artifact)
+            artifact_ids.append(str(artifact_id))
+            events.append(
+                AgentEvent(
+                    session_id=action.session_id,
+                    turn_id=action.turn_id,
+                    seq=next_seq,
+                    type=artifact_event_type,
+                    payload={
+                        "artifact_id": str(artifact_id),
+                        "action_id": str(action.id),
+                        "type": artifact.type,
+                        "title": artifact.title,
+                    },
+                    visibility="user",
+                    schema_version=1,
+                )
+            )
+            next_seq += 1
+        events.append(
+            AgentEvent(
+                session_id=action.session_id,
+                turn_id=action.turn_id,
+                seq=next_seq,
+                type=action_event_type,
+                payload={
+                    "action_id": str(action.id),
+                    "name": action.name,
+                    "tool_call_id": (
+                        str(action.tool_call_id) if action.tool_call_id else None
+                    ),
+                    "input_preview": action.input_preview,
+                    "result": result,
+                    "artifact_ids": artifact_ids,
+                },
+                visibility="user",
+                schema_version=1,
+            )
+        )
+        self.session.add_all(events)
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        completed = await self.session.get(self.model, action_id, populate_existing=True)
+        if completed is None:
+            return None
+        return completed, artifact_ids
 
     async def list_for_turn(self, turn_id: str) -> list[AgentAction]:
         stmt = (

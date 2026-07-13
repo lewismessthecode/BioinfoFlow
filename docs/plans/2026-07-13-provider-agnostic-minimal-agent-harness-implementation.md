@@ -544,6 +544,9 @@ Accepted final-review invariants:
   terminal turn state;
 - use the existing turn lease columns as a second CAS so duplicate workers
   cannot run the same turn concurrently;
+- treat the existing `claimed_at` value as the immutable owner token for lease
+  renewal, checkpoints, and terminal writes; recovery must not take over an
+  unexpired lease;
 - make action terminal states monotonic with expected-status CAS updates;
 - derive canonical tool-call IDs from `(turn, iteration, call index)` rather
   than trusting provider IDs;
@@ -551,6 +554,12 @@ Accepted final-review invariants:
   database conflict-ignore for exactly-once insertion;
 - allow a new turn to atomically replace a stale session claim only when the
   referenced turn is absent or terminal.
+- commit the session claim, turn, initial user transcript, and created event as
+  one aggregate; commit successful action result, artifact, and completion
+  events as one aggregate;
+- watch claimed actions from an independent database session so cross-process
+  cancellation cancels cooperative tools, with explicit subprocess cleanup for
+  shell, Docker build, and ripgrep tools.
 
 - [ ] **Step 3: Commit review fixes when changes exist**
 

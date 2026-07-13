@@ -6,12 +6,12 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import app.database as app_database
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agent_core import AgentActionStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
-    AgentArtifactRepository,
     AgentSessionRepository,
 )
 from app.services.agent_core.actions import AgentActionService
@@ -29,6 +29,10 @@ from app.services.agent_core.tools.result_budget import normalize_tool_result
 from app.services.agent_core.tools.specs import AgentTool, AgentToolContext
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.utils.exceptions import BadRequestError, ConflictError, PermissionDeniedError
+
+
+class _DurableActionCancelled(Exception):
+    pass
 
 
 def _artifact_descriptor(
@@ -145,7 +149,6 @@ class AgentToolExecutor:
         self.exposure = ToolsetExposure(registry)
         self.action_service = AgentActionService(session)
         self.action_repo = AgentActionRepository(session)
-        self.artifact_repo = AgentArtifactRepository(session)
         self.ledger = AgentEventLedger(session)
 
     async def execute(
@@ -437,12 +440,15 @@ class AgentToolExecutor:
         )
         agent_metrics.increment("tools.started")
         try:
-            raw_result = await asyncio.wait_for(
-                tool.run(action.normalized_input or action.input, context),
-                timeout=tool.spec.timeout_seconds,
+            raw_result = await self._run_tool_with_cancellation(
+                action=action,
+                tool=tool,
+                context=context,
             )
             validated_result = validate_tool_output(raw_result, tool.spec.output_schema)
             result, summary = normalize_tool_result(validated_result)
+        except _DurableActionCancelled:
+            return await self._current_action_result(str(action.id))
         except asyncio.TimeoutError:
             error = {
                 "type": "TimeoutError",
@@ -505,31 +511,25 @@ class AgentToolExecutor:
             agent_metrics.increment("tools.failed")
             return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
 
-        updated = await self.action_repo.transition_if_status(
+        policy = action.artifact_policy or tool.spec.artifact_policy or {}
+        artifact_descriptor = _artifact_descriptor(
+            policy=policy,
+            tool_name=tool.spec.name,
+            result=result,
+            action_input=action.normalized_input or action.input or {},
+        )
+        completed = await self.action_repo.complete_running(
             str(action.id),
-            expected_statuses=[AgentActionStatus.RUNNING],
-            status=AgentActionStatus.COMPLETED,
             result=result,
             output_summary=summary,
             completed_at=datetime.now(timezone.utc),
+            artifact_descriptor=artifact_descriptor,
+            artifact_event_type=AgentEventType.ARTIFACT_CREATED,
+            action_event_type=AgentEventType.ACTION_COMPLETED,
         )
-        if updated is None:
+        if completed is None:
             return await self._current_action_result(str(action.id))
-        action = updated
-        artifact_ids = await self._register_artifacts(action=action, tool=tool, result=result)
-        await self.ledger.append(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
-            type=AgentEventType.ACTION_COMPLETED,
-            payload={
-                "action_id": str(action.id),
-                "name": action.name,
-                "tool_call_id": str(action.tool_call_id) if action.tool_call_id else None,
-                "input_preview": action.input_preview,
-                "result": result,
-                "artifact_ids": artifact_ids,
-            },
-        )
+        action, _artifact_ids = completed
         agent_metrics.increment("tools.completed")
         return ToolExecutionResult(
             action_id=str(action.id),
@@ -538,34 +538,56 @@ class AgentToolExecutor:
             permission_decision=action.permission_decision,
         )
 
-    async def _register_artifacts(self, *, action, tool: AgentTool, result: dict[str, Any]) -> list[str]:
-        policy = action.artifact_policy or tool.spec.artifact_policy or {}
-        descriptor = _artifact_descriptor(
-            policy=policy,
-            tool_name=tool.spec.name,
-            result=result,
-            action_input=action.normalized_input or action.input or {},
+    async def _run_tool_with_cancellation(
+        self,
+        *,
+        action,
+        tool: AgentTool,
+        context: AgentToolContext,
+    ) -> dict[str, Any]:
+        tool_task = asyncio.create_task(
+            tool.run(action.normalized_input or action.input, context)
         )
-        if descriptor is None:
-            return []
-        artifact = await self.artifact_repo.create(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
-            action_id=str(action.id),
-            type=descriptor["type"],
-            title=descriptor["title"],
-            summary=descriptor["summary"],
-            payload=descriptor["payload"],
+        cancellation_task = asyncio.create_task(
+            self._wait_for_durable_action_cancellation(str(action.id))
         )
-        await self.ledger.append(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
-            type=AgentEventType.ARTIFACT_CREATED,
-            payload={
-                "artifact_id": str(artifact.id),
-                "action_id": str(action.id),
-                "type": artifact.type,
-                "title": artifact.title,
-            },
+        try:
+            done, _pending = await asyncio.wait(
+                {tool_task, cancellation_task},
+                timeout=tool.spec.timeout_seconds,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                tool_task.cancel()
+                await asyncio.gather(tool_task, return_exceptions=True)
+                raise asyncio.TimeoutError
+            if cancellation_task in done and cancellation_task.result():
+                tool_task.cancel()
+                await asyncio.gather(tool_task, return_exceptions=True)
+                raise _DurableActionCancelled
+            return await tool_task
+        except BaseException:
+            tool_task.cancel()
+            await asyncio.gather(tool_task, return_exceptions=True)
+            raise
+        finally:
+            cancellation_task.cancel()
+            await asyncio.gather(cancellation_task, return_exceptions=True)
+
+    async def _wait_for_durable_action_cancellation(self, action_id: str) -> bool:
+        bind = self.session.bind
+        session_factory = (
+            async_sessionmaker(bind=bind, expire_on_commit=False, class_=AsyncSession)
+            if bind is not None
+            else app_database.async_session_maker
         )
-        return [str(artifact.id)]
+        async with session_factory() as watcher_db:
+            watcher_repo = AgentActionRepository(watcher_db)
+            while True:
+                await asyncio.sleep(0.05)
+                current = await watcher_repo.get(action_id)
+                if current is None:
+                    return True
+                await watcher_db.refresh(current)
+                if current.status != AgentActionStatus.RUNNING:
+                    return True
