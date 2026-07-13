@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 import app.database as app_database
 from litellm import acompletion
@@ -1001,7 +1002,7 @@ class AgentLoopController:
                 state = seen_tool_calls.setdefault(
                     delta.index,
                     StreamToolCall(
-                        call_id=delta.call_id or f"tool_call_{delta.index + 1}",
+                        call_id=_canonical_tool_call_id(message_id, delta.index),
                         name=delta.name or "",
                         index=delta.index,
                     ),
@@ -1009,8 +1010,6 @@ class AgentLoopController:
                 started_before = (
                     bool(state.call_id and state.name) if seen_before else False
                 )
-                if delta.call_id:
-                    state.call_id = delta.call_id
                 if delta.name:
                     state.name = delta.name
                 if not started_before and state.call_id and state.name:
@@ -1119,7 +1118,7 @@ class AgentLoopController:
                 },
             )
         tool_calls = [
-            _stream_tool_call_from_payload(item, index)
+            _stream_tool_call_from_payload(item, index, message_id=message_id)
             for index, item in enumerate(_extract_tool_calls(response))
         ]
         for tool_call in tool_calls:
@@ -1254,6 +1253,14 @@ class AgentLoopController:
                 type=event_type,
                 payload=payload,
             )
+        if status in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            await self.sessions.release_active_turn(
+                str(updated.session_id), str(updated.id)
+            )
         log_fields = {
             "session_id": str(updated.session_id),
             "turn_id": str(updated.id),
@@ -1322,7 +1329,7 @@ def _extract_tool_calls(response: Any) -> list[dict[str, Any]]:
             parsed_arguments = {}
         calls.append(
             {
-                "id": call_id or f"tool_call_{len(calls) + 1}",
+                "id": call_id,
                 "name": name,
                 "arguments": parsed_arguments,
             }
@@ -1356,9 +1363,11 @@ def _tool_call_dict(tool_call: StreamToolCall) -> dict[str, Any]:
 def _stream_tool_call_from_payload(
     tool_call: dict[str, Any],
     index: int,
+    *,
+    message_id: str,
 ) -> StreamToolCall:
     return StreamToolCall(
-        call_id=str(tool_call.get("id") or f"tool_call_{index + 1}"),
+        call_id=_canonical_tool_call_id(message_id, index),
         name=str(tool_call.get("name") or ""),
         arguments_text=json.dumps(
             tool_call.get("arguments") or {},
@@ -1367,6 +1376,11 @@ def _stream_tool_call_from_payload(
         ),
         index=index,
     )
+
+
+def _canonical_tool_call_id(message_id: str, index: int) -> str:
+    occurrence = f"bioinfoflow:agent-tool-call:{message_id}:{index}"
+    return f"tc_{uuid5(NAMESPACE_URL, occurrence).hex}"
 
 
 def _extract_token_usage(response: Any) -> dict[str, Any] | None:

@@ -244,6 +244,16 @@ rtk uv run ruff check app/services/agent_core/context \
 - Independent review agents find no unresolved critical or important issues.
 - The branch is rebased on current `origin/main`, pushed, and opened as a PR.
 
+### Final Review Decision: One Session Claim Column
+
+Cross-worker tests proved that existing turn snapshots cannot serialize two
+tool-free turns before either emits a tool call. The minimum durable correction
+is one nullable `agent_sessions.active_turn_id` column with conditional updates.
+It is not a new orchestration layer: the session claim protects transcript
+ordering, while the existing turn lease protects execution ownership of the
+same turn. Terminal stale claims may be replaced atomically; active or
+approval-waiting claims may not.
+
 ## Explicit Non-Goals
 
 - No planner DAG, WorkflowContract DSL, or semantic progress ontology.

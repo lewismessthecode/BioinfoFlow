@@ -4,7 +4,7 @@
 
 **Goal:** Make AgentCore preserve one bounded turn across approvals and provider fallback, keep tool-call transcripts closed, and present a provider-neutral prompt and target-coherent tool/context surface.
 
-**Architecture:** Reuse the existing `AgentTurn` durability fields and current registry/executor/context layers. Add small loop checkpoint helpers, stop at the first approval boundary, and make the current session execution target authoritative. Keep provider-specific features in adapters and avoid new orchestration abstractions or database schema.
+**Architecture:** Reuse the existing `AgentTurn` durability fields and current registry/executor/context layers. Add small loop checkpoint helpers, stop at the first approval boundary, and make the current session execution target authoritative. Keep provider-specific features in adapters and avoid new orchestration abstractions. Final concurrency review proved that one nullable session claim is the minimum additional schema needed to serialize the canonical transcript across workers.
 
 **Tech Stack:** Python 3.12, FastAPI service layer, SQLAlchemy async repositories, LiteLLM, pytest, Ruff.
 
@@ -23,6 +23,10 @@
 - Modify `backend/tests/test_agent_core/test_context_compaction.py`: stable prompt and active-skill context assertions.
 - Modify `backend/tests/test_agent_core/test_project_instructions.py`: current-target precedence assertions.
 - Modify `backend/tests/test_agent_remote_tools.py`: remote environment and Phoenix-like target boundary regression.
+- Modify `backend/app/models/agent_core.py` and add migration `0044_agent_session_active_turn.py`: one database-level active-turn claim per session.
+- Modify `backend/app/repositories/agent_core_repo.py`: atomic session/turn/action state transitions.
+- Modify `backend/app/services/agent_core/transcript/store.py`: deterministic atomic tool-result insertion.
+- Modify `backend/tests/test_agent_core/test_durable_hardening.py`: cross-session concurrency, cancellation, identity, and recovery regressions.
 
 ## Phase 1: Durable Loop And Atomic Approval
 
@@ -533,6 +537,21 @@ For each accepted finding, first add or adjust the smallest failing test, then
 patch the implementation and rerun the affected focused suite. Reject findings
 that contradict the design with written evidence.
 
+Accepted final-review invariants:
+
+- serialize turn creation with `AgentSession.active_turn_id` plus a conditional
+  database update; retain the claim through approval and release it only at a
+  terminal turn state;
+- use the existing turn lease columns as a second CAS so duplicate workers
+  cannot run the same turn concurrently;
+- make action terminal states monotonic with expected-status CAS updates;
+- derive canonical tool-call IDs from `(turn, iteration, call index)` rather
+  than trusting provider IDs;
+- derive tool-result message IDs from `(turn, canonical call ID)` and use
+  database conflict-ignore for exactly-once insertion;
+- allow a new turn to atomically replace a stale session claim only when the
+  referenced turn is absent or terminal.
+
 - [ ] **Step 3: Commit review fixes when changes exist**
 
 ```bash
@@ -564,8 +583,9 @@ Inspect current code, tests, git diff, and command output to prove:
 - remote context and tools contain no local target leakage;
 - local Bioinfoflow guidance remains available dynamically;
 - the stable prompt is compact and provider-neutral;
-- no migration, tool-search framework, Phoenix tool, or unrelated redesign was
-  introduced.
+- exactly one evidence-driven migration was introduced for session
+  serialization; no tool-search framework, Phoenix tool, provider rewrite, or
+  unrelated redesign was introduced.
 
 - [ ] **Step 6: Rebase, rerun affected checks, and push**
 

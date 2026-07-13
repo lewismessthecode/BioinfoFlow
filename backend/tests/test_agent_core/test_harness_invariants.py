@@ -837,9 +837,10 @@ async def test_approval_resume_executes_tool_and_continues_turn(
             tool_result = next(
                 message for message in messages if message["role"] == "tool"
             )
-            assert assistant_tool_call["tool_calls"][0]["id"] == "tool-call-1"
+            canonical_call_id = assistant_tool_call["tool_calls"][0]["id"]
+            assert canonical_call_id.startswith("tc_")
             assert assistant_tool_call["tool_calls"][0]["function"]["name"] == "bash"
-            assert tool_result["tool_call_id"] == "tool-call-1"
+            assert tool_result["tool_call_id"] == canonical_call_id
             message.content = "Final after approved tool."
             message.tool_calls = None
 
@@ -943,7 +944,7 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(
             tool_result = next(
                 item for item in kwargs["messages"] if item["role"] == "tool"
             )
-            assert tool_result["tool_call_id"] == "tool-call-rejected"
+            assert tool_result["tool_call_id"].startswith("tc_")
             assert "UserRejected" in tool_result["content"]
             message.content = "I will continue without running that tool."
             message.tool_calls = None
@@ -1062,18 +1063,17 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
             ] == ["completed", "deferred"]
             assert progress["repeat_count"] == 1
             assert "pending_observation" not in progress
-            emitted_ids = {
+            emitted_ids = [
                 call["id"]
                 for item in kwargs["messages"]
                 for call in item.get("tool_calls", [])
-            }
+            ]
             result_ids = [
                 item.get("tool_call_id")
                 for item in kwargs["messages"]
                 if item.get("role") == "tool"
             ]
-            assert emitted_ids == set(result_ids)
-            assert result_ids == ["tool-call-question", "tool-call-projects"]
+            assert result_ids == emitted_ids
             message.content = "Continued after the answer."
             message.tool_calls = None
 
@@ -1120,7 +1120,8 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
     ]
     pending_results = [json.loads(signature) for signature in pending["tool_results"]]
     assert [result["status"] for result in pending_results] == ["pending", "deferred"]
-    assert pending_results[0]["tool_call_id"] == "tool-call-question"
+    assert pending_results[0]["tool_call_id"] == actions[0].tool_call_id
+    assert pending_results[0]["tool_call_id"].startswith("tc_")
     assert progress["repeat_count"] == 0
     assert not any(message.role == "tool" for message in messages)
 
@@ -1137,10 +1138,17 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
     assert resumed_turn.status == "completed"
     messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
     tool_messages = [message for message in messages if message.role == "tool"]
-    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
-        "tool-call-question",
-        "tool-call-projects",
+    assistant_call_ids = [
+        call["id"]
+        for message in messages
+        if message.role == "assistant"
+        for part in message.content_parts
+        if part.get("type") == "tool_calls"
+        for call in part.get("tool_calls") or []
     ]
+    assert [
+        message.message_metadata["tool_call_id"] for message in tool_messages
+    ] == assistant_call_ids
     assert "DeferredToolCall" in tool_messages[1].content_parts[0]["text"]
 
 
@@ -1335,10 +1343,13 @@ async def test_ask_each_action_static_reads_execute_once_and_close_all_call_ids(
     assert model_calls == 2
     assert sorted(action.name for action in actions) == ["projects.list", "workflows.list"]
     assert all(action.status == "completed" for action in actions)
-    assert {message.message_metadata.get("tool_call_id") for message in messages if message.role == "tool"} == {
-        "tool-call-static-projects",
-        "tool-call-static-workflows",
+    result_call_ids = {
+        message.message_metadata.get("tool_call_id")
+        for message in messages
+        if message.role == "tool"
     }
+    assert len(result_call_ids) == 2
+    assert all(call_id.startswith("tc_") for call_id in result_call_ids)
 
 
 @pytest.mark.asyncio
@@ -1488,18 +1499,17 @@ async def test_tool_batch_stops_at_first_approval_and_defers_later_mutation(
             message.content = ""
             message.tool_calls = [BashCall(), WriteCall()]
         else:
-            emitted_ids = {
+            emitted_ids = [
                 call["id"]
                 for item in kwargs["messages"]
                 for call in item.get("tool_calls", [])
-            }
+            ]
             result_ids = [
                 item.get("tool_call_id")
                 for item in kwargs["messages"]
                 if item.get("role") == "tool"
             ]
-            assert emitted_ids == set(result_ids)
-            assert result_ids == ["tool-call-bash", "tool-call-write"]
+            assert result_ids == emitted_ids
             message.content = "Continued without the deferred mutation."
             message.tool_calls = None
 
@@ -1557,10 +1567,17 @@ async def test_tool_batch_stops_at_first_approval_and_defers_later_mutation(
     assert not deferred_path.exists()
     messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
     tool_messages = [message for message in messages if message.role == "tool"]
-    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
-        "tool-call-bash",
-        "tool-call-write",
+    assistant_call_ids = [
+        call["id"]
+        for message in messages
+        if message.role == "assistant"
+        for part in message.content_parts
+        if part.get("type") == "tool_calls"
+        for call in part.get("tool_calls") or []
     ]
+    assert [
+        message.message_metadata["tool_call_id"] for message in tool_messages
+    ] == assistant_call_ids
     assert "DeferredToolCall" in tool_messages[1].content_parts[0]["text"]
 
 

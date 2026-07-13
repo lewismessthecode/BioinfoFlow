@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -235,14 +236,6 @@ class AgentCoreService:
             raise ConflictError(
                 "Cannot create a new turn while a prior turn has unresolved tool calls"
             )
-        if execution_target is not None:
-            session = await self.session_repo.update_all(
-                session,
-                session_metadata=session_metadata_with_execution_target(
-                    getattr(session, "session_metadata", None),
-                    execution_target,
-                ),
-            )
         normalized_active_skill_names = _validated_active_skill_names(active_skill_names)
         turn_metadata = _metadata_with_active_skill_names(
             metadata,
@@ -257,14 +250,20 @@ class AgentCoreService:
             input_text=input_text,
             input_parts=input_parts,
         )
-        if not session.title and not await self.turn_repo.list_for_session(str(session.id)):
-            session = await self.session_repo.update_all(
-                session,
-                title=_generated_session_title(input_text),
+        session_updates: dict[str, object] = {}
+        if execution_target is not None:
+            session_updates["session_metadata"] = session_metadata_with_execution_target(
+                getattr(session, "session_metadata", None),
+                execution_target,
             )
+        if not session.title and not await self.turn_repo.list_for_session(str(session.id)):
+            session_updates["title"] = _generated_session_title(input_text)
         normalized_model_selection = normalize_model_selection(model_selection)
-        turn = await self.turn_repo.create(
+        turn_id = str(uuid4())
+        turn = await self.turn_repo.create_with_session_claim(
             session_id=str(session.id),
+            turn_id=turn_id,
+            session_updates=session_updates,
             project_id=str(session.project_id) if session.project_id else None,
             workspace_id=str(session.workspace_id),
             user_id=user_id,
@@ -279,6 +278,11 @@ class AgentCoreService:
             budget_snapshot={"max_iterations": 0, "used_iterations": 0},
             loop_state={"state": "queued"},
         )
+        if turn is None:
+            raise ConflictError(
+                "Cannot create a new turn while another turn is active in this session"
+            )
+        await self.db.refresh(session)
         await AgentTranscriptStore(self.db).append_parts(
             session_id=str(session.id),
             turn_id=str(turn.id),
@@ -378,6 +382,9 @@ class AgentCoreService:
             claimed_at=None,
             lease_until=None,
         )
+        await self.session_repo.release_active_turn(
+            str(updated.session_id), str(updated.id)
+        )
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -410,6 +417,9 @@ class AgentCoreService:
             loop_state={"termination_reason": "interrupted"},
             claimed_at=None,
             lease_until=None,
+        )
+        await self.session_repo.release_active_turn(
+            str(updated.session_id), str(updated.id)
         )
         await self.ledger.append(
             session_id=str(updated.session_id),
@@ -489,19 +499,15 @@ class AgentCoreService:
             # key; ask_user echoes it as the tool result on resume.
             next_input = {**(action.input or {}), "_user_answer": answer or {}}
 
-        # When a plan is approved, flip the session into the execution toolset
-        # *before* enqueueing resume — the resume worker reads the session
-        # toolset fresh, so the model gains write/exec tools on the next round.
-        if decision == "approve" and action.name == "exit_plan_mode":
-            await self._activate_execution_toolset(str(action.session_id))
-
         status = (
             AgentActionStatus.REJECTED
             if decision == "reject"
             else AgentActionStatus.REQUESTED
         )
-        updated = await self.action_repo.update_all(
-            action,
+        updated = await self.action_repo.transition_if_status(
+            str(action.id),
+            expected_statuses=[AgentActionStatus.WAITING_DECISION],
+            status=status,
             input=next_input,
             normalized_input=next_input,
             redacted_input=next_input,
@@ -511,8 +517,12 @@ class AgentCoreService:
                 "modified_input": modified_input,
                 "answer": answer,
             },
-            status=status,
         )
+        if updated is None:
+            raise ConflictError("Agent action changed before the decision was recorded")
+        # Enable execution only after the approval transition wins its race.
+        if decision == "approve" and action.name == "exit_plan_mode":
+            await self._activate_execution_toolset(str(action.session_id))
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
@@ -573,6 +583,13 @@ class AgentCoreService:
             AgentTurnStatus.FAILED,
             AgentTurnStatus.CANCELLED,
         }:
+            await self.session_repo.release_active_turn(
+                str(turn.session_id), str(turn.id)
+            )
+            return "skipped"
+        if not await self.session_repo.claim_active_turn(
+            str(turn.session_id), str(turn.id)
+        ):
             return "skipped"
 
         turn = await self._reconcile_pending_observation(turn)
@@ -625,7 +642,7 @@ class AgentCoreService:
 
         if latest_action is not None and latest_action.status == AgentActionStatus.RUNNING:
             await self._cancel_open_actions(turn_id, cancelled_at=now)
-            await self.turn_repo.update_all(
+            failed_turn = await self.turn_repo.update_all(
                 turn,
                 status=AgentTurnStatus.FAILED,
                 termination_reason="model_failed",
@@ -639,6 +656,9 @@ class AgentCoreService:
                     termination_reason="model_failed",
                     recovered=True,
                 ),
+            )
+            await self.session_repo.release_active_turn(
+                str(failed_turn.session_id), str(failed_turn.id)
             )
             await self.ledger.append(
                 session_id=str(turn.session_id),
@@ -691,13 +711,20 @@ class AgentCoreService:
 
     async def _cancel_open_actions(self, turn_id: str, *, cancelled_at: datetime) -> None:
         for action in await self.action_repo.list_open_for_turn(turn_id):
-            updated = await self.action_repo.update_all(
-                action,
+            updated = await self.action_repo.transition_if_status(
+                str(action.id),
+                expected_statuses=[
+                    AgentActionStatus.WAITING_DECISION,
+                    AgentActionStatus.REQUESTED,
+                    AgentActionStatus.RUNNING,
+                ],
                 status=AgentActionStatus.CANCELLED,
                 error={"type": "CancelledError", "message": "Action cancelled with its parent turn."},
                 completed_at=cancelled_at,
                 requires_resume=False,
             )
+            if updated is None:
+                continue
             await AgentTranscriptStore(self.db).append_tool_result_once(
                 session_id=str(updated.session_id),
                 turn_id=str(updated.turn_id),

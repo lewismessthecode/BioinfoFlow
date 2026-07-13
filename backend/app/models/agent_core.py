@@ -77,6 +77,11 @@ class AgentSession(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     runtime_mode: Mapped[str] = mapped_column(String(40), nullable=False, default="api")
+    active_turn_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
     prompt_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     toolset_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     context_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)

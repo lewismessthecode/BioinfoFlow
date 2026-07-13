@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import desc, func, or_, select, update
 
 from app.models.agent_core import (
@@ -20,6 +22,35 @@ from app.schemas.common import Pagination
 
 class AgentSessionRepository(BaseRepository[AgentSession]):
     model = AgentSession
+
+    async def claim_active_turn(self, session_id: str, turn_id: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == session_id,
+                or_(
+                    self.model.active_turn_id.is_(None),
+                    self.model.active_turn_id == turn_id,
+                ),
+            )
+            .values(active_turn_id=turn_id)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        return result.rowcount == 1
+
+    async def release_active_turn(self, session_id: str, turn_id: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == session_id,
+                self.model.active_turn_id == turn_id,
+            )
+            .values(active_turn_id=None)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        return result.rowcount == 1
 
     async def list_for_user(
         self,
@@ -62,6 +93,101 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
 
 class AgentTurnRepository(BaseRepository[AgentTurn]):
     model = AgentTurn
+
+    async def create_with_session_claim(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        session_updates: dict[str, object] | None = None,
+        **data,
+    ) -> AgentTurn | None:
+        values = {"active_turn_id": turn_id, **(session_updates or {})}
+        active_turn_exists = (
+            select(self.model.id)
+            .where(
+                self.model.id == AgentSession.active_turn_id,
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_USER,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                ),
+            )
+            .exists()
+        )
+        result = await self.session.execute(
+            update(AgentSession)
+            .where(
+                AgentSession.id == session_id,
+                or_(
+                    AgentSession.active_turn_id.is_(None),
+                    ~active_turn_exists,
+                ),
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            await self.session.rollback()
+            return None
+        turn = self.model(id=UUID(turn_id), session_id=session_id, **data)
+        self.session.add(turn)
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        await self.session.refresh(turn)
+        return turn
+
+    async def claim_for_run(
+        self,
+        turn_id: str,
+        *,
+        claimed_at,
+        lease_until,
+    ) -> AgentTurn | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                or_(
+                    self.model.status.in_(
+                        [AgentTurnStatus.QUEUED, AgentTurnStatus.WAITING_APPROVAL]
+                    ),
+                    (
+                        (self.model.status == AgentTurnStatus.RUNNING)
+                        & or_(
+                            self.model.claimed_at.is_(None),
+                            self.model.lease_until.is_(None),
+                            self.model.lease_until < claimed_at,
+                        )
+                    ),
+                ),
+            )
+            .values(
+                status=AgentTurnStatus.RUNNING,
+                started_at=func.coalesce(self.model.started_at, claimed_at),
+                completed_at=None,
+                error_code=None,
+                error_message=None,
+                claimed_at=claimed_at,
+                lease_until=lease_until,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        if result.rowcount != 1:
+            return None
+        refreshed = await self.session.execute(
+            select(self.model)
+            .where(self.model.id == turn_id)
+            .execution_options(populate_existing=True)
+        )
+        return refreshed.scalar_one()
 
     async def list_for_session(self, session_id: str) -> list[AgentTurn]:
         stmt = (
@@ -227,6 +353,28 @@ class AgentActionRepository(BaseRepository[AgentAction]):
                 requires_resume=False,
                 started_at=started_at,
             )
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        if result.rowcount != 1:
+            return None
+        return await self.session.get(self.model, action_id, populate_existing=True)
+
+    async def transition_if_status(
+        self,
+        action_id: str,
+        *,
+        expected_statuses: list[str],
+        status: str,
+        **values,
+    ) -> AgentAction | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == action_id,
+                self.model.status.in_(expected_statuses),
+            )
+            .values(status=status, **values)
             .execution_options(synchronize_session=False)
         )
         await self.session.commit()

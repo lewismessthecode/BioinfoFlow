@@ -71,6 +71,9 @@ class AgentCoreRuntime:
             AgentTurnStatus.FAILED,
             AgentTurnStatus.CANCELLED,
         }:
+            await self.session_repo.release_active_turn(
+                str(turn.session_id), str(turn.id)
+            )
             return turn
 
         session = await self.session_repo.get(str(turn.session_id))
@@ -79,6 +82,14 @@ class AgentCoreRuntime:
                 turn,
                 error_message="Agent session could not be loaded for this turn.",
                 error_code="session_not_found",
+            )
+        if not await self.session_repo.claim_active_turn(
+            str(turn.session_id), str(turn.id)
+        ):
+            return await self._fail_turn(
+                turn,
+                error_message="Another turn is already active in this session.",
+                error_code="session_turn_in_progress",
             )
         unresolved_turn = await self.turn_repo.find_with_pending_observation(
             str(turn.session_id),
@@ -100,16 +111,14 @@ class AgentCoreRuntime:
             )
 
         now = datetime.now(timezone.utc)
-        turn = await self.turn_repo.update_all(
-            turn,
-            status=AgentTurnStatus.RUNNING,
-            started_at=turn.started_at or now,
-            completed_at=None,
-            error_code=None,
-            error_message=None,
+        claimed_turn = await self.turn_repo.claim_for_run(
+            str(turn.id),
             claimed_at=now,
             lease_until=now + _turn_lease_duration(),
         )
+        if claimed_turn is None:
+            return await self.turn_repo.get(str(turn.id))
+        turn = claimed_turn
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -160,6 +169,9 @@ class AgentCoreRuntime:
             AgentTurnStatus.FAILED,
             AgentTurnStatus.CANCELLED,
         }:
+            await self.session_repo.release_active_turn(
+                str(turn.session_id), str(turn.id)
+            )
             return turn
 
         session = await self.session_repo.get(str(turn.session_id))
@@ -168,6 +180,14 @@ class AgentCoreRuntime:
                 turn,
                 error_message="Agent session could not be loaded for this turn.",
                 error_code="session_not_found",
+            )
+        if not await self.session_repo.claim_active_turn(
+            str(turn.session_id), str(turn.id)
+        ):
+            return await self._fail_turn(
+                turn,
+                error_message="Another turn is already active in this session.",
+                error_code="session_turn_in_progress",
             )
         unresolved_turn = await self.turn_repo.find_with_pending_observation(
             str(turn.session_id),
@@ -189,16 +209,14 @@ class AgentCoreRuntime:
             )
 
         now = datetime.now(timezone.utc)
-        turn = await self.turn_repo.update_all(
-            turn,
-            status=AgentTurnStatus.RUNNING,
-            started_at=turn.started_at or now,
-            completed_at=None,
-            error_code=None,
-            error_message=None,
+        claimed_turn = await self.turn_repo.claim_for_run(
+            str(turn.id),
             claimed_at=now,
             lease_until=now + _turn_lease_duration(),
         )
+        if claimed_turn is None:
+            return await self.turn_repo.get(str(turn.id))
+        turn = claimed_turn
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -545,6 +563,9 @@ class AgentCoreRuntime:
             error_message=error_message,
             claimed_at=None,
             lease_until=None,
+        )
+        await self.session_repo.release_active_turn(
+            str(turn.session_id), str(turn.id)
         )
         await self.ledger.append(
             session_id=str(turn.session_id),

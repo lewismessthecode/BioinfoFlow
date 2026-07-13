@@ -2,15 +2,21 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
+from sqlalchemy import insert
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.agent_core import AgentMessage
 from app.repositories.agent_core_repo import AgentMessageRepository
 from app.services.agent_core.transcript.messages import parts_to_text, text_part
 
 
 class AgentTranscriptStore:
     def __init__(self, session: AsyncSession):
+        self.session = session
         self.messages = AgentMessageRepository(session)
 
     async def append_text(
@@ -72,25 +78,57 @@ class AgentTranscriptStore:
         call_id = str(tool_call_id or "")
         for message in await self.messages.list_for_session(session_id):
             metadata = message.message_metadata or {}
-            if message.role == "tool" and str(metadata.get("tool_call_id") or "") == call_id:
+            if (
+                message.role == "tool"
+                and str(message.turn_id or "") == turn_id
+                and str(metadata.get("tool_call_id") or "") == call_id
+            ):
                 return False
-        await self.append_text(
-            session_id=session_id,
-            turn_id=turn_id,
-            role="tool",
-            text=json.dumps(
-                {
-                    "tool": tool_name,
-                    "status": status,
-                    "result": result,
-                    "error": error,
-                },
-                separators=(",", ":"),
-                default=str,
-            ),
-            metadata={"tool_call_id": tool_call_id, "tool": tool_name},
+        message_id = str(
+            uuid5(
+                NAMESPACE_URL,
+                f"bioinfoflow:agent-tool-result:{turn_id}:{call_id}",
+            )
         )
-        return True
+        values = {
+            "id": message_id,
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "role": "tool",
+            "content_parts": [
+                text_part(
+                    json.dumps(
+                        {
+                            "tool": tool_name,
+                            "status": status,
+                            "result": result,
+                            "error": error,
+                        },
+                        separators=(",", ":"),
+                        default=str,
+                    )
+                )
+            ],
+            "message_metadata": {"tool_call_id": tool_call_id, "tool": tool_name},
+            "status": "committed",
+            "ordering_index": await self.messages.next_ordering_index(session_id),
+        }
+        dialect_name = self.session.bind.dialect.name if self.session.bind else ""
+        if dialect_name == "sqlite":
+            statement = sqlite_insert(AgentMessage).values(**values).on_conflict_do_nothing(
+                index_elements=["id"]
+            )
+        elif dialect_name == "postgresql":
+            statement = (
+                postgresql_insert(AgentMessage)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=["id"])
+            )
+        else:
+            statement = insert(AgentMessage).values(**values)
+        inserted = await self.session.execute(statement)
+        await self.session.commit()
+        return inserted.rowcount == 1
 
     async def unresolved_tool_calls(
         self,

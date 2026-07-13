@@ -357,13 +357,17 @@ class AgentToolExecutor:
         error_type: str = "PermissionDeniedError",
     ) -> ToolExecutionResult:
         error = {"type": error_type, "message": error_message}
-        action = await self.action_repo.update_all(
-            action,
+        updated = await self.action_repo.transition_if_status(
+            str(action.id),
+            expected_statuses=[AgentActionStatus.REQUESTED],
             status=AgentActionStatus.FAILED,
             error=error,
             completed_at=datetime.now(timezone.utc),
             requires_resume=False,
         )
+        if updated is None:
+            return await self._current_action_result(str(action.id))
+        action = updated
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
@@ -375,6 +379,20 @@ class AgentToolExecutor:
             action_id=str(action.id),
             status=action.status,
             error=error,
+        )
+
+    async def _current_action_result(self, action_id: str) -> ToolExecutionResult:
+        current = await self.action_repo.get(action_id)
+        if current is None:
+            raise ConflictError("Agent action disappeared during execution")
+        await self.session.refresh(current)
+        return ToolExecutionResult(
+            action_id=str(current.id),
+            status=current.status,
+            result=current.result,
+            permission_decision=current.permission_decision,
+            error=current.error,
+            requires_resume=bool(current.requires_resume),
         )
 
     async def _run_action(
@@ -430,12 +448,16 @@ class AgentToolExecutor:
                 "type": "TimeoutError",
                 "message": f"Tool timed out after {tool.spec.timeout_seconds}s",
             }
-            action = await self.action_repo.update_all(
-                action,
+            updated = await self.action_repo.transition_if_status(
+                str(action.id),
+                expected_statuses=[AgentActionStatus.RUNNING],
                 status=AgentActionStatus.FAILED,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
             )
+            if updated is None:
+                return await self._current_action_result(str(action.id))
+            action = updated
             await self.ledger.append(
                 session_id=str(action.session_id),
                 turn_id=str(action.turn_id),
@@ -445,28 +467,35 @@ class AgentToolExecutor:
             agent_metrics.increment("tools.failed")
             return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
         except asyncio.CancelledError:
-            action = await self.action_repo.update_all(
-                action,
+            updated = await self.action_repo.transition_if_status(
+                str(action.id),
+                expected_statuses=[AgentActionStatus.RUNNING],
                 status=AgentActionStatus.CANCELLED,
                 error={"type": "CancelledError", "message": "Tool execution was cancelled."},
                 completed_at=datetime.now(timezone.utc),
             )
-            await self.ledger.append(
-                session_id=str(action.session_id),
-                turn_id=str(action.turn_id),
-                type=AgentEventType.ACTION_CANCELLED,
-                payload={"action_id": str(action.id), "tool": tool.spec.name},
-            )
-            agent_metrics.increment("tools.cancelled")
+            if updated is not None:
+                action = updated
+                await self.ledger.append(
+                    session_id=str(action.session_id),
+                    turn_id=str(action.turn_id),
+                    type=AgentEventType.ACTION_CANCELLED,
+                    payload={"action_id": str(action.id), "tool": tool.spec.name},
+                )
+                agent_metrics.increment("tools.cancelled")
             raise
         except Exception as exc:
             error = {"type": exc.__class__.__name__, "message": str(exc)}
-            action = await self.action_repo.update_all(
-                action,
+            updated = await self.action_repo.transition_if_status(
+                str(action.id),
+                expected_statuses=[AgentActionStatus.RUNNING],
                 status=AgentActionStatus.FAILED,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
             )
+            if updated is None:
+                return await self._current_action_result(str(action.id))
+            action = updated
             await self.ledger.append(
                 session_id=str(action.session_id),
                 turn_id=str(action.turn_id),
@@ -476,14 +505,18 @@ class AgentToolExecutor:
             agent_metrics.increment("tools.failed")
             return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
 
-        artifact_ids = await self._register_artifacts(action=action, tool=tool, result=result)
-        action = await self.action_repo.update_all(
-            action,
+        updated = await self.action_repo.transition_if_status(
+            str(action.id),
+            expected_statuses=[AgentActionStatus.RUNNING],
             status=AgentActionStatus.COMPLETED,
             result=result,
             output_summary=summary,
             completed_at=datetime.now(timezone.utc),
         )
+        if updated is None:
+            return await self._current_action_result(str(action.id))
+        action = updated
+        artifact_ids = await self._register_artifacts(action=action, tool=tool, result=result)
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),

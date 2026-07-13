@@ -124,6 +124,35 @@ class _CountingMutationTool:
         return {"ok": True}
 
 
+@dataclass
+class _BlockingMutationTool:
+    started: asyncio.Event
+    release: asyncio.Event
+    name: str = "blocking.mutate"
+
+    @property
+    def spec(self) -> AgentToolSpec:
+        return AgentToolSpec(
+            name=self.name,
+            description="Block one durable mutation until the test releases it.",
+            input_schema={"type": "object", "additionalProperties": False},
+            output_schema={
+                "type": "object",
+                "properties": {"ok": {"type": "boolean"}},
+                "required": ["ok"],
+                "additionalProperties": False,
+            },
+            risk_level="act_high",
+            write_scope=["test:mutation"],
+        )
+
+    async def run(self, input, context):
+        del input, context
+        self.started.set()
+        await self.release.wait()
+        return {"ok": True}
+
+
 async def _session_turn_and_action(
     db_session,
     *,
@@ -200,6 +229,105 @@ async def test_two_independent_resumes_claim_approved_action_exactly_once(
     stored = await AgentActionRepository(db_session).get(str(action.id))
     await db_session.refresh(stored)
     assert stored.status == AgentActionStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_interrupt_cannot_be_overwritten_after_action_is_claimed(
+    db_session,
+    db_engine,
+):
+    await _workspace(db_session)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    tool = _BlockingMutationTool(started, release)
+    _service, session, turn, action = await _session_turn_and_action(
+        db_session,
+        tool_name=tool.name,
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def execute_claimed_action():
+        async with maker() as run_db:
+            registry = AgentToolRegistry()
+            registry.register(tool)
+            return await AgentToolExecutor(run_db, registry).resume_action(
+                action_id=str(action.id),
+                context=AgentToolContext(
+                    db=run_db,
+                    workspace_id=DEFAULT_WORKSPACE_ID,
+                    user_id="dev",
+                    session_id=str(session.id),
+                    turn_id=str(turn.id),
+                ),
+            )
+
+    run_task = asyncio.create_task(execute_claimed_action())
+    await started.wait()
+    async with maker() as interrupt_db:
+        await AgentCoreService(interrupt_db).interrupt_turn(
+            turn_id=str(turn.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+    release.set()
+    result = await run_task
+
+    async with maker() as inspect_db:
+        stored = await AgentActionRepository(inspect_db).get(str(action.id))
+        messages = await AgentMessageRepository(inspect_db).list_for_session(
+            str(session.id)
+        )
+
+    assert stored.status == AgentActionStatus.CANCELLED
+    assert result.status == AgentActionStatus.CANCELLED
+    tool_results = [
+        message
+        for message in messages
+        if message.role == "tool"
+        and (message.message_metadata or {}).get("tool_call_id") == "durable-call"
+    ]
+    assert len(tool_results) == 1
+    assert json.loads(tool_results[0].content_parts[0]["text"])["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_completed_action_cannot_be_cancelled_after_terminal_write_wins(
+    db_session,
+    db_engine,
+):
+    await _workspace(db_session)
+    calls: list[str] = []
+    tool = _CountingMutationTool(calls)
+    _service, session, turn, action = await _session_turn_and_action(
+        db_session,
+        tool_name=tool.name,
+    )
+    registry = AgentToolRegistry()
+    registry.register(tool)
+    completed = await AgentToolExecutor(db_session, registry).resume_action(
+        action_id=str(action.id),
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+        ),
+    )
+    assert completed.status == AgentActionStatus.COMPLETED
+
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as cancel_db:
+        await AgentCoreService(cancel_db).cancel_turn(
+            turn_id=str(turn.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+    async with maker() as inspect_db:
+        stored = await AgentActionRepository(inspect_db).get(str(action.id))
+
+    assert stored.status == AgentActionStatus.COMPLETED
+    assert stored.result == {"ok": True}
 
 
 @pytest.mark.asyncio
@@ -307,6 +435,462 @@ async def test_cross_session_interrupt_after_model_response_executes_no_tool(
 
 
 @pytest.mark.asyncio
+async def test_session_rejects_second_turn_while_first_waits_on_model(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    await _seed_model(db_session, model_id="serialized-turn-model")
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    first_turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="First turn blocks in the model.",
+    )
+    model_started = asyncio.Event()
+    release_model = asyncio.Event()
+
+    async def blocked_completion(*args, **kwargs):
+        del args, kwargs
+        model_started.set()
+        await release_model.wait()
+
+        class FakeMessage:
+            content = "First turn complete."
+            tool_calls = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            usage = None
+            choices = [FakeChoice()]
+
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", blocked_completion)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async with maker() as run_db:
+        run_task = asyncio.create_task(
+            AgentCoreRuntime(run_db).run_turn(str(first_turn.id))
+        )
+        await model_started.wait()
+        try:
+            async with maker() as competing_db:
+                with pytest.raises(ConflictError):
+                    await AgentCoreService(competing_db).create_turn_record(
+                        session_id=str(session.id),
+                        workspace_id=DEFAULT_WORKSPACE_ID,
+                        user_id="dev",
+                        input_text="Second turn must not enter the transcript yet.",
+                    )
+        finally:
+            release_model.set()
+        completed = await run_task
+
+    assert completed.status == "completed"
+    async with maker() as inspect_db:
+        messages = await AgentMessageRepository(inspect_db).list_for_session(
+            str(session.id)
+        )
+    assert [message.role for message in messages] == ["user", "assistant"]
+    async with maker() as next_db:
+        next_turn = await AgentCoreService(next_db).create_turn_record(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="A new turn is allowed after the first terminates.",
+        )
+        assert next_turn.status == "queued"
+
+
+@pytest.mark.asyncio
+async def test_terminal_stale_session_claim_is_replaced_by_new_turn(
+    db_session,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    stale_turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="This terminal turn leaves a stale session claim.",
+    )
+    await service.turn_repo.update_all(
+        stale_turn,
+        status="completed",
+        completed_at=stale_turn.created_at,
+    )
+
+    next_turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Replace the stale terminal claim atomically.",
+    )
+    await service.session_repo.release_active_turn(
+        str(session.id), str(stale_turn.id)
+    )
+    await db_session.refresh(session)
+
+    assert session.active_turn_id == str(next_turn.id)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_turn_creation_writes_one_turn_and_one_user_message(
+    db_session,
+    db_engine,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def create_once(text):
+        async with maker() as independent_db:
+            try:
+                turn = await AgentCoreService(independent_db).create_turn_record(
+                    session_id=str(session.id),
+                    workspace_id=DEFAULT_WORKSPACE_ID,
+                    user_id="dev",
+                    input_text=text,
+                )
+            except ConflictError:
+                return None
+            return str(turn.id)
+
+    created = await asyncio.gather(
+        create_once("Concurrent turn A"),
+        create_once("Concurrent turn B"),
+    )
+    winner_ids = [turn_id for turn_id in created if turn_id is not None]
+
+    async with maker() as inspect_db:
+        turns = await AgentCoreService(inspect_db).turn_repo.list_for_session(
+            str(session.id)
+        )
+        messages = await AgentMessageRepository(inspect_db).list_for_session(
+            str(session.id)
+        )
+        stored_session = await AgentCoreService(inspect_db).session_repo.get(
+            str(session.id)
+        )
+
+    assert len(winner_ids) == 1
+    assert [str(turn.id) for turn in turns] == winner_ids
+    assert [message.role for message in messages] == ["user"]
+    assert stored_session.active_turn_id == winner_ids[0]
+
+
+@pytest.mark.asyncio
+async def test_same_turn_is_claimed_by_only_one_runtime_worker(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    await _seed_model(db_session, model_id="single-worker-model")
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Only one worker may run this turn.",
+    )
+    model_started = asyncio.Event()
+    release_model = asyncio.Event()
+    model_calls = 0
+
+    async def blocked_completion(*args, **kwargs):
+        nonlocal model_calls
+        del args, kwargs
+        model_calls += 1
+        model_started.set()
+        await release_model.wait()
+
+        class FakeMessage:
+            content = "Claimed once."
+            tool_calls = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            usage = None
+            choices = [FakeChoice()]
+
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", blocked_completion)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def run_once():
+        async with maker() as independent_db:
+            return await AgentCoreRuntime(independent_db).run_turn(str(turn.id))
+
+    first = asyncio.create_task(run_once())
+    await model_started.wait()
+    second = await run_once()
+    release_model.set()
+    completed = await first
+
+    assert second.status == "running"
+    assert completed.status == "completed"
+    assert model_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_result_append_is_atomic_across_sessions(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Append one durable tool result.",
+    )
+    await AgentTranscriptStore(db_session).append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[
+            tool_calls_part(
+                [
+                    {
+                        "id": "atomic-result-call",
+                        "type": "function",
+                        "function": {"name": "projects.list", "arguments": "{}"},
+                    }
+                ]
+            )
+        ],
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    original_next_index = AgentMessageRepository.next_ordering_index
+    both_read_index = asyncio.Event()
+    arrivals = 0
+    arrivals_lock = asyncio.Lock()
+
+    async def synchronized_next_index(repository, session_id):
+        nonlocal arrivals
+        value = await original_next_index(repository, session_id)
+        async with arrivals_lock:
+            arrivals += 1
+            if arrivals == 2:
+                both_read_index.set()
+        await both_read_index.wait()
+        return value
+
+    monkeypatch.setattr(
+        AgentMessageRepository,
+        "next_ordering_index",
+        synchronized_next_index,
+    )
+
+    async def append_once():
+        async with maker() as independent_db:
+            return await AgentTranscriptStore(independent_db).append_tool_result_once(
+                session_id=str(session.id),
+                turn_id=str(turn.id),
+                tool_call_id="atomic-result-call",
+                tool_name="projects.list",
+                status="completed",
+                result={"ok": True},
+            )
+
+    outcomes = await asyncio.gather(append_once(), append_once())
+
+    async with maker() as inspect_db:
+        messages = await AgentMessageRepository(inspect_db).list_for_session(
+            str(session.id)
+        )
+    stored_results = [
+        message
+        for message in messages
+        if message.role == "tool"
+        and str(message.turn_id) == str(turn.id)
+        and (message.message_metadata or {}).get("tool_call_id")
+        == "atomic-result-call"
+    ]
+    assert sorted(outcomes) == [False, True]
+    assert len(stored_results) == 1
+    async with maker() as unresolved_db:
+        assert await AgentTranscriptStore(unresolved_db).unresolved_tool_calls(
+            str(session.id), turn_id=str(turn.id)
+        ) == []
+
+
+@pytest.mark.asyncio
+async def test_nonstream_tool_call_ids_are_unique_when_provider_omits_or_reuses_them(
+    db_session,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Normalize provider tool call identities.",
+    )
+    controller = AgentLoopController(db_session)
+
+    first = await controller._consume_response(
+        agent_session=session,
+        turn=turn,
+        response=_tool_call_response(
+            call_id=None,
+            name="projects.list",
+            arguments={},
+        ),
+        message_id=f"assistant:{turn.id}:1",
+        allow_thinking=False,
+    )
+    await controller._append_assistant_tool_calls(
+        agent_session=session,
+        turn=turn,
+        provider="test",
+        model="test",
+        tool_calls=[
+            {
+                "id": first.tool_calls[0].call_id,
+                "name": first.tool_calls[0].name,
+                "arguments": first.tool_calls[0].arguments(),
+            }
+        ],
+    )
+    second = await controller._consume_response(
+        agent_session=session,
+        turn=turn,
+        response=_tool_call_response(
+            call_id=None,
+            name="projects.list",
+            arguments={},
+        ),
+        message_id=f"assistant:{turn.id}:2",
+        allow_thinking=False,
+    )
+    await controller._append_assistant_tool_calls(
+        agent_session=session,
+        turn=turn,
+        provider="test",
+        model="test",
+        tool_calls=[
+            {
+                "id": "provider-reused-id",
+                "name": "projects.list",
+                "arguments": {},
+            }
+        ],
+    )
+    reused = await controller._consume_response(
+        agent_session=session,
+        turn=turn,
+        response=_tool_call_response(
+            call_id="provider-reused-id",
+            name="projects.list",
+            arguments={},
+        ),
+        message_id=f"assistant:{turn.id}:3",
+        allow_thinking=False,
+    )
+
+    assert first.tool_calls[0].call_id != second.tool_calls[0].call_id
+    assert reused.tool_calls[0].call_id != "provider-reused-id"
+
+
+@pytest.mark.asyncio
+async def test_stream_tool_call_ids_are_unique_when_provider_omits_them(
+    db_session,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Normalize streamed tool call identities.",
+    )
+    controller = AgentLoopController(db_session)
+
+    async def missing_id_stream():
+        yield {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {
+                                    "name": "projects.list",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+
+    first = await controller._consume_stream_response(
+        agent_session=session,
+        turn=turn,
+        response=missing_id_stream(),
+        message_id=f"assistant:{turn.id}:1",
+        allow_thinking=False,
+    )
+    second = await controller._consume_stream_response(
+        agent_session=session,
+        turn=turn,
+        response=missing_id_stream(),
+        message_id=f"assistant:{turn.id}:2",
+        allow_thinking=False,
+    )
+
+    assert first.tool_calls[0].call_id != second.tool_calls[0].call_id
+
+
+@pytest.mark.asyncio
 async def test_interrupt_closes_already_emitted_tool_call_before_execution(
     db_session,
     monkeypatch,
@@ -410,11 +994,13 @@ async def test_permission_denied_tool_call_is_closed_exactly_once(
         message
         for message in messages
         if message.role == "tool"
-        and (message.message_metadata or {}).get("tool_call_id") == "permission-call"
     ]
 
     assert failed_turn.status == "failed"
     assert len(matching_results) == 1
+    assert (matching_results[0].message_metadata or {})["tool_call_id"].startswith(
+        "tc_"
+    )
     payload = json.loads(matching_results[0].content_parts[0]["text"])
     assert payload["status"] == "failed"
     assert payload["error"]["type"] == "PermissionDeniedError"
@@ -477,10 +1063,20 @@ async def test_cancel_pending_action_closes_its_tool_call_once(
         for message in messages
         if message.role == "tool"
     }
+    assistant_call_ids = {
+        call["id"]
+        for message in messages
+        if message.role == "assistant"
+        for part in message.content_parts
+        if part.get("type") == "tool_calls"
+        for call in part.get("tool_calls") or []
+    }
 
-    assert set(results) == {"cancel-call", "cancel-deferred-call"}
-    assert results["cancel-call"]["status"] == "cancelled"
-    assert results["cancel-deferred-call"]["status"] == "deferred"
+    assert set(results) == assistant_call_ids
+    assert sorted(item["status"] for item in results.values()) == [
+        "cancelled",
+        "deferred",
+    ]
 
 
 @pytest.mark.asyncio
@@ -771,7 +1367,7 @@ async def test_recovery_closes_terminal_action_pending_observation(
         message
         for message in messages
         if message.role == "tool"
-        and (message.message_metadata or {}).get("tool_call_id") == "reconcile-call"
+        and (message.message_metadata or {}).get("tool_call_id") == action.tool_call_id
     ]
 
     assert summary["enqueued"] == 1
@@ -829,7 +1425,7 @@ async def test_recovery_cancels_running_action_and_closes_pending_call(
         for message in messages
         if message.role == "tool"
         and (message.message_metadata or {}).get("tool_call_id")
-        == "running-recovery-call"
+        == action.tool_call_id
     ]
 
     assert summary["failed"] == 1
