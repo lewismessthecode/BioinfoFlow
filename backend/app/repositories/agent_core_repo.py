@@ -154,18 +154,122 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         stmt = (
             select(self.model)
             .where(
-                self.model.status.in_(
-                    [
-                        AgentTurnStatus.QUEUED,
-                        AgentTurnStatus.RUNNING,
-                        AgentTurnStatus.WAITING_APPROVAL,
-                    ]
+                or_(
+                    self.model.status == AgentTurnStatus.QUEUED,
+                    and_(
+                        self.model.status == AgentTurnStatus.RUNNING,
+                        or_(
+                            self.model.lease_until.is_(None),
+                            self.model.lease_until <= func.now(),
+                        ),
+                    ),
                 )
             )
             .order_by(self.model.created_at, self.model.id)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def claim_execution(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        claimed_at: datetime,
+        lease_until: datetime,
+    ) -> AgentTurn | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                or_(
+                    self.model.status == AgentTurnStatus.QUEUED,
+                    and_(
+                        self.model.status == AgentTurnStatus.RUNNING,
+                        or_(
+                            self.model.lease_until.is_(None),
+                            self.model.lease_until <= claimed_at,
+                        ),
+                    ),
+                ),
+            )
+            .values(
+                status=AgentTurnStatus.RUNNING,
+                claimed_at=claimed_at,
+                lease_until=lease_until,
+                lease_owner_token=owner_token,
+            )
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        claimed = result.scalar_one_or_none()
+        await self.session.commit()
+        return claimed
+
+    async def renew_execution_lease(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        lease_until: datetime,
+    ) -> AgentTurn | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.lease_owner_token == owner_token,
+            )
+            .values(lease_until=lease_until)
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        renewed = result.scalar_one_or_none()
+        await self.session.commit()
+        return renewed
+
+    async def update_claimed_execution(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        commit: bool = True,
+        **values,
+    ) -> AgentTurn | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.lease_owner_token == owner_token,
+            )
+            .values(**values)
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        updated = result.scalar_one_or_none()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+        return updated
+
+    async def queue_waiting_for_resume(self, turn_id: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status == AgentTurnStatus.WAITING_APPROVAL,
+            )
+            .values(
+                status=AgentTurnStatus.QUEUED,
+                claimed_at=None,
+                lease_until=None,
+                lease_owner_token=None,
+            )
+            .returning(self.model.id)
+        )
+        return result.scalar_one_or_none() is not None
 
     async def claim_cancelled(
         self,
@@ -181,6 +285,7 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             "loop_state": {"termination_reason": termination_reason},
             "claimed_at": None,
             "lease_until": None,
+            "lease_owner_token": None,
         }
         if interrupted_at is not None:
             values["interrupt_requested_at"] = interrupted_at
@@ -470,6 +575,68 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
+
+    async def transition_running(
+        self,
+        action_id: str,
+        *,
+        status: str,
+        completed_at: datetime,
+        result: dict | None = None,
+        output_summary: str | None = None,
+        error: dict | None = None,
+    ) -> AgentAction | None:
+        values = {
+            "status": status,
+            "completed_at": completed_at,
+        }
+        if result is not None:
+            values["result"] = result
+        if output_summary is not None:
+            values["output_summary"] = output_summary
+        if error is not None:
+            values["error"] = error
+        updated = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == action_id,
+                self.model.status == AgentActionStatus.RUNNING,
+            )
+            .values(**values)
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        return updated.scalar_one_or_none()
+
+    async def cancel_open(
+        self,
+        action_id: str,
+        *,
+        error: dict,
+        completed_at: datetime,
+    ) -> AgentAction | None:
+        updated = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == action_id,
+                self.model.status.in_(
+                    [
+                        AgentActionStatus.WAITING_DECISION,
+                        AgentActionStatus.REQUESTED,
+                        AgentActionStatus.RUNNING,
+                    ]
+                ),
+            )
+            .values(
+                status=AgentActionStatus.CANCELLED,
+                requires_resume=False,
+                error=error,
+                completed_at=completed_at,
+            )
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        return updated.scalar_one_or_none()
 
     async def defer_requested_for_approval(
         self,

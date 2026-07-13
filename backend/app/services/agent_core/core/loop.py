@@ -81,6 +81,7 @@ class AgentLoopController:
         self.executor = AgentToolExecutor(session, self.registry)
         self.tool_batches = ToolCallBatchCoordinator(session)
         self._current_prepared_batch_id: str | None = None
+        self._execution_owner_token: str | None = None
 
     async def run_turn(
         self,
@@ -94,7 +95,10 @@ class AgentLoopController:
         max_tokens: int | None = None,
         continuation_batch_id: str | None = None,
         continuation_failure_mode: str = "failed",
+        execution_owner_token: str | None = None,
     ) -> LoopResult:
+        if execution_owner_token is not None:
+            self._execution_owner_token = execution_owner_token
         turn = await self.turns.get(turn_id)
         if turn is None:
             return LoopResult(
@@ -158,6 +162,15 @@ class AgentLoopController:
                     token_usage=token_usage,
                 )
             turn = await self._renew_turn_lease(turn)
+            if turn is None:
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=budget.used_iterations,
+                    error_code="execution_claim_lost",
+                    error_message="Agent turn execution lease ownership was lost.",
+                    token_usage=token_usage,
+                )
             permission_context, agent_session = await PermissionContextResolver(
                 self.db
             ).resolve_with_session(
@@ -628,6 +641,8 @@ class AgentLoopController:
         }
         for _tool_call, tool_name, prepared_result in prepared:
             turn = await self._renew_turn_lease(turn)
+            if turn is None:
+                raise asyncio.CancelledError
             read_result = read_results_by_action.get(prepared_result.action_id)
             if read_result is not None:
                 result_signatures.append(_tool_result_signature(tool_name, read_result))
@@ -660,6 +675,10 @@ class AgentLoopController:
         if (
             turn is None
             or turn.status != AgentTurnStatus.RUNNING
+            or (
+                self._execution_owner_token is not None
+                and turn.lease_owner_token != self._execution_owner_token
+            )
             or is_interrupt_requested(turn)
         ):
             return None
@@ -797,7 +816,10 @@ class AgentLoopController:
         strategy: RuntimeStrategy = RuntimeStrategy(),
         max_tokens: int | None = None,
         continuation_failure_mode: str = "failed",
+        execution_owner_token: str | None = None,
     ) -> LoopResult:
+        if execution_owner_token is not None:
+            self._execution_owner_token = execution_owner_token
         action = await self.actions.get(action_id)
         if action is None:
             return LoopResult(
@@ -947,6 +969,7 @@ class AgentLoopController:
                 str(action.tool_batch_id) if action.tool_batch_id else None
             ),
             continuation_failure_mode=continuation_failure_mode,
+            execution_owner_token=execution_owner_token,
         )
 
     async def _append_assistant_tool_calls(
@@ -1158,6 +1181,12 @@ class AgentLoopController:
 
     async def _renew_turn_lease(self, turn):
         now = datetime.now(timezone.utc)
+        if self._execution_owner_token is not None:
+            return await self.turns.renew_execution_lease(
+                str(turn.id),
+                owner_token=self._execution_owner_token,
+                lease_until=now + _turn_lease_duration(),
+            )
         return await self.turns.update_all(
             turn,
             claimed_at=turn.claimed_at or now,
@@ -1426,8 +1455,14 @@ class AgentLoopController:
             streamed=False,
         )
 
-    async def complete_turn_from_result(self, *, turn, result: LoopResult):
-        current_turn = await self.turns.get(str(turn.id))
+    async def complete_turn_from_result(
+        self,
+        *,
+        turn,
+        result: LoopResult,
+        execution_owner_token: str | None = None,
+    ):
+        current_turn = await self.turns.get_fresh(str(turn.id))
         if current_turn is None:
             return None
         if (
@@ -1460,8 +1495,7 @@ class AgentLoopController:
             status = AgentTurnStatus.FAILED
             event_type = AgentEventType.TURN_FAILED
 
-        updated = await self.turns.update_all(
-            turn,
+        values = dict(
             status=status,
             final_text=result.final_text,
             token_usage=result.token_usage,
@@ -1476,6 +1510,7 @@ class AgentLoopController:
             error_message=result.error_message,
             claimed_at=None,
             lease_until=None,
+            lease_owner_token=None,
             completed_at=datetime.now(timezone.utc)
             if status
             in {
@@ -1485,6 +1520,16 @@ class AgentLoopController:
             }
             else None,
         )
+        if execution_owner_token is not None:
+            updated = await self.turns.update_claimed_execution(
+                str(turn.id),
+                owner_token=execution_owner_token,
+                **values,
+            )
+            if updated is None:
+                return await self.turns.get_fresh(str(turn.id))
+        else:
+            updated = await self.turns.update_all(turn, **values)
         if result.termination_reason == "assistant_final":
             payload = {"final_text": result.final_text}
         elif result.termination_reason in {"interrupted", "cancelled", "no_progress"}:

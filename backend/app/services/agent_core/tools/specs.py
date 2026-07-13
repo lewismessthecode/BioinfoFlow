@@ -36,6 +36,7 @@ class AgentToolContext:
     user_id: str
     session_id: str
     turn_id: str
+    permission_context_snapshot: dict[str, Any] | None = None
 
 
 class AgentTool(Protocol):

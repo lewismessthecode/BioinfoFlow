@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -433,13 +433,15 @@ class AgentToolExecutor:
         if action is None:
             raise ConflictError("Tool action does not exist")
         error = {"type": "InteractionExclusive", "message": reason}
-        action = await self.action_repo.update_all(
-            action,
-            status=AgentActionStatus.CANCELLED,
-            requires_resume=False,
+        cancelled = await self.action_repo.cancel_open(
+            action_id,
             error=error,
             completed_at=datetime.now(timezone.utc),
         )
+        if cancelled is None:
+            await self.session.rollback()
+            return await self._current_result(action_id, fallback=action)
+        action = cancelled
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
@@ -701,9 +703,13 @@ class AgentToolExecutor:
             await self.session.rollback()
             raise
         agent_metrics.increment("tools.started")
+        execution_context = replace(
+            context,
+            permission_context_snapshot=snapshot,
+        )
         try:
             raw_result = await asyncio.wait_for(
-                tool.run(action.normalized_input or action.input, context),
+                tool.run(action.normalized_input or action.input, execution_context),
                 timeout=tool.spec.timeout_seconds,
             )
             validated_result = validate_tool_output(raw_result, tool.spec.output_schema)
@@ -713,12 +719,16 @@ class AgentToolExecutor:
                 "type": "TimeoutError",
                 "message": f"Tool timed out after {tool.spec.timeout_seconds}s",
             }
-            action = await self.action_repo.update_all_pending(
-                action,
+            failed = await self.action_repo.transition_running(
+                str(action.id),
                 status=AgentActionStatus.FAILED,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
             )
+            if failed is None:
+                await self.session.rollback()
+                return await self._current_result(action_id, fallback=action)
+            action = failed
             await self.ledger.append(
                 session_id=str(action.session_id),
                 turn_id=str(action.turn_id),
@@ -732,8 +742,8 @@ class AgentToolExecutor:
                 action_id=str(action.id), status=action.status, error=error
             )
         except asyncio.CancelledError:
-            action = await self.action_repo.update_all_pending(
-                action,
+            cancelled = await self.action_repo.transition_running(
+                str(action.id),
                 status=AgentActionStatus.CANCELLED,
                 error={
                     "type": "CancelledError",
@@ -741,6 +751,10 @@ class AgentToolExecutor:
                 },
                 completed_at=datetime.now(timezone.utc),
             )
+            if cancelled is None:
+                await self.session.rollback()
+                raise
+            action = cancelled
             await self.ledger.append(
                 session_id=str(action.session_id),
                 turn_id=str(action.turn_id),
@@ -753,12 +767,16 @@ class AgentToolExecutor:
             raise
         except Exception as exc:
             error = {"type": exc.__class__.__name__, "message": str(exc)}
-            action = await self.action_repo.update_all_pending(
-                action,
+            failed = await self.action_repo.transition_running(
+                str(action.id),
                 status=AgentActionStatus.FAILED,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
             )
+            if failed is None:
+                await self.session.rollback()
+                return await self._current_result(action_id, fallback=action)
+            action = failed
             await self.ledger.append(
                 session_id=str(action.session_id),
                 turn_id=str(action.turn_id),
@@ -772,15 +790,19 @@ class AgentToolExecutor:
                 action_id=str(action.id), status=action.status, error=error
             )
 
-        artifact_ids = await self._register_artifacts(
-            action=action, tool=tool, result=result
-        )
-        action = await self.action_repo.update_all_pending(
-            action,
+        completed = await self.action_repo.transition_running(
+            str(action.id),
             status=AgentActionStatus.COMPLETED,
             result=result,
             output_summary=summary,
             completed_at=datetime.now(timezone.utc),
+        )
+        if completed is None:
+            await self.session.rollback()
+            return await self._current_result(action_id, fallback=action)
+        action = completed
+        artifact_ids = await self._register_artifacts(
+            action=action, tool=tool, result=result
         )
         await self.ledger.append(
             session_id=str(action.session_id),

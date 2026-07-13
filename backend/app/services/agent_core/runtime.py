@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import uuid4
 
 from litellm import acompletion
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,12 +58,13 @@ class AgentCoreRuntime:
         self.llm_profiles = LlmModelProfileRepository(session)
         self.llm_providers = LlmProviderRepository(session)
         self.llm_credentials = LlmProviderCredentialRepository(session)
+        self._execution_owner_token: str | None = None
 
     async def run_no_tool_turn(self, turn_id: str):
         return await self.run_turn(turn_id)
 
     async def run_turn(self, turn_id: str):
-        turn = await self.turn_repo.get(turn_id)
+        turn = await self.turn_repo.get_fresh(turn_id)
         if turn is None:
             return None
         if turn.status in {
@@ -72,6 +74,18 @@ class AgentCoreRuntime:
         }:
             return turn
 
+        now = datetime.now(timezone.utc)
+        owner_token = str(uuid4())
+        turn = await self.turn_repo.claim_execution(
+            turn_id,
+            owner_token=owner_token,
+            claimed_at=now,
+            lease_until=now + _turn_lease_duration(),
+        )
+        if turn is None:
+            return await self.turn_repo.get_fresh(turn_id)
+        self._execution_owner_token = owner_token
+
         session = await self.session_repo.get(str(turn.session_id))
         if session is None:
             return await self._fail_turn(
@@ -80,17 +94,16 @@ class AgentCoreRuntime:
                 error_code="session_not_found",
             )
 
-        now = datetime.now(timezone.utc)
-        turn = await self.turn_repo.update_all(
-            turn,
-            status=AgentTurnStatus.RUNNING,
+        turn = await self.turn_repo.update_claimed_execution(
+            str(turn.id),
+            owner_token=owner_token,
             started_at=turn.started_at or now,
             completed_at=None,
             error_code=None,
             error_message=None,
-            claimed_at=now,
-            lease_until=now + _turn_lease_duration(),
         )
+        if turn is None:
+            return await self.turn_repo.get_fresh(turn_id)
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -125,6 +138,7 @@ class AgentCoreRuntime:
         return await AgentLoopController(self.turn_repo.session).complete_turn_from_result(
             turn=fresh_turn,
             result=result,
+            execution_owner_token=owner_token,
         )
 
     async def resume_turn_after_action(self, action_id: str):
@@ -133,7 +147,7 @@ class AgentCoreRuntime:
         action = await AgentActionRepository(self.turn_repo.session).get(action_id)
         if action is None:
             return None
-        turn = await self.turn_repo.get(str(action.turn_id))
+        turn = await self.turn_repo.get_fresh(str(action.turn_id))
         if turn is None:
             return None
         if turn.status in {
@@ -143,6 +157,18 @@ class AgentCoreRuntime:
         }:
             return turn
 
+        now = datetime.now(timezone.utc)
+        owner_token = str(uuid4())
+        turn = await self.turn_repo.claim_execution(
+            str(turn.id),
+            owner_token=owner_token,
+            claimed_at=now,
+            lease_until=now + _turn_lease_duration(),
+        )
+        if turn is None:
+            return await self.turn_repo.get_fresh(str(action.turn_id))
+        self._execution_owner_token = owner_token
+
         session = await self.session_repo.get(str(turn.session_id))
         if session is None:
             return await self._fail_turn(
@@ -151,17 +177,16 @@ class AgentCoreRuntime:
                 error_code="session_not_found",
             )
 
-        now = datetime.now(timezone.utc)
-        turn = await self.turn_repo.update_all(
-            turn,
-            status=AgentTurnStatus.RUNNING,
+        turn = await self.turn_repo.update_claimed_execution(
+            str(turn.id),
+            owner_token=owner_token,
             started_at=turn.started_at or now,
             completed_at=None,
             error_code=None,
             error_message=None,
-            claimed_at=now,
-            lease_until=now + _turn_lease_duration(),
         )
+        if turn is None:
+            return await self.turn_repo.get_fresh(str(action.turn_id))
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -200,6 +225,7 @@ class AgentCoreRuntime:
         return await AgentLoopController(self.turn_repo.session).complete_turn_from_result(
             turn=fresh_turn,
             result=result,
+            execution_owner_token=owner_token,
         )
 
     async def _resolve_model_selection(self, *, turn, session) -> dict[str, Any] | None:
@@ -391,6 +417,16 @@ class AgentCoreRuntime:
                 candidate,
                 attempt_index=attempt_index,
             )
+            if turn is None:
+                from app.services.agent_core.core.types import LoopResult
+
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=0,
+                    error_code="execution_claim_lost",
+                    error_message="Agent turn execution lease ownership was lost.",
+                )
             runtime_strategy = _resolved_runtime_strategy(candidate)
             if attempt_index == 0:
                 await self.ledger.append(
@@ -429,6 +465,7 @@ class AgentCoreRuntime:
                     continuation_failure_mode=(
                         "ready" if attempt_index < len(attempts) - 1 else "failed"
                     ),
+                    execution_owner_token=self._execution_owner_token,
                 )
                 next_resume_action_id = None
             else:
@@ -444,6 +481,7 @@ class AgentCoreRuntime:
                     continuation_failure_mode=(
                         "ready" if attempt_index < len(attempts) - 1 else "failed"
                     ),
+                    execution_owner_token=self._execution_owner_token,
                 )
             if not should_try_fallback(result) or attempt_index == len(attempts) - 1:
                 return result
@@ -481,6 +519,14 @@ class AgentCoreRuntime:
         snapshot["resolved_model_source"] = resolved["source"]
         snapshot["resolved_model_capabilities"] = resolved.get("capabilities", {})
         snapshot["resolved_runtime_strategy"] = resolved.get("runtime_strategy", {})
+        if self._execution_owner_token is not None:
+            updated = await self.turn_repo.update_claimed_execution(
+                str(turn.id),
+                owner_token=self._execution_owner_token,
+                model_profile_snapshot=snapshot,
+                lease_until=datetime.now(timezone.utc) + _turn_lease_duration(),
+            )
+            return updated
         return await self.turn_repo.update_all(
             turn,
             model_profile_snapshot=snapshot,
@@ -514,8 +560,7 @@ class AgentCoreRuntime:
 
     async def _fail_turn(self, turn, *, error_message: str, error_code: str):
         completed_at = datetime.now(timezone.utc)
-        turn = await self.turn_repo.update_all(
-            turn,
+        values = dict(
             status=AgentTurnStatus.FAILED,
             final_text=None,
             completed_at=completed_at,
@@ -524,7 +569,19 @@ class AgentCoreRuntime:
             error_message=error_message,
             claimed_at=None,
             lease_until=None,
+            lease_owner_token=None,
         )
+        if self._execution_owner_token is not None:
+            updated = await self.turn_repo.update_claimed_execution(
+                str(turn.id),
+                owner_token=self._execution_owner_token,
+                **values,
+            )
+            if updated is None:
+                return await self.turn_repo.get_fresh(str(turn.id))
+            turn = updated
+        else:
+            turn = await self.turn_repo.update_all(turn, **values)
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),

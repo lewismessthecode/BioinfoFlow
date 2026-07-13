@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services.agent_core.context.remote import render_remote_connection_context
 from app.services.agent_core.permissions.command_risk import CommandTargetProfile
 from app.services.agent_core.permissions.policy import PermissionPolicy
-from app.services.agent_core.tools import build_default_tool_registry
+from app.services.agent_core.tools import AgentToolDispatcher, build_default_tool_registry
 from app.services.agent_core.tools.executor import _artifact_descriptor
 from app.services.agent_core.tools.remote import (
     DatabaseRemoteConnectionResolver,
@@ -117,6 +119,153 @@ class _FakeRemoteExecutor:
             }
         )
         return self.result
+
+
+async def _dispatch_remote_exec_while_target_drifts(db_session, drift: str):
+    from app.repositories.project_repo import ProjectRepository
+    from app.services.agent_core.service import AgentCoreService
+    from app.services.project_service import ProjectService
+
+    connection_service = RemoteConnectionService(db_session)
+    first = await connection_service.create_connection(
+        {
+            "name": "Approved target",
+            "host": "approved.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    second = await connection_service.create_connection(
+        {
+            "name": "Replacement target",
+            "host": "replacement.example.org",
+            "port": 22,
+            "username": "bob",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    project = None
+    if drift == "project_root":
+        project = await ProjectService(db_session).create_project(
+            {
+                "name": "Approved remote project",
+                "workspace_id": "workspace-1",
+                "remote_connection_id": str(first.id),
+                "remote_root_path": "/approved/root",
+            },
+            user_id="user-1",
+        )
+    service = AgentCoreService(db_session)
+    agent_session = await service.create_session(
+        project_id=str(project.id) if project is not None else None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="bypass",
+        metadata=(
+            None
+            if project is not None
+            else {
+                "execution_target": {
+                    "type": "remote_ssh",
+                    "connection_id": str(first.id),
+                }
+            }
+        ),
+    )
+    turn = await service.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Run on the approved target only.",
+    )
+    remote_executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="ok\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    remote_tool = registry.get("remote.exec")
+    remote_tool.executor = remote_executor
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original_run = remote_tool.run
+
+    async def paused_run(input, context):
+        entered.set()
+        await release.wait()
+        return await original_run(input, context)
+
+    remote_tool.run = paused_run
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as worker, maker() as mutator:
+        task = asyncio.create_task(
+            AgentToolDispatcher(worker, registry).dispatch(
+                tool_name="remote.exec",
+                input={"command": "hostname"},
+                context=AgentToolContext(
+                    db=worker,
+                    workspace_id="workspace-1",
+                    user_id="user-1",
+                    session_id=str(agent_session.id),
+                    turn_id=str(turn.id),
+                ),
+            )
+        )
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        if drift == "selected_target":
+            await AgentCoreService(mutator).update_session(
+                session_id=str(agent_session.id),
+                workspace_id="workspace-1",
+                user_id="user-1",
+                updates={
+                    "execution_target": {
+                        "type": "remote_ssh",
+                        "connection_id": str(second.id),
+                    }
+                },
+            )
+        elif drift == "host":
+            current = await RemoteConnectionService(mutator).get_connection(
+                str(first.id), workspace_id="workspace-1"
+            )
+            await RemoteConnectionService(mutator).update_connection(
+                current, {"host": "changed.example.org"}
+            )
+        else:
+            current_project = await ProjectRepository(mutator).get_fresh(
+                str(project.id)
+            )
+            await ProjectRepository(mutator).update_all(
+                current_project, remote_root_path="/changed/root"
+            )
+        release.set()
+        result = await asyncio.wait_for(task, timeout=2)
+    return result, remote_executor.calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drift", ["selected_target", "host", "project_root"])
+async def test_remote_exec_fails_closed_when_claimed_target_drifts(
+    db_session, drift
+):
+    result, calls = await _dispatch_remote_exec_while_target_drifts(
+        db_session, drift
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert calls == []
 
 
 @pytest.mark.asyncio

@@ -240,6 +240,77 @@ async def test_two_workers_claim_requested_action_before_side_effect(
 
 
 @pytest.mark.asyncio
+async def test_cross_session_cancel_wins_over_running_tool_completion(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf too-late"},
+        normalized_input={"command": "printf too-late"},
+        risk_level="act_high",
+        permission_decision={"decision": "approve", "source": "user"},
+        status=AgentActionStatus.REQUESTED,
+    )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def delayed_run(self, input, context):
+        del self, input, context
+        entered.set()
+        await release.wait()
+        return {
+            "exit_code": 0,
+            "stdout": "too late",
+            "stderr": "",
+            "cwd": ".",
+            "command": "printf too-late",
+        }
+
+    monkeypatch.setattr(ExecuteShellTool, "run", delayed_run)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as worker, maker() as canceller:
+        worker_task = asyncio.create_task(
+            AgentToolDispatcher(worker, build_default_tool_registry()).resume_action(
+                action_id=str(action.id),
+                context=AgentToolContext(
+                    db=worker,
+                    workspace_id=DEFAULT_WORKSPACE_ID,
+                    user_id="dev",
+                    session_id=str(session.id),
+                    turn_id=str(turn.id),
+                ),
+            )
+        )
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        running = await AgentActionRepository(canceller).get_fresh(str(action.id))
+        assert running.status == AgentActionStatus.RUNNING
+        await AgentActionRepository(canceller).update_all(
+            running,
+            status=AgentActionStatus.CANCELLED,
+            error={"type": "CancelledError", "message": "cancelled externally"},
+        )
+        release.set()
+        result = await asyncio.wait_for(worker_task, timeout=2)
+
+    async with maker() as observer:
+        current = await AgentActionRepository(observer).get_fresh(str(action.id))
+        events = await AgentEventRepository(observer).list_for_turn(
+            turn_id=str(turn.id)
+        )
+
+    assert result.status == AgentActionStatus.CANCELLED
+    assert current.status == AgentActionStatus.CANCELLED
+    assert Counter(event.type for event in events)["action.completed"] == 0
+    assert Counter(event.type for event in events)["action.failed"] == 0
+
+
+@pytest.mark.asyncio
 async def test_requested_action_rechecks_fresh_catastrophic_hard_block(
     db_session, monkeypatch
 ):

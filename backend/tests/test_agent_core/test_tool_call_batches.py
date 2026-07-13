@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -45,6 +46,8 @@ async def _seed_runtime(db_session) -> None:
     )
     db_session.add(provider)
     await db_session.commit()
+
+
     await db_session.refresh(provider)
     db_session.add(
         LlmModel(
@@ -56,6 +59,17 @@ async def _seed_runtime(db_session) -> None:
         )
     )
     await db_session.commit()
+
+
+async def _mark_turn_as_expired_execution(service, turn):
+    now = datetime.now(timezone.utc)
+    return await service.turn_repo.update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        claimed_at=now - timedelta(minutes=2),
+        lease_until=now - timedelta(minutes=1),
+        lease_owner_token="expired-worker",
+    )
 
 
 def test_action_read_contract_exposes_batch_identity_and_ordinal():
@@ -1549,7 +1563,7 @@ async def test_restart_recovery_is_batch_first_with_fresh_session_and_empty_runn
         user_id="dev",
         input_text="Recover from durable batch state.",
     )
-    turn = await service.turn_repo.update_all(turn, status="waiting_approval")
+    turn = await _mark_turn_as_expired_execution(service, turn)
     batch = await AgentToolCallBatchRepository(db_session).create(
         session_id=str(session.id),
         turn_id=str(turn.id),
@@ -1619,7 +1633,7 @@ async def test_restart_repairs_partially_prepared_evaluating_batch(
         user_id="dev",
         input_text="Recover partial preparation.",
     )
-    await service.turn_repo.update_all(turn, status="waiting_approval")
+    await _mark_turn_as_expired_execution(service, turn)
     transcript = AgentTranscriptStore(db_session)
     await transcript.append_parts(
         session_id=str(session.id),
@@ -1709,7 +1723,7 @@ async def test_mixed_batch_recovery_uses_running_waiting_requested_priority(
         user_id="dev",
         input_text="Recover mixed states.",
     )
-    await service.turn_repo.update_all(turn, status="waiting_approval")
+    await _mark_turn_as_expired_execution(service, turn)
     batch = await AgentToolCallBatchRepository(db_session).create(
         session_id=str(session.id),
         turn_id=str(turn.id),
@@ -1752,7 +1766,7 @@ async def test_recovery_never_crosses_earlier_unresolved_batch_when_timestamps_t
         user_id="dev",
         input_text="Order barriers.",
     )
-    await service.turn_repo.update_all(turn, status="waiting_approval")
+    await _mark_turn_as_expired_execution(service, turn)
     batches = ToolCallBatchCoordinator(db_session)
     first = await batches.create(
         session_id=str(session.id), turn_id=str(turn.id), tool_call_count=1

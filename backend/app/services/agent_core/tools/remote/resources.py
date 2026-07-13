@@ -30,7 +30,7 @@ from app.services.remote_execution import (
     RemoteExecutor,
     SshRemoteExecutor,
 )
-from app.utils.exceptions import BadRequestError, NotFoundError
+from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 
 
 ResolverFactory = Callable[[AsyncSession], "RemoteConnectionResolver"]
@@ -265,9 +265,10 @@ class RemoteExecTool:
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
         await _require_remote_operation_access(context)
-        connection = await _resolve_connection(input, context, self.resolver_factory)
+        connection, working_directory = await _resolve_claimed_remote_target(
+            input, context, self.resolver_factory
+        )
         command = _required_string(input, "command")
-        working_directory = await _remote_working_directory(context, connection.id)
         remote_command = _command_in_remote_working_directory(
             command, working_directory
         )
@@ -343,8 +344,9 @@ class RemoteReadFileTool:
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
         await _require_remote_operation_access(context)
-        connection = await _resolve_connection(input, context, self.resolver_factory)
-        working_directory = await _remote_working_directory(context, connection.id)
+        connection, working_directory = await _resolve_claimed_remote_target(
+            input, context, self.resolver_factory
+        )
         path = _remote_path_for_context(
             _required_string(input, "path"), working_directory
         )
@@ -430,8 +432,9 @@ class RemoteListDirTool:
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
         await _require_remote_operation_access(context)
-        connection = await _resolve_connection(input, context, self.resolver_factory)
-        working_directory = await _remote_working_directory(context, connection.id)
+        connection, working_directory = await _resolve_claimed_remote_target(
+            input, context, self.resolver_factory
+        )
         path = _remote_path_for_context(
             _required_string(input, "path"), working_directory
         )
@@ -479,6 +482,78 @@ async def _resolve_connection(
     raise BadRequestError(
         "connection_id is required when multiple remote connections are selected"
     )
+
+
+async def _resolve_claimed_remote_target(
+    input: dict[str, Any],
+    context: AgentToolContext,
+    resolver_factory: ResolverFactory,
+) -> tuple[RemoteConnectionConfig, str | None]:
+    snapshot = context.permission_context_snapshot
+    if not isinstance(snapshot, dict):
+        connection = await _resolve_connection(input, context, resolver_factory)
+        return connection, await _remote_working_directory(context, connection.id)
+
+    execution_target = snapshot.get("execution_target")
+    if not isinstance(execution_target, dict) or execution_target.get("type") != "remote_ssh":
+        raise PermissionDeniedError("Authorized remote execution target is unavailable")
+    claimed_connection_id = str(execution_target.get("connection_id") or "")
+    if not claimed_connection_id:
+        raise PermissionDeniedError("Authorized remote connection is unavailable")
+    requested_connection_id = input.get("connection_id")
+    if (
+        isinstance(requested_connection_id, str)
+        and requested_connection_id.strip()
+        and requested_connection_id.strip() != claimed_connection_id
+    ):
+        raise PermissionDeniedError("Remote connection differs from the authorized target")
+
+    resolver = resolver_factory(context.db)
+    try:
+        connection = await resolver.get(
+            claimed_connection_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+            session_id=context.session_id,
+        )
+    except NotFoundError as exc:
+        raise PermissionDeniedError(
+            "Remote connection changed after the action was authorized"
+        ) from exc
+
+    agent_session = await AgentSessionRepository(context.db).get_fresh(
+        context.session_id
+    )
+    if agent_session is None:
+        raise PermissionDeniedError("Agent session is not accessible")
+    if (
+        str(agent_session.workspace_id) != context.workspace_id
+        or str(agent_session.user_id) != context.user_id
+    ):
+        raise PermissionDeniedError("Agent session is not accessible")
+    boundary = await RemoteBoundaryResolver(context.db).resolve(
+        agent_session=agent_session,
+        connection_id=claimed_connection_id,
+    )
+    claimed_roots = snapshot.get("effective_roots")
+    claimed_root = (
+        str(claimed_roots[0])
+        if isinstance(claimed_roots, list) and claimed_roots
+        else None
+    )
+    current_identity = boundary.remote_identity
+    current_revisions = boundary.resource_revisions
+    if (
+        int(agent_session.permission_policy_version)
+        != int(snapshot.get("policy_version") or 0)
+        or snapshot.get("remote_identity") != current_identity
+        or snapshot.get("resource_revisions") != current_revisions
+        or claimed_root != boundary.effective_root
+    ):
+        raise PermissionDeniedError(
+            "Remote target changed after the action was authorized"
+        )
+    return connection, claimed_root
 
 
 async def _require_remote_operation_access(context: AgentToolContext) -> None:

@@ -3,16 +3,23 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings, settings
-from app.models.agent_core import AgentActionStatus
+from app.models.agent_core import AgentActionStatus, AgentTurnStatus
 from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
-from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRepository
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentEventRepository,
+    AgentTurnRepository,
+)
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.loop import _max_iterations
+from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.agent_core.runtime import AgentCoreRuntime
 import app.services.agent_core.runner as runner_module
@@ -609,6 +616,207 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
 
     assert summary["enqueued"] == 1
     assert resumed == [(str(action.id), str(turn.id))]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_run_turn_claims_once_across_database_sessions(
+    db_session, monkeypatch
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Execute exactly once.",
+    )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    model_calls = 0
+
+    async def resolve_model(self, *, turn, session):
+        del self, turn, session
+        return {"provider": "test", "model": "test", "request_args": {}}
+
+    async def run_model(self, *, turn, session, resolved, resume_action_id=None):
+        nonlocal model_calls
+        del self, turn, session, resolved, resume_action_id
+        model_calls += 1
+        entered.set()
+        await release.wait()
+        return LoopResult(
+            termination_reason="assistant_final",
+            final_text="done",
+            iteration_count=1,
+        )
+
+    monkeypatch.setattr(AgentCoreRuntime, "_resolve_model_selection", resolve_model)
+    monkeypatch.setattr(AgentCoreRuntime, "_run_model_attempts", run_model)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as first, maker() as second:
+        first_task = asyncio.create_task(AgentCoreRuntime(first).run_turn(str(turn.id)))
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        second_task = asyncio.create_task(
+            AgentCoreRuntime(second).run_turn(str(turn.id))
+        )
+        for _ in range(50):
+            if second_task.done() or model_calls > 1:
+                break
+            await asyncio.sleep(0.01)
+        release.set()
+        first_result, second_result = await asyncio.wait_for(
+            asyncio.gather(first_task, second_task), timeout=2
+        )
+
+    assert model_calls == 1
+    assert second_result.status == AgentTurnStatus.RUNNING
+    assert first_result.status == AgentTurnStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_duplicate_resume_turn_claims_once_across_database_sessions(
+    db_session, monkeypatch
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Resume exactly once.",
+    )
+    await service.turn_repo.update_all(turn, status=AgentTurnStatus.QUEUED)
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="projects.list",
+        input={},
+        normalized_input={},
+        risk_level="read",
+        permission_decision={"decision": "approve", "source": "user"},
+        status=AgentActionStatus.REQUESTED,
+    )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    model_calls = 0
+
+    async def resolve_model(self, *, turn, session):
+        del self, turn, session
+        return {"provider": "test", "model": "test", "request_args": {}}
+
+    async def run_model(self, *, turn, session, resolved, resume_action_id=None):
+        nonlocal model_calls
+        del self, turn, session, resolved
+        assert resume_action_id == str(action.id)
+        model_calls += 1
+        entered.set()
+        await release.wait()
+        return LoopResult(
+            termination_reason="assistant_final",
+            final_text="resumed",
+            iteration_count=1,
+        )
+
+    monkeypatch.setattr(AgentCoreRuntime, "_resolve_model_selection", resolve_model)
+    monkeypatch.setattr(AgentCoreRuntime, "_run_model_attempts", run_model)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as first, maker() as second:
+        first_task = asyncio.create_task(
+            AgentCoreRuntime(first).resume_turn_after_action(str(action.id))
+        )
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        second_task = asyncio.create_task(
+            AgentCoreRuntime(second).resume_turn_after_action(str(action.id))
+        )
+        for _ in range(50):
+            if second_task.done() or model_calls > 1:
+                break
+            await asyncio.sleep(0.01)
+        release.set()
+        first_result, second_result = await asyncio.wait_for(
+            asyncio.gather(first_task, second_task), timeout=2
+        )
+
+    assert model_calls == 1
+    assert second_result.status == AgentTurnStatus.RUNNING
+    assert first_result.status == AgentTurnStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_valid_rolling_turn_lease_is_not_recoverable(db_session):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep the live lease.",
+    )
+    now = datetime.now(timezone.utc)
+    await service.turn_repo.update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        claimed_at=now,
+        lease_until=now + timedelta(minutes=5),
+        lease_owner_token="live-owner",
+    )
+
+    recoverable = await AgentTurnRepository(db_session).list_recoverable()
+
+    assert str(turn.id) not in {str(item.id) for item in recoverable}
+
+
+@pytest.mark.asyncio
+async def test_turn_lease_renewal_requires_current_owner(db_session):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Renew only for the owner.",
+    )
+    now = datetime.now(timezone.utc)
+    claimed = await service.turn_repo.claim_execution(
+        str(turn.id),
+        owner_token="owner-a",
+        claimed_at=now,
+        lease_until=now + timedelta(minutes=1),
+    )
+    assert claimed is not None
+
+    rejected = await service.turn_repo.renew_execution_lease(
+        str(turn.id),
+        owner_token="owner-b",
+        lease_until=now + timedelta(minutes=2),
+    )
+
+    assert rejected is None
 
 
 @pytest.mark.asyncio
