@@ -37,6 +37,7 @@ from app.services.model_runtime.contracts import InputPart
 class AgentModelContext:
     instructions: str
     input_items: tuple[InputPart, ...]
+    compacted: bool = False
 
 
 class AgentContextAssembler:
@@ -58,26 +59,15 @@ class AgentContextAssembler:
             await self._compact_if_needed(agent_session=agent_session, turn=turn)
         # Stable, cache-friendly identity prefix comes first; everything that
         # changes per session/turn is appended after it.
-        system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
-        project_instruction_context = await self.project_instructions.resolve(
-            agent_session,
-            turn=turn,
-        )
-        if project_instruction_context:
-            system_sections.append(project_instruction_context)
-        environment_context = await self._environment_context(
-            agent_session, exposed_tools
-        )
-        if environment_context:
-            system_sections.append(environment_context)
-        memory_context = await self._memory_context(agent_session)
-        if memory_context:
-            system_sections.append(memory_context)
-        skills_context = self._skills_context(turn)
-        if skills_context:
-            system_sections.append(skills_context)
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": "\n\n".join(section for section in system_sections if section)}
+            {
+                "role": "system",
+                "content": await self._instructions(
+                    agent_session=agent_session,
+                    turn=turn,
+                    exposed_tools=exposed_tools,
+                ),
+            }
         ]
         for message in await self.transcript.list_messages(str(agent_session.id)):
             if message.status != "committed":
@@ -105,18 +95,39 @@ class AgentContextAssembler:
         exposed_tools=None,
         skip_compaction: bool = False,
     ) -> AgentModelContext:
-        messages = await self.provider_messages(
-            agent_session=agent_session,
-            turn=turn,
-            exposed_tools=exposed_tools,
-            skip_compaction=skip_compaction,
+        compacted = False
+        if not skip_compaction:
+            compacted = await self._compact_if_needed(
+                agent_session=agent_session,
+                turn=turn,
+            )
+        input_items: list[InputPart] = []
+        for message in await self.transcript.list_messages(str(agent_session.id)):
+            if message.status != "committed":
+                continue
+            if message.role not in {"user", "assistant", "tool"}:
+                continue
+            input_items.extend(
+                model_input_parts_from_message(
+                    message.role,
+                    message.content_parts or [],
+                    getattr(message, "message_metadata", None),
+                )
+            )
+        return AgentModelContext(
+            instructions=await self._instructions(
+                agent_session=agent_session,
+                turn=turn,
+                exposed_tools=exposed_tools,
+            ),
+            input_items=tuple(input_items),
+            compacted=compacted,
         )
-        return model_context_from_messages(messages)
 
-    async def _compact_if_needed(self, *, agent_session, turn) -> None:
+    async def _compact_if_needed(self, *, agent_session, turn) -> bool:
         policy = getattr(agent_session, "compression_state", None) or {}
         if not bool(policy.get("enabled", False)):
-            return
+            return False
         threshold_chars = int(policy.get("threshold_chars") or 12000)
         preserve_recent_messages = int(policy.get("preserve_recent_messages") or 12)
         compacted = await self.transcript.compact_session(
@@ -127,6 +138,29 @@ class AgentContextAssembler:
         )
         if compacted is not None:
             agent_metrics.increment("transcript.compactions")
+            return True
+        return False
+
+    async def _instructions(self, *, agent_session, turn, exposed_tools=None) -> str:
+        system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
+        project_instruction_context = await self.project_instructions.resolve(
+            agent_session,
+            turn=turn,
+        )
+        if project_instruction_context:
+            system_sections.append(project_instruction_context)
+        environment_context = await self._environment_context(
+            agent_session, exposed_tools
+        )
+        if environment_context:
+            system_sections.append(environment_context)
+        memory_context = await self._memory_context(agent_session)
+        if memory_context:
+            system_sections.append(memory_context)
+        skills_context = self._skills_context(turn)
+        if skills_context:
+            system_sections.append(skills_context)
+        return "\n\n".join(section for section in system_sections if section)
 
     async def _environment_context(self, agent_session, exposed_tools=None) -> str:
         """Dynamic per-turn environment, platform inventory, and tool list.
@@ -289,7 +323,11 @@ def model_context_from_messages(messages: list[dict[str, Any]]) -> AgentModelCon
             continue
         parts: list[dict[str, Any]] = []
         if text:
-            parts.append({"type": "text", "text": text})
+            text_part: dict[str, Any] = {"type": "text", "text": text}
+            phase = message.get("phase")
+            if phase in {"commentary", "final_answer"}:
+                text_part["phase"] = phase
+            parts.append(text_part)
         raw_calls = message.get("tool_calls")
         if isinstance(raw_calls, list):
             parts.append({"type": "tool_calls", "tool_calls": raw_calls})

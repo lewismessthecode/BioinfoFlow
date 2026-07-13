@@ -37,7 +37,7 @@ from app.services.agent_core.tools.toolsets import (
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
 from app.services.agent_core.transcript.messages import (
     RESPONSES_CONTINUATION_METADATA_KEY,
-    latest_responses_continuation,
+    latest_responses_continuation_anchor,
     metadata_with_responses_continuation,
 )
 from app.services.model_runtime.contracts import (
@@ -52,6 +52,7 @@ from app.services.model_runtime.contracts import (
     ToolCallDelta,
     UsageReport,
 )
+from app.services.model_runtime.errors import ModelError
 from app.services.model_runtime.gateway import ModelGateway
 from app.utils.exceptions import PermissionDeniedError
 from app.utils.logging import get_logger
@@ -174,16 +175,30 @@ class AgentLoopController:
                 )
             turn = await self._renew_turn_lease(turn)
 
-            continuation = await self._responses_continuation_for_turn(
+            continuation_anchor = await self._responses_continuation_anchor(
                 turn,
                 target=target,
+            )
+            continuation = (
+                continuation_anchor.continuation
+                if continuation_anchor is not None
+                else None
             )
             model_context = await self.context.model_context(
                 agent_session=agent_session,
                 turn=turn,
                 exposed_tools=visible_tools,
-                skip_compaction=continuation is not None,
+                skip_compaction=(
+                    continuation_anchor is not None
+                    and continuation_anchor.turn_id == str(turn.id)
+                ),
             )
+            if model_context.compacted and continuation is not None:
+                await self.transcript.clear_session_metadata(
+                    session_id=str(agent_session.id),
+                    metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+                )
+                continuation = None
             invocation = ModelInvocation(
                 target=target,
                 instructions=model_context.instructions,
@@ -218,6 +233,9 @@ class AgentLoopController:
                     error_code="model_request_failed",
                     error_message=str(exc),
                     token_usage=token_usage,
+                    model_replay_safe=(
+                        exc.replay_safe if isinstance(exc, ModelError) else True
+                    ),
                 )
 
             token_usage = _merge_usage(token_usage, streamed.token_usage)
@@ -346,7 +364,7 @@ class AgentLoopController:
                             },
                             streamed.continuation.advance_canonical_input_count(1),
                         ),
-                        replace_turn_metadata_key=(
+                        replace_session_metadata_key=(
                             RESPONSES_CONTINUATION_METADATA_KEY
                         ),
                     )
@@ -379,13 +397,21 @@ class AgentLoopController:
                     phase="final_answer" if target.wire_protocol == "responses" else None,
                 )
             )
+            final_continuation = (
+                streamed.continuation.advance_canonical_input_count(len(parts))
+                if streamed.continuation is not None
+                else None
+            )
             await self.transcript.append_parts(
                 session_id=str(agent_session.id),
                 turn_id=str(turn.id),
                 role="assistant",
                 parts=parts,
-                metadata={"provider": target.provider_kind, "model": target.model_name},
-                replace_turn_metadata_key=(
+                metadata=metadata_with_responses_continuation(
+                    {"provider": target.provider_kind, "model": target.model_name},
+                    final_continuation,
+                ),
+                replace_session_metadata_key=(
                     RESPONSES_CONTINUATION_METADATA_KEY
                     if target.wire_protocol == "responses"
                     else None
@@ -597,9 +623,9 @@ class AgentLoopController:
                 {"provider": provider, "model": model, "kind": "tool_calls"},
                 continuation,
             ),
-            replace_turn_metadata_key=(
+            replace_session_metadata_key=(
                 RESPONSES_CONTINUATION_METADATA_KEY
-                if continuation is not None
+                if wire_protocol == "responses"
                 else None
             ),
         )
@@ -638,25 +664,24 @@ class AgentLoopController:
             },
         )
 
-    async def _responses_continuation_for_turn(
+    async def _responses_continuation_anchor(
         self,
         turn,
         *,
         target: ModelTarget,
-    ) -> ResponsesContinuation | None:
-        continuation = latest_responses_continuation(
+    ):
+        anchor = latest_responses_continuation_anchor(
             await self.transcript.list_messages(str(turn.session_id)),
-            turn_id=str(turn.id),
         )
         if (
-            continuation is not None
+            anchor is not None
             and target.wire_protocol == "responses"
-            and continuation.matches_target(target)
+            and anchor.continuation.matches_target(target)
         ):
-            return continuation
-        if continuation is not None:
-            await self.transcript.clear_turn_metadata(
-                turn_id=str(turn.id),
+            return anchor
+        if anchor is not None:
+            await self.transcript.clear_session_metadata(
+                session_id=str(turn.session_id),
                 metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
             )
         return None

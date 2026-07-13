@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from app.services.model_runtime.contracts import (
@@ -14,6 +15,12 @@ from app.services.model_runtime.contracts import (
 
 
 RESPONSES_CONTINUATION_METADATA_KEY = "_responses_continuation"
+
+
+@dataclass(frozen=True)
+class ResponsesContinuationAnchor:
+    continuation: ResponsesContinuation
+    turn_id: str | None
 
 
 def text_part(text: str, *, phase: str | None = None) -> dict[str, str]:
@@ -149,11 +156,26 @@ def responses_continuation_from_metadata(
 def latest_responses_continuation(
     messages: list[Any],
     *,
-    turn_id: str,
+    turn_id: str | None = None,
     target: ModelTarget | None = None,
 ) -> ResponsesContinuation | None:
+    anchor = latest_responses_continuation_anchor(
+        messages,
+        turn_id=turn_id,
+        target=target,
+    )
+    return anchor.continuation if anchor is not None else None
+
+
+def latest_responses_continuation_anchor(
+    messages: list[Any],
+    *,
+    turn_id: str | None = None,
+    target: ModelTarget | None = None,
+) -> ResponsesContinuationAnchor | None:
     for message in reversed(messages):
-        if str(getattr(message, "turn_id", "")) != turn_id:
+        message_turn_id = getattr(message, "turn_id", None)
+        if turn_id is not None and str(message_turn_id or "") != turn_id:
             continue
         if getattr(message, "status", None) != "committed":
             continue
@@ -163,7 +185,10 @@ def latest_responses_continuation(
         if continuation is not None and (
             target is None or continuation.matches_target(target)
         ):
-            return continuation
+            return ResponsesContinuationAnchor(
+                continuation=continuation,
+                turn_id=str(message_turn_id) if message_turn_id is not None else None,
+            )
     return None
 
 

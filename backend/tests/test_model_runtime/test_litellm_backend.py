@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import asyncio
 import traceback
+import socket
 from collections.abc import AsyncIterator
 from typing import Any
 
+import aiohttp
 import httpx
 import litellm
 import pytest
+from yarl import URL
 
 from app.services.model_runtime.backend.litellm import LiteLLMBackend
+from app.services.model_runtime.backend.litellm_network import (
+    PublicNetworkHTTPHandler,
+    PublicNetworkResolver,
+    ensure_public_request_url,
+    public_network_middleware,
+)
 from app.services.model_runtime.contracts import (
     ModelInvocation,
     ModelTarget,
@@ -16,6 +26,7 @@ from app.services.model_runtime.contracts import (
 )
 from app.services.model_runtime.errors import ModelError
 from app.services.model_runtime.gateway import ModelGateway
+from app.utils.exceptions import PermissionDeniedError
 
 
 def _response(
@@ -119,6 +130,168 @@ async def test_responses_backend_calls_injected_aresponses_once_with_retries_dis
     ]
 
 
+@pytest.mark.asyncio
+async def test_public_only_backend_injects_request_scoped_policy_client():
+    calls: list[dict[str, Any]] = []
+
+    async def fake_acompletion(**kwargs: Any) -> object:
+        calls.append(kwargs)
+        return object()
+
+    await LiteLLMBackend(acompletion_fn=fake_acompletion).invoke(
+        "chat_completions",
+        {"model": "openai/gpt-test", "messages": []},
+        network_access="public_only",
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["client"].network_access == "public_only"
+    assert calls[0]["client"].closed is True
+
+
+@pytest.mark.asyncio
+async def test_public_network_resolver_rejects_any_private_dns_answer(monkeypatch):
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443)),
+        ],
+    )
+
+    with pytest.raises(PermissionDeniedError, match="public address"):
+        await PublicNetworkResolver().resolve("relay.example.com", 443)
+
+
+@pytest.mark.asyncio
+async def test_public_network_resolver_returns_the_exact_validated_connect_address(
+    monkeypatch,
+):
+    calls = 0
+
+    def resolve_once(*args, **kwargs):
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        if calls > 1:
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))
+            ]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443))]
+
+    monkeypatch.setattr("socket.getaddrinfo", resolve_once)
+
+    resolved = await PublicNetworkResolver().resolve("relay.example.com", 443)
+
+    assert calls == 1
+    assert [item["host"] for item in resolved] == ["1.1.1.1"]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/admin",
+        "http://169.254.169.254/latest/meta-data",
+        "https://service.internal/v1/responses",
+    ],
+)
+def test_public_network_request_guard_rejects_private_redirect_destination(url):
+    with pytest.raises(PermissionDeniedError, match="public address"):
+        ensure_public_request_url(URL(url))
+
+
+@pytest.mark.asyncio
+async def test_public_network_http_handler_blocks_private_literal_before_connect():
+    client = PublicNetworkHTTPHandler()
+    try:
+        with pytest.raises(PermissionDeniedError, match="public address"):
+            await client.get("http://127.0.0.1/private")
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_public_only_stream_keeps_policy_client_until_stream_closes():
+    captured: list[PublicNetworkHTTPHandler] = []
+
+    async def provider_stream() -> AsyncIterator[object]:
+        yield object()
+
+    async def fake_acompletion(**kwargs: Any) -> object:
+        captured.append(kwargs["client"])
+        return provider_stream()
+
+    response = await LiteLLMBackend(acompletion_fn=fake_acompletion).invoke(
+        "chat_completions",
+        {"model": "openai/gpt-test", "messages": []},
+        network_access="public_only",
+    )
+
+    assert captured[0].closed is False
+    await anext(response)
+    with pytest.raises(StopAsyncIteration):
+        await anext(response)
+    assert captured[0].closed is True
+
+
+@pytest.mark.asyncio
+async def test_public_network_middleware_rechecks_redirect_destination():
+    requests = 0
+
+    async def handle(
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        nonlocal requests
+        await reader.readuntil(b"\r\n\r\n")
+        requests += 1
+        writer.write(
+            b"HTTP/1.1 302 Found\r\n"
+            b"Location: http://127.0.0.1/private\r\n"
+            b"Content-Length: 0\r\n"
+            b"Connection: close\r\n\r\n"
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+
+    class TestResolver(aiohttp.abc.AbstractResolver):
+        async def resolve(self, host, port=0, family=socket.AF_INET):
+            return [
+                aiohttp.abc.ResolveResult(
+                    hostname=host,
+                    host="127.0.0.1",
+                    port=port,
+                    family=family,
+                    proto=socket.IPPROTO_TCP,
+                    flags=0,
+                )
+            ]
+
+        async def close(self):
+            return None
+
+    connector = aiohttp.TCPConnector(
+        resolver=TestResolver(),
+        use_dns_cache=False,
+    )
+    try:
+        async with aiohttp.ClientSession(
+            connector=connector,
+            middlewares=(public_network_middleware,),
+        ) as client:
+            with pytest.raises(PermissionDeniedError, match="public address"):
+                await client.get(f"http://relay.example.com:{port}/start")
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert requests == 1
+
+
 def test_default_gateway_registers_chat_and_responses_codecs() -> None:
     assert repr(ModelGateway()) == "ModelGateway(protocols=[chat_completions, responses])"
 
@@ -157,10 +330,16 @@ async def test_gateway_dispatches_chat_through_registered_codec_and_backend():
 
     class FakeBackend:
         def __init__(self) -> None:
-            self.calls: list[tuple[str, dict[str, Any]]] = []
+            self.calls: list[tuple[str, dict[str, Any], str]] = []
 
-        async def invoke(self, wire_protocol: str, request: dict[str, Any]) -> Any:
-            self.calls.append((wire_protocol, request))
+        async def invoke(
+            self,
+            wire_protocol: str,
+            request: dict[str, Any],
+            *,
+            network_access: str = "unrestricted",
+        ) -> Any:
+            self.calls.append((wire_protocol, request, network_access))
             return raw_response
 
     backend = FakeBackend()
@@ -177,6 +356,7 @@ async def test_gateway_dispatches_chat_through_registered_codec_and_backend():
                 "api_base": "https://models.example/v1",
                 "api_key": "secret-value",
             },
+            "unrestricted",
         )
     ]
 

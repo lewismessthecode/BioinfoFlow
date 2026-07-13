@@ -6,8 +6,14 @@ import sys
 
 import pytest
 
-from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
-from app.models.workspace import Workspace
+from app.models.llm import (
+    LlmCredentialSource,
+    LlmModel,
+    LlmModelProfile,
+    LlmProvider,
+    LlmProviderCredential,
+)
+from app.models.workspace import Workspace, WorkspaceMembership
 from app.config import settings
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
@@ -20,6 +26,7 @@ from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, R
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools.executor import ToolExecutionResult
+from app.services.llm.credentials import encrypt_secret
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelEvent,
@@ -59,22 +66,92 @@ class FakeModelGateway:
             yield event
 
 
-async def _turn(db_session, *, input_text: str = "Summarize this workflow."):
+class PartialFailureGateway:
+    def __init__(self) -> None:
+        self.invocations: list[ModelInvocation] = []
+
+    async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
+        self.invocations.append(invocation)
+        yield TextDelta(text="Partial output.")
+        raise ModelError(
+            category="service_unavailable",
+            message="Stream failed after output started.",
+            retryable=True,
+            replay_safe=False,
+        )
+
+
+async def _turn(
+    db_session,
+    *,
+    input_text: str = "Summarize this workflow.",
+    user_id: str = "dev",
+):
     db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
     await db_session.commit()
     service = AgentCoreService(db_session)
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
+        user_id=user_id,
     )
     turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
+        user_id=user_id,
         input_text=input_text,
     )
     return session, turn
+
+
+async def _select_catalog_model(
+    db_session,
+    *,
+    session,
+    name: str,
+    user_id: str,
+    scope: str = "user",
+    base_url: str,
+    credential_source: str = LlmCredentialSource.NONE,
+    env_var_name: str | None = None,
+):
+    provider = LlmProvider(
+        name=name,
+        kind="openai_compatible",
+        base_url=base_url,
+        scope=scope,
+        workspace_id=(DEFAULT_WORKSPACE_ID if scope != "global" else None),
+        user_id=(user_id if scope == "user" else None),
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    if credential_source != LlmCredentialSource.NONE:
+        db_session.add(
+            LlmProviderCredential(
+                provider_id=str(provider.id),
+                source=credential_source,
+                env_var_name=env_var_name,
+                masked_hint=(f"env:{env_var_name}" if env_var_name else None),
+                updated_by=user_id,
+            )
+        )
+    model = LlmModel(
+        provider_id=str(provider.id),
+        model_id=f"{name}-model",
+        display_name=f"{name} model",
+        supports_tools=False,
+        supports_streaming=True,
+    )
+    db_session.add(model)
+    await db_session.commit()
+    await db_session.refresh(model)
+    await AgentCoreService(db_session).session_repo.update_all(
+        session,
+        session_metadata={"model_selection": {"model_id": str(model.id)}},
+    )
+    return provider, model
 
 
 def _target() -> ModelTarget:
@@ -86,6 +163,229 @@ def _target() -> ModelTarget:
         base_url="https://models.example/v1",
         api_key="secret",
     )
+
+
+@pytest.mark.asyncio
+async def test_team_member_agent_invocation_rejects_hostname_resolving_private(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    session, turn = await _turn(db_session, user_id="member-1")
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="member-1",
+            role="member",
+        )
+    )
+    await db_session.commit()
+    await _select_catalog_model(
+        db_session,
+        session=session,
+        name="member-rebinding-provider",
+        user_id="member-1",
+        base_url="https://relay.example.com/v1",
+    )
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("127.0.0.1", 0))],
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="must not be reached"),
+            CompletionMetadata(response_id="forbidden", finish_reason="stop"),
+        )
+    )
+
+    failed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+
+    assert failed.status == "failed"
+    assert failed.error_code == "model_selection_missing"
+    assert gateway.invocations == []
+
+
+@pytest.mark.asyncio
+async def test_team_member_agent_invocation_rejects_legacy_user_env_credential(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setenv("DATABASE_URL", "legacy-server-secret")
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("1.1.1.1", 0))],
+    )
+    session, turn = await _turn(db_session, user_id="member-1")
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="member-1",
+            role="member",
+        )
+    )
+    await db_session.commit()
+    await _select_catalog_model(
+        db_session,
+        session=session,
+        name="legacy-member-env-provider",
+        user_id="member-1",
+        base_url="https://1.1.1.1/v1",
+        credential_source=LlmCredentialSource.ENV,
+        env_var_name="DATABASE_URL",
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="must not receive the environment secret"),
+            CompletionMetadata(response_id="forbidden-env", finish_reason="stop"),
+        )
+    )
+
+    failed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+
+    assert failed.status == "failed"
+    assert failed.error_code == "model_selection_missing"
+    assert gateway.invocations == []
+
+
+@pytest.mark.asyncio
+async def test_team_member_public_provider_carries_public_only_network_policy(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("1.1.1.1", 0))],
+    )
+    session, turn = await _turn(db_session, user_id="member-1")
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="member-1",
+            role="member",
+        )
+    )
+    await db_session.commit()
+    await _select_catalog_model(
+        db_session,
+        session=session,
+        name="member-public-provider",
+        user_id="member-1",
+        base_url="https://relay.example.com/v1",
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="public provider completed"),
+            CompletionMetadata(response_id="public-ok", finish_reason="stop"),
+        )
+    )
+
+    completed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    assert gateway.invocations[0].target.network_access == "public_only"
+
+
+@pytest.mark.asyncio
+async def test_team_admin_agent_invocation_preserves_private_env_provider_access(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setenv("ADMIN_RELAY_API_KEY", "admin-relay-secret")
+    session, turn = await _turn(db_session, user_id="admin-1")
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="admin-1",
+            role="admin",
+        )
+    )
+    await db_session.commit()
+    await _select_catalog_model(
+        db_session,
+        session=session,
+        name="admin-private-provider",
+        user_id="admin-1",
+        base_url="http://127.0.0.1:8000/v1",
+        credential_source=LlmCredentialSource.ENV,
+        env_var_name="ADMIN_RELAY_API_KEY",
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="admin provider completed"),
+            CompletionMetadata(response_id="admin-ok", finish_reason="stop"),
+        )
+    )
+
+    completed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    target = gateway.invocations[0].target
+    assert target.network_access == "unrestricted"
+    assert target.resolved_api_key() == "admin-relay-secret"
+
+
+@pytest.mark.asyncio
+async def test_team_member_can_invoke_admin_managed_workspace_env_provider(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setenv("WORKSPACE_RELAY_API_KEY", "workspace-relay-secret")
+    session, turn = await _turn(db_session, user_id="member-1")
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="member-1",
+            role="member",
+        )
+    )
+    await db_session.commit()
+    await _select_catalog_model(
+        db_session,
+        session=session,
+        name="workspace-private-provider",
+        user_id="admin-1",
+        scope="workspace",
+        base_url="http://127.0.0.1:8000/v1",
+        credential_source=LlmCredentialSource.ENV,
+        env_var_name="WORKSPACE_RELAY_API_KEY",
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="workspace provider completed"),
+            CompletionMetadata(response_id="workspace-ok", finish_reason="stop"),
+        )
+    )
+
+    completed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    target = gateway.invocations[0].target
+    assert target.network_access == "unrestricted"
+    assert target.resolved_api_key() == "workspace-relay-secret"
 
 
 @pytest.mark.asyncio
@@ -125,6 +425,26 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
 
     messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
     assert [message.role for message in messages] == ["user", "assistant"]
+
+
+@pytest.mark.asyncio
+async def test_partial_model_failure_is_marked_unsafe_for_fallback(db_session) -> None:
+    _session, turn = await _turn(db_session, input_text="Stream a response.")
+    gateway = PartialFailureGateway()
+
+    result = await AgentLoopController(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(supports_tools=False),
+        strategy=RuntimeStrategy(allow_tools=False),
+    )
+
+    assert result.termination_reason == "model_failed"
+    assert result.error_code == "model_request_failed"
+    assert result.model_replay_safe is False
 
 
 @pytest.mark.asyncio
@@ -605,10 +925,12 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("rotation", ["none", "endpoint", "credential"])
 async def test_responses_approval_resume_survives_service_restart(
     db_session,
     monkeypatch,
     caplog,
+    rotation,
 ) -> None:
     session, turn = await _turn(
         db_session,
@@ -628,6 +950,16 @@ async def test_responses_approval_resume_survives_service_restart(
     db_session.add(provider)
     await db_session.commit()
     await db_session.refresh(provider)
+    credential = LlmProviderCredential(
+        provider_id=str(provider.id),
+        source=LlmCredentialSource.STORED,
+        encrypted_secret=encrypt_secret("initial-responses-key"),
+        fingerprint="initial-responses-fingerprint",
+        masked_hint="init...-key",
+        updated_by="dev",
+    )
+    db_session.add(credential)
+    await db_session.commit()
     model = LlmModel(
         provider_id=str(provider.id),
         model_id="gpt-responses-test",
@@ -784,14 +1116,25 @@ async def test_responses_approval_resume_survives_service_restart(
         decision="approve",
     )
 
-    provider.base_url = "https://changed.example/v1"
-    provider.wire_protocol = "chat_completions"
-    await db_session.commit()
+    if rotation == "endpoint":
+        provider.base_url = "https://changed.example/v1"
+        provider.wire_protocol = "chat_completions"
+        await db_session.commit()
+    elif rotation == "credential":
+        credential.encrypted_secret = encrypt_secret("rotated-responses-key")
+        credential.fingerprint = "rotated-responses-fingerprint"
+        await db_session.commit()
 
     resumed = await AgentCoreRuntime(
         db_session,
         model_gateway=gateway,
     ).resume_turn_after_action(str(actions[0].id))
+
+    if rotation != "none":
+        assert resumed.status == "failed"
+        assert resumed.error_code == "model_selection_missing"
+        assert len(gateway.invocations) == 1
+        return
 
     assert resumed.status == "completed"
     assert resumed.final_text == "Responses continuation completed."
@@ -1084,3 +1427,184 @@ async def test_responses_unknown_item_with_final_answer_emits_warning_and_succee
     assert result.final_text == "Safe final answer."
     events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
     assert any(event.type == AgentEventType.MODEL_WARNING for event in events)
+
+
+@pytest.mark.asyncio
+async def test_completed_responses_turn_continues_into_next_turn_with_one_session_anchor(
+    db_session,
+) -> None:
+    session, first_turn = await _turn(
+        db_session,
+        input_text="Inspect the workflow and remember the result.",
+    )
+    target = ModelTarget(
+        endpoint_id="endpoint-responses-session",
+        provider_kind="openai_compatible",
+        model_name="gpt-responses-session",
+        wire_protocol="responses",
+    )
+    first_continuation = ResponsesContinuation(
+        response_id="resp-first-turn",
+        canonical_input_count=1,
+        output_items=(
+            {
+                "type": "reasoning",
+                "id": "reasoning-first-turn",
+                "encrypted_content": "encrypted-first-turn",
+            },
+            {
+                "type": "message",
+                "id": "message-first-turn",
+                "role": "assistant",
+                "phase": "final_answer",
+                "content": [{"type": "output_text", "text": "First result."}],
+            },
+        ),
+        target=target.continuation_target(),
+    )
+    second_continuation = ResponsesContinuation(
+        response_id="resp-second-turn",
+        canonical_input_count=3,
+        output_items=(
+            {
+                "type": "message",
+                "id": "message-second-turn",
+                "role": "assistant",
+                "phase": "final_answer",
+                "content": [{"type": "output_text", "text": "Second result."}],
+            },
+        ),
+        target=target.continuation_target(),
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="First result.", phase="final_answer"),
+            CompletionMetadata(
+                response_id="resp-first-turn",
+                finish_reason="completed",
+                continuation=first_continuation,
+            ),
+        ),
+        (
+            TextDelta(text="Second result.", phase="final_answer"),
+            CompletionMetadata(
+                response_id="resp-second-turn",
+                finish_reason="completed",
+                continuation=second_continuation,
+            ),
+        ),
+    )
+    controller = AgentLoopController(db_session, model_gateway=gateway)
+
+    first_result = await controller.run_turn(
+        turn_id=str(first_turn.id),
+        target=target,
+    )
+    assert first_result.termination_reason == "assistant_final"
+
+    second_turn = await AgentCoreService(db_session).create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Use that result for a follow-up.",
+    )
+    second_result = await controller.run_turn(
+        turn_id=str(second_turn.id),
+        target=target,
+    )
+
+    assert second_result.termination_reason == "assistant_final"
+    continuation = gateway.invocations[1].continuation
+    assert continuation is not None
+    assert continuation.response_id == "resp-first-turn"
+    assert continuation.canonical_input_count == 2
+    assert gateway.invocations[1].input_items[2:] == (
+        TextPart(text="Use that result for a follow-up."),
+    )
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
+    anchors = [
+        message
+        for message in messages
+        if "_responses_continuation" in (message.message_metadata or {})
+    ]
+    assert len(anchors) == 1
+    assert anchors[0].turn_id == second_turn.id
+
+
+@pytest.mark.asyncio
+async def test_cross_turn_responses_continuation_is_invalidated_when_context_compacts(
+    db_session,
+) -> None:
+    session, first_turn = await _turn(db_session, input_text="A" * 80)
+    session = await AgentCoreService(db_session).session_repo.update_all(
+        session,
+        compression_state={
+            "enabled": True,
+            "threshold_chars": 1,
+            "preserve_recent_messages": 1,
+        },
+    )
+    target = ModelTarget(
+        endpoint_id="endpoint-responses-compaction",
+        provider_kind="openai_compatible",
+        model_name="gpt-responses-compaction",
+        wire_protocol="responses",
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="First result.", phase="final_answer"),
+            CompletionMetadata(
+                response_id="resp-before-compaction",
+                finish_reason="completed",
+                continuation=ResponsesContinuation(
+                    response_id="resp-before-compaction",
+                    canonical_input_count=1,
+                    output_items=(
+                        {
+                            "type": "reasoning",
+                            "id": "reasoning-before-compaction",
+                            "encrypted_content": "discard-after-compaction",
+                        },
+                    ),
+                    target=target.continuation_target(),
+                ),
+            ),
+        ),
+        (
+            TextDelta(text="Fresh result.", phase="final_answer"),
+            CompletionMetadata(response_id="resp-after-compaction", finish_reason="completed"),
+        ),
+    )
+    controller = AgentLoopController(db_session, model_gateway=gateway)
+    await controller.run_turn(turn_id=str(first_turn.id), target=target)
+    before_compaction = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
+    assert sum(
+        "_responses_continuation" in (message.message_metadata or {})
+        for message in before_compaction
+    ) == 1
+    assert "discard-after-compaction" in repr(
+        [message.message_metadata for message in before_compaction]
+    )
+    second_turn = await AgentCoreService(db_session).create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Continue after compaction.",
+    )
+
+    result = await controller.run_turn(turn_id=str(second_turn.id), target=target)
+
+    assert result.termination_reason == "assistant_final"
+    assert gateway.invocations[1].continuation is None
+    assert any(
+        isinstance(item, TextPart) and "Conversation summary for continuity" in item.text
+        for item in gateway.invocations[1].input_items
+    )
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    assert "discard-after-compaction" not in repr(
+        [message.message_metadata for message in messages]
+    )

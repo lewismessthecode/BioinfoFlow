@@ -107,6 +107,57 @@ def test_encode_request_preserves_chat_message_and_tool_order() -> None:
     }
 
 
+def test_encode_request_keeps_assistant_text_and_tool_calls_in_one_message() -> None:
+    invocation = _invocation()
+
+    request = ChatCompletionsCodec().encode_request(
+        ModelInvocation(
+            target=invocation.target,
+            instructions=invocation.instructions,
+            input_items=(
+                TextPart(text="I will inspect the workflow.", phase="commentary"),
+                ToolCallPart(
+                    call_id="call-a",
+                    name="run_workflow",
+                    arguments={"name": "alpha"},
+                ),
+                ToolCallPart(
+                    call_id="call-b",
+                    name="run_workflow",
+                    arguments={"name": "beta"},
+                ),
+            ),
+            tools=invocation.tools,
+            stream=False,
+            max_output_tokens=invocation.max_output_tokens,
+        )
+    )
+
+    assert request["messages"][1] == {
+        "role": "assistant",
+        "content": "I will inspect the workflow.",
+        "tool_calls": [
+            {
+                "id": "call-a",
+                "type": "function",
+                "function": {
+                    "name": "run_workflow",
+                    "arguments": '{"name":"alpha"}',
+                },
+            },
+            {
+                "id": "call-b",
+                "type": "function",
+                "function": {
+                    "name": "run_workflow",
+                    "arguments": '{"name":"beta"}',
+                },
+            },
+        ],
+    }
+    assert len(request["messages"]) == 2
+
+
 def test_encode_request_uses_catalog_litellm_provider_prefix() -> None:
     invocation = _invocation()
     target = ModelTarget(

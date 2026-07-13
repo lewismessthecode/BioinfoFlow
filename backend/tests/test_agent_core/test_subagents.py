@@ -20,8 +20,15 @@ class _FakeBackend:
     def __init__(self, completion: Callable[..., Awaitable[Any]]) -> None:
         self.completion = completion
 
-    async def invoke(self, wire_protocol: str, request: dict[str, Any]) -> Any:
+    async def invoke(
+        self,
+        wire_protocol: str,
+        request: dict[str, Any],
+        *,
+        network_access: str = "unrestricted",
+    ) -> Any:
         assert wire_protocol == "chat_completions"
+        assert network_access == "unrestricted"
         return await self.completion(**request)
 
 

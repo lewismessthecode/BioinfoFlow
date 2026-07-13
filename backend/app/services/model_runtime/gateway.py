@@ -53,7 +53,11 @@ class ModelGateway:
         api_key = invocation.target.resolved_api_key()
         if api_key is not None:
             request["api_key"] = api_key
-        raw_response = await self._backend.invoke(wire_protocol, request)
+        raw_response = await self._backend.invoke(
+            wire_protocol,
+            request,
+            network_access=invocation.target.network_access,
+        )
         yield ResponseStarted(streaming=hasattr(raw_response, "__aiter__"))
         async for event in codec.decode_response(raw_response):
             finalize_event = getattr(codec, "finalize_event", None)

@@ -36,8 +36,8 @@ class ChatCompletionsCodec:
                 )
             elif isinstance(item, ToolCallPart):
                 tool_call = _encode_tool_call(item)
-                if messages and _is_tool_call_message(messages[-1]):
-                    messages[-1]["tool_calls"].append(tool_call)
+                if messages and _is_assistant_message(messages[-1]):
+                    messages[-1].setdefault("tool_calls", []).append(tool_call)
                 else:
                     messages.append(
                         {
@@ -160,11 +160,9 @@ def _encode_tool_call(item: ToolCallPart) -> dict[str, Any]:
     }
 
 
-def _is_tool_call_message(message: dict[str, Any]) -> bool:
-    return (
-        message.get("role") == "assistant"
-        and message.get("content") is None
-        and isinstance(message.get("tool_calls"), list)
+def _is_assistant_message(message: dict[str, Any]) -> bool:
+    return message.get("role") == "assistant" and (
+        "tool_calls" not in message or isinstance(message.get("tool_calls"), list)
     )
 
 

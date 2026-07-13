@@ -71,6 +71,7 @@ class ResponsesCodec:
                         {
                             "role": "assistant",
                             "content": item.text,
+                            "phase": item.phase,
                         }
                     )
             elif isinstance(item, ToolCallPart):

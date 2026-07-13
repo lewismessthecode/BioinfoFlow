@@ -179,8 +179,52 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         await self.session.refresh(message)
         return message
 
+    async def create_replacing_session_metadata(
+        self,
+        *,
+        metadata_key: str,
+        **data: object,
+    ) -> AgentMessage:
+        session_id = str(data["session_id"])
+        stmt = select(self.model).where(self.model.session_id == session_id)
+        result = await self.session.execute(stmt)
+        for existing in result.scalars().all():
+            metadata = dict(existing.message_metadata or {})
+            if metadata_key not in metadata:
+                continue
+            metadata.pop(metadata_key)
+            existing.message_metadata = metadata or None
+        message = self.model(**data)
+        self.session.add(message)
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        await self.session.refresh(message)
+        return message
+
     async def clear_turn_metadata(self, *, turn_id: str, metadata_key: str) -> None:
         stmt = select(self.model).where(self.model.turn_id == turn_id)
+        result = await self.session.execute(stmt)
+        changed = False
+        for message in result.scalars().all():
+            metadata = dict(message.message_metadata or {})
+            if metadata_key not in metadata:
+                continue
+            metadata.pop(metadata_key)
+            message.message_metadata = metadata or None
+            changed = True
+        if changed:
+            await self.session.commit()
+
+    async def clear_session_metadata(
+        self,
+        *,
+        session_id: str,
+        metadata_key: str,
+    ) -> None:
+        stmt = select(self.model).where(self.model.session_id == session_id)
         result = await self.session.execute(stmt)
         changed = False
         for message in result.scalars().all():
