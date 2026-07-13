@@ -628,11 +628,8 @@ def _assess_structured_remote_path(
             or absolute.startswith(f"{posixpath.normpath(root).rstrip('/')}/")
             for root in target.read_roots
         )
-    unsafe = (
-        outside_root
-        or dynamic_or_traversal
-        or (not target.read_roots and normalized.startswith("/"))
-    )
+    unbounded_target = not target.read_roots or not target.working_directory
+    unsafe = unbounded_target or outside_root or dynamic_or_traversal
     if unsafe:
         return RiskAssessment(
             level="act_high",

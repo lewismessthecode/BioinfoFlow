@@ -144,3 +144,34 @@ def test_recursive_and_block_device_sinks_are_hard_blocked(command):
 )
 def test_recursive_and_device_sink_text_is_not_executable(command):
     assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf image | tee /dev/md0",
+        "cp disk.img /dev/dm-0",
+        "dd if=disk.img of=/dev/loop0 bs=1M",
+        "install disk.img /dev/zram0",
+        "mv disk.img /dev/rdisk0",
+        "tee /dev/mapper/vg-root < disk.img",
+        "cp disk.img /dev/disk/by-id/nvme-array",
+    ],
+)
+def test_extended_linux_and_macos_block_device_sinks_are_critical(command):
+    assert classify_shell_command(command) == "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf ok | tee /dev/null",
+        "cp /dev/null output.txt",
+        "dd if=/dev/zero of=/dev/null bs=1 count=1",
+        "printf data > /dev/stdout",
+        "mkfs.ext4 /dev/null",
+        "mkfs.ext4 disk.img",
+    ],
+)
+def test_non_block_dev_nodes_are_not_hard_blocked(command):
+    assert classify_shell_command(command) != "critical"

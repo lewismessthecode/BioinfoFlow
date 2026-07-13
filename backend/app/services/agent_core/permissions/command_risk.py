@@ -446,7 +446,12 @@ def _classify_node(node: _CommandNode) -> RiskLevel:
     ) in {"0", "6"}:
         return "critical"
     if executable.startswith("mkfs"):
-        return "critical"
+        targets = [arg for arg in args if not arg.startswith("-")]
+        return (
+            "critical"
+            if any(_is_block_device(path) for path in targets)
+            else "destructive"
+        )
     if executable == "dd" and any(
         _is_block_device_assignment(arg, "of") for arg in args
     ):
@@ -653,7 +658,14 @@ def _is_block_device_assignment(value: str, key: str) -> bool:
 def _is_block_device(path: str) -> bool:
     return bool(
         re.match(
-            r"^/dev/(?:sd[a-z]|hd[a-z]|vd[a-z]|xvd[a-z]|nvme\d+n\d+|mmcblk\d+|disk\d*|mapper/)",
+            r"^/dev/(?:"
+            r"(?:sd|hd|vd|xvd)[a-z](?:\d+)?|"
+            r"nvme\d+n\d+(?:p\d+)?|mmcblk\d+(?:p\d+)?|"
+            r"md(?:\d+|/[^/]+)|dm-\d+|loop\d+|zram\d+|"
+            r"nbd\d+(?:p\d+)?|rbd\d+|dasd[a-z](?:\d+)?|"
+            r"(?:r?disk\d+(?:s\d+)?|disk/by-(?:id|path)/[^/]+)|"
+            r"mapper/[^/]+|cciss/[^/]+"
+            r")(?:$|/)",
             path,
         )
     )

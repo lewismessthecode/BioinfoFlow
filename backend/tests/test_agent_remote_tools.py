@@ -1154,7 +1154,7 @@ def test_unbounded_structured_remote_paths_require_explicit_approval(tool, path)
 
 
 @pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
-def test_unbounded_structured_safe_relative_path_remains_read_only(tool):
+def test_unbounded_structured_relative_path_requires_explicit_approval(tool):
     target = CommandTargetProfile(
         kind="remote_ssh",
         trust_domain="cluster.example.org",
@@ -1165,8 +1165,18 @@ def test_unbounded_structured_safe_relative_path_remains_read_only(tool):
 
     risk = tool.assess_risk({"path": "results/run.log"}, target=target)
 
-    assert risk.level == "read"
-    assert risk.requires_explicit_approval is False
+    assert risk.level == "act_high"
+    assert risk.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=risk,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
 
 
 @pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])

@@ -246,6 +246,32 @@ def test_nested_destructive_sink_is_denied_even_in_bypass():
     )
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tee /dev/md0 < disk.img",
+        "cp disk.img /dev/dm-0",
+        "dd if=disk.img of=/dev/loop0",
+        "mkfs.ext4 /dev/zram0",
+        "install disk.img /dev/rdisk0",
+    ],
+)
+def test_extended_block_device_sinks_are_denied_in_bypass(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.hard_blocked is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "deny"
+    )
+
+
 def test_command_risk_audit_snapshot_is_bounded_and_structured():
     assessment = assess_command_risk(
         "cat /analysis/project/input/sequence.list",
