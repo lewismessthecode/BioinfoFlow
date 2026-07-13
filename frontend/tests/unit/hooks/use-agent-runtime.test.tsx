@@ -692,6 +692,44 @@ describe("useAgentRuntime", () => {
     expect(result.current.state.error).toBeNull()
   })
 
+  it("keeps loaded runtime state stable during an active session-list refresh", async () => {
+    const initialState = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    const sessionList = deferred<AgentRuntimeSession[]>()
+    mocks.getAgentRuntimeState.mockReturnValueOnce(initialState.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    await act(async () => {
+      initialState.resolve({ session, turns: [], events: [] })
+      await initialState.promise
+    })
+    await waitFor(() => expect(result.current.state.status).toBe("idle"))
+
+    mocks.listAgentRuntimeSessions.mockReturnValueOnce(sessionList.promise)
+    let refresh!: Promise<void>
+    act(() => {
+      refresh = result.current.refreshSessions()
+    })
+
+    expect(result.current.state.status).toBe("idle")
+
+    await act(async () => {
+      sessionList.resolve([session])
+      await refresh
+    })
+
+    expect(result.current.state.status).toBe("idle")
+  })
+
   it("ignores stale state refreshes for inactive sessions", async () => {
     const session2: AgentRuntimeSession = { ...session, id: "session-2" }
     mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])

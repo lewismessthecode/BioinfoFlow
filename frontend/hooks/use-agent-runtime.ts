@@ -166,7 +166,9 @@ export function useAgentRuntime(
     const sequence = sessionListRefreshSequenceRef.current + 1
     sessionListRefreshSequenceRef.current = sequence
     const requestedActiveSessionId = activeSessionIdRef.current
-    dispatch({ type: "loading" })
+    if (!requestedActiveSessionId) {
+      dispatch({ type: "loading" })
+    }
     try {
       const nextSessions = await listAgentRuntimeSessions(projectId)
       if (sessionListRefreshSequenceRef.current !== sequence) return
