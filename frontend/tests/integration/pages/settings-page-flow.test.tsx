@@ -78,6 +78,23 @@ vi.mock("next-intl", () => ({
       "providerCards.summary": "1 configured",
       "providerCards.save": "Save",
       "providerCards.saving": "Saving...",
+      "providerCards.discoverModels": "Discover models",
+      "providerCards.discoveringModels": "Discovering...",
+      "providerCards.testConnection": "Test connection",
+      "providerCards.testingConnection": "Testing...",
+      "providerCards.test": "Test",
+      "providerCards.testing": "Testing...",
+      "providerCards.protocolLabel": "Protocol",
+      "providerCards.protocolAriaLabel": `${values?.provider ?? ""} protocol`,
+      "providerCards.testModelLabel": "Test model",
+      "providerCards.testModelAriaLabel": `${values?.provider ?? ""} test model`,
+      "providerCards.protocolChat": "Chat Completions",
+      "providerCards.protocolResponses": "Responses",
+      "providerCards.testVerified": "Connection verified",
+      "providerCards.testSucceeded": "Connection verified",
+      "providerCards.testFailed": "Connection failed",
+      "providerCards.noTestModels": "No model available",
+      "providerCards.retryable": "Retryable",
       "providerCards.apiKeyPlaceholder": "Paste API key",
       "providerCards.savedKeyPlaceholder": "Key saved. Paste a new key to replace it.",
       "providerCards.endpointPlaceholder": "Endpoint URL",
@@ -161,8 +178,10 @@ describe("Settings page flow", () => {
   const apiRequestMock = vi.mocked(apiRequest)
   const useAppearanceMock = vi.mocked(useAppearance)
   const useLlmSettingsMock = vi.mocked(useLlmSettings)
+  let configuredWireProtocol: "chat_completions" | "responses"
 
   beforeEach(() => {
+    configuredWireProtocol = "chat_completions"
     window.history.replaceState(null, "", "/settings")
     updateSettingsMock.mockReset()
     testProviderMock.mockReset()
@@ -221,13 +240,24 @@ describe("Settings page flow", () => {
                 id: "llm-provider-1",
                 name: "OpenAI",
                 kind: "openai",
+                wire_protocol: configuredWireProtocol,
                 base_url: "https://api.openai.com/v1",
                 api_key_ref: null,
                 scope: "workspace",
                 workspace_id: "workspace-1",
                 user_id: null,
                 enabled: true,
-                test_status: { success: true, latency_ms: 42 },
+                allow_insecure_http: false,
+                test_status:
+                  configuredWireProtocol === "chat_completions"
+                    ? {
+                        success: true,
+                        wire_protocol: "chat_completions",
+                        model: "gpt-5.4",
+                        latency_ms: 42,
+                        retryable: false,
+                      }
+                    : null,
                 metadata: { providerTemplate: "openai" },
                 credential: {
                   provider_id: "llm-provider-1",
@@ -301,14 +331,57 @@ describe("Settings page flow", () => {
             provider_id: "llm-provider-1",
             success: true,
             model: "gpt-5.4",
+            wire_protocol: configuredWireProtocol,
             error: null,
             latency_ms: 42,
+            retryable: false,
           },
           meta: undefined,
         }
       }
       if (path === "/llm/provider-setups" && options?.method === "POST") {
-        expect(options.body).toContain('"template_id":"openrouter"')
+        const input = JSON.parse(String(options.body)) as {
+          template_id: string
+          wire_protocol: "chat_completions" | "responses"
+        }
+        configuredWireProtocol = input.wire_protocol
+        if (input.template_id === "openai") {
+          return {
+            data: {
+              provider: {
+                id: "llm-provider-1",
+                name: "OpenAI",
+                kind: "openai",
+                wire_protocol: configuredWireProtocol,
+                base_url: "https://api.openai.com/v1",
+                api_key_ref: null,
+                scope: "workspace",
+                workspace_id: "workspace-1",
+                user_id: null,
+                enabled: true,
+                allow_insecure_http: false,
+                test_status: null,
+                metadata: { providerTemplate: "openai" },
+                credential: {
+                  provider_id: "llm-provider-1",
+                  source: "env",
+                  configured: true,
+                  available: true,
+                  env_var_name: "OPENAI_API_KEY",
+                  fingerprint: null,
+                  masked_hint: "env:OPENAI_API_KEY",
+                  updated_at: "2026-06-04T00:00:00Z",
+                },
+                created_at: "2026-06-04T00:00:00Z",
+                updated_at: "2026-06-04T00:00:01Z",
+              },
+              models: [],
+              discovered: false,
+            },
+            meta: undefined,
+          }
+        }
+        expect(input.template_id).toBe("openrouter")
         expect(options.body).toContain("sk-openrouter")
         return {
           data: {
@@ -316,12 +389,14 @@ describe("Settings page flow", () => {
               id: "llm-provider-2",
               name: "OpenRouter",
               kind: "openrouter",
+              wire_protocol: "chat_completions",
               base_url: "https://openrouter.ai/api/v1",
               api_key_ref: null,
               scope: "user",
               workspace_id: "workspace-1",
               user_id: "owner-1",
               enabled: true,
+              allow_insecure_http: false,
               test_status: null,
               metadata: { providerTemplate: "openrouter" },
               credential: {
@@ -415,6 +490,98 @@ describe("Settings page flow", () => {
         }),
       )
     })
+    expect(within(openRouterCard).getByLabelText("OpenRouter API key")).toHaveValue("")
+    expect(screen.queryByText("sk-openrouter")).not.toBeInTheDocument()
+  })
+
+  it("keeps Responses save, discovery, and model-specific testing as separate actions", async () => {
+    const user = userEvent.setup()
+    window.history.replaceState(null, "", "/settings?section=providers")
+
+    const page = render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          email: "owner@example.com",
+          role: "owner",
+          mode: "team",
+          canManageMembers: true,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    const openAiCard = await screen.findByRole("group", { name: "OpenAI" })
+    const protocol = within(openAiCard).getByRole("combobox", {
+      name: "OpenAI protocol",
+    })
+    expect(protocol).toHaveTextContent("Chat Completions")
+    expect(within(openAiCard).getByText(/42\s*ms/)).toBeInTheDocument()
+
+    await user.selectOptions(protocol, "responses")
+    expect(within(openAiCard).queryByText(/42\s*ms/)).not.toBeInTheDocument()
+
+    await user.click(within(openAiCard).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      const saveCall = apiRequestMock.mock.calls.find(
+        ([path, options]) =>
+          path === "/llm/provider-setups" && options?.method === "POST",
+      )
+      expect(saveCall).toBeDefined()
+      expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual(
+        expect.objectContaining({
+          template_id: "openai",
+          wire_protocol: "responses",
+          discover: false,
+        }),
+      )
+    })
+    expect(apiRequestMock).not.toHaveBeenCalledWith(
+      "/llm/providers/llm-provider-1/discover-models",
+      expect.anything(),
+    )
+
+    const testModel = within(openAiCard).getByRole("combobox", {
+      name: "OpenAI test model",
+    })
+    await user.selectOptions(testModel, "llm-model-1")
+    await user.click(
+      within(openAiCard).getByRole("button", { name: "Test" }),
+    )
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "/llm/providers/llm-provider-1/test",
+        {
+          method: "POST",
+          body: JSON.stringify({ model_id: "llm-model-1" }),
+        },
+      )
+    })
+    expect(within(openAiCard).getByText("Connection verified")).toBeInTheDocument()
+    expect(within(openAiCard).getByText(/42\s*ms/)).toBeInTheDocument()
+
+    page.unmount()
+    render(
+      <SettingsPageClient
+        viewer={{
+          id: "owner-1",
+          email: "owner@example.com",
+          role: "owner",
+          mode: "team",
+          canManageMembers: true,
+          authEnabled: true,
+          authLocalEnabled: true,
+        }}
+      />,
+    )
+
+    const reloadedCard = await screen.findByRole("group", { name: "OpenAI" })
+    expect(
+      within(reloadedCard).getByRole("combobox", { name: "OpenAI protocol" }),
+    ).toHaveTextContent("Responses")
   })
 
   it("renders the appearance section and the dual preset controls", async () => {
@@ -517,6 +684,11 @@ function template(
     docs_url: `https://docs.example.com/${id}`,
     discovery,
     default_base_url: defaultBaseUrl,
+    supported_wire_protocols:
+      kind === "openai" || kind === "openai_compatible"
+        ? ["chat_completions", "responses"]
+        : ["chat_completions"],
+    default_wire_protocol: "chat_completions",
     fields,
     models,
   }

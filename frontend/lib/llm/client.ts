@@ -11,11 +11,13 @@ import type {
   LlmProviderSetupResult,
   LlmProviderTemplate,
   LlmProviderTestResult,
+  LlmWireProtocol,
 } from "@/lib/llm/types"
 
 export type CreateLlmProviderInput = {
   name: string
   kind: LlmProviderKind
+  wireProtocol?: LlmWireProtocol
   baseUrl?: string | null
   apiKeyRef?: string | null
   scope?: LlmProviderScope
@@ -55,6 +57,7 @@ export const setupLlmProvider = async (input: LlmProviderSetupInput) => {
         name: input.name || null,
         base_url: input.baseUrl || null,
         api_key: input.apiKey || null,
+        wire_protocol: input.wireProtocol ?? "chat_completions",
         model_ids: input.modelIds ?? [],
         discover: input.discover ?? false,
         scope: input.scope ?? "user",
@@ -72,6 +75,7 @@ export const createLlmProvider = async (input: CreateLlmProviderInput) => {
     body: JSON.stringify({
       name: input.name,
       kind: input.kind,
+      wire_protocol: input.wireProtocol ?? "chat_completions",
       base_url: input.baseUrl || null,
       api_key_ref: input.apiKeyRef || null,
       scope: input.scope ?? "workspace",
@@ -92,6 +96,7 @@ export const updateLlmProvider = async (
     body: JSON.stringify({
       name: updates.name,
       kind: updates.kind,
+      wire_protocol: updates.wireProtocol,
       base_url: updates.baseUrl,
       api_key_ref: updates.apiKeyRef,
       scope: updates.scope,
@@ -103,10 +108,18 @@ export const updateLlmProvider = async (
   return response.data
 }
 
-export const testLlmProvider = async (providerId: string) => {
+export const testLlmProvider = async (
+  providerId: string,
+  modelId?: string,
+) => {
   const response = await apiRequest<LlmProviderTestResult>(
     `/llm/providers/${providerId}/test`,
-    { method: "POST" },
+    {
+      method: "POST",
+      ...(modelId
+        ? { body: JSON.stringify({ model_id: modelId }) }
+        : {}),
+    },
   )
   return response.data
 }
