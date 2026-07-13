@@ -160,6 +160,8 @@ class AgentTurn(Base, UUIDMixin, TimestampMixin):
     )
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    owner_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    resume_batch_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,7 @@ from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_metadata_with_model_selection,
 )
+from app.services.agent_core.ownership import new_turn_owner_token
 from app.services.agent_core.runner import (
     cancel_turn_run,
     enqueue_turn_resume,
@@ -366,6 +367,8 @@ class AgentCoreService:
             loop_state={"termination_reason": "cancelled"},
             claimed_at=None,
             lease_until=None,
+            owner_token=None,
+            resume_batch_token=None,
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -399,6 +402,8 @@ class AgentCoreService:
             loop_state={"termination_reason": "interrupted"},
             claimed_at=None,
             lease_until=None,
+            owner_token=None,
+            resume_batch_token=None,
         )
         await self.ledger.append(
             session_id=str(updated.session_id),
@@ -560,40 +565,50 @@ class AgentCoreService:
         return summary
 
     async def _recover_turn(self, turn_id: str) -> str:
-        turn = await self.turn_repo.get(turn_id)
+        now = datetime.now(timezone.utc)
+        owner_token = new_turn_owner_token()
+        lease_seconds = max(
+            int(getattr(settings, "agent_turn_lease_seconds", 300) or 300),
+            1,
+        )
+        turn, claimed = await self.turn_repo.claim_recovery(
+            turn_id,
+            owner_token=owner_token,
+            claimed_at=now,
+            lease_until=now + timedelta(seconds=lease_seconds),
+        )
         if turn is None:
             return "skipped"
-        if turn.status in {
-            AgentTurnStatus.COMPLETED,
-            AgentTurnStatus.FAILED,
-            AgentTurnStatus.CANCELLED,
-        }:
+        if not claimed:
             return "skipped"
 
         open_actions = await self.action_repo.list_open_for_turn(turn_id)
         latest_action = open_actions[0] if open_actions else None
-        now = datetime.now(timezone.utc)
 
         if latest_action is not None and latest_action.status == AgentActionStatus.WAITING_DECISION:
-            await self.turn_repo.update_all(
-                turn,
+            await self.turn_repo.update_owned(
+                str(turn.id),
+                expected_owner_token=owner_token,
                 status=AgentTurnStatus.WAITING_APPROVAL,
                 claimed_at=None,
                 lease_until=None,
+                owner_token=None,
                 completed_at=None,
                 loop_state={"state": "waiting_approval", "recovered": True},
             )
             return "waiting"
 
         if latest_action is not None and latest_action.status == AgentActionStatus.REQUESTED:
-            await self.turn_repo.update_all(
-                turn,
+            await self.turn_repo.update_owned(
+                str(turn.id),
+                expected_owner_token=owner_token,
                 status=AgentTurnStatus.RUNNING,
                 completed_at=None,
                 error_code=None,
                 error_message=None,
                 claimed_at=None,
                 lease_until=None,
+                owner_token=None,
                 loop_state={"state": "running", "recovered": True, "resume_action_id": str(latest_action.id)},
             )
             await self.ledger.append(
@@ -609,8 +624,9 @@ class AgentCoreService:
 
         if latest_action is not None and latest_action.status == AgentActionStatus.RUNNING:
             await self._cancel_open_actions(turn_id, cancelled_at=now)
-            await self.turn_repo.update_all(
-                turn,
+            await self.turn_repo.update_owned(
+                str(turn.id),
+                expected_owner_token=owner_token,
                 status=AgentTurnStatus.FAILED,
                 termination_reason="model_failed",
                 error_code="recovery_inflight_action",
@@ -618,6 +634,8 @@ class AgentCoreService:
                 completed_at=now,
                 claimed_at=None,
                 lease_until=None,
+                owner_token=None,
+                resume_batch_token=None,
                 loop_state={"termination_reason": "model_failed", "recovered": True},
             )
             await self.ledger.append(
@@ -628,8 +646,9 @@ class AgentCoreService:
             )
             return "failed"
 
-        await self.turn_repo.update_all(
-            turn,
+        await self.turn_repo.update_owned(
+            str(turn.id),
+            expected_owner_token=owner_token,
             status=AgentTurnStatus.QUEUED,
             termination_reason=None,
             completed_at=None,
@@ -637,7 +656,9 @@ class AgentCoreService:
             error_message=None,
             claimed_at=None,
             lease_until=None,
+            owner_token=None,
             loop_state={"state": "queued", "recovered": True},
+            resume_batch_token=None,
         )
         await self.ledger.append(
             session_id=str(turn.session_id),

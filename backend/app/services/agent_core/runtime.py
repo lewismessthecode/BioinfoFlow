@@ -42,6 +42,11 @@ from app.services.agent_core.model_selection import (
     session_model_selection_from_metadata,
 )
 from app.services.agent_core.observability import truncate_log_value
+from app.services.agent_core.ownership import (
+    TurnOwnership,
+    TurnOwnershipLostError,
+    new_turn_owner_token,
+)
 from app.services.agent_core.transcript.messages import (
     RESPONSES_CONTINUATION_METADATA_KEY,
     text_part,
@@ -114,16 +119,28 @@ class AgentCoreRuntime:
             )
 
         now = datetime.now(timezone.utc)
-        turn = await self.turn_repo.update_all(
-            turn,
-            status=AgentTurnStatus.RUNNING,
-            started_at=turn.started_at or now,
-            completed_at=None,
-            error_code=None,
-            error_message=None,
+        owner_token = new_turn_owner_token()
+        turn, claimed = await self.turn_repo.claim_run(
+            str(turn.id),
+            owner_token=owner_token,
             claimed_at=now,
             lease_until=now + _turn_lease_duration(),
         )
+        if turn is None or not claimed:
+            return turn
+        ownership = self._ownership(str(turn.id), owner_token)
+        async with ownership.maintain():
+            try:
+                return await self._run_claimed_turn(
+                    turn=turn,
+                    session=session,
+                    ownership=ownership,
+                )
+            except TurnOwnershipLostError:
+                return await self.turn_repo.get(str(turn.id))
+
+    async def _run_claimed_turn(self, *, turn, session, ownership: TurnOwnership):
+        await ownership.ensure_current()
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -147,10 +164,14 @@ class AgentCoreRuntime:
                     "or configure a deployment default."
                 ),
                 error_code="model_selection_missing",
+                ownership=ownership,
             )
 
         result = await self._run_model_attempts(
-            turn=turn, session=session, resolved=resolved
+            turn=turn,
+            session=session,
+            resolved=resolved,
+            ownership=ownership,
         )
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
@@ -158,6 +179,7 @@ class AgentCoreRuntime:
         return await AgentLoopController(
             self.turn_repo.session,
             model_gateway=self.model_gateway,
+            ownership=ownership,
         ).complete_turn_from_result(
             turn=fresh_turn,
             result=result,
@@ -178,9 +200,31 @@ class AgentCoreRuntime:
         }:
             return turn
 
+        transcript = AgentTranscriptStore(self.turn_repo.session)
+        current_batch = await transcript.latest_unresolved_tool_call_batch_ids(
+            session_id=str(action.session_id),
+            turn_id=str(action.turn_id),
+        )
+        pending_call_ids = (turn.loop_state or {}).get("pending_tool_call_ids")
+        eligible_call_ids = (
+            [str(call_id) for call_id in pending_call_ids]
+            if isinstance(pending_call_ids, list)
+            else current_batch
+        )
+        if not action.tool_call_id or action.tool_call_id not in eligible_call_ids:
+            return turn
+        if action.status not in {
+            AgentActionStatus.REQUESTED,
+            AgentActionStatus.REJECTED,
+        }:
+            return turn
+
         now = datetime.now(timezone.utc)
+        owner_token = new_turn_owner_token()
         turn, claimed = await self.turn_repo.claim_action_resume(
             str(turn.id),
+            owner_token=owner_token,
+            expected_resume_batch_token=turn.resume_batch_token,
             claimed_at=now,
             lease_until=now + _turn_lease_duration(),
         )
@@ -189,14 +233,40 @@ class AgentCoreRuntime:
         if not claimed:
             return turn
 
+        ownership = self._ownership(str(turn.id), owner_token)
         session = await self.session_repo.get(str(turn.session_id))
         if session is None:
             return await self._fail_turn(
                 turn,
                 error_message="Agent session could not be loaded for this turn.",
                 error_code="session_not_found",
+                ownership=ownership,
             )
 
+        async with ownership.maintain():
+            try:
+                return await self._resume_claimed_turn(
+                    action_id=action_id,
+                    action_repo=action_repo,
+                    action=action,
+                    turn=turn,
+                    session=session,
+                    ownership=ownership,
+                )
+            except TurnOwnershipLostError:
+                return await self.turn_repo.get(str(turn.id))
+
+    async def _resume_claimed_turn(
+        self,
+        *,
+        action_id: str,
+        action_repo: AgentActionRepository,
+        action,
+        turn,
+        session,
+        ownership: TurnOwnership,
+    ):
+        await ownership.ensure_current()
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -220,6 +290,7 @@ class AgentCoreRuntime:
                 action=action,
                 turn=turn,
                 session=session,
+                ownership=ownership,
             )
             return await self._fail_turn(
                 turn,
@@ -228,12 +299,14 @@ class AgentCoreRuntime:
                     "or configure a deployment default."
                 ),
                 error_code="model_selection_missing",
+                ownership=ownership,
             )
         result = await self._run_model_attempts(
             turn=turn,
             session=session,
             resolved=resolved,
             resume_action_id=action_id,
+            ownership=ownership,
         )
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
@@ -241,6 +314,7 @@ class AgentCoreRuntime:
         return await AgentLoopController(
             self.turn_repo.session,
             model_gateway=self.model_gateway,
+            ownership=ownership,
         ).complete_turn_from_result(
             turn=fresh_turn,
             result=result,
@@ -253,6 +327,7 @@ class AgentCoreRuntime:
         action,
         turn,
         session,
+        ownership: TurnOwnership,
     ) -> None:
         transcript = AgentTranscriptStore(self.turn_repo.session)
         batch = await ordered_tool_call_batch(
@@ -269,6 +344,7 @@ class AgentCoreRuntime:
         }
         now = datetime.now(timezone.utc)
         for sibling in batch:
+            await ownership.ensure_current()
             matching_tool_result = await transcript.find_committed_tool_result(
                 session_id=str(session.id),
                 turn_id=str(turn.id),
@@ -625,10 +701,12 @@ class AgentCoreRuntime:
         session,
         resolved: dict[str, Any],
         resume_action_id: str | None = None,
+        ownership: TurnOwnership,
     ):
         controller = AgentLoopController(
             self.turn_repo.session,
             model_gateway=self.model_gateway,
+            ownership=ownership,
         )
         attempts = [
             resolved,
@@ -638,6 +716,7 @@ class AgentCoreRuntime:
         ]
         next_resume_action_id = resume_action_id
         for attempt_index, candidate in enumerate(attempts):
+            await ownership.ensure_current()
             fresh_turn = await self.turn_repo.get(str(turn.id))
             if fresh_turn is not None:
                 turn = fresh_turn
@@ -645,6 +724,7 @@ class AgentCoreRuntime:
                 turn,
                 candidate,
                 attempt_index=attempt_index,
+                ownership=ownership,
             )
             runtime_strategy = _resolved_runtime_strategy(candidate)
             if attempt_index == 0:
@@ -701,6 +781,7 @@ class AgentCoreRuntime:
         resolved: dict[str, Any],
         *,
         attempt_index: int,
+        ownership: TurnOwnership,
     ):
         snapshot = dict(turn.model_profile_snapshot or {})
         attempts = list(snapshot.get("model_attempts") or [])
@@ -734,12 +815,15 @@ class AgentCoreRuntime:
         snapshot["resolved_model_source"] = resolved["source"]
         snapshot["resolved_model_capabilities"] = resolved.get("capabilities", {})
         snapshot["resolved_runtime_strategy"] = resolved.get("runtime_strategy", {})
-        return await self.turn_repo.update_all(
-            turn,
+        updated_turn, updated = await self.turn_repo.update_owned(
+            str(turn.id),
+            expected_owner_token=ownership.owner_token,
             model_profile_snapshot=snapshot,
-            claimed_at=turn.claimed_at or datetime.now(timezone.utc),
             lease_until=datetime.now(timezone.utc) + _turn_lease_duration(),
         )
+        if not updated or updated_turn is None:
+            raise TurnOwnershipLostError("Agent turn ownership was replaced")
+        return updated_turn
 
     async def _resolve_fallback_candidates(
         self,
@@ -765,19 +849,37 @@ class AgentCoreRuntime:
                 candidates.append(candidate)
         return candidates
 
-    async def _fail_turn(self, turn, *, error_message: str, error_code: str):
+    async def _fail_turn(
+        self,
+        turn,
+        *,
+        error_message: str,
+        error_code: str,
+        ownership: TurnOwnership | None = None,
+    ):
         completed_at = datetime.now(timezone.utc)
-        turn = await self.turn_repo.update_all(
-            turn,
-            status=AgentTurnStatus.FAILED,
-            final_text=None,
-            completed_at=completed_at,
-            termination_reason="model_failed",
-            error_code=error_code,
-            error_message=error_message,
-            claimed_at=None,
-            lease_until=None,
-        )
+        values = {
+            "status": AgentTurnStatus.FAILED,
+            "final_text": None,
+            "completed_at": completed_at,
+            "termination_reason": "model_failed",
+            "error_code": error_code,
+            "error_message": error_message,
+            "claimed_at": None,
+            "lease_until": None,
+            "owner_token": None,
+            "resume_batch_token": None,
+        }
+        if ownership is None:
+            turn = await self.turn_repo.update_all(turn, **values)
+        else:
+            turn, updated = await self.turn_repo.update_owned(
+                str(turn.id),
+                expected_owner_token=ownership.owner_token,
+                **values,
+            )
+            if not updated or turn is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -794,6 +896,17 @@ class AgentCoreRuntime:
         )
         agent_metrics.increment("turns.failed")
         return turn
+
+    def _ownership(self, turn_id: str, owner_token: str) -> TurnOwnership:
+        bind = self.turn_repo.session.bind
+        if bind is None:
+            raise RuntimeError("Agent turn ownership requires a bound database session")
+        return TurnOwnership(
+            bind=bind,
+            turn_id=turn_id,
+            owner_token=owner_token,
+            lease_duration=_turn_lease_duration(),
+        )
 
 
 _DEFAULT_PREFERRED_ENV_KINDS = {"vllm", "openai_compatible"}

@@ -77,6 +77,8 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         self,
         turn_id: str,
         *,
+        owner_token: str,
+        expected_resume_batch_token: str | None,
         claimed_at: datetime,
         lease_until: datetime,
     ) -> tuple[AgentTurn | None, bool]:
@@ -93,6 +95,11 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             self.model.lease_until.is_(None),
             self.model.lease_until <= claimed_at,
         )
+        batch_token_matches = (
+            self.model.resume_batch_token.is_(None)
+            if expected_resume_batch_token is None
+            else self.model.resume_batch_token == expected_resume_batch_token
+        )
         result = await self.session.execute(
             update(self.model)
             .where(
@@ -104,6 +111,7 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
                     ]
                 ),
                 no_active_lease,
+                batch_token_matches,
             )
             .values(
                 status=AgentTurnStatus.RUNNING,
@@ -111,6 +119,94 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
                 completed_at=None,
                 error_code=None,
                 error_message=None,
+                claimed_at=claimed_at,
+                lease_until=lease_until,
+                owner_token=owner_token,
+                resume_batch_token=None,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        claimed = result.rowcount == 1
+        await self.session.commit()
+        turn = await self.session.scalar(
+            select(self.model)
+            .where(self.model.id == turn_id)
+            .execution_options(populate_existing=True)
+        )
+        return turn, claimed
+
+    async def claim_run(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        claimed_at: datetime,
+        lease_until: datetime,
+    ) -> tuple[AgentTurn | None, bool]:
+        """Atomically claim queued work or take over an expired running turn."""
+        self.ensure_clean_resume_claim_session()
+        await self.session.commit()
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_([AgentTurnStatus.QUEUED, AgentTurnStatus.RUNNING]),
+                or_(
+                    self.model.lease_until.is_(None),
+                    self.model.lease_until <= claimed_at,
+                ),
+            )
+            .values(
+                status=AgentTurnStatus.RUNNING,
+                started_at=func.coalesce(self.model.started_at, claimed_at),
+                completed_at=None,
+                error_code=None,
+                error_message=None,
+                claimed_at=claimed_at,
+                lease_until=lease_until,
+                owner_token=owner_token,
+                resume_batch_token=None,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        claimed = result.rowcount == 1
+        await self.session.commit()
+        turn = await self.session.scalar(
+            select(self.model)
+            .where(self.model.id == turn_id)
+            .execution_options(populate_existing=True)
+        )
+        return turn, claimed
+
+    async def claim_recovery(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        claimed_at: datetime,
+        lease_until: datetime,
+    ) -> tuple[AgentTurn | None, bool]:
+        """Fence startup recovery from live workers and competing processes."""
+        self.ensure_clean_resume_claim_session()
+        await self.session.commit()
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                ),
+                or_(
+                    self.model.lease_until.is_(None),
+                    self.model.lease_until <= claimed_at,
+                ),
+            )
+            .values(
+                owner_token=owner_token,
                 claimed_at=claimed_at,
                 lease_until=lease_until,
             )
@@ -124,6 +220,66 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             .execution_options(populate_existing=True)
         )
         return turn, claimed
+
+    async def renew_owned_lease(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        lease_until: datetime,
+    ) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.owner_token == owner_token,
+            )
+            .values(lease_until=lease_until)
+            .execution_options(synchronize_session=False)
+        )
+        renewed = result.rowcount == 1
+        await self.session.commit()
+        return renewed
+
+    async def is_owned(self, turn_id: str, *, owner_token: str) -> bool:
+        return bool(
+            await self.session.scalar(
+                select(func.count())
+                .select_from(self.model)
+                .where(
+                    self.model.id == turn_id,
+                    self.model.status == AgentTurnStatus.RUNNING,
+                    self.model.owner_token == owner_token,
+                )
+            )
+        )
+
+    async def update_owned(
+        self,
+        turn_id: str,
+        *,
+        expected_owner_token: str,
+        **data: object,
+    ) -> tuple[AgentTurn | None, bool]:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.owner_token == expected_owner_token,
+            )
+            .values(**data)
+            .execution_options(synchronize_session=False)
+        )
+        updated = result.rowcount == 1
+        await self.session.commit()
+        turn = await self.session.scalar(
+            select(self.model)
+            .where(self.model.id == turn_id)
+            .execution_options(populate_existing=True)
+        )
+        return turn, updated
 
     async def list_for_session(self, session_id: str) -> list[AgentTurn]:
         stmt = (

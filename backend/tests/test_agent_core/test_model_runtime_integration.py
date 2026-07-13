@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta, timezone
 import json
 import sys
 
@@ -78,6 +79,21 @@ class FakeModelGateway:
             raise response
         for event in response:
             yield event
+
+
+class BlockingFinalGateway:
+    def __init__(self, text: str = "Long model call completed.") -> None:
+        self.text = text
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.invocations: list[ModelInvocation] = []
+
+    async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
+        self.invocations.append(invocation)
+        self.started.set()
+        await self.release.wait()
+        yield TextDelta(text=self.text, phase="final_answer")
+        yield CompletionMetadata(response_id="resp-blocking", finish_reason="stop")
 
 
 class PartialFailureGateway:
@@ -1710,6 +1726,240 @@ async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
     assert tool_results[0].is_error is False
     assert tool_results[1].is_error is True
     assert "UserRejected" in tool_results[1].output
+
+
+@pytest.mark.asyncio
+async def test_stale_resume_job_cannot_claim_after_a_new_approval_batch(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    input_text = "Run the first approved command, then request a second approval."
+    session, turn = await _turn(db_session, input_text=input_text)
+    _provider, continuation = await _responses_batch_approval_fixture(
+        db_session,
+        session=session,
+        input_text=input_text,
+    )
+    first_marker = tmp_path / "old-approval-batch.txt"
+    first_command = (
+        f'{sys.executable} -c "from pathlib import Path; '
+        f"Path({str(first_marker)!r}).write_text('ran')\""
+    )
+    gateway = FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-old-batch",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {"command": first_command, "cwd": str(settings.bioinfoflow_home)}
+                ),
+            ),
+            CompletionMetadata(
+                response_id="resp-old-batch",
+                finish_reason="tool_calls",
+                continuation=continuation,
+            ),
+        ),
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-current-batch",
+                name="ask_user",
+                arguments_delta=json.dumps(
+                    {
+                        "questions": [
+                            {
+                                "question": "Continue with the current batch?",
+                                "header": "Continue",
+                                "options": [
+                                    {"label": "Yes", "description": "Continue."},
+                                    {"label": "No", "description": "Stop."},
+                                ],
+                            }
+                        ]
+                    }
+                ),
+            ),
+            CompletionMetadata(
+                response_id="resp-current-batch",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            TextDelta(text="A stale job incorrectly advanced the turn.", phase="final_answer"),
+            CompletionMetadata(response_id="resp-stale-final", finish_reason="stop"),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_: None
+    )
+    waiting = await AgentCoreRuntime(db_session, model_gateway=gateway).run_turn(
+        str(turn.id)
+    )
+    first_action = (
+        await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    )[0]
+    assert waiting.status == AgentTurnStatus.WAITING_APPROVAL
+    old_batch_token = waiting.resume_batch_token
+    assert old_batch_token
+    await AgentCoreService(db_session).decide_action(
+        action_id=str(first_action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    second_wait = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).resume_turn_after_action(str(first_action.id))
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    second_action = next(
+        action for action in actions if action.tool_call_id == "call-current-batch"
+    )
+
+    assert second_wait.status == AgentTurnStatus.WAITING_APPROVAL
+    assert first_marker.read_text() == "ran"
+    assert first_action.tool_call_id == "call-old-batch"
+    assert second_action.status == AgentActionStatus.WAITING_DECISION
+    assert len(gateway.invocations) == 2
+
+    stale_claim_turn, stale_claimed = await AgentTurnRepository(
+        db_session
+    ).claim_action_resume(
+        str(turn.id),
+        owner_token="stale-old-batch-owner",
+        expected_resume_batch_token=old_batch_token,
+        claimed_at=datetime.now(timezone.utc),
+        lease_until=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    assert stale_claimed is False
+    assert stale_claim_turn.status == AgentTurnStatus.WAITING_APPROVAL
+
+    stale_result = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).resume_turn_after_action(str(first_action.id))
+    durable_turn = await AgentTurnRepository(db_session).get(str(turn.id))
+
+    assert stale_result.status == AgentTurnStatus.WAITING_APPROVAL
+    assert durable_turn.status == AgentTurnStatus.WAITING_APPROVAL
+    assert durable_turn.claimed_at is None
+    assert durable_turn.lease_until is None
+    assert len(gateway.invocations) == 2
+
+
+@pytest.mark.asyncio
+async def test_turn_heartbeat_keeps_long_model_call_out_of_startup_recovery(
+    db_engine,
+    db_session,
+    monkeypatch,
+) -> None:
+    input_text = "Wait for the long model response."
+    session, turn = await _turn(db_session, input_text=input_text)
+    await _responses_batch_approval_fixture(
+        db_session,
+        session=session,
+        input_text=input_text,
+    )
+    monkeypatch.setattr(settings, "agent_turn_lease_seconds", 1)
+    enqueued: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    gateway = BlockingFinalGateway()
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def run_from_worker():
+        async with session_factory() as worker_session:
+            return await AgentCoreRuntime(
+                worker_session,
+                model_gateway=gateway,
+            ).run_turn(str(turn.id))
+
+    worker = asyncio.create_task(run_from_worker())
+    await asyncio.wait_for(gateway.started.wait(), timeout=2)
+    await asyncio.sleep(1.2)
+    async with session_factory() as recovery_session:
+        summary = await AgentCoreService(recovery_session).recover_orphaned_turns()
+
+    assert summary == {"enqueued": 0, "failed": 0, "waiting": 0, "skipped": 1}
+    assert enqueued == []
+
+    gateway.release.set()
+    completed = await asyncio.wait_for(worker, timeout=2)
+    assert completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "Long model call completed."
+
+
+@pytest.mark.asyncio
+async def test_replaced_turn_owner_cannot_publish_or_complete_after_long_model_call(
+    db_engine,
+    db_session,
+) -> None:
+    input_text = "Fence a stale model worker."
+    session, turn = await _turn(db_session, input_text=input_text)
+    await _responses_batch_approval_fixture(
+        db_session,
+        session=session,
+        input_text=input_text,
+    )
+    gateway = BlockingFinalGateway("This stale answer must not be committed.")
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def run_from_worker():
+        async with session_factory() as worker_session:
+            return await AgentCoreRuntime(
+                worker_session,
+                model_gateway=gateway,
+            ).run_turn(str(turn.id))
+
+    stale_worker = asyncio.create_task(run_from_worker())
+    await asyncio.wait_for(gateway.started.wait(), timeout=2)
+    replacement_time = datetime.now(timezone.utc)
+    async with session_factory() as replacement_session:
+        repo = AgentTurnRepository(replacement_session)
+        durable_turn = await repo.get(str(turn.id))
+        original_token = durable_turn.owner_token
+        await repo.update_all(
+            durable_turn,
+            owner_token="replacement-owner",
+            claimed_at=replacement_time,
+            lease_until=replacement_time + timedelta(minutes=5),
+        )
+
+    assert original_token
+    gateway.release.set()
+    await asyncio.wait_for(stale_worker, timeout=2)
+
+    async with session_factory() as inspector:
+        durable_turn = await AgentTurnRepository(inspector).get(str(turn.id))
+        messages = await AgentMessageRepository(inspector).list_for_session(
+            str(session.id)
+        )
+        events = await AgentEventRepository(inspector).list_for_turn(
+            turn_id=str(turn.id)
+        )
+
+    assert durable_turn.status == AgentTurnStatus.RUNNING
+    assert durable_turn.owner_token == "replacement-owner"
+    assert durable_turn.final_text is None
+    assert [message.role for message in messages] == ["user"]
+    assert all(event.type != AgentEventType.TURN_COMPLETED for event in events)
 
 
 @pytest.mark.asyncio

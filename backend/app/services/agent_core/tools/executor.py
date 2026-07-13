@@ -19,6 +19,7 @@ from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import execution_target_from_session
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
+from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.tools.approval import action_requires_resume
 from app.services.agent_core.tools.middleware import (
     normalize_tool_input,
@@ -401,6 +402,7 @@ class AgentToolExecutor:
         context: AgentToolContext,
         already_running: bool = False,
     ) -> ToolExecutionResult:
+        await context.ensure_turn_ownership()
         if not already_running:
             action = await self.action_repo.update_all(
                 action,
@@ -428,7 +430,9 @@ class AgentToolExecutor:
             )
             validated_result = validate_tool_output(raw_result, tool.spec.output_schema)
             result, summary = normalize_tool_result(validated_result)
+            await context.ensure_turn_ownership()
         except asyncio.TimeoutError:
+            await context.ensure_turn_ownership()
             error = {
                 "type": "TimeoutError",
                 "message": f"Tool timed out after {tool.spec.timeout_seconds}s",
@@ -447,7 +451,10 @@ class AgentToolExecutor:
             )
             agent_metrics.increment("tools.failed")
             return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
+        except TurnOwnershipLostError:
+            raise
         except asyncio.CancelledError:
+            await context.ensure_turn_ownership()
             action = await self.action_repo.update_all(
                 action,
                 status=AgentActionStatus.CANCELLED,
@@ -463,6 +470,7 @@ class AgentToolExecutor:
             agent_metrics.increment("tools.cancelled")
             raise
         except Exception as exc:
+            await context.ensure_turn_ownership()
             error = {"type": exc.__class__.__name__, "message": str(exc)}
             action = await self.action_repo.update_all(
                 action,
@@ -479,7 +487,9 @@ class AgentToolExecutor:
             agent_metrics.increment("tools.failed")
             return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
 
+        await context.ensure_turn_ownership()
         artifact_ids = await self._register_artifacts(action=action, tool=tool, result=result)
+        await context.ensure_turn_ownership()
         action = await self.action_repo.update_all(
             action,
             status=AgentActionStatus.COMPLETED,

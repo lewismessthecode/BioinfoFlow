@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 import json
 import sys
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings, settings
-from app.models.agent_core import AgentActionStatus
+from app.models.agent_core import AgentActionStatus, AgentTurnStatus
 from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentEventRepository,
     AgentMessageRepository,
+    AgentTurnRepository,
 )
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
@@ -815,6 +818,60 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
 
     assert summary["enqueued"] == 1
     assert resumed == [(str(action.id), str(turn.id))]
+
+
+@pytest.mark.asyncio
+async def test_startup_recovery_skips_running_turn_with_active_durable_lease(
+    db_engine,
+    db_session,
+    monkeypatch,
+) -> None:
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep the active worker lease intact.",
+    )
+    claimed_at = datetime.now(timezone.utc)
+    lease_until = claimed_at + timedelta(minutes=5)
+    await service.turn_repo.update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        claimed_at=claimed_at,
+        lease_until=lease_until,
+    )
+    enqueued: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async with session_factory() as recovery_session:
+        summary = await AgentCoreService(recovery_session).recover_orphaned_turns()
+    async with session_factory() as inspector:
+        durable_turn = await AgentTurnRepository(inspector).get(str(turn.id))
+
+    assert summary == {"enqueued": 0, "failed": 0, "waiting": 0, "skipped": 1}
+    assert enqueued == []
+    assert durable_turn.status == AgentTurnStatus.RUNNING
+    assert durable_turn.claimed_at.replace(tzinfo=timezone.utc) == claimed_at
+    assert durable_turn.lease_until.replace(tzinfo=timezone.utc) == lease_until
 
 
 @pytest.mark.asyncio
