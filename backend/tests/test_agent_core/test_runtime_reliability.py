@@ -346,6 +346,7 @@ async def test_model_failure_and_fallback_surfaces_never_persist_credentials(
             "endpoint_id": f"endpoint-{model}",
             "provider": "openai_compatible",
             "model": model,
+            "routed_model_name": f"openai/{model}",
             "model_id": f"id-{model}",
             "source": source,
             "capabilities": {

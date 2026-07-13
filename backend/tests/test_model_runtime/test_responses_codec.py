@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from app.services.model_runtime import contracts as runtime_contracts
 from app.services.model_runtime.codecs.responses import ResponsesCodec
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
@@ -48,6 +49,7 @@ def _invocation(
             routed_model_name="openai/gpt-test",
             wire_protocol="responses",
             base_url="https://relay.example/v1",
+            target_revision="credential-revision-a",
             api_key="secret",
         ),
         instructions="Be precise.",
@@ -104,6 +106,9 @@ def test_encode_request_uses_stateless_encrypted_reasoning_continuation() -> Non
             response_id="resp-old",
             output_items=opaque_items,
             canonical_input_count=2,
+            canonical_input_digest=runtime_contracts.canonical_input_prefix_digest(
+                _invocation().input_items[:2]
+            ),
             target=_invocation().target.continuation_target(),
         ),
     )
@@ -153,12 +158,16 @@ def test_encode_request_discards_continuation_bound_to_another_target() -> None:
                 },
             ),
             canonical_input_count=4,
+            canonical_input_digest=runtime_contracts.canonical_input_prefix_digest(
+                _invocation().input_items
+            ),
             target=ModelTarget(
                 endpoint_id="fallback-endpoint",
                 provider_kind="openai",
                 model_name="fallback-model",
                 wire_protocol="responses",
                 base_url="https://fallback.example/v1",
+                target_revision="credential-revision-b",
             ).continuation_target(),
         )
     )
@@ -170,6 +179,72 @@ def test_encode_request_discards_continuation_bound_to_another_target() -> None:
         "content": [{"type": "input_text", "text": "List projects."}],
     }
     assert "must-not-cross-targets" not in repr(request)
+
+
+def test_encode_request_discards_continuation_when_count_exceeds_current_input() -> None:
+    invocation = _invocation(
+        continuation=ResponsesContinuation(
+            response_id="resp-stale",
+            output_items=(
+                {"type": "reasoning", "encrypted_content": "must-not-drop-input"},
+            ),
+            canonical_input_count=99,
+            canonical_input_digest=runtime_contracts.canonical_input_prefix_digest(
+                _invocation().input_items
+            ),
+            target=_invocation().target.continuation_target(),
+        )
+    )
+
+    request = ResponsesCodec().encode_request(invocation)
+
+    assert len(request["input"]) == len(invocation.input_items)
+    assert request["input"][0]["content"][0]["text"] == "List projects."
+    assert "must-not-drop-input" not in repr(request)
+
+
+def test_encode_request_discards_continuation_when_count_is_negative() -> None:
+    current_input = _invocation().input_items
+    invocation = _invocation(
+        continuation=ResponsesContinuation(
+            response_id="resp-stale",
+            output_items=(
+                {"type": "reasoning", "encrypted_content": "must-not-drop-prefix"},
+            ),
+            canonical_input_count=-1,
+            canonical_input_digest=runtime_contracts.canonical_input_prefix_digest(
+                current_input[:-1]
+            ),
+            target=_invocation().target.continuation_target(),
+        )
+    )
+
+    request = ResponsesCodec().encode_request(invocation)
+
+    assert len(request["input"]) == len(current_input)
+    assert request["input"][0]["content"][0]["text"] == "List projects."
+    assert "must-not-drop-prefix" not in repr(request)
+
+
+def test_encode_request_discards_continuation_when_same_length_prefix_changed() -> None:
+    invocation = _invocation(
+        continuation=ResponsesContinuation(
+            response_id="resp-stale",
+            output_items=(
+                {"type": "reasoning", "encrypted_content": "must-not-replay-stale"},
+            ),
+            canonical_input_count=1,
+            canonical_input_digest=runtime_contracts.canonical_input_prefix_digest(
+                (TextPart(text="A compacted-away user message."),)
+            ),
+            target=_invocation().target.continuation_target(),
+        )
+    )
+
+    request = ResponsesCodec().encode_request(invocation)
+
+    assert request["input"][0]["content"][0]["text"] == "List projects."
+    assert "must-not-replay-stale" not in repr(request)
 
 
 @pytest.mark.asyncio
@@ -254,6 +329,7 @@ async def test_responses_codec_builds_complete_ordered_stateless_replay_across_t
         model_name="gpt-test",
         routed_model_name="openai/gpt-test",
         wire_protocol="responses",
+        target_revision="credential-revision-a",
     )
     backend = QueueBackend()
     gateway = ModelGateway(backend=backend, codecs=[ResponsesCodec()])
@@ -290,6 +366,9 @@ async def test_responses_codec_builds_complete_ordered_stateless_replay_across_t
                     response_id=first_continuation.response_id,
                     output_items=first_continuation.opaque_output_items(),
                     canonical_input_count=3,
+                    canonical_input_digest=runtime_contracts.canonical_input_prefix_digest(
+                        (user, first_message, first_call)
+                    ),
                     target=first_continuation.target,
                 ),
             )
@@ -320,6 +399,16 @@ async def test_responses_codec_builds_complete_ordered_stateless_replay_across_t
                 response_id=second_continuation.response_id,
                 output_items=second_continuation.opaque_output_items(),
                 canonical_input_count=6,
+                canonical_input_digest=runtime_contracts.canonical_input_prefix_digest(
+                    (
+                        user,
+                        first_message,
+                        first_call,
+                        first_result,
+                        second_message,
+                        second_call,
+                    )
+                ),
                 target=second_continuation.target,
             ),
         )

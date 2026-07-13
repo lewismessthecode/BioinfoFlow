@@ -39,6 +39,7 @@ from app.services.agent_core.transcript.messages import (
     RESPONSES_CONTINUATION_METADATA_KEY,
     latest_responses_continuation_anchor,
     metadata_with_responses_continuation,
+    model_input_parts_from_message,
 )
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
@@ -250,15 +251,7 @@ class AgentLoopController:
                     tool_calls=tool_calls,
                     commentary=streamed.commentary or None,
                     final_text=streamed.text or None,
-                    continuation=(
-                        streamed.continuation.advance_canonical_input_count(
-                            int(bool(streamed.commentary))
-                            + int(bool(streamed.text))
-                            + len(tool_calls)
-                        )
-                        if streamed.continuation is not None
-                        else None
-                    ),
+                    continuation=streamed.continuation,
                     wire_protocol=target.wire_protocol,
                 )
                 try:
@@ -362,7 +355,12 @@ class AgentLoopController:
                                 "model": target.model_name,
                                 "kind": "commentary",
                             },
-                            streamed.continuation.advance_canonical_input_count(1),
+                            streamed.continuation.advance_canonical_input(
+                                model_input_parts_from_message(
+                                    "assistant",
+                                    [text_part(streamed.commentary, phase="commentary")],
+                                )
+                            ),
                         ),
                         replace_session_metadata_key=(
                             RESPONSES_CONTINUATION_METADATA_KEY
@@ -398,7 +396,9 @@ class AgentLoopController:
                 )
             )
             final_continuation = (
-                streamed.continuation.advance_canonical_input_count(len(parts))
+                streamed.continuation.advance_canonical_input(
+                    model_input_parts_from_message("assistant", parts)
+                )
                 if streamed.continuation is not None
                 else None
             )
@@ -614,6 +614,10 @@ class AgentLoopController:
                 )
             )
         parts.append(tool_calls_part([_provider_tool_call(call) for call in tool_calls]))
+        if continuation is not None:
+            continuation = continuation.advance_canonical_input(
+                model_input_parts_from_message("assistant", parts)
+            )
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
@@ -670,16 +674,19 @@ class AgentLoopController:
         *,
         target: ModelTarget,
     ):
-        anchor = latest_responses_continuation_anchor(
-            await self.transcript.list_messages(str(turn.session_id)),
-        )
+        messages = await self.transcript.list_messages(str(turn.session_id))
+        anchor = latest_responses_continuation_anchor(messages)
         if (
             anchor is not None
             and target.wire_protocol == "responses"
             and anchor.continuation.matches_target(target)
         ):
             return anchor
-        if anchor is not None:
+        if anchor is not None or any(
+            RESPONSES_CONTINUATION_METADATA_KEY
+            in (getattr(message, "message_metadata", None) or {})
+            for message in messages
+        ):
             await self.transcript.clear_session_metadata(
                 session_id=str(turn.session_id),
                 metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,

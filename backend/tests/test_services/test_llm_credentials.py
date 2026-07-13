@@ -4,7 +4,9 @@ import pytest
 
 from app.config import settings
 from app.models.llm import LlmCredentialSource, LlmProviderCredential
+from app.services.llm import credentials
 from app.services.llm.credentials import (
+    CredentialMaterial,
     credential_available,
     encrypt_secret,
     generate_credential_fingerprint,
@@ -85,3 +87,35 @@ def test_generate_credential_fingerprint_returns_hex_identifier():
 
     assert len(fingerprint) == 16
     int(fingerprint, 16)
+
+
+def test_model_target_revision_changes_with_fully_resolved_credential(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "revision-test-key")
+    identity = {
+        "endpoint_id": "provider-1",
+        "provider_kind": "openai_compatible",
+        "model_name": "gpt-test",
+        "wire_protocol": "responses",
+        "routed_model_name": "openai/gpt-test",
+        "base_url": "https://relay.example/v1",
+    }
+
+    first = credentials.derive_model_target_revision(
+        **identity,
+        credential_material=CredentialMaterial(api_key="first-secret", source="env"),
+    )
+    repeated = credentials.derive_model_target_revision(
+        **identity,
+        credential_material=CredentialMaterial(api_key="first-secret", source="env"),
+    )
+    rotated = credentials.derive_model_target_revision(
+        **identity,
+        credential_material=CredentialMaterial(api_key="second-secret", source="env"),
+    )
+
+    assert first == repeated
+    assert first != rotated
+    assert "first-secret" not in first
+    assert "second-secret" not in rotated
