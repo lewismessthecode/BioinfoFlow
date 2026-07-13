@@ -7,9 +7,11 @@ from time import perf_counter
 from typing import Any
 
 from app.services.llm.credentials import CredentialMaterial
+from app.services.llm.provider_templates import route_provider_model_name
 from app.services.model_runtime.contracts import (
     ModelInvocation,
     ModelTarget,
+    NetworkAccessPolicy,
     TextPart,
     WireProtocol,
 )
@@ -70,6 +72,7 @@ class LlmProviderProbe:
         model_id: str,
         wire_protocol: WireProtocol,
         base_url: str | None,
+        network_access: NetworkAccessPolicy,
         credential: CredentialMaterial,
         credential_required: bool,
     ) -> LlmProviderProbeResult:
@@ -84,8 +87,14 @@ class LlmProviderProbe:
                 endpoint_id=endpoint_id,
                 provider_kind=provider_kind,
                 model_name=model_id,
+                routed_model_name=route_provider_model_name(
+                    provider_kind,
+                    model_id,
+                    wire_protocol=wire_protocol,
+                ),
                 wire_protocol=wire_protocol,
                 base_url=base_url,
+                network_access=network_access,
                 api_key=credential.api_key,
             ),
             instructions="Reply with OK.",

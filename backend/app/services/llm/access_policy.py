@@ -5,6 +5,7 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
+from app.services.model_runtime.contracts import NetworkAccessPolicy
 from app.utils.authorization import can_manage_server_integrations
 from app.utils.exceptions import PermissionDeniedError
 
@@ -47,17 +48,44 @@ async def authorize_provider_endpoint(
     trusted operators may target loopback, private, link-local, reserved, or
     internal service addresses.
     """
-    if not base_url or can_manage_server_integrations(role):
-        return
+    await resolve_provider_network_access(
+        base_url,
+        private_endpoint_authorized=can_manage_server_integrations(role),
+        resolve_dns=resolve_dns,
+    )
+
+
+async def resolve_provider_network_access(
+    base_url: str | None,
+    *,
+    private_endpoint_authorized: bool,
+    resolve_dns: bool = False,
+) -> NetworkAccessPolicy:
+    """Resolve transport policy independently from provider visibility.
+
+    Shared catalog scope and credential authority decide whether an actor may
+    use a provider configuration. They must not turn an otherwise public URL
+    into unrestricted network access. Only an explicitly internal URL may use
+    the unrestricted transport, and only after trusted configuration authority
+    has been established by the caller.
+    """
+    if not base_url:
+        return "public_only"
     parsed = urlparse(str(base_url).strip())
     host = parsed.hostname or ""
     if _is_non_public_host(host):
-        _deny_internal_endpoint()
+        if not private_endpoint_authorized:
+            _deny_internal_endpoint()
+        return "unrestricted"
     if resolve_dns:
         addresses = await asyncio.to_thread(_resolve_host_addresses, host)
         for address in addresses:
             if not address.is_global:
+                # A public-looking hostname resolving privately is ambiguous,
+                # not an explicit operator-selected internal endpoint. Fail
+                # closed instead of upgrading it to unrestricted transport.
                 _deny_internal_endpoint()
+    return "public_only"
 
 
 def _is_non_public_host(host: str) -> bool:

@@ -1,12 +1,30 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 import httpx
 import pytest
+import socket
 
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.services.llm.bootstrap import sync_environment_llm_catalog
 from app.services.llm.catalog import LlmCatalogService, _validate_provider_base_url
-from app.services.llm.provider_templates import get_provider_template
+from app.services.llm.provider_templates import (
+    ProviderRegistry,
+    ProviderTemplate,
+    get_provider_template,
+)
+from app.utils.exceptions import PermissionDeniedError
+
+
+def _network_client_factory(client_type):
+    @asynccontextmanager
+    async def factory(**kwargs):
+        client = client_type(timeout=kwargs.get("timeout"))
+        async with client:
+            yield client
+
+    return factory
 
 
 async def _noop_discovery(self, provider, **kwargs):
@@ -31,6 +49,39 @@ def test_provider_templates_expose_explicit_supported_and_default_protocols() ->
         "chat_completions",
         "responses",
     ]
+
+
+def test_custom_provider_template_can_declare_responses_support() -> None:
+    template = ProviderTemplate(
+        id="custom-vllm",
+        name="Custom vLLM",
+        kind="custom_vllm",
+        docs_url="https://docs.example.com/custom-vllm",
+        discovery="openai_models",
+        supported_wire_protocols=("chat_completions", "responses"),
+    )
+    registry = ProviderRegistry((template,))
+
+    assert registry.validate_configuration("custom_vllm", "responses") == (
+        "custom_vllm",
+        "responses",
+    )
+
+
+def test_provider_registry_rejects_unknown_or_unsupported_configuration() -> None:
+    template = ProviderTemplate(
+        id="custom-vllm",
+        name="Custom vLLM",
+        kind="custom_vllm",
+        docs_url="https://docs.example.com/custom-vllm",
+        discovery="openai_models",
+    )
+    registry = ProviderRegistry((template,))
+
+    with pytest.raises(ValueError, match="Unsupported LLM provider kind"):
+        registry.validate_configuration("unknown_provider", "chat_completions")
+    with pytest.raises(ValueError, match="does not support wire protocol"):
+        registry.validate_configuration("custom_vllm", "responses")
 
 
 @pytest.mark.asyncio
@@ -168,7 +219,10 @@ async def test_model_discovery_rejects_unapproved_public_http_before_network(
                 request=httpx.Request("GET", str(args[0])),
             )
 
-    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
     provider = LlmProvider(
         name="Unapproved public relay",
         kind="openai_compatible",
@@ -184,9 +238,84 @@ async def test_model_discovery_rejects_unapproved_public_http_before_network(
     await db_session.commit()
 
     with pytest.raises(ValueError, match="explicitly allow insecure HTTP"):
-        await LlmCatalogService(db_session).discover_models_unchecked(provider)
+        await LlmCatalogService(db_session).discover_models_unchecked(
+            provider,
+            network_access="public_only",
+        )
 
     assert network_called is False
+
+
+@pytest.mark.asyncio
+async def test_public_only_discovery_ignores_proxy_env_and_rejects_rebound_dns(
+    db_session,
+    monkeypatch,
+):
+    requests = 0
+
+    async def handle(
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        nonlocal requests
+        await reader.readuntil(b"\r\n\r\n")
+        requests += 1
+        writer.write(
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 11\r\n"
+            b"Connection: close\r\n\r\n"
+            b'{"data":[]}'
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    proxy_url = f"http://127.0.0.1:{port}"
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
+        monkeypatch.setenv(name, proxy_url)
+    monkeypatch.setenv("NO_PROXY", "")
+    monkeypatch.setenv("no_proxy", "")
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))
+        ],
+    )
+    provider = LlmProvider(
+        name="Rebinding discovery relay",
+        kind="openai_compatible",
+        base_url=f"http://relay.example.com:{port}/v1",
+        allow_insecure_http=True,
+        scope="user",
+        workspace_id=None,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    try:
+        with pytest.raises(PermissionDeniedError, match="public address"):
+            await LlmCatalogService(db_session).discover_models_unchecked(
+                provider,
+                network_access="public_only",
+            )
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert requests == 0
 
 
 @pytest.mark.asyncio
@@ -299,7 +428,8 @@ async def test_environment_bootstrap_runs_live_discovery(db_session, monkeypatch
             )
 
     monkeypatch.setattr(
-        "app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
     )
 
     await sync_environment_llm_catalog(db_session)

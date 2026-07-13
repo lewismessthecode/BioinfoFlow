@@ -43,12 +43,23 @@ class ModelTarget:
     provider_kind: str
     model_name: str
     wire_protocol: WireProtocol
+    routed_model_name: InitVar[str | None] = None
     base_url: str | None = None
     network_access: NetworkAccessPolicy = "unrestricted"
     api_key: InitVar[str | None] = None
 
-    def __post_init__(self, api_key: str | None) -> None:
+    def __post_init__(
+        self,
+        routed_model_name: str | None,
+        api_key: str | None,
+    ) -> None:
+        object.__setattr__(self, "_routed_model_name", routed_model_name)
         object.__setattr__(self, "_resolved_api_key", api_key)
+
+    def resolved_model_name(self) -> str:
+        if not self._routed_model_name:
+            raise ValueError("Model target is missing provider routing metadata.")
+        return self._routed_model_name
 
     def resolved_api_key(self) -> str | None:
         return self._resolved_api_key

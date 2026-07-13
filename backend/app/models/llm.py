@@ -15,22 +15,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 
-class LlmProviderKind:
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    GEMINI = "gemini"
-    GROK = "grok"
-    GROQ = "groq"
-    OPENROUTER = "openrouter"
-    DEEPSEEK = "deepseek"
-    OLLAMA = "ollama"
-    VLLM = "vllm"
-    OPENAI_COMPATIBLE = "openai_compatible"
-    QWEN = "qwen"
-    KIMI = "kimi"
-    MINIMAX = "minimax"
-
-
 class LlmProviderScope:
     GLOBAL = "global"
     WORKSPACE = "workspace"
@@ -42,23 +26,11 @@ class LlmWireProtocol:
     RESPONSES = "responses"
 
     ALL = (CHAT_COMPLETIONS, RESPONSES)
-    _RESPONSES_KINDS = frozenset(
-        {LlmProviderKind.OPENAI, LlmProviderKind.OPENAI_COMPATIBLE}
-    )
 
     @classmethod
-    def supported_for_kind(cls, kind: str) -> tuple[str, ...]:
-        return cls.ALL if kind in cls._RESPONSES_KINDS else (cls.CHAT_COMPLETIONS,)
-
-    @classmethod
-    def validate_for_kind(cls, kind: str, wire_protocol: str) -> str:
+    def validate(cls, wire_protocol: str) -> str:
         if wire_protocol not in cls.ALL:
             raise ValueError(f"Unknown LLM wire protocol: {wire_protocol}")
-        if wire_protocol not in cls.supported_for_kind(kind):
-            raise ValueError(
-                f"Provider kind {kind!r} does not support wire protocol "
-                f"{wire_protocol!r}."
-            )
         return wire_protocol
 
 

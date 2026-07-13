@@ -294,7 +294,7 @@ const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
   ], "https://api.openai.com/v1", [
     providerModelTemplate("gpt-5.4-mini", "GPT-5.4 Mini"),
     providerModelTemplate("gpt-5.4", "GPT-5.4"),
-  ]),
+  ], ["chat_completions", "responses"]),
   providerTemplate("anthropic", "Anthropic", "anthropic", "static", [
     providerField("api_key", "API key", true, true),
   ], null, [
@@ -331,7 +331,7 @@ const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     providerField("base_url", "Endpoint", false, true, "https://api.example.com/v1"),
     providerField("api_key", "API key", true, false),
     providerField("model_id", "Model ID", false, false),
-  ], "https://api.example.com/v1"),
+  ], "https://api.example.com/v1", [], ["chat_completions", "responses"]),
 ]
 
 function providerTemplate(
@@ -342,11 +342,8 @@ function providerTemplate(
   fields: LlmProviderTemplate["fields"],
   defaultBaseUrl: string | null = null,
   models: LlmProviderTemplate["models"] = [],
+  supportedWireProtocols: LlmWireProtocol[] = ["chat_completions"],
 ): LlmProviderTemplate {
-  const supportedWireProtocols: LlmWireProtocol[] =
-    kind === "openai" || kind === "openai_compatible"
-      ? ["chat_completions", "responses"]
-      : ["chat_completions"]
   return {
     id,
     name,

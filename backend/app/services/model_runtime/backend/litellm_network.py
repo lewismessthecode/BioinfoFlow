@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
@@ -16,6 +17,7 @@ from app.services.model_runtime.network import (
     ensure_public_network_host,
     resolve_public_address_infos,
 )
+from app.services.model_runtime.contracts import NetworkAccessPolicy
 
 
 class PublicNetworkResolver(AbstractResolver):
@@ -101,10 +103,10 @@ class PublicNetworkHTTPHandler(AsyncHTTPHandler):
 
     network_access = "public_only"
 
-    def __init__(self) -> None:
+    def __init__(self, *, timeout: float | httpx.Timeout | None = None) -> None:
         self._policy_session = _public_network_session()
         self._closed = False
-        super().__init__()
+        super().__init__(timeout=timeout)
 
     @property
     def closed(self) -> bool:
@@ -137,10 +139,29 @@ class PublicNetworkHTTPHandler(AsyncHTTPHandler):
         await self._policy_session.close()
 
 
+@asynccontextmanager
+async def network_policy_http_client(
+    *,
+    network_access: NetworkAccessPolicy,
+    timeout: float,
+) -> AsyncIterator[AsyncHTTPHandler | httpx.AsyncClient]:
+    """Yield an HTTP client whose transport enforces the resolved policy."""
+    if network_access == "public_only":
+        client = PublicNetworkHTTPHandler(timeout=timeout)
+        try:
+            yield client
+        finally:
+            await client.close()
+        return
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        yield client
+
+
 __all__ = [
     "PublicNetworkAiohttpTransport",
     "PublicNetworkHTTPHandler",
     "PublicNetworkResolver",
     "ensure_public_request_url",
+    "network_policy_http_client",
     "public_network_middleware",
 ]

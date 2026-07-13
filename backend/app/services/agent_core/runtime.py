@@ -46,10 +46,13 @@ from app.services.agent_core.transcript.messages import (
 from app.services.agent_core.transcript.store import AgentTranscriptStore
 from app.services.authorization_service import AuthorizationService
 from app.services.llm.access_policy import (
-    authorize_provider_endpoint,
     authorize_server_environment_credential,
+    resolve_provider_network_access,
 )
-from app.services.llm.provider_templates import normalize_provider_base_url
+from app.services.llm.provider_templates import (
+    normalize_provider_base_url,
+    route_provider_model_name,
+)
 from app.services.llm.credentials import resolve_credential_material
 from app.services.llm.catalog import (
     _provider_requires_credential,
@@ -471,15 +474,17 @@ class AgentCoreRuntime:
             provider,
             role=role,
         )
-        if not server_authorized:
-            try:
-                await authorize_provider_endpoint(
-                    provider.base_url,
-                    role=role,
-                    resolve_dns=True,
-                )
-            except PermissionDeniedError:
-                return None
+        try:
+            network_access = await resolve_provider_network_access(
+                provider.base_url,
+                private_endpoint_authorized=server_authorized,
+                # Untrusted member-owned endpoints get an early DNS check.
+                # Trusted/shared configurations still use public_only for
+                # public URLs, whose request transport pins and revalidates DNS.
+                resolve_dns=not server_authorized,
+            )
+        except PermissionDeniedError:
+            return None
         try:
             validate_provider_transport(provider)
         except ValueError:
@@ -524,6 +529,13 @@ class AgentCoreRuntime:
             "endpoint_id": str(provider.id),
             "provider": provider.kind,
             "model": model.model_id,
+            "routed_model_name": route_provider_model_name(
+                provider.kind,
+                model.model_id,
+                wire_protocol=str(
+                    getattr(provider, "wire_protocol", "chat_completions")
+                ),
+            ),
             "model_id": str(model.id),
             "source": source,
             "capabilities": capabilities.as_dict(),
@@ -531,9 +543,7 @@ class AgentCoreRuntime:
             "request_args": request_args,
             "wire_protocol": str(getattr(provider, "wire_protocol", "chat_completions")),
             "configuration_fingerprint": configuration_fingerprint,
-            "network_access": (
-                "unrestricted" if server_authorized else "public_only"
-            ),
+            "network_access": network_access,
         }
         if profile_id:
             result["profile_id"] = profile_id
@@ -811,6 +821,7 @@ def _model_target(resolved: dict[str, Any]) -> ModelTarget:
         endpoint_id=str(resolved.get("endpoint_id") or resolved.get("model_id") or ""),
         provider_kind=str(resolved["provider"]),
         model_name=str(resolved["model"]),
+        routed_model_name=str(resolved["routed_model_name"]),
         wire_protocol=str(resolved.get("wire_protocol") or "chat_completions"),
         base_url=request_args.get("api_base"),
         network_access=str(resolved.get("network_access") or "unrestricted"),

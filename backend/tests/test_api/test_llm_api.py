@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import httpx
 import pytest
 
@@ -19,6 +21,16 @@ OTHER_WORKSPACE_ID = "00000000-0000-0000-0000-000000000002"
 OTHER_PROVIDER_ID = "00000000-0000-0000-0000-00000000aa01"
 OTHER_MODEL_ID = "00000000-0000-0000-0000-00000000bb01"
 OTHER_PROFILE_ID = "00000000-0000-0000-0000-00000000cc01"
+
+
+def _network_client_factory(client_type):
+    @asynccontextmanager
+    async def factory(**kwargs):
+        client = client_type(timeout=kwargs.get("timeout"))
+        async with client:
+            yield client
+
+    return factory
 
 
 def _auth_user(
@@ -321,6 +333,24 @@ async def test_llm_provider_create_defaults_to_chat_completions_for_compatibilit
 
 
 @pytest.mark.asyncio
+async def test_llm_provider_create_accepts_registered_headless_litellm_kind(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Azure OpenAI",
+            "kind": "azure",
+            "base_url": "https://example.openai.azure.com",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["kind"] == "azure"
+    assert response.json()["data"]["wire_protocol"] == "chat_completions"
+
+
+@pytest.mark.asyncio
 async def test_llm_provider_setup_update_preserves_omitted_wire_protocol(
     async_client,
 ):
@@ -452,7 +482,10 @@ async def test_openai_compatible_provider_discovers_models_from_v1_models(
                 request=httpx.Request("GET", url),
             )
 
-    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
 
     setup = await async_client.post(
         "/api/v1/llm/provider-setups",
@@ -508,7 +541,10 @@ async def test_anthropic_provider_discovers_models_from_v1_models(
                 request=httpx.Request("GET", url),
             )
 
-    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
 
     setup = await async_client.post(
         "/api/v1/llm/provider-setups",
@@ -564,7 +600,10 @@ async def test_gemini_provider_discovers_models_and_skips_non_generative(
                 request=httpx.Request("GET", url),
             )
 
-    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
 
     setup = await async_client.post(
         "/api/v1/llm/provider-setups",
@@ -831,7 +870,10 @@ async def test_ollama_provider_discovers_local_models(async_client, monkeypatch)
                 request=httpx.Request("GET", url),
             )
 
-    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
 
     provider_response = await async_client.post(
         "/api/v1/llm/providers",
@@ -1593,8 +1635,8 @@ async def test_team_member_provider_network_operation_rechecks_resolved_target(
         forbidden_probe,
     )
     monkeypatch.setattr(
-        "app.services.llm.catalog.httpx.AsyncClient",
-        ForbiddenAsyncClient,
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(ForbiddenAsyncClient),
     )
     monkeypatch.setattr(
         "socket.getaddrinfo",
@@ -1615,6 +1657,109 @@ async def test_team_member_provider_network_operation_rechecks_resolved_target(
 
     assert response.status_code == 403
     assert network_called is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user_id", "role", "scope"),
+    [
+        ("member-1", "member", "user"),
+        ("admin-1", "admin", "workspace"),
+    ],
+)
+async def test_public_provider_probe_and_discovery_receive_public_only_network_policy(
+    async_client,
+    app,
+    db_session,
+    monkeypatch,
+    user_id,
+    role,
+    scope,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "bioinfoflow_credential_key",
+        "toeJrhzrLxTdxucwNbNOwVZJZL-EBwrBByLlWJXzTEw=",
+    )
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("1.1.1.1", 443))],
+    )
+    provider = LlmProvider(
+        name=f"{scope} public network provider",
+        kind="openai_compatible",
+        base_url="https://relay.example.com/v1",
+        scope=scope,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id=(user_id if scope == "user" else None),
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    model = await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="relay-model",
+        display_name="Relay Model",
+    )
+    probe_policies: list[str] = []
+    discovery_policies: list[str] = []
+
+    class FakeProbeResult:
+        def to_public_dict(self):
+            return {
+                "success": True,
+                "latency_ms": 1,
+                "wire_protocol": "chat_completions",
+                "model_id": "relay-model",
+                "error_code": None,
+                "error_message": None,
+                "retryable": False,
+                "http_status": None,
+                "provider_code": None,
+            }
+
+    async def fake_probe(*args, **kwargs):
+        del args
+        probe_policies.append(kwargs["network_access"])
+        return FakeProbeResult()
+
+    async def fake_discovery(self, selected_provider, *, timeout=10.0, network_access):
+        del self, selected_provider, timeout
+        discovery_policies.append(network_access)
+        return []
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        fake_probe,
+    )
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmCatalogService.discover_models_unchecked",
+        fake_discovery,
+    )
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id=user_id,
+        role=role,
+    )
+    try:
+        tested = await async_client.post(
+            f"/api/v1/llm/providers/{provider.id}/test",
+            json={"model_id": str(model.id)},
+        )
+        discovered = await async_client.post(
+            f"/api/v1/llm/providers/{provider.id}/discover-models",
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert tested.status_code == 200, tested.text
+    assert discovered.status_code == 200, discovered.text
+    assert probe_policies == ["public_only"]
+    assert discovery_policies == ["public_only"]
 
 
 @pytest.mark.asyncio
@@ -1679,8 +1824,8 @@ async def test_team_member_cannot_use_legacy_server_environment_credential(
         forbidden_probe,
     )
     monkeypatch.setattr(
-        "app.services.llm.catalog.httpx.AsyncClient",
-        ForbiddenAsyncClient,
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(ForbiddenAsyncClient),
     )
     monkeypatch.setattr(
         "socket.getaddrinfo",

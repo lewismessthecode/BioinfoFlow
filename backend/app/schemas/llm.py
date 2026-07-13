@@ -1,29 +1,25 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
-from app.models.llm import LlmWireProtocol
+from app.services.llm.provider_templates import (
+    validate_provider_configuration,
+    validate_provider_kind,
+)
 
 
-ProviderKind = Literal[
-    "openai",
-    "anthropic",
-    "gemini",
-    "grok",
-    "groq",
-    "openrouter",
-    "deepseek",
-    "ollama",
-    "vllm",
-    "openai_compatible",
-    "qwen",
-    "kimi",
-    "minimax",
-]
+ProviderKind = Annotated[str, AfterValidator(validate_provider_kind)]
 ProviderScope = Literal["global", "workspace", "user"]
 CredentialSource = Literal["none", "env", "stored"]
 WireProtocol = Literal["chat_completions", "responses"]
@@ -59,7 +55,7 @@ class LlmProviderCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_wire_protocol_support(self):
-        LlmWireProtocol.validate_for_kind(self.kind, self.wire_protocol)
+        validate_provider_configuration(self.kind, self.wire_protocol)
         return self
 
 
@@ -77,7 +73,7 @@ class LlmProviderUpdate(BaseModel):
     @model_validator(mode="after")
     def validate_complete_protocol_update(self):
         if self.kind is not None and self.wire_protocol is not None:
-            LlmWireProtocol.validate_for_kind(self.kind, self.wire_protocol)
+            validate_provider_configuration(self.kind, self.wire_protocol)
         return self
 
     def validate_merged_wire_protocol(
@@ -88,7 +84,7 @@ class LlmProviderUpdate(BaseModel):
     ) -> tuple[str, str]:
         kind = self.kind or current_kind
         wire_protocol = self.wire_protocol or current_wire_protocol
-        LlmWireProtocol.validate_for_kind(kind, wire_protocol)
+        validate_provider_configuration(kind, wire_protocol)
         return kind, wire_protocol
 
 
