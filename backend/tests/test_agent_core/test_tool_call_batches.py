@@ -533,10 +533,12 @@ async def test_mixed_reads_complete_but_model_waits_for_approval(
         nonlocal calls
         del args, kwargs
         calls += 1
+        if calls > 1:
+            return _response(text="unexpected continuation")
         return _response(
             tool_calls=[
                 ("read-1", "projects__list", {}),
-                ("approval", "bash", {"command": "printf approved"}),
+                ("approval", "bash", {"command": "python -c 'print(1)'"}),
                 ("read-2", "projects__list", {}),
             ]
         )
@@ -855,10 +857,16 @@ async def test_reads_overlap_across_non_read_sibling(db_session, monkeypatch):
         nonlocal calls
         del args, kwargs
         calls += 1
+        if calls > 1:
+            return _response(text="unexpected continuation")
         return _response(
             tool_calls=[
                 ("overlap-1", "projects__list", {}),
-                ("approval-between", "bash", {"command": "printf later"}),
+                (
+                    "approval-between",
+                    "bash",
+                    {"command": "python -c 'print(1)'"},
+                ),
                 ("overlap-2", "projects__list", {}),
             ]
         )

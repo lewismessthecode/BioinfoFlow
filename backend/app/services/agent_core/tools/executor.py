@@ -713,7 +713,7 @@ class AgentToolExecutor:
                 "type": "TimeoutError",
                 "message": f"Tool timed out after {tool.spec.timeout_seconds}s",
             }
-            action = await self.action_repo.update_all(
+            action = await self.action_repo.update_all_pending(
                 action,
                 status=AgentActionStatus.FAILED,
                 error=error,
@@ -724,13 +724,15 @@ class AgentToolExecutor:
                 turn_id=str(action.turn_id),
                 type=AgentEventType.ACTION_FAILED,
                 payload={"action_id": str(action.id), "error": error},
+                commit=False,
             )
+            await self.session.commit()
             agent_metrics.increment("tools.failed")
             return ToolExecutionResult(
                 action_id=str(action.id), status=action.status, error=error
             )
         except asyncio.CancelledError:
-            action = await self.action_repo.update_all(
+            action = await self.action_repo.update_all_pending(
                 action,
                 status=AgentActionStatus.CANCELLED,
                 error={
@@ -744,12 +746,14 @@ class AgentToolExecutor:
                 turn_id=str(action.turn_id),
                 type=AgentEventType.ACTION_CANCELLED,
                 payload={"action_id": str(action.id), "tool": tool.spec.name},
+                commit=False,
             )
+            await self.session.commit()
             agent_metrics.increment("tools.cancelled")
             raise
         except Exception as exc:
             error = {"type": exc.__class__.__name__, "message": str(exc)}
-            action = await self.action_repo.update_all(
+            action = await self.action_repo.update_all_pending(
                 action,
                 status=AgentActionStatus.FAILED,
                 error=error,
@@ -760,7 +764,9 @@ class AgentToolExecutor:
                 turn_id=str(action.turn_id),
                 type=AgentEventType.ACTION_FAILED,
                 payload={"action_id": str(action.id), "error": error},
+                commit=False,
             )
+            await self.session.commit()
             agent_metrics.increment("tools.failed")
             return ToolExecutionResult(
                 action_id=str(action.id), status=action.status, error=error
@@ -769,7 +775,7 @@ class AgentToolExecutor:
         artifact_ids = await self._register_artifacts(
             action=action, tool=tool, result=result
         )
-        action = await self.action_repo.update_all(
+        action = await self.action_repo.update_all_pending(
             action,
             status=AgentActionStatus.COMPLETED,
             result=result,
@@ -790,7 +796,9 @@ class AgentToolExecutor:
                 "result": result,
                 "artifact_ids": artifact_ids,
             },
+            commit=False,
         )
+        await self.session.commit()
         agent_metrics.increment("tools.completed")
         return ToolExecutionResult(
             action_id=str(action.id),

@@ -355,8 +355,8 @@ async def test_requested_action_requires_real_user_approval_when_risk_demands_it
     )
     side_effects = 0
 
-    def require_explicit_approval(self, input):
-        del self, input
+    def require_explicit_approval(self, input, *, target=None):
+        del self, input, target
         return RiskAssessment(
             level="act_high",
             reasons=["protected resource requires explicit approval"],
