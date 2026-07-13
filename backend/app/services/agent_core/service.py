@@ -26,6 +26,7 @@ from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_metadata_with_model_selection,
 )
+from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
 from app.services.agent_core.runner import (
     cancel_turn_run,
     enqueue_turn_resume,
@@ -154,7 +155,14 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        previous_authorization = _authorization_state(session)
+        previous_authorization = _authorization_state(
+            session,
+            remote_boundary_fingerprint=await _remote_boundary_fingerprint(
+                self.db,
+                session=session,
+                session_metadata=session.session_metadata,
+            ),
+        )
         update_data: dict[str, Any] = {}
         for key in (
             "title",
@@ -202,6 +210,13 @@ class AgentCoreService:
             toolset_policy=update_data.get("toolset_policy", session.toolset_policy),
             session_metadata=update_data.get(
                 "session_metadata", session.session_metadata
+            ),
+            remote_boundary_fingerprint=await _remote_boundary_fingerprint(
+                self.db,
+                session=session,
+                session_metadata=update_data.get(
+                    "session_metadata", session.session_metadata
+                ),
             ),
         )
         return await self.session_repo.update_with_policy_version(
@@ -585,12 +600,15 @@ class AgentCoreService:
     ):
         action = await self.action_repo.get(action_id)
         if action is None:
-            raise NotFoundError(f"Agent action not found: {action_id}")
-        await self.require_turn(
-            turn_id=str(action.turn_id),
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+            raise NotFoundError("Agent action not found")
+        try:
+            await self.require_turn(
+                turn_id=str(action.turn_id),
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+        except (NotFoundError, PermissionDeniedError) as exc:
+            raise NotFoundError("Agent action not found") from exc
         return action
 
     async def recover_orphaned_turns(self) -> dict[str, int]:
@@ -764,6 +782,7 @@ def _authorization_state(
     automation_mode: Any = _UNSET,
     toolset_policy: Any = _UNSET,
     session_metadata: Any = _UNSET,
+    remote_boundary_fingerprint: tuple[Any, ...] | None = None,
 ) -> tuple[Any, ...]:
     metadata = (
         session.session_metadata
@@ -786,6 +805,7 @@ def _authorization_state(
             session.toolset_policy if toolset_policy is _UNSET else toolset_policy
         ),
         tuple(sorted(normalize_execution_target(None, metadata=metadata).items())),
+        remote_boundary_fingerprint,
     )
 
 
@@ -799,6 +819,23 @@ def _normalized_toolset(policy: Any) -> tuple[str, tuple[str, ...] | None]:
         else None
     )
     return name, normalized_allowed
+
+
+async def _remote_boundary_fingerprint(
+    db: AsyncSession,
+    *,
+    session,
+    session_metadata: dict | None,
+) -> tuple[Any, ...] | None:
+    execution_target = normalize_execution_target(None, metadata=session_metadata)
+    if execution_target.get("type") != "remote_ssh":
+        return None
+    boundary = await RemoteBoundaryResolver(db).resolve(
+        agent_session=session,
+        connection_id=execution_target.get("connection_id"),
+        session_metadata=session_metadata,
+    )
+    return boundary.policy_fingerprint()
 
 
 def _metadata_with_remote_project(metadata: dict | None, project) -> dict | None:

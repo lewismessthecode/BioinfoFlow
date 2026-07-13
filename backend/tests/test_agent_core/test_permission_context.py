@@ -16,6 +16,7 @@ from app.repositories.agent_core_repo import (
 from app.schemas.agent_core import AgentActionRead, AgentSessionRead
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.tools.executor import AgentToolExecutor
+from app.services.agent_core.tools import build_default_tool_registry
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -461,6 +462,18 @@ async def test_remote_permission_snapshot_refreshes_connection_and_project_resou
         assert first["policy_version"] == 1
         assert first["remote_identity"]["host"] == "host-a.internal"
         assert first["effective_roots"] == ["/analysis/root-a"]
+        metadata_only = await service.update_session(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            updates={
+                "metadata": {
+                    **(session.session_metadata or {}),
+                    "remote_project_root": "/ignored/metadata-root",
+                }
+            },
+        )
+        assert metadata_only.permission_policy_version == 1
 
         async with sessions() as update_db:
             fresh_connection = await update_db.get(RemoteConnection, connection.id)
@@ -587,3 +600,83 @@ async def test_noop_turn_target_and_toolset_activation_do_not_increment_version(
     await service._activate_execution_toolset(str(session.id))
     fresh = await service.session_repo.get_fresh(str(session.id))
     assert fresh.permission_policy_version == 3
+
+
+@pytest.mark.asyncio
+async def test_metadata_remote_boundary_changes_version_and_next_action_snapshot(db_session) -> None:
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    connection = RemoteConnection(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        name="Boundary host",
+        host="boundary.internal",
+        port=22,
+        username="analyst",
+        auth_method="agent",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+    await db_session.refresh(connection)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            },
+            "remote_project_root": "/analysis/a",
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Audit the updated remote boundary.",
+    )
+
+    changed = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={
+            "metadata": {
+                **(session.session_metadata or {}),
+                "remote_project_root": "/analysis/b",
+            }
+        },
+    )
+    assert changed.permission_policy_version == 2
+    equivalent = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={
+            "metadata": {
+                **(changed.session_metadata or {}),
+                "remote_project_root": "/analysis/b/./",
+            }
+        },
+    )
+    assert equivalent.permission_policy_version == 2
+
+    result = await AgentToolExecutor(
+        db_session,
+        build_default_tool_registry(),
+    ).execute(
+        tool_name="remote.exec",
+        input={"command": "hostname"},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+        ),
+        toolset_policy={"name": "execution"},
+    )
+
+    action = await AgentActionRepository(db_session).get(result.action_id)
+    assert action.evaluated_policy_version == 2
+    assert action.permission_context_snapshot["effective_roots"] == ["/analysis/b"]

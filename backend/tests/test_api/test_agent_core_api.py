@@ -157,6 +157,51 @@ async def test_get_remote_action_exposes_safe_executor_snapshot(
     assert "/sensitive/id_ed25519" not in serialized
 
 
+@pytest.mark.asyncio
+async def test_get_action_does_not_reveal_cross_scope_existence(
+    async_client,
+    app,
+    db_session,
+):
+    create_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"title": "Private action"},
+    )
+    session = create_response.json()["data"]
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="Private action.",
+    )
+    action = await service.action_repo.create(
+        session_id=session["id"],
+        turn_id=str(turn.id),
+        kind="tool",
+        name="private.action",
+        input={},
+        risk_level="read",
+        status="completed",
+    )
+
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="other-user",
+        workspace_id="other-workspace",
+    )
+    try:
+        hidden = await async_client.get(f"/api/v1/agent/actions/{action.id}")
+        missing = await async_client.get(
+            "/api/v1/agent/actions/00000000-0000-0000-0000-000000000099"
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert hidden.status_code == missing.status_code == 404
+    assert hidden.json()["error"]["code"] == missing.json()["error"]["code"]
+    assert hidden.json()["error"]["message"] == missing.json()["error"]["message"]
+
+
 def _auth_user(
     *,
     user_id: str = "user-1",

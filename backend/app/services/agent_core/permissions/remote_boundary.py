@@ -13,10 +13,14 @@ from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.agent_core.execution_target import execution_target_from_session
 
 
+_UNSET = object()
+
+
 @dataclass(frozen=True)
 class RemoteBoundary:
     connection_id: str | None
     effective_root: str | None
+    root_source: str
     remote_identity: dict[str, Any] | None
     resource_revisions: dict[str, dict[str, str | None]]
 
@@ -39,6 +43,14 @@ class RemoteBoundary:
             },
         }
 
+    def policy_fingerprint(self) -> tuple[Any, ...]:
+        metadata_root = self.effective_root if self.root_source == "metadata" else None
+        return (
+            metadata_root,
+            bool(metadata_root),
+            False,
+        )
+
 
 class RemoteBoundaryResolver:
     def __init__(self, session: AsyncSession):
@@ -49,6 +61,7 @@ class RemoteBoundaryResolver:
         *,
         agent_session: AgentSession,
         connection_id: str | None = None,
+        session_metadata: Any = _UNSET,
     ) -> RemoteBoundary:
         selected_connection_id = connection_id or execution_target_from_session(
             agent_session
@@ -77,16 +90,22 @@ class RemoteBoundaryResolver:
             agent_session=agent_session,
             connection_id=selected_connection_id,
         )
-        effective_root = (
-            _bounded_remote_root(project.remote_root_path)
-            if project is not None
-            else _metadata_remote_root(agent_session.session_metadata)
-        )
+        if project is not None:
+            effective_root = _bounded_remote_root(project.remote_root_path)
+            root_source = "project" if effective_root else "none"
+        else:
+            effective_root = _metadata_remote_root(
+                agent_session.session_metadata
+                if session_metadata is _UNSET
+                else session_metadata
+            )
+            root_source = "metadata" if effective_root else "none"
         if project is not None:
             revisions["project"] = _resource_revision(project)
         return RemoteBoundary(
             connection_id=selected_connection_id,
             effective_root=effective_root,
+            root_source=root_source,
             remote_identity=remote_identity,
             resource_revisions=revisions,
         )
