@@ -16,6 +16,10 @@ from app.repositories.agent_core_repo import (
     AgentSessionRepository,
     AgentTurnRepository,
 )
+from app.services.agent_core.approval_batches import (
+    TERMINAL_ACTION_STATUSES,
+    ordered_tool_call_batch,
+)
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.budget import IterationBudget
 from app.services.agent_core.core.guardrails import no_progress_detected
@@ -550,37 +554,80 @@ class AgentLoopController:
                 error_message="Agent session could not be loaded for resume.",
             )
 
-        if action.status == AgentActionStatus.REJECTED:
-            result = ToolExecutionResult(
-                action_id=str(action.id),
-                status=action.status,
-                error={"type": "UserRejected", "message": "The user rejected this tool call."},
-            )
-        else:
-            result = await self.executor.resume_action(
-                action_id=action_id,
-                context=AgentToolContext(
-                    db=self.db,
-                    workspace_id=str(turn.workspace_id),
-                    user_id=turn.user_id,
-                    session_id=str(agent_session.id),
-                    turn_id=str(turn.id),
-                ),
-            )
-        await self._append_tool_result(
-            agent_session=agent_session,
-            turn=turn,
-            tool_name=action.name,
-            tool_call_id=action.tool_call_id,
-            result=result,
+        batch = await ordered_tool_call_batch(
+            action_repo=self.actions,
+            transcript=self.transcript,
+            action=action,
         )
-        if result.status not in {"completed", AgentActionStatus.REJECTED}:
+        context = AgentToolContext(
+            db=self.db,
+            workspace_id=str(turn.workspace_id),
+            user_id=turn.user_id,
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        )
+        for sibling in batch:
+            matching_tool_result = await self.transcript.find_committed_tool_result(
+                session_id=str(agent_session.id),
+                turn_id=str(turn.id),
+                tool_call_id=sibling.tool_call_id,
+            )
+            if matching_tool_result is not None:
+                await self._clear_terminal_action_resume_state(sibling)
+                continue
+            if sibling.status == AgentActionStatus.REQUESTED:
+                result = await self.executor.resume_action(
+                    action_id=str(sibling.id),
+                    context=context,
+                )
+            elif sibling.status in TERMINAL_ACTION_STATUSES:
+                result = _tool_result_for_terminal_action(sibling)
+            else:
+                continue
+            await self._append_tool_result(
+                agent_session=agent_session,
+                turn=turn,
+                tool_name=sibling.name,
+                tool_call_id=sibling.tool_call_id,
+                result=result,
+            )
+            refreshed = await self.actions.get(str(sibling.id))
+            if refreshed is not None:
+                await self._clear_terminal_action_resume_state(refreshed)
+
+        refreshed_batch = await ordered_tool_call_batch(
+            action_repo=self.actions,
+            transcript=self.transcript,
+            action=action,
+        )
+        batch_is_resolved = True
+        failed_status: str | None = None
+        for sibling in refreshed_batch:
+            matching_tool_result = await self.transcript.find_committed_tool_result(
+                session_id=str(agent_session.id),
+                turn_id=str(turn.id),
+                tool_call_id=sibling.tool_call_id,
+            )
+            if sibling.status not in TERMINAL_ACTION_STATUSES or matching_tool_result is None:
+                batch_is_resolved = False
+            elif sibling.status not in {
+                AgentActionStatus.COMPLETED,
+                AgentActionStatus.REJECTED,
+            }:
+                failed_status = failed_status or sibling.status
+        if not batch_is_resolved:
+            return LoopResult(
+                termination_reason="waiting_approval",
+                final_text=None,
+                iteration_count=0,
+            )
+        if failed_status is not None:
             return LoopResult(
                 termination_reason="model_failed",
                 final_text=None,
                 iteration_count=0,
                 error_code="tool_resume_failed",
-                error_message=f"Approved tool action finished with status: {result.status}",
+                error_message=f"Approved tool action finished with status: {failed_status}",
             )
         return await self.run_turn(
             turn_id=str(turn.id),
@@ -589,6 +636,16 @@ class AgentLoopController:
             strategy=strategy,
             max_tokens=max_tokens,
         )
+
+    async def _clear_terminal_action_resume_state(self, action) -> None:
+        if action.status not in TERMINAL_ACTION_STATUSES:
+            return
+        if action.requires_resume or action.completed_at is None:
+            await self.actions.update_all(
+                action,
+                requires_resume=False,
+                completed_at=action.completed_at or datetime.now(timezone.utc),
+            )
 
     async def _append_assistant_tool_calls(
         self,
@@ -1160,6 +1217,22 @@ def _tool_result_signature(tool_name: str, result: ToolExecutionResult) -> str:
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
+    )
+
+
+def _tool_result_for_terminal_action(action) -> ToolExecutionResult:
+    error = action.error
+    if action.status == AgentActionStatus.REJECTED and not error:
+        error = {
+            "type": "UserRejected",
+            "message": "The user rejected this tool call.",
+        }
+    return ToolExecutionResult(
+        action_id=str(action.id),
+        status=action.status,
+        result=action.result,
+        permission_decision=action.permission_decision,
+        error=error,
     )
 
 
