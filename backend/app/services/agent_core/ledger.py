@@ -27,13 +27,15 @@ class AgentEventLedger:
         payload: dict | None = None,
         visibility: str = "user",
         schema_version: int = 1,
+        commit: bool = True,
     ):
         lock = _session_seq_locks.setdefault(session_id, asyncio.Lock())
         for attempt in range(3):
             async with lock:
                 seq = await self.event_repo.next_seq(session_id)
                 try:
-                    event = await self.event_repo.create(
+                    create = self.event_repo.create if commit else self.event_repo.add
+                    event = await create(
                         session_id=session_id,
                         turn_id=turn_id,
                         seq=seq,

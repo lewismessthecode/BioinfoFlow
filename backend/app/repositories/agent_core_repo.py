@@ -306,7 +306,7 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
             select(self.model)
             .where(
                 self.model.turn_id == turn_id,
-                self.model.status != "terminal",
+                self.model.status.not_in(["terminal", "failed", "cancelled"]),
             )
             .order_by(desc(self.model.created_at), desc(self.model.id))
         )
@@ -345,6 +345,39 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
         released = result.scalar_one_or_none() is not None
         await self.session.commit()
         return released
+
+    async def settle_unclaimed(self, batch_id: str, *, status: str) -> bool:
+        stmt = (
+            update(self.model)
+            .where(
+                self.model.id == batch_id,
+                self.model.status.in_(["evaluating", "waiting"]),
+            )
+            .values(status=status)
+            .returning(self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        changed = result.scalar_one_or_none() is not None
+        await self.session.commit()
+        return changed
+
+    async def terminalize_continuing(self, batch_id: str, *, status: str) -> bool:
+        stmt = (
+            update(self.model)
+            .where(
+                self.model.id == batch_id,
+                self.model.status == "continuing",
+            )
+            .values(
+                status=status,
+                completed_at=datetime.now(timezone.utc),
+            )
+            .returning(self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        changed = result.scalar_one_or_none() is not None
+        await self.session.commit()
+        return changed
 
 
 class AgentArtifactRepository(BaseRepository[AgentArtifact]):

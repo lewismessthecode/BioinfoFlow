@@ -426,6 +426,9 @@ class AgentCoreRuntime:
                     strategy=runtime_strategy,
                     request_args=candidate["request_args"],
                     max_tokens=runtime_strategy.max_tokens,
+                    continuation_failure_mode=(
+                        "ready" if attempt_index < len(attempts) - 1 else "failed"
+                    ),
                 )
                 next_resume_action_id = None
             else:
@@ -438,6 +441,9 @@ class AgentCoreRuntime:
                     request_args=candidate["request_args"],
                     max_tokens=runtime_strategy.max_tokens,
                     continuation_batch_id=continuation_batch_id,
+                    continuation_failure_mode=(
+                        "ready" if attempt_index < len(attempts) - 1 else "failed"
+                    ),
                 )
             if not should_try_fallback(result) or attempt_index == len(attempts) - 1:
                 return result

@@ -156,6 +156,7 @@ class AgentToolExecutor:
         tool_batch_id: str | None = None,
         tool_call_ordinal: int | None = None,
         defer_execution: bool = False,
+        commit_action: bool = True,
         role: str = "orchestrator",
         execution_target: dict | str | None = None,
     ) -> ToolExecutionResult:
@@ -193,6 +194,7 @@ class AgentToolExecutor:
                 tool_call_ordinal=tool_call_ordinal,
                 permission_context=permission_context,
                 exc=exc,
+                commit=commit_action,
             )
         requested_risk = _resolve_requested_risk(tool, normalized_input)
 
@@ -217,9 +219,15 @@ class AgentToolExecutor:
             interaction=tool.spec.interaction,
             evaluated_policy_version=permission_context.policy_version,
             permission_context_snapshot=permission_context.snapshot(),
+            commit=commit_action,
         )
         if action_requires_resume(action.status):
-            action = await self.action_repo.update_all(action, requires_resume=True)
+            update = (
+                self.action_repo.update_all
+                if commit_action
+                else self.action_repo.update_all_pending
+            )
+            action = await update(action, requires_resume=True)
             return ToolExecutionResult(
                 action_id=str(action.id),
                 status=action.status,
@@ -257,6 +265,7 @@ class AgentToolExecutor:
         tool_call_ordinal: int | None,
         permission_context: PermissionContext,
         exc: BadRequestError,
+        commit: bool,
     ) -> ToolExecutionResult:
         action_input = input if isinstance(input, dict) else {"_raw_input": input}
         error = {"type": exc.__class__.__name__, "message": str(exc)}
@@ -281,8 +290,10 @@ class AgentToolExecutor:
             interaction=None,
             evaluated_policy_version=permission_context.policy_version,
             permission_context_snapshot=permission_context.snapshot(),
+            commit=commit,
         )
-        action = await self.action_repo.update_all(
+        update = self.action_repo.update_all if commit else self.action_repo.update_all_pending
+        action = await update(
             action,
             status=AgentActionStatus.FAILED,
             error=error,
@@ -293,6 +304,7 @@ class AgentToolExecutor:
             turn_id=str(action.turn_id),
             type=AgentEventType.ACTION_FAILED,
             payload={"action_id": str(action.id), "error": error},
+            commit=commit,
         )
         agent_metrics.increment("tools.failed")
         return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)

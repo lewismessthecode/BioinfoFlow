@@ -46,6 +46,8 @@ class AgentToolCallBatchStatus:
     READY = "ready"
     CONTINUING = "continuing"
     TERMINAL = "terminal"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class AgentMemoryStatus:

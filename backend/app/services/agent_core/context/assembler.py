@@ -117,6 +117,8 @@ class AgentContextAssembler:
                 index += 1
                 continue
             expected = [str(call["id"]) for call in tool_calls if call.get("id")]
+            batch_id = (message.message_metadata or {}).get("tool_batch_id")
+            group_turn_id = str(message.turn_id or turn_id)
             cursor = index + 1
             group_messages = []
             seen: list[str] = []
@@ -129,7 +131,20 @@ class AgentContextAssembler:
                 cursor += 1
             missing = [tool_call_id for tool_call_id in expected if tool_call_id not in seen]
             if missing or seen != expected:
-                turn_actions = await AgentActionRepository(self.db).list_for_turn(turn_id)
+                turn_actions = await AgentActionRepository(self.db).list_for_turn(
+                    group_turn_id
+                )
+                if batch_id:
+                    turn_actions = [
+                        action
+                        for action in turn_actions
+                        if str(action.tool_batch_id) == str(batch_id)
+                    ]
+                actions_by_call_id = {
+                    str(action.tool_call_id): action
+                    for action in turn_actions
+                    if action.tool_call_id
+                }
                 unresolved_ids = {
                     str(action.tool_call_id)
                     for action in turn_actions
@@ -160,6 +175,12 @@ class AgentContextAssembler:
                         parts = existing.content_parts or []
                         metadata = {
                             **(existing.message_metadata or {}),
+                            "tool_batch_id": batch_id,
+                            "action_id": (
+                                str(actions_by_call_id[tool_call_id].id)
+                                if tool_call_id in actions_by_call_id
+                                else (existing.message_metadata or {}).get("action_id")
+                            ),
                             "transcript_repair": True,
                             "assistant_message_id": str(message.id),
                             "original_message_id": str(existing.id),
@@ -184,12 +205,18 @@ class AgentContextAssembler:
                         ]
                         metadata = {
                             "tool_call_id": tool_call_id,
+                            "tool_batch_id": batch_id,
+                            "action_id": (
+                                str(actions_by_call_id[tool_call_id].id)
+                                if tool_call_id in actions_by_call_id
+                                else None
+                            ),
                             "transcript_repair": True,
                             "assistant_message_id": str(message.id),
                         }
                     await self.transcript.append_parts(
                         session_id=session_id,
-                        turn_id=turn_id,
+                        turn_id=group_turn_id,
                         role="tool",
                         parts=parts,
                         metadata=metadata,
@@ -200,11 +227,12 @@ class AgentContextAssembler:
                 )
                 await AgentEventLedger(self.db).append(
                     session_id=session_id,
-                    turn_id=turn_id,
+                    turn_id=group_turn_id,
                     type=AgentEventType.TRANSCRIPT_TOOL_GROUP_REPAIRED,
                     payload={
                         "assistant_message_id": str(message.id),
                         "missing_tool_call_ids": missing,
+                        "tool_batch_id": batch_id,
                     },
                     visibility="audit",
                 )

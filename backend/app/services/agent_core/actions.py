@@ -46,6 +46,7 @@ class AgentActionService:
         interaction: str | None = None,
         evaluated_policy_version: int | None = None,
         permission_context_snapshot: dict | None = None,
+        commit: bool = True,
     ):
         turn = await self.turn_repo.get(turn_id)
         if turn is None:
@@ -75,7 +76,8 @@ class AgentActionService:
         status = _status_for_decision(decision.decision)
         if input_preview is None:
             input_preview = _input_preview(name=name, action_input=action_input)
-        action = await self.action_repo.create(
+        create = self.action_repo.create if commit else self.action_repo.add
+        action = await create(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             kind=kind,
@@ -110,6 +112,7 @@ class AgentActionService:
                 "name": name,
                 "evaluated_policy_version": evaluated_policy_version,
             },
+            commit=commit,
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -121,6 +124,7 @@ class AgentActionService:
                 "reasons": risk.reasons,
                 "evaluated_policy_version": evaluated_policy_version,
             },
+            commit=commit,
         )
         if decision.decision == "ask":
             # Enrich the waiting-decision event so the frontend renders the
@@ -142,6 +146,7 @@ class AgentActionService:
                 turn_id=str(turn.id),
                 type=AgentEventType.ACTION_WAITING_DECISION,
                 payload=payload,
+                commit=commit,
             )
         return action
 

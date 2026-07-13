@@ -113,7 +113,7 @@ async def test_three_approvals_continue_only_after_entire_batch_is_terminal(
         assert len({item["tool_call_id"] for item in tool_results}) == 3
         return _response(text="batch complete")
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr("app.services.agent_core.core.loop.acompletion", fake_completion)
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_: None)
     await _seed_runtime(db_session)
     service = AgentCoreService(db_session)
@@ -644,6 +644,49 @@ async def test_continuation_claim_has_one_winner_across_database_sessions(db_ses
 
 
 @pytest.mark.asyncio
+async def test_duplicate_settle_never_downgrades_claimed_or_terminal_batch(db_session):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id), workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", input_text="Settle once."
+    )
+    batches = ToolCallBatchCoordinator(db_session)
+    batch = await batches.create(session_id=str(session.id), turn_id=str(turn.id), tool_call_count=1)
+    await AgentActionRepository(db_session).create(
+        session_id=str(session.id), turn_id=str(turn.id), tool_batch_id=str(batch.id),
+        tool_call_ordinal=0, tool_call_id="settle", kind="tool", name="x", input={},
+        risk_level="read", status=AgentActionStatus.COMPLETED,
+    )
+    assert await batches.settle(str(batch.id)) == "ready"
+    assert await batches.claim_continuation(str(batch.id)) is True
+    assert await batches.settle(str(batch.id)) == "ready"
+    assert (await AgentToolCallBatchRepository(db_session).get_fresh(str(batch.id))).status == AgentToolCallBatchStatus.CONTINUING
+    await batches.mark_terminal(str(batch.id))
+    assert await batches.settle(str(batch.id)) == "ready"
+    assert (await AgentToolCallBatchRepository(db_session).get_fresh(str(batch.id))).status == AgentToolCallBatchStatus.TERMINAL
+
+
+@pytest.mark.asyncio
+async def test_empty_ordinary_turn_has_no_continuation_state_error(db_session, monkeypatch):
+    async def empty_completion(*args, **kwargs):
+        del args, kwargs
+        return _response(text="")
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", empty_completion)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev")
+    turn = await service.create_turn_record(
+        session_id=str(session.id), workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", input_text="Return empty."
+    )
+    failed = await service.runtime.run_turn(str(turn.id))
+    assert failed.error_code == "empty_model_response"
+
+
+@pytest.mark.asyncio
 async def test_reads_overlap_across_non_read_sibling(db_session, monkeypatch):
     started = 0
     both_started = asyncio.Event()
@@ -800,7 +843,92 @@ async def test_prepare_failure_repairs_every_call_with_terminal_result(db_sessio
     assert all(action.status == AgentActionStatus.FAILED for action in actions)
     batch = await AgentToolCallBatchRepository(db_session).get(str(actions[0].tool_batch_id))
     assert batch is not None
-    assert batch.status == AgentToolCallBatchStatus.TERMINAL
+    assert batch.status == AgentToolCallBatchStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_prepare_cancellation_terminalizes_entire_batch(db_session, monkeypatch):
+    async def fake_completion(*args, **kwargs):
+        del args, kwargs
+        return _response(
+            tool_calls=[
+                ("cancel-1", "projects__list", {}),
+                ("cancel-2", "projects__list", {}),
+            ]
+        )
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    from app.services.agent_core.tools.executor import AgentToolExecutor
+
+    original_execute = AgentToolExecutor.execute
+    count = 0
+
+    async def cancel_second(self, **kwargs):
+        nonlocal count
+        count += 1
+        if count == 2:
+            raise asyncio.CancelledError
+        return await original_execute(self, **kwargs)
+
+    monkeypatch.setattr(AgentToolExecutor, "execute", cancel_second)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev")
+    turn = await service.create_turn_record(
+        session_id=str(session.id), workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", input_text="Cancel prepare."
+    )
+    cancelled = await service.runtime.run_turn(str(turn.id))
+    assert cancelled.status == "cancelled"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert len(actions) == 2
+    assert all(action.status == AgentActionStatus.CANCELLED for action in actions)
+    batch = await AgentToolCallBatchRepository(db_session).get(str(actions[0].tool_batch_id))
+    assert batch.status == AgentToolCallBatchStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_assistant_batch_and_all_actions_become_visible_atomically(db_session, monkeypatch):
+    model_calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal model_calls
+        del args, kwargs
+        model_calls += 1
+        if model_calls > 1:
+            return _response(text="atomic complete")
+        return _response(tool_calls=[("atomic-1", "projects__list", {}), ("atomic-2", "projects__list", {})])
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    from app.services.agent_core.tools.executor import AgentToolExecutor
+
+    original_execute = AgentToolExecutor.execute
+    count = 0
+    maker = async_sessionmaker(bind=db_session.bind, expire_on_commit=False, class_=AsyncSession)
+
+    async def inspect_second_prepare(self, **kwargs):
+        nonlocal count
+        count += 1
+        if count == 2:
+            async with maker() as observer:
+                observed_actions, _ = await AgentActionRepository(observer).list(limit=10)
+                observed_batches, _ = await AgentToolCallBatchRepository(observer).list(limit=10)
+                observed_messages, _ = await AgentMessageRepository(observer).list(limit=20)
+                assert observed_actions == []
+                assert observed_batches == []
+                assert not any(message.role == "assistant" for message in observed_messages)
+        return await original_execute(self, **kwargs)
+
+    monkeypatch.setattr(AgentToolExecutor, "execute", inspect_second_prepare)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev")
+    turn = await service.create_turn_record(
+        session_id=str(session.id), workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", input_text="Commit atomically."
+    )
+    await service.runtime.run_turn(str(turn.id))
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert len(actions) == 2
+    assert len({action.tool_batch_id for action in actions}) == 1
 
 
 @pytest.mark.asyncio
@@ -854,7 +982,7 @@ async def test_model_failure_releases_and_retries_continuing_batch(db_session, m
             return _response(tool_calls=[("recover-continuing", "projects__list", {})])
         raise RuntimeError("model unavailable after claim")
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr("app.services.agent_core.core.loop.acompletion", fake_completion)
     await _seed_runtime(db_session)
     service = AgentCoreService(db_session)
     session = await service.create_session(
@@ -867,9 +995,18 @@ async def test_model_failure_releases_and_retries_continuing_batch(db_session, m
         input_text="Recover a claimed continuation.",
     )
 
-    failed = await service.runtime.run_turn(str(turn.id))
+    from app.services.agent_core.core.loop import AgentLoopController
 
-    assert failed.status == "failed"
+    controller = AgentLoopController(db_session)
+    failed = await controller.run_turn(
+        turn_id=str(turn.id),
+        provider="openai_compatible",
+        model="batch-model",
+        request_args={},
+        continuation_failure_mode="ready",
+    )
+
+    assert failed.termination_reason == "model_failed"
     batches, _ = await AgentToolCallBatchRepository(db_session).list(limit=10)
     assert batches[0].status == AgentToolCallBatchStatus.READY
 
@@ -880,9 +1017,7 @@ async def test_model_failure_releases_and_retries_continuing_batch(db_session, m
     monkeypatch.setattr(
         "app.services.agent_core.core.loop.acompletion", recovered_completion
     )
-    from app.services.agent_core.core.loop import AgentLoopController
-
-    recovered = await AgentLoopController(db_session).run_turn(
+    recovered = await controller.run_turn(
         turn_id=str(turn.id),
         provider="openai_compatible",
         model="batch-model",

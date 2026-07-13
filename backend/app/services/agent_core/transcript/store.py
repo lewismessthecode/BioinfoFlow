@@ -22,6 +22,7 @@ class AgentTranscriptStore:
         text: str,
         metadata: dict[str, Any] | None = None,
         ordering_index: int | None = None,
+        commit: bool = True,
     ):
         return await self.append_parts(
             session_id=session_id,
@@ -30,6 +31,7 @@ class AgentTranscriptStore:
             parts=[text_part(text)],
             metadata=metadata,
             ordering_index=ordering_index,
+            commit=commit,
         )
 
     async def append_parts(
@@ -42,10 +44,12 @@ class AgentTranscriptStore:
         metadata: dict[str, Any] | None = None,
         status: str = "committed",
         ordering_index: int | None = None,
+        commit: bool = True,
     ):
         if ordering_index is None:
             ordering_index = await self.messages.next_ordering_index(session_id)
-        return await self.messages.create(
+        create = self.messages.create if commit else self.messages.add
+        return await create(
             session_id=session_id,
             turn_id=turn_id,
             role=role,
