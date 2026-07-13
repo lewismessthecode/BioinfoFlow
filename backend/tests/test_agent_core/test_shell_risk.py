@@ -175,3 +175,46 @@ def test_extended_linux_and_macos_block_device_sinks_are_critical(command):
 )
 def test_non_block_dev_nodes_are_not_hard_blocked(command):
     assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf image | tee /dev/root",
+        "cp disk.img /dev/block/8:0",
+        "dd if=disk.img of=/dev/disk/by-uuid/volume-alias",
+        "install disk.img /dev/custom-disk-alias",
+        "mv disk.img /dev/storage/primary",
+        "printf image > /dev/root",
+        "mkfs.ext4 /dev/root",
+    ],
+)
+def test_unknown_device_write_targets_are_conservatively_critical(command):
+    assert classify_shell_command(command) == "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf ok | tee /dev/null",
+        "dd if=input.bin of=/dev/zero",
+        "printf ok > /dev/stdout",
+        "printf warning > /dev/stderr",
+        "printf ok | tee /dev/fd/1",
+        "printf ok | tee /dev/tty",
+    ],
+)
+def test_safe_pseudo_device_write_targets_are_allowlisted(command):
+    assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat /dev/root",
+        "cp /dev/block/8:0 output.img",
+        "dd if=/dev/disk/by-uuid/volume-alias of=output.img",
+    ],
+)
+def test_device_paths_used_only_as_read_sources_are_not_hard_blocked(command):
+    assert classify_shell_command(command) != "critical"

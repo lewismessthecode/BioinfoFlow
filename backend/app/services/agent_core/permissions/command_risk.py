@@ -449,16 +449,16 @@ def _classify_node(node: _CommandNode) -> RiskLevel:
         targets = [arg for arg in args if not arg.startswith("-")]
         return (
             "critical"
-            if any(_is_block_device(path) for path in targets)
+            if any(_is_unsafe_device_write_target(path) for path in targets)
             else "destructive"
         )
     if executable == "dd" and any(
-        _is_block_device_assignment(arg, "of") for arg in args
+        _is_unsafe_device_assignment(arg, "of") for arg in args
     ):
         return "critical"
-    if _writes_block_device(executable, args):
+    if _writes_unsafe_device(executable, args):
         return "critical"
-    if _redirects_to_block_device(tokens):
+    if _redirects_to_unsafe_device(tokens):
         return "critical"
     if executable == "rm" and _recursive_rm_targets_root(args):
         return "critical"
@@ -644,41 +644,44 @@ def _rootish_path(value: str) -> bool:
     return False
 
 
-def _redirects_to_block_device(tokens: list[str]) -> bool:
+def _redirects_to_unsafe_device(tokens: list[str]) -> bool:
     return any(
-        tokens[index] in {">", ">>"} and _is_block_device(tokens[index + 1])
+        tokens[index] in {">", ">>"}
+        and _is_unsafe_device_write_target(tokens[index + 1])
         for index in range(len(tokens) - 1)
     )
 
 
-def _is_block_device_assignment(value: str, key: str) -> bool:
-    return value.startswith(f"{key}=") and _is_block_device(value.split("=", 1)[1])
-
-
-def _is_block_device(path: str) -> bool:
-    return bool(
-        re.match(
-            r"^/dev/(?:"
-            r"(?:sd|hd|vd|xvd)[a-z](?:\d+)?|"
-            r"nvme\d+n\d+(?:p\d+)?|mmcblk\d+(?:p\d+)?|"
-            r"md(?:\d+|/[^/]+)|dm-\d+|loop\d+|zram\d+|"
-            r"nbd\d+(?:p\d+)?|rbd\d+|dasd[a-z](?:\d+)?|"
-            r"(?:r?disk\d+(?:s\d+)?|disk/by-(?:id|path)/[^/]+)|"
-            r"mapper/[^/]+|cciss/[^/]+"
-            r")(?:$|/)",
-            path,
-        )
+def _is_unsafe_device_assignment(value: str, key: str) -> bool:
+    return value.startswith(f"{key}=") and _is_unsafe_device_write_target(
+        value.split("=", 1)[1]
     )
 
 
-def _writes_block_device(executable: str, args: list[str]) -> bool:
+_SAFE_DEVICE_WRITE_TARGETS = frozenset(
+    {"/dev/null", "/dev/zero", "/dev/stdout", "/dev/stderr", "/dev/tty"}
+)
+
+
+def _is_unsafe_device_write_target(path: str) -> bool:
+    normalized = posixpath.normpath(path)
+    if normalized != "/dev" and not normalized.startswith("/dev/"):
+        return False
+    if normalized in _SAFE_DEVICE_WRITE_TARGETS:
+        return False
+    if re.fullmatch(r"/dev/fd/\d+", normalized):
+        return False
+    return True
+
+
+def _writes_unsafe_device(executable: str, args: list[str]) -> bool:
     positional = [arg for arg in args if not arg.startswith("-")]
     if executable == "tee":
-        return any(_is_block_device(path) for path in positional)
+        return any(_is_unsafe_device_write_target(path) for path in positional)
     if executable in {"cp", "install", "mv"} and positional:
-        return _is_block_device(positional[-1])
+        return _is_unsafe_device_write_target(positional[-1])
     if executable in {"shred", "truncate"}:
-        return any(_is_block_device(path) for path in positional)
+        return any(_is_unsafe_device_write_target(path) for path in positional)
     return False
 
 

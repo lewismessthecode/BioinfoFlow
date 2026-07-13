@@ -272,6 +272,25 @@ def test_extended_block_device_sinks_are_denied_in_bypass(command):
     )
 
 
+def test_unknown_device_alias_write_is_denied_in_bypass():
+    assessment = assess_command_risk(
+        "dd if=disk.img of=/dev/disk/by-uuid/volume-alias",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.hard_blocked is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "deny"
+    )
+
+
 def test_command_risk_audit_snapshot_is_bounded_and_structured():
     assessment = assess_command_risk(
         "cat /analysis/project/input/sequence.list",
