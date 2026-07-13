@@ -422,6 +422,9 @@ export function LlmCatalogPanel() {
               selectedTestModelIds[template.id]?.model_id ??
               providerModels[0]?.id ??
               ""
+            const candidateProbeResult = dirtyTemplateIds.has(template.id)
+              ? undefined
+              : probeResults[template.id] ?? providerProbeResult(provider)
             return (
               <ProviderCard
                 key={template.id}
@@ -441,11 +444,11 @@ export function LlmCatalogPanel() {
                 }
                 providerModels={providerModels}
                 selectedTestModelId={selectedTestModelId}
-                probeResult={
-                  dirtyTemplateIds.has(template.id)
-                    ? undefined
-                    : probeResults[template.id] ?? providerProbeResult(provider)
-                }
+                probeResult={probeResultForSelectedModel(
+                  candidateProbeResult,
+                  providerModels,
+                  selectedTestModelId,
+                )}
                 settingsDirty={dirtyTemplateIds.has(template.id)}
                 onFieldChange={(fieldName, value) =>
                   setFieldValue(template.id, fieldName, value)
@@ -456,12 +459,13 @@ export function LlmCatalogPanel() {
                 onWireProtocolChange={(wireProtocol) =>
                   setWireProtocol(template.id, wireProtocol)
                 }
-                onTestModelChange={(modelId) =>
+                onTestModelChange={(modelId) => {
+                  invalidateProbeResult(template.id)
                   setSelectedTestModelIds((current) => ({
                     ...current,
                     [template.id]: { model_id: modelId },
                   }))
-                }
+                }}
                 onTest={() => {
                   if (provider) {
                     void testConfiguredProvider(template, provider, providerModels)
@@ -1061,6 +1065,17 @@ function providerProbeResult(
     provider_code:
       typeof status.provider_code === "string" ? status.provider_code : null,
   }
+}
+
+function probeResultForSelectedModel(
+  result: LlmProviderTestResult | undefined,
+  models: LlmModel[],
+  selectedModelId: string,
+): LlmProviderTestResult | undefined {
+  if (!result) return undefined
+  const selectedModel = models.find((model) => model.id === selectedModelId)
+  if (!selectedModel) return result.model ? undefined : result
+  return result.model === selectedModel.model_id ? result : undefined
 }
 
 function protocolLabel(
