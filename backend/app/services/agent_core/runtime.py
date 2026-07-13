@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
+import app.database as app_database
 from litellm import acompletion
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.agent_core.core.loop as loop_module
 from app.config import settings
@@ -49,6 +51,68 @@ _ORIGINAL_ACOMPLETION = acompletion
 logger = get_logger(__name__)
 
 
+class _TurnLeaseHeartbeat:
+    def __init__(self, session: AsyncSession, *, turn_id: str, owner_token: str):
+        bind = session.bind
+        self._session_factory = (
+            async_sessionmaker(bind=bind, expire_on_commit=False, class_=AsyncSession)
+            if bind is not None
+            else app_database.async_session_maker
+        )
+        self._turn_id = turn_id
+        self._owner_token = owner_token
+        self._owner_task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task | None = None
+        self._stop_event = asyncio.Event()
+        self.ownership_lost = False
+
+    async def __aenter__(self):
+        self._owner_task = asyncio.current_task()
+        self._heartbeat_task = asyncio.create_task(self._run())
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _traceback):
+        await self.stop()
+
+    async def stop(self) -> None:
+        heartbeat_task = self._heartbeat_task
+        self._heartbeat_task = None
+        if heartbeat_task is None:
+            return
+        self._stop_event.set()
+        await heartbeat_task
+
+    async def _run(self) -> None:
+        while True:
+            try:
+                await asyncio.wait_for(
+                    self._stop_event.wait(),
+                    timeout=_turn_lease_heartbeat_interval(),
+                )
+                return
+            except TimeoutError:
+                pass
+            try:
+                async with self._session_factory() as session:
+                    renewed = await AgentTurnRepository(session).renew_execution_lease(
+                        self._turn_id,
+                        owner_token=self._owner_token,
+                        lease_until=datetime.now(timezone.utc) + _turn_lease_duration(),
+                    )
+            except Exception:
+                logger.exception(
+                    "agent_core.turn.lease_heartbeat_failed",
+                    turn_id=self._turn_id,
+                )
+                renewed = None
+            if renewed is not None:
+                continue
+            self.ownership_lost = True
+            if self._owner_task is not None:
+                self._owner_task.cancel()
+            return
+
+
 class AgentCoreRuntime:
     def __init__(self, session: AsyncSession):
         self.turn_repo = AgentTurnRepository(session)
@@ -85,60 +149,9 @@ class AgentCoreRuntime:
         if turn is None:
             return await self.turn_repo.get_fresh(turn_id)
         self._execution_owner_token = owner_token
-
-        session = await self.session_repo.get(str(turn.session_id))
-        if session is None:
-            return await self._fail_turn(
-                turn,
-                error_message="Agent session could not be loaded for this turn.",
-                error_code="session_not_found",
-            )
-
-        turn = await self.turn_repo.update_claimed_execution(
-            str(turn.id),
+        return await self._run_with_lease_heartbeat(
+            turn,
             owner_token=owner_token,
-            started_at=turn.started_at or now,
-            completed_at=None,
-            error_code=None,
-            error_message=None,
-        )
-        if turn is None:
-            return await self.turn_repo.get_fresh(turn_id)
-        await self.ledger.append(
-            session_id=str(turn.session_id),
-            turn_id=str(turn.id),
-            type=AgentEventType.TURN_STARTED,
-            payload={},
-        )
-        logger.info(
-            "agent_core.turn.started",
-            session_id=str(turn.session_id),
-            turn_id=str(turn.id),
-            status=turn.status,
-        )
-        agent_metrics.increment("turns.started")
-
-        resolved = await self._resolve_model_selection(turn=turn, session=session)
-        if resolved is None:
-            return await self._fail_turn(
-                turn,
-                error_message=(
-                    "No usable model is configured. Select a provider/model in Settings, "
-                    "or configure a deployment default."
-                ),
-                error_code="model_selection_missing",
-            )
-
-        if acompletion is not _ORIGINAL_ACOMPLETION:
-            loop_module.acompletion = acompletion
-        result = await self._run_model_attempts(turn=turn, session=session, resolved=resolved)
-        fresh_turn = await self.turn_repo.get(str(turn.id))
-        if fresh_turn is None:
-            return None
-        return await AgentLoopController(self.turn_repo.session).complete_turn_from_result(
-            turn=fresh_turn,
-            result=result,
-            execution_owner_token=owner_token,
         )
 
     async def resume_turn_after_action(self, action_id: str):
@@ -169,8 +182,54 @@ class AgentCoreRuntime:
             return await self.turn_repo.get_fresh(str(action.turn_id))
         self._execution_owner_token = owner_token
 
+        return await self._run_with_lease_heartbeat(
+            turn,
+            owner_token=owner_token,
+            resume_action_id=action_id,
+        )
+
+    async def _run_with_lease_heartbeat(
+        self,
+        turn,
+        *,
+        owner_token: str,
+        resume_action_id: str | None = None,
+    ):
+        turn_id = str(turn.id)
+        heartbeat = _TurnLeaseHeartbeat(
+            self.turn_repo.session,
+            turn_id=turn_id,
+            owner_token=owner_token,
+        )
+        try:
+            async with heartbeat:
+                return await self._run_claimed_turn(
+                    turn,
+                    owner_token=owner_token,
+                    resume_action_id=resume_action_id,
+                    heartbeat=heartbeat,
+                )
+        except asyncio.CancelledError:
+            if not heartbeat.ownership_lost:
+                raise
+            await self.turn_repo.session.rollback()
+            return await self.turn_repo.get_fresh(turn_id)
+        finally:
+            self._execution_owner_token = None
+
+    async def _run_claimed_turn(
+        self,
+        turn,
+        *,
+        owner_token: str,
+        resume_action_id: str | None,
+        heartbeat: _TurnLeaseHeartbeat,
+    ):
+        now = datetime.now(timezone.utc)
+        turn_id = str(turn.id)
         session = await self.session_repo.get(str(turn.session_id))
         if session is None:
+            await heartbeat.stop()
             return await self._fail_turn(
                 turn,
                 error_message="Agent session could not be loaded for this turn.",
@@ -178,7 +237,7 @@ class AgentCoreRuntime:
             )
 
         turn = await self.turn_repo.update_claimed_execution(
-            str(turn.id),
+            turn_id,
             owner_token=owner_token,
             started_at=turn.started_at or now,
             completed_at=None,
@@ -186,23 +245,29 @@ class AgentCoreRuntime:
             error_message=None,
         )
         if turn is None:
-            return await self.turn_repo.get_fresh(str(action.turn_id))
+            return await self.turn_repo.get_fresh(turn_id)
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             type=AgentEventType.TURN_STARTED,
-            payload={"resume_action_id": action_id},
+            payload={"resume_action_id": resume_action_id}
+            if resume_action_id is not None
+            else {},
         )
-        logger.info(
-            "agent_core.turn.started",
-            session_id=str(turn.session_id),
-            turn_id=str(turn.id),
-            status=turn.status,
-            resume_action_id=action_id,
-        )
+        log_fields = {
+            "session_id": str(turn.session_id),
+            "turn_id": str(turn.id),
+            "status": turn.status,
+        }
+        if resume_action_id is not None:
+            log_fields["resume_action_id"] = resume_action_id
+        logger.info("agent_core.turn.started", **log_fields)
+        if resume_action_id is None:
+            agent_metrics.increment("turns.started")
 
         resolved = await self._resolve_model_selection(turn=turn, session=session)
         if resolved is None:
+            await heartbeat.stop()
             return await self._fail_turn(
                 turn,
                 error_message=(
@@ -217,11 +282,12 @@ class AgentCoreRuntime:
             turn=turn,
             session=session,
             resolved=resolved,
-            resume_action_id=action_id,
+            resume_action_id=resume_action_id,
         )
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
             return None
+        await heartbeat.stop()
         return await AgentLoopController(self.turn_repo.session).complete_turn_from_result(
             turn=fresh_turn,
             result=result,
@@ -656,3 +722,7 @@ def _coerce_optional_int(value: Any) -> int | None:
 def _turn_lease_duration() -> timedelta:
     seconds = max(int(getattr(settings, "agent_turn_lease_seconds", 300) or 300), 1)
     return timedelta(seconds=seconds)
+
+
+def _turn_lease_heartbeat_interval() -> float:
+    return max(_turn_lease_duration().total_seconds() / 3, 0.05)

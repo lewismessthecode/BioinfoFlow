@@ -20,6 +20,7 @@ from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.loop import _max_iterations
 from app.services.agent_core.core.types import LoopResult
+from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.agent_core.runtime import AgentCoreRuntime
 import app.services.agent_core.runner as runner_module
@@ -879,6 +880,187 @@ async def test_turn_lease_renewal_requires_current_owner(db_session):
     )
 
     assert rejected is None
+
+
+@pytest.mark.asyncio
+async def test_turn_lease_heartbeat_keeps_blocked_execution_out_of_recovery(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr(settings, "agent_turn_lease_seconds", 1)
+    resumed: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda turn_id, session_id=None: resumed.append((turn_id, session_id)),
+    )
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep this long model call owned.",
+    )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def resolve_model(self, *, turn, session):
+        del self, turn, session
+        return {"provider": "test", "model": "test", "request_args": {}}
+
+    async def run_model(self, *, turn, session, resolved, resume_action_id=None):
+        del self, turn, session, resolved, resume_action_id
+        entered.set()
+        await release.wait()
+        return LoopResult(
+            termination_reason="assistant_final",
+            final_text="done",
+            iteration_count=1,
+        )
+
+    monkeypatch.setattr(AgentCoreRuntime, "_resolve_model_selection", resolve_model)
+    monkeypatch.setattr(AgentCoreRuntime, "_run_model_attempts", run_model)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as execution_session, maker() as recovery_session:
+        execution = asyncio.create_task(
+            AgentCoreRuntime(execution_session).run_turn(str(turn.id))
+        )
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        claimed = await AgentTurnRepository(recovery_session).get_fresh(str(turn.id))
+        await AgentTurnRepository(recovery_session).update_all(
+            claimed,
+            lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        await asyncio.sleep(0.5)
+
+        summary = await AgentCoreService(recovery_session).recover_orphaned_turns()
+
+        release.set()
+        completed = await asyncio.wait_for(execution, timeout=2)
+
+    assert summary == {"enqueued": 0, "failed": 0, "waiting": 0, "skipped": 0}
+    assert resumed == []
+    assert completed.status == AgentTurnStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_turn_lease_heartbeat_stops_stale_owner_without_terminal_write(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr(settings, "agent_turn_lease_seconds", 1)
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Stop when another owner takes over.",
+    )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def resolve_model(self, *, turn, session):
+        del self, turn, session
+        return {"provider": "test", "model": "test", "request_args": {}}
+
+    async def run_model(self, *, turn, session, resolved, resume_action_id=None):
+        del self, turn, session, resolved, resume_action_id
+        entered.set()
+        await release.wait()
+        return LoopResult(
+            termination_reason="assistant_final",
+            final_text="stale completion",
+            iteration_count=1,
+        )
+
+    monkeypatch.setattr(AgentCoreRuntime, "_resolve_model_selection", resolve_model)
+    monkeypatch.setattr(AgentCoreRuntime, "_run_model_attempts", run_model)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as execution_session, maker() as takeover_session:
+        execution = asyncio.create_task(
+            AgentCoreRuntime(execution_session).run_turn(str(turn.id))
+        )
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        replacement = await AgentTurnRepository(takeover_session).get_fresh(
+            str(turn.id)
+        )
+        await AgentTurnRepository(takeover_session).update_all(
+            replacement,
+            status=AgentTurnStatus.RUNNING,
+            lease_owner_token="replacement-owner",
+            lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+        )
+
+        result = await asyncio.wait_for(execution, timeout=2)
+        persisted = await AgentTurnRepository(takeover_session).get_fresh(str(turn.id))
+
+    assert result.status == AgentTurnStatus.RUNNING
+    assert result.lease_owner_token == "replacement-owner"
+    assert persisted.status == AgentTurnStatus.RUNNING
+    assert persisted.lease_owner_token == "replacement-owner"
+    assert persisted.final_text is None
+
+
+@pytest.mark.asyncio
+async def test_turn_lease_heartbeat_does_not_interrupt_terminal_event_commit(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr(settings, "agent_turn_lease_seconds", 1)
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Commit the terminal event before stopping the heartbeat.",
+    )
+
+    async def resolve_model(self, *, turn, session):
+        del self, turn, session
+        return {"provider": "test", "model": "test", "request_args": {}}
+
+    async def run_model(self, *, turn, session, resolved, resume_action_id=None):
+        del self, turn, session, resolved, resume_action_id
+        return LoopResult(
+            termination_reason="assistant_final",
+            final_text="done",
+            iteration_count=1,
+        )
+
+    original_append = AgentEventLedger.append
+
+    async def delayed_terminal_append(self, **kwargs):
+        if kwargs.get("type") == "turn.completed":
+            await asyncio.sleep(0.5)
+        return await original_append(self, **kwargs)
+
+    monkeypatch.setattr(AgentCoreRuntime, "_resolve_model_selection", resolve_model)
+    monkeypatch.setattr(AgentCoreRuntime, "_run_model_attempts", run_model)
+    monkeypatch.setattr(AgentEventLedger, "append", delayed_terminal_append)
+
+    completed = await AgentCoreRuntime(db_session).run_turn(str(turn.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+
+    assert completed.status == AgentTurnStatus.COMPLETED
+    assert "turn.completed" in {event.type for event in events}
 
 
 @pytest.mark.asyncio
