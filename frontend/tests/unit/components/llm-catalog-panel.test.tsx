@@ -246,7 +246,7 @@ describe("LlmCatalogPanel", () => {
     const testProvider = vi.fn().mockResolvedValue({
       provider_id: "provider-relay",
       success: true,
-      model: "gpt-5.4-mini",
+      model: "gpt-5.4",
       wire_protocol: "responses",
       latency_ms: 42,
       retryable: false,
@@ -303,8 +303,121 @@ describe("LlmCatalogPanel", () => {
     const status = await within(card).findByRole("status")
     expect(within(status).getByText("Connection verified")).toBeInTheDocument()
     expect(within(status).getByText("Responses")).toBeInTheDocument()
-    expect(within(status).getByText("gpt-5.4-mini")).toBeInTheDocument()
+    expect(within(status).getByText("gpt-5.4")).toBeInTheDocument()
     expect(within(status).getByText("42 ms")).toBeInTheDocument()
+  })
+
+  it("clears a local probe result when the selected test model changes", async () => {
+    const testProvider = vi.fn().mockResolvedValue({
+      provider_id: "provider-relay",
+      success: true,
+      model: "gpt-5.4-mini",
+      wire_protocol: "responses",
+      latency_ms: 42,
+      retryable: false,
+    })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-relay",
+          name: "OpenAI Compatible",
+          kind: "openai_compatible",
+          wire_protocol: "responses",
+          metadata: { providerTemplate: "openai-compatible" },
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+        {
+          id: "model-two",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4",
+          display_name: "GPT 5.4",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    fireEvent.click(within(card).getByRole("button", { name: "Test" }))
+    expect(await within(card).findByRole("status")).toHaveTextContent(
+      "gpt-5.4-mini",
+    )
+
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible test model"), {
+      target: { value: "model-two" },
+    })
+
+    expect(within(card).queryByRole("status")).not.toBeInTheDocument()
+  })
+
+  it("hides persisted probe status for a different selected model", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-relay",
+          name: "OpenAI Compatible",
+          kind: "openai_compatible",
+          wire_protocol: "responses",
+          metadata: { providerTemplate: "openai-compatible" },
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+          test_status: {
+            success: true,
+            model: "gpt-5.4",
+            wire_protocol: "responses",
+            latency_ms: 42,
+            retryable: false,
+          },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+        {
+          id: "model-two",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4",
+          display_name: "GPT 5.4",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    expect(within(card).getByLabelText("OpenAI Compatible test model")).toHaveValue(
+      "model-one",
+    )
+    expect(within(card).queryByRole("status")).not.toBeInTheDocument()
   })
 
   it("renders safe probe failure details and disables Test without models", async () => {
