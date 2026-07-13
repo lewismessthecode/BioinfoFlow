@@ -8,8 +8,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.agent_core import AgentTurnStatus
-from app.repositories.agent_core_repo import AgentSessionRepository, AgentTurnRepository
+from app.models.agent_core import AgentActionStatus, AgentTurnStatus
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentSessionRepository,
+    AgentTurnRepository,
+)
 from app.repositories.llm_repo import (
     LlmModelProfileRepository,
     LlmModelRepository,
@@ -35,6 +39,11 @@ from app.services.agent_core.model_selection import (
     session_model_selection_from_metadata,
 )
 from app.services.agent_core.observability import truncate_log_value
+from app.services.agent_core.transcript.messages import (
+    RESPONSES_CONTINUATION_METADATA_KEY,
+    text_part,
+)
+from app.services.agent_core.transcript.store import AgentTranscriptStore
 from app.services.authorization_service import AuthorizationService
 from app.services.llm.access_policy import (
     authorize_provider_endpoint,
@@ -144,9 +153,8 @@ class AgentCoreRuntime:
         )
 
     async def resume_turn_after_action(self, action_id: str):
-        from app.repositories.agent_core_repo import AgentActionRepository
-
-        action = await AgentActionRepository(self.turn_repo.session).get(action_id)
+        action_repo = AgentActionRepository(self.turn_repo.session)
+        action = await action_repo.get(action_id)
         if action is None:
             return None
         turn = await self.turn_repo.get(str(action.turn_id))
@@ -194,6 +202,12 @@ class AgentCoreRuntime:
 
         resolved = await self._resolve_resume_model_selection(turn=turn, session=session)
         if resolved is None:
+            await self._close_failed_resume_action(
+                action_repo=action_repo,
+                action=action,
+                turn=turn,
+                session=session,
+            )
             return await self._fail_turn(
                 turn,
                 error_message=(
@@ -218,6 +232,74 @@ class AgentCoreRuntime:
             turn=fresh_turn,
             result=result,
         )
+
+    async def _close_failed_resume_action(
+        self,
+        *,
+        action_repo: AgentActionRepository,
+        action,
+        turn,
+        session,
+    ) -> None:
+        transcript = AgentTranscriptStore(self.turn_repo.session)
+        terminal_statuses = {
+            AgentActionStatus.COMPLETED,
+            AgentActionStatus.FAILED,
+            AgentActionStatus.CANCELLED,
+            AgentActionStatus.REJECTED,
+        }
+        if action.status in terminal_statuses:
+            await transcript.clear_session_metadata(
+                session_id=str(session.id),
+                metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+            )
+            return
+
+        error = {
+            "type": "ModelConfigurationChanged",
+            "message": (
+                "The model configuration changed while approval was pending; "
+                "the tool was not executed."
+            ),
+        }
+        await transcript.append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="tool",
+            parts=[
+                text_part(
+                    json.dumps(
+                        {
+                            "tool": action.name,
+                            "status": AgentActionStatus.FAILED,
+                            "result": None,
+                            "error": error,
+                        },
+                        separators=(",", ":"),
+                    )
+                )
+            ],
+            metadata={
+                "tool_call_id": action.tool_call_id,
+                "tool": action.name,
+                "is_error": True,
+            },
+            replace_session_metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+        )
+        action = await action_repo.update_all(
+            action,
+            status=AgentActionStatus.FAILED,
+            error=error,
+            completed_at=datetime.now(timezone.utc),
+            requires_resume=False,
+        )
+        await self.ledger.append(
+            session_id=str(action.session_id),
+            turn_id=str(action.turn_id),
+            type=AgentEventType.ACTION_FAILED,
+            payload={"action_id": str(action.id), "error": error},
+        )
+        agent_metrics.increment("tools.failed")
 
     async def _resolve_model_selection(self, *, turn, session) -> dict[str, Any] | None:
         snapshot = turn.model_profile_snapshot or {}
