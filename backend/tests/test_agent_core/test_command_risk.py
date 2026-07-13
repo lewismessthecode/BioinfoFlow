@@ -233,6 +233,55 @@ def test_every_supported_write_sink_protects_credential_destinations(command):
     )
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "ln -s /tmp/evil /home/alice/.ssh/config",
+        "ln /tmp/evil /home/alice/.ssh/authorized_keys",
+        "tar -xf payload.tar -C /home/alice/.ssh",
+        "tar -xf payload.tar --directory=/home/alice/.ssh",
+        "unzip payload.zip -d /home/alice/.ssh",
+        "rsync payload /home/alice/.ssh/authorized_keys",
+    ],
+)
+def test_archive_link_and_sync_sinks_protect_credential_destinations(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.requires_explicit_approval is True
+    assert "write" in assessment.effects
+    assert {item["kind"] for item in assessment.protected_resources} == {"ssh"}
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+def test_unknown_non_read_command_with_protected_path_fails_ask():
+    assessment = assess_command_risk(
+        "credential-rewriter /home/alice/.ssh/config",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.requires_explicit_approval is True
+    assert {item["kind"] for item in assessment.protected_resources} == {"ssh"}
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
 def test_unrelated_protected_read_does_not_turn_a_safe_sink_into_protected_write():
     assessment = assess_command_risk(
         "cat ~/.ssh/config && printf ok > output.txt",
@@ -603,6 +652,50 @@ def test_unproven_inline_code_or_danger_literals_require_explicit_approval(comma
         )
         .decision
         == "ask"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python3.13 -c \"print('ok')\"",
+        "nodejs -e \"console.log('ok')\"",
+        "ruby3.4 -e \"puts 'ok'\"",
+        "perl5.40 -e \"print 'ok'\"",
+        "php8.4 -r \"echo 'ok';\"",
+    ],
+)
+def test_versioned_and_alternate_inline_interpreters_require_approval(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python3.13 -c 'import os; os.system(\"reboot\")'",
+        "nodejs -e 'require(\"child_process\").execSync(\"reboot\")'",
+        "ruby3.4 -e 'system(\"reboot\")'",
+        "perl5.40 -e 'system(\"reboot\")'",
+        "php8.4 -r 'system(\"reboot\");'",
+    ],
+)
+def test_versioned_interpreter_literal_hardlines_are_denied(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.level == "critical"
+    assert assessment.hard_blocked is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "deny"
     )
 
 

@@ -364,8 +364,13 @@ _WRAPPERS = frozenset(
     {"env", "command", "exec", "nohup", "sudo", "timeout", "nice", "setsid"}
 )
 _SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})
-_INLINE_INTERPRETERS = frozenset(
-    {"python", "python3", "pypy", "pypy3", "node", "ruby", "perl", "php"}
+_INLINE_INTERPRETER_PATTERNS = (
+    ("python", re.compile(r"python(?:\d+(?:\.\d+)*)?")),
+    ("python", re.compile(r"pypy(?:\d+(?:\.\d+)*)?")),
+    ("node", re.compile(r"node(?:js)?(?:\d+(?:\.\d+)*)?")),
+    ("ruby", re.compile(r"ruby(?:\d+(?:\.\d+)*)?")),
+    ("perl", re.compile(r"perl(?:\d+(?:\.\d+)*)?")),
+    ("php", re.compile(r"php(?:\d+(?:\.\d+)*)?")),
 )
 _SHUTDOWN_EXECUTABLES = frozenset({"shutdown", "reboot", "halt", "poweroff"})
 _ROOTISH = frozenset({"/", "/*", "~", "$HOME", "${HOME}", ".."})
@@ -426,8 +431,9 @@ def _classify_node(node: _CommandNode) -> RiskLevel:
         if command_arg is not None:
             inner = classify_command_level(command_arg)
             return _max_level("destructive" if elevated else "read", inner)
-    if executable in _INLINE_INTERPRETERS:
-        inline_code = _interpreter_inline_code(executable, args)
+    interpreter = _interpreter_family(executable)
+    if interpreter is not None:
+        inline_code = _interpreter_inline_code(interpreter, args)
         if inline_code is not None and _inline_code_contains_known_hardline(
             inline_code
         ):
@@ -630,11 +636,19 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
     return None
 
 
+def _interpreter_family(executable: str) -> str | None:
+    for family, pattern in _INLINE_INTERPRETER_PATTERNS:
+        if pattern.fullmatch(executable):
+            return family
+    return None
+
+
 def _inline_code_contains_known_hardline(code: str) -> bool:
     call_pattern = re.compile(
         r"(?:\bos\s*\.\s*system|\bsystem|\bexec(?:v|ve|vp|vpe)?|"
         r"\bsubprocess\s*\.\s*(?:run|call|check_call|check_output|Popen)|"
-        r"\bchild_process\s*\.\s*(?:exec|execSync|spawn|spawnSync))"
+        r"(?:\bchild_process|require\s*\(\s*['\"]child_process['\"]\s*\))"
+        r"\s*\.\s*(?:exec|execSync|spawn|spawnSync))"
         r"\s*\(([^)]*)\)",
         re.IGNORECASE | re.DOTALL,
     )
@@ -791,8 +805,8 @@ def _analyze_indirect_execution_safety(
                 reasons.append(
                     "unproven shell -c source or danger literal requires explicit approval"
                 )
-        elif executable in _INLINE_INTERPRETERS:
-            if _interpreter_inline_code(executable, args) is not None:
+        elif (interpreter := _interpreter_family(executable)) is not None:
+            if _interpreter_inline_code(interpreter, args) is not None:
                 reasons.append(
                     "inline interpreter source cannot be proven side-effect free"
                 )
@@ -801,10 +815,11 @@ def _analyze_indirect_execution_safety(
             if nested:
                 nested_level = classify_command_level(" ".join(nested))
                 nested_executable = _basename(nested[0])
-                if nested_level == "destructive" or nested_executable in {
-                    *_SHELLS,
-                    *_INLINE_INTERPRETERS,
-                }:
+                if (
+                    nested_level == "destructive"
+                    or nested_executable in _SHELLS
+                    or _interpreter_family(nested_executable) is not None
+                ):
                     reasons.append(
                         "xargs supplies an indirect runtime target to an elevated command"
                     )
@@ -840,11 +855,21 @@ def _analyze_write_sink_safety(nodes: list[_CommandNode]) -> _WriteSinkSafety:
         symlink = _symlink_binding(node)
         if symlink is not None:
             link, target = symlink
+            protected_paths.extend(
+                item["path"] for item in _protected_resources([link])
+            )
+            if _is_unresolved_sink_path(link):
+                requires_explicit = True
+                low_confidence = True
+                reasons.append(
+                    "indirect or unresolved link destination requires explicit approval"
+                )
             aliases[_alias_key(link)] = _resolve_alias_target(
                 _symlink_target_path(link, target), aliases
             )
             continue
-        for destination in _write_sink_destinations(node):
+        destinations = _write_sink_destinations(node)
+        for destination in destinations:
             resolved_destination = _resolve_alias_target(destination, aliases)
             protected_paths.extend(
                 item["path"] for item in _protected_resources([resolved_destination])
@@ -870,6 +895,15 @@ def _analyze_write_sink_safety(nodes: list[_CommandNode]) -> _WriteSinkSafety:
                     reasons.append(
                         "write destination is in a sensitive non-block device subtree"
                     )
+        if not destinations:
+            potential_paths = _unknown_mutator_protected_paths(node)
+            if potential_paths:
+                protected_paths.extend(potential_paths)
+                requires_explicit = True
+                low_confidence = True
+                reasons.append(
+                    "an unknown non-read command may mutate an explicit protected path"
+                )
     return _WriteSinkSafety(
         requires_explicit_approval=requires_explicit,
         low_confidence=low_confidence,
@@ -972,9 +1006,61 @@ def _write_sink_destinations(node: _CommandNode) -> list[str]:
         destinations.extend(_output_option_destinations(args, {"--output"}))
     elif executable == "git" and args[:1] == ["diff"]:
         destinations.extend(_output_option_destinations(args[1:], {"--output"}))
+    elif executable == "ln":
+        destinations.extend(_link_destinations(args))
+    elif executable == "tar" and _tar_extracts(args):
+        destinations.extend(
+            _output_option_destinations(args, {"-C", "--directory"})
+        )
+    elif executable == "unzip":
+        destinations.extend(_output_option_destinations(args, {"-d"}))
+    elif executable == "rsync":
+        destinations.extend(_rsync_destinations(args))
     elif executable in {"rm", "rmdir", "touch", "mkdir", "chmod", "chown"}:
         destinations.extend(positional)
     return _dedupe(destinations)
+
+
+def _link_destinations(args: list[str]) -> list[str]:
+    target_directories = _output_option_destinations(
+        args, {"-t", "--target-directory"}
+    )
+    if target_directories:
+        return target_directories
+    positional = [arg for arg in args if not arg.startswith("-")]
+    return positional[-1:]
+
+
+def _tar_extracts(args: list[str]) -> bool:
+    return any(
+        arg in {"-x", "--extract", "--get"}
+        or (arg.startswith("-") and not arg.startswith("--") and "x" in arg[1:])
+        for arg in args
+    )
+
+
+def _rsync_destinations(args: list[str]) -> list[str]:
+    positional = [arg for arg in args if not arg.startswith("-")]
+    return positional[-1:]
+
+
+def _unknown_mutator_protected_paths(node: _CommandNode) -> list[str]:
+    tokens, _ = _unwrap_command(list(node.tokens))
+    if not tokens:
+        return []
+    executable = _basename(tokens[0])
+    args = tokens[1:]
+    if (
+        executable in _READ_EXECUTABLES
+        or executable in _SHELLS
+        or _interpreter_family(executable) is not None
+        or _is_read_only_platform_command(executable, args)
+        or (executable == "git" and _classify_git(args) == "act_low")
+        or (executable == "docker" and _classify_docker(args) == "act_low")
+    ):
+        return []
+    candidates = [arg for arg in args if not arg.startswith("-")]
+    return [item["path"] for item in _protected_resources(candidates)]
 
 
 def _copy_move_destinations(executable: str, args: list[str]) -> list[str]:
@@ -1678,6 +1764,8 @@ def _command_effects(nodes: list[_CommandNode]) -> list[str]:
             effects.append("process_control")
         elif executable in _EXTERNAL_EXECUTABLES or executable in _INSTALL_EXECUTABLES:
             effects.append("network")
+            if executable == "rsync":
+                effects.append("write")
         elif _node_writes(tokens, executable, args):
             effects.append("write")
         elif (
@@ -1705,7 +1793,15 @@ def _node_writes(tokens: list[str], executable: str, args: list[str]) -> bool:
         "chmod",
         "chown",
         "dd",
+        "ln",
+        "rsync",
     }:
+        return True
+    if executable == "tar" and _tar_extracts(args):
+        return True
+    if executable == "unzip" and not any(
+        arg in {"-l", "-t", "-v"} for arg in args
+    ):
         return True
     if executable == "sort" and _has_output_option(args, {"-o", "--output"}):
         return True

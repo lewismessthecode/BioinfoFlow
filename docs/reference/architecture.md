@@ -210,6 +210,11 @@ commands can rely on the active OS adapter. Unsandboxed local and SSH commands
 cannot: SSH is authorized by the selected remote Unix account and server policy,
 and a remote working root is not confinement. Unknown, outside-root, or
 symlink-sensitive remote paths require approval when safety cannot be proven.
+Protected command destinations are detected lexically, including common link,
+archive-extraction, and synchronization forms. This analysis does not resolve
+pre-existing filesystem symlinks or inspect archive members, so it is defense in
+depth rather than an OS boundary; actual confinement comes from the active local
+sandbox or the remote Unix account and server controls.
 
 ## Remote Connections
 
