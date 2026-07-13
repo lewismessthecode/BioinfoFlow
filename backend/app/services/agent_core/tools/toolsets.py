@@ -6,6 +6,7 @@ from typing import Iterable
 from app.services.agent_core.execution_target import is_remote_ssh_execution_target
 from app.services.agent_core.tools.registry import AgentToolRegistry
 from app.services.agent_core.tools.specs import AgentToolSpec
+from app.services.model_runtime.contracts import ToolDefinition
 
 
 # The read-only fallback policy, used when a caller passes no policy at all.
@@ -154,6 +155,19 @@ def provider_tool_specs(specs: Iterable[AgentToolSpec]) -> list[dict]:
             }
         )
     return tools
+
+
+def model_tool_definitions(
+    specs: Iterable[AgentToolSpec],
+) -> tuple[ToolDefinition, ...]:
+    return tuple(
+        ToolDefinition(
+            name=encode_provider_tool_name(spec.name),
+            description=spec.description,
+            parameters=spec.input_schema,
+        )
+        for spec in specs
+    )
 
 
 def encode_provider_tool_name(name: str) -> str:

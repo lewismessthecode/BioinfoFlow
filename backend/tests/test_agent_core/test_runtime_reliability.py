@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import json
 import sys
 
@@ -9,12 +10,23 @@ import pytest
 from app.config import Settings, settings
 from app.models.agent_core import AgentActionStatus
 from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
-from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRepository
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentEventRepository,
+    AgentMessageRepository,
+)
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
+from app.services.agent_core.core.fallback import (
+    build_fallback_model_ids,
+    should_try_fallback,
+)
 from app.services.agent_core.core.loop import _max_iterations
+from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.agent_core.runtime import AgentCoreRuntime
+from app.services.model_runtime.errors import ModelError
+from app.services.model_runtime.contracts import ModelInvocation
 import app.services.agent_core.runner as runner_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 from app.models.workspace import Workspace
@@ -64,6 +76,28 @@ def test_agent_max_iterations_prefers_explicit_setting(monkeypatch):
     monkeypatch.setattr(settings, "agent_max_iterations", 120)
 
     assert _max_iterations() == 120
+
+
+def test_fallback_candidates_preserve_order_and_suppress_duplicates() -> None:
+    assert build_fallback_model_ids(
+        ("primary", "fallback-a", "fallback-a", "fallback-b", "primary"),
+        primary_model_id="primary",
+    ) == ("fallback-a", "fallback-b")
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        LoopResult("waiting_approval", None, 1),
+        LoopResult("cancelled", None, 1),
+        LoopResult("interrupted", None, 1),
+        LoopResult("tool_failed", None, 1, error_code="tool_execution_failed"),
+    ],
+)
+def test_non_model_termination_never_triggers_semantic_fallback(
+    result: LoopResult,
+) -> None:
+    assert should_try_fallback(result) is False
 
 
 @pytest.mark.asyncio
@@ -169,7 +203,10 @@ async def test_context_replays_committed_transcript_messages(db_session, monkeyp
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="replay-model")
 
@@ -198,14 +235,24 @@ async def test_context_replays_committed_transcript_messages(db_session, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_runtime_retries_transient_model_failure_and_records_event(db_session, monkeypatch):
+async def test_runtime_retries_transient_model_failure_and_records_event(
+    db_session,
+    monkeypatch,
+    caplog,
+):
+    secret = "sentinel-retry-secret"
     attempts = 0
 
     async def flaky_completion(*args, **kwargs):
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            raise RuntimeError("Provider timed out")
+            raise ModelError(
+                category="timeout",
+                message="The provider timed out.",
+                retryable=True,
+                cause=RuntimeError(f"Authorization: Bearer {secret}"),
+            )
 
         class FakeMessage:
             content = "Succeeded after retry."
@@ -220,7 +267,10 @@ async def test_runtime_retries_transient_model_failure_and_records_event(db_sess
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", flaky_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        flaky_completion,
+    )
     monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
@@ -246,14 +296,140 @@ async def test_runtime_retries_transient_model_failure_and_records_event(db_sess
     assert completed_turn.status == "completed"
     assert completed_turn.final_text == "Succeeded after retry."
     assert any(event.type == "model.retrying" for event in events)
+    assert secret not in repr([event.payload for event in events])
+    assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_model_failure_and_fallback_surfaces_never_persist_credentials(
+    db_session,
+    monkeypatch,
+    caplog,
+):
+    secret = "sentinel-end-to-end-credential"
+    errors = [
+        ModelError(
+            category="timeout",
+            message="The provider timed out.",
+            retryable=True,
+            cause=RuntimeError(f"Authorization: Bearer {secret}"),
+        )
+        for _ in range(4)
+    ]
+    serialized_errors = [error.to_public_dict() for error in errors]
+
+    class FailingGateway:
+        def __init__(self) -> None:
+            self.invocations: list[ModelInvocation] = []
+
+        async def invoke(self, invocation: ModelInvocation):
+            self.invocations.append(invocation)
+            error = errors.pop(0)
+            if False:
+                yield None
+            raise error
+
+    def candidate(model: str, *, source: str) -> dict:
+        return {
+            "endpoint_id": f"endpoint-{model}",
+            "provider": "openai_compatible",
+            "model": model,
+            "model_id": f"id-{model}",
+            "source": source,
+            "capabilities": {
+                "supports_streaming": True,
+                "supports_reasoning": False,
+                "supports_tools": False,
+            },
+            "runtime_strategy": {
+                "use_streaming": True,
+                "allow_thinking": False,
+                "allow_tools": False,
+                "max_tokens": None,
+                "reasoning_budget": None,
+                "fallback_model_ids": [],
+            },
+            "request_args": {
+                "api_base": "https://models.example/v1",
+                "api_key": secret,
+            },
+            "wire_protocol": "chat_completions",
+        }
+
+    primary = candidate("primary-secret-model", source="test")
+    fallback = candidate("fallback-secret-model", source="fallback_model")
+    gateway = FailingGateway()
+    monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Fail safely without exposing credentials.",
+    )
+    runtime = AgentCoreRuntime(db_session, model_gateway=gateway)
+
+    async def resolved_selection(**kwargs):
+        del kwargs
+        return primary
+
+    async def fallback_candidates(**kwargs):
+        del kwargs
+        return [fallback]
+
+    monkeypatch.setattr(runtime, "_resolve_model_selection", resolved_selection)
+    monkeypatch.setattr(runtime, "_resolve_fallback_candidates", fallback_candidates)
+
+    failed_turn = await runtime.run_turn(str(turn.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+
+    assert failed_turn.status == "failed"
+    assert any(event.type == "model.retrying" for event in events)
+    assert any(event.type == "model.fallback" for event in events)
+    assert secret not in caplog.text
+    assert secret not in repr([event.payload for event in events])
+    assert secret not in repr(
+        {
+            "error_code": failed_turn.error_code,
+            "error_message": failed_turn.error_message,
+            "snapshot": failed_turn.model_profile_snapshot,
+        }
+    )
+    assert secret not in repr(
+        [
+            {
+                "parts": message.content_parts,
+                "metadata": message.message_metadata,
+            }
+            for message in messages
+        ]
+    )
+    assert secret not in repr([asdict(invocation) for invocation in gateway.invocations])
+    assert secret not in repr(serialized_errors)
 
 
 @pytest.mark.asyncio
 async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
+    model_attempts: list[str] = []
+
     async def fallback_completion(*args, **kwargs):
         model_name = str(kwargs["model"])
+        model_attempts.append(model_name)
         if "primary-model" in model_name:
-            raise RuntimeError("Provider timed out")
+            raise ModelError(
+                category="timeout",
+                message="The provider timed out.",
+                retryable=True,
+            )
 
         class FakeMessage:
             content = "Answered from fallback."
@@ -268,7 +444,10 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fallback_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fallback_completion,
+    )
     monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
@@ -322,6 +501,8 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
     assert completed_turn.final_text == "Answered from fallback."
     assert completed_turn.model_profile_snapshot["resolved_model_id"] == str(fallback.id)
     assert any(event.type == "model.fallback" for event in events)
+    assert sum("primary-model" in model for model in model_attempts) == 2
+    assert sum("fallback-model" in model for model in model_attempts) == 1
 
 
 @pytest.mark.asyncio
@@ -358,7 +539,10 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session,
         response.choices = [choice]
         return response
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", looping_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        looping_completion,
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="no-progress-model")
 
@@ -436,7 +620,10 @@ async def test_runtime_allows_repeated_tool_polling_when_results_change(db_sessi
             result={"state": f"running-{tool_executions}"},
         )
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", polling_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        polling_completion,
+    )
     monkeypatch.setattr(
         "app.services.agent_core.tools.executor.AgentToolExecutor.execute",
         changing_tool_result,
@@ -495,7 +682,10 @@ async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(db_session,
         response.choices = [choice]
         return response
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="unexposed-tool-model")
 
@@ -569,7 +759,10 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
         response.choices = [choice]
         return response
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
     monkeypatch.setattr(
         "app.services.agent_core.service.enqueue_turn_resume",
         lambda action_id, turn_id, _session_id=None: resumed.append(

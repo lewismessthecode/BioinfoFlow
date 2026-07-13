@@ -131,7 +131,7 @@ Recorded on 2026-07-13 from `origin/main` commit `b320b4144`:
 - Modify: `backend/app/services/agent_core/tools/toolsets.py`
 - Modify or remove: `backend/app/services/agent_core/core/stream_adapter.py`
 - Create: `backend/tests/test_agent_core/test_model_runtime_integration.py`
-- Create: `backend/tests/test_model_runtime/test_retry.py`
+- Create: `backend/tests/test_model_runtime/test_model_runtime_retry.py`
 - Modify: `backend/tests/test_agent_core/test_harness_invariants.py`
 - Modify: `backend/tests/test_agent_core/test_runtime_reliability.py`
 
@@ -156,7 +156,7 @@ Recorded on 2026-07-13 from `origin/main` commit `b320b4144`:
   payloads, turn errors, transcript rows, serialized contracts, and retry/
   fallback events.
 - [ ] From `backend/`, run
-  `rtk uv run pytest tests/test_model_runtime/test_retry.py tests/test_agent_core/test_runtime_reliability.py -q`;
+  `rtk uv run pytest tests/test_model_runtime/test_model_runtime_retry.py tests/test_agent_core/test_runtime_reliability.py -q`;
   expected result: failures showing string-based retry decisions, missing
   replay-safety handling, and unsanitized events.
 - [ ] Replace string-based retry decisions with structured `ModelError`

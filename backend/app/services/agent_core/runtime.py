@@ -3,10 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from litellm import acompletion
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.services.agent_core.core.loop as loop_module
 from app.config import settings
 from app.models.agent_core import AgentTurnStatus
 from app.repositories.agent_core_repo import AgentSessionRepository, AgentTurnRepository
@@ -42,14 +40,20 @@ from app.services.llm.catalog import (
     validate_provider_transport,
 )
 from app.services.llm.credentials import credential_available, credential_configured
+from app.services.model_runtime.contracts import ModelTarget
+from app.services.model_runtime.gateway import ModelGateway
 from app.utils.logging import get_logger
 
-_ORIGINAL_ACOMPLETION = acompletion
 logger = get_logger(__name__)
 
 
 class AgentCoreRuntime:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        model_gateway: ModelGateway | None = None,
+    ):
         self.turn_repo = AgentTurnRepository(session)
         self.session_repo = AgentSessionRepository(session)
         self.ledger = AgentEventLedger(session)
@@ -57,6 +61,7 @@ class AgentCoreRuntime:
         self.llm_profiles = LlmModelProfileRepository(session)
         self.llm_providers = LlmProviderRepository(session)
         self.llm_credentials = LlmProviderCredentialRepository(session)
+        self.model_gateway = model_gateway or ModelGateway()
 
     async def run_no_tool_turn(self, turn_id: str):
         return await self.run_turn(turn_id)
@@ -116,13 +121,14 @@ class AgentCoreRuntime:
                 error_code="model_selection_missing",
             )
 
-        if acompletion is not _ORIGINAL_ACOMPLETION:
-            loop_module.acompletion = acompletion
         result = await self._run_model_attempts(turn=turn, session=session, resolved=resolved)
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
             return None
-        return await AgentLoopController(self.turn_repo.session).complete_turn_from_result(
+        return await AgentLoopController(
+            self.turn_repo.session,
+            model_gateway=self.model_gateway,
+        ).complete_turn_from_result(
             turn=fresh_turn,
             result=result,
         )
@@ -176,7 +182,7 @@ class AgentCoreRuntime:
             resume_action_id=action_id,
         )
 
-        resolved = await self._resolve_model_selection(turn=turn, session=session)
+        resolved = await self._resolve_resume_model_selection(turn=turn, session=session)
         if resolved is None:
             return await self._fail_turn(
                 turn,
@@ -186,8 +192,6 @@ class AgentCoreRuntime:
                 ),
                 error_code="model_selection_missing",
             )
-        if acompletion is not _ORIGINAL_ACOMPLETION:
-            loop_module.acompletion = acompletion
         result = await self._run_model_attempts(
             turn=turn,
             session=session,
@@ -197,7 +201,10 @@ class AgentCoreRuntime:
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
             return None
-        return await AgentLoopController(self.turn_repo.session).complete_turn_from_result(
+        return await AgentLoopController(
+            self.turn_repo.session,
+            model_gateway=self.model_gateway,
+        ).complete_turn_from_result(
             turn=fresh_turn,
             result=result,
         )
@@ -242,6 +249,38 @@ class AgentCoreRuntime:
             workspace_id=str(session.workspace_id),
             user_id=turn.user_id,
         )
+
+    async def _resolve_resume_model_selection(
+        self,
+        *,
+        turn,
+        session,
+    ) -> dict[str, Any] | None:
+        snapshot = turn.model_profile_snapshot or {}
+        resolved_model_id = snapshot.get("resolved_model_id")
+        if not resolved_model_id:
+            return await self._resolve_model_selection(turn=turn, session=session)
+        candidate = await self._catalog_selection(
+            {"model_id": str(resolved_model_id)},
+            source="turn_resolved_resume",
+            workspace_id=str(session.workspace_id),
+            user_id=turn.user_id,
+        )
+        if candidate is None:
+            return None
+        resolved_target = snapshot.get("resolved_model_target")
+        if isinstance(resolved_target, dict) and not _target_matches_snapshot(
+            candidate,
+            resolved_target,
+        ):
+            return None
+        capabilities = snapshot.get("resolved_model_capabilities")
+        if isinstance(capabilities, dict):
+            candidate["capabilities"] = capabilities
+        runtime_strategy = snapshot.get("resolved_runtime_strategy")
+        if isinstance(runtime_strategy, dict):
+            candidate["runtime_strategy"] = runtime_strategy
+        return candidate
 
     async def _catalog_selection(
         self,
@@ -310,6 +349,7 @@ class AgentCoreRuntime:
             profile=profile if profile_id else None,
         )
         result = {
+            "endpoint_id": str(provider.id),
             "provider": provider.kind,
             "model": model.model_id,
             "model_id": str(model.id),
@@ -317,6 +357,7 @@ class AgentCoreRuntime:
             "capabilities": capabilities.as_dict(),
             "runtime_strategy": runtime_strategy.as_dict(),
             "request_args": request_args,
+            "wire_protocol": str(getattr(provider, "wire_protocol", "chat_completions")),
         }
         if profile_id:
             result["profile_id"] = profile_id
@@ -370,7 +411,10 @@ class AgentCoreRuntime:
         resolved: dict[str, Any],
         resume_action_id: str | None = None,
     ):
-        controller = AgentLoopController(self.turn_repo.session)
+        controller = AgentLoopController(
+            self.turn_repo.session,
+            model_gateway=self.model_gateway,
+        )
         attempts = [resolved, *await self._resolve_fallback_candidates(turn=turn, session=session, resolved=resolved)]
         next_resume_action_id = resume_action_id
         for attempt_index, candidate in enumerate(attempts):
@@ -411,22 +455,18 @@ class AgentCoreRuntime:
             if next_resume_action_id is not None:
                 result = await controller.resume_turn_from_action(
                     action_id=next_resume_action_id,
-                    provider=candidate["provider"],
-                    model=candidate["model"],
+                    target=_model_target(candidate),
                     capabilities=_resolved_capabilities(candidate),
                     strategy=runtime_strategy,
-                    request_args=candidate["request_args"],
                     max_tokens=runtime_strategy.max_tokens,
                 )
                 next_resume_action_id = None
             else:
                 result = await controller.run_turn(
                     turn_id=str(turn.id),
-                    provider=candidate["provider"],
-                    model=candidate["model"],
+                    target=_model_target(candidate),
                     capabilities=_resolved_capabilities(candidate),
                     strategy=runtime_strategy,
-                    request_args=candidate["request_args"],
                     max_tokens=runtime_strategy.max_tokens,
                 )
             if not should_try_fallback(result) or attempt_index == len(attempts) - 1:
@@ -455,6 +495,14 @@ class AgentCoreRuntime:
         snapshot["resolved_model_selection"] = {
             "provider": resolved["provider"],
             "model": resolved["model"],
+        }
+        request_args = resolved.get("request_args") or {}
+        snapshot["resolved_model_target"] = {
+            "endpoint_id": str(resolved.get("endpoint_id") or ""),
+            "provider_kind": resolved["provider"],
+            "model_name": resolved["model"],
+            "wire_protocol": resolved.get("wire_protocol") or "chat_completions",
+            "base_url": request_args.get("api_base"),
         }
         if resolved.get("model_id"):
             snapshot["resolved_model_id"] = resolved["model_id"]
@@ -576,6 +624,32 @@ def _coerce_optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _model_target(resolved: dict[str, Any]) -> ModelTarget:
+    request_args = resolved.get("request_args") or {}
+    return ModelTarget(
+        endpoint_id=str(resolved.get("endpoint_id") or resolved.get("model_id") or ""),
+        provider_kind=str(resolved["provider"]),
+        model_name=str(resolved["model"]),
+        wire_protocol=str(resolved.get("wire_protocol") or "chat_completions"),
+        base_url=request_args.get("api_base"),
+        api_key=request_args.get("api_key"),
+    )
+
+
+def _target_matches_snapshot(
+    resolved: dict[str, Any],
+    snapshot: dict[str, Any],
+) -> bool:
+    request_args = resolved.get("request_args") or {}
+    return snapshot == {
+        "endpoint_id": str(resolved.get("endpoint_id") or ""),
+        "provider_kind": resolved.get("provider"),
+        "model_name": resolved.get("model"),
+        "wire_protocol": resolved.get("wire_protocol") or "chat_completions",
+        "base_url": request_args.get("api_base"),
+    }
 
 
 def _turn_lease_duration() -> timedelta:

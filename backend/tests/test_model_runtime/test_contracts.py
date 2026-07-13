@@ -10,6 +10,7 @@ from app.services.model_runtime.contracts import (
     ModelTarget,
     ModelWarning,
     ReasoningDelta,
+    ResponseStarted,
     ResponsesContinuation,
     TextDelta,
     TextPart,
@@ -122,6 +123,7 @@ def test_dataclass_serialization_structurally_excludes_transport_secrets() -> No
 
 def test_model_events_have_stable_tags_and_safe_defaults() -> None:
     events = (
+        ResponseStarted(streaming=False),
         TextDelta(text="done"),
         ReasoningDelta(text="checking"),
         ToolCallDelta(
@@ -136,6 +138,7 @@ def test_model_events_have_stable_tags_and_safe_defaults() -> None:
     )
 
     assert [event.kind for event in events] == [
+        "response_started",
         "text_delta",
         "reasoning_delta",
         "tool_call_delta",
@@ -143,9 +146,9 @@ def test_model_events_have_stable_tags_and_safe_defaults() -> None:
         "warning",
         "completion",
     ]
-    assert events[0].phase == "final_answer"
-    assert events[3].cached_input_tokens == 0
-    assert events[3].reasoning_tokens == 0
+    assert events[1].phase == "final_answer"
+    assert events[4].cached_input_tokens is None
+    assert events[4].reasoning_tokens is None
 
 
 def test_model_error_is_structured_immutable_and_never_serializes_its_cause() -> None:

@@ -88,6 +88,12 @@ class ModelInvocation:
 
 
 @dataclass(frozen=True)
+class ResponseStarted:
+    streaming: bool
+    kind: Literal["response_started"] = field(default="response_started", init=False)
+
+
+@dataclass(frozen=True)
 class TextDelta:
     text: str
     phase: Phase = "final_answer"
@@ -114,8 +120,8 @@ class UsageReport:
     input_tokens: int
     output_tokens: int
     total_tokens: int
-    cached_input_tokens: int = 0
-    reasoning_tokens: int = 0
+    cached_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
     kind: Literal["usage"] = field(default="usage", init=False)
 
 
@@ -135,7 +141,8 @@ class CompletionMetadata:
 
 
 ModelEvent: TypeAlias = (
-    TextDelta
+    ResponseStarted
+    | TextDelta
     | ReasoningDelta
     | ToolCallDelta
     | UsageReport

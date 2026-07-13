@@ -4,12 +4,49 @@ import traceback
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx
+import litellm
 import pytest
 
 from app.services.model_runtime.backend.litellm import LiteLLMBackend
-from app.services.model_runtime.contracts import ModelInvocation, ModelTarget
+from app.services.model_runtime.contracts import (
+    ModelInvocation,
+    ModelTarget,
+    ResponseStarted,
+)
 from app.services.model_runtime.errors import ModelError
 from app.services.model_runtime.gateway import ModelGateway
+
+
+def _response(
+    status_code: int,
+    *,
+    code: str,
+    request_id: str,
+    retry_after: str | None = None,
+) -> httpx.Response:
+    headers = {"x-request-id": request_id}
+    if retry_after is not None:
+        headers["retry-after"] = retry_after
+    return httpx.Response(
+        status_code,
+        headers=headers,
+        json={"error": {"code": code, "message": "raw provider detail"}},
+        request=httpx.Request("POST", "https://provider.example/v1/chat/completions"),
+    )
+
+
+async def _normalized_error(provider_error: Exception) -> ModelError:
+    async def failing_acompletion(**kwargs: Any) -> object:
+        del kwargs
+        raise provider_error
+
+    with pytest.raises(ModelError) as caught:
+        await LiteLLMBackend(acompletion_fn=failing_acompletion).invoke(
+            "chat_completions",
+            {"model": "openai/gpt-test", "messages": [], "api_key": "secret-key"},
+        )
+    return caught.value
 
 
 @pytest.mark.asyncio
@@ -89,7 +126,7 @@ async def test_gateway_dispatches_chat_through_registered_codec_and_backend():
 
     events = [item async for item in gateway.invoke(invocation)]
 
-    assert events == [event]
+    assert events == [ResponseStarted(streaming=False), event]
     assert backend.calls == [
         (
             "chat_completions",
@@ -157,6 +194,125 @@ async def test_backend_suppresses_secret_bearing_provider_exception_chain(caplog
 
 
 @pytest.mark.asyncio
+async def test_rate_limit_error_preserves_retry_after_and_safe_metadata() -> None:
+    error = await _normalized_error(
+        litellm.RateLimitError(
+            "raw secret-bearing rate-limit message",
+            "openai",
+            "gpt-test",
+            _response(
+                429,
+                code="rate_limit_exceeded",
+                request_id="req-rate-limit",
+                retry_after="1.75",
+            ),
+        )
+    )
+
+    assert error.category == "rate_limit"
+    assert error.http_status == 429
+    assert error.provider_code in {"429", "rate_limit_exceeded"}
+    assert error.request_id == "req-rate-limit"
+    assert error.retry_after_seconds == 1.75
+    assert error.retryable is True
+    assert error.replay_safe is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_error", "category", "status_code"),
+    [
+        (litellm.Timeout("raw timeout", "gpt-test", "openai"), "timeout", 408),
+        (
+            litellm.APIConnectionError("raw connection", "openai", "gpt-test"),
+            "connection",
+            500,
+        ),
+        (litellm.APIError(502, "raw 502", "openai", "gpt-test"), "service_unavailable", 502),
+        (
+            litellm.ServiceUnavailableError("raw 503", "openai", "gpt-test"),
+            "service_unavailable",
+            503,
+        ),
+        (litellm.APIError(504, "raw 504", "openai", "gpt-test"), "service_unavailable", 504),
+    ],
+)
+async def test_transient_typed_provider_errors_are_retryable(
+    provider_error: Exception,
+    category: str,
+    status_code: int,
+) -> None:
+    error = await _normalized_error(provider_error)
+
+    assert error.category == category
+    assert error.http_status == status_code
+    assert error.retryable is True
+    assert error.replay_safe is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_error", "category", "status_code", "provider_code", "request_id"),
+    [
+        (
+            litellm.BadRequestError(
+                "raw bad request with secret-key",
+                "gpt-test",
+                "openai",
+                _response(400, code="invalid_tool_schema", request_id="req-400"),
+                body={"code": "invalid_tool_schema"},
+            ),
+            "invalid_request",
+            400,
+            "invalid_tool_schema",
+            "req-400",
+        ),
+        (
+            litellm.AuthenticationError(
+                "raw auth with secret-key",
+                "openai",
+                "gpt-test",
+                _response(401, code="invalid_api_key", request_id="req-401"),
+            ),
+            "authentication",
+            401,
+            "invalid_api_key",
+            "req-401",
+        ),
+        (
+            litellm.PermissionDeniedError(
+                "raw permission with secret-key",
+                "openai",
+                "gpt-test",
+                _response(403, code="organization_forbidden", request_id="req-403"),
+            ),
+            "authorization",
+            403,
+            "organization_forbidden",
+            "req-403",
+        ),
+    ],
+)
+async def test_client_provider_errors_are_safe_and_nonretryable(
+    provider_error: Exception,
+    category: str,
+    status_code: int,
+    provider_code: str,
+    request_id: str,
+) -> None:
+    error = await _normalized_error(provider_error)
+
+    assert error.category == category
+    assert error.http_status == status_code
+    assert error.provider_code == provider_code
+    assert error.request_id == request_id
+    assert error.retryable is False
+    assert error.replay_safe is True
+    assert "secret-key" not in str(error)
+    assert "secret-key" not in repr(error.to_public_dict())
+
+
+@pytest.mark.asyncio
 async def test_stream_failure_after_event_is_safe_and_not_replayable(caplog):
     secret = "sentinel-stream-secret-never-render"
     provider_error = RuntimeError(f"stream failed with api_key={secret}")
@@ -201,6 +357,7 @@ async def test_stream_failure_after_event_is_safe_and_not_replayable(caplog):
     )
     events = gateway.invoke(invocation)
 
+    assert await anext(events) == ResponseStarted(streaming=True)
     assert await anext(events) is first_event
     with pytest.raises(ModelError) as caught:
         await anext(events)
@@ -211,6 +368,37 @@ async def test_stream_failure_after_event_is_safe_and_not_replayable(caplog):
     assert error.replay_safe is False
     assert secret not in rendered_traceback
     assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_model_error_after_stream_event_is_forced_nonreplayable() -> None:
+    first_event = object()
+
+    async def provider_stream() -> AsyncIterator[object]:
+        yield first_event
+        raise ModelError(
+            category="timeout",
+            message="The provider timed out.",
+            retryable=True,
+            replay_safe=True,
+        )
+
+    async def fake_acompletion(**kwargs: Any) -> object:
+        del kwargs
+        return provider_stream()
+
+    response = await LiteLLMBackend(acompletion_fn=fake_acompletion).invoke(
+        "chat_completions",
+        {"model": "openai/gpt-test", "messages": []},
+    )
+
+    assert await anext(response) is first_event
+    with pytest.raises(ModelError) as caught:
+        await anext(response)
+
+    assert caught.value.category == "timeout"
+    assert caught.value.retryable is True
+    assert caught.value.replay_safe is False
 
 
 def test_gateway_rejects_duplicate_protocol_registration():
