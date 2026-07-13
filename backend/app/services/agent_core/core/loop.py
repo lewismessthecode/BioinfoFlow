@@ -34,6 +34,11 @@ from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import execution_target_from_session
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
+from app.services.agent_core.ownership import (
+    TurnOwnership,
+    TurnOwnershipLostError,
+    new_turn_owner_token,
+)
 from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import (
@@ -108,6 +113,7 @@ class AgentLoopController:
         session: AsyncSession,
         *,
         model_gateway: ModelGateway | None = None,
+        ownership: TurnOwnership | None = None,
     ):
         self.db = session
         self.sessions = AgentSessionRepository(session)
@@ -119,6 +125,7 @@ class AgentLoopController:
         self.registry = build_default_tool_registry()
         self.executor = AgentToolExecutor(session, self.registry)
         self.model_gateway = model_gateway or ModelGateway()
+        self.ownership = ownership
 
     async def run_turn(
         self,
@@ -172,6 +179,7 @@ class AgentLoopController:
         empty_response_retries_remaining = 1
 
         while budget.consume():
+            await self._ensure_owned()
             turn = await self.turns.get(turn_id)
             if turn is None:
                 return LoopResult(
@@ -233,6 +241,7 @@ class AgentLoopController:
                     message_id=f"assistant:{turn.id}:{budget.used_iterations}",
                     allow_thinking=strategy.allow_thinking,
                 )
+                await self._ensure_owned()
             except asyncio.CancelledError:
                 return LoopResult(
                     termination_reason=_cancellation_reason(turn),
@@ -360,6 +369,7 @@ class AgentLoopController:
                     and streamed.commentary
                     and streamed.continuation is not None
                 ):
+                    await self._ensure_owned()
                     await self.transcript.append_parts(
                         session_id=str(agent_session.id),
                         turn_id=str(turn.id),
@@ -424,6 +434,7 @@ class AgentLoopController:
                 if streamed.continuation is not None
                 else None
             )
+            await self._ensure_owned()
             await self.transcript.append_parts(
                 session_id=str(agent_session.id),
                 turn_id=str(turn.id),
@@ -512,6 +523,7 @@ class AgentLoopController:
                     user_id=turn.user_id,
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
+                    ownership_guard=self._ensure_owned,
                 ),
                 toolset_policy=agent_session.toolset_policy,
                 permission_mode=agent_session.permission_mode,
@@ -544,6 +556,7 @@ class AgentLoopController:
         strategy: RuntimeStrategy = RuntimeStrategy(),
         max_tokens: int | None = None,
     ) -> LoopResult:
+        await self._ensure_owned()
         action = await self.actions.get(action_id)
         if action is None:
             return LoopResult(
@@ -583,8 +596,10 @@ class AgentLoopController:
             user_id=turn.user_id,
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
+            ownership_guard=self._ensure_owned,
         )
         for sibling in batch:
+            await self._ensure_owned()
             matching_tool_result = await self.transcript.find_committed_tool_result(
                 session_id=str(agent_session.id),
                 turn_id=str(turn.id),
@@ -598,6 +613,7 @@ class AgentLoopController:
                     action_id=str(sibling.id),
                     context=context,
                 )
+                await self._ensure_owned()
             elif sibling.status in TERMINAL_ACTION_STATUSES:
                 result = _tool_result_for_terminal_action(sibling)
             else:
@@ -683,6 +699,7 @@ class AgentLoopController:
         continuation: ResponsesContinuation | None = None,
         wire_protocol: str = "chat_completions",
     ) -> None:
+        await self._ensure_owned()
         parts: list[dict[str, Any]] = []
         if commentary:
             parts.append(text_part(commentary, phase="commentary"))
@@ -725,6 +742,7 @@ class AgentLoopController:
         tool_call_id: str | None,
         result,
     ) -> None:
+        await self._ensure_owned()
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
@@ -795,6 +813,7 @@ class AgentLoopController:
                     user_id=turn.user_id,
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
+                    ownership_guard=self._ensure_owned,
                 ),
                 toolset_policy=agent_session.toolset_policy,
                 permission_mode=agent_session.permission_mode,
@@ -809,6 +828,12 @@ class AgentLoopController:
         return spec.risk_level == "read" and not spec.write_scope
 
     async def _renew_turn_lease(self, turn):
+        if self.ownership is not None:
+            await self.ownership.renew()
+            refreshed = await self.turns.get(str(turn.id))
+            if refreshed is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            return refreshed
         now = datetime.now(timezone.utc)
         return await self.turns.update_all(
             turn,
@@ -840,6 +865,7 @@ class AgentLoopController:
         warnings: list[ModelWarning] = []
 
         async for event in self.model_gateway.invoke(invocation):
+            await self._ensure_owned()
             if isinstance(event, ResponseStarted):
                 response_streaming = event.streaming
             elif isinstance(event, ReasoningDelta):
@@ -1060,6 +1086,7 @@ class AgentLoopController:
         thinking_parts: list[str],
         thinking_index: int,
     ) -> None:
+        await self._ensure_owned()
         await self.ledger.append(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
@@ -1105,8 +1132,20 @@ class AgentLoopController:
             status = AgentTurnStatus.FAILED
             event_type = AgentEventType.TURN_FAILED
 
-        updated = await self.turns.update_all(
-            turn,
+        loop_state = {"termination_reason": result.termination_reason}
+        if result.termination_reason == "waiting_approval":
+            loop_state["pending_tool_call_ids"] = (
+                await self.transcript.latest_unresolved_tool_call_batch_ids(
+                    session_id=str(turn.session_id),
+                    turn_id=str(turn.id),
+                )
+            )
+        resume_batch_token = (
+            new_turn_owner_token()
+            if result.termination_reason == "waiting_approval"
+            else None
+        )
+        values = dict(
             status=status,
             final_text=result.final_text,
             token_usage=result.token_usage,
@@ -1116,11 +1155,13 @@ class AgentLoopController:
                 "used_iterations": result.iteration_count,
                 "max_iterations": _max_iterations(),
             },
-            loop_state={"termination_reason": result.termination_reason},
+            loop_state=loop_state,
             error_code=result.error_code,
             error_message=result.error_message,
             claimed_at=None,
             lease_until=None,
+            owner_token=None,
+            resume_batch_token=resume_batch_token,
             completed_at=datetime.now(timezone.utc)
             if status
             in {
@@ -1130,6 +1171,16 @@ class AgentLoopController:
             }
             else None,
         )
+        if self.ownership is None:
+            updated = await self.turns.update_all(turn, **values)
+        else:
+            updated, owned = await self.turns.update_owned(
+                str(turn.id),
+                expected_owner_token=self.ownership.owner_token,
+                **values,
+            )
+            if not owned or updated is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
         if result.termination_reason == "assistant_final":
             payload = {"final_text": result.final_text}
         elif result.termination_reason in {"interrupted", "cancelled", "no_progress"}:
@@ -1162,6 +1213,10 @@ class AgentLoopController:
         agent_metrics.increment(f"turns.{result.termination_reason}")
         agent_metrics.observe("turns.iterations", float(result.iteration_count))
         return updated
+
+    async def _ensure_owned(self) -> None:
+        if self.ownership is not None:
+            await self.ownership.ensure_current()
 
 
 def _usage_dict(usage: UsageReport) -> dict[str, int]:

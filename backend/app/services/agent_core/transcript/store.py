@@ -123,6 +123,33 @@ class AgentTranscriptStore:
                 return call_ids
         return [tool_call_id]
 
+    async def latest_unresolved_tool_call_batch_ids(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> list[str]:
+        messages = await self.messages.list_for_session(session_id)
+        for message in reversed(messages):
+            if (
+                message.role != "assistant"
+                or str(message.turn_id or "") != turn_id
+                or message.status != "committed"
+            ):
+                continue
+            call_ids: list[str] = []
+            for part in message.content_parts or []:
+                if part.get("type") != "tool_calls":
+                    continue
+                call_ids.extend(
+                    str(call["id"])
+                    for call in part.get("tool_calls") or []
+                    if isinstance(call, dict) and call.get("id")
+                )
+            if call_ids:
+                return call_ids
+        return []
+
     async def clear_turn_metadata(self, *, turn_id: str, metadata_key: str) -> None:
         await self.messages.clear_turn_metadata(
             turn_id=turn_id,
