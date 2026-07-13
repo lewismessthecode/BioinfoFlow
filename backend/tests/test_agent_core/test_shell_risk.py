@@ -113,3 +113,34 @@ def test_hardline_commands_survive_common_wrappers(command):
 
 def test_quoted_command_substitution_literal_is_not_executed():
     assert classify_shell_command("echo '$(reboot)'") != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf '/\\n' | xargs rm -rf",
+        "xargs rm -rf /",
+        "find / -delete",
+        "find / -exec rm -rf {} +",
+        "find / -exec sh -c 'rm -rf -- \"$1\"' sh {} \\;",
+        "printf image | tee /dev/sda",
+        "cp disk.img /dev/nvme0n1",
+        "install disk.img /dev/mmcblk0",
+        "mv disk.img /dev/vda",
+        "dd if=disk.img of=/dev/mmcblk0 bs=1M",
+    ],
+)
+def test_recursive_and_block_device_sinks_are_hard_blocked(command):
+    assert classify_shell_command(command) == "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo 'xargs rm -rf /'",
+        "printf '%s\\n' 'find / -delete'",
+        "echo 'cp disk.img /dev/nvme0n1'",
+    ],
+)
+def test_recursive_and_device_sink_text_is_not_executable(command):
+    assert classify_shell_command(command) != "critical"

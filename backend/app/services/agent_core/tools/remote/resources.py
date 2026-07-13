@@ -21,6 +21,7 @@ from app.services.agent_core.permissions.command_risk import (
     CommandTargetProfile,
     assess_command_risk,
 )
+from app.services.agent_core.permissions.risk import RiskAssessment
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.remote_execution import (
@@ -330,6 +331,14 @@ class RemoteReadFileTool:
         )
         self.executor = executor or SshRemoteExecutor()
 
+    def assess_risk(
+        self,
+        input: dict[str, Any],
+        *,
+        target: CommandTargetProfile | None = None,
+    ) -> RiskAssessment | None:
+        return _assess_structured_remote_path(input, target=target)
+
     async def run(
         self, input: dict[str, Any], context: AgentToolContext
     ) -> dict[str, Any]:
@@ -408,6 +417,14 @@ class RemoteListDirTool:
             resolver_factory or SessionMetadataRemoteConnectionResolver
         )
         self.executor = executor or SshRemoteExecutor()
+
+    def assess_risk(
+        self,
+        input: dict[str, Any],
+        *,
+        target: CommandTargetProfile | None = None,
+    ) -> RiskAssessment | None:
+        return _assess_structured_remote_path(input, target=target)
 
     async def run(
         self, input: dict[str, Any], context: AgentToolContext
@@ -581,6 +598,56 @@ def _remote_path_for_context(path: str, working_directory: str | None) -> str:
     if relative == ".":
         return root
     return f"{root.rstrip('/')}/{relative}"
+
+
+def _assess_structured_remote_path(
+    input: dict[str, Any],
+    *,
+    target: CommandTargetProfile | None,
+) -> RiskAssessment | None:
+    path = input.get("path")
+    if (
+        target is None
+        or target.kind != "remote_ssh"
+        or not isinstance(path, str)
+        or not path.strip()
+    ):
+        return None
+    normalized = path.strip().replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part not in {"", "."}]
+    dynamic_or_traversal = (
+        normalized.startswith(("~", "$"))
+        or "$" in normalized
+        or any(part == ".." for part in parts)
+    )
+    outside_root = False
+    if target.read_roots and normalized.startswith("/"):
+        absolute = posixpath.normpath(normalized)
+        outside_root = not any(
+            absolute == posixpath.normpath(root)
+            or absolute.startswith(f"{posixpath.normpath(root).rstrip('/')}/")
+            for root in target.read_roots
+        )
+    unsafe = (
+        outside_root
+        or dynamic_or_traversal
+        or (not target.read_roots and normalized.startswith("/"))
+    )
+    if unsafe:
+        return RiskAssessment(
+            level="act_high",
+            reasons=[
+                "structured remote path is not bounded by an effective project root",
+                "explicit approval is required for absolute, home, variable, or traversal paths",
+            ],
+            affected_resources=[{"type": "path", "id": normalized[:1000]}],
+            requires_explicit_approval=True,
+        )
+    return RiskAssessment(
+        level="read",
+        reasons=["structured remote path is a bounded relative read"],
+        affected_resources=[{"type": "path", "id": normalized[:1000]}],
+    )
 
 
 def _selected_ids_from_policy(policy: Any) -> list[str]:

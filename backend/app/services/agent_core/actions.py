@@ -11,6 +11,7 @@ from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.permissions import PermissionPolicy, RiskEngine
 from app.services.agent_core.permissions.policy import PermissionDecision
 from app.services.agent_core.permissions.risk import RiskAssessment, RiskLevel
+from app.services.agent_core.permissions.command_risk import CommandRiskAssessment
 from app.utils.exceptions import NotFoundError
 
 
@@ -123,16 +124,28 @@ class AgentActionService:
             },
             commit=commit,
         )
+        risk_event_payload: dict = {
+            "action_id": str(action.id),
+            "risk_level": risk.level,
+            "reasons": risk.reasons,
+            "evaluated_policy_version": evaluated_policy_version,
+        }
+        if isinstance(risk, CommandRiskAssessment):
+            risk_event_payload.update(
+                {
+                    "target": risk.target,
+                    "effects": risk.effects,
+                    "confidence": risk.confidence,
+                    "protected_resources": risk.protected_resources,
+                    "hard_blocked": risk.hard_blocked,
+                    "assessment_fingerprint": risk.assessment_fingerprint(),
+                }
+            )
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             type=AgentEventType.ACTION_RISK_ASSESSED,
-            payload={
-                "action_id": str(action.id),
-                "risk_level": risk.level,
-                "reasons": risk.reasons,
-                "evaluated_policy_version": evaluated_policy_version,
-            },
+            payload=risk_event_payload,
             commit=commit,
         )
         if decision.decision == "ask":

@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.agent_core.context.remote import render_remote_connection_context
+from app.services.agent_core.permissions.command_risk import CommandTargetProfile
+from app.services.agent_core.permissions.policy import PermissionPolicy
 from app.services.agent_core.tools import build_default_tool_registry
 from app.services.agent_core.tools.executor import _artifact_descriptor
 from app.services.agent_core.tools.remote import (
@@ -26,7 +28,9 @@ from app.services.remote_connection_service import RemoteConnectionService
 from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 
 
-def _tool_context(db_session, *, session_id: str | None = "session-1") -> AgentToolContext:
+def _tool_context(
+    db_session, *, session_id: str | None = "session-1"
+) -> AgentToolContext:
     return AgentToolContext(
         db=db_session,
         workspace_id="workspace-1",
@@ -117,7 +121,9 @@ class _FakeRemoteExecutor:
 
 @pytest.mark.asyncio
 async def test_remote_connections_list_returns_workspace_summaries(db_session):
-    tool = RemoteConnectionsListTool(resolver_factory=_resolver_factory([_connection()]))
+    tool = RemoteConnectionsListTool(
+        resolver_factory=_resolver_factory([_connection()])
+    )
 
     result = await tool.run({}, _tool_context(db_session))
 
@@ -157,7 +163,9 @@ async def test_remote_connections_list_reads_workspace_database_connections(db_s
     )
     tool = RemoteConnectionsListTool()
 
-    result = await tool.run({}, _tool_context(db_session, session_id=str(agent_session.id)))
+    result = await tool.run(
+        {}, _tool_context(db_session, session_id=str(agent_session.id))
+    )
 
     assert result["connections"] == [
         {
@@ -188,11 +196,14 @@ async def test_remote_tools_require_explicit_selected_connection(db_session):
 
     resolver = DatabaseRemoteConnectionResolver(db_session)
 
-    assert await resolver.list(
-        workspace_id="workspace-1",
-        user_id="user-1",
-        session_id=None,
-    ) == []
+    assert (
+        await resolver.list(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=None,
+        )
+        == []
+    )
     with pytest.raises(NotFoundError):
         await resolver.get(
             "conn-1",
@@ -303,7 +314,9 @@ async def test_remote_exec_uses_persisted_selected_connection(db_session):
 
 
 @pytest.mark.asyncio
-async def test_remote_exec_uses_single_execution_target_connection_when_omitted(db_session):
+async def test_remote_exec_uses_single_execution_target_connection_when_omitted(
+    db_session,
+):
     service = RemoteConnectionService(db_session)
     selected = await service.create_connection(
         {
@@ -638,7 +651,9 @@ async def test_remote_project_session_ignores_metadata_connection_override(db_se
         session_id=str(agent_session.id),
     )
 
-    assert agent_session.session_metadata["remote_connection_id"] == str(project_connection.id)
+    assert agent_session.session_metadata["remote_connection_id"] == str(
+        project_connection.id
+    )
     assert [connection.id for connection in connections] == [str(project_connection.id)]
     with pytest.raises(NotFoundError):
         await resolver.get(
@@ -735,11 +750,14 @@ async def test_remote_tools_ignore_inline_session_metadata_connection(db_session
     )
     resolver = DatabaseRemoteConnectionResolver(db_session)
 
-    assert await resolver.list(
-        workspace_id="workspace-1",
-        user_id="user-1",
-        session_id=str(agent_session.id),
-    ) == []
+    assert (
+        await resolver.list(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+        )
+        == []
+    )
     with pytest.raises(NotFoundError):
         await resolver.get(
             "evil",
@@ -1105,6 +1123,94 @@ def test_remote_project_paths_cannot_escape_working_directory():
         _remote_path_for_context("/etc/passwd", root)
 
 
+@pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
+@pytest.mark.parametrize(
+    "path",
+    ["/etc/passwd", "~/.ssh/config", "$HOME/.ssh/config", "../outside.txt"],
+)
+def test_unbounded_structured_remote_paths_require_explicit_approval(tool, path):
+    target = CommandTargetProfile(
+        kind="remote_ssh",
+        trust_domain="cluster.example.org",
+        identity="alice",
+        sandbox_strength="none",
+        connection_id="conn-1",
+    )
+
+    risk = tool.assess_risk({"path": path}, target=target)
+
+    assert risk.level == "act_high"
+    assert risk.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=risk,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
+def test_unbounded_structured_safe_relative_path_remains_read_only(tool):
+    target = CommandTargetProfile(
+        kind="remote_ssh",
+        trust_domain="cluster.example.org",
+        identity="alice",
+        sandbox_strength="none",
+        connection_id="conn-1",
+    )
+
+    risk = tool.assess_risk({"path": "results/run.log"}, target=target)
+
+    assert risk.level == "read"
+    assert risk.requires_explicit_approval is False
+
+
+@pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
+@pytest.mark.parametrize(
+    "path",
+    ["/etc/passwd", "~/.ssh/config", "$HOME/.ssh/config", "../outside.txt"],
+)
+def test_bounded_structured_remote_paths_cannot_escape_root(tool, path):
+    target = CommandTargetProfile(
+        kind="remote_ssh",
+        trust_domain="cluster.example.org",
+        identity="alice",
+        sandbox_strength="none",
+        read_roots=("/analysis/project",),
+        working_directory="/analysis/project",
+        connection_id="conn-1",
+    )
+
+    risk = tool.assess_risk({"path": path}, target=target)
+
+    assert risk.level == "act_high"
+    assert risk.requires_explicit_approval is True
+
+
+@pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
+def test_bounded_structured_remote_absolute_path_inside_root_is_read(tool):
+    target = CommandTargetProfile(
+        kind="remote_ssh",
+        trust_domain="cluster.example.org",
+        identity="alice",
+        sandbox_strength="none",
+        read_roots=("/analysis/project",),
+        working_directory="/analysis/project",
+        connection_id="conn-1",
+    )
+
+    risk = tool.assess_risk(
+        {"path": "/analysis/project/input/sequence.list"},
+        target=target,
+    )
+
+    assert risk.level == "read"
+
+
 def test_default_registry_registers_remote_tools_with_expected_exposure():
     registry = build_default_tool_registry()
     names = registry.names()
@@ -1117,7 +1223,9 @@ def test_default_registry_registers_remote_tools_with_expected_exposure():
         "remote.list_dir",
     }.issubset(names)
     assert "remote.exec" not in exposure.exposed_names(policy={"name": "default"})
-    assert "remote.connections.list" in exposure.exposed_names(policy={"name": "default"})
+    assert "remote.connections.list" in exposure.exposed_names(
+        policy={"name": "default"}
+    )
     assert "remote.read_file" in exposure.exposed_names(policy={"name": "default"})
     assert "remote.list_dir" in exposure.exposed_names(policy={"name": "default"})
     assert registry.get("remote.exec").spec.risk_level == "act_high"
@@ -1158,15 +1266,35 @@ def test_remote_ssh_toolset_exposure_hides_local_and_platform_tools():
     assert "grep" not in execution_tools
     assert "glob" not in execution_tools
     assert not any(name.startswith(hidden_prefixes) for name in execution_tools)
-    assert {"remote.connections.list", "remote.exec", "remote.read_file", "remote.list_dir"} <= execution_tools
-    assert {"skills.list", "skills.load", "plugins.list", "web.search", "web.fetch"} <= execution_tools
+    assert {
+        "remote.connections.list",
+        "remote.exec",
+        "remote.read_file",
+        "remote.list_dir",
+    } <= execution_tools
+    assert {
+        "skills.list",
+        "skills.load",
+        "plugins.list",
+        "web.search",
+        "web.fetch",
+    } <= execution_tools
     assert {"todo_write", "ask_user"} <= execution_tools
 
     assert "remote.exec" not in plan_tools
-    assert {"remote.read_file", "todo_write", "ask_user", "exit_plan_mode"} <= plan_tools
+    assert {
+        "remote.read_file",
+        "todo_write",
+        "ask_user",
+        "exit_plan_mode",
+    } <= plan_tools
     assert "bash" not in plan_tools
 
-    assert {"remote.connections.list", "remote.read_file", "remote.list_dir"} <= worker_tools
+    assert {
+        "remote.connections.list",
+        "remote.read_file",
+        "remote.list_dir",
+    } <= worker_tools
     assert "remote.exec" not in worker_tools
     assert "ask_user" not in worker_tools
     assert "todo_write" not in worker_tools

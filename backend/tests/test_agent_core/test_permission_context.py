@@ -741,6 +741,27 @@ async def test_metadata_remote_boundary_changes_version_and_next_action_snapshot
         "network_allowed": True,
         "privileged": False,
     }
+    events = await service.list_events_for_turn(
+        turn_id=str(turn.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    risk_event = next(
+        event
+        for event in events
+        if event.type == "action.risk_assessed"
+        and event.payload["action_id"] == result.action_id
+    )
+    assert (
+        risk_event.payload["target"]
+        == action.permission_context_snapshot["command_risk"]["target"]
+    )
+    assert risk_event.payload["effects"] == ["read"]
+    assert risk_event.payload["confidence"] == "medium"
+    assert risk_event.payload["protected_resources"] == []
+    assert risk_event.payload["hard_blocked"] is False
+    assert len(risk_event.payload["assessment_fingerprint"]) == 64
+    assert "hostname" not in str(risk_event.payload)
 
     write_result = await AgentToolExecutor(
         db_session,
@@ -762,3 +783,60 @@ async def test_metadata_remote_boundary_changes_version_and_next_action_snapshot
     assert write_action.permission_context_snapshot["command_risk"]["effects"] == [
         "write"
     ]
+
+
+@pytest.mark.asyncio
+async def test_unbounded_remote_read_file_does_not_auto_run_absolute_path_in_bypass(
+    db_session,
+) -> None:
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    connection = RemoteConnection(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        name="Unbounded host",
+        host="unbounded.internal",
+        port=22,
+        username="analyst",
+        auth_method="agent",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+    await db_session.refresh(connection)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+        metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            }
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Read an unbounded remote file.",
+    )
+
+    result = await AgentToolExecutor(
+        db_session,
+        build_default_tool_registry(),
+    ).execute(
+        tool_name="remote.read_file",
+        input={"path": "/etc/passwd"},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+        ),
+        toolset_policy={"name": "execution"},
+        defer_execution=True,
+    )
+
+    assert result.status == "waiting_decision"
+    assert result.permission_decision["requires_explicit_approval"] is True

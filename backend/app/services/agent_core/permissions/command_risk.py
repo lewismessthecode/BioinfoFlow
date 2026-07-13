@@ -10,6 +10,8 @@ from __future__ import annotations
 import posixpath
 import re
 import shlex
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -58,6 +60,15 @@ class CommandRiskAssessment(RiskAssessment):
             "hard_blocked": self.hard_blocked,
             "requires_explicit_approval": self.requires_explicit_approval,
         }
+
+    def assessment_fingerprint(self) -> str:
+        payload = json.dumps(
+            self.audit_snapshot(),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
 
 
 def command_target_profile_from_context(
@@ -117,7 +128,7 @@ def assess_command_risk(
     level = classify_command_level(command)
     nodes = _parse_command_nodes(_strip_heredoc_bodies(command))
     effects = _command_effects(nodes)
-    referenced_paths = _referenced_paths(nodes, target=target)
+    referenced_paths, path_analysis_confident = _referenced_paths(nodes, target=target)
     protected_resources = _protected_resources(referenced_paths)
     reasons = [f"command semantics classified as {level}"]
     hard_blocked = level == "critical"
@@ -147,12 +158,24 @@ def assess_command_risk(
             )
         if outside_paths:
             reasons.append("a referenced path is outside the target read roots")
+    if (
+        target.kind == "remote_ssh"
+        and level in {"read", "act_low"}
+        and not path_analysis_confident
+    ):
+        level = "act_high"
+        reasons.append(
+            "remote read option/path semantics cannot be proven safe statically"
+        )
 
-    if target.kind == "remote_ssh":
+    if hard_blocked:
+        reasons.append("the command matches a non-bypassable hard safety boundary")
+        confidence: RiskConfidence = "high"
+    elif target.kind == "remote_ssh":
         reasons.append(
             "remote commands are bounded by the remote SSH account and server policy, not the working directory"
         )
-        confidence: RiskConfidence = "low" if unknown_path else "medium"
+        confidence = "low" if unknown_path else "medium"
     elif target.sandbox_strength == "enforced":
         reasons.append("the local operating-system sandbox enforces the declared roots")
         confidence = "low" if unknown_path else "high"
@@ -428,11 +451,19 @@ def _classify_node(node: _CommandNode) -> RiskLevel:
         _is_block_device_assignment(arg, "of") for arg in args
     ):
         return "critical"
+    if _writes_block_device(executable, args):
+        return "critical"
     if _redirects_to_block_device(tokens):
         return "critical"
     if executable == "rm" and _recursive_rm_targets_root(args):
         return "critical"
     if executable == "chmod" and _recursive_chmod_targets_root(args):
+        return "critical"
+    if executable == "xargs":
+        nested = _xargs_command(args)
+        if nested and _xargs_nested_is_hardline(nested):
+            return "critical"
+    if executable == "find" and _find_is_hardline(args):
         return "critical"
 
     has_write_redirect = any(token in {">", ">>"} for token in tokens)
@@ -620,7 +651,107 @@ def _is_block_device_assignment(value: str, key: str) -> bool:
 
 
 def _is_block_device(path: str) -> bool:
-    return bool(re.match(r"^/dev/(?:sd|hd|vd|xvd|nvme|disk|mapper/)", path))
+    return bool(
+        re.match(
+            r"^/dev/(?:sd[a-z]|hd[a-z]|vd[a-z]|xvd[a-z]|nvme\d+n\d+|mmcblk\d+|disk\d*|mapper/)",
+            path,
+        )
+    )
+
+
+def _writes_block_device(executable: str, args: list[str]) -> bool:
+    positional = [arg for arg in args if not arg.startswith("-")]
+    if executable == "tee":
+        return any(_is_block_device(path) for path in positional)
+    if executable in {"cp", "install", "mv"} and positional:
+        return _is_block_device(positional[-1])
+    if executable in {"shred", "truncate"}:
+        return any(_is_block_device(path) for path in positional)
+    return False
+
+
+def _xargs_command(args: list[str]) -> list[str]:
+    takes_value = {
+        "-a",
+        "--arg-file",
+        "-d",
+        "--delimiter",
+        "-E",
+        "--eof",
+        "-I",
+        "--replace",
+        "-L",
+        "--max-lines",
+        "-n",
+        "--max-args",
+        "-P",
+        "--max-procs",
+        "-s",
+        "--max-chars",
+    }
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            return args[index + 1 :]
+        if not arg.startswith("-"):
+            return args[index:]
+        index += 1
+        if arg in takes_value and index < len(args):
+            index += 1
+    return []
+
+
+def _xargs_nested_is_hardline(tokens: list[str]) -> bool:
+    unwrapped, _ = _unwrap_command(list(tokens))
+    if not unwrapped:
+        return False
+    executable = _basename(unwrapped[0])
+    args = unwrapped[1:]
+    if executable == "rm" and any(
+        arg == "--recursive" or (arg.startswith("-") and "r" in arg.lower())
+        for arg in args
+    ):
+        return True
+    return classify_command_level(" ".join(tokens)) == "critical"
+
+
+def _find_is_hardline(args: list[str]) -> bool:
+    roots: list[str] = []
+    for arg in args:
+        if arg.startswith("-") or arg in {"!", "("}:
+            break
+        roots.append(arg)
+    scans_root = any(_rootish_path(root) for root in roots)
+    if not scans_root:
+        return False
+    if "-delete" in args:
+        return True
+    for marker in ("-exec", "-execdir", "-ok", "-okdir"):
+        start = 0
+        while marker in args[start:]:
+            index = args.index(marker, start)
+            end = next(
+                (
+                    candidate
+                    for candidate in range(index + 1, len(args))
+                    if args[candidate] in {";", "\\;", "+"}
+                ),
+                len(args),
+            )
+            nested = args[index + 1 : end]
+            if nested:
+                level = classify_command_level(" ".join(nested))
+                nested_executable = _executable(tuple(nested))
+                if level in {"destructive", "critical"} or nested_executable in {
+                    "rm",
+                    "rmdir",
+                    "shred",
+                    "truncate",
+                }:
+                    return True
+            start = end + 1
+    return False
 
 
 def _classify_git(args: list[str]) -> RiskLevel:
@@ -764,29 +895,47 @@ def _strip_heredoc_bodies(text: str) -> str:
 
 def _is_read_only_platform_command(executable: str, args: list[str]) -> bool:
     if executable in {"module", "ml"}:
-        return any(arg in {"avail", "list", "show", "whatis", "help"} for arg in args)
-    if executable in {"squeue", "sinfo", "sacct", "qstat", "nextflow"}:
+        verbs = [arg for arg in args if not arg.startswith("-")]
+        return bool(verbs) and verbs[0] in {
+            "avail",
+            "list",
+            "show",
+            "whatis",
+            "help",
+        }
+    if executable in {"squeue", "sinfo", "sacct", "qstat"}:
         return True
-    if not executable.endswith("cli"):
+    if executable == "nextflow":
+        return args in [["-version"], ["-v"], ["version"], ["info"]]
+    if executable == "phoenixcli":
+        return _phoenixcli_is_read_only(args)
+    return False
+
+
+def _phoenixcli_is_read_only(args: list[str]) -> bool:
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--no-interactive":
+            index += 1
+            continue
+        if arg in {"--profile", "--config"} and index + 1 < len(args):
+            index += 2
+            continue
+        break
+    if args[index : index + 2] != ["pipeline", "list"]:
         return False
-    read_verbs = {"list", "get", "show", "status", "describe", "version", "info"}
-    write_verbs = {
-        "create",
-        "delete",
-        "remove",
-        "submit",
-        "cancel",
-        "update",
-        "set",
-        "start",
-        "stop",
-        "run",
-        "launch",
-        "register",
-        "install",
-    }
-    words = {arg.casefold() for arg in args if not arg.startswith("-")}
-    return bool(words & read_verbs) and not bool(words & write_verbs)
+    index += 2
+    while index < len(args):
+        arg = args[index]
+        if arg in {"--output", "--limit", "--page", "--sort"} and index + 1 < len(args):
+            index += 2
+            continue
+        if arg in {"--all", "--json"}:
+            index += 1
+            continue
+        return False
+    return True
 
 
 def _command_effects(nodes: list[_CommandNode]) -> list[str]:
@@ -846,8 +995,9 @@ def _node_writes(tokens: list[str], executable: str, args: list[str]) -> bool:
 
 def _referenced_paths(
     nodes: list[_CommandNode], *, target: CommandTargetProfile
-) -> list[str]:
+) -> tuple[list[str], bool]:
     paths: list[str] = []
+    confident = True
     for node in nodes:
         tokens, _ = _unwrap_command(list(node.tokens))
         if not tokens:
@@ -857,22 +1007,23 @@ def _referenced_paths(
         if executable in _SHELLS:
             inner = _shell_command_argument(args)
             if inner is not None:
-                paths.extend(
-                    _referenced_paths(
-                        _parse_command_nodes(_strip_heredoc_bodies(inner)),
-                        target=target,
-                    )
+                inner_paths, inner_confident = _referenced_paths(
+                    _parse_command_nodes(_strip_heredoc_bodies(inner)),
+                    target=target,
                 )
+                paths.extend(inner_paths)
+                confident = confident and inner_confident
                 continue
         for index, token in enumerate(tokens[:-1]):
             if token in {">", ">>", "<", "<<"}:
                 paths.append(_canonical_reference(tokens[index + 1], target))
-        file_args = _file_arguments(executable, args)
+        file_args, node_confident = _file_arguments(executable, args)
+        confident = confident and node_confident
         paths.extend(_canonical_reference(arg, target) for arg in file_args)
-    return _dedupe(_bounded_strings(paths, limit=32, width=1000))
+    return _dedupe(_bounded_strings(paths, limit=32, width=1000)), confident
 
 
-def _file_arguments(executable: str, args: list[str]) -> list[str]:
+def _file_arguments(executable: str, args: list[str]) -> tuple[list[str], bool]:
     file_commands = {
         "cat",
         "head",
@@ -895,11 +1046,43 @@ def _file_arguments(executable: str, args: list[str]) -> list[str]:
         "chown",
         "sed",
         "perl",
+        "grep",
+        "egrep",
+        "fgrep",
+        "rg",
+        "wc",
+        "sort",
+        "diff",
+        "jq",
     }
     if executable not in file_commands:
-        return []
+        return [], True
     if executable in {"sed", "perl"}:
-        return _editor_file_arguments(args)
+        return _editor_file_arguments(args), True
+    if executable in {"grep", "egrep", "fgrep", "rg"}:
+        return _grep_file_arguments(args)
+    if executable == "wc":
+        return _simple_read_file_arguments(
+            args,
+            known_flags={
+                "-c",
+                "-m",
+                "-l",
+                "-w",
+                "-L",
+                "--bytes",
+                "--chars",
+                "--lines",
+                "--words",
+                "--max-line-length",
+            },
+        )
+    if executable == "sort":
+        return _sort_file_arguments(args)
+    if executable == "diff":
+        return _diff_file_arguments(args)
+    if executable == "jq":
+        return _jq_file_arguments(args)
     values: list[str] = []
     for arg in args:
         if arg.startswith("-") or arg in {"{}", "+", ";"}:
@@ -907,7 +1090,295 @@ def _file_arguments(executable: str, args: list[str]) -> list[str]:
         if executable in {"head", "tail"} and arg.isdigit():
             continue
         values.append(arg)
-    return values
+    return values, True
+
+
+def _grep_file_arguments(args: list[str]) -> tuple[list[str], bool]:
+    no_value = {
+        "-n",
+        "-r",
+        "-R",
+        "-i",
+        "-v",
+        "-w",
+        "-x",
+        "-s",
+        "-q",
+        "-H",
+        "-h",
+        "-l",
+        "-L",
+        "-c",
+        "-o",
+        "-a",
+        "-I",
+        "-U",
+        "-z",
+        "--line-number",
+        "--recursive",
+        "--ignore-case",
+        "--invert-match",
+        "--word-regexp",
+        "--line-regexp",
+        "--quiet",
+        "--with-filename",
+        "--no-filename",
+        "--files-with-matches",
+        "--files-without-match",
+        "--count",
+        "--only-matching",
+    }
+    pattern_options = {"-e", "--regexp"}
+    path_options = {"-f", "--file", "--files-from"}
+    value_options = {
+        "-m",
+        "--max-count",
+        "-A",
+        "--after-context",
+        "-B",
+        "--before-context",
+        "-C",
+        "--context",
+        "--include",
+        "--exclude",
+        "--exclude-dir",
+        "--glob",
+        "-g",
+        "--type",
+        "-t",
+        "--type-not",
+        "-T",
+    }
+    paths: list[str] = []
+    positionals: list[str] = []
+    confident = True
+    pattern_supplied = False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            positionals.extend(args[index + 1 :])
+            break
+        if arg.startswith("--") and "=" in arg:
+            option, value = arg.split("=", 1)
+            if option in path_options:
+                paths.append(value)
+                pattern_supplied = True
+            elif option in pattern_options:
+                pattern_supplied = True
+            elif option not in value_options and option not in no_value:
+                confident = False
+                if _looks_like_path(value):
+                    paths.append(value)
+            index += 1
+            continue
+        if arg in no_value:
+            index += 1
+            continue
+        if arg in pattern_options | path_options | value_options:
+            if index + 1 >= len(args):
+                confident = False
+                break
+            value = args[index + 1]
+            if arg in path_options:
+                paths.append(value)
+                pattern_supplied = True
+            elif arg in pattern_options:
+                pattern_supplied = True
+            index += 2
+            continue
+        if arg.startswith("-"):
+            confident = False
+            index += 1
+            continue
+        positionals.append(arg)
+        index += 1
+    if not pattern_supplied and positionals:
+        positionals = positionals[1:]
+    paths.extend(positionals)
+    return paths, confident
+
+
+def _simple_read_file_arguments(
+    args: list[str], *, known_flags: set[str]
+) -> tuple[list[str], bool]:
+    paths: list[str] = []
+    confident = True
+    options_done = False
+    for arg in args:
+        if arg == "--":
+            options_done = True
+        elif not options_done and arg.startswith("-"):
+            if arg not in known_flags:
+                confident = False
+        else:
+            paths.append(arg)
+    return paths, confident
+
+
+def _sort_file_arguments(args: list[str]) -> tuple[list[str], bool]:
+    no_value = {
+        "-b",
+        "-d",
+        "-f",
+        "-g",
+        "-i",
+        "-M",
+        "-n",
+        "-h",
+        "-r",
+        "-R",
+        "-s",
+        "-u",
+        "-V",
+        "-z",
+        "--reverse",
+        "--unique",
+        "--stable",
+    }
+    value_options = {"-k", "--key", "-t", "--field-separator", "-S", "--buffer-size"}
+    path_options = {"-o", "--output", "--random-source", "-T", "--temporary-directory"}
+    return _option_aware_paths(args, no_value, value_options, path_options)
+
+
+def _diff_file_arguments(args: list[str]) -> tuple[list[str], bool]:
+    no_value = {
+        "-q",
+        "-s",
+        "-r",
+        "-N",
+        "-a",
+        "-b",
+        "-B",
+        "-i",
+        "-w",
+        "-y",
+        "-u",
+        "-c",
+        "--brief",
+        "--report-identical-files",
+        "--recursive",
+        "--unified",
+        "--context",
+    }
+    value_options = {"-U", "-C", "--label", "--exclude", "--exclude-from"}
+    return _option_aware_paths(args, no_value, value_options, set())
+
+
+def _jq_file_arguments(args: list[str]) -> tuple[list[str], bool]:
+    no_value = {
+        "-r",
+        "-c",
+        "-M",
+        "-S",
+        "-e",
+        "-s",
+        "-R",
+        "-n",
+        "-j",
+        "--raw-output",
+        "--compact-output",
+        "--monochrome-output",
+        "--sort-keys",
+        "--exit-status",
+        "--slurp",
+        "--raw-input",
+        "--null-input",
+        "--join-output",
+    }
+    value_counts = {
+        "--arg": 2,
+        "--argjson": 2,
+        "--slurpfile": 2,
+        "--rawfile": 2,
+        "--argfile": 2,
+        "-L": 1,
+    }
+    path_value_options = {"--slurpfile", "--rawfile", "--argfile"}
+    paths: list[str] = []
+    positionals: list[str] = []
+    confident = True
+    filter_supplied = False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            positionals.extend(args[index + 1 :])
+            break
+        if arg in no_value:
+            index += 1
+            continue
+        if arg in {"-f", "--from-file"}:
+            if index + 1 >= len(args):
+                confident = False
+                break
+            paths.append(args[index + 1])
+            filter_supplied = True
+            index += 2
+            continue
+        if arg in value_counts:
+            count = value_counts[arg]
+            if index + count >= len(args):
+                confident = False
+                break
+            if arg in path_value_options:
+                paths.append(args[index + count])
+            index += count + 1
+            continue
+        if arg.startswith("-"):
+            confident = False
+            index += 1
+            continue
+        positionals.append(arg)
+        index += 1
+    if not filter_supplied and positionals:
+        positionals = positionals[1:]
+    paths.extend(positionals)
+    return paths, confident
+
+
+def _option_aware_paths(
+    args: list[str],
+    no_value: set[str],
+    value_options: set[str],
+    path_options: set[str],
+) -> tuple[list[str], bool]:
+    paths: list[str] = []
+    confident = True
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            paths.extend(args[index + 1 :])
+            break
+        if arg.startswith("--") and "=" in arg:
+            option, value = arg.split("=", 1)
+            if option in path_options:
+                paths.append(value)
+            elif option not in value_options and option not in no_value:
+                confident = False
+                if _looks_like_path(value):
+                    paths.append(value)
+            index += 1
+            continue
+        if arg in no_value:
+            index += 1
+            continue
+        if arg in value_options | path_options:
+            if index + 1 >= len(args):
+                confident = False
+                break
+            if arg in path_options:
+                paths.append(args[index + 1])
+            index += 2
+            continue
+        if arg.startswith("-"):
+            confident = False
+            index += 1
+            continue
+        paths.append(arg)
+        index += 1
+    return paths, confident
 
 
 def _editor_file_arguments(args: list[str]) -> list[str]:

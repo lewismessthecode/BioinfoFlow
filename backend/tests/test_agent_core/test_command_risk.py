@@ -67,6 +67,86 @@ def test_target_aware_command_matrix(target, command, expected):
     assert assess_command_risk(command, target=target).level == expected
 
 
+@pytest.mark.parametrize(
+    "command,expected_paths",
+    [
+        (
+            "grep -n leaf /analysis/project/input/sequence.list",
+            ["/analysis/project/input/sequence.list"],
+        ),
+        (
+            "wc -l /analysis/project/input/sequence.list",
+            ["/analysis/project/input/sequence.list"],
+        ),
+        (
+            "sort /analysis/project/input/sequence.list",
+            ["/analysis/project/input/sequence.list"],
+        ),
+        (
+            "diff /analysis/project/a.txt /analysis/project/b.txt",
+            ["/analysis/project/a.txt", "/analysis/project/b.txt"],
+        ),
+        ("jq '.sample' /analysis/project/data.json", ["/analysis/project/data.json"]),
+    ],
+)
+def test_remote_raw_read_extracts_common_file_operands(command, expected_paths):
+    assessment = assess_command_risk(command, target=REMOTE)
+
+    assert assessment.level == "act_low"
+    assert assessment.referenced_paths == expected_paths
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "grep leaf /etc/passwd",
+        "wc -l /etc/passwd",
+        "sort /etc/passwd",
+        "diff /analysis/project/a.txt /etc/passwd",
+        "jq '.user' /etc/passwd",
+        "grep --files-from=/etc/passwd leaf",
+        "sort --random-source=/etc/passwd /analysis/project/input.txt",
+        "grep --unknown-path-option /analysis/project/input.txt",
+    ],
+)
+def test_remote_raw_read_outside_or_ambiguous_paths_fail_closed(command):
+    assessment = assess_command_risk(command, target=REMOTE)
+
+    assert assessment.level == "act_high"
+    assert any(
+        marker in " ".join(assessment.reasons)
+        for marker in ("outside", "cannot be proven", "option")
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "dangercli pipeline list",
+        "mycli status",
+        "phoenixcli arbitrary list",
+        "phoenixcli pipeline list delete",
+        "phoenixcli pipeline submit",
+    ],
+)
+def test_unknown_or_ambiguous_cli_commands_are_not_auto_run(command):
+    assert assess_command_risk(command, target=REMOTE).level == "act_high"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "phoenixcli pipeline list",
+        "phoenixcli --no-interactive --profile sz01 pipeline list --output json",
+        "squeue -u alice",
+        "module avail nextflow",
+        "nextflow -version",
+    ],
+)
+def test_known_remote_diagnostic_grammar_is_auto_runnable(command):
+    assert assess_command_risk(command, target=REMOTE).level == "act_low"
+
+
 def test_assessment_records_semantics_and_canonical_boundary():
     assessment = assess_command_risk(
         "cat /analysis/project/input/sequence.list | head -20",
@@ -146,6 +226,26 @@ def test_connection_mismatch_is_hard_blocked_in_every_mode():
         )
 
 
+def test_nested_destructive_sink_is_denied_even_in_bypass():
+    assessment = assess_command_risk(
+        "find / -exec rm -rf {} +",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.hard_blocked is True
+    assert assessment.confidence == "high"
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "deny"
+    )
+
+
 def test_command_risk_audit_snapshot_is_bounded_and_structured():
     assessment = assess_command_risk(
         "cat /analysis/project/input/sequence.list",
@@ -164,6 +264,8 @@ def test_command_risk_audit_snapshot_is_bounded_and_structured():
         "hard_blocked": False,
         "requires_explicit_approval": False,
     }
+    assert len(assessment.assessment_fingerprint()) == 64
+    assert assessment.assessment_fingerprint() == assessment.assessment_fingerprint()
 
 
 def test_local_target_profile_records_per_command_sandbox_disable():
