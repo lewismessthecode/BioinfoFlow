@@ -545,6 +545,93 @@ async def test_current_session_instruction_snapshot_for_target_is_preserved():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("current_cwd", "expected_directories"),
+    [
+        (None, ["/srv/project"]),
+        ("/srv/project/current-b", ["/srv/project", "/srv/project/current-b"]),
+    ],
+    ids=("current-root", "current-cwd"),
+)
+async def test_stale_cross_connection_working_directories_are_discarded(
+    current_cwd,
+    expected_directories,
+):
+    resolver_cls, _instruction_file_cls = _instruction_classes()
+
+    class CapturingRemoteReader:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def read_first_existing(
+            self,
+            *,
+            agent_session,
+            connection_id: str,
+            directory: str,
+            filenames,
+            max_bytes: int,
+            remote_root: str,
+        ):
+            del agent_session, filenames, max_bytes
+            self.calls.append(
+                {
+                    "connection_id": connection_id,
+                    "directory": directory,
+                    "remote_root": remote_root,
+                }
+            )
+            return None
+
+    current_execution_target = {
+        "type": "remote_ssh",
+        "connection_id": "conn-b",
+    }
+    if current_cwd:
+        current_execution_target["cwd"] = current_cwd
+    reader = CapturingRemoteReader()
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "remote_connection_id": "conn-b",
+            "remote_project_id": "project-b",
+            "remote_project_root": "/srv/project",
+            "execution_target": current_execution_target,
+        },
+    )
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "working_directory": "/srv/project/stale-working-a",
+                "remote_cwd": "/srv/project/stale-remote-a",
+                "execution_target": {
+                    "type": "remote_ssh",
+                    "connection_id": "conn-a",
+                    "cwd": "/srv/project/stale-a",
+                },
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+    await resolver_cls(max_bytes=32768, remote_reader=reader).resolve(
+        session,
+        turn=turn,
+    )
+
+    assert target.get("cwd") == current_cwd
+    assert "working_directory" not in target
+    assert "remote_cwd" not in target
+    assert [call["connection_id"] for call in reader.calls] == [
+        "conn-b"
+    ] * len(expected_directories)
+    assert [call["directory"] for call in reader.calls] == expected_directories
+    assert all(call["remote_root"] == "/srv/project" for call in reader.calls)
+
+
+@pytest.mark.asyncio
 async def test_remote_project_instruction_partial_failure_keeps_prior_files():
     resolver_cls, instruction_file_cls = _instruction_classes()
 

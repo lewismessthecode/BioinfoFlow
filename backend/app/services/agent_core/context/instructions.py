@@ -243,6 +243,10 @@ def _target_metadata(
     merged: dict[str, Any] = {}
     for source in _policy_sources(agent_session, turn):
         policy = dict(source)
+        policy_target = policy.get("execution_target")
+        if isinstance(policy_target, dict):
+            policy_target = dict(policy_target)
+            policy["execution_target"] = policy_target
         bound_connection_id = _policy_bound_connection_id(policy)
         if (
             current_target.get("type") == "remote_ssh"
@@ -250,10 +254,11 @@ def _target_metadata(
             and target_connection_id
             and bound_connection_id != target_connection_id
         ):
-            for key in _PROJECT_TARGET_KEYS:
+            for key in (*_PROJECT_TARGET_KEYS, *_CWD_KEYS):
                 policy.pop(key, None)
+                if isinstance(policy_target, dict):
+                    policy_target.pop(key, None)
         merged.update(policy)
-        policy_target = policy.get("execution_target")
         if isinstance(policy_target, dict):
             merged.update(policy_target)
     for key in ("kind", "target_type", "mode"):
