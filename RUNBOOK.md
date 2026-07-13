@@ -407,6 +407,12 @@ insecure HTTP** switch because API keys and prompts otherwise travel without
 TLS. Save, model discovery, and the model-specific connection test are separate
 actions.
 
+In `AUTH_MODE=team`, server environment credentials and localhost/private or
+internal provider endpoints are restricted to owner/admin roles because they
+cross the backend host trust boundary. Team members can use stored credentials
+with public provider endpoints. Personal and development modes keep local relay,
+Ollama, and vLLM workflows available.
+
 For a backend end-to-end smoke test, export the relay configuration without
 placing the key value on the command line:
 
