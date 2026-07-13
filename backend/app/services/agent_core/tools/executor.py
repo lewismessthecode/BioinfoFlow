@@ -20,6 +20,7 @@ from app.services.agent_core.permissions.context import (
     PermissionContext,
     PermissionContextResolver,
 )
+from app.services.agent_core.permissions.risk import RiskAssessment
 from app.services.agent_core.tools.approval import action_requires_resume
 from app.services.agent_core.tools.middleware import (
     normalize_tool_input,
@@ -130,6 +131,36 @@ def _resolve_requested_risk(tool: AgentTool, normalized_input: dict[str, Any]):
         if dynamic is not None:
             return dynamic
     return tool.spec.risk_level
+
+
+def _produce_risk_assessment(
+    *,
+    tool: AgentTool,
+    action_input: dict[str, Any],
+    action_service: AgentActionService,
+) -> RiskAssessment:
+    requested = _resolve_requested_risk(tool, action_input)
+    if isinstance(requested, RiskAssessment):
+        return requested
+    return action_service.risk_engine.assess(
+        kind="tool",
+        name=tool.spec.name,
+        requested_level=requested,
+        input=action_input,
+    )
+
+
+def _has_explicit_user_approval(permission_decision: dict[str, Any]) -> bool:
+    if permission_decision.get("decision") not in {"approve", "modify", "answer"}:
+        return False
+    # Historical user decisions predate the source field. Policy-produced
+    # decisions use ``allow``/``ask``/``deny``, so a legacy approve remains a
+    # safe, unambiguous compatibility case.
+    return permission_decision.get("source") in {
+        None,
+        "user",
+        "user_pending_strategy",
+    }
 
 
 @dataclass(frozen=True)
@@ -355,22 +386,6 @@ class AgentToolExecutor:
         if decision.get("decision") not in {"allow", "approve", "modify", "answer"}:
             raise PermissionDeniedError("Agent action has not been approved")
         tool = self.registry.get(action.name)
-        permission_context = await PermissionContextResolver(self.session).resolve(
-            session_id=context.session_id,
-            workspace_id=context.workspace_id,
-            user_id=context.user_id,
-        )
-        exposure = self.exposure.decide(
-            tool_name=tool.spec.name,
-            policy=permission_context.snapshot()["toolset_policy"],
-            role=permission_context.role,
-            execution_target=permission_context.snapshot()["execution_target"],
-        )
-        if not exposure.allowed:
-            return await self._record_permission_failure(
-                action=action,
-                error_message="; ".join(exposure.reasons),
-            )
         return await self._run_action(action=action, tool=tool, context=context)
 
     async def cancel_action(
@@ -401,31 +416,52 @@ class AgentToolExecutor:
             action_id=str(action.id), status=action.status, error=error
         )
 
-    async def _record_permission_failure(
+    async def _fail_requested_permission(
         self,
         *,
         action,
         error_message: str,
     ) -> ToolExecutionResult:
         error = {"type": "PermissionDeniedError", "message": error_message}
-        action = await self.action_repo.update_all(
-            action,
-            status=AgentActionStatus.FAILED,
+        failed = await self.action_repo.fail_requested(
+            str(action.id),
             error=error,
             completed_at=datetime.now(timezone.utc),
-            requires_resume=False,
         )
+        if failed is None:
+            return await self._current_result(str(action.id), fallback=action)
         await self.ledger.append(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
+            session_id=str(failed.session_id),
+            turn_id=str(failed.turn_id),
             type=AgentEventType.ACTION_FAILED,
-            payload={"action_id": str(action.id), "error": error},
+            payload={"action_id": str(failed.id), "error": error},
+            commit=False,
         )
+        await self.session.commit()
         agent_metrics.increment("tools.failed")
         return ToolExecutionResult(
-            action_id=str(action.id),
-            status=action.status,
+            action_id=str(failed.id),
+            status=failed.status,
             error=error,
+        )
+
+    async def _current_result(self, action_id: str, *, fallback) -> ToolExecutionResult:
+        current = await self.action_repo.get_fresh(action_id)
+        return ToolExecutionResult(
+            action_id=str(current.id) if current is not None else action_id,
+            status=current.status if current is not None else fallback.status,
+            result=current.result if current is not None else fallback.result,
+            permission_decision=(
+                current.permission_decision
+                if current is not None
+                else fallback.permission_decision
+            ),
+            error=current.error if current is not None else fallback.error,
+            requires_resume=(
+                bool(current.requires_resume)
+                if current is not None
+                else bool(fallback.requires_resume)
+            ),
         )
 
     async def _run_action(
@@ -434,71 +470,154 @@ class AgentToolExecutor:
         action,
         tool: AgentTool,
         context: AgentToolContext,
+        policy_recheck_attempt: int = 0,
     ) -> ToolExecutionResult:
-        current_risk = _resolve_requested_risk(
-            tool, action.normalized_input or action.input or {}
+        action_id = str(action.id)
+        action = await self.action_repo.get_fresh(action_id)
+        if action is None:
+            raise PermissionDeniedError("Agent action is not accessible")
+        if action.status != AgentActionStatus.REQUESTED:
+            await self.session.rollback()
+            return await self._current_result(action_id, fallback=action)
+
+        permission_context = await PermissionContextResolver(self.session).resolve(
+            session_id=context.session_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
         )
-        permission_decision = action.permission_decision or {}
-        safety_floor_changed = (
-            current_risk == "critical"
-            or permission_decision.get("hard_blocked") is True
-            or permission_decision.get("protected_resource_recheck") == "deny"
+        snapshot = permission_context.snapshot()
+        exposure = self.exposure.decide(
+            tool_name=tool.spec.name,
+            policy=snapshot["toolset_policy"],
+            role=permission_context.role,
+            execution_target=snapshot["execution_target"],
         )
-        if safety_floor_changed:
-            error = {
-                "type": "PermissionDeniedError",
-                "message": "Action is hard-blocked by the current safety floor.",
-            }
-            failed = await self.action_repo.fail_requested(
-                str(action.id), error=error, completed_at=datetime.now(timezone.utc)
-            )
-            if failed is None:
-                current = await self.action_repo.get_fresh(str(action.id))
-                return ToolExecutionResult(
-                    action_id=str(action.id),
-                    status=current.status if current is not None else action.status,
-                    result=current.result if current is not None else None,
-                    permission_decision=(
-                        current.permission_decision
-                        if current is not None
-                        else action.permission_decision
-                    ),
-                    error=current.error if current is not None else None,
-                )
-            try:
-                await self.ledger.append(
-                    session_id=str(failed.session_id),
-                    turn_id=str(failed.turn_id),
-                    type=AgentEventType.ACTION_FAILED,
-                    payload={"action_id": str(failed.id), "error": error},
-                    commit=False,
-                )
-                await self.session.commit()
-            except Exception:
-                await self.session.rollback()
-                raise
-            agent_metrics.increment("tools.failed")
-            return ToolExecutionResult(
-                action_id=str(failed.id), status=failed.status, error=error
+        if not exposure.allowed:
+            return await self._fail_requested_permission(
+                action=action,
+                error_message="; ".join(exposure.reasons),
             )
 
-        action_id = str(action.id)
+        current_risk = _produce_risk_assessment(
+            tool=tool,
+            action_input=action.normalized_input or action.input or {},
+            action_service=self.action_service,
+        )
+        fresh_decision = self.action_service.permission_policy.decide(
+            risk=current_risk,
+            permission_mode=permission_context.permission_mode,
+            automation_mode=permission_context.automation_mode,
+        )
+        previous_decision = action.permission_decision or {}
+        explicitly_approved = _has_explicit_user_approval(previous_decision)
+        hard_denied = (
+            fresh_decision.decision == "deny"
+            or current_risk.level == "critical"
+            or previous_decision.get("hard_blocked") is True
+            or previous_decision.get("protected_resource_recheck") == "deny"
+        )
+        if hard_denied:
+            return await self._fail_requested_permission(
+                action=action,
+                error_message="Action is hard-blocked by the current safety floor.",
+            )
+
+        requires_approval = (
+            fresh_decision.decision == "ask" or current_risk.requires_explicit_approval
+        )
+        if requires_approval and not explicitly_approved:
+            permission_decision = {
+                **fresh_decision.as_dict(),
+                "source": "policy_recheck",
+                "evaluated_policy_version": permission_context.policy_version,
+                "requires_explicit_approval": (current_risk.requires_explicit_approval),
+            }
+            waiting = await self.action_repo.defer_requested_for_approval(
+                action_id,
+                risk_level=current_risk.level,
+                risk_reasons=current_risk.reasons,
+                affected_resources=current_risk.affected_resources,
+                permission_decision=permission_decision,
+                evaluated_policy_version=permission_context.policy_version,
+                permission_context_snapshot=snapshot,
+            )
+            if waiting is None:
+                await self.session.rollback()
+                return await self._current_result(action_id, fallback=action)
+            await self.ledger.append(
+                session_id=str(waiting.session_id),
+                turn_id=str(waiting.turn_id),
+                type=AgentEventType.ACTION_WAITING_DECISION,
+                payload={
+                    "action_id": str(waiting.id),
+                    "name": waiting.name,
+                    "kind": waiting.kind,
+                    "risk_level": current_risk.level,
+                    "tool_call_id": waiting.tool_call_id,
+                    "input_preview": waiting.input_preview,
+                    "evaluated_policy_version": permission_context.policy_version,
+                    "recheck": True,
+                },
+                commit=False,
+            )
+            await self.session.commit()
+            return ToolExecutionResult(
+                action_id=str(waiting.id),
+                status=waiting.status,
+                permission_decision=permission_decision,
+                requires_resume=True,
+            )
+
+        permission_decision = (
+            {
+                **previous_decision,
+                "rechecked_policy_version": permission_context.policy_version,
+                "recheck_decision": fresh_decision.as_dict(),
+                "requires_explicit_approval": (current_risk.requires_explicit_approval),
+            }
+            if explicitly_approved
+            else {
+                **fresh_decision.as_dict(),
+                "source": "policy_recheck",
+                "evaluated_policy_version": permission_context.policy_version,
+                "requires_explicit_approval": (current_risk.requires_explicit_approval),
+            }
+        )
+        requested_action = action
         action = await self.action_repo.claim_requested(
-            action_id, started_at=datetime.now(timezone.utc)
+            action_id,
+            started_at=datetime.now(timezone.utc),
+            risk_level=current_risk.level,
+            risk_reasons=current_risk.reasons,
+            affected_resources=current_risk.affected_resources,
+            permission_decision=permission_decision,
+            evaluated_policy_version=permission_context.policy_version,
+            permission_context_snapshot=snapshot,
+            expected_policy_version=permission_context.policy_version,
         )
         if action is None:
+            await self.session.rollback()
             current = await self.action_repo.get_fresh(action_id)
-            return ToolExecutionResult(
-                action_id=str(current.id) if current is not None else action_id,
-                status=current.status
-                if current is not None
-                else AgentActionStatus.FAILED,
-                result=current.result if current is not None else None,
-                permission_decision=current.permission_decision
-                if current is not None
-                else None,
-                error=current.error if current is not None else None,
-            )
+            if (
+                current is not None
+                and current.status == AgentActionStatus.REQUESTED
+                and policy_recheck_attempt < 3
+            ):
+                return await self._run_action(
+                    action=current,
+                    tool=tool,
+                    context=context,
+                    policy_recheck_attempt=policy_recheck_attempt + 1,
+                )
+            if current is not None and current.status == AgentActionStatus.REQUESTED:
+                return await self._fail_requested_permission(
+                    action=current,
+                    error_message=(
+                        "Permission policy changed repeatedly before the action "
+                        "could be claimed."
+                    ),
+                )
+            return await self._current_result(action_id, fallback=requested_action)
         try:
             await self.ledger.append(
                 session_id=str(action.session_id),

@@ -11,10 +11,12 @@ from app.models.agent_core import AgentActionStatus, AgentToolCallBatchStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentEventRepository,
+    AgentSessionRepository,
     AgentToolCallBatchRepository,
 )
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.permissions.risk import RiskAssessment
 from app.services.agent_core.tools import (
     AgentToolContext,
     AgentToolDispatcher,
@@ -279,6 +281,245 @@ async def test_requested_action_rechecks_fresh_catastrophic_hard_block(
     assert result.error["type"] == "PermissionDeniedError"
     assert "hard-blocked" in result.error["message"]
     assert side_effects == 0
+
+
+@pytest.mark.asyncio
+async def test_requested_action_rechecks_fresh_policy_before_side_effect_claim(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "touch policy-recheck"},
+        normalized_input={"command": "touch policy-recheck"},
+        risk_level="act_high",
+        permission_decision={"decision": "allow", "source": "policy"},
+        evaluated_policy_version=session.permission_policy_version,
+        status=AgentActionStatus.REQUESTED,
+    )
+    await AgentCoreService(db_session).update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"permission_mode": "ask_each_action"},
+    )
+    side_effects = 0
+
+    async def forbidden_run(self, input, context):
+        del self, input, context
+        nonlocal side_effects
+        side_effects += 1
+        return {}
+
+    monkeypatch.setattr(ExecuteShellTool, "run", forbidden_run)
+    result = await AgentToolDispatcher(
+        db_session, build_default_tool_registry()
+    ).resume_action(
+        action_id=str(action.id),
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+        ),
+    )
+
+    assert result.status == AgentActionStatus.WAITING_DECISION
+    assert side_effects == 0
+    refreshed = await AgentActionRepository(db_session).get_fresh(str(action.id))
+    assert refreshed.requires_resume is True
+    assert refreshed.evaluated_policy_version == 2
+    assert refreshed.permission_decision["decision"] == "ask"
+
+
+@pytest.mark.asyncio
+async def test_requested_action_requires_real_user_approval_when_risk_demands_it(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "touch explicit-approval"},
+        normalized_input={"command": "touch explicit-approval"},
+        risk_level="act_low",
+        permission_decision={"decision": "allow", "source": "policy"},
+        evaluated_policy_version=session.permission_policy_version,
+        status=AgentActionStatus.REQUESTED,
+    )
+    side_effects = 0
+
+    def require_explicit_approval(self, input):
+        del self, input
+        return RiskAssessment(
+            level="act_high",
+            reasons=["protected resource requires explicit approval"],
+            requires_explicit_approval=True,
+        )
+
+    async def forbidden_run(self, input, context):
+        del self, input, context
+        nonlocal side_effects
+        side_effects += 1
+        return {}
+
+    monkeypatch.setattr(ExecuteShellTool, "assess_risk", require_explicit_approval)
+    monkeypatch.setattr(ExecuteShellTool, "run", forbidden_run)
+    result = await AgentToolDispatcher(
+        db_session, build_default_tool_registry()
+    ).resume_action(
+        action_id=str(action.id),
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+        ),
+    )
+
+    assert result.status == AgentActionStatus.WAITING_DECISION
+    assert side_effects == 0
+
+
+@pytest.mark.asyncio
+async def test_policy_row_lock_serializes_pending_reconciliation(db_session):
+    session, _turn = await _seed_session_turn(db_session)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as preparing, maker() as updating:
+        locked = await AgentSessionRepository(preparing).lock_policy(str(session.id))
+        assert locked.permission_policy_version == 1
+
+        update_task = asyncio.create_task(
+            AgentCoreService(updating).update_session(
+                session_id=str(session.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                updates={
+                    "permission_mode": "bypass",
+                    "pending_strategy": "approve_pending_tools",
+                },
+            )
+        )
+        await asyncio.sleep(0.05)
+        assert update_task.done() is False
+        await preparing.rollback()
+        updated = await update_task
+
+    assert updated.permission_policy_version == 2
+
+
+@pytest.mark.asyncio
+async def test_locked_batch_action_cannot_commit_after_bulk_reconciliation(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    wakeups: list[str] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda action_id, *_: wakeups.append(action_id),
+    )
+
+    async with maker() as preparing, maker() as updating:
+        locked = await AgentSessionRepository(preparing).lock_policy(str(session.id))
+        batch = await AgentToolCallBatchRepository(preparing).add(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            status=AgentToolCallBatchStatus.WAITING,
+            tool_call_count=1,
+            batch_ordinal=1,
+        )
+        action = await AgentActionRepository(preparing).add(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            tool_batch_id=str(batch.id),
+            tool_call_ordinal=0,
+            tool_call_id="locked-policy-action",
+            kind="tool",
+            name="bash",
+            input={"command": "printf locked"},
+            normalized_input={"command": "printf locked"},
+            risk_level="act_high",
+            permission_decision={"decision": "ask", "source": "policy"},
+            evaluated_policy_version=locked.permission_policy_version,
+            status=AgentActionStatus.WAITING_DECISION,
+        )
+        update_task = asyncio.create_task(
+            AgentCoreService(updating).update_session(
+                session_id=str(session.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                updates={
+                    "permission_mode": "bypass",
+                    "pending_strategy": "approve_pending_tools",
+                },
+            )
+        )
+        await asyncio.sleep(0.05)
+        assert update_task.done() is False
+        await preparing.commit()
+        updated = await update_task
+
+    async with maker() as observer:
+        refreshed = await AgentActionRepository(observer).get_fresh(str(action.id))
+    assert updated.pending_reconciliation["affected_count"] == 1
+    assert refreshed.status == AgentActionStatus.REQUESTED
+    assert wakeups == [str(action.id)]
+
+
+@pytest.mark.asyncio
+async def test_pending_strategy_reconciles_legacy_waiting_tool_without_batch(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf legacy"},
+        normalized_input={"command": "printf legacy"},
+        risk_level="act_high",
+        permission_decision={"decision": "ask"},
+        evaluated_policy_version=session.permission_policy_version,
+        status=AgentActionStatus.WAITING_DECISION,
+    )
+    wakeups: list[str] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda action_id, *_: wakeups.append(action_id),
+    )
+
+    updated = await AgentCoreService(db_session).update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={
+            "permission_mode": "bypass",
+            "pending_strategy": "approve_pending_tools",
+        },
+    )
+
+    assert updated.pending_reconciliation == {
+        "affected_count": 1,
+        "excluded_count": 0,
+        "already_resolved_count": 0,
+    }
+    assert (
+        await AgentActionRepository(db_session).get_fresh(str(action.id))
+    ).status == AgentActionStatus.REQUESTED
+    assert wakeups == [str(action.id)]
 
 
 @pytest.mark.asyncio

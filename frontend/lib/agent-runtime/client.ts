@@ -9,6 +9,7 @@ import type {
   AgentMode,
   AgentModelSelection,
   AgentPermissionMode,
+  AgentPendingStrategy,
   AgentRuntimeArtifact,
   AgentRuntimeInputPart,
   AgentRuntimeSession,
@@ -86,10 +87,17 @@ export const updateAgentRuntimeSessionMode = async (
 export const updateAgentRuntimeSessionPermissionMode = async (
   sessionId: string,
   permissionMode: AgentPermissionMode,
+  pendingStrategy?: AgentPendingStrategy,
 ) => {
   const response = await apiRequest<AgentRuntimeSession>(
     `/agent/sessions/${sessionId}`,
-    { method: "PATCH", body: JSON.stringify({ permission_mode: permissionMode }) },
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        permission_mode: permissionMode,
+        ...(pendingStrategy ? { pending_strategy: pendingStrategy } : {}),
+      }),
+    },
   )
   return response.data
 }

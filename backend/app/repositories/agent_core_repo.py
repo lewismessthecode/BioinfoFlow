@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import desc, func, or_, select, update
+from sqlalchemy import and_, desc, exists, func, or_, select, update
 from datetime import datetime, timezone
 
 from app.models.agent_core import (
@@ -32,6 +32,34 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def lock_policy(self, session_id: str) -> AgentSession | None:
+        """Serialize policy updates and atomic tool-batch authorization.
+
+        A no-op ``UPDATE`` acquires the session row's write lock on PostgreSQL
+        and SQLite alike. ``updated_at`` is explicitly preserved so preparing
+        a tool batch does not make the conversation appear user-modified.
+        The caller owns the surrounding transaction and must commit/rollback.
+        """
+        result = await self.session.execute(
+            update(self.model)
+            .where(self.model.id == session_id)
+            .values(
+                permission_policy_version=self.model.permission_policy_version,
+                updated_at=self.model.updated_at,
+            )
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
+    async def policy_version_matches(self, session_id: str, version: int) -> bool:
+        current = await self.session.scalar(
+            select(self.model.permission_policy_version).where(
+                self.model.id == session_id
+            )
+        )
+        return current is not None and int(current) == version
 
     async def update_with_policy_version(
         self,
@@ -328,6 +356,7 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             select(self.model)
             .where(self.model.tool_batch_id == batch_id)
             .order_by(self.model.tool_call_ordinal, self.model.id)
+            .execution_options(populate_existing=True)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -335,23 +364,29 @@ class AgentActionRepository(BaseRepository[AgentAction]):
     async def list_for_active_batches(self, session_id: str) -> list[AgentAction]:
         stmt = (
             select(self.model)
-            .join(
+            .outerjoin(
                 AgentToolCallBatch,
                 AgentToolCallBatch.id == self.model.tool_batch_id,
             )
             .where(
                 self.model.session_id == session_id,
                 self.model.kind == "tool",
-                AgentToolCallBatch.status.not_in(
-                    [
-                        AgentToolCallBatchStatus.TERMINAL,
-                        AgentToolCallBatchStatus.FAILED,
-                        AgentToolCallBatchStatus.CANCELLED,
-                    ]
+                or_(
+                    and_(
+                        self.model.tool_batch_id.is_(None),
+                        self.model.status == AgentActionStatus.WAITING_DECISION,
+                    ),
+                    AgentToolCallBatch.status.not_in(
+                        [
+                            AgentToolCallBatchStatus.TERMINAL,
+                            AgentToolCallBatchStatus.FAILED,
+                            AgentToolCallBatchStatus.CANCELLED,
+                        ]
+                    ),
                 ),
             )
             .order_by(
-                AgentToolCallBatch.batch_ordinal,
+                AgentToolCallBatch.batch_ordinal.asc().nullsfirst(),
                 self.model.tool_call_ordinal,
                 self.model.id,
             )
@@ -390,6 +425,62 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         action_id: str,
         *,
         started_at: datetime,
+        risk_level: str | None = None,
+        risk_reasons: list | None = None,
+        affected_resources: list | None = None,
+        permission_decision: dict | None = None,
+        evaluated_policy_version: int | None = None,
+        permission_context_snapshot: dict | None = None,
+        expected_policy_version: int | None = None,
+    ) -> AgentAction | None:
+        values = {
+            "status": AgentActionStatus.RUNNING,
+            "requires_resume": False,
+            "started_at": started_at,
+        }
+        for key, value in (
+            ("risk_level", risk_level),
+            ("risk_reasons", risk_reasons),
+            ("affected_resources", affected_resources),
+            ("permission_decision", permission_decision),
+            ("evaluated_policy_version", evaluated_policy_version),
+            ("permission_context_snapshot", permission_context_snapshot),
+        ):
+            if value is not None:
+                values[key] = value
+        conditions = [
+            self.model.id == action_id,
+            self.model.status == AgentActionStatus.REQUESTED,
+        ]
+        if expected_policy_version is not None:
+            conditions.append(
+                exists(
+                    select(AgentSession.id).where(
+                        AgentSession.id == self.model.session_id,
+                        AgentSession.permission_policy_version
+                        == expected_policy_version,
+                    )
+                )
+            )
+        result = await self.session.execute(
+            update(self.model)
+            .where(*conditions)
+            .values(**values)
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
+    async def defer_requested_for_approval(
+        self,
+        action_id: str,
+        *,
+        risk_level: str,
+        risk_reasons: list,
+        affected_resources: list,
+        permission_decision: dict,
+        evaluated_policy_version: int,
+        permission_context_snapshot: dict,
     ) -> AgentAction | None:
         result = await self.session.execute(
             update(self.model)
@@ -398,9 +489,14 @@ class AgentActionRepository(BaseRepository[AgentAction]):
                 self.model.status == AgentActionStatus.REQUESTED,
             )
             .values(
-                status=AgentActionStatus.RUNNING,
-                requires_resume=False,
-                started_at=started_at,
+                status=AgentActionStatus.WAITING_DECISION,
+                requires_resume=True,
+                risk_level=risk_level,
+                risk_reasons=risk_reasons,
+                affected_resources=affected_resources,
+                permission_decision=permission_decision,
+                evaluated_policy_version=evaluated_policy_version,
+                permission_context_snapshot=permission_context_snapshot,
             )
             .returning(self.model)
             .execution_options(populate_existing=True)

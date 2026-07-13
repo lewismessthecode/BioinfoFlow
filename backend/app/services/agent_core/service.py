@@ -168,11 +168,14 @@ class AgentCoreService:
         updates: dict[str, Any],
     ):
         pending_strategy = updates.pop("pending_strategy", "future_only")
-        session = await self.require_session(
-            session_id=session_id,
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+        session = await self.session_repo.lock_policy(session_id)
+        if session is None or session.status == AgentSessionStatus.DELETED:
+            raise NotFoundError(f"Agent session not found: {session_id}")
+        if (
+            str(session.workspace_id) != str(workspace_id)
+            or str(session.user_id) != user_id
+        ):
+            raise PermissionDeniedError("Agent session is not accessible")
         previous_authorization = _authorization_state(
             session,
             remote_boundary_fingerprint=await _remote_boundary_fingerprint(
@@ -289,7 +292,7 @@ class AgentCoreService:
                     decision_payload = {
                         "decision": "approve",
                         "note": "Approved by permission policy update",
-                        "source": "pending_strategy",
+                        "source": "user_pending_strategy",
                         "evaluated_policy_version": action.evaluated_policy_version,
                         "modified_input": None,
                         "answer": None,
@@ -311,7 +314,7 @@ class AgentCoreService:
                         payload={
                             "action_id": str(decided.id),
                             "decision": "approve",
-                            "source": "pending_strategy",
+                            "source": "user_pending_strategy",
                             "permission_policy_version": updated.permission_policy_version,
                         },
                         commit=False,
@@ -704,6 +707,7 @@ class AgentCoreService:
         decision_payload = {
             "decision": decision,
             "note": note,
+            "source": "user",
             "evaluated_policy_version": action.evaluated_policy_version,
             "modified_input": modified_input,
             "answer": answer,

@@ -26,7 +26,10 @@ from app.services.agent_core.core.budget import IterationBudget
 from app.services.agent_core.core.guardrails import no_progress_detected
 from app.services.agent_core.core.interrupt import is_interrupt_requested
 from app.services.agent_core.core.retry import RetryPolicy, run_with_retry
-from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, RuntimeStrategy
+from app.services.agent_core.core.runtime_strategy import (
+    RuntimeCapabilities,
+    RuntimeStrategy,
+)
 from app.services.agent_core.core.stream_adapter import (
     StreamCompletionResult,
     StreamToolCall,
@@ -44,12 +47,19 @@ from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.permissions.context import PermissionContextResolver
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
-from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
+from app.services.agent_core.tools.executor import (
+    AgentToolExecutor,
+    ToolExecutionResult,
+)
 from app.services.agent_core.tools.toolsets import (
     decode_provider_tool_name,
     provider_tool_specs,
 )
-from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
+from app.services.agent_core.transcript import (
+    AgentTranscriptStore,
+    text_part,
+    tool_calls_part,
+)
 from app.services.llm.provider_templates import litellm_model_name
 from app.utils.exceptions import PermissionDeniedError
 from app.utils.logging import get_logger
@@ -290,10 +300,15 @@ class AgentLoopController:
                 iteration_count=budget.used_iterations,
             )
             if tool_calls:
-                tool_call_signatures = [_tool_call_signature(tool_call) for tool_call in tool_calls]
+                tool_call_signatures = [
+                    _tool_call_signature(tool_call) for tool_call in tool_calls
+                ]
                 try:
-                    waiting, tool_result_signatures, claimed_batch_id = (
-                        await self._execute_tool_calls(
+                    (
+                        waiting,
+                        tool_result_signatures,
+                        claimed_batch_id,
+                    ) = await self._execute_tool_calls(
                         agent_session=agent_session,
                         turn=turn,
                         tool_calls=tool_calls,
@@ -301,7 +316,6 @@ class AgentLoopController:
                         model=model,
                         text=streamed.text or None,
                         prior_continuation_batch_id=active_continuation_batch_id,
-                    )
                     )
                     if active_continuation_batch_id is not None:
                         active_continuation_batch_id = None
@@ -465,6 +479,11 @@ class AgentLoopController:
         )
         prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
         try:
+            locked_session = await self.sessions.lock_policy(session_id)
+            if locked_session is None:
+                raise PermissionDeniedError("Agent session is not accessible")
+            agent_session = locked_session
+            locked_policy_version = int(agent_session.permission_policy_version)
             await self.tool_batches.create(
                 session_id=session_id,
                 turn_id=turn_id,
@@ -500,6 +519,20 @@ class AgentLoopController:
                     execution_target=execution_target_from_session(agent_session),
                 )
                 prepared.append((tool_call, tool_name, result))
+            if not await self.sessions.policy_version_matches(
+                session_id, locked_policy_version
+            ):
+                raise RuntimeError(
+                    "Permission policy changed during atomic tool-batch preparation"
+                )
+            prepared_actions = await self.actions.list_for_batch(batch_id)
+            if any(
+                action.evaluated_policy_version != locked_policy_version
+                for action in prepared_actions
+            ):
+                raise RuntimeError(
+                    "Tool action was evaluated outside the locked permission policy"
+                )
             if prior_continuation_batch_id is not None:
                 await self.tool_batches.batches.terminalize_continuing_pending(
                     prior_continuation_batch_id
@@ -555,7 +588,9 @@ class AgentLoopController:
         interaction_ordinals = [
             ordinal
             for ordinal, call in enumerate(tool_calls)
-            if self.registry.get(decode_provider_tool_name(call["name"])).spec.interaction
+            if self.registry.get(
+                decode_provider_tool_name(call["name"])
+            ).spec.interaction
         ]
         if interaction_ordinals:
             waiting, signatures = await self._execute_interaction_batch(
@@ -698,7 +733,9 @@ class AgentLoopController:
         )
         await self.db.commit()
 
-    async def _cancel_committed_batch(self, batch_id: str, *, agent_session, turn) -> None:
+    async def _cancel_committed_batch(
+        self, batch_id: str, *, agent_session, turn
+    ) -> None:
         now = datetime.now(timezone.utc)
         for action in await self.actions.list_for_batch(batch_id):
             if action.status in {
@@ -710,7 +747,10 @@ class AgentLoopController:
                     action,
                     status=AgentActionStatus.CANCELLED,
                     requires_resume=False,
-                    error={"type": "CancelledError", "message": "Tool batch execution was cancelled."},
+                    error={
+                        "type": "CancelledError",
+                        "message": "Tool batch execution was cancelled.",
+                    },
                     completed_at=now,
                 )
         await self.tool_batches.batches.cancel_nonterminal(batch_id)
@@ -795,13 +835,21 @@ class AgentLoopController:
         )
         if action.tool_batch_id:
             failed_resume_status: str | None = None
-            for batch_action in await self.actions.list_for_batch(str(action.tool_batch_id)):
+            for batch_action in await self.actions.list_for_batch(
+                str(action.tool_batch_id)
+            ):
                 if batch_action.status != AgentActionStatus.REQUESTED:
                     continue
                 result = await self.executor.resume_action(
                     action_id=str(batch_action.id),
                     context=context,
                 )
+                if result.status == AgentActionStatus.WAITING_DECISION:
+                    return LoopResult(
+                        termination_reason="waiting_approval",
+                        final_text=None,
+                        iteration_count=0,
+                    )
                 if result.status not in {
                     AgentActionStatus.COMPLETED,
                     AgentActionStatus.REJECTED,
@@ -830,7 +878,9 @@ class AgentLoopController:
                     final_text=None,
                     iteration_count=0,
                 )
-            if not await self.tool_batches.claim_continuation(str(action.tool_batch_id)):
+            if not await self.tool_batches.claim_continuation(
+                str(action.tool_batch_id)
+            ):
                 return LoopResult(
                     termination_reason="waiting_approval",
                     final_text=None,
@@ -855,6 +905,12 @@ class AgentLoopController:
                 result = await self.executor.resume_action(
                     action_id=action_id,
                     context=context,
+                )
+            if result.status == AgentActionStatus.WAITING_DECISION:
+                return LoopResult(
+                    termination_reason="waiting_approval",
+                    final_text=None,
+                    iteration_count=0,
                 )
             if not await self._has_tool_result(
                 str(agent_session.id),
@@ -908,7 +964,9 @@ class AgentLoopController:
         parts: list[dict[str, Any]] = []
         if text:
             parts.append(text_part(text))
-        parts.append(tool_calls_part([_provider_tool_call(call) for call in tool_calls]))
+        parts.append(
+            tool_calls_part([_provider_tool_call(call) for call in tool_calls])
+        )
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
@@ -1042,7 +1100,10 @@ class AgentLoopController:
                 result = ToolExecutionResult(
                     action_id=str(batch_action.id),
                     status=batch_action.status,
-                    error={"type": "UserRejected", "message": "The user rejected this tool call."},
+                    error={
+                        "type": "UserRejected",
+                        "message": "The user rejected this tool call.",
+                    },
                 )
             else:
                 result = ToolExecutionResult(
@@ -1073,7 +1134,9 @@ class AgentLoopController:
         completion_kwargs: dict[str, Any],
         iteration_count: int,
     ) -> Any:
-        async def _on_retry(next_attempt: int, exc: Exception, delay_seconds: float) -> None:
+        async def _on_retry(
+            next_attempt: int, exc: Exception, delay_seconds: float
+        ) -> None:
             await self.ledger.append(
                 session_id=str(turn.session_id),
                 turn_id=str(turn.id),
@@ -1197,7 +1260,9 @@ class AgentLoopController:
                         index=delta.index,
                     ),
                 )
-                started_before = bool(state.call_id and state.name) if seen_before else False
+                started_before = (
+                    bool(state.call_id and state.name) if seen_before else False
+                )
                 if delta.call_id:
                     state.call_id = delta.call_id
                     state.provider_call_id = delta.call_id
@@ -1294,7 +1359,9 @@ class AgentLoopController:
         allow_thinking: bool,
     ) -> StreamCompletionResult:
         usage = _extract_token_usage(response)
-        thinking_text = extract_response_thinking(response).strip() if allow_thinking else ""
+        thinking_text = (
+            extract_response_thinking(response).strip() if allow_thinking else ""
+        )
         if thinking_text:
             await self.ledger.append(
                 session_id=str(agent_session.id),
@@ -1306,7 +1373,10 @@ class AgentLoopController:
                     "index": 0,
                 },
             )
-        tool_calls = [_stream_tool_call_from_payload(item, index) for index, item in enumerate(_extract_tool_calls(response))]
+        tool_calls = [
+            _stream_tool_call_from_payload(item, index)
+            for index, item in enumerate(_extract_tool_calls(response))
+        ]
         for tool_call in tool_calls:
             await self.ledger.append(
                 session_id=str(agent_session.id),
@@ -1360,10 +1430,14 @@ class AgentLoopController:
         current_turn = await self.turns.get(str(turn.id))
         if current_turn is None:
             return None
-        if current_turn.status == AgentTurnStatus.CANCELLED and result.termination_reason not in {
-            "cancelled",
-            "interrupted",
-        }:
+        if (
+            current_turn.status == AgentTurnStatus.CANCELLED
+            and result.termination_reason
+            not in {
+                "cancelled",
+                "interrupted",
+            }
+        ):
             return current_turn
         turn = current_turn
 
@@ -1404,7 +1478,11 @@ class AgentLoopController:
             lease_until=None,
             completed_at=datetime.now(timezone.utc)
             if status
-            in {AgentTurnStatus.COMPLETED, AgentTurnStatus.FAILED, AgentTurnStatus.CANCELLED}
+            in {
+                AgentTurnStatus.COMPLETED,
+                AgentTurnStatus.FAILED,
+                AgentTurnStatus.CANCELLED,
+            }
             else None,
         )
         if result.termination_reason == "assistant_final":
@@ -1452,7 +1530,11 @@ def _extract_response_text(response: Any) -> str:
     if isinstance(content, list):
         parts: list[str] = []
         for item in content:
-            text = item.get("text") if isinstance(item, dict) else getattr(item, "text", None)
+            text = (
+                item.get("text")
+                if isinstance(item, dict)
+                else getattr(item, "text", None)
+            )
             if isinstance(text, str) and text.strip():
                 parts.append(text.strip())
         return "\n".join(parts).strip()
@@ -1596,8 +1678,12 @@ def _merge_usage(
 def _retry_policy() -> RetryPolicy:
     return RetryPolicy(
         max_attempts=max(int(settings.agent_retry_max_attempts or 1), 1),
-        base_delay_seconds=max(float(settings.agent_retry_base_delay_seconds or 0.0), 0.0),
-        max_delay_seconds=max(float(settings.agent_retry_max_delay_seconds or 0.0), 0.0),
+        base_delay_seconds=max(
+            float(settings.agent_retry_base_delay_seconds or 0.0), 0.0
+        ),
+        max_delay_seconds=max(
+            float(settings.agent_retry_max_delay_seconds or 0.0), 0.0
+        ),
     )
 
 

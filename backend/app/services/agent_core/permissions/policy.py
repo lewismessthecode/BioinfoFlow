@@ -47,6 +47,13 @@ class PermissionPolicy:
                 risk_level=risk.level,
             )
 
+        if risk.requires_explicit_approval:
+            return PermissionDecision(
+                decision="ask",
+                reasons=[*risk.reasons, "risk assessment requires explicit approval"],
+                risk_level=risk.level,
+            )
+
         if permission_mode == "ask_each_action" and risk.level != "read":
             return PermissionDecision(
                 decision="ask",
