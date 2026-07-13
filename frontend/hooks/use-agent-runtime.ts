@@ -164,13 +164,15 @@ export function useAgentRuntime(
     dispatch({ type: "loading" })
     try {
       const nextSessions = await listAgentRuntimeSessions(projectId)
+      const pendingIntent = pendingPermissionIntentRef.current
       for (const session of nextSessions) {
+        adoptPendingPermissionBaseline(pendingIntent, session)
         rememberConfirmedSession(confirmedSessionsRef.current, session)
       }
       updateSessions((current) =>
         applyPendingPermissionIntent(
           mergeFetchedSessions(current, nextSessions),
-          pendingPermissionIntentRef.current,
+          pendingIntent,
         ),
       )
       if (isControlledDraft) {
@@ -249,8 +251,9 @@ export function useAgentRuntime(
         sessionId,
         limited: false,
       })
-      rememberConfirmedSession(confirmedSessionsRef.current, payload.session)
       const pendingIntent = pendingPermissionIntentRef.current
+      adoptPendingPermissionBaseline(pendingIntent, payload.session)
+      rememberConfirmedSession(confirmedSessionsRef.current, payload.session)
       const loadedSession = sessionWithPendingPermissionIntent(
         payload.session,
         pendingIntent,
@@ -260,6 +263,7 @@ export function useAgentRuntime(
       dispatch({ type: "state.loaded", payload: { ...payload, session: loadedSession } })
     } catch (error) {
       if (activeSessionIdRef.current !== sessionId) return
+      if (stateRefreshSequenceRef.current !== sequence) return
       dispatch({
         type: "error",
         message: error instanceof Error ? error.message : "Failed to load agent state",
@@ -744,6 +748,16 @@ function rememberConfirmedSession(
   if (isSessionPolicyNewerOrEqual(session, confirmed)) {
     confirmedSessions.set(session.id, session)
   }
+}
+
+function adoptPendingPermissionBaseline(
+  intent: PermissionUpdateRequest | null,
+  session: AgentRuntimeSession,
+) {
+  if (!intent?.sessionId || intent.sessionId !== session.id) return
+  if (intent.rollbackSession) return
+  intent.rollbackSession = session
+  intent.basePolicyVersion = sessionPolicyVersion(session)
 }
 
 function applyPendingPermissionIntent(

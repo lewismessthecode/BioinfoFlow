@@ -828,7 +828,11 @@ describe("useAgentRuntime", () => {
 
     await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
     await act(async () => {
-      stateRequest.resolve({ session, turns: [], events: [] })
+      stateRequest.resolve({
+        session: { ...session, permission_policy_version: 1 },
+        turns: [],
+        events: [],
+      })
       await stateRequest.promise
     })
 
@@ -856,6 +860,53 @@ describe("useAgentRuntime", () => {
     expect(
       window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2"),
     ).toBe("guarded_auto")
+  })
+
+  it("ignores an older refresh rejection after a newer refresh succeeds", async () => {
+    const older = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    const newer = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    mocks.getAgentRuntimeState
+      .mockResolvedValueOnce({ session, turns: [], events: [] })
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    let olderRefresh!: Promise<void>
+    let newerRefresh!: Promise<void>
+    act(() => {
+      olderRefresh = result.current.refreshState("session-1")
+      newerRefresh = result.current.refreshState("session-1")
+    })
+    await act(async () => {
+      newer.resolve({
+        session: { ...session, title: "Newest state" },
+        turns: [],
+        events: [],
+      })
+      await newerRefresh
+    })
+    await act(async () => {
+      older.reject(new Error("stale refresh failed"))
+      await olderRefresh
+    })
+
+    expect(result.current.state.session?.title).toBe("Newest state")
+    expect(result.current.state.status).toBe("idle")
+    expect(result.current.state.error).toBeNull()
   })
 
   it("rolls back only policy fields when same-version state refreshes add a newer title", async () => {
