@@ -218,3 +218,28 @@ def test_safe_pseudo_device_write_targets_are_allowlisted(command):
 )
 def test_device_paths_used_only_as_read_sources_are_not_hard_blocked(command):
     assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf data | tee $TARGET",
+        "cp disk.img ${DESTINATION}",
+        "dd if=disk.img of=$(resolve_device)",
+        "printf data > /dev/$DEVICE_NAME",
+        "mv disk.img /dev/disk/by-id/*",
+        "tee /dev/shm/cache.bin < data.bin",
+        "tee /dev/pts/4 < data.bin",
+    ],
+)
+def test_indirect_or_non_block_device_targets_are_not_hard_blocked(command):
+    assert classify_shell_command(command) != "critical"
+
+
+def test_compound_symlink_to_unsafe_device_is_critical():
+    assert (
+        classify_shell_command(
+            "ln -s /dev/root /tmp/device-alias && dd if=disk.img of=/tmp/device-alias"
+        )
+        == "critical"
+    )

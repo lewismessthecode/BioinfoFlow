@@ -291,6 +291,101 @@ def test_unknown_device_alias_write_is_denied_in_bypass():
     )
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf data | tee $TARGET",
+        "cp disk.img ${DESTINATION}",
+        "dd if=disk.img of=$(resolve_device)",
+        "printf data > /dev/$DEVICE_NAME",
+        "mv disk.img /dev/disk/by-id/*",
+        "cp --target-directory=$DESTINATION disk.img",
+        "install -t ${DESTINATION} disk.img",
+        "sed -i 's/old/new/' $TARGET",
+    ],
+)
+def test_indirect_device_capable_write_targets_require_explicit_approval(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
+    assert assessment.confidence == "low"
+    assert any(
+        "indirect" in reason or "unresolved" in reason for reason in assessment.reasons
+    )
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+def test_compound_symlink_to_unsafe_device_is_hard_blocked():
+    assessment = assess_command_risk(
+        "ln -s /dev/root /tmp/device-alias && dd if=disk.img of=/tmp/device-alias",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.hard_blocked is True
+    assert assessment.level == "critical"
+
+
+def test_compound_relative_symlink_alias_is_normalized_before_sink_check():
+    assessment = assess_command_risk(
+        "ln -s /dev/root device-alias && dd if=disk.img of=./device-alias",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.hard_blocked is True
+
+
+def test_compound_symlink_with_unknown_target_requires_explicit_approval():
+    assessment = assess_command_risk(
+        "ln -s $TARGET /tmp/device-alias && tee /tmp/device-alias < disk.img",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
+    assert assessment.confidence == "low"
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize("path", ["/dev/shm/cache.bin", "/dev/pts/4"])
+def test_non_block_device_subtrees_are_explicit_not_hard_blocked(path):
+    assessment = assess_command_risk(
+        f"tee {path} < data.bin",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
 def test_command_risk_audit_snapshot_is_bounded_and_structured():
     assessment = assess_command_risk(
         "cat /analysis/project/input/sequence.list",

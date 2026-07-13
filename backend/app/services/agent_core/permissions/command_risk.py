@@ -128,6 +128,7 @@ def assess_command_risk(
     level = classify_command_level(command)
     nodes = _parse_command_nodes(_strip_heredoc_bodies(command))
     effects = _command_effects(nodes)
+    sink_safety = _analyze_write_sink_safety(nodes)
     referenced_paths, path_analysis_confident = _referenced_paths(nodes, target=target)
     protected_resources = _protected_resources(referenced_paths)
     reasons = [f"command semantics classified as {level}"]
@@ -183,11 +184,17 @@ def assess_command_risk(
         reasons.append("the local command has no enforced operating-system sandbox")
         confidence = "low" if unknown_path else "medium"
 
+    if sink_safety.low_confidence:
+        confidence = "low"
+
     protected_write = bool(protected_resources) and bool(
         {"write", "delete"}.intersection(effects)
     )
     if protected_write:
         reasons.append("the command mutates a protected resource")
+
+    if sink_safety.requires_explicit_approval:
+        reasons.extend(sink_safety.reasons)
 
     return CommandRiskAssessment(
         level=level,
@@ -195,7 +202,9 @@ def assess_command_risk(
         affected_resources=[
             {"type": "path", "id": path} for path in referenced_paths[:32]
         ],
-        requires_explicit_approval=protected_write,
+        requires_explicit_approval=(
+            protected_write or sink_safety.requires_explicit_approval
+        ),
         effects=effects,
         confidence=confidence,
         referenced_paths=referenced_paths,
@@ -406,6 +415,8 @@ def classify_command_level(command: str) -> RiskLevel:
         return "critical"
 
     nodes = _parse_command_nodes(_strip_heredoc_bodies(text))
+    if _compound_alias_targets_unsafe_device(nodes):
+        return "critical"
     highest: RiskLevel = "act_high" if substitutions or "<(" in text else "read"
     previous: _CommandNode | None = None
     for node in nodes:
@@ -663,15 +674,188 @@ _SAFE_DEVICE_WRITE_TARGETS = frozenset(
 )
 
 
+def _is_unresolved_sink_path(path: str) -> bool:
+    return path.startswith("~") or any(
+        marker in path for marker in ("$", "`", "*", "?", "[", "]")
+    )
+
+
+def _is_sensitive_pseudo_device_target(path: str) -> bool:
+    normalized = posixpath.normpath(path)
+    return normalized in {"/dev/shm", "/dev/pts"} or normalized.startswith(
+        ("/dev/shm/", "/dev/pts/")
+    )
+
+
 def _is_unsafe_device_write_target(path: str) -> bool:
+    if _is_unresolved_sink_path(path):
+        return False
     normalized = posixpath.normpath(path)
     if normalized != "/dev" and not normalized.startswith("/dev/"):
         return False
     if normalized in _SAFE_DEVICE_WRITE_TARGETS:
         return False
+    if _is_sensitive_pseudo_device_target(normalized):
+        return False
     if re.fullmatch(r"/dev/fd/\d+", normalized):
         return False
     return True
+
+
+@dataclass(frozen=True)
+class _WriteSinkSafety:
+    requires_explicit_approval: bool = False
+    low_confidence: bool = False
+    reasons: tuple[str, ...] = ()
+
+
+def _analyze_write_sink_safety(nodes: list[_CommandNode]) -> _WriteSinkSafety:
+    aliases: dict[str, str] = {}
+    requires_explicit = False
+    low_confidence = False
+    reasons: list[str] = []
+    for node in nodes:
+        symlink = _symlink_binding(node)
+        if symlink is not None:
+            link, target = symlink
+            aliases[_alias_key(link)] = target
+            continue
+        for destination in _write_sink_destinations(node):
+            if _is_unresolved_sink_path(destination):
+                requires_explicit = True
+                low_confidence = True
+                reasons.append(
+                    "indirect or unresolved write destination requires explicit approval"
+                )
+                continue
+            alias_target = aliases.get(_alias_key(destination))
+            if alias_target is not None:
+                if _is_unresolved_sink_path(alias_target):
+                    requires_explicit = True
+                    low_confidence = True
+                    reasons.append(
+                        "write destination follows a symlink with an unresolved target"
+                    )
+                elif _is_sensitive_pseudo_device_target(alias_target):
+                    requires_explicit = True
+                    reasons.append(
+                        "write destination follows a symlink into a sensitive pseudo-device subtree"
+                    )
+            if _is_sensitive_pseudo_device_target(destination):
+                requires_explicit = True
+                reasons.append(
+                    "write destination is in a sensitive non-block device subtree"
+                )
+    return _WriteSinkSafety(
+        requires_explicit_approval=requires_explicit,
+        low_confidence=low_confidence,
+        reasons=tuple(_dedupe(reasons)),
+    )
+
+
+def _compound_alias_targets_unsafe_device(nodes: list[_CommandNode]) -> bool:
+    aliases: dict[str, str] = {}
+    for node in nodes:
+        symlink = _symlink_binding(node)
+        if symlink is not None:
+            link, target = symlink
+            aliases[_alias_key(link)] = target
+            continue
+        for destination in _write_sink_destinations(node):
+            target = aliases.get(_alias_key(destination))
+            if target is not None and _is_unsafe_device_write_target(target):
+                return True
+    return False
+
+
+def _alias_key(path: str) -> str:
+    return path if _is_unresolved_sink_path(path) else posixpath.normpath(path)
+
+
+def _symlink_binding(node: _CommandNode) -> tuple[str, str] | None:
+    tokens, _ = _unwrap_command(list(node.tokens))
+    if not tokens or _basename(tokens[0]) != "ln":
+        return None
+    args = tokens[1:]
+    if not any(
+        arg == "--symbolic" or (arg.startswith("-") and "s" in arg) for arg in args
+    ):
+        return None
+    positional = [arg for arg in args if not arg.startswith("-")]
+    if len(positional) != 2:
+        return None
+    target, link = positional
+    return link, target
+
+
+def _write_sink_destinations(node: _CommandNode) -> list[str]:
+    tokens, _ = _unwrap_command(list(node.tokens))
+    if not tokens:
+        return []
+    destinations = [
+        tokens[index + 1]
+        for index in range(len(tokens) - 1)
+        if tokens[index] in {">", ">>"}
+    ]
+    executable = _basename(tokens[0])
+    args = tokens[1:]
+    before_redirect = args[:]
+    for marker in (">", ">>", "<", "<<"):
+        if marker in before_redirect:
+            before_redirect = before_redirect[: before_redirect.index(marker)]
+    positional = [arg for arg in before_redirect if not arg.startswith("-")]
+    if executable == "tee":
+        destinations.extend(positional)
+    elif executable in {"cp", "install", "mv"}:
+        destinations.extend(_copy_move_destinations(args))
+    elif executable == "dd":
+        destinations.extend(
+            arg.split("=", 1)[1] for arg in args if arg.startswith("of=")
+        )
+    elif executable.startswith("mkfs"):
+        destinations.extend(positional)
+    elif executable in {"shred", "truncate"}:
+        destinations.extend(positional)
+    elif executable in {"sed", "perl"} and any(arg.startswith("-i") for arg in args):
+        destinations.extend(_editor_file_arguments(args))
+    elif executable == "sort":
+        for index, arg in enumerate(args):
+            if arg in {"-o", "--output"} and index + 1 < len(args):
+                destinations.append(args[index + 1])
+            elif arg.startswith("--output="):
+                destinations.append(arg.split("=", 1)[1])
+    return _dedupe(destinations)
+
+
+def _copy_move_destinations(args: list[str]) -> list[str]:
+    target_directories: list[str] = []
+    positional: list[str] = []
+    index = 0
+    options_done = False
+    while index < len(args):
+        arg = args[index]
+        if not options_done and arg == "--":
+            options_done = True
+            index += 1
+            continue
+        if not options_done and arg in {"-t", "--target-directory"}:
+            if index + 1 < len(args):
+                target_directories.append(args[index + 1])
+                index += 2
+                continue
+            return ["$UNRESOLVED_MISSING_TARGET_DIRECTORY"]
+        if not options_done and arg.startswith("--target-directory="):
+            target_directories.append(arg.split("=", 1)[1])
+            index += 1
+            continue
+        if not options_done and arg.startswith("-"):
+            index += 1
+            continue
+        positional.append(arg)
+        index += 1
+    if target_directories:
+        return target_directories
+    return positional[-1:] if positional else []
 
 
 def _writes_unsafe_device(executable: str, args: list[str]) -> bool:
