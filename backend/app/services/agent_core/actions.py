@@ -5,7 +5,11 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_core import AgentActionStatus
-from app.repositories.agent_core_repo import AgentActionRepository, AgentTurnRepository
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentTurnRepository,
+    ensure_clean_owned_publication_session,
+)
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.ownership import TurnOwnershipLostError
@@ -45,6 +49,8 @@ class AgentActionService:
         interaction: str | None = None,
         expected_owner_token: str | None = None,
     ):
+        if expected_owner_token is not None:
+            ensure_clean_owned_publication_session(self.action_repo.session)
         turn = await self.turn_repo.get(turn_id)
         if turn is None:
             raise NotFoundError(f"Agent turn not found: {turn_id}")

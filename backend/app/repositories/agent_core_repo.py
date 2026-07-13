@@ -37,7 +37,14 @@ def _model_column(model: type, attribute_name: str):
     return getattr(model, attribute_name).property.columns[0]
 
 
-def _ensure_clean_owned_write(session) -> None:
+def ensure_clean_owned_publication_session(session) -> None:
+    """Reject unrelated ORM mutations before an owner-conditioned write.
+
+    This must run before any SQL statement that could trigger autoflush. Once
+    autoflush runs, SQLAlchemy removes the objects from ``dirty``/``new`` and a
+    later guard can no longer prevent the publication commit from carrying
+    those unrelated changes with it.
+    """
     if session.new or session.dirty or session.deleted:
         raise RuntimeError(
             "Owner-conditioned publication requires a clean database session"
@@ -79,7 +86,7 @@ async def _create_for_owned_turn(
     generated id lets the caller load the ORM object without relying on
     backend-specific rowcount behavior.
     """
-    _ensure_clean_owned_write(session)
+    ensure_clean_owned_publication_session(session)
     values = dict(data)
     values.setdefault("id", uuid4())
     columns = [_model_column(model, key) for key in values]
@@ -441,7 +448,7 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         summary_data: dict[str, Any],
         superseded_message_ids: list[str],
     ) -> tuple[AgentMessage | None, bool]:
-        _ensure_clean_owned_write(self.session)
+        ensure_clean_owned_publication_session(self.session)
         try:
             await self.session.execute(
                 update(self.model)
@@ -577,6 +584,8 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         **data: object,
     ) -> AgentMessage | None:
         turn_id = str(data["turn_id"])
+        if expected_owner_token is not None:
+            ensure_clean_owned_publication_session(self.session)
         stmt = select(self.model).where(
             self.model.turn_id == turn_id,
             self.model.status == AgentMessageStatus.COMMITTED,
@@ -634,6 +643,10 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
     ) -> AgentMessage | None:
         session_id = str(data["session_id"])
         turn_id = str(data["turn_id"]) if data.get("turn_id") is not None else None
+        if expected_owner_token is not None:
+            if turn_id is None:
+                raise ValueError("turn_id is required for owner-conditioned messages")
+            ensure_clean_owned_publication_session(self.session)
         stmt = select(self.model).where(self.model.session_id == session_id)
         result = await self.session.execute(stmt)
         metadata_updates: list[tuple[str, dict | None]] = []
@@ -647,8 +660,6 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
             else:
                 metadata_updates.append((str(existing.id), metadata or None))
         if expected_owner_token is not None:
-            if turn_id is None:
-                raise ValueError("turn_id is required for owner-conditioned messages")
             message, owned = await _create_for_owned_turn(
                 self.session,
                 self.model,
@@ -689,7 +700,7 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         expected_owner_token: str | None = None,
     ) -> bool:
         if expected_owner_token is not None:
-            _ensure_clean_owned_write(self.session)
+            ensure_clean_owned_publication_session(self.session)
         stmt = select(self.model).where(self.model.turn_id == turn_id)
         result = await self.session.execute(stmt)
         changed = False
@@ -733,7 +744,7 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         if expected_owner_token is not None and turn_id is None:
             raise ValueError("turn_id is required for owner-conditioned metadata clear")
         if expected_owner_token is not None:
-            _ensure_clean_owned_write(self.session)
+            ensure_clean_owned_publication_session(self.session)
         stmt = select(self.model).where(self.model.session_id == session_id)
         result = await self.session.execute(stmt)
         changed = False
@@ -853,7 +864,7 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         expected_owner_token: str,
         **data: Any,
     ) -> tuple[AgentAction | None, bool]:
-        _ensure_clean_owned_write(self.session)
+        ensure_clean_owned_publication_session(self.session)
         result = await self.session.execute(
             update(self.model)
             .where(
