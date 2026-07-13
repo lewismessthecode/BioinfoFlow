@@ -60,12 +60,66 @@ class ModelTarget:
             "base_url": self.base_url,
         }
 
+    def continuation_target(self) -> ContinuationTarget:
+        return ContinuationTarget(
+            endpoint_id=self.endpoint_id,
+            provider_kind=self.provider_kind,
+            model_name=self.model_name,
+            wire_protocol=self.wire_protocol,
+            base_url=self.base_url,
+        )
+
+
+@dataclass(frozen=True)
+class ContinuationTarget:
+    endpoint_id: str
+    provider_kind: str
+    model_name: str
+    wire_protocol: WireProtocol
+    base_url: str | None = None
+
+    def to_private_dict(self) -> dict[str, str | None]:
+        return {
+            "endpoint_id": self.endpoint_id,
+            "provider_kind": self.provider_kind,
+            "model_name": self.model_name,
+            "wire_protocol": self.wire_protocol,
+            "base_url": self.base_url,
+        }
+
+    @classmethod
+    def from_private_dict(cls, payload: Any) -> ContinuationTarget | None:
+        if not isinstance(payload, Mapping):
+            return None
+        endpoint_id = payload.get("endpoint_id")
+        provider_kind = payload.get("provider_kind")
+        model_name = payload.get("model_name")
+        wire_protocol = payload.get("wire_protocol")
+        base_url = payload.get("base_url")
+        if not all(
+            isinstance(value, str) and value
+            for value in (endpoint_id, provider_kind, model_name)
+        ):
+            return None
+        if wire_protocol not in {"chat_completions", "responses"}:
+            return None
+        if base_url is not None and not isinstance(base_url, str):
+            return None
+        return cls(
+            endpoint_id=endpoint_id,
+            provider_kind=provider_kind,
+            model_name=model_name,
+            wire_protocol=wire_protocol,
+            base_url=base_url,
+        )
+
 
 @dataclass(frozen=True)
 class ResponsesContinuation:
     response_id: str | None
     output_items: InitVar[tuple[dict[str, Any], ...]]
     canonical_input_count: int = 0
+    target: ContinuationTarget | None = None
 
     def __post_init__(self, output_items: tuple[dict[str, Any], ...]) -> None:
         object.__setattr__(self, "_opaque_output_items", output_items)
@@ -78,6 +132,7 @@ class ResponsesContinuation:
             "response_id": self.response_id,
             "canonical_input_count": self.canonical_input_count,
             "output_items": list(self.opaque_output_items()),
+            "target": self.target.to_private_dict() if self.target is not None else None,
         }
 
     @classmethod
@@ -91,6 +146,9 @@ class ResponsesContinuation:
             return None
         response_id = payload.get("response_id")
         canonical_input_count = payload.get("canonical_input_count")
+        target = ContinuationTarget.from_private_dict(payload.get("target"))
+        if target is None:
+            return None
         return cls(
             response_id=response_id if isinstance(response_id, str) else None,
             canonical_input_count=(
@@ -100,7 +158,11 @@ class ResponsesContinuation:
                 else 0
             ),
             output_items=tuple(output_items),
+            target=target,
         )
+
+    def matches_target(self, target: ModelTarget) -> bool:
+        return self.target == target.continuation_target()
 
     def advance_canonical_input_count(
         self,
@@ -112,6 +174,7 @@ class ResponsesContinuation:
                 self.canonical_input_count + max(canonical_parts_written, 0)
             ),
             output_items=self.opaque_output_items(),
+            target=self.target,
         )
 
 

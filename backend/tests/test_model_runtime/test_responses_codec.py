@@ -103,6 +103,7 @@ def test_encode_request_uses_stateless_encrypted_reasoning_continuation() -> Non
             response_id="resp-old",
             output_items=opaque_items,
             canonical_input_count=2,
+            target=_invocation().target.continuation_target(),
         ),
     )
 
@@ -120,8 +121,7 @@ def test_encode_request_uses_stateless_encrypted_reasoning_continuation() -> Non
             },
             {
                 "role": "assistant",
-                "phase": "commentary",
-                "content": [{"type": "output_text", "text": "No projects found."}],
+                "content": "No projects found.",
             },
         ],
         "tools": [
@@ -140,8 +140,38 @@ def test_encode_request_uses_stateless_encrypted_reasoning_continuation() -> Non
     assert "previous_response_id" not in request
 
 
+def test_encode_request_discards_continuation_bound_to_another_target() -> None:
+    invocation = _invocation(
+        continuation=ResponsesContinuation(
+            response_id="resp-other",
+            output_items=(
+                {
+                    "type": "reasoning",
+                    "encrypted_content": "must-not-cross-targets",
+                },
+            ),
+            canonical_input_count=4,
+            target=ModelTarget(
+                endpoint_id="fallback-endpoint",
+                provider_kind="openai",
+                model_name="fallback-model",
+                wire_protocol="responses",
+                base_url="https://fallback.example/v1",
+            ).continuation_target(),
+        )
+    )
+
+    request = ResponsesCodec().encode_request(invocation)
+
+    assert request["input"][0] == {
+        "role": "user",
+        "content": [{"type": "input_text", "text": "List projects."}],
+    }
+    assert "must-not-cross-targets" not in repr(request)
+
+
 @pytest.mark.asyncio
-async def test_gateway_builds_complete_ordered_stateless_replay_across_tool_rounds() -> (
+async def test_responses_codec_builds_complete_ordered_stateless_replay_across_tool_rounds() -> (
     None
 ):
     user = TextPart(text="Start.")
@@ -234,6 +264,7 @@ async def test_gateway_builds_complete_ordered_stateless_replay_across_tool_roun
     first_continuation = first_events[-1].continuation
     assert first_continuation is not None
     assert first_continuation.canonical_input_count == 1
+    assert first_continuation.matches_target(target)
 
     second_events = [
         event
@@ -249,6 +280,7 @@ async def test_gateway_builds_complete_ordered_stateless_replay_across_tool_roun
                     response_id=first_continuation.response_id,
                     output_items=first_continuation.opaque_output_items(),
                     canonical_input_count=3,
+                    target=first_continuation.target,
                 ),
             )
         )
@@ -256,6 +288,7 @@ async def test_gateway_builds_complete_ordered_stateless_replay_across_tool_roun
     second_continuation = second_events[-1].continuation
     assert second_continuation is not None
     assert second_continuation.canonical_input_count == 4
+    assert second_continuation.matches_target(target)
 
     final_request = ResponsesCodec().encode_request(
         ModelInvocation(
@@ -277,6 +310,7 @@ async def test_gateway_builds_complete_ordered_stateless_replay_across_tool_roun
                 response_id=second_continuation.response_id,
                 output_items=second_continuation.opaque_output_items(),
                 canonical_input_count=6,
+                target=second_continuation.target,
             ),
         )
     )

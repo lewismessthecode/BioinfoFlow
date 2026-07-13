@@ -36,6 +36,7 @@ from app.services.agent_core.tools.toolsets import (
 )
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
 from app.services.agent_core.transcript.messages import (
+    RESPONSES_CONTINUATION_METADATA_KEY,
     latest_responses_continuation,
     metadata_with_responses_continuation,
 )
@@ -173,10 +174,9 @@ class AgentLoopController:
                 )
             turn = await self._renew_turn_lease(turn)
 
-            continuation = (
-                await self._responses_continuation_for_turn(turn)
-                if target.wire_protocol == "responses"
-                else None
+            continuation = await self._responses_continuation_for_turn(
+                turn,
+                target=target,
             )
             model_context = await self.context.model_context(
                 agent_session=agent_session,
@@ -346,6 +346,9 @@ class AgentLoopController:
                             },
                             streamed.continuation.advance_canonical_input_count(1),
                         ),
+                        replace_turn_metadata_key=(
+                            RESPONSES_CONTINUATION_METADATA_KEY
+                        ),
                     )
                 if empty_response_retries_remaining > 0:
                     empty_response_retries_remaining -= 1
@@ -382,6 +385,11 @@ class AgentLoopController:
                 role="assistant",
                 parts=parts,
                 metadata={"provider": target.provider_kind, "model": target.model_name},
+                replace_turn_metadata_key=(
+                    RESPONSES_CONTINUATION_METADATA_KEY
+                    if target.wire_protocol == "responses"
+                    else None
+                ),
             )
             return LoopResult(
                 termination_reason="assistant_final",
@@ -589,6 +597,11 @@ class AgentLoopController:
                 {"provider": provider, "model": model, "kind": "tool_calls"},
                 continuation,
             ),
+            replace_turn_metadata_key=(
+                RESPONSES_CONTINUATION_METADATA_KEY
+                if continuation is not None
+                else None
+            ),
         )
 
     async def _append_tool_result(
@@ -600,7 +613,6 @@ class AgentLoopController:
         tool_call_id: str | None,
         result,
     ) -> None:
-        continuation = await self._responses_continuation_for_turn(turn)
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
@@ -619,24 +631,35 @@ class AgentLoopController:
                     )
                 )
             ],
-            metadata=metadata_with_responses_continuation(
-                {
-                    "tool_call_id": tool_call_id,
-                    "tool": tool_name,
-                    "is_error": bool(result.error) or result.status != "completed",
-                },
-                continuation,
-            ),
+            metadata={
+                "tool_call_id": tool_call_id,
+                "tool": tool_name,
+                "is_error": bool(result.error) or result.status != "completed",
+            },
         )
 
     async def _responses_continuation_for_turn(
         self,
         turn,
+        *,
+        target: ModelTarget,
     ) -> ResponsesContinuation | None:
-        return latest_responses_continuation(
+        continuation = latest_responses_continuation(
             await self.transcript.list_messages(str(turn.session_id)),
             turn_id=str(turn.id),
         )
+        if (
+            continuation is not None
+            and target.wire_protocol == "responses"
+            and continuation.matches_target(target)
+        ):
+            return continuation
+        if continuation is not None:
+            await self.transcript.clear_turn_metadata(
+                turn_id=str(turn.id),
+                metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+            )
+        return None
 
     async def _execute_tool_call_isolated(self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str):
         bind = self.db.bind
