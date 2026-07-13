@@ -96,19 +96,15 @@ def _safe_stream(
     policy_client: PublicNetworkHTTPHandler | None = None,
 ) -> AsyncIterator[Any]:
     async def iterate() -> AsyncIterator[Any]:
-        yielded = False
         try:
             async for item in response:
-                yielded = True
                 yield item
-        except ModelError as exc:
-            if yielded and exc.replay_safe:
-                raise _copy_model_error(exc, replay_safe=False) from None
+        except ModelError:
             raise
         except Exception as exc:
             raise _provider_error(
                 exc,
-                replay_safe=not yielded,
+                replay_safe=True,
                 sensitive_values=sensitive_values,
             ) from None
         finally:
@@ -269,17 +265,3 @@ def _sensitive_values(request: Mapping[str, Any]) -> tuple[str, ...]:
         if isinstance(value, str) and value:
             values.append(value)
     return tuple(values)
-
-
-def _copy_model_error(exc: ModelError, *, replay_safe: bool) -> ModelError:
-    return ModelError(
-        category=exc.category,
-        message=exc.message,
-        http_status=exc.http_status,
-        provider_code=exc.provider_code,
-        retryable=exc.retryable,
-        replay_safe=replay_safe,
-        retry_after_seconds=exc.retry_after_seconds,
-        request_id=exc.request_id,
-        cause=exc.cause,
-    )

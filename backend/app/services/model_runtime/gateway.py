@@ -10,9 +10,13 @@ from app.services.model_runtime.codecs.responses import ResponsesCodec
 from app.services.model_runtime.contracts import (
     ModelEvent,
     ModelInvocation,
+    ReasoningDelta,
     ResponseStarted,
+    TextDelta,
+    ToolCallDelta,
     WireProtocol,
 )
+from app.services.model_runtime.errors import ModelError
 
 
 class ModelGateway:
@@ -59,10 +63,36 @@ class ModelGateway:
             network_access=invocation.target.network_access,
         )
         yield ResponseStarted(streaming=hasattr(raw_response, "__aiter__"))
-        async for event in codec.decode_response(raw_response):
-            finalize_event = getattr(codec, "finalize_event", None)
-            yield (
-                finalize_event(invocation, request, event)
-                if callable(finalize_event)
-                else event
-            )
+        semantic_output_emitted = False
+        try:
+            async for event in codec.decode_response(raw_response):
+                finalize_event = getattr(codec, "finalize_event", None)
+                finalized_event = (
+                    finalize_event(invocation, request, event)
+                    if callable(finalize_event)
+                    else event
+                )
+                if isinstance(
+                    finalized_event,
+                    (TextDelta, ReasoningDelta, ToolCallDelta),
+                ):
+                    semantic_output_emitted = True
+                yield finalized_event
+        except ModelError as exc:
+            if semantic_output_emitted and exc.replay_safe:
+                raise _copy_model_error(exc, replay_safe=False) from None
+            raise
+
+
+def _copy_model_error(exc: ModelError, *, replay_safe: bool) -> ModelError:
+    return ModelError(
+        category=exc.category,
+        message=exc.message,
+        http_status=exc.http_status,
+        provider_code=exc.provider_code,
+        retryable=exc.retryable,
+        replay_safe=replay_safe,
+        retry_after_seconds=exc.retry_after_seconds,
+        request_id=exc.request_id,
+        cause=exc.cause,
+    )

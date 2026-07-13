@@ -22,7 +22,10 @@ from app.services.model_runtime.backend.litellm_network import (
 from app.services.model_runtime.contracts import (
     ModelInvocation,
     ModelTarget,
+    ReasoningDelta,
     ResponseStarted,
+    TextDelta,
+    ToolCallDelta,
 )
 from app.services.model_runtime.errors import ModelError
 from app.services.model_runtime.gateway import ModelGateway
@@ -389,6 +392,121 @@ async def test_gateway_dispatches_chat_through_registered_codec_and_backend():
 
 
 @pytest.mark.asyncio
+async def test_responses_stream_failure_after_nonsemantic_chunk_is_replayable():
+    provider_error = RuntimeError("responses stream disconnected")
+
+    async def provider_stream() -> AsyncIterator[dict[str, Any]]:
+        yield {
+            "type": "response.created",
+            "response": {"id": "resp-created", "status": "in_progress"},
+        }
+        raise provider_error
+
+    async def fake_aresponses(**kwargs: Any) -> object:
+        del kwargs
+        return provider_stream()
+
+    invocation = ModelInvocation(
+        target=ModelTarget(
+            endpoint_id="endpoint-1",
+            provider_kind="openai",
+            model_name="gpt-test",
+            wire_protocol="responses",
+            api_key="secret-value",
+        ),
+        instructions="",
+        input_items=(),
+        tools=(),
+        stream=True,
+        max_output_tokens=128,
+    )
+    gateway = ModelGateway(
+        backend=LiteLLMBackend(aresponses_fn=fake_aresponses),
+    )
+    events = gateway.invoke(invocation)
+
+    assert await anext(events) == ResponseStarted(streaming=True)
+    with pytest.raises(ModelError) as caught:
+        await anext(events)
+
+    assert caught.value.category == "provider"
+    assert caught.value.cause is provider_error
+    assert caught.value.replay_safe is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("semantic_chunk", "event_type"),
+    [
+        (
+            {"type": "response.output_text.delta", "delta": "visible"},
+            TextDelta,
+        ),
+        (
+            {
+                "type": "response.reasoning_summary_text.delta",
+                "delta": "thinking",
+            },
+            ReasoningDelta,
+        ),
+        (
+            {
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {
+                    "type": "function_call",
+                    "id": "fc-1",
+                    "call_id": "call-1",
+                    "name": "lookup",
+                    "arguments": "",
+                },
+            },
+            ToolCallDelta,
+        ),
+    ],
+)
+async def test_responses_stream_failure_after_semantic_output_is_not_replayable(
+    semantic_chunk: dict[str, Any],
+    event_type: type[object],
+) -> None:
+    async def provider_stream() -> AsyncIterator[dict[str, Any]]:
+        yield {
+            "type": "response.created",
+            "response": {"id": "resp-created", "status": "in_progress"},
+        }
+        yield semantic_chunk
+        raise RuntimeError("responses stream disconnected")
+
+    async def fake_aresponses(**kwargs: Any) -> object:
+        del kwargs
+        return provider_stream()
+
+    invocation = ModelInvocation(
+        target=ModelTarget(
+            endpoint_id="endpoint-1",
+            provider_kind="openai",
+            model_name="gpt-test",
+            wire_protocol="responses",
+        ),
+        instructions="",
+        input_items=(),
+        tools=(),
+        stream=True,
+        max_output_tokens=128,
+    )
+    events = ModelGateway(
+        backend=LiteLLMBackend(aresponses_fn=fake_aresponses),
+    ).invoke(invocation)
+
+    assert await anext(events) == ResponseStarted(streaming=True)
+    assert isinstance(await anext(events), event_type)
+    with pytest.raises(ModelError) as caught:
+        await anext(events)
+
+    assert caught.value.replay_safe is False
+
+
+@pytest.mark.asyncio
 async def test_backend_redacts_credentials_from_normalized_errors_and_repr():
     secret = "sentinel-secret-never-expose"
 
@@ -565,7 +683,7 @@ async def test_client_provider_errors_are_safe_and_nonretryable(
 async def test_stream_failure_after_event_is_safe_and_not_replayable(caplog):
     secret = "sentinel-stream-secret-never-render"
     provider_error = RuntimeError(f"stream failed with api_key={secret}")
-    first_event = object()
+    first_event = TextDelta(text="visible output")
 
     async def provider_stream() -> AsyncIterator[object]:
         yield first_event
@@ -620,7 +738,7 @@ async def test_stream_failure_after_event_is_safe_and_not_replayable(caplog):
 
 
 @pytest.mark.asyncio
-async def test_model_error_after_stream_event_is_forced_nonreplayable() -> None:
+async def test_backend_preserves_model_error_replay_safety_before_codec_boundary() -> None:
     first_event = object()
 
     async def provider_stream() -> AsyncIterator[object]:
@@ -647,7 +765,7 @@ async def test_model_error_after_stream_event_is_forced_nonreplayable() -> None:
 
     assert caught.value.category == "timeout"
     assert caught.value.retryable is True
-    assert caught.value.replay_safe is False
+    assert caught.value.replay_safe is True
 
 
 def test_gateway_rejects_duplicate_protocol_registration():
