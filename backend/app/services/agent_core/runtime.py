@@ -373,6 +373,15 @@ class AgentCoreRuntime:
         controller = AgentLoopController(self.turn_repo.session)
         attempts = [resolved, *await self._resolve_fallback_candidates(turn=turn, session=session, resolved=resolved)]
         next_resume_action_id = resume_action_id
+        continuation_batch_id: str | None = None
+        if resume_action_id is not None:
+            from app.repositories.agent_core_repo import AgentActionRepository
+
+            resume_action = await AgentActionRepository(self.turn_repo.session).get(
+                resume_action_id
+            )
+            if resume_action is not None and resume_action.tool_batch_id:
+                continuation_batch_id = str(resume_action.tool_batch_id)
         for attempt_index, candidate in enumerate(attempts):
             fresh_turn = await self.turn_repo.get(str(turn.id))
             if fresh_turn is not None:
@@ -428,9 +437,12 @@ class AgentCoreRuntime:
                     strategy=runtime_strategy,
                     request_args=candidate["request_args"],
                     max_tokens=runtime_strategy.max_tokens,
+                    continuation_batch_id=continuation_batch_id,
                 )
             if not should_try_fallback(result) or attempt_index == len(attempts) - 1:
                 return result
+            if result.continuation_batch_id is not None:
+                continuation_batch_id = result.continuation_batch_id
         raise RuntimeError("Agent runtime exhausted model attempts without returning a result.")
 
     async def _persist_model_resolution(

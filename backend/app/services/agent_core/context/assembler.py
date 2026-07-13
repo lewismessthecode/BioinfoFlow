@@ -118,14 +118,17 @@ class AgentContextAssembler:
                 continue
             expected = [str(call["id"]) for call in tool_calls if call.get("id")]
             cursor = index + 1
-            seen: set[str] = set()
+            group_messages = []
+            seen: list[str] = []
             while cursor < len(messages) and messages[cursor].role == "tool":
-                metadata = messages[cursor].message_metadata or {}
-                if metadata.get("tool_call_id"):
-                    seen.add(str(metadata["tool_call_id"]))
+                if messages[cursor].status == "committed":
+                    group_messages.append(messages[cursor])
+                    metadata = messages[cursor].message_metadata or {}
+                    if metadata.get("tool_call_id"):
+                        seen.append(str(metadata["tool_call_id"]))
                 cursor += 1
             missing = [tool_call_id for tool_call_id in expected if tool_call_id not in seen]
-            if missing:
+            if missing or seen != expected:
                 turn_actions = await AgentActionRepository(self.db).list_for_turn(turn_id)
                 unresolved_ids = {
                     str(action.tool_call_id)
@@ -141,27 +144,60 @@ class AgentContextAssembler:
                 if any(tool_call_id in unresolved_ids for tool_call_id in missing):
                     index = cursor
                     continue
-                for tool_call_id in missing:
-                    await self.transcript.append_text(
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        role="tool",
-                        text=json.dumps(
+                existing_by_id = {
+                    str((item.message_metadata or {}).get("tool_call_id")): item
+                    for item in group_messages
+                }
+                insert_at = message.ordering_index + 1
+                await self.transcript.messages.shift_ordering_indices(
+                    session_id,
+                    starting_at=insert_at,
+                    delta=len(expected),
+                )
+                for offset, tool_call_id in enumerate(expected):
+                    existing = existing_by_id.get(tool_call_id)
+                    if existing is not None:
+                        parts = existing.content_parts or []
+                        metadata = {
+                            **(existing.message_metadata or {}),
+                            "transcript_repair": True,
+                            "assistant_message_id": str(message.id),
+                            "original_message_id": str(existing.id),
+                        }
+                    else:
+                        parts = [
                             {
-                                "status": "failed",
-                                "error": {
-                                    "type": "TranscriptRepair",
-                                    "message": "Missing durable tool result was repaired.",
-                                },
-                            },
-                            separators=(",", ":"),
-                        ),
-                        metadata={
+                                "type": "text",
+                                "text": json.dumps(
+                                    {
+                                        "status": "failed",
+                                        "error": {
+                                            "type": "TranscriptRepair",
+                                            "message": (
+                                                "Missing durable tool result was repaired."
+                                            ),
+                                        },
+                                    },
+                                    separators=(",", ":"),
+                                ),
+                            }
+                        ]
+                        metadata = {
                             "tool_call_id": tool_call_id,
                             "transcript_repair": True,
                             "assistant_message_id": str(message.id),
-                        },
+                        }
+                    await self.transcript.append_parts(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        role="tool",
+                        parts=parts,
+                        metadata=metadata,
+                        ordering_index=insert_at + offset,
                     )
+                await self.transcript.messages.mark_superseded(
+                    [str(item.id) for item in group_messages]
+                )
                 await AgentEventLedger(self.db).append(
                     session_id=session_id,
                     turn_id=turn_id,
@@ -173,9 +209,8 @@ class AgentContextAssembler:
                     visibility="audit",
                 )
                 messages = await self.transcript.list_messages(session_id)
-                cursor = index + 1
-                while cursor < len(messages) and messages[cursor].role == "tool":
-                    cursor += 1
+                index = 0
+                continue
             index = cursor
     async def _compact_if_needed(self, *, agent_session, turn) -> None:
         policy = getattr(agent_session, "compression_state", None) or {}

@@ -105,10 +105,23 @@ class AgentLoopController:
         repeated_tool_call_count = 0
         empty_response_retries_remaining = 1
         active_continuation_batch_id = continuation_batch_id
+        if active_continuation_batch_id is not None:
+            batch = await self.tool_batches.batches.get_fresh(
+                active_continuation_batch_id
+            )
+            if batch is not None and batch.status == "ready":
+                if not await self.tool_batches.claim_continuation(
+                    active_continuation_batch_id
+                ):
+                    active_continuation_batch_id = None
 
         while budget.consume():
             turn = await self.turns.get(turn_id)
             if turn is None:
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.release_continuation(
+                        active_continuation_batch_id
+                    )
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -117,6 +130,10 @@ class AgentLoopController:
                     error_message="Agent turn could not be loaded.",
                 )
             if turn.status == AgentTurnStatus.CANCELLED or is_interrupt_requested(turn):
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.release_continuation(
+                        active_continuation_batch_id
+                    )
                 return LoopResult(
                     termination_reason=_cancellation_reason(turn),
                     final_text=None,
@@ -164,6 +181,10 @@ class AgentLoopController:
                     iteration_count=budget.used_iterations,
                 )
             except asyncio.CancelledError:
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.release_continuation(
+                        active_continuation_batch_id
+                    )
                 return LoopResult(
                     termination_reason=_cancellation_reason(turn),
                     final_text=None,
@@ -171,6 +192,11 @@ class AgentLoopController:
                     token_usage=token_usage,
                 )
             except Exception as exc:
+                released_batch_id = active_continuation_batch_id
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.release_continuation(
+                        active_continuation_batch_id
+                    )
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -178,6 +204,7 @@ class AgentLoopController:
                     error_code="model_request_failed",
                     error_message=str(exc),
                     token_usage=token_usage,
+                    continuation_batch_id=released_batch_id,
                 )
 
             message_id = f"assistant:{turn.id}:{budget.used_iterations}"
@@ -217,6 +244,7 @@ class AgentLoopController:
                     tool_calls=tool_calls,
                     text=streamed.text or None,
                 )
+                released_batch_id = active_continuation_batch_id
                 if active_continuation_batch_id is not None:
                     await self.tool_batches.mark_terminal(active_continuation_batch_id)
                     active_continuation_batch_id = None
@@ -229,6 +257,10 @@ class AgentLoopController:
                     )
                     )
                 except asyncio.CancelledError:
+                    if active_continuation_batch_id is not None:
+                        await self.tool_batches.release_continuation(
+                            active_continuation_batch_id
+                        )
                     return LoopResult(
                         termination_reason=_cancellation_reason(turn),
                         final_text=None,
@@ -274,6 +306,10 @@ class AgentLoopController:
                             "iteration_count": budget.used_iterations,
                         },
                     )
+                    if active_continuation_batch_id is not None:
+                        await self.tool_batches.release_continuation(
+                            active_continuation_batch_id
+                        )
                     return LoopResult(
                         termination_reason="no_progress",
                         final_text=None,
@@ -303,6 +339,10 @@ class AgentLoopController:
                         },
                     )
                     continue
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.release_continuation(
+                        active_continuation_batch_id
+                    )
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -310,6 +350,7 @@ class AgentLoopController:
                     token_usage=token_usage,
                     error_code="empty_model_response",
                     error_message="The selected model completed without returning visible text.",
+                    continuation_batch_id=released_batch_id,
                 )
             await self.transcript.append_parts(
                 session_id=str(agent_session.id),
@@ -328,6 +369,8 @@ class AgentLoopController:
                 token_usage=token_usage,
             )
 
+        if active_continuation_batch_id is not None:
+            await self.tool_batches.release_continuation(active_continuation_batch_id)
         return LoopResult(
             termination_reason="budget_exhausted",
             final_text=None,

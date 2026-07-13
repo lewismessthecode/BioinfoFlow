@@ -411,9 +411,71 @@ async def test_provider_messages_repair_and_audit_incomplete_tool_call_group(db_
         for message in stored
         if (message.message_metadata or {}).get("transcript_repair") is True
     ]
-    assert len(repairs) == 1
+    assert len(repairs) == 2
     events = await service.event_repo.list_for_turn(turn_id=str(turn.id))
     assert any(event.type == "transcript.tool_group_repaired" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_transcript_repair_rebuilds_group_before_later_messages(db_session):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Repair in place.",
+    )
+    transcript = AgentTranscriptStore(db_session)
+    await transcript.append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[
+            tool_calls_part(
+                [
+                    {"id": "old-1", "type": "function", "function": {"name": "x", "arguments": "{}"}},
+                    {"id": "old-2", "type": "function", "function": {"name": "x", "arguments": "{}"}},
+                ]
+            )
+        ],
+    )
+    await transcript.append_text(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="tool",
+        text="old first",
+        metadata={"tool_call_id": "old-1", "tool_batch_id": "old-batch", "action_id": "old-action-1"},
+    )
+    await transcript.append_text(
+        session_id=str(session.id), turn_id=str(turn.id), role="user", text="later user"
+    )
+    await transcript.append_text(
+        session_id=str(session.id), turn_id=str(turn.id), role="assistant", text="later assistant"
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+    relevant = [message for message in messages if message["role"] != "system"]
+
+    tool_group_index = next(i for i, message in enumerate(relevant) if message.get("tool_calls"))
+    assert [message["role"] for message in relevant[tool_group_index : tool_group_index + 5]] == [
+        "assistant",
+        "tool",
+        "tool",
+        "user",
+        "assistant",
+    ]
+    assert [
+        message["tool_call_id"]
+        for message in relevant[tool_group_index + 1 : tool_group_index + 3]
+    ] == ["old-1", "old-2"]
+    assert relevant[tool_group_index + 3]["content"] == "later user"
 
 
 @pytest.mark.asyncio
@@ -781,7 +843,7 @@ async def test_batch_stays_continuing_until_next_model_message_is_persisted(
 
 
 @pytest.mark.asyncio
-async def test_model_failure_leaves_continuing_batch_recoverable(db_session, monkeypatch):
+async def test_model_failure_releases_and_retries_continuing_batch(db_session, monkeypatch):
     calls = 0
 
     async def fake_completion(*args, **kwargs):
@@ -809,7 +871,28 @@ async def test_model_failure_leaves_continuing_batch_recoverable(db_session, mon
 
     assert failed.status == "failed"
     batches, _ = await AgentToolCallBatchRepository(db_session).list(limit=10)
-    assert batches[0].status == AgentToolCallBatchStatus.CONTINUING
+    assert batches[0].status == AgentToolCallBatchStatus.READY
+
+    async def recovered_completion(*args, **kwargs):
+        del args, kwargs
+        return _response(text="recovered continuation")
+
+    monkeypatch.setattr(
+        "app.services.agent_core.core.loop.acompletion", recovered_completion
+    )
+    from app.services.agent_core.core.loop import AgentLoopController
+
+    recovered = await AgentLoopController(db_session).run_turn(
+        turn_id=str(turn.id),
+        provider="openai_compatible",
+        model="batch-model",
+        request_args={},
+        continuation_batch_id=str(batches[0].id),
+    )
+
+    assert recovered.final_text == "recovered continuation"
+    recovered_batch = await AgentToolCallBatchRepository(db_session).get(str(batches[0].id))
+    assert recovered_batch.status == AgentToolCallBatchStatus.TERMINAL
 
 
 @pytest.mark.asyncio
@@ -979,3 +1062,57 @@ async def test_restart_repairs_partially_prepared_evaluating_batch(db_session, m
     assert repaired[1].status == AgentActionStatus.FAILED
     assert repaired[1].error["type"] == "BatchPreparationError"
     assert wakeups == [str(repaired[1].id)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("statuses", "expected"),
+    [
+        ([AgentActionStatus.RUNNING, AgentActionStatus.WAITING_DECISION], "failed"),
+        ([AgentActionStatus.RUNNING, AgentActionStatus.REQUESTED], "failed"),
+        ([AgentActionStatus.WAITING_DECISION, AgentActionStatus.REQUESTED], "waiting"),
+    ],
+)
+async def test_mixed_batch_recovery_uses_running_waiting_requested_priority(
+    db_session,
+    monkeypatch,
+    statuses,
+    expected,
+):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Recover mixed states.",
+    )
+    await service.turn_repo.update_all(turn, status="waiting_approval")
+    batch = await AgentToolCallBatchRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        status=AgentToolCallBatchStatus.WAITING,
+        tool_call_count=2,
+    )
+    for ordinal, status in enumerate(statuses):
+        await AgentActionRepository(db_session).create(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            tool_batch_id=str(batch.id),
+            tool_call_ordinal=ordinal,
+            tool_call_id=f"mixed-{ordinal}",
+            kind="tool",
+            name="bash",
+            input={},
+            risk_level="act_high",
+            status=status,
+        )
+    from app.services.agent_core import service as service_module
+
+    monkeypatch.setattr(service_module, "enqueue_turn_resume", lambda *_: None)
+    outcome = await service._recover_turn(str(turn.id))
+
+    assert outcome == expected

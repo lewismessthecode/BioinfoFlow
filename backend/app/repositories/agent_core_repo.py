@@ -271,6 +271,15 @@ class AgentActionRepository(BaseRepository[AgentAction]):
 class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
     model = AgentToolCallBatch
 
+    async def get_fresh(self, batch_id: str) -> AgentToolCallBatch | None:
+        stmt = (
+            select(self.model)
+            .where(self.model.id == batch_id)
+            .execution_options(populate_existing=True)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def continuation_state(self, batch_id: str) -> str:
         batch = await self.get(batch_id)
         if batch is None:
@@ -321,6 +330,21 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
         claimed = result.scalar_one_or_none() is not None
         await self.session.commit()
         return claimed
+
+    async def release_continuing(self, batch_id: str) -> bool:
+        stmt = (
+            update(self.model)
+            .where(
+                self.model.id == batch_id,
+                self.model.status == "continuing",
+            )
+            .values(status="ready", continuation_claimed_at=None)
+            .returning(self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        released = result.scalar_one_or_none() is not None
+        await self.session.commit()
+        return released
 
 
 class AgentArtifactRepository(BaseRepository[AgentArtifact]):

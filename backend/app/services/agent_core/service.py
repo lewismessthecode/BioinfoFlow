@@ -669,6 +669,80 @@ class AgentCoreService:
                     batch_actions = await self.action_repo.list_for_batch(
                         str(latest_batch.id)
                     )
+            batch_statuses = {action.status for action in batch_actions}
+            if AgentActionStatus.RUNNING in batch_statuses:
+                await self._cancel_open_actions(turn_id, cancelled_at=now)
+                await self.turn_repo.update_all(
+                    turn,
+                    status=AgentTurnStatus.FAILED,
+                    termination_reason="model_failed",
+                    error_code="recovery_inflight_action",
+                    error_message=(
+                        "Agent process stopped while a tool action in the batch was running."
+                    ),
+                    completed_at=now,
+                    claimed_at=None,
+                    lease_until=None,
+                    loop_state={"termination_reason": "model_failed", "recovered": True},
+                )
+                await self.ledger.append(
+                    session_id=str(turn.session_id),
+                    turn_id=str(turn.id),
+                    type=AgentEventType.TURN_RECOVERY_FAILED,
+                    payload={
+                        "error_code": "recovery_inflight_action",
+                        "tool_batch_id": str(latest_batch.id),
+                    },
+                )
+                return "failed"
+            if AgentActionStatus.WAITING_DECISION in batch_statuses:
+                await self.turn_repo.update_all(
+                    turn,
+                    status=AgentTurnStatus.WAITING_APPROVAL,
+                    claimed_at=None,
+                    lease_until=None,
+                    completed_at=None,
+                    loop_state={
+                        "state": "waiting_approval",
+                        "recovered": True,
+                        "tool_batch_id": str(latest_batch.id),
+                    },
+                )
+                return "waiting"
+            if AgentActionStatus.REQUESTED in batch_statuses:
+                requested_action = next(
+                    action
+                    for action in batch_actions
+                    if action.status == AgentActionStatus.REQUESTED
+                )
+                await self.turn_repo.update_all(
+                    turn,
+                    status=AgentTurnStatus.RUNNING,
+                    completed_at=None,
+                    error_code=None,
+                    error_message=None,
+                    claimed_at=None,
+                    lease_until=None,
+                    loop_state={
+                        "state": "running",
+                        "recovered": True,
+                        "tool_batch_id": str(latest_batch.id),
+                    },
+                )
+                await self.ledger.append(
+                    session_id=str(turn.session_id),
+                    turn_id=str(turn.id),
+                    type=AgentEventType.TURN_RECOVERY_ENQUEUED,
+                    payload={
+                        "mode": "batch_resume",
+                        "action_id": str(requested_action.id),
+                        "tool_batch_id": str(latest_batch.id),
+                    },
+                )
+                enqueue_turn_resume(
+                    str(requested_action.id), str(turn.id), str(turn.session_id)
+                )
+                return "enqueued"
             if batch_state == "ready" and batch_actions:
                 if latest_batch.status == "continuing":
                     latest_batch = await self.tool_batch_repo.update_all(

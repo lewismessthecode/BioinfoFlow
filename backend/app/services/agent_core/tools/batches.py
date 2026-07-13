@@ -54,6 +54,9 @@ class ToolCallBatchCoordinator:
                 completed_at=datetime.now(timezone.utc),
             )
 
+    async def release_continuation(self, batch_id: str) -> bool:
+        return await self.batches.release_continuing(batch_id)
+
     async def repair_preparation_failure(
         self,
         *,
