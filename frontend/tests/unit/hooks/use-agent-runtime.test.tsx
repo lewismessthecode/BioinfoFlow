@@ -794,12 +794,18 @@ describe("useAgentRuntime", () => {
 
   it("captures an authoritative rollback snapshot before the initial loading effects settle", async () => {
     const sessionList = deferred<AgentRuntimeSession[]>()
+    const stateRequest = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
     const permissionRequest = deferred<AgentRuntimeSession>()
     window.localStorage.setItem(
       "bioinfoflow.agentRuntime.permissionMode:v2",
       "guarded_auto",
     )
     mocks.listAgentRuntimeSessions.mockReturnValue(sessionList.promise)
+    mocks.getAgentRuntimeState.mockReturnValue(stateRequest.promise)
     mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(
       permissionRequest.promise,
     )
@@ -811,16 +817,25 @@ describe("useAgentRuntime", () => {
       }),
     )
 
-    await waitFor(() => expect(result.current.state.session?.id).toBe("session-1"))
+    expect(result.current.session).toBeNull()
     let update!: Promise<AgentRuntimeSession | null>
     act(() => {
       update = result.current.setPermissionMode("bypass")
     })
 
-    expect(result.current.session?.permission_mode).toBe("bypass")
-    expect(result.current.sessions).toContainEqual(
-      expect.objectContaining({ id: "session-1", permission_mode: "bypass" }),
-    )
+    expect(result.current.permissionMode).toBe("bypass")
+    expect(result.current.permissionUpdate.status).toBe("pending")
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    await act(async () => {
+      stateRequest.resolve({ session, turns: [], events: [] })
+      await stateRequest.promise
+    })
+
+    expect(result.current.session).toMatchObject({
+      id: "session-1",
+      permission_mode: "bypass",
+    })
 
     await act(async () => {
       permissionRequest.reject(new Error("Permission service unavailable"))

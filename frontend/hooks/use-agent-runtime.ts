@@ -164,6 +164,9 @@ export function useAgentRuntime(
     dispatch({ type: "loading" })
     try {
       const nextSessions = await listAgentRuntimeSessions(projectId)
+      for (const session of nextSessions) {
+        rememberConfirmedSession(confirmedSessionsRef.current, session)
+      }
       updateSessions((current) =>
         applyPendingPermissionIntent(
           mergeFetchedSessions(current, nextSessions),
@@ -246,6 +249,7 @@ export function useAgentRuntime(
         sessionId,
         limited: false,
       })
+      rememberConfirmedSession(confirmedSessionsRef.current, payload.session)
       const pendingIntent = pendingPermissionIntentRef.current
       const loadedSession = sessionWithPendingPermissionIntent(
         payload.session,
@@ -730,6 +734,16 @@ function newestPolicySnapshot(
   if (!first) return second ?? null
   if (!second) return first
   return sessionPolicyVersion(second) >= sessionPolicyVersion(first) ? second : first
+}
+
+function rememberConfirmedSession(
+  confirmedSessions: Map<string, AgentRuntimeSession>,
+  session: AgentRuntimeSession,
+) {
+  const confirmed = confirmedSessions.get(session.id)
+  if (isSessionPolicyNewerOrEqual(session, confirmed)) {
+    confirmedSessions.set(session.id, session)
+  }
 }
 
 function applyPendingPermissionIntent(
