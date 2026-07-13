@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 import json
 import sys
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agent_core import AgentActionStatus, AgentTurnStatus
 from app.models.llm import (
@@ -20,10 +22,14 @@ from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentEventRepository,
     AgentMessageRepository,
+    AgentTurnRepository,
 )
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.core.loop import AgentLoopController
-from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, RuntimeStrategy
+from app.services.agent_core.core.runtime_strategy import (
+    RuntimeCapabilities,
+    RuntimeStrategy,
+)
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools.executor import ToolExecutionResult
@@ -87,6 +93,33 @@ class PartialFailureGateway:
             retryable=True,
             replay_safe=False,
         )
+
+
+def _synchronize_two_resume_turn_reads(monkeypatch, *, turn_id: str) -> None:
+    original_get = AgentTurnRepository.get
+    both_workers_loaded = asyncio.Event()
+    load_lock = asyncio.Lock()
+    loaded_repositories: set[int] = set()
+
+    async def synchronized_get(repo, item_id):
+        turn = await original_get(repo, item_id)
+        repo_id = id(repo)
+        if (
+            item_id == turn_id
+            and turn is not None
+            and turn.status
+            in {AgentTurnStatus.WAITING_APPROVAL, AgentTurnStatus.RUNNING}
+            and repo_id not in loaded_repositories
+            and not both_workers_loaded.is_set()
+        ):
+            async with load_lock:
+                loaded_repositories.add(repo_id)
+                if len(loaded_repositories) == 2:
+                    both_workers_loaded.set()
+            await asyncio.wait_for(both_workers_loaded.wait(), timeout=2)
+        return turn
+
+    monkeypatch.setattr(AgentTurnRepository, "get", synchronized_get)
 
 
 async def _turn(
@@ -492,7 +525,9 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
     assert invocation.instructions
     assert invocation.input_items == (TextPart(text="Summarize this workflow."),)
 
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     assert [message.role for message in messages] == ["user", "assistant"]
 
 
@@ -572,7 +607,9 @@ async def test_responses_commentary_does_not_complete_without_final_answer(
     assert gateway.invocations[1].continuation is not None
     assert gateway.invocations[1].continuation.response_id == "resp-commentary"
     assert gateway.invocations[1].continuation.canonical_input_count == 2
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     assert [message.role for message in messages] == ["user", "assistant", "assistant"]
     assert messages[1].content_parts == [
         {"type": "text", "text": "Still checking.", "phase": "commentary"}
@@ -580,7 +617,9 @@ async def test_responses_commentary_does_not_complete_without_final_answer(
 
 
 @pytest.mark.asyncio
-async def test_non_stream_turn_emits_completed_event_without_text_delta(db_session) -> None:
+async def test_non_stream_turn_emits_completed_event_without_text_delta(
+    db_session,
+) -> None:
     _session, turn = await _turn(db_session, input_text="Reply without streaming.")
     gateway = FakeModelGateway(
         (
@@ -595,7 +634,9 @@ async def test_non_stream_turn_emits_completed_event_without_text_delta(db_sessi
         turn_id=str(turn.id),
         target=_target(),
         capabilities=RuntimeCapabilities(supports_streaming=True, supports_tools=False),
-        strategy=RuntimeStrategy(use_streaming=True, allow_tools=False, allow_thinking=True),
+        strategy=RuntimeStrategy(
+            use_streaming=True, allow_tools=False, allow_thinking=True
+        ),
     )
 
     assert result.termination_reason == "assistant_final"
@@ -609,7 +650,9 @@ async def test_non_stream_turn_emits_completed_event_without_text_delta(db_sessi
 
 @pytest.mark.asyncio
 async def test_tool_call_result_continues_through_gateway(db_session) -> None:
-    _session, turn = await _turn(db_session, input_text="List projects, then summarize.")
+    _session, turn = await _turn(
+        db_session, input_text="List projects, then summarize."
+    )
     gateway = FakeModelGateway(
         (
             ToolCallDelta(
@@ -648,8 +691,12 @@ async def test_tool_call_result_continues_through_gateway(db_session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_failed_tool_result_round_trips_with_error_flag(db_session, monkeypatch) -> None:
-    _session, turn = await _turn(db_session, input_text="Run a command and report failure.")
+async def test_failed_tool_result_round_trips_with_error_flag(
+    db_session, monkeypatch
+) -> None:
+    _session, turn = await _turn(
+        db_session, input_text="Run a command and report failure."
+    )
     gateway = FakeModelGateway(
         (
             ToolCallDelta(
@@ -658,11 +705,15 @@ async def test_failed_tool_result_round_trips_with_error_flag(db_session, monkey
                 name="bash",
                 arguments_delta="{}",
             ),
-            CompletionMetadata(response_id="chatcmpl-failed", finish_reason="tool_calls"),
+            CompletionMetadata(
+                response_id="chatcmpl-failed", finish_reason="tool_calls"
+            ),
         ),
         (
             TextDelta(text="The command failed."),
-            CompletionMetadata(response_id="chatcmpl-after-failure", finish_reason="stop"),
+            CompletionMetadata(
+                response_id="chatcmpl-after-failure", finish_reason="stop"
+            ),
         ),
     )
     controller = AgentLoopController(db_session, model_gateway=gateway)
@@ -710,7 +761,9 @@ async def test_approval_resume_survives_controller_restart(
                     }
                 ),
             ),
-            CompletionMetadata(response_id="chatcmpl-approval", finish_reason="tool_calls"),
+            CompletionMetadata(
+                response_id="chatcmpl-approval", finish_reason="tool_calls"
+            ),
         ),
         (
             TextDelta(text=f"Continued after {decision}."),
@@ -728,7 +781,9 @@ async def test_approval_resume_survives_controller_restart(
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
     assert len(actions) == 1
     service = AgentCoreService(db_session)
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     await service.decide_action(
         action_id=str(actions[0].id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -756,8 +811,15 @@ async def test_approval_resume_survives_controller_restart(
     else:
         assert "approved" in tool_result.output
         assert tool_result.is_error is False
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
-    assert [message.role for message in messages] == ["user", "assistant", "tool", "assistant"]
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
+    assert [message.role for message in messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
 
 
 @pytest.mark.asyncio
@@ -862,7 +924,9 @@ async def test_runtime_uses_semantic_fallback_through_same_gateway(db_session) -
     await db_session.commit()
     await db_session.refresh(profile)
     service = AgentCoreService(db_session)
-    await service.session_repo.update_all(session, default_model_profile_id=str(profile.id))
+    await service.session_repo.update_all(
+        session, default_model_profile_id=str(profile.id)
+    )
     gateway = FakeModelGateway(
         ModelError(
             category="invalid_request",
@@ -875,7 +939,9 @@ async def test_runtime_uses_semantic_fallback_through_same_gateway(db_session) -
         ),
     )
 
-    completed = await AgentCoreRuntime(db_session, model_gateway=gateway).run_turn(str(turn.id))
+    completed = await AgentCoreRuntime(db_session, model_gateway=gateway).run_turn(
+        str(turn.id)
+    )
 
     assert completed.status == "completed"
     assert completed.final_text == "Fallback completed."
@@ -890,7 +956,9 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
     db_session,
     monkeypatch,
 ) -> None:
-    session, turn = await _turn(db_session, input_text="Fallback, then request approval.")
+    session, turn = await _turn(
+        db_session, input_text="Fallback, then request approval."
+    )
     provider = LlmProvider(
         name="Approval fallback provider",
         kind="openai_compatible",
@@ -934,7 +1002,9 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
     await db_session.commit()
     await db_session.refresh(profile)
     service = AgentCoreService(db_session)
-    await service.session_repo.update_all(session, default_model_profile_id=str(profile.id))
+    await service.session_repo.update_all(
+        session, default_model_profile_id=str(profile.id)
+    )
     gateway = FakeModelGateway(
         ModelError(
             category="invalid_request",
@@ -960,15 +1030,21 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
         ),
         (
             TextDelta(text="Fallback resumed."),
-            CompletionMetadata(response_id="chatcmpl-fallback-resume", finish_reason="stop"),
+            CompletionMetadata(
+                response_id="chatcmpl-fallback-resume", finish_reason="stop"
+            ),
         ),
     )
 
-    waiting = await AgentCoreRuntime(db_session, model_gateway=gateway).run_turn(str(turn.id))
+    waiting = await AgentCoreRuntime(db_session, model_gateway=gateway).run_turn(
+        str(turn.id)
+    )
 
     assert waiting.status == "waiting_approval"
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     await service.decide_action(
         action_id=str(actions[0].id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -1195,12 +1271,17 @@ async def test_responses_approval_resume_survives_service_restart(
         "wire_protocol": "responses",
         "base_url": "https://responses.example/v1",
     }
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     assistant = next(message for message in messages if message.role == "assistant")
-    assert sum(
-        "_responses_continuation" in (message.message_metadata or {})
-        for message in messages
-    ) == 1
+    assert (
+        sum(
+            "_responses_continuation" in (message.message_metadata or {})
+            for message in messages
+        )
+        == 1
+    )
     assert all(
         "_responses_continuation" not in (message.message_metadata or {})
         for message in messages
@@ -1220,7 +1301,9 @@ async def test_responses_approval_resume_survives_service_restart(
 
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
     assert len(actions) == 1
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     await service.decide_action(
         action_id=str(actions[0].id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -1373,7 +1456,9 @@ async def test_responses_approval_resume_survives_service_restart(
     assert resumed_invocation.input_items[
         resumed_invocation.continuation.canonical_input_count :
     ] == (tool_result,)
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     assert all(message.status == "committed" for message in messages)
     assert all(
         opaque_secret
@@ -1525,7 +1610,9 @@ async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
     actions_by_call_id = {action.tool_call_id: action for action in actions}
     first_action = actions_by_call_id["call-responses-batch-first"]
     second_action = actions_by_call_id["call-responses-batch-second"]
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_: None
+    )
     await AgentCoreService(db_session).decide_action(
         action_id=str(first_action.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -1673,7 +1760,9 @@ async def test_responses_config_rotation_closes_entire_pending_tool_call_batch(
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
     actions_by_call_id = {action.tool_call_id: action for action in actions}
     first_action = actions_by_call_id["call-responses-rotation-1"]
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_: None
+    )
     await AgentCoreService(db_session).decide_action(
         action_id=str(first_action.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -1707,7 +1796,9 @@ async def test_responses_config_rotation_closes_entire_pending_tool_call_batch(
         == "ModelConfigurationChanged"
         for call_id in rotation_call_ids
     )
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     tool_messages = [message for message in messages if message.role == "tool"]
     assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
         "call-responses-rotation-1",
@@ -1741,11 +1832,293 @@ async def test_responses_config_rotation_closes_entire_pending_tool_call_batch(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("recovery_enqueued", [False, True])
+async def test_concurrent_full_runtime_resume_has_one_durable_owner(
+    db_engine,
+    db_session,
+    monkeypatch,
+    tmp_path,
+    recovery_enqueued,
+) -> None:
+    input_text = "Run the approved command exactly once, then continue."
+    session, turn = await _turn(db_session, input_text=input_text)
+    _provider, continuation = await _responses_batch_approval_fixture(
+        db_session,
+        session=session,
+        input_text=input_text,
+    )
+    marker = tmp_path / "single-resume-owner.txt"
+    command = (
+        f'{sys.executable} -c "import time; from pathlib import Path; '
+        f"time.sleep(0.15); Path({str(marker)!r}).write_text('ran')\""
+    )
+    gateway = FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-single-resume-owner",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {"command": command, "cwd": str(settings.bioinfoflow_home)}
+                ),
+            ),
+            CompletionMetadata(
+                response_id="resp-single-resume-owner",
+                finish_reason="tool_calls",
+                continuation=continuation,
+            ),
+        ),
+        (
+            TextDelta(text="The command ran once.", phase="final_answer"),
+            CompletionMetadata(
+                response_id="resp-single-resume-final",
+                finish_reason="stop",
+            ),
+        ),
+    )
+    waiting = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+    assert waiting.status == AgentTurnStatus.WAITING_APPROVAL
+    action = (await AgentActionRepository(db_session).list_for_turn(str(turn.id)))[0]
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_: None
+    )
+    await AgentCoreService(db_session).decide_action(
+        action_id=str(action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    if recovery_enqueued:
+        waiting = await AgentTurnRepository(db_session).get(str(turn.id))
+        waiting = await AgentTurnRepository(db_session).update_all(
+            waiting,
+            status=AgentTurnStatus.RUNNING,
+            claimed_at=None,
+            lease_until=None,
+            loop_state={
+                "state": "running",
+                "recovered": True,
+                "resume_action_id": str(action.id),
+            },
+        )
+        assert waiting.status == AgentTurnStatus.RUNNING
+
+    _synchronize_two_resume_turn_reads(monkeypatch, turn_id=str(turn.id))
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def resume_from_fresh_worker():
+        async with session_factory() as worker_session:
+            return await AgentCoreRuntime(
+                worker_session,
+                model_gateway=gateway,
+            ).resume_turn_after_action(str(action.id))
+
+    worker_results = await asyncio.gather(
+        resume_from_fresh_worker(),
+        resume_from_fresh_worker(),
+    )
+    assert sorted(result.status for result in worker_results) == [
+        AgentTurnStatus.COMPLETED,
+        AgentTurnStatus.RUNNING,
+    ]
+
+    async with session_factory() as inspector:
+        durable_turn = await AgentTurnRepository(inspector).get(str(turn.id))
+        durable_action = await AgentActionRepository(inspector).get(str(action.id))
+        messages = await AgentMessageRepository(inspector).list_for_session(
+            str(session.id)
+        )
+        events = await AgentEventRepository(inspector).list_for_turn(
+            turn_id=str(turn.id)
+        )
+
+    assert durable_turn.status == AgentTurnStatus.COMPLETED
+    assert durable_turn.final_text == "The command ran once."
+    assert durable_action.status == AgentActionStatus.COMPLETED
+    assert marker.read_text() == "ran"
+    assert len(gateway.invocations) == 2
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert len(tool_messages) == 1
+    assert tool_messages[0].message_metadata["tool_call_id"] == (
+        "call-single-resume-owner"
+    )
+    assert '"status":"completed"' in tool_messages[0].content_parts[0]["text"]
+    assert '"status":"running"' not in json.dumps(
+        [message.content_parts for message in tool_messages]
+    )
+    assert sum(event.type == AgentEventType.TURN_STARTED for event in events) == 2
+    assert sum(event.type == AgentEventType.ACTION_STARTED for event in events) == 1
+    assert sum(event.type == AgentEventType.ACTION_COMPLETED for event in events) == 1
+
+    before_late_worker = (
+        len(gateway.invocations),
+        len(messages),
+        len(events),
+    )
+    async with session_factory() as late_session:
+        late_turn = await AgentCoreRuntime(
+            late_session,
+            model_gateway=gateway,
+        ).resume_turn_after_action(str(action.id))
+    async with session_factory() as inspector:
+        late_messages = await AgentMessageRepository(inspector).list_for_session(
+            str(session.id)
+        )
+        late_events = await AgentEventRepository(inspector).list_for_turn(
+            turn_id=str(turn.id)
+        )
+    assert late_turn.status == AgentTurnStatus.COMPLETED
+    assert (
+        len(gateway.invocations),
+        len(late_messages),
+        len(late_events),
+    ) == before_late_worker
+
+
+@pytest.mark.asyncio
+async def test_concurrent_config_rotation_cleanup_has_one_durable_owner(
+    db_engine,
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    input_text = "Request two commands and close both if the model target rotates."
+    session, turn = await _turn(db_session, input_text=input_text)
+    provider, continuation = await _responses_batch_approval_fixture(
+        db_session,
+        session=session,
+        input_text=input_text,
+    )
+    markers = [
+        tmp_path / "rotation-owner-first.txt",
+        tmp_path / "rotation-owner-second.txt",
+    ]
+    gateway = FakeModelGateway(
+        (
+            *(
+                ToolCallDelta(
+                    index=index,
+                    call_id=f"call-rotation-owner-{index + 1}",
+                    name="bash",
+                    arguments_delta=json.dumps(
+                        {
+                            "command": (
+                                f'{sys.executable} -c "from pathlib import Path; '
+                                f"Path({str(marker)!r}).write_text('ran')\""
+                            ),
+                            "cwd": str(settings.bioinfoflow_home),
+                        }
+                    ),
+                )
+                for index, marker in enumerate(markers)
+            ),
+            CompletionMetadata(
+                response_id="resp-rotation-owner",
+                finish_reason="tool_calls",
+                continuation=continuation,
+            ),
+        )
+    )
+    waiting = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+    assert waiting.status == AgentTurnStatus.WAITING_APPROVAL
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    first_action = next(
+        action for action in actions if action.tool_call_id == "call-rotation-owner-1"
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_: None
+    )
+    await AgentCoreService(db_session).decide_action(
+        action_id=str(first_action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    provider.base_url = "https://rotated-owner.example/v1"
+    await db_session.commit()
+
+    _synchronize_two_resume_turn_reads(monkeypatch, turn_id=str(turn.id))
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def resume_from_fresh_worker():
+        async with session_factory() as worker_session:
+            return await AgentCoreRuntime(
+                worker_session,
+                model_gateway=gateway,
+            ).resume_turn_after_action(str(first_action.id))
+
+    await asyncio.gather(
+        resume_from_fresh_worker(),
+        resume_from_fresh_worker(),
+    )
+
+    async with session_factory() as inspector:
+        durable_turn = await AgentTurnRepository(inspector).get(str(turn.id))
+        durable_actions = await AgentActionRepository(inspector).list_for_turn(
+            str(turn.id)
+        )
+        messages = await AgentMessageRepository(inspector).list_for_session(
+            str(session.id)
+        )
+        events = await AgentEventRepository(inspector).list_for_turn(
+            turn_id=str(turn.id)
+        )
+
+    assert durable_turn.status == AgentTurnStatus.FAILED
+    assert durable_turn.error_code == "model_selection_missing"
+    assert len(gateway.invocations) == 1
+    assert all(not marker.exists() for marker in markers)
+    assert all(action.status == AgentActionStatus.FAILED for action in durable_actions)
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert sorted(
+        message.message_metadata["tool_call_id"] for message in tool_messages
+    ) == ["call-rotation-owner-1", "call-rotation-owner-2"]
+    assert sum(event.type == AgentEventType.TURN_STARTED for event in events) == 2
+    assert sum(event.type == AgentEventType.ACTION_FAILED for event in events) == 2
+    assert all(
+        "_responses_continuation" not in (message.message_metadata or {})
+        for message in messages
+    )
+
+    before_late_worker = (len(messages), len(events))
+    async with session_factory() as late_session:
+        late_turn = await AgentCoreRuntime(
+            late_session,
+            model_gateway=gateway,
+        ).resume_turn_after_action(str(first_action.id))
+    async with session_factory() as inspector:
+        late_messages = await AgentMessageRepository(inspector).list_for_session(
+            str(session.id)
+        )
+        late_events = await AgentEventRepository(inspector).list_for_turn(
+            turn_id=str(turn.id)
+        )
+    assert late_turn.status == AgentTurnStatus.FAILED
+    assert (len(late_messages), len(late_events)) == before_late_worker
+
+
+@pytest.mark.asyncio
 async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplicates(
     db_session,
     monkeypatch,
 ) -> None:
-    _session, turn = await _turn(db_session, input_text="Run two commands, then finish.")
+    _session, turn = await _turn(
+        db_session, input_text="Run two commands, then finish."
+    )
     target = ModelTarget(
         endpoint_id="endpoint-responses",
         provider_kind="openai_compatible",
@@ -1934,7 +2307,9 @@ async def test_fallback_target_change_discards_durable_responses_continuation(
 
     assert result.termination_reason == "assistant_final"
     assert gateway.invocations[0].continuation is None
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     assert all(
         "_responses_continuation" not in (message.message_metadata or {})
         for message in messages
@@ -1974,7 +2349,9 @@ async def test_responses_refusal_only_returns_specific_error_without_empty_retry
     assert result.error_message == "The model refused this request."
     assert len(gateway.invocations) == 1
     events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
-    warning = next(event for event in events if event.type == AgentEventType.MODEL_WARNING)
+    warning = next(
+        event for event in events if event.type == AgentEventType.MODEL_WARNING
+    )
     assert warning.payload == {
         "code": "response_refusal",
         "message": "The model refused this request.",
@@ -2155,11 +2532,11 @@ async def test_cross_turn_responses_continuation_is_invalidated_when_context_com
                 response_id="resp-before-compaction",
                 finish_reason="completed",
                 continuation=ResponsesContinuation(
-                        response_id="resp-before-compaction",
-                        canonical_input_count=1,
-                        canonical_input_digest=canonical_input_prefix_digest(
-                            (TextPart(text="A" * 80),)
-                        ),
+                    response_id="resp-before-compaction",
+                    canonical_input_count=1,
+                    canonical_input_digest=canonical_input_prefix_digest(
+                        (TextPart(text="A" * 80),)
+                    ),
                     output_items=(
                         {
                             "type": "reasoning",
@@ -2173,7 +2550,9 @@ async def test_cross_turn_responses_continuation_is_invalidated_when_context_com
         ),
         (
             TextDelta(text="Fresh result.", phase="final_answer"),
-            CompletionMetadata(response_id="resp-after-compaction", finish_reason="completed"),
+            CompletionMetadata(
+                response_id="resp-after-compaction", finish_reason="completed"
+            ),
         ),
     )
     controller = AgentLoopController(db_session, model_gateway=gateway)
@@ -2181,10 +2560,13 @@ async def test_cross_turn_responses_continuation_is_invalidated_when_context_com
     before_compaction = await AgentMessageRepository(db_session).list_for_session(
         str(session.id)
     )
-    assert sum(
-        "_responses_continuation" in (message.message_metadata or {})
-        for message in before_compaction
-    ) == 1
+    assert (
+        sum(
+            "_responses_continuation" in (message.message_metadata or {})
+            for message in before_compaction
+        )
+        == 1
+    )
     assert "discard-after-compaction" in repr(
         [message.message_metadata for message in before_compaction]
     )
@@ -2200,10 +2582,13 @@ async def test_cross_turn_responses_continuation_is_invalidated_when_context_com
     assert result.termination_reason == "assistant_final"
     assert gateway.invocations[1].continuation is None
     assert any(
-        isinstance(item, TextPart) and "Conversation summary for continuity" in item.text
+        isinstance(item, TextPart)
+        and "Conversation summary for continuity" in item.text
         for item in gateway.invocations[1].input_items
     )
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     assert "discard-after-compaction" not in repr(
         [message.message_metadata for message in messages]
     )
