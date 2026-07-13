@@ -58,7 +58,9 @@ The default flow is:
 user input
   -> AgentCore service
   -> async runtime loop
-  -> tool dispatch and approvals
+  -> fresh, versioned permission context
+  -> durable tool-call batch and approval barrier
+  -> tool dispatch
   -> persisted actions, events, and artifacts
   -> frontend SSE stream
 ```
@@ -68,6 +70,19 @@ Tools implement the `AgentTool` protocol and describe themselves with
 skills, platform, web, subagent, and SSH remote tools. Toolsets include
 `default`, `plan`, the read-only `bio` policy, and `execution`; higher-risk
 actions can pause for approval before they run.
+
+Permission mode is an approval policy, not an operating-system capability.
+AgentCore resolves the current session policy and execution target immediately
+before authorizing each tool call. Authorization-relevant changes increment a
+monotonic policy version, and actions record the version and bounded context
+used for their decision. A model response containing several tool calls is
+stored as one durable batch: every call must have a terminal result before one
+database-claimed continuation may invoke the model again.
+
+"Full access" is the UI name for bypassing ordinary risk approvals on the
+selected target. It does not bypass catastrophic hard blocks, protected-resource
+approval, explicit user/plan interactions, workspace or administrator policy,
+an enabled local OS sandbox, or remote SSH account and server controls.
 
 ## Remote Connections
 
@@ -92,8 +107,14 @@ short probe command over WebSocket, and open an interactive terminal for remote
 projects.
 
 When a user selects a connection in the Agent composer, AgentCore can expose
-read-only remote file and directory inspection tools plus an approval-gated
-`remote.exec` tool for short diagnostic commands.
+read-only remote file and directory inspection tools plus `remote.exec` for
+short diagnostic commands. Local shell and remote SSH commands share one
+command-risk vocabulary, but risk is adjusted for the actual target. A safe,
+bounded remote read may be low risk; writes, network activity, destructive
+commands, uncertain paths, and protected resources receive stronger handling.
+The remote working root is a navigation default and risk signal, not a security
+boundary: SSH commands have the authority of the selected remote account and
+the remote server's controls.
 
 ## Local-First Path Model
 

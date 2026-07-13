@@ -407,6 +407,15 @@
               }
             ]
           },
+          "pending_strategy": {
+            "default": "future_only",
+            "enum": [
+              "future_only",
+              "approve_pending_tools"
+            ],
+            "title": "Pending Strategy",
+            "type": "string"
+          },
           "permission_mode": {
             "anyOf": [
               {
@@ -1784,6 +1793,11 @@
       },
       "LlmProviderCreate": {
         "properties": {
+          "allow_insecure_http": {
+            "default": false,
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
           "api_key_ref": {
             "anyOf": [
               {
@@ -1906,6 +1920,11 @@
       },
       "LlmProviderSetupRequest": {
         "properties": {
+          "allow_insecure_http": {
+            "default": false,
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
           "api_key": {
             "anyOf": [
               {
@@ -1998,6 +2017,17 @@
       },
       "LlmProviderUpdate": {
         "properties": {
+          "allow_insecure_http": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Insecure Http"
+          },
           "api_key_ref": {
             "anyOf": [
               {
@@ -2984,6 +3014,46 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/agent/actions/{action_id}": {
+      "get": {
+        "operationId": "get_action_api_v1_agent_actions__action_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Action",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/v1/agent/actions/{action_id}/decision": {
       "post": {
         "operationId": "decide_action_api_v1_agent_actions__action_id__decision_post",

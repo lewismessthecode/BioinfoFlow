@@ -6,11 +6,11 @@ for use from the web UI and AgentCore runtime.
 Use this feature when you want Bioinfoflow to diagnose or inspect a remote
 server, open a project terminal, run existing commands, inspect files, or give
 the agent access to a selected host. AgentCore has no dedicated remote file-write
-tool; approval-gated commands can still modify the remote host. The browser never opens an SSH session
-directly. The frontend calls the Bioinfoflow backend, and the backend performs
-the SSH operation. Command-style probes and AgentCore tools stay bounded by
-timeouts and output limits; project terminals use backend-managed SSH PTY
-sessions.
+tool; `remote.exec` commands can still modify the remote host when policy allows
+them. The browser never opens an SSH session directly. The frontend calls the
+Bioinfoflow backend, and the backend performs the SSH operation. Command-style
+probes and AgentCore tools stay bounded by timeouts and output limits; project
+terminals use backend-managed SSH PTY sessions.
 
 ## What You Can Do
 
@@ -181,9 +181,30 @@ When a connection is selected, AgentCore receives remote context and can use the
 | `remote.connections.list` | List selected remote connections visible to the session | read |
 | `remote.read_file` | Read bounded text from a remote file | read |
 | `remote.list_dir` | List bounded remote directory entries | read |
-| `remote.exec` | Run a short remote diagnostic command | act_high |
+| `remote.exec` | Run a short remote diagnostic command | assessed per command and SSH target |
 
-`remote.exec` is approval-gated as an elevated action. Prefer `remote.read_file` and `remote.list_dir` for read-only inspection.
+Prefer `remote.read_file` and `remote.list_dir` for bounded read-only inspection.
+`remote.exec` shares the local command-risk vocabulary but is adjusted for the
+selected SSH identity and remote boundary. A safe read whose path can be bounded
+may remain low risk. Writes, network access, destructive commands, protected
+resources, variable or home-relative paths, outside-root paths, and uncertain
+option or symlink behavior are escalated when safety cannot be proven.
+
+The selected connection is part of the authorization context. A tool call may
+not switch to another connection id. The configured remote root is used as a
+working directory and a risk-analysis root; it is not a chroot, container, or
+OS sandbox. A command has the privileges of the configured remote user plus any
+sudo, ACL, scheduler, and server policy available to that account.
+
+Changing the Agent permission mode affects the next authorization evaluation,
+including during an active turn. With waiting tool approvals, the UI asks
+whether to update future operations only or also approve eligible waiting tools.
+User questions and plan approval are never bulk-approved.
+
+**Full access** skips ordinary Bioinfoflow risk prompts for this selected host.
+It does not grant additional SSH privileges. Catastrophic commands remain
+blocked, and writes to protected credentials, SSH/sudo configuration, shell
+startup files, or permission-policy resources still require explicit approval.
 
 ## Current Limits
 

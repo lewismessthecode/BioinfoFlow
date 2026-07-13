@@ -71,9 +71,15 @@ Security expectations:
   that needs them when using advanced backend SSH methods
 - use SSH config aliases for `HostName`, `User`, `Port`, `IdentityFile`, and
   `ProxyJump` when possible
-- treat `remote.exec` as an elevated agent action; it runs a remote shell command
-  on the selected host
+- treat `remote.exec` as a remote shell with the selected SSH account's actual
+  authority; Bioinfoflow assesses each command dynamically, but does not add an
+  OS sandbox to an arbitrary SSH host
 - use `remote.read_file` and `remote.list_dir` for read-only inspection
+- treat the configured remote root as a navigation default and policy signal,
+  not confinement; absolute, variable, home-relative, outside-root, or
+  symlink-sensitive paths may require approval when safety cannot be established
+- connection authorization is scoped to the connection selected in the Agent
+  session; a command cannot substitute another connection id
 - remember that remote project terminals are backend-mediated SSH PTY sessions;
   the browser still does not connect to SSH hosts directly
 
@@ -107,6 +113,43 @@ ports directly to untrusted networks.
 The OS-level bash sandbox for AgentCore is disabled by default. When enabled it
 is fail-closed by default, with network access and unsandboxed opt-out disabled.
 Docker deployments may require host user-namespace and bubblewrap support.
+
+The sandbox and approval policy are separate controls:
+
+- the sandbox limits what a local process can reach when an adapter is active
+- permission modes decide when Bioinfoflow asks before an action
+- SSH commands are constrained by the remote Unix account, sudo/ACL policy,
+  scheduler policy, and server configuration, not by the local sandbox
+
+"Full access" (`bypass`) skips ordinary risk prompts for the selected target.
+It does not disable an active local sandbox or bypass remote account authority.
+Catastrophic operations such as root filesystem destruction, unsafe block-device
+writes or formats, host shutdown/reboot, and fork-bomb equivalents remain
+non-bypassable. Writes to protected credentials, SSH configuration, sudoers,
+shell startup files, and permission-policy resources still require an explicit
+decision.
+
+## Agent Permission And Approval Integrity
+
+AgentCore treats permission state as versioned authorization data. Each change
+to permission mode, automation mode, role/toolset, or execution target advances
+`permission_policy_version`. Before exposing or authorizing a tool, the runtime
+forces a fresh database read and stores a bounded permission and target snapshot
+on the resulting action. A committed change therefore applies to the next
+authorization evaluation in an active turn; already running or terminal actions
+are not rewritten.
+
+Permission updates default to `future_only`. The optional
+`approve_pending_tools` strategy approves eligible waiting tool actions in the
+same transaction as the policy update, but excludes `ask_user` and plan approval.
+The response reports affected, excluded, and already-resolved counts.
+
+Assistant tool calls are persisted in batches. The model cannot continue until
+every call in the batch has a completed, failed, rejected, or cancelled result.
+Approval decisions, execution claims, and batch continuation use conditional
+database transitions so duplicate requests, queue deliveries, workers, and
+restarts do not intentionally execute or continue twice. A process lost during
+a running side effect is failed for manual reconciliation rather than replayed.
 
 ## Environment Files
 

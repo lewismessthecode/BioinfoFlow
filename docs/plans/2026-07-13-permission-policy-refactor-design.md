@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed for implementation after user review.
+Accepted and implemented through the documentation/contract phase. Full-suite
+verification, parallel final review, rebase, and publication remain pending.
 
 ## Problem
 
