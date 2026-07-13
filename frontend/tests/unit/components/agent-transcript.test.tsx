@@ -634,7 +634,7 @@ describe("AgentTranscript", () => {
   })
 
   it("renders inline approval cards with decision buttons", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     renderTranscript({
       turn: { ...baseTurn, status: "waiting_approval", final_text: null },
       events: [
@@ -697,7 +697,7 @@ describe("AgentTranscript", () => {
   })
 
   it("renders inline ask-user decisions with answer submission", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     renderTranscript({
       turn: { ...baseTurn, status: "waiting_user", final_text: null },
       events: [

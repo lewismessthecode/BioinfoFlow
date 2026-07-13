@@ -423,10 +423,18 @@ export type AgentWaitingDecision = {
   toolCallId?: string | null
   inputPreview?: string | null
   answer?: AgentAnswer | null
+  target?: AgentDecisionTarget | null
   interaction?:
     | { kind: "user_input"; questions: AgentAskUserQuestion[] }
     | { kind: "plan_approval"; plan: string }
     | null
+}
+
+export type AgentDecisionTarget = {
+  kind: AgentExecutionTargetKind | "container"
+  trustDomain?: string | null
+  identity?: string | null
+  connectionId?: string | null
 }
 
 export type AgentAnswer = Record<string, string | string[]>

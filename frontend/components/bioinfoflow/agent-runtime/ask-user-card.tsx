@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import type { AgentAnswer, AgentAskUserQuestion } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 import type { AgentDecisionHandler } from "./types"
+import { DecisionSubmissionFeedback, useDecisionSubmission } from "./decision-submission"
 
 type AskUserDecisionCardProps = {
   actionId: string
@@ -37,6 +38,8 @@ export function AskUserDecisionCard({
   const t = useTranslations("agentRuntime")
   const [selections, setSelections] = useState<Record<string, string[]>>({})
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({})
+  const submission = useDecisionSubmission(actionId, onDecision)
+  const effectiveReadOnly = readOnly || submission.busy
 
   const toggle = (question: AgentAskUserQuestion, label: string) => {
     setSelections((current) => {
@@ -68,7 +71,7 @@ export function AskUserDecisionCard({
   }
 
   const complete = questions.every(hasAnswer)
-  const canSubmit = !readOnly && complete && Boolean(onDecision)
+  const canSubmit = !effectiveReadOnly && complete && Boolean(onDecision)
 
   const submit = () => {
     const answer: AgentAnswer = {}
@@ -82,7 +85,7 @@ export function AskUserDecisionCard({
         answer[question.header] = customAnswer || picked[0] || ""
       }
     }
-    onDecision?.(actionId, "answer", { answer })
+    void submission.submit("answer", { answer })
   }
 
   return (
@@ -124,7 +127,7 @@ export function AskUserDecisionCard({
                       key={option.label}
                       type="button"
                       aria-pressed={active}
-                      disabled={readOnly}
+                      disabled={effectiveReadOnly}
                       onClick={() => toggle(question, option.label)}
                       className={cn(
                         "group flex min-h-9 items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
@@ -203,6 +206,7 @@ export function AskUserDecisionCard({
                     autoComplete="off"
                     value={customAnswers[question.header] ?? ""}
                     onChange={(event) => updateCustomAnswer(question, event.target.value)}
+                    disabled={effectiveReadOnly}
                     placeholder={t("ask.customPlaceholder")}
                     className="h-7 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
                   />
@@ -219,8 +223,8 @@ export function AskUserDecisionCard({
           size="sm"
           variant="ghost"
           className="h-8 rounded-full text-muted-foreground"
-          disabled={!onDecision}
-          onClick={() => onDecision?.(actionId, "reject")}
+          disabled={!onDecision || submission.busy}
+          onClick={() => void submission.submit("reject")}
         >
           {t("ask.rejectQuestion")}
         </Button>
@@ -235,6 +239,13 @@ export function AskUserDecisionCard({
           {t("ask.submit")}
         </Button>
       </div> : null}
+      {!readOnly ? (
+        <DecisionSubmissionFeedback
+          busy={submission.busy}
+          error={submission.error}
+          onRetry={() => void submission.retry()}
+        />
+      ) : null}
     </div>
   )
 }

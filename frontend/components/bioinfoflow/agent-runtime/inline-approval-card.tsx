@@ -6,6 +6,8 @@ import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import type { AgentAnswer, AgentAskUserQuestion, AgentRuntimeDecisionView } from "@/lib/agent-runtime"
 import { AskUserDecisionCard } from "./ask-user-card"
+import { DecisionSubmissionFeedback, useDecisionSubmission } from "./decision-submission"
+import { DecisionTargetBadge } from "./decision-target-badge"
 import type { AgentDecisionHandler } from "./types"
 
 export function InlineApprovalCard({
@@ -17,6 +19,7 @@ export function InlineApprovalCard({
 }) {
   const t = useTranslations("agentRuntime")
   const isPending = decision.state === "pending"
+  const submission = useDecisionSubmission(decision.actionId, onDecision)
 
   if (decision.interaction?.kind === "user_input") {
     return (
@@ -84,6 +87,7 @@ export function InlineApprovalCard({
             {decision.riskLevel}
           </span>
         ) : null}
+        <DecisionTargetBadge target={decision.target} />
       </div>
 
       <div className="grid gap-1.5 text-xs text-muted-foreground">
@@ -106,7 +110,8 @@ export function InlineApprovalCard({
             size="sm"
             variant="secondary"
             className="h-8 rounded-full"
-            onClick={() => onDecision(decision.actionId, "approve")}
+            onClick={() => void submission.submit("approve")}
+            disabled={submission.busy}
           >
             <Check className="h-3.5 w-3.5" />
             {isPlanApproval ? t("plan.approveAndAct") : t("approve")}
@@ -116,11 +121,19 @@ export function InlineApprovalCard({
             size="sm"
             variant="outline"
             className="h-8 rounded-full bg-card"
-            onClick={() => onDecision(decision.actionId, "reject")}
+            onClick={() => void submission.submit("reject")}
+            disabled={submission.busy}
           >
             {isPlanApproval ? t("plan.keepPlanning") : t("reject")}
           </Button>
         </div>
+      ) : null}
+      {isPending && onDecision ? (
+        <DecisionSubmissionFeedback
+          busy={submission.busy}
+          error={submission.error}
+          onRetry={() => void submission.retry()}
+        />
       ) : null}
     </div>
   )

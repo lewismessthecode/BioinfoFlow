@@ -1,6 +1,7 @@
 "use client"
 
 import type {
+  AgentDecisionTarget,
   AgentRuntimeDecisionState,
   AgentRuntimeDecisionView,
   AgentRuntimeEvent,
@@ -52,7 +53,7 @@ export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
   return events
     .filter((event) => event.type === "action.waiting_decision")
     .map((event): AgentDecisionCard | null => {
-      const decision = parseWaitingDecision(event)
+      const decision = parseWaitingDecision(event, events)
       if (!decision.actionId) return null
       const resolver = resolvedWithoutDecision.get(decision.actionId)
       if (resolver && !decisions.has(decision.actionId)) return null
@@ -70,8 +71,15 @@ export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
     .reverse()
 }
 
-export function parseWaitingDecision(event: AgentRuntimeEvent): AgentWaitingDecision {
-  return parseRuntimeWaitingDecision(event)
+export function parseWaitingDecision(
+  event: AgentRuntimeEvent,
+  events: AgentRuntimeEvent[] = [],
+): AgentWaitingDecision {
+  const decision = parseRuntimeWaitingDecision(event)
+  return {
+    ...decision,
+    target: persistedTargetForAction(events, decision.actionId),
+  }
 }
 
 function decisionCardFromEvent(
@@ -119,4 +127,32 @@ function decisionState(event: AgentRuntimeEvent): AgentRuntimeDecisionState {
   if (decision === "reject") return "rejected"
   if (decision === "answer") return "answered"
   return "approved"
+}
+
+function persistedTargetForAction(
+  events: AgentRuntimeEvent[],
+  actionId: string,
+): AgentDecisionTarget | null {
+  const assessment = [...events]
+    .reverse()
+    .find(
+      (event) =>
+        event.type === "action.risk_assessed" &&
+        String(event.payload.action_id || "") === actionId,
+    )
+  const target = assessment?.payload.target
+  if (!target || typeof target !== "object" || Array.isArray(target)) return null
+  const record = target as Record<string, unknown>
+  const kind = String(record.kind || "")
+  if (kind !== "local" && kind !== "remote_ssh" && kind !== "container") return null
+  return {
+    kind,
+    trustDomain: stringOrNull(record.trust_domain),
+    identity: stringOrNull(record.identity),
+    connectionId: stringOrNull(record.connection_id),
+  }
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value ? value : null
 }

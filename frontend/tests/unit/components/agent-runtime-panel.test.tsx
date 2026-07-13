@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
@@ -607,7 +607,7 @@ describe("resolveBrowserUrl", () => {
 
 describe("PendingDecisionCards", () => {
   it("submits an ask_user answer", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     render(
       <PendingDecisionCards
         events={[
@@ -641,7 +641,7 @@ describe("PendingDecisionCards", () => {
   })
 
   it("submits a custom ask_user answer", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     render(
       <PendingDecisionCards
         events={[
@@ -676,7 +676,7 @@ describe("PendingDecisionCards", () => {
   })
 
   it("keeps custom text when adding a multi-select ask_user option", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     render(
       <PendingDecisionCards
         events={[
@@ -740,7 +740,7 @@ describe("PendingDecisionCards", () => {
   })
 
   it("approves a plan", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     render(
       <PendingDecisionCards
         events={[
@@ -759,8 +759,13 @@ describe("PendingDecisionCards", () => {
     expect(onDecision).toHaveBeenCalledWith("a2", "approve")
   })
 
-  it("renders a generic approval card with name and preview", () => {
-    const onDecision = vi.fn()
+  it("renders a generic approval card with name and preview", async () => {
+    let resolveDecision!: () => void
+    const onDecision = vi.fn(
+      () => new Promise<void>((resolve) => {
+        resolveDecision = resolve
+      }),
+    )
     render(
       <PendingDecisionCards
         events={[
@@ -778,6 +783,11 @@ describe("PendingDecisionCards", () => {
     expect(screen.getByText("rm build/")).toBeInTheDocument()
     fireEvent.click(screen.getByText("approve"))
     expect(onDecision).toHaveBeenCalledWith("a3", "approve")
+    await act(async () => {
+      resolveDecision()
+      await Promise.resolve()
+    })
+    expect(screen.getByText("reject")).toBeEnabled()
     fireEvent.click(screen.getByText("reject"))
     expect(onDecision).toHaveBeenCalledWith("a3", "reject")
   })

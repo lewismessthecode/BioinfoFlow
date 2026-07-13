@@ -11,6 +11,8 @@ import type {
   AgentWaitingDecision,
 } from "@/lib/agent-runtime"
 import { AskUserDecisionCard } from "./ask-user-card"
+import { DecisionSubmissionFeedback, useDecisionSubmission } from "./decision-submission"
+import { DecisionTargetBadge } from "./decision-target-badge"
 import { getPendingActions, parseWaitingDecision } from "./pending-actions"
 import type { AgentDecisionHandler } from "./types"
 
@@ -22,7 +24,7 @@ export function PendingDecisionCards({
   onDecision: AgentDecisionHandler
 }) {
   const decisions = useMemo(
-    () => getPendingActions(events).map(parseWaitingDecision),
+    () => getPendingActions(events).map((event) => parseWaitingDecision(event, events)),
     [events],
   )
   if (!decisions.length) return null
@@ -71,8 +73,9 @@ function ApprovalCard({
   onDecision: AgentDecisionHandler
 }) {
   const t = useTranslations("agentRuntime")
+  const submission = useDecisionSubmission(decision.actionId, onDecision)
   return (
-    <div className="rounded-[14px] border border-foreground/12 bg-foreground/[0.045] px-3 py-3 text-sm">
+    <div className="rounded-[14px] border border-foreground/12 bg-foreground/[0.045] px-3 py-3 text-sm" data-testid="pending-approval-card">
       <div className="mb-1 font-medium text-foreground/82">
         {t("sidecar.needsDecision")}
       </div>
@@ -83,6 +86,7 @@ function ApprovalCard({
             {decision.riskLevel}
           </span>
         ) : null}
+        <DecisionTargetBadge target={decision.target} />
       </div>
       {decision.inputPreview ? (
         <div className="mb-3 truncate font-mono text-xs text-muted-foreground/82">
@@ -94,7 +98,8 @@ function ApprovalCard({
           type="button"
           size="sm"
           className="h-8 rounded-md"
-          onClick={() => onDecision(decision.actionId, "approve")}
+          onClick={() => void submission.submit("approve")}
+          disabled={submission.busy}
         >
           <Check className="h-3.5 w-3.5" />
           {t("approve")}
@@ -104,11 +109,17 @@ function ApprovalCard({
           size="sm"
           variant="outline"
           className="h-8 rounded-md bg-card"
-          onClick={() => onDecision(decision.actionId, "reject")}
+          onClick={() => void submission.submit("reject")}
+          disabled={submission.busy}
         >
           {t("reject")}
         </Button>
       </div>
+      <DecisionSubmissionFeedback
+        busy={submission.busy}
+        error={submission.error}
+        onRetry={() => void submission.retry()}
+      />
     </div>
   )
 }
@@ -123,6 +134,7 @@ function PlanApprovalCard({
   onDecision: AgentDecisionHandler
 }) {
   const t = useTranslations("agentRuntime")
+  const submission = useDecisionSubmission(actionId, onDecision)
   return (
     <div className="rounded-[18px] border border-primary/30 bg-primary/5 px-3 py-3 text-sm" data-testid="plan-approval-card">
       <div className="mb-2 font-medium text-foreground">{t("plan.reviewTitle")}</div>
@@ -134,7 +146,8 @@ function PlanApprovalCard({
           type="button"
           size="sm"
           className="h-8 rounded-full"
-          onClick={() => onDecision(actionId, "approve")}
+          onClick={() => void submission.submit("approve")}
+          disabled={submission.busy}
         >
           <Check className="h-3.5 w-3.5" />
           {t("plan.approveAndAct")}
@@ -144,11 +157,17 @@ function PlanApprovalCard({
           size="sm"
           variant="outline"
           className="h-8 rounded-full bg-card"
-          onClick={() => onDecision(actionId, "reject")}
+          onClick={() => void submission.submit("reject")}
+          disabled={submission.busy}
         >
           {t("plan.keepPlanning")}
         </Button>
       </div>
+      <DecisionSubmissionFeedback
+        busy={submission.busy}
+        error={submission.error}
+        onRetry={() => void submission.retry()}
+      />
     </div>
   )
 }

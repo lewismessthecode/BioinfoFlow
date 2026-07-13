@@ -32,8 +32,17 @@ import { AgentTabbedPanel, type AgentTabbedPanelTab } from "./agent-tabbed-panel
 import { AgentTodoDock } from "./agent-todo-dock"
 import { AgentTranscript } from "./agent-transcript"
 import { ComposerApprovalPopover } from "./composer-approval-popover"
+import { getPendingActions, parseWaitingDecision } from "./pending-actions"
 import { todosFromArtifact } from "./artifact-viewers"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useOptionalWorkspaceShell } from "@/components/bioinfoflow/workspace-shell-context"
@@ -50,6 +59,8 @@ import {
   type AgentRuntimeInputPart,
   type AgentRuntimeSkill,
   type AgentModelSelection,
+  type AgentPendingStrategy,
+  type AgentPermissionMode,
   type AgentRuntimeTurn,
   resolveAgentExecutionTarget,
 } from "@/lib/agent-runtime"
@@ -171,6 +182,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [queuedSubmissions, setQueuedSubmissions] = useState<PendingSubmission[]>([])
     const [pendingInterruptSubmission, setPendingInterruptSubmission] =
       useState<PendingSubmission | null>(null)
+    const [pendingPermissionMode, setPendingPermissionMode] =
+      useState<AgentPermissionMode | null>(null)
     const [environmentOpen, setEnvironmentOpen] = useState(false)
     const [sidecarOpen, setSidecarOpen] = useState(false)
     const [sidecarMaxWidth, setSidecarMaxWidth] = useState(SIDECAR_MAX_WIDTH)
@@ -202,6 +215,8 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       setMode,
       permissionMode,
       setPermissionMode,
+      permissionUpdate,
+      retryPermissionModeUpdate,
       setActiveSessionId,
       send,
       interrupt,
@@ -228,6 +243,42 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       hasRemoteConnectionOverride
         ? remoteConnectionOverride.value
         : sessionRemoteConnectionId || (state.session ? "" : projectRemoteConnectionId)
+
+    const pendingApprovalSummary = useMemo(() => {
+      let eligible = 0
+      let excluded = 0
+      for (const event of getPendingActions(state.events)) {
+        const decision = parseWaitingDecision(event)
+        if (decision.interaction) excluded += 1
+        else eligible += 1
+      }
+      return { eligible, excluded }
+    }, [state.events])
+
+    const requestPermissionMode = useCallback(
+      (nextMode: AgentPermissionMode) => {
+        if (!setPermissionMode || nextMode === permissionMode) return
+        if (
+          permissionRank(nextMode) > permissionRank(permissionMode) &&
+          pendingApprovalSummary.eligible > 0
+        ) {
+          setPendingPermissionMode(nextMode)
+          return
+        }
+        void setPermissionMode(nextMode, "future_only")
+      },
+      [pendingApprovalSummary.eligible, permissionMode, setPermissionMode],
+    )
+
+    const confirmPermissionMode = useCallback(
+      (pendingStrategy: AgentPendingStrategy) => {
+        const nextMode = pendingPermissionMode
+        setPendingPermissionMode(null)
+        if (!nextMode || !setPermissionMode) return
+        void setPermissionMode(nextMode, pendingStrategy)
+      },
+      [pendingPermissionMode, setPermissionMode],
+    )
 
     const disabled = !workspaceEnabled
     const visibleOptimisticTurns = optimisticTurns.filter(
@@ -990,9 +1041,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         mode={agentMode}
         onModeChange={setMode ? (next) => void setMode(next) : undefined}
         permissionMode={permissionMode}
-        onPermissionModeChange={
-          setPermissionMode ? (next) => void setPermissionMode(next) : undefined
-        }
+        onPermissionModeChange={requestPermissionMode}
+        permissionUpdate={permissionUpdate}
+        onRetryPermissionModeChange={() => void retryPermissionModeUpdate()}
         models={models}
         selectedModel={selectedModel}
         modelsLoading={modelsLoading}
@@ -1028,6 +1079,69 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         className={cn("relative flex h-full min-w-0 flex-1 bg-background", className)}
         data-testid="agent-workbench-root"
       >
+        <Dialog
+          open={pendingPermissionMode !== null}
+          onOpenChange={(open) => {
+            if (!open) setPendingPermissionMode(null)
+          }}
+        >
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>{t("permission.confirm.title")}</DialogTitle>
+              <DialogDescription>
+                {t("permission.confirm.description", {
+                  eligible: pendingApprovalSummary.eligible,
+                  excluded: pendingApprovalSummary.excluded,
+                })}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-auto justify-start rounded-lg px-3 py-2.5 text-left"
+                onClick={() => confirmPermissionMode("future_only")}
+                aria-label={t("permission.confirm.futureOnly")}
+              >
+                <span className="grid gap-0.5">
+                  <span>{t("permission.confirm.futureOnly")}</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {t("permission.confirm.futureOnlyDescription")}
+                  </span>
+                </span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto justify-start rounded-lg px-3 py-2.5 text-left"
+                onClick={() => confirmPermissionMode("approve_pending_tools")}
+                aria-label={t("permission.confirm.approvePending", {
+                  count: pendingApprovalSummary.eligible,
+                })}
+              >
+                <span className="grid gap-0.5">
+                  <span>
+                    {t("permission.confirm.approvePending", {
+                      count: pendingApprovalSummary.eligible,
+                    })}
+                  </span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {t("permission.confirm.approvePendingDescription")}
+                  </span>
+                </span>
+              </Button>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setPendingPermissionMode(null)}
+              >
+                {t("permission.confirm.cancel")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <main
           className="relative flex min-w-0 flex-1 flex-col overflow-hidden transition-[padding,width] duration-300 ease-out"
           data-testid="agent-workbench-main"
@@ -1268,6 +1382,12 @@ function isLocalPendingSubmissionTurn(turn: AgentRuntimeTurn) {
     turn.loop_state?.local_queue === true ||
     turn.loop_state?.local_pending_interrupt === true
   )
+}
+
+function permissionRank(mode: AgentPermissionMode) {
+  if (mode === "ask_each_action") return 0
+  if (mode === "guarded_auto") return 1
+  return 2
 }
 
 function reassignPendingSubmission(

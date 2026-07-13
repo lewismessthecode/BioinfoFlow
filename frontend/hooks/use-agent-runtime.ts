@@ -20,6 +20,8 @@ import {
   type AgentExecutionTarget,
   type AgentMode,
   type AgentModelSelection,
+  type AgentPendingReconciliation,
+  type AgentPendingStrategy,
   type AgentPermissionMode,
   type AgentRuntimeInputPart,
   type AgentRuntimeSession,
@@ -38,8 +40,31 @@ type AgentRuntimeStreamSignal = {
   status: Exclude<AgentRuntimeStreamStatus, "idle" | "connecting">
 }
 
-const DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode"
+export type AgentPermissionUpdateState = {
+  status: "idle" | "pending" | "success" | "error"
+  mode: AgentPermissionMode | null
+  pendingStrategy: AgentPendingStrategy | null
+  reconciliation: AgentPendingReconciliation | null
+  error: string | null
+}
+
+type PermissionUpdateRequest = {
+  sequence: number
+  sessionId: string | null
+  mode: AgentPermissionMode
+  pendingStrategy: AgentPendingStrategy
+}
+
+const DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode:v2"
+const LEGACY_DRAFT_PERMISSION_MODE_STORAGE_KEY = "bioinfoflow.agentRuntime.permissionMode"
 const DEFAULT_PERMISSION_MODE: AgentPermissionMode = "guarded_auto"
+const INITIAL_PERMISSION_UPDATE_STATE: AgentPermissionUpdateState = {
+  status: "idle",
+  mode: null,
+  pendingStrategy: null,
+  reconciliation: null,
+  error: null,
+}
 const INTERRUPTIBLE_TURN_STATUSES = new Set([
   "queued",
   "running",
@@ -69,8 +94,20 @@ export function useAgentRuntime(
   const [draftPermissionMode, setDraftPermissionModeState] = useState<AgentPermissionMode>(
     readDraftPermissionMode,
   )
+  const [permissionUpdate, setPermissionUpdate] =
+    useState<AgentPermissionUpdateState>(INITIAL_PERMISSION_UPDATE_STATE)
   const streamCursorRef = useRef(0)
   const stateRefreshSequenceRef = useRef(0)
+  const confirmedDraftPermissionModeRef = useRef(draftPermissionMode)
+  const confirmedStorageValueRef = useRef(readStoredDraftPermissionMode())
+  const confirmedSessionsRef = useRef(new Map<string, AgentRuntimeSession>())
+  const permissionUpdateSequenceRef = useRef(0)
+  const permissionUpdateTailRef = useRef<Promise<unknown>>(Promise.resolve())
+  const permissionUpdatePromisesRef = useRef(
+    new Map<string, Promise<AgentRuntimeSession | null>>(),
+  )
+  const lastPermissionUpdateRequestRef = useRef<PermissionUpdateRequest | null>(null)
+  const pendingPermissionIntentRef = useRef<PermissionUpdateRequest | null>(null)
   const activeSessionId = isControlled
     ? options.activeSessionId || null
     : uncontrolledSessionId
@@ -106,7 +143,12 @@ export function useAgentRuntime(
     dispatch({ type: "loading" })
     try {
       const nextSessions = await listAgentRuntimeSessions(projectId)
-      setSessions((current) => mergeFetchedSessions(current, nextSessions))
+      setSessions((current) =>
+        applyPendingPermissionIntent(
+          mergeFetchedSessions(current, nextSessions),
+          pendingPermissionIntentRef.current,
+        ),
+      )
       if (isControlledDraft) {
         dispatch({ type: "session.selected", session: null })
         return
@@ -128,6 +170,15 @@ export function useAgentRuntime(
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId
   }, [activeSessionId])
+
+  useEffect(() => {
+    if (!activeSession) return
+    if (permissionUpdate.status === "pending") return
+    const confirmed = confirmedSessionsRef.current.get(activeSession.id)
+    if (isSessionPolicyNewer(activeSession, confirmed)) {
+      confirmedSessionsRef.current.set(activeSession.id, activeSession)
+    }
+  }, [activeSession, permissionUpdate.status])
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -165,9 +216,14 @@ export function useAgentRuntime(
         sessionId,
         limited: false,
       })
-      setSessions((current) => mergeSessionList(current, payload.session))
+      const pendingIntent = pendingPermissionIntentRef.current
+      const loadedSession = sessionWithPendingPermissionIntent(
+        payload.session,
+        pendingIntent,
+      )
+      setSessions((current) => mergeSessionList(current, loadedSession))
       emitRuntimeSessionUpdated(payload.session)
-      dispatch({ type: "state.loaded", payload })
+      dispatch({ type: "state.loaded", payload: { ...payload, session: loadedSession } })
     } catch (error) {
       if (activeSessionIdRef.current !== sessionId) return
       dispatch({
@@ -369,6 +425,7 @@ export function useAgentRuntime(
           message:
             error instanceof Error ? error.message : "Failed to update action decision",
         })
+        throw error
       }
     },
     [activeSessionId, refreshState],
@@ -399,26 +456,123 @@ export function useAgentRuntime(
   )
 
   const setPermissionMode = useCallback(
-    async (mode: AgentPermissionMode) => {
+    (
+      mode: AgentPermissionMode,
+      pendingStrategy: AgentPendingStrategy = "future_only",
+    ): Promise<AgentRuntimeSession | null> => {
+      const sessionId = activeSessionIdRef.current
+      const requestKey = `${sessionId ?? "draft"}:${mode}:${pendingStrategy}`
+      const duplicate = permissionUpdatePromisesRef.current.get(requestKey)
+      if (duplicate) return duplicate
+
+      const sequence = permissionUpdateSequenceRef.current + 1
+      permissionUpdateSequenceRef.current = sequence
+      const request: PermissionUpdateRequest = {
+        sequence,
+        sessionId,
+        mode,
+        pendingStrategy,
+      }
+      lastPermissionUpdateRequestRef.current = request
+      pendingPermissionIntentRef.current = request
+
       setDraftPermissionModeState(mode)
       writeDraftPermissionMode(mode)
-      if (!activeSessionId) return
-      try {
-        const updated = await updateAgentRuntimeSessionPermissionMode(activeSessionId, mode)
+      if (sessionId) {
         setSessions((current) =>
-          current.map((session) => (session.id === updated.id ? updated : session)),
+          current.map((item) =>
+            item.id === sessionId ? { ...item, permission_mode: mode } : item,
+          ),
         )
-        await refreshState(activeSessionId)
-      } catch (error) {
-        dispatch({
-          type: "error",
-          message:
-            error instanceof Error ? error.message : "Failed to switch permission mode",
-        })
       }
+      setPermissionUpdate({
+        status: sessionId ? "pending" : "success",
+        mode,
+        pendingStrategy,
+        reconciliation: null,
+        error: null,
+      })
+
+      if (!sessionId) {
+        pendingPermissionIntentRef.current = null
+        confirmedDraftPermissionModeRef.current = mode
+        confirmedStorageValueRef.current = mode
+        return Promise.resolve(null)
+      }
+
+      const execute = async (): Promise<AgentRuntimeSession | null> => {
+        try {
+          const updated = await updateAgentRuntimeSessionPermissionMode(
+            sessionId,
+            mode,
+            pendingStrategy,
+          )
+          const confirmed = confirmedSessionsRef.current.get(sessionId)
+          if (!isSessionPolicyNewerOrEqual(updated, confirmed)) {
+            throw new Error("Permission update was superseded by a newer policy version")
+          }
+          confirmedSessionsRef.current.set(sessionId, updated)
+          confirmedDraftPermissionModeRef.current = mode
+          confirmedStorageValueRef.current = mode
+
+          if (permissionUpdateSequenceRef.current === sequence) {
+            pendingPermissionIntentRef.current = null
+            setSessions((current) => replaceSession(current, updated))
+            setPermissionUpdate({
+              status: "success",
+              mode,
+              pendingStrategy,
+              reconciliation: updated.pending_reconciliation ?? null,
+              error: null,
+            })
+          }
+          return updated
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Failed to switch permission mode"
+          if (permissionUpdateSequenceRef.current === sequence) {
+            pendingPermissionIntentRef.current = null
+            const confirmedSession = confirmedSessionsRef.current.get(sessionId)
+            const confirmedMode =
+              confirmedSession?.permission_mode ?? confirmedDraftPermissionModeRef.current
+            setDraftPermissionModeState(confirmedMode)
+            restoreStoredDraftPermissionMode(confirmedStorageValueRef.current)
+            if (confirmedSession) {
+              setSessions((current) => replaceSession(current, confirmedSession))
+            }
+            setPermissionUpdate({
+              status: "error",
+              mode,
+              pendingStrategy,
+              reconciliation: null,
+              error: message,
+            })
+          }
+          return null
+        }
+      }
+
+      const promise = permissionUpdateTailRef.current.then(execute, execute)
+      permissionUpdateTailRef.current = promise.then(
+        () => undefined,
+        () => undefined,
+      )
+      permissionUpdatePromisesRef.current.set(requestKey, promise)
+      void promise.finally(() => {
+        if (permissionUpdatePromisesRef.current.get(requestKey) === promise) {
+          permissionUpdatePromisesRef.current.delete(requestKey)
+        }
+      })
+      return promise
     },
-    [activeSessionId, refreshState],
+    [],
   )
+
+  const retryPermissionModeUpdate = useCallback(() => {
+    const request = lastPermissionUpdateRequestRef.current
+    if (!request) return Promise.resolve(null)
+    return setPermissionMode(request.mode, request.pendingStrategy)
+  }, [setPermissionMode])
 
   return {
     sessions,
@@ -433,6 +587,8 @@ export function useAgentRuntime(
     setMode,
     permissionMode,
     setPermissionMode,
+    permissionUpdate,
+    retryPermissionModeUpdate,
     setActiveSessionId,
     refreshSessions,
     refreshState,
@@ -448,7 +604,31 @@ function mergeSessionList(
 ) {
   const exists = sessions.some((item) => item.id === session.id)
   if (!exists) return [session, ...sessions]
+  return sessions.map((item) =>
+    item.id === session.id && isSessionPolicyNewerOrEqual(session, item) ? session : item,
+  )
+}
+
+function replaceSession(sessions: AgentRuntimeSession[], session: AgentRuntimeSession) {
+  const exists = sessions.some((item) => item.id === session.id)
+  if (!exists) return [session, ...sessions]
   return sessions.map((item) => (item.id === session.id ? session : item))
+}
+
+function applyPendingPermissionIntent(
+  sessions: AgentRuntimeSession[],
+  intent: PermissionUpdateRequest | null,
+) {
+  if (!intent?.sessionId) return sessions
+  return sessions.map((session) => sessionWithPendingPermissionIntent(session, intent))
+}
+
+function sessionWithPendingPermissionIntent(
+  session: AgentRuntimeSession,
+  intent: PermissionUpdateRequest | null,
+) {
+  if (!intent?.sessionId || session.id !== intent.sessionId) return session
+  return { ...session, permission_mode: intent.mode }
 }
 
 function mergeFetchedSessions(
@@ -479,13 +659,45 @@ function emitRuntimeSessionUpdated(session: AgentRuntimeSession) {
 
 function readDraftPermissionMode(): AgentPermissionMode {
   if (typeof window === "undefined") return DEFAULT_PERMISSION_MODE
-  const stored = window.localStorage.getItem(DRAFT_PERMISSION_MODE_STORAGE_KEY)
-  return isPermissionMode(stored) ? stored : DEFAULT_PERMISSION_MODE
+  const stored = readStoredDraftPermissionMode()
+  if (isPermissionMode(stored)) return stored
+  const legacy = safeStorageGet(LEGACY_DRAFT_PERMISSION_MODE_STORAGE_KEY)
+  return isPermissionMode(legacy) ? legacy : DEFAULT_PERMISSION_MODE
 }
 
 function writeDraftPermissionMode(mode: AgentPermissionMode) {
   if (typeof window === "undefined") return
-  window.localStorage.setItem(DRAFT_PERMISSION_MODE_STORAGE_KEY, mode)
+  try {
+    window.localStorage.setItem(DRAFT_PERMISSION_MODE_STORAGE_KEY, mode)
+  } catch {
+    // Storage can be unavailable in private browsing or restricted embeds.
+  }
+}
+
+function readStoredDraftPermissionMode() {
+  return safeStorageGet(DRAFT_PERMISSION_MODE_STORAGE_KEY)
+}
+
+function safeStorageGet(key: string) {
+  if (typeof window === "undefined") return null
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function restoreStoredDraftPermissionMode(value: string | null) {
+  if (typeof window === "undefined") return
+  try {
+    if (value === null) {
+      window.localStorage.removeItem(DRAFT_PERMISSION_MODE_STORAGE_KEY)
+    } else {
+      window.localStorage.setItem(DRAFT_PERMISSION_MODE_STORAGE_KEY, value)
+    }
+  } catch {
+    // The in-memory draft still rolls back when browser storage is unavailable.
+  }
 }
 
 function eventTriggersStateRefresh(type: string) {
@@ -522,4 +734,24 @@ function timestamp(value?: string | null) {
   if (!value) return 0
   const parsed = Date.parse(value)
   return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function isSessionPolicyNewer(
+  candidate: AgentRuntimeSession,
+  current?: AgentRuntimeSession,
+) {
+  if (!current) return true
+  return sessionPolicyVersion(candidate) > sessionPolicyVersion(current)
+}
+
+function isSessionPolicyNewerOrEqual(
+  candidate: AgentRuntimeSession,
+  current?: AgentRuntimeSession,
+) {
+  if (!current) return true
+  return sessionPolicyVersion(candidate) >= sessionPolicyVersion(current)
+}
+
+function sessionPolicyVersion(session: AgentRuntimeSession) {
+  return session.permission_policy_version ?? 0
 }
