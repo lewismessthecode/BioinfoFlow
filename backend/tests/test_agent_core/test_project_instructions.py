@@ -9,6 +9,7 @@ from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.context.instructions import (
+    _is_remote_target,
     _remote_read_first_existing_command,
     _target_metadata,
 )
@@ -158,6 +159,41 @@ async def test_current_local_session_target_overrides_stale_remote_turn_target(
     assert context is not None
     assert "current local instructions" in context
     assert "stale remote instructions" not in context
+
+
+@pytest.mark.parametrize(
+    ("stale_alias", "current_target", "expected_remote"),
+    [
+        ("remote_ssh", {"type": "local"}, False),
+        (
+            "local",
+            {"type": "remote_ssh", "connection_id": "conn-current"},
+            True,
+        ),
+    ],
+)
+def test_current_target_removes_conflicting_stale_aliases(
+    stale_alias,
+    current_target,
+    expected_remote,
+):
+    session = SimpleNamespace(session_metadata={"execution_target": current_target})
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "kind": stale_alias,
+                "target_type": stale_alias,
+                "mode": stale_alias,
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+
+    assert "kind" not in target
+    assert "target_type" not in target
+    assert "mode" not in target
+    assert _is_remote_target(target) is expected_remote
 
 
 @pytest.mark.asyncio
@@ -392,6 +428,9 @@ async def test_remote_project_instructions_drop_root_when_current_target_changes
             "remote_project_id": "project-a",
             "remote_project_root": "/srv/project-a",
             "remote_root_path": "/srv/project-a",
+            "project_instruction_snapshot": "project A singular snapshot",
+            "project_instructions_snapshot": "project A plural snapshot",
+            "project_instructions": "project A derived instructions",
             "execution_target": {
                 "type": "remote_ssh",
                 "connection_id": "conn-b",
@@ -406,10 +445,16 @@ async def test_remote_project_instructions_drop_root_when_current_target_changes
     assert "remote_project_id" not in target
     assert "remote_project_root" not in target
     assert "remote_root_path" not in target
+    assert "project_instruction_snapshot" not in target
+    assert "project_instructions_snapshot" not in target
+    assert "project_instructions" not in target
     assert reader.calls == []
     assert context is not None
     assert "/srv/project-a" not in context
     assert "leaked project A instructions" not in context
+    assert "project A singular snapshot" not in context
+    assert "project A plural snapshot" not in context
+    assert "project A derived instructions" not in context
 
 
 @pytest.mark.asyncio

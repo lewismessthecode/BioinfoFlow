@@ -46,7 +46,14 @@ async def render_remote_connection_context(
             session_id=str(getattr(agent_session, "id", "")) or None,
         )
     except Exception:  # noqa: BLE001 - dynamic context must never break a turn
-        return None
+        return "\n".join(
+            [
+                "## Remote connection",
+                f"- Target connection ID: {connection_id}",
+                "- Status: unavailable",
+                "- Connection details could not be resolved for the current target.",
+            ]
+        )
 
     lines = [
         "## Remote connection",

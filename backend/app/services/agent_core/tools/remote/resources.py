@@ -440,8 +440,13 @@ async def _selected_remote_connection_ids(
         return []
     if str(session.workspace_id) != workspace_id or str(session.user_id) != user_id:
         return []
+    session_metadata = getattr(session, "session_metadata", None)
     execution_target = execution_target_from_session(session)
     target_connection_id = execution_target.get("connection_id")
+    if isinstance(session_metadata, dict) and "execution_target" in session_metadata:
+        if target_connection_id and _is_uuid_string(target_connection_id):
+            return [target_connection_id]
+        return []
     if target_connection_id and _is_uuid_string(target_connection_id):
         return [target_connection_id]
     project_connection_id = await _session_remote_project_connection_id(db, session)

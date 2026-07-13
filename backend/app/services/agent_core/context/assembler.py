@@ -44,7 +44,6 @@ class AgentContextAssembler:
         *,
         agent_session,
         turn,
-        exposed_tools=None,
     ) -> list[dict]:
         await self._compact_if_needed(agent_session=agent_session, turn=turn)
         execution_target = execution_target_from_session(agent_session)

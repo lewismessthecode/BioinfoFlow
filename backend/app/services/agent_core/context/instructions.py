@@ -244,8 +244,17 @@ def _target_metadata(
         and target_connection_id
         and project_connection_id != target_connection_id
     ):
-        for key in ("remote_project_id", "remote_project_root", "remote_root_path"):
+        for key in (
+            "remote_project_id",
+            "remote_project_root",
+            "remote_root_path",
+            "project_instruction_snapshot",
+            "project_instructions_snapshot",
+            "project_instructions",
+        ):
             merged.pop(key, None)
+    for key in ("kind", "target_type", "mode"):
+        merged.pop(key, None)
     merged["execution_target"] = dict(current_target)
     merged.update(current_target)
     return merged

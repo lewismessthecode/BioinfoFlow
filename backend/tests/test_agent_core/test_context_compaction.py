@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -147,7 +146,7 @@ async def test_context_compaction_supersedes_older_messages(db_session):
 
 
 @pytest.mark.asyncio
-async def test_local_context_keeps_platform_guidance_without_duplicating_tool_schemas(
+async def test_local_context_keeps_platform_guidance_without_tool_inventory_prose(
     db_session,
 ):
     await _workspace(db_session)
@@ -168,12 +167,6 @@ async def test_local_context_keeps_platform_guidance_without_duplicating_tool_sc
     messages = await AgentContextAssembler(db_session).provider_messages(
         agent_session=session,
         turn=turn,
-        exposed_tools=[
-            SimpleNamespace(
-                name="runs.submit",
-                description="Submit a registered workflow run.",
-            )
-        ],
     )
     system_content = messages[0]["content"]
     platform_context = system_content.split("## Bioinfoflow local platform", 1)[1]
