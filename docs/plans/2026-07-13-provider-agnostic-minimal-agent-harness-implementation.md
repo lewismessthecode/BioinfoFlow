@@ -559,7 +559,14 @@ Accepted final-review invariants:
   events as one aggregate;
 - watch claimed actions from an independent database session so cross-process
   cancellation cancels cooperative tools, with explicit subprocess cleanup for
-  shell, Docker build, and ripgrep tools.
+  shell, Docker build, and ripgrep tools;
+- bind action creation, execution start, and aggregate completion to the
+  original turn owner token, including isolated read workers;
+- heartbeat the turn lease while a healthy long-running tool is active so
+  another process cannot falsely recover it;
+- require resume requests to match the turn's one pending observation; and
+- serialize assistant events and canonical transcript commits against the
+  execution-target row so a response from a superseded target is discarded.
 
 - [ ] **Step 3: Commit review fixes when changes exist**
 

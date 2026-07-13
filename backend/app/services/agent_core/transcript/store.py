@@ -11,7 +11,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_core import AgentMessage
-from app.repositories.agent_core_repo import AgentMessageRepository
+from app.repositories.agent_core_repo import (
+    AgentMessageRepository,
+    AgentSessionRepository,
+)
+from app.services.agent_core.execution_target import (
+    ExecutionTargetChangedError,
+    execution_target_from_session,
+    normalize_execution_target,
+)
 from app.services.agent_core.transcript.messages import parts_to_text, text_part
 
 
@@ -49,7 +57,20 @@ class AgentTranscriptStore:
         metadata: dict[str, Any] | None = None,
         status: str = "committed",
         ordering_index: int | None = None,
+        expected_execution_target=None,
     ):
+        if expected_execution_target is not None:
+            session = await AgentSessionRepository(self.session).lock_for_update(
+                session_id
+            )
+            if session is None:
+                raise RuntimeError("Agent session disappeared before transcript append")
+            if (
+                execution_target_from_session(session)
+                != normalize_execution_target(expected_execution_target)
+            ):
+                await self.session.rollback()
+                raise ExecutionTargetChangedError
         if ordering_index is None:
             ordering_index = await self.messages.next_ordering_index(session_id)
         return await self.messages.create(

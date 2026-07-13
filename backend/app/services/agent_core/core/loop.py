@@ -39,7 +39,10 @@ from app.services.agent_core.core.stream_adapter import (
 )
 from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.events import AgentEventType
-from app.services.agent_core.execution_target import execution_target_from_session
+from app.services.agent_core.execution_target import (
+    ExecutionTargetChangedError,
+    execution_target_from_session,
+)
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.observability import truncate_log_value
@@ -64,10 +67,6 @@ from app.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
-
-
-class _ExecutionTargetChanged(Exception):
-    pass
 
 
 class AgentLoopController:
@@ -252,8 +251,9 @@ class AgentLoopController:
                         response=response,
                         message_id=message_id,
                         allow_thinking=strategy.allow_thinking,
+                        expected_execution_target=execution_target,
                     )
-            except _ExecutionTargetChanged:
+            except ExecutionTargetChangedError:
                 continue
 
             token_usage = _merge_usage(token_usage, streamed.token_usage)
@@ -279,14 +279,18 @@ class AgentLoopController:
                 tool_call_signatures = [
                     _tool_call_signature(tool_call) for tool_call in tool_calls
                 ]
-                await self._append_assistant_tool_calls(
-                    agent_session=agent_session,
-                    turn=turn,
-                    provider=provider,
-                    model=model,
-                    tool_calls=tool_calls,
-                    text=streamed.text or None,
-                )
+                try:
+                    await self._append_assistant_tool_calls(
+                        agent_session=agent_session,
+                        turn=turn,
+                        provider=provider,
+                        model=model,
+                        tool_calls=tool_calls,
+                        text=streamed.text or None,
+                        expected_execution_target=execution_target,
+                    )
+                except ExecutionTargetChangedError:
+                    continue
                 try:
                     (
                         waiting,
@@ -400,13 +404,17 @@ class AgentLoopController:
                     error_code="empty_model_response",
                     error_message="The selected model completed without returning visible text.",
                 )
-            await self.transcript.append_parts(
-                session_id=str(agent_session.id),
-                turn_id=str(turn.id),
-                role="assistant",
-                parts=[text_part(final_text)],
-                metadata={"provider": provider, "model": model},
-            )
+            try:
+                await self.transcript.append_parts(
+                    session_id=str(agent_session.id),
+                    turn_id=str(turn.id),
+                    role="assistant",
+                    parts=[text_part(final_text)],
+                    metadata={"provider": provider, "model": model},
+                    expected_execution_target=execution_target,
+                )
+            except ExecutionTargetChangedError:
+                continue
             return LoopResult(
                 termination_reason="assistant_final",
                 final_text=final_text,
@@ -771,6 +779,7 @@ class AgentLoopController:
         model: str,
         tool_calls: list[dict[str, Any]],
         text: str | None = None,
+        expected_execution_target=None,
     ) -> None:
         parts: list[dict[str, Any]] = []
         if text:
@@ -784,6 +793,7 @@ class AgentLoopController:
             role="assistant",
             parts=parts,
             metadata={"provider": provider, "model": model, "kind": "tool_calls"},
+            expected_execution_target=expected_execution_target,
         )
 
     async def _append_tool_result(
@@ -864,8 +874,12 @@ class AgentLoopController:
                     error={"type": "CancelledError", "message": "Turn no longer exists."},
                 )
             await session.refresh(current_turn)
-            if current_turn.status == AgentTurnStatus.CANCELLED or is_interrupt_requested(
-                current_turn
+            original_claim = getattr(turn, "claimed_at", None)
+            if (
+                original_claim is None
+                or current_turn.status != AgentTurnStatus.RUNNING
+                or current_turn.claimed_at != original_claim
+                or is_interrupt_requested(current_turn)
             ):
                 return ToolExecutionResult(
                     action_id="",
@@ -887,7 +901,7 @@ class AgentLoopController:
                     user_id=turn.user_id,
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
-                    turn_claimed_at=current_turn.claimed_at,
+                    turn_claimed_at=original_claim,
                 ),
                 toolset_policy=agent_session.toolset_policy,
                 permission_mode=agent_session.permission_mode,
@@ -991,7 +1005,7 @@ class AgentLoopController:
             and execution_target_from_session(current_session)
             != expected_execution_target
         ):
-            raise _ExecutionTargetChanged
+            raise ExecutionTargetChangedError
         agent_session = current_session
         if not hasattr(response, "__aiter__"):
             return await self._consume_response(
@@ -1000,6 +1014,7 @@ class AgentLoopController:
                 response=response,
                 message_id=message_id,
                 allow_thinking=allow_thinking,
+                expected_execution_target=expected_execution_target,
             )
 
         text_parts: list[str] = []
@@ -1021,7 +1036,7 @@ class AgentLoopController:
                 close = getattr(response, "aclose", None)
                 if close is not None:
                     await close()
-                raise _ExecutionTargetChanged
+                raise ExecutionTargetChangedError
             agent_session = current_session
             usage = _merge_usage(usage, _extract_token_usage(chunk))
 
@@ -1038,6 +1053,7 @@ class AgentLoopController:
                         "content": "".join(thinking_parts),
                         "index": thinking_index,
                     },
+                    expected_execution_target=expected_execution_target,
                 )
                 thinking_index += 1
 
@@ -1053,6 +1069,7 @@ class AgentLoopController:
                             "content": "".join(thinking_parts).strip(),
                             "index": max(thinking_index - 1, 0),
                         },
+                        expected_execution_target=expected_execution_target,
                     )
                     thinking_completed = True
                 text_parts.append(text_delta)
@@ -1066,6 +1083,7 @@ class AgentLoopController:
                         "content": "".join(text_parts),
                         "index": text_index,
                     },
+                    expected_execution_target=expected_execution_target,
                 )
                 text_index += 1
 
@@ -1080,6 +1098,7 @@ class AgentLoopController:
                             "content": "".join(thinking_parts).strip(),
                             "index": max(thinking_index - 1, 0),
                         },
+                        expected_execution_target=expected_execution_target,
                     )
                     thinking_completed = True
                 seen_before = delta.index in seen_tool_calls
@@ -1108,6 +1127,7 @@ class AgentLoopController:
                             "status": "building",
                             "index": state.index,
                         },
+                        expected_execution_target=expected_execution_target,
                     )
                 if delta.arguments_delta:
                     state.arguments_text += delta.arguments_delta
@@ -1124,6 +1144,7 @@ class AgentLoopController:
                             "status": "building",
                             "index": state.index,
                         },
+                        expected_execution_target=expected_execution_target,
                     )
 
         current_session = await self.sessions.get_fresh(str(agent_session.id))
@@ -1132,7 +1153,7 @@ class AgentLoopController:
             and execution_target_from_session(current_session)
             != expected_execution_target
         ):
-            raise _ExecutionTargetChanged
+            raise ExecutionTargetChangedError
         agent_session = current_session
 
         thinking_text = "".join(thinking_parts).strip()
@@ -1146,6 +1167,7 @@ class AgentLoopController:
                     "content": thinking_text,
                     "index": max(thinking_index - 1, 0),
                 },
+                expected_execution_target=expected_execution_target,
             )
 
         tool_calls = [seen_tool_calls[index] for index in sorted(seen_tool_calls)]
@@ -1162,6 +1184,7 @@ class AgentLoopController:
                     "status": "completed",
                     "index": tool_call.index,
                 },
+                expected_execution_target=expected_execution_target,
             )
 
         final_text = "".join(text_parts).strip()
@@ -1176,6 +1199,7 @@ class AgentLoopController:
                     "content": final_text,
                     "index": max(text_index - 1, 0),
                 },
+                expected_execution_target=expected_execution_target,
             )
 
         return StreamCompletionResult(
@@ -1194,6 +1218,7 @@ class AgentLoopController:
         response: Any,
         message_id: str,
         allow_thinking: bool,
+        expected_execution_target=None,
     ) -> StreamCompletionResult:
         usage = _extract_token_usage(response)
         thinking_text = (
@@ -1209,6 +1234,7 @@ class AgentLoopController:
                     "content": thinking_text,
                     "index": 0,
                 },
+                expected_execution_target=expected_execution_target,
             )
         tool_calls = [
             _stream_tool_call_from_payload(item, index, message_id=message_id)
@@ -1226,6 +1252,7 @@ class AgentLoopController:
                     "status": "building",
                     "index": tool_call.index,
                 },
+                expected_execution_target=expected_execution_target,
             )
             await self.ledger.append(
                 session_id=str(agent_session.id),
@@ -1239,6 +1266,7 @@ class AgentLoopController:
                     "status": "completed",
                     "index": tool_call.index,
                 },
+                expected_execution_target=expected_execution_target,
             )
 
         final_text = _extract_response_text(response)
@@ -1253,6 +1281,7 @@ class AgentLoopController:
                     "content": final_text,
                     "index": 0,
                 },
+                expected_execution_target=expected_execution_target,
             )
 
         return StreamCompletionResult(

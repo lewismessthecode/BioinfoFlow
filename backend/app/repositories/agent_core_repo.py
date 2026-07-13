@@ -36,6 +36,7 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
             select(self.model)
             .where(self.model.id == session_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -586,6 +587,7 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         artifact_descriptor: dict | None,
         artifact_event_type: str,
         action_event_type: str,
+        expected_turn_claimed_at=None,
     ) -> tuple[AgentAction, list[str]] | None:
         session_id = await self.session.scalar(
             select(self.model.session_id).where(self.model.id == action_id)
@@ -596,12 +598,23 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             str(session_id)
         ) is None:
             return None
+        conditions = [
+            self.model.id == action_id,
+            self.model.status == AgentActionStatus.RUNNING,
+        ]
+        if expected_turn_claimed_at is not None:
+            conditions.append(
+                select(AgentTurn.id)
+                .where(
+                    AgentTurn.id == self.model.turn_id,
+                    AgentTurn.status == AgentTurnStatus.RUNNING,
+                    AgentTurn.claimed_at == expected_turn_claimed_at,
+                )
+                .exists()
+            )
         transition = await self.session.execute(
             update(self.model)
-            .where(
-                self.model.id == action_id,
-                self.model.status == AgentActionStatus.RUNNING,
-            )
+            .where(*conditions)
             .values(
                 status=AgentActionStatus.COMPLETED,
                 result=result,

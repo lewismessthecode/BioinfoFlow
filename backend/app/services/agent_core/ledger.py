@@ -6,6 +6,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentEventRepository, AgentSessionRepository
+from app.services.agent_core.execution_target import (
+    ExecutionTargetChangedError,
+    execution_target_from_session,
+    normalize_execution_target,
+)
 from app.services.agent_core.observability import agent_event_log_fields
 from app.utils.logging import get_logger
 
@@ -28,12 +33,20 @@ class AgentEventLedger:
         payload: dict | None = None,
         visibility: str = "user",
         schema_version: int = 1,
+        expected_execution_target=None,
     ):
         lock = _session_seq_locks.setdefault(session_id, asyncio.Lock())
         for attempt in range(3):
             async with lock:
-                if await self.session_repo.lock_for_update(session_id) is None:
+                session = await self.session_repo.lock_for_update(session_id)
+                if session is None:
                     raise RuntimeError("Agent session disappeared before event append")
+                if expected_execution_target is not None and (
+                    execution_target_from_session(session)
+                    != normalize_execution_target(expected_execution_target)
+                ):
+                    await self.event_repo.session.rollback()
+                    raise ExecutionTargetChangedError
                 seq = await self.event_repo.next_seq(session_id)
                 try:
                     event = await self.event_repo.create(

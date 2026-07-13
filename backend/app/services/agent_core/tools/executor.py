@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
 import app.database as app_database
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.config import settings
 from app.models.agent_core import AgentActionStatus, AgentTurnStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
@@ -577,17 +578,19 @@ class AgentToolExecutor:
             result=result,
             action_input=action.normalized_input or action.input or {},
         )
+        action_id = str(action.id)
         completed = await self.action_repo.complete_running(
-            str(action.id),
+            action_id,
             result=result,
             output_summary=summary,
             completed_at=datetime.now(timezone.utc),
             artifact_descriptor=artifact_descriptor,
             artifact_event_type=AgentEventType.ARTIFACT_CREATED,
             action_event_type=AgentEventType.ACTION_COMPLETED,
+            expected_turn_claimed_at=context.turn_claimed_at,
         )
         if completed is None:
-            return await self._current_action_result(str(action.id))
+            return await self._current_action_result(action_id)
         action, _artifact_ids = completed
         agent_metrics.increment("tools.completed")
         return ToolExecutionResult(
@@ -604,15 +607,28 @@ class AgentToolExecutor:
         tool: AgentTool,
         context: AgentToolContext,
     ) -> dict[str, Any]:
+        if not await self._durable_action_is_running(
+            str(action.id),
+            context=context,
+        ):
+            raise _DurableActionCancelled
         tool_task = asyncio.create_task(
             tool.run(action.normalized_input or action.input, context)
         )
         cancellation_task = asyncio.create_task(
             self._wait_for_durable_action_cancellation(str(action.id))
         )
+        heartbeat_task = (
+            asyncio.create_task(self._heartbeat_turn_lease(context))
+            if context.turn_claimed_at is not None
+            else None
+        )
         try:
+            waiters = {tool_task, cancellation_task}
+            if heartbeat_task is not None:
+                waiters.add(heartbeat_task)
             done, _pending = await asyncio.wait(
-                {tool_task, cancellation_task},
+                waiters,
                 timeout=tool.spec.timeout_seconds,
                 return_when=asyncio.FIRST_COMPLETED,
             )
@@ -624,6 +640,11 @@ class AgentToolExecutor:
                 tool_task.cancel()
                 await asyncio.gather(tool_task, return_exceptions=True)
                 raise _DurableActionCancelled
+            if heartbeat_task is not None and heartbeat_task in done:
+                if not heartbeat_task.result():
+                    tool_task.cancel()
+                    await asyncio.gather(tool_task, return_exceptions=True)
+                    raise _DurableActionCancelled
             return await tool_task
         except BaseException:
             tool_task.cancel()
@@ -632,6 +653,65 @@ class AgentToolExecutor:
         finally:
             cancellation_task.cancel()
             await asyncio.gather(cancellation_task, return_exceptions=True)
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
+                await asyncio.gather(heartbeat_task, return_exceptions=True)
+
+    async def _durable_action_is_running(
+        self,
+        action_id: str,
+        *,
+        context: AgentToolContext,
+    ) -> bool:
+        bind = self.session.bind
+        session_factory = (
+            async_sessionmaker(bind=bind, expire_on_commit=False, class_=AsyncSession)
+            if bind is not None
+            else app_database.async_session_maker
+        )
+        async with session_factory() as check_db:
+            action = await AgentActionRepository(check_db).get(action_id)
+            if action is None:
+                return False
+            await check_db.refresh(action)
+            if action.status != AgentActionStatus.RUNNING:
+                return False
+            if context.turn_claimed_at is None:
+                return True
+            turn = await AgentTurnRepository(check_db).get_fresh(context.turn_id)
+            return bool(
+                turn is not None
+                and turn.status == AgentTurnStatus.RUNNING
+                and turn.claimed_at == context.turn_claimed_at
+            )
+
+    async def _heartbeat_turn_lease(self, context: AgentToolContext) -> bool:
+        claim_token = context.turn_claimed_at
+        if claim_token is None:
+            return True
+        lease_seconds = max(
+            int(getattr(settings, "agent_turn_lease_seconds", 300) or 300),
+            1,
+        )
+        interval = max(min(lease_seconds / 3, 30.0), 0.05)
+        bind = self.session.bind
+        session_factory = (
+            async_sessionmaker(bind=bind, expire_on_commit=False, class_=AsyncSession)
+            if bind is not None
+            else app_database.async_session_maker
+        )
+        async with session_factory() as heartbeat_db:
+            turns = AgentTurnRepository(heartbeat_db)
+            while True:
+                await asyncio.sleep(interval)
+                now = datetime.now(timezone.utc)
+                updated = await turns.update_if_claimed(
+                    context.turn_id,
+                    expected_claimed_at=claim_token,
+                    lease_until=now + timedelta(seconds=lease_seconds),
+                )
+                if updated is None:
+                    return False
 
     async def _wait_for_durable_action_cancellation(self, action_id: str) -> bool:
         bind = self.session.bind
@@ -640,13 +720,14 @@ class AgentToolExecutor:
             if bind is not None
             else app_database.async_session_maker
         )
-        async with session_factory() as watcher_db:
-            watcher_repo = AgentActionRepository(watcher_db)
-            while True:
-                await asyncio.sleep(0.05)
+        while True:
+            await asyncio.sleep(0.05)
+            async with session_factory() as watcher_db:
+                watcher_repo = AgentActionRepository(watcher_db)
                 current = await watcher_repo.get(action_id)
                 if current is None:
                     return True
                 await watcher_db.refresh(current)
-                if current.status != AgentActionStatus.RUNNING:
-                    return True
+                is_running = current.status == AgentActionStatus.RUNNING
+            if not is_running:
+                return True

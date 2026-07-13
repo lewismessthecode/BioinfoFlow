@@ -18,6 +18,7 @@ from app.repositories.agent_core_repo import (
     AgentArtifactRepository,
     AgentEventRepository,
     AgentMessageRepository,
+    AgentTurnRepository,
 )
 from app.config import settings
 from app.services.agent_core import AgentCoreService
@@ -302,6 +303,72 @@ async def test_interrupt_cannot_be_overwritten_after_action_is_claimed(
     ]
     assert len(tool_results) == 1
     assert json.loads(tool_results[0].content_parts[0]["text"])["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_committed_interrupt_after_action_claim_prevents_tool_coroutine_start(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    tool_started = asyncio.Event()
+    tool_release = asyncio.Event()
+    tool = _BlockingMutationTool(tool_started, tool_release)
+    _service, session, turn, action = await _session_turn_and_action(
+        db_session,
+        tool_name=tool.name,
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    action_claimed = asyncio.Event()
+    allow_tool_start = asyncio.Event()
+
+    async with maker() as run_db:
+        registry = AgentToolRegistry()
+        registry.register(tool)
+        executor = AgentToolExecutor(run_db, registry)
+        original_run_tool = executor._run_tool_with_cancellation
+
+        async def wait_after_claim_before_tool_start(*, action, tool, context):
+            action_claimed.set()
+            await allow_tool_start.wait()
+            return await original_run_tool(action=action, tool=tool, context=context)
+
+        monkeypatch.setattr(
+            executor,
+            "_run_tool_with_cancellation",
+            wait_after_claim_before_tool_start,
+        )
+        run_task = asyncio.create_task(
+            executor.resume_action(
+                action_id=str(action.id),
+                context=AgentToolContext(
+                    db=run_db,
+                    workspace_id=DEFAULT_WORKSPACE_ID,
+                    user_id="dev",
+                    session_id=str(session.id),
+                    turn_id=str(turn.id),
+                ),
+            )
+        )
+        await action_claimed.wait()
+
+        async with maker() as interrupt_db:
+            await AgentCoreService(interrupt_db).interrupt_turn(
+                turn_id=str(turn.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+            )
+            cancelled_action = await AgentActionRepository(interrupt_db).get(
+                str(action.id)
+            )
+            assert cancelled_action.status == AgentActionStatus.CANCELLED
+
+        allow_tool_start.set()
+        result = await asyncio.wait_for(run_task, timeout=1)
+
+    assert result.status == AgentActionStatus.CANCELLED
+    assert not tool_started.is_set()
 
 
 @pytest.mark.asyncio
@@ -921,6 +988,120 @@ async def test_recovery_skips_running_turn_with_unexpired_lease(
     assert turn.claimed_at.replace(tzinfo=timezone.utc) == now
     assert turn.lease_until is not None
     assert enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_running_tool_heartbeats_turn_lease_and_blocks_recovery(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    monkeypatch.setattr(settings, "agent_turn_lease_seconds", 1)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep the live tool owner healthy with lease heartbeats.",
+    )
+    claimed_at = datetime.now(timezone.utc)
+    claimed_turn = await service.turn_repo.claim_for_run(
+        str(turn.id),
+        claimed_at=claimed_at,
+        lease_until=claimed_at + timedelta(seconds=1),
+    )
+    assert claimed_turn is not None
+    agent_session = await service.session_repo.get(str(session.id))
+    assert agent_session is not None
+
+    tool_started = asyncio.Event()
+    tool_release = asyncio.Event()
+    heartbeat_observed = asyncio.Event()
+    tool = _BlockingMutationTool(
+        tool_started,
+        tool_release,
+        name="lease-heartbeat.mutate",
+    )
+    original_update_if_claimed = AgentTurnRepository.update_if_claimed
+
+    async def observe_lease_renewal(
+        repo,
+        turn_id,
+        *,
+        expected_claimed_at,
+        **values,
+    ):
+        updated = await original_update_if_claimed(
+            repo,
+            turn_id,
+            expected_claimed_at=expected_claimed_at,
+            **values,
+        )
+        if tool_started.is_set() and values.get("lease_until") is not None:
+            heartbeat_observed.set()
+        return updated
+
+    monkeypatch.setattr(
+        AgentTurnRepository,
+        "update_if_claimed",
+        observe_lease_renewal,
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async with maker() as run_db:
+        controller = AgentLoopController(run_db)
+        controller.registry.register(tool)
+        tool_calls = [
+            {
+                "id": "lease-heartbeat-call",
+                "name": tool.name,
+                "arguments": {},
+            }
+        ]
+        await controller._append_assistant_tool_calls(
+            agent_session=agent_session,
+            turn=claimed_turn,
+            provider="test",
+            model="test",
+            tool_calls=tool_calls,
+        )
+        execute_task = asyncio.create_task(
+            controller._execute_tool_calls(
+                agent_session=agent_session,
+                turn=claimed_turn,
+                tool_calls=tool_calls,
+            )
+        )
+        await tool_started.wait()
+
+        async with maker() as expire_db:
+            expire_service = AgentCoreService(expire_db)
+            live_turn = await expire_service.turn_repo.get(str(turn.id))
+            await expire_service.turn_repo.update_all(
+                live_turn,
+                lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
+            )
+
+        try:
+            await asyncio.wait_for(heartbeat_observed.wait(), timeout=2)
+            async with maker() as recovery_db:
+                recovery_service = AgentCoreService(recovery_db)
+                recovery_summary = await recovery_service.recover_orphaned_turns()
+                stored_turn = await recovery_service.turn_repo.get(str(turn.id))
+        finally:
+            tool_release.set()
+            await asyncio.gather(execute_task, return_exceptions=True)
+
+    assert recovery_summary["skipped"] == 1
+    assert stored_turn.status == "running"
+    assert stored_turn.claimed_at.replace(tzinfo=timezone.utc) == claimed_at
 
 
 @pytest.mark.asyncio
