@@ -30,8 +30,14 @@ _PUBLIC_MESSAGES = {
 class LiteLLMBackend:
     """Execute one wire-level LiteLLM request without hidden retry policy."""
 
-    def __init__(self, *, acompletion_fn: CompletionCallable | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        acompletion_fn: CompletionCallable | None = None,
+        aresponses_fn: CompletionCallable | None = None,
+    ) -> None:
         self._acompletion = acompletion_fn or litellm.acompletion
+        self._aresponses = aresponses_fn or litellm.aresponses
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
@@ -41,14 +47,18 @@ class LiteLLMBackend:
         wire_protocol: WireProtocol,
         request: Mapping[str, Any],
     ) -> Any:
-        if wire_protocol != "chat_completions":
+        if wire_protocol == "chat_completions":
+            operation = self._acompletion
+        elif wire_protocol == "responses":
+            operation = self._aresponses
+        else:
             raise ValueError(f"Unsupported wire protocol: {wire_protocol}")
 
         request_kwargs = dict(request)
         request_kwargs["num_retries"] = 0
         sensitive_values = _sensitive_values(request_kwargs)
         try:
-            response = await self._acompletion(**request_kwargs)
+            response = await operation(**request_kwargs)
         except ModelError:
             raise
         except Exception as exc:

@@ -4,7 +4,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.models.llm import LlmWireProtocol
 
 
 ProviderKind = Literal[
@@ -24,6 +26,7 @@ ProviderKind = Literal[
 ]
 ProviderScope = Literal["global", "workspace", "user"]
 CredentialSource = Literal["none", "env", "stored"]
+WireProtocol = Literal["chat_completions", "responses"]
 
 
 class LlmProviderCredentialUpdate(BaseModel):
@@ -46,6 +49,7 @@ class LlmProviderCredentialRead(BaseModel):
 class LlmProviderCreate(BaseModel):
     name: str
     kind: ProviderKind
+    wire_protocol: WireProtocol = "chat_completions"
     base_url: str | None = None
     api_key_ref: str | None = None
     scope: ProviderScope = "user"
@@ -53,16 +57,39 @@ class LlmProviderCreate(BaseModel):
     allow_insecure_http: bool = False
     metadata: dict | None = None
 
+    @model_validator(mode="after")
+    def validate_wire_protocol_support(self):
+        LlmWireProtocol.validate_for_kind(self.kind, self.wire_protocol)
+        return self
+
 
 class LlmProviderUpdate(BaseModel):
     name: str | None = None
     kind: ProviderKind | None = None
+    wire_protocol: WireProtocol | None = None
     base_url: str | None = None
     api_key_ref: str | None = None
     scope: ProviderScope | None = None
     enabled: bool | None = None
     allow_insecure_http: bool | None = None
     metadata: dict | None = None
+
+    @model_validator(mode="after")
+    def validate_complete_protocol_update(self):
+        if self.kind is not None and self.wire_protocol is not None:
+            LlmWireProtocol.validate_for_kind(self.kind, self.wire_protocol)
+        return self
+
+    def validate_merged_wire_protocol(
+        self,
+        *,
+        current_kind: str,
+        current_wire_protocol: str,
+    ) -> tuple[str, str]:
+        kind = self.kind or current_kind
+        wire_protocol = self.wire_protocol or current_wire_protocol
+        LlmWireProtocol.validate_for_kind(kind, wire_protocol)
+        return kind, wire_protocol
 
 
 class LlmProviderRead(BaseModel):
@@ -71,6 +98,7 @@ class LlmProviderRead(BaseModel):
     id: UUID
     name: str
     kind: ProviderKind
+    wire_protocol: WireProtocol = "chat_completions"
     base_url: str | None = None
     api_key_ref: str | None = None
     scope: ProviderScope
@@ -118,6 +146,8 @@ class LlmProviderTemplateRead(BaseModel):
         "gemini_models",
     ]
     default_base_url: str | None = None
+    supported_wire_protocols: list[WireProtocol]
+    default_wire_protocol: WireProtocol
     fields: list[LlmProviderTemplateFieldRead]
     models: list[LlmProviderTemplateModelRead]
 
@@ -127,12 +157,22 @@ class LlmProviderSetupRequest(BaseModel):
     provider_id: UUID | None = None
     name: str | None = None
     base_url: str | None = None
+    wire_protocol: WireProtocol = "chat_completions"
     api_key: str | None = None
     model_ids: list[str] | None = None
     discover: bool = False
     scope: ProviderScope = "user"
     enabled: bool = True
     allow_insecure_http: bool = False
+
+    @model_validator(mode="after")
+    def validate_wire_protocol_support(self):
+        from app.services.llm.provider_templates import get_provider_template
+
+        template = get_provider_template(self.template_id)
+        if template is not None:
+            template.validate_wire_protocol(self.wire_protocol)
+        return self
 
 
 class LlmModelCreate(BaseModel):

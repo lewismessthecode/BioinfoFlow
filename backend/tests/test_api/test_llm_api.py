@@ -169,6 +169,189 @@ async def test_llm_provider_setup_creates_vllm_provider_key_and_manual_model(
 
 
 @pytest.mark.asyncio
+async def test_llm_provider_setup_persists_explicit_responses_protocol(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Responses relay",
+            "base_url": "https://relay.example.com/v1",
+            "wire_protocol": "responses",
+            "api_key": "relay-key",
+            "model_ids": ["gpt-5.4-mini"],
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 200
+    provider = response.json()["data"]["provider"]
+    assert provider["wire_protocol"] == "responses"
+
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    assert configuration.status_code == 200
+    persisted = next(
+        item
+        for item in configuration.json()["data"]["providers"]
+        if item["id"] == provider["id"]
+    )
+    assert persisted["wire_protocol"] == "responses"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_setup_can_switch_wire_protocol_in_both_directions(
+    async_client,
+):
+    created = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Switchable relay",
+            "base_url": "https://relay.example.com/v1",
+            "api_key": "relay-key",
+            "model_ids": ["gpt-5.4-mini"],
+            "scope": "user",
+        },
+    )
+    assert created.status_code == 200
+    provider = created.json()["data"]["provider"]
+    assert provider["wire_protocol"] == "chat_completions"
+
+    switched_to_responses = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "provider_id": provider["id"],
+            "wire_protocol": "responses",
+            "scope": "user",
+        },
+    )
+    assert switched_to_responses.status_code == 200
+    assert (
+        switched_to_responses.json()["data"]["provider"]["wire_protocol"]
+        == "responses"
+    )
+
+    switched_to_chat = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "provider_id": provider["id"],
+            "wire_protocol": "chat_completions",
+            "scope": "user",
+        },
+    )
+    assert switched_to_chat.status_code == 200
+    assert (
+        switched_to_chat.json()["data"]["provider"]["wire_protocol"]
+        == "chat_completions"
+    )
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_update_rejects_protocol_unsupported_by_current_kind(
+    async_client,
+):
+    created = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Anthropic endpoint",
+            "kind": "anthropic",
+        },
+    )
+    assert created.status_code == 201
+    provider = created.json()["data"]
+    assert provider["wire_protocol"] == "chat_completions"
+
+    response = await async_client.patch(
+        f"/api/v1/llm/providers/{provider['id']}",
+        json={"wire_protocol": "responses"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_update_rejects_kind_unsupported_by_current_protocol(
+    async_client,
+):
+    created = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "OpenAI Responses endpoint",
+            "kind": "openai",
+            "wire_protocol": "responses",
+        },
+    )
+    assert created.status_code == 201
+    provider = created.json()["data"]
+    assert provider["wire_protocol"] == "responses"
+
+    response = await async_client.patch(
+        f"/api/v1/llm/providers/{provider['id']}",
+        json={"kind": "anthropic"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_create_defaults_to_chat_completions_for_compatibility(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Compatibility endpoint",
+            "kind": "openai_compatible",
+            "base_url": "https://relay.example.com/v1",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["wire_protocol"] == "chat_completions"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_setup_update_preserves_omitted_wire_protocol(
+    async_client,
+):
+    created = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Persistent Responses relay",
+            "base_url": "https://relay.example.com/v1",
+            "wire_protocol": "responses",
+            "api_key": "relay-key",
+            "model_ids": ["gpt-5.4-mini"],
+            "scope": "user",
+        },
+    )
+    assert created.status_code == 200
+    provider = created.json()["data"]["provider"]
+    assert provider["wire_protocol"] == "responses"
+
+    updated = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "provider_id": provider["id"],
+            "name": "Renamed Responses relay",
+            "scope": "user",
+        },
+    )
+
+    assert updated.status_code == 200
+    updated_provider = updated.json()["data"]["provider"]
+    assert updated_provider["name"] == "Renamed Responses relay"
+    assert updated_provider["wire_protocol"] == "responses"
+
+
+@pytest.mark.asyncio
 async def test_llm_provider_setup_allows_explicit_public_insecure_http(
     async_client,
 ):

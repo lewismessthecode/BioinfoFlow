@@ -6,11 +6,15 @@ from app.services.agent_core.context.assembler import model_context_from_message
 from app.services.agent_core.tools.specs import AgentToolSpec
 from app.services.agent_core.tools.toolsets import model_tool_definitions
 from app.services.agent_core.transcript.messages import (
+    metadata_with_responses_continuation,
     model_input_parts_from_message,
     provider_message_from_parts,
+    responses_continuation_from_metadata,
+    text_part,
     tool_calls_part,
 )
 from app.services.model_runtime.contracts import (
+    ResponsesContinuation,
     TextPart,
     ToolCallPart,
     ToolDefinition,
@@ -143,6 +147,31 @@ def test_tool_result_uses_metadata_call_id_and_error_flag():
         ),
     )
 
+
+def test_responses_phase_and_private_continuation_round_trip_without_public_leak():
+    secret = "encrypted-private-reasoning"
+    continuation = ResponsesContinuation(
+        response_id="resp-1",
+        canonical_input_count=3,
+        output_items=({"type": "reasoning", "encrypted_content": secret},),
+    )
+    metadata = metadata_with_responses_continuation(
+        {"provider": "openai_compatible"},
+        continuation,
+    )
+
+    restored = responses_continuation_from_metadata(metadata)
+    assert restored is not None
+    assert restored.to_private_dict() == continuation.to_private_dict()
+    parts = [
+        text_part("Working.", phase="commentary"),
+        text_part("Done.", phase="final_answer"),
+    ]
+    assert model_input_parts_from_message("assistant", parts, metadata) == (
+        TextPart(text="Working.", phase="commentary"),
+        TextPart(text="Done.", phase="final_answer"),
+    )
+    assert secret not in repr(provider_message_from_parts("assistant", parts, metadata))
 
 def test_context_messages_shape_model_instructions_and_inputs_without_secrets():
     secret = "sentinel-context-secret"

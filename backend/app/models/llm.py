@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -28,6 +37,31 @@ class LlmProviderScope:
     USER = "user"
 
 
+class LlmWireProtocol:
+    CHAT_COMPLETIONS = "chat_completions"
+    RESPONSES = "responses"
+
+    ALL = (CHAT_COMPLETIONS, RESPONSES)
+    _RESPONSES_KINDS = frozenset(
+        {LlmProviderKind.OPENAI, LlmProviderKind.OPENAI_COMPATIBLE}
+    )
+
+    @classmethod
+    def supported_for_kind(cls, kind: str) -> tuple[str, ...]:
+        return cls.ALL if kind in cls._RESPONSES_KINDS else (cls.CHAT_COMPLETIONS,)
+
+    @classmethod
+    def validate_for_kind(cls, kind: str, wire_protocol: str) -> str:
+        if wire_protocol not in cls.ALL:
+            raise ValueError(f"Unknown LLM wire protocol: {wire_protocol}")
+        if wire_protocol not in cls.supported_for_kind(kind):
+            raise ValueError(
+                f"Provider kind {kind!r} does not support wire protocol "
+                f"{wire_protocol!r}."
+            )
+        return wire_protocol
+
+
 class LlmCredentialSource:
     NONE = "none"
     ENV = "env"
@@ -38,10 +72,20 @@ class LlmProvider(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "llm_providers"
     __table_args__ = (
         UniqueConstraint("scope", "workspace_id", "user_id", "name", name="uq_llm_providers_scope_name"),
+        CheckConstraint(
+            "wire_protocol IN ('chat_completions', 'responses')",
+            name="ck_llm_providers_wire_protocol",
+        ),
     )
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     kind: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    wire_protocol: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=LlmWireProtocol.CHAT_COMPLETIONS,
+        server_default=LlmWireProtocol.CHAT_COMPLETIONS,
+    )
     base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     api_key_ref: Mapped[str | None] = mapped_column(String(300), nullable=True)
     scope: Mapped[str] = mapped_column(

@@ -19,6 +19,7 @@ from app.services.model_runtime.contracts import (
 )
 from app.services.model_runtime.errors import ModelError, ModelErrorCategory
 from app.services.model_runtime.gateway import ModelGateway
+from app.services.model_runtime.codecs.responses import ResponsesCodec
 
 __all__ = [
     "CompletionMetadata",
@@ -33,6 +34,7 @@ __all__ = [
     "ReasoningDelta",
     "ResponseStarted",
     "ResponsesContinuation",
+    "ResponsesCodec",
     "TextDelta",
     "TextPart",
     "ToolCallDelta",

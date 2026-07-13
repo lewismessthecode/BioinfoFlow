@@ -5,14 +5,21 @@ from typing import Any
 
 from app.services.model_runtime.contracts import (
     InputPart,
+    ResponsesContinuation,
     TextPart,
     ToolCallPart,
     ToolResultPart,
 )
 
 
-def text_part(text: str) -> dict[str, str]:
-    return {"type": "text", "text": text}
+_RESPONSES_CONTINUATION_KEY = "_responses_continuation"
+
+
+def text_part(text: str, *, phase: str | None = None) -> dict[str, str]:
+    part = {"type": "text", "text": text}
+    if phase is not None:
+        part["phase"] = phase
+    return part
 
 
 def tool_calls_part(tool_calls: list[dict[str, Any]]) -> dict[str, Any]:
@@ -68,15 +75,26 @@ def model_input_parts_from_message(
     parts: list[dict[str, Any]],
     metadata: dict[str, Any] | None = None,
 ) -> tuple[InputPart, ...]:
-    text = parts_to_text(parts)
     result: list[InputPart] = []
     if role == "user":
+        text = parts_to_text(parts)
         if text:
             result.append(TextPart(text=text))
         return tuple(result)
     if role == "assistant":
-        if text:
-            result.append(TextPart(text=text, phase="final_answer"))
+        for part in parts:
+            if part.get("type") != "text" or not isinstance(part.get("text"), str):
+                continue
+            text = part["text"]
+            if not text:
+                continue
+            phase = part.get("phase")
+            result.append(
+                TextPart(
+                    text=text,
+                    phase=phase if phase in {"commentary", "final_answer"} else "final_answer",
+                )
+            )
         for part in parts:
             if part.get("type") != "tool_calls" or not isinstance(
                 part.get("tool_calls"), list
@@ -95,6 +113,7 @@ def model_input_parts_from_message(
                 )
         return tuple(result)
     if role == "tool":
+        text = parts_to_text(parts)
         result.append(
             ToolResultPart(
                 call_id=str((metadata or {}).get("tool_call_id") or ""),
@@ -103,6 +122,45 @@ def model_input_parts_from_message(
             )
         )
     return tuple(result)
+
+
+def metadata_with_responses_continuation(
+    metadata: dict[str, Any] | None,
+    continuation: ResponsesContinuation | None,
+) -> dict[str, Any] | None:
+    result = dict(metadata or {})
+    if continuation is None:
+        return result or None
+    result[_RESPONSES_CONTINUATION_KEY] = continuation.to_private_dict()
+    return result
+
+
+def responses_continuation_from_metadata(
+    metadata: dict[str, Any] | None,
+) -> ResponsesContinuation | None:
+    if not isinstance(metadata, dict):
+        return None
+    return ResponsesContinuation.from_private_dict(
+        metadata.get(_RESPONSES_CONTINUATION_KEY)
+    )
+
+
+def latest_responses_continuation(
+    messages: list[Any],
+    *,
+    turn_id: str,
+) -> ResponsesContinuation | None:
+    for message in reversed(messages):
+        if str(getattr(message, "turn_id", "")) != turn_id:
+            continue
+        if getattr(message, "status", None) != "committed":
+            continue
+        continuation = responses_continuation_from_metadata(
+            getattr(message, "message_metadata", None)
+        )
+        if continuation is not None:
+            return continuation
+    return None
 
 
 def _canonical_tool_call(raw_call: Any) -> dict[str, Any] | None:

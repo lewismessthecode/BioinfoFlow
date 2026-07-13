@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Literal, TypeAlias
 
@@ -64,12 +65,54 @@ class ModelTarget:
 class ResponsesContinuation:
     response_id: str | None
     output_items: InitVar[tuple[dict[str, Any], ...]]
+    canonical_input_count: int = 0
 
     def __post_init__(self, output_items: tuple[dict[str, Any], ...]) -> None:
         object.__setattr__(self, "_opaque_output_items", output_items)
 
     def opaque_output_items(self) -> tuple[dict[str, Any], ...]:
         return self._opaque_output_items
+
+    def to_private_dict(self) -> dict[str, Any]:
+        return {
+            "response_id": self.response_id,
+            "canonical_input_count": self.canonical_input_count,
+            "output_items": list(self.opaque_output_items()),
+        }
+
+    @classmethod
+    def from_private_dict(cls, payload: Any) -> ResponsesContinuation | None:
+        if not isinstance(payload, Mapping):
+            return None
+        output_items = payload.get("output_items")
+        if not isinstance(output_items, list) or not all(
+            isinstance(item, dict) for item in output_items
+        ):
+            return None
+        response_id = payload.get("response_id")
+        canonical_input_count = payload.get("canonical_input_count")
+        return cls(
+            response_id=response_id if isinstance(response_id, str) else None,
+            canonical_input_count=(
+                canonical_input_count
+                if isinstance(canonical_input_count, int)
+                and canonical_input_count >= 0
+                else 0
+            ),
+            output_items=tuple(output_items),
+        )
+
+    def advance_canonical_input_count(
+        self,
+        canonical_parts_written: int,
+    ) -> ResponsesContinuation:
+        return ResponsesContinuation(
+            response_id=self.response_id,
+            canonical_input_count=(
+                self.canonical_input_count + max(canonical_parts_written, 0)
+            ),
+            output_items=self.opaque_output_items(),
+        )
 
 
 InputPart: TypeAlias = TextPart | ToolCallPart | ToolResultPart

@@ -35,11 +35,18 @@ from app.services.agent_core.tools.toolsets import (
     model_tool_definitions,
 )
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
+from app.services.agent_core.transcript.messages import (
+    latest_responses_continuation,
+    metadata_with_responses_continuation,
+)
 from app.services.model_runtime.contracts import (
+    CompletionMetadata,
     ModelInvocation,
     ModelTarget,
+    ModelWarning,
     ReasoningDelta,
     ResponseStarted,
+    ResponsesContinuation,
     TextDelta,
     ToolCallDelta,
     UsageReport,
@@ -70,9 +77,12 @@ class _PendingToolCall:
 @dataclass
 class _ModelTurnResult:
     text: str
+    commentary: str
     thinking: str
     tool_calls: list[_PendingToolCall]
     token_usage: dict[str, Any] | None
+    continuation: ResponsesContinuation | None
+    warnings: list[ModelWarning]
 
 
 class AgentLoopController:
@@ -163,10 +173,16 @@ class AgentLoopController:
                 )
             turn = await self._renew_turn_lease(turn)
 
+            continuation = (
+                await self._responses_continuation_for_turn(turn)
+                if target.wire_protocol == "responses"
+                else None
+            )
             model_context = await self.context.model_context(
                 agent_session=agent_session,
                 turn=turn,
                 exposed_tools=visible_tools,
+                skip_compaction=continuation is not None,
             )
             invocation = ModelInvocation(
                 target=target,
@@ -176,6 +192,7 @@ class AgentLoopController:
                 stream=capabilities.supports_streaming and strategy.use_streaming,
                 max_output_tokens=max_tokens or settings.agent_max_tokens,
                 allow_reasoning=strategy.allow_thinking,
+                continuation=continuation,
             )
 
             try:
@@ -213,7 +230,18 @@ class AgentLoopController:
                     provider=target.provider_kind,
                     model=target.model_name,
                     tool_calls=tool_calls,
-                    text=streamed.text or None,
+                    commentary=streamed.commentary or None,
+                    final_text=streamed.text or None,
+                    continuation=(
+                        streamed.continuation.advance_canonical_input_count(
+                            int(bool(streamed.commentary))
+                            + int(bool(streamed.text))
+                            + len(tool_calls)
+                        )
+                        if streamed.continuation is not None
+                        else None
+                    ),
+                    wire_protocol=target.wire_protocol,
                 )
                 try:
                     waiting, tool_result_signatures = await self._execute_tool_calls(
@@ -283,6 +311,42 @@ class AgentLoopController:
             repeated_tool_call_count = 0
             final_text = streamed.text
             if not final_text:
+                refusal = next(
+                    (
+                        warning
+                        for warning in streamed.warnings
+                        if warning.code == "response_refusal"
+                    ),
+                    None,
+                )
+                if refusal is not None:
+                    return LoopResult(
+                        termination_reason="model_failed",
+                        final_text=None,
+                        iteration_count=budget.used_iterations,
+                        token_usage=token_usage,
+                        error_code="model_refusal",
+                        error_message=refusal.message,
+                    )
+                if (
+                    target.wire_protocol == "responses"
+                    and streamed.commentary
+                    and streamed.continuation is not None
+                ):
+                    await self.transcript.append_parts(
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                        role="assistant",
+                        parts=[text_part(streamed.commentary, phase="commentary")],
+                        metadata=metadata_with_responses_continuation(
+                            {
+                                "provider": target.provider_kind,
+                                "model": target.model_name,
+                                "kind": "commentary",
+                            },
+                            streamed.continuation.advance_canonical_input_count(1),
+                        ),
+                    )
                 if empty_response_retries_remaining > 0:
                     empty_response_retries_remaining -= 1
                     await self.ledger.append(
@@ -303,11 +367,20 @@ class AgentLoopController:
                     error_code="empty_model_response",
                     error_message="The selected model completed without returning visible text.",
                 )
+            parts: list[dict[str, Any]] = []
+            if streamed.commentary:
+                parts.append(text_part(streamed.commentary, phase="commentary"))
+            parts.append(
+                text_part(
+                    final_text,
+                    phase="final_answer" if target.wire_protocol == "responses" else None,
+                )
+            )
             await self.transcript.append_parts(
                 session_id=str(agent_session.id),
                 turn_id=str(turn.id),
                 role="assistant",
-                parts=[text_part(final_text)],
+                parts=parts,
                 metadata={"provider": target.provider_kind, "model": target.model_name},
             )
             return LoopResult(
@@ -491,18 +564,31 @@ class AgentLoopController:
         provider: str,
         model: str,
         tool_calls: list[dict[str, Any]],
-        text: str | None = None,
+        commentary: str | None = None,
+        final_text: str | None = None,
+        continuation: ResponsesContinuation | None = None,
+        wire_protocol: str = "chat_completions",
     ) -> None:
         parts: list[dict[str, Any]] = []
-        if text:
-            parts.append(text_part(text))
+        if commentary:
+            parts.append(text_part(commentary, phase="commentary"))
+        if final_text:
+            parts.append(
+                text_part(
+                    final_text,
+                    phase="final_answer" if wire_protocol == "responses" else None,
+                )
+            )
         parts.append(tool_calls_part([_provider_tool_call(call) for call in tool_calls]))
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
             role="assistant",
             parts=parts,
-            metadata={"provider": provider, "model": model, "kind": "tool_calls"},
+            metadata=metadata_with_responses_continuation(
+                {"provider": provider, "model": model, "kind": "tool_calls"},
+                continuation,
+            ),
         )
 
     async def _append_tool_result(
@@ -514,6 +600,7 @@ class AgentLoopController:
         tool_call_id: str | None,
         result,
     ) -> None:
+        continuation = await self._responses_continuation_for_turn(turn)
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
@@ -532,11 +619,23 @@ class AgentLoopController:
                     )
                 )
             ],
-            metadata={
-                "tool_call_id": tool_call_id,
-                "tool": tool_name,
-                "is_error": bool(result.error) or result.status != "completed",
-            },
+            metadata=metadata_with_responses_continuation(
+                {
+                    "tool_call_id": tool_call_id,
+                    "tool": tool_name,
+                    "is_error": bool(result.error) or result.status != "completed",
+                },
+                continuation,
+            ),
+        )
+
+    async def _responses_continuation_for_turn(
+        self,
+        turn,
+    ) -> ResponsesContinuation | None:
+        return latest_responses_continuation(
+            await self.transcript.list_messages(str(turn.session_id)),
+            turn_id=str(turn.id),
         )
 
     async def _execute_tool_call_isolated(self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str):
@@ -587,7 +686,10 @@ class AgentLoopController:
         message_id: str,
         allow_thinking: bool,
     ) -> _ModelTurnResult:
-        text_parts: list[str] = []
+        text_parts: dict[str, list[str]] = {
+            "commentary": [],
+            "final_answer": [],
+        }
         thinking_parts: list[str] = []
         tool_calls: dict[int, _PendingToolCall] = {}
         usage: dict[str, Any] | None = None
@@ -595,6 +697,8 @@ class AgentLoopController:
         thinking_index = 0
         thinking_completed = False
         response_streaming = invocation.stream
+        continuation: ResponsesContinuation | None = None
+        warnings: list[ModelWarning] = []
 
         async for event in self.model_gateway.invoke(invocation):
             if isinstance(event, ResponseStarted):
@@ -627,7 +731,9 @@ class AgentLoopController:
                     )
                     thinking_completed = True
                 if event.text:
-                    text_parts.append(event.text)
+                    phase = event.phase
+                    phase_parts = text_parts[phase]
+                    phase_parts.append(event.text)
                     if response_streaming:
                         await self.ledger.append(
                             session_id=str(agent_session.id),
@@ -636,7 +742,8 @@ class AgentLoopController:
                             payload={
                                 "message_id": message_id,
                                 "delta": event.text,
-                                "content": "".join(text_parts),
+                                "content": "".join(phase_parts),
+                                "phase": phase,
                                 "index": text_index,
                             },
                         )
@@ -697,6 +804,17 @@ class AgentLoopController:
                         )
             elif isinstance(event, UsageReport):
                 usage = _merge_usage(usage, _usage_dict(event))
+            elif isinstance(event, ModelWarning):
+                warnings.append(event)
+                await self.ledger.append(
+                    session_id=str(agent_session.id),
+                    turn_id=str(turn.id),
+                    type=AgentEventType.MODEL_WARNING,
+                    payload={"code": event.code, "message": event.message},
+                )
+            elif isinstance(event, CompletionMetadata):
+                if event.continuation is not None:
+                    continuation = event.continuation
 
         thinking_text = "".join(thinking_parts).strip()
         if allow_thinking and thinking_text and not thinking_completed:
@@ -724,24 +842,34 @@ class AgentLoopController:
                 },
             )
 
-        final_text = "".join(text_parts).strip()
-        if final_text:
+        commentary_text = "".join(text_parts["commentary"]).strip()
+        final_text = "".join(text_parts["final_answer"]).strip()
+        for phase, completed_text in (
+            ("commentary", commentary_text),
+            ("final_answer", final_text),
+        ):
+            if not completed_text:
+                continue
             await self.ledger.append(
                 session_id=str(agent_session.id),
                 turn_id=str(turn.id),
                 type=AgentEventType.ASSISTANT_TEXT_COMPLETED,
                 payload={
                     "message_id": message_id,
-                    "text": final_text,
-                    "content": final_text,
+                    "text": completed_text,
+                    "content": completed_text,
+                    "phase": phase,
                     "index": max(text_index - 1, 0),
                 },
             )
         return _ModelTurnResult(
             text=final_text,
+            commentary=commentary_text,
             thinking=thinking_text,
             tool_calls=completed_calls,
             token_usage=usage,
+            continuation=continuation,
+            warnings=warnings,
         )
 
     async def _consume_model_events_with_retry(

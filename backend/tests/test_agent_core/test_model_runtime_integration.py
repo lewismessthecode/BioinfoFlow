@@ -17,6 +17,7 @@ from app.repositories.agent_core_repo import (
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.core.loop import AgentLoopController
 from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, RuntimeStrategy
+from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.model_runtime.contracts import (
@@ -24,8 +25,10 @@ from app.services.model_runtime.contracts import (
     ModelEvent,
     ModelInvocation,
     ModelTarget,
+    ModelWarning,
     ReasoningDelta,
     ResponseStarted,
+    ResponsesContinuation,
     TextDelta,
     TextPart,
     ToolCallDelta,
@@ -34,6 +37,7 @@ from app.services.model_runtime.contracts import (
     UsageReport,
 )
 from app.services.model_runtime.errors import ModelError
+from app.services.agent_core.transcript import provider_message_from_parts
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -117,6 +121,65 @@ async def test_normal_turn_runs_through_injected_model_gateway(db_session) -> No
 
     messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
     assert [message.role for message in messages] == ["user", "assistant"]
+
+
+@pytest.mark.asyncio
+async def test_responses_commentary_does_not_complete_without_final_answer(
+    db_session,
+) -> None:
+    session, turn = await _turn(db_session, input_text="Work in two visible phases.")
+    continuation = ResponsesContinuation(
+        response_id="resp-commentary",
+        canonical_input_count=1,
+        output_items=(
+            {
+                "type": "message",
+                "id": "msg-commentary",
+                "role": "assistant",
+                "phase": "commentary",
+                "content": [{"type": "output_text", "text": "Still checking."}],
+            },
+        ),
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="Still checking.", phase="commentary"),
+            CompletionMetadata(
+                response_id="resp-commentary",
+                finish_reason="incomplete",
+                continuation=continuation,
+            ),
+        ),
+        (
+            TextDelta(text="The final result is ready.", phase="final_answer"),
+            CompletionMetadata(response_id="resp-final", finish_reason="stop"),
+        ),
+    )
+    target = ModelTarget(
+        endpoint_id="endpoint-responses",
+        provider_kind="openai_compatible",
+        model_name="gpt-responses-test",
+        wire_protocol="responses",
+    )
+
+    result = await AgentLoopController(db_session, model_gateway=gateway).run_turn(
+        turn_id=str(turn.id),
+        target=target,
+        capabilities=RuntimeCapabilities(supports_tools=False),
+        strategy=RuntimeStrategy(allow_tools=False),
+    )
+
+    assert result.termination_reason == "assistant_final"
+    assert result.final_text == "The final result is ready."
+    assert len(gateway.invocations) == 2
+    assert gateway.invocations[1].continuation is not None
+    assert gateway.invocations[1].continuation.response_id == "resp-commentary"
+    assert gateway.invocations[1].continuation.canonical_input_count == 2
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    assert [message.role for message in messages] == ["user", "assistant", "assistant"]
+    assert messages[1].content_parts == [
+        {"type": "text", "text": "Still checking.", "phase": "commentary"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -535,3 +598,388 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
         "wire_protocol": "chat_completions",
         "base_url": "https://models.example/v1",
     }
+
+
+@pytest.mark.asyncio
+async def test_responses_approval_resume_survives_service_restart(
+    db_session,
+    monkeypatch,
+    caplog,
+) -> None:
+    session, turn = await _turn(
+        db_session,
+        input_text="Explain the command, run it with approval, then report the result.",
+    )
+    provider = LlmProvider(
+        name="Responses continuation provider",
+        kind="openai_compatible",
+        base_url="https://responses.example/v1",
+        wire_protocol="responses",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    model = LlmModel(
+        provider_id=str(provider.id),
+        model_id="gpt-responses-test",
+        display_name="Responses test model",
+        supports_tools=True,
+        supports_streaming=True,
+    )
+    db_session.add(model)
+    await db_session.commit()
+    await db_session.refresh(model)
+    service = AgentCoreService(db_session)
+    session = await service.session_repo.update_all(
+        session,
+        session_metadata={"model_selection": {"model_id": str(model.id)}},
+        compression_state={
+            "enabled": True,
+            "threshold_chars": 1,
+            "preserve_recent_messages": 0,
+        },
+    )
+
+    opaque_secret = "encrypted-reasoning-must-stay-private"
+    first_continuation = ResponsesContinuation(
+        response_id="resp-approval",
+        canonical_input_count=1,
+        output_items=(
+            {
+                "type": "reasoning",
+                "id": "rs_approval",
+                "encrypted_content": opaque_secret,
+            },
+            {
+                "type": "message",
+                "id": "msg_commentary",
+                "role": "assistant",
+                "phase": "commentary",
+                "content": [{"type": "output_text", "text": "I will run it."}],
+            },
+            {
+                "type": "function_call",
+                "id": "fc_approval",
+                "call_id": "call-responses-bash",
+                "name": "bash",
+                "arguments": json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"responses-approved\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
+                ),
+            },
+        ),
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="I will run it.", phase="commentary"),
+            ToolCallDelta(
+                index=0,
+                call_id="call-responses-bash",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"responses-approved\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
+                ),
+            ),
+            CompletionMetadata(
+                response_id="resp-approval",
+                finish_reason="tool_calls",
+                continuation=first_continuation,
+            ),
+        ),
+        (
+            TextDelta(text="The approved command finished. ", phase="commentary"),
+            TextDelta(text="Responses continuation completed.", phase="final_answer"),
+            CompletionMetadata(
+                response_id="resp-final",
+                finish_reason="stop",
+                continuation=ResponsesContinuation(
+                    response_id="resp-final",
+                    canonical_input_count=4,
+                    output_items=(
+                        {
+                            "type": "message",
+                            "id": "msg_final",
+                            "role": "assistant",
+                            "phase": "final_answer",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": "Responses continuation completed.",
+                                }
+                            ],
+                        },
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    waiting = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+
+    assert waiting.status == "waiting_approval"
+    assert waiting.final_text is None
+    assert waiting.model_profile_snapshot["resolved_model_target"] == {
+        "endpoint_id": str(provider.id),
+        "provider_kind": "openai_compatible",
+        "model_name": "gpt-responses-test",
+        "wire_protocol": "responses",
+        "base_url": "https://responses.example/v1",
+    }
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    assistant = next(message for message in messages if message.role == "assistant")
+    assert opaque_secret in json.dumps(assistant.message_metadata)
+    assert opaque_secret not in json.dumps(
+        provider_message_from_parts(
+            assistant.role,
+            assistant.content_parts,
+            assistant.message_metadata,
+        )
+    )
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    assert opaque_secret not in json.dumps([event.payload for event in events])
+    assert opaque_secret not in caplog.text
+
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert len(actions) == 1
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    await service.decide_action(
+        action_id=str(actions[0].id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+
+    provider.base_url = "https://changed.example/v1"
+    provider.wire_protocol = "chat_completions"
+    await db_session.commit()
+
+    resumed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).resume_turn_after_action(str(actions[0].id))
+
+    assert resumed.status == "completed"
+    assert resumed.final_text == "Responses continuation completed."
+    assert len(gateway.invocations) == 2
+    resumed_invocation = gateway.invocations[1]
+    assert resumed_invocation.target.wire_protocol == "responses"
+    assert resumed_invocation.target.base_url == "https://responses.example/v1"
+    assert resumed_invocation.continuation is not None
+    assert resumed_invocation.continuation.response_id == "resp-approval"
+    assert resumed_invocation.continuation.canonical_input_count == 3
+    assert resumed_invocation.continuation.opaque_output_items() == (
+        first_continuation.opaque_output_items()
+    )
+    tool_result = next(
+        item
+        for item in resumed_invocation.input_items
+        if isinstance(item, ToolResultPart)
+    )
+    assert tool_result.call_id == "call-responses-bash"
+    assert "responses-approved" in tool_result.output
+    assert tool_result.is_error is False
+    assert resumed_invocation.input_items[
+        resumed_invocation.continuation.canonical_input_count :
+    ] == (tool_result,)
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    assert all(message.status == "committed" for message in messages)
+    assert all(
+        opaque_secret
+        not in json.dumps(
+            provider_message_from_parts(
+                message.role,
+                message.content_parts,
+                message.message_metadata,
+            )
+        )
+        for message in messages
+    )
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    assert opaque_secret not in json.dumps([event.payload for event in events])
+    assert opaque_secret not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplicates(
+    db_session,
+    monkeypatch,
+) -> None:
+    _session, turn = await _turn(db_session, input_text="Run two commands, then finish.")
+    gateway = FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-one",
+                name="bash",
+                arguments_delta='{"command":"first"}',
+            ),
+            CompletionMetadata(
+                response_id="resp-one",
+                finish_reason="tool_calls",
+                continuation=ResponsesContinuation(
+                    response_id="resp-one",
+                    canonical_input_count=1,
+                    output_items=(
+                        {
+                            "type": "function_call",
+                            "call_id": "call-one",
+                            "name": "bash",
+                            "arguments": '{"command":"first"}',
+                        },
+                    ),
+                ),
+            ),
+        ),
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-two",
+                name="bash",
+                arguments_delta='{"command":"second"}',
+            ),
+            CompletionMetadata(
+                response_id="resp-two",
+                finish_reason="tool_calls",
+                continuation=ResponsesContinuation(
+                    response_id="resp-two",
+                    canonical_input_count=3,
+                    output_items=(
+                        {
+                            "type": "function_call",
+                            "call_id": "call-two",
+                            "name": "bash",
+                            "arguments": '{"command":"second"}',
+                        },
+                    ),
+                ),
+            ),
+        ),
+        (
+            TextDelta(text="Both commands completed.", phase="final_answer"),
+            CompletionMetadata(response_id="resp-final", finish_reason="stop"),
+        ),
+    )
+    controller = AgentLoopController(db_session, model_gateway=gateway)
+
+    async def completed_execution(*args, **kwargs):
+        del args, kwargs
+        return ToolExecutionResult(
+            action_id="completed-action",
+            status="completed",
+            result={"ok": True},
+        )
+
+    monkeypatch.setattr(controller.executor, "execute", completed_execution)
+    target = ModelTarget(
+        endpoint_id="endpoint-responses",
+        provider_kind="openai_compatible",
+        model_name="gpt-responses-test",
+        wire_protocol="responses",
+    )
+
+    result = await controller.run_turn(turn_id=str(turn.id), target=target)
+
+    assert result.termination_reason == "assistant_final"
+    assert len(gateway.invocations) == 3
+    first_resume = gateway.invocations[1]
+    assert first_resume.continuation is not None
+    assert first_resume.continuation.canonical_input_count == 2
+    assert [
+        item.call_id
+        for item in first_resume.input_items[
+            first_resume.continuation.canonical_input_count :
+        ]
+        if isinstance(item, ToolResultPart)
+    ] == ["call-one"]
+    second_resume = gateway.invocations[2]
+    assert second_resume.continuation is not None
+    assert second_resume.continuation.canonical_input_count == 4
+    assert [
+        item.call_id
+        for item in second_resume.input_items[
+            second_resume.continuation.canonical_input_count :
+        ]
+        if isinstance(item, ToolResultPart)
+    ] == ["call-two"]
+
+
+@pytest.mark.asyncio
+async def test_responses_refusal_only_returns_specific_error_without_empty_retry(
+    db_session,
+) -> None:
+    _session, turn = await _turn(db_session, input_text="Request something refused.")
+    gateway = FakeModelGateway(
+        (
+            ModelWarning(
+                code="response_refusal",
+                message="The model refused this request.",
+            ),
+            CompletionMetadata(response_id="resp-refusal", finish_reason="completed"),
+        )
+    )
+
+    result = await AgentLoopController(db_session, model_gateway=gateway).run_turn(
+        turn_id=str(turn.id),
+        target=ModelTarget(
+            endpoint_id="endpoint-responses",
+            provider_kind="openai_compatible",
+            model_name="gpt-responses-test",
+            wire_protocol="responses",
+        ),
+    )
+
+    assert result.termination_reason == "model_failed"
+    assert result.error_code == "model_refusal"
+    assert result.error_message == "The model refused this request."
+    assert len(gateway.invocations) == 1
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    warning = next(event for event in events if event.type == AgentEventType.MODEL_WARNING)
+    assert warning.payload == {
+        "code": "response_refusal",
+        "message": "The model refused this request.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_responses_unknown_item_with_final_answer_emits_warning_and_succeeds(
+    db_session,
+) -> None:
+    _session, turn = await _turn(db_session, input_text="Return a final answer.")
+    gateway = FakeModelGateway(
+        (
+            ModelWarning(
+                code="unsupported_response_item",
+                message="Unsupported Responses output item type: future_item",
+            ),
+            TextDelta(text="Safe final answer.", phase="final_answer"),
+            CompletionMetadata(response_id="resp-warning", finish_reason="completed"),
+        )
+    )
+
+    result = await AgentLoopController(db_session, model_gateway=gateway).run_turn(
+        turn_id=str(turn.id),
+        target=ModelTarget(
+            endpoint_id="endpoint-responses",
+            provider_kind="openai_compatible",
+            model_name="gpt-responses-test",
+            wire_protocol="responses",
+        ),
+    )
+
+    assert result.termination_reason == "assistant_final"
+    assert result.final_text == "Safe final answer."
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    assert any(event.type == AgentEventType.MODEL_WARNING for event in events)

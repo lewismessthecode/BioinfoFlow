@@ -52,8 +52,10 @@ class AgentContextAssembler:
         agent_session,
         turn,
         exposed_tools=None,
+        skip_compaction: bool = False,
     ) -> list[dict]:
-        await self._compact_if_needed(agent_session=agent_session, turn=turn)
+        if not skip_compaction:
+            await self._compact_if_needed(agent_session=agent_session, turn=turn)
         # Stable, cache-friendly identity prefix comes first; everything that
         # changes per session/turn is appended after it.
         system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
@@ -101,11 +103,13 @@ class AgentContextAssembler:
         agent_session,
         turn,
         exposed_tools=None,
+        skip_compaction: bool = False,
     ) -> AgentModelContext:
         messages = await self.provider_messages(
             agent_session=agent_session,
             turn=turn,
             exposed_tools=exposed_tools,
+            skip_compaction=skip_compaction,
         )
         return model_context_from_messages(messages)
 
