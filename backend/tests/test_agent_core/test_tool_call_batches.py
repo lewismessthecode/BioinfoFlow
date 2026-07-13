@@ -1442,6 +1442,7 @@ async def test_atomic_batch_preparation_locks_permission_policy_before_actions(
         return _response(tool_calls=[("policy-lock", "projects__list", {})])
 
     from app.repositories.agent_core_repo import AgentSessionRepository
+    from app.repositories.agent_core_repo import AgentTurnRepository
     from app.services.agent_core.tools.executor import AgentToolExecutor
 
     policy_locked = False
@@ -1450,6 +1451,16 @@ async def test_atomic_batch_preparation_locks_permission_policy_before_actions(
         nonlocal policy_locked
         policy_locked = True
         return await repository.get_fresh(session_id)
+
+    original_owner_lock = AgentTurnRepository.lock_execution_owner
+
+    async def require_policy_before_owner_lock(repository, turn_id, *, owner_token):
+        assert policy_locked is True
+        return await original_owner_lock(
+            repository,
+            turn_id,
+            owner_token=owner_token,
+        )
 
     original_execute = AgentToolExecutor.execute
 
@@ -1463,6 +1474,11 @@ async def test_atomic_batch_preparation_locks_permission_policy_before_actions(
         "lock_policy",
         observe_policy_lock,
         raising=False,
+    )
+    monkeypatch.setattr(
+        AgentTurnRepository,
+        "lock_execution_owner",
+        require_policy_before_owner_lock,
     )
     monkeypatch.setattr(AgentToolExecutor, "execute", require_policy_lock)
     await _seed_runtime(db_session)
@@ -1482,6 +1498,155 @@ async def test_atomic_batch_preparation_locks_permission_policy_before_actions(
     await service.runtime.run_turn(str(turn.id))
 
     assert policy_locked is True
+
+
+@pytest.mark.asyncio
+async def test_stale_turn_owner_cannot_commit_tool_batch_preparation(db_session):
+    from app.services.agent_core.core.lease import LEASE_LOSS_CANCELLATION
+    from app.services.agent_core.core.loop import AgentLoopController
+
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Fence stale preparation.",
+    )
+    turn = await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        lease_owner_token="stale-owner",
+        lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+
+    async with maker() as worker, maker() as takeover:
+        stale_turn = await AgentTurnRepository(worker).get_fresh(str(turn.id))
+        stale_session = await AgentSessionRepository(worker).get_fresh(str(session.id))
+        replacement = await AgentTurnRepository(takeover).get_fresh(str(turn.id))
+        await AgentTurnRepository(takeover).update_all(
+            replacement,
+            lease_owner_token="replacement-owner",
+            lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+        )
+        baseline_actions = await AgentActionRepository(takeover).list_for_turn(
+            str(turn.id)
+        )
+        baseline_batches, _ = await AgentToolCallBatchRepository(takeover).list(
+            limit=20
+        )
+        baseline_messages = await AgentMessageRepository(takeover).list_for_session(
+            str(session.id)
+        )
+        baseline_events = await AgentEventRepository(takeover).list_for_turn(
+            turn_id=str(turn.id)
+        )
+
+        controller = AgentLoopController(worker)
+        controller._execution_owner_token = "stale-owner"
+        with pytest.raises(asyncio.CancelledError) as cancelled:
+            await controller._execute_tool_calls(
+                agent_session=stale_session,
+                turn=stale_turn,
+                tool_calls=[
+                    {
+                        "id": "stale-preparation",
+                        "name": "projects__list",
+                        "arguments": {},
+                    }
+                ],
+                provider="openai_compatible",
+                model="batch-model",
+                text=None,
+                prior_continuation_batch_id=None,
+            )
+        assert cancelled.value.args == (LEASE_LOSS_CANCELLATION,)
+
+    async with maker() as observer:
+        actions = await AgentActionRepository(observer).list_for_turn(str(turn.id))
+        batches, _ = await AgentToolCallBatchRepository(observer).list(limit=20)
+        messages = await AgentMessageRepository(observer).list_for_session(
+            str(session.id)
+        )
+        events = await AgentEventRepository(observer).list_for_turn(
+            turn_id=str(turn.id)
+        )
+
+    assert [str(item.id) for item in actions] == [
+        str(item.id) for item in baseline_actions
+    ]
+    assert [str(item.id) for item in batches] == [
+        str(item.id) for item in baseline_batches
+    ]
+    assert [str(item.id) for item in messages] == [
+        str(item.id) for item in baseline_messages
+    ]
+    assert [str(item.id) for item in events] == [
+        str(item.id) for item in baseline_events
+    ]
+
+
+@pytest.mark.asyncio
+async def test_current_turn_owner_can_commit_tool_batch_preparation(db_session):
+    from app.services.agent_core.core.loop import AgentLoopController
+
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="ask_each_action",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Prepare with the current owner.",
+    )
+    turn = await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        lease_owner_token="current-owner",
+        lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+
+    controller = AgentLoopController(db_session)
+    controller._execution_owner_token = "current-owner"
+    waiting, _signatures, _claimed_batch_id = await controller._execute_tool_calls(
+        agent_session=session,
+        turn=turn,
+        tool_calls=[
+            {
+                "id": "healthy-preparation",
+                "name": "bash",
+                "arguments": {"command": "printf healthy"},
+            }
+        ],
+        provider="openai_compatible",
+        model="batch-model",
+        text=None,
+        prior_continuation_batch_id=None,
+    )
+
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    batches, _ = await AgentToolCallBatchRepository(db_session).list(limit=20)
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
+
+    assert waiting is True
+    assert len(actions) == 1
+    assert len(batches) == 1
+    assert any(message.role == "assistant" for message in messages)
 
 
 @pytest.mark.asyncio

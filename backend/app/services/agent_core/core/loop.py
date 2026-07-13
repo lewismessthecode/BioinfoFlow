@@ -505,6 +505,15 @@ class AgentLoopController:
             locked_session = await self.sessions.lock_policy(session_id)
             if locked_session is None:
                 raise PermissionDeniedError("Agent session is not accessible")
+            if (
+                self._execution_owner_token is not None
+                and not await self.turns.lock_execution_owner(
+                    turn_id,
+                    owner_token=self._execution_owner_token,
+                )
+            ):
+                await self.db.rollback()
+                raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
             agent_session = locked_session
             locked_policy_version = int(agent_session.permission_policy_version)
             await self.tool_batches.create(
