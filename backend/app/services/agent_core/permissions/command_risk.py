@@ -393,6 +393,13 @@ class _UnwrappedCommand:
     confident: bool = True
 
 
+@dataclass(frozen=True)
+class _ShortOptionClusterMatch:
+    matched: bool = False
+    value: str | None = None
+    ambiguous: bool = False
+
+
 def classify_command_level(command: str) -> RiskLevel:
     """Return the semantic risk floor for a shell command string."""
     text = (command or "").strip()
@@ -597,6 +604,30 @@ def _unwrap_command(tokens: list[str]) -> tuple[list[str], bool]:
     return list(result.tokens), result.elevated
 
 
+def _short_option_cluster_match(
+    arg: str,
+    *,
+    target: str,
+    no_value_options: set[str],
+    consuming_options: set[str],
+    allow_unknown_no_value: bool = False,
+) -> _ShortOptionClusterMatch:
+    if not arg.startswith("-") or arg.startswith("--") or arg == "-":
+        return _ShortOptionClusterMatch()
+    cluster = arg[1:]
+    for index, option in enumerate(cluster):
+        if option == target:
+            return _ShortOptionClusterMatch(
+                matched=True,
+                value=cluster[index + 1 :] or None,
+            )
+        if option in consuming_options:
+            return _ShortOptionClusterMatch()
+        if option not in no_value_options and not allow_unknown_no_value:
+            return _ShortOptionClusterMatch(ambiguous=True)
+    return _ShortOptionClusterMatch()
+
+
 def _env_split_command(tokens: list[str]) -> list[str] | None:
     if not tokens or _basename(tokens[0]) != "env":
         return None
@@ -611,12 +642,27 @@ def _env_split_command(tokens: list[str]) -> list[str] | None:
             except ValueError:
                 return []
             return [*split, *tokens[index + 2 :]]
-        if arg.startswith("-S") and arg != "-S":
+        env_cluster = _short_option_cluster_match(
+            arg,
+            target="S",
+            no_value_options={"0", "i", "v"},
+            consuming_options={"C", "u"},
+        )
+        if env_cluster.matched:
+            split_source = env_cluster.value
+            remaining = tokens[index + 1 :]
+            if split_source is None:
+                if not remaining:
+                    return []
+                split_source = remaining[0]
+                remaining = remaining[1:]
             try:
-                split = shlex.split(arg[2:])
+                split = shlex.split(split_source)
             except ValueError:
                 return []
-            return [*split, *tokens[index + 1 :]]
+            return [*split, *remaining]
+        if env_cluster.ambiguous and "S" in arg[1:]:
+            return []
         if arg.startswith("--split-string="):
             try:
                 split = shlex.split(arg.split("=", 1)[1])
@@ -695,7 +741,12 @@ def _unwrap_command_details(tokens: list[str]) -> _UnwrappedCommand:
         elif executable == "env":
             if any(
                 arg == "-S"
-                or (arg.startswith("-S") and arg != "-S")
+                or _short_option_cluster_match(
+                    arg,
+                    target="S",
+                    no_value_options={"0", "i", "v"},
+                    consuming_options={"C", "u"},
+                ).matched
                 or arg == "--split-string"
                 or arg.startswith("--split-string=")
                 for arg in tokens
@@ -703,7 +754,14 @@ def _unwrap_command_details(tokens: list[str]) -> _UnwrappedCommand:
                 confident = False
             tokens, wrapper_confident = _skip_wrapper_options(
                 tokens,
-                no_value={"-i", "--ignore-environment", "-0", "--null"},
+                no_value={
+                    "-i",
+                    "--ignore-environment",
+                    "-0",
+                    "--null",
+                    "-v",
+                    "--debug",
+                },
                 value_options={
                     "-u",
                     "--unset",
@@ -830,17 +888,96 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
     for index, arg in enumerate(args):
         if arg in flags and index + 1 < len(args):
             return args[index + 1]
-        if executable in {"ruby", "perl"} and arg.startswith("-"):
-            bundled = re.fullmatch(
-                r"-[wWdvtT]*([eE])(.*)" if executable == "perl" else r"-[wdv]*e(.*)",
+        if executable == "perl" and arg.startswith("-"):
+            bundled = _short_option_cluster_match(
                 arg,
+                target="e",
+                no_value_options={
+                    "a",
+                    "c",
+                    "d",
+                    "l",
+                    "n",
+                    "p",
+                    "s",
+                    "t",
+                    "T",
+                    "u",
+                    "U",
+                    "w",
+                    "W",
+                },
+                consuming_options={"F", "I", "M", "V", "i", "m", "x"},
             )
-            if bundled is not None:
-                inline = bundled.group(bundled.lastindex or 1)
-                if inline:
-                    return inline
+            if not bundled.matched:
+                bundled = _short_option_cluster_match(
+                    arg,
+                    target="E",
+                    no_value_options={
+                        "a",
+                        "c",
+                        "d",
+                        "l",
+                        "n",
+                        "p",
+                        "s",
+                        "t",
+                        "T",
+                        "u",
+                        "U",
+                        "w",
+                        "W",
+                    },
+                    consuming_options={"F", "I", "M", "V", "i", "m", "x"},
+                )
+            if bundled.matched:
+                if bundled.value:
+                    return bundled.value
                 if index + 1 < len(args):
                     return args[index + 1]
+                return ""
+            if bundled.ambiguous:
+                return ""
+        if executable == "ruby" and arg.startswith("-"):
+            bundled = _short_option_cluster_match(
+                arg,
+                target="e",
+                no_value_options={
+                    "S",
+                    "U",
+                    "a",
+                    "c",
+                    "d",
+                    "l",
+                    "n",
+                    "p",
+                    "s",
+                    "v",
+                    "w",
+                    "y",
+                },
+                consuming_options={
+                    "0",
+                    "C",
+                    "E",
+                    "F",
+                    "I",
+                    "K",
+                    "T",
+                    "W",
+                    "i",
+                    "r",
+                    "x",
+                },
+            )
+            if bundled.matched:
+                if bundled.value:
+                    return bundled.value
+                if index + 1 < len(args):
+                    return args[index + 1]
+                return ""
+            if bundled.ambiguous:
+                return ""
         if executable == "node" and any(
             arg.startswith(f"{flag}=") for flag in {"--eval", "--print"}
         ):
@@ -848,8 +985,6 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
         if executable == "python" and arg.startswith("-c") and arg != "-c":
             return arg[2:]
         if executable == "ruby" and arg.startswith("-e") and arg != "-e":
-            return arg[2:]
-        if executable == "perl" and arg[:2] in {"-e", "-E"} and len(arg) > 2:
             return arg[2:]
         if executable == "php" and arg[:2] in {"-r", "-B", "-R", "-F", "-E"}:
             if len(arg) > 2:
@@ -1669,9 +1804,23 @@ def _rsync_destinations(args: list[str]) -> list[str]:
         if arg.startswith(("-e", "-f", "-M")) and len(arg) > 2:
             index += 1
             continue
-        if arg.startswith("-T") and len(arg) > 2:
-            additional_sinks.append(arg[2:])
-            index += 1
+        temp_dir = _short_option_cluster_match(
+            arg,
+            target="T",
+            no_value_options=set(),
+            consuming_options={"B", "M", "e", "f"},
+            allow_unknown_no_value=True,
+        )
+        if temp_dir.matched:
+            if temp_dir.value is not None:
+                additional_sinks.append(temp_dir.value)
+                index += 1
+                continue
+            if index + 1 >= len(args):
+                uncertain = True
+                break
+            additional_sinks.append(args[index + 1])
+            index += 2
             continue
         if arg.startswith("--"):
             uncertain = True

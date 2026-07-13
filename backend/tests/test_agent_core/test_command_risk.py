@@ -740,10 +740,21 @@ def test_versioned_interpreter_literal_hardlines_are_denied(command):
         "xargs env --split-string='reboot'",
         "env -Sreboot",
         "xargs env -Sreboot",
+        "env -iSreboot",
+        "env -iS reboot",
+        "env -viSreboot",
+        "xargs env -iSreboot",
+        "xargs env -iS reboot",
         "perl5.40 '-Esystem(\"reboot\")'",
         "perl5.40 -we 'system(\"reboot\")'",
         "perl5.40 -wE 'system(\"reboot\")'",
+        "perl5.40 -lwe 'system(\"reboot\")'",
+        "perl5.40 -nwe 'system(\"reboot\")'",
+        "perl5.40 -ple 'system(\"reboot\")'",
+        "perl5.40 '-lwEsystem(\"reboot\")'",
         "ruby3.4 -we 'system(\"reboot\")'",
+        "ruby3.4 -nle 'system(\"reboot\")'",
+        "ruby3.4 '-apwesystem(\"reboot\")'",
         "php8.4 '-Bsystem(\"reboot\");'",
         "php8.4 '-Rsystem(\"reboot\");'",
         "php8.4 '-Esystem(\"reboot\");'",
@@ -777,6 +788,11 @@ def test_literal_catastrophic_nested_commands_are_denied_in_bypass(target, comma
         "env --split-string='printf ok'",
         "env '-Sprintf ok'",
         "xargs env '-Sprintf ok'",
+        "env '-iSprintf ok'",
+        "env -iS 'printf ok'",
+        "env -viS 'printf ok'",
+        "xargs env '-iSprintf ok'",
+        "xargs env -iS 'printf ok'",
         "printf 'printf ok' | sh",
         "printf 'printf ok' | busybox sh",
         "safe=printf; $safe ok",
@@ -792,7 +808,12 @@ def test_literal_catastrophic_nested_commands_are_denied_in_bypass(target, comma
         "perl5.40 '-Eprint(\"ok\")'",
         "perl5.40 -we 'print(\"ok\")'",
         "perl5.40 -wE 'print(\"ok\")'",
+        "perl5.40 -lwe 'print(\"ok\")'",
+        "perl5.40 -nwe 'print(\"ok\")'",
+        "perl5.40 -ple 'print(\"ok\")'",
         "ruby3.4 -we 'puts(\"ok\")'",
+        "ruby3.4 -nle 'puts(\"ok\")'",
+        "ruby3.4 '-apweputs(\"ok\")'",
         "php8.4 '-Becho \"ok\";'",
         "php8.4 '-Recho \"ok\";'",
         "php8.4 '-Eecho \"ok\";'",
@@ -882,6 +903,8 @@ def test_attached_inline_interpreter_hardlines_are_denied(target, command):
         "unzip payload.zip -d /home/alice",
         "rsync payload /home/alice/.ssh/authorized_keys --out-format %n",
         "rsync payload /tmp/output -T/home/alice/.ssh",
+        "rsync -avT/home/alice/.ssh payload /tmp/output",
+        "rsync -vaT/home/alice/.ssh payload /tmp/output",
     ],
 )
 def test_opaque_or_protected_write_sinks_fail_ask_in_bypass(target, command):
@@ -914,6 +937,10 @@ def test_opaque_or_protected_write_sinks_fail_ask_in_bypass(target, command):
         "unzip -c payload.zip report.txt",
         "python3.13 script.py",
         "perl5.40 script.pl",
+        "perl5.40 -Mstrictwe script.pl",
+        "perl5.40 -Ilibe script.pl",
+        "ruby3.4 -Ilibe script.rb",
+        "ruby3.4 -rwebrick script.rb",
         "php8.4 script.php",
         "printf reboot",
         "find . -exec printf ok {} +",
@@ -939,9 +966,17 @@ def test_provable_non_inline_or_read_only_analogs_do_not_force_approval(
 
 
 @pytest.mark.parametrize("target", BYPASS_TARGETS, ids=["local", "ssh"])
-def test_non_protected_attached_rsync_temp_dir_does_not_force_approval(target):
-    assessment = assess_command_risk(
+@pytest.mark.parametrize(
+    "command",
+    [
         "rsync payload /tmp/output -T/tmp/rsync-work",
+        "rsync -avT/tmp/rsync-work payload /tmp/output",
+        "rsync -vaT/tmp/rsync-work payload /tmp/output",
+    ],
+)
+def test_non_protected_attached_rsync_temp_dir_does_not_force_approval(target, command):
+    assessment = assess_command_risk(
+        command,
         target=target,
     )
 
