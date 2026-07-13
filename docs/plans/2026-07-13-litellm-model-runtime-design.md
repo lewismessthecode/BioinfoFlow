@@ -232,20 +232,22 @@ The Responses codec maps canonical input to Responses items and handles:
 
 Responses continuation state is provider-derived state, not canonical
 transcript identity. This campaign uses `store=false` and requests
-`include=["reasoning.encrypted_content"]`. The gateway persists the complete
-provider output items required for continuation—including encrypted reasoning,
-message, and function-call items—in provider continuation metadata. The next
-request replays those items plus the matching `function_call_output`. This
-state survives approval pauses and process restart without exposing raw
-reasoning or depending on provider-side storage.
+`include=["reasoning.encrypted_content"]`. The Responses codec assembles the
+complete provider output items required for continuation—including encrypted
+reasoning, message, and function-call items—and binds them to the exact endpoint,
+provider kind, model, protocol, and base URL that produced them. The next request
+replays those items plus the matching `function_call_output` only when that target
+identity still matches. This state survives approval pauses and process restart
+without exposing raw reasoning or depending on provider-side storage.
 
-Continuation metadata is stored only in the existing durable, session-scoped
-transcript message metadata used by AgentCore resume. It is treated as opaque
-provider state: public transcript/API serializers omit it, logs and ledger
-events may report only its presence and item count, and compaction must preserve
-the latest live continuation chain until the turn finishes. It follows the
-session/transcript retention and deletion lifecycle; completing, deleting, or
-expiring the owning session removes the need to replay it. The encrypted
+Continuation metadata is stored as one replaceable, turn-scoped anchor in the
+durable transcript metadata used by AgentCore resume. Tool-result messages do not
+copy it, a target change discards it, and a final answer clears it. It is treated
+as opaque provider state: public transcript/API serializers omit it, logs and
+ledger events may report only its presence and item count, and compaction must
+preserve the latest live continuation chain until the turn finishes. It follows
+the session/transcript retention and deletion lifecycle; completing, deleting,
+or expiring the owning session removes the need to replay it. The encrypted
 reasoning payload is never decrypted or rendered by Bioinfoflow.
 
 ## AgentCore Integration
@@ -347,16 +349,30 @@ fallback.
 - Provider probe status is safe to persist and return through the API.
 - Live relay tests read secrets from environment or the existing encrypted
   local credential and never print them.
+- In team mode, server environment credentials and non-public provider
+  destinations are deployment-owned resources available only to owner/admin
+  roles. Personal and development modes retain localhost and internal-relay
+  support.
+- Public provider hostnames can be saved without DNS access, while test and
+  discovery operations re-resolve the hostname immediately before network I/O
+  and reject private, loopback, link-local, reserved, internal, or unresolvable
+  targets for ordinary team members.
 
 ## Acceptance Criteria
 
 - Existing Chat providers remain behavior-compatible.
 - AgentCore loop and runtime no longer import or monkeypatch LiteLLM calls.
+- Importing the model runtime is deterministic and does not depend on the LLM
+  catalog package being imported first.
 - Explicit persisted protocol selects `acompletion()` or `aresponses()`.
 - The configured relay completes `gpt-5.4-mini` through Responses.
 - Responses text, tools, usage, and phase are normalized into AgentCore events.
+- Responses continuation is codec-owned, target-bound, and persisted at most
+  once per active turn.
 - Tool approvals pause and resume with stable call IDs for both protocols.
 - Provider test executes the same gateway path used by AgentCore.
+- Ordinary team members cannot use provider configuration to read arbitrary
+  server environment variables or target non-public backend network addresses.
 - No protocol inference or relay-specific hardcoding exists.
 - Migration upgrade/downgrade, backend tests/Ruff, frontend tests/lints/build,
   live smoke, and independent reviews pass before the PR is opened.
