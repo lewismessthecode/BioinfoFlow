@@ -41,9 +41,19 @@ class AgentModelContext:
 
 
 class AgentContextAssembler:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        owned_turn_id: str | None = None,
+        expected_owner_token: str | None = None,
+    ):
         self.db = session
-        self.transcript = AgentTranscriptStore(session)
+        self.transcript = AgentTranscriptStore(
+            session,
+            owned_turn_id=owned_turn_id,
+            expected_owner_token=expected_owner_token,
+        )
         self.memories = AgentMemoryRepository(session)
         self.project_instructions = ProjectInstructionResolver(session)
 
@@ -170,10 +180,14 @@ class AgentContextAssembler:
         platform state, and the exact tools it can call every turn. Ordering is
         deterministic so the preceding stable prefix stays cache-identical.
         """
-        toolset = (getattr(agent_session, "toolset_policy", None) or {}).get("name") or "default"
+        toolset = (getattr(agent_session, "toolset_policy", None) or {}).get(
+            "name"
+        ) or "default"
         lines: list[str] = ["## Environment"]
         lines.append(f"- Working directory: {settings.repo_root}")
-        allowed_roots = ", ".join(str(root) for root in FilesystemPolicy().allowed_roots)
+        allowed_roots = ", ".join(
+            str(root) for root in FilesystemPolicy().allowed_roots
+        )
         lines.append(f"- Allowed filesystem roots: {allowed_roots}")
         lines.append(f"- Workspace: {agent_session.workspace_id}")
         lines.append(
@@ -187,7 +201,9 @@ class AgentContextAssembler:
             "for the user's approval."
         )
         lines.append(f"- Runtime mode: {getattr(agent_session, 'runtime_mode', 'api')}")
-        lines.append(f"- Role profile: {getattr(agent_session, 'role_profile', 'bioinformatician')}")
+        lines.append(
+            f"- Role profile: {getattr(agent_session, 'role_profile', 'bioinformatician')}"
+        )
         lines.append(f"- Toolset policy: {toolset}")
         if toolset == "plan":
             lines.append(
@@ -245,7 +261,9 @@ class AgentContextAssembler:
     async def _memory_context(self, agent_session) -> str | None:
         memories = await self.memories.list_for_workspace(
             workspace_id=str(agent_session.workspace_id),
-            project_id=str(agent_session.project_id) if agent_session.project_id else None,
+            project_id=str(agent_session.project_id)
+            if agent_session.project_id
+            else None,
             status=AgentMemoryStatus.ACCEPTED,
         )
         if not memories:
@@ -257,7 +275,9 @@ class AgentContextAssembler:
 
     def _skills_context(self, turn) -> str | None:
         skills = AgentSkillRegistry.from_default_roots()
-        plugins = AgentPluginRegistry.from_directory(state_root() / "agent_core" / "plugins")
+        plugins = AgentPluginRegistry.from_directory(
+            state_root() / "agent_core" / "plugins"
+        )
         lines: list[str] = []
         if skills.list():
             lines.append("## Agent skills")
@@ -354,5 +374,7 @@ def _exposed_tool_lines(exposed_tools) -> list[str]:
     for spec in sorted(exposed_tools, key=lambda spec: spec.name):
         summary = str(getattr(spec, "description", "") or "").strip()
         first_sentence = summary.split(". ")[0].rstrip(".")
-        lines.append(f"- {spec.name}: {first_sentence}" if first_sentence else f"- {spec.name}")
+        lines.append(
+            f"- {spec.name}: {first_sentence}" if first_sentence else f"- {spec.name}"
+        )
     return lines

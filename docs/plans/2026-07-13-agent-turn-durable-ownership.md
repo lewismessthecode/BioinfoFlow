@@ -79,3 +79,13 @@
 Implemented on 2026-07-13. The ownership-specific regressions pass, the full
 AgentCore plus model-runtime slice passes (351 tests), Ruff passes, and a fresh
 SQLite database upgrades through migration `0045`.
+
+### Atomic publication follow-up
+
+The initial heartbeat checks still left a check-then-publish window. Owned
+transcript messages, ledger events, action creation/terminal updates, artifact
+registration, Responses continuation metadata, and transcript compaction now
+use repository-native conditional writes. Each write validates the current
+`agent_turns.owner_token` in the database statement and fences the turn row in
+the same transaction before commit. Non-owned service operations keep their
+existing repository paths by omitting the optional owner token.

@@ -119,9 +119,23 @@ class AgentLoopController:
         self.sessions = AgentSessionRepository(session)
         self.turns = AgentTurnRepository(session)
         self.actions = AgentActionRepository(session)
-        self.ledger = AgentEventLedger(session)
-        self.context = AgentContextAssembler(session)
-        self.transcript = AgentTranscriptStore(session)
+        owner_token = ownership.owner_token if ownership is not None else None
+        owned_turn_id = ownership.turn_id if ownership is not None else None
+        self.ledger = AgentEventLedger(
+            session,
+            owned_turn_id=owned_turn_id,
+            expected_owner_token=owner_token,
+        )
+        self.context = AgentContextAssembler(
+            session,
+            owned_turn_id=owned_turn_id,
+            expected_owner_token=owner_token,
+        )
+        self.transcript = AgentTranscriptStore(
+            session,
+            owned_turn_id=owned_turn_id,
+            expected_owner_token=owner_token,
+        )
         self.registry = build_default_tool_registry()
         self.executor = AgentToolExecutor(session, self.registry)
         self.model_gateway = model_gateway or ModelGateway()
@@ -524,6 +538,11 @@ class AgentLoopController:
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
                     ownership_guard=self._ensure_owned,
+                    expected_owner_token=(
+                        self.ownership.owner_token
+                        if self.ownership is not None
+                        else None
+                    ),
                 ),
                 toolset_policy=agent_session.toolset_policy,
                 permission_mode=agent_session.permission_mode,
@@ -597,6 +616,9 @@ class AgentLoopController:
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
             ownership_guard=self._ensure_owned,
+            expected_owner_token=(
+                self.ownership.owner_token if self.ownership is not None else None
+            ),
         )
         for sibling in batch:
             await self._ensure_owned()
@@ -680,11 +702,20 @@ class AgentLoopController:
         if action.status not in TERMINAL_ACTION_STATUSES:
             return
         if action.requires_resume or action.completed_at is None:
-            await self.actions.update_all(
-                action,
-                requires_resume=False,
-                completed_at=action.completed_at or datetime.now(timezone.utc),
-            )
+            values = {
+                "requires_resume": False,
+                "completed_at": action.completed_at or datetime.now(timezone.utc),
+            }
+            if self.ownership is None:
+                await self.actions.update_all(action, **values)
+            else:
+                updated, owned = await self.actions.update_all_owned(
+                    action,
+                    expected_owner_token=self.ownership.owner_token,
+                    **values,
+                )
+                if not owned or updated is None:
+                    raise TurnOwnershipLostError("Agent turn ownership was replaced")
 
     async def _append_assistant_tool_calls(
         self,
@@ -814,6 +845,11 @@ class AgentLoopController:
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
                     ownership_guard=self._ensure_owned,
+                    expected_owner_token=(
+                        self.ownership.owner_token
+                        if self.ownership is not None
+                        else None
+                    ),
                 ),
                 toolset_policy=agent_session.toolset_policy,
                 permission_mode=agent_session.permission_mode,
@@ -1134,11 +1170,11 @@ class AgentLoopController:
 
         loop_state = {"termination_reason": result.termination_reason}
         if result.termination_reason == "waiting_approval":
-            loop_state["pending_tool_call_ids"] = (
-                await self.transcript.latest_unresolved_tool_call_batch_ids(
-                    session_id=str(turn.session_id),
-                    turn_id=str(turn.id),
-                )
+            loop_state[
+                "pending_tool_call_ids"
+            ] = await self.transcript.latest_unresolved_tool_call_batch_ids(
+                session_id=str(turn.session_id),
+                turn_id=str(turn.id),
             )
         resume_batch_token = (
             new_turn_owner_token()
@@ -1198,6 +1234,7 @@ class AgentLoopController:
                 turn_id=str(updated.id),
                 type=event_type,
                 payload=payload,
+                after_owner_fenced_transition=self.ownership is not None,
             )
         log_fields = {
             "session_id": str(updated.session_id),
