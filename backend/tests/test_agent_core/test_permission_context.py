@@ -26,7 +26,11 @@ class _HighRiskTool:
     spec = AgentToolSpec(
         name="test.high",
         description="High-risk test tool.",
-        input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+        input_schema={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
         output_schema={
             "type": "object",
             "properties": {"ok": {"type": "boolean"}},
@@ -41,7 +45,9 @@ class _HighRiskTool:
         return {"ok": True}
 
 
-async def _create_session_and_turn(db_session, *, permission_mode: str = "guarded_auto"):
+async def _create_session_and_turn(
+    db_session, *, permission_mode: str = "guarded_auto"
+):
     db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
     await db_session.commit()
     service = AgentCoreService(db_session)
@@ -82,13 +88,19 @@ def test_permission_audit_models_default_to_initial_policy_version() -> None:
         (AgentActionRead, "permission_context_snapshot"),
     ],
 )
-def test_permission_audit_fields_are_exposed_by_read_schemas(schema, field_name: str) -> None:
+def test_permission_audit_fields_are_exposed_by_read_schemas(
+    schema, field_name: str
+) -> None:
     assert field_name in schema.model_fields
 
 
 @pytest.mark.asyncio
-async def test_executor_observes_guarded_to_bypass_update_during_active_turn(db_engine) -> None:
-    sessions = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+async def test_executor_observes_guarded_to_bypass_update_during_active_turn(
+    db_engine,
+) -> None:
+    sessions = async_sessionmaker(
+        db_engine, expire_on_commit=False, class_=AsyncSession
+    )
     async with sessions() as loop_db:
         session, turn = await _create_session_and_turn(loop_db)
         stale = await AgentSessionRepository(loop_db).get(str(session.id))
@@ -126,10 +138,16 @@ async def test_executor_observes_guarded_to_bypass_update_during_active_turn(db_
 
 
 @pytest.mark.asyncio
-async def test_executor_observes_bypass_to_guarded_update_during_active_turn(db_engine) -> None:
-    sessions = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+async def test_executor_observes_bypass_to_guarded_update_during_active_turn(
+    db_engine,
+) -> None:
+    sessions = async_sessionmaker(
+        db_engine, expire_on_commit=False, class_=AsyncSession
+    )
     async with sessions() as loop_db:
-        session, turn = await _create_session_and_turn(loop_db, permission_mode="bypass")
+        session, turn = await _create_session_and_turn(
+            loop_db, permission_mode="bypass"
+        )
         stale = await AgentSessionRepository(loop_db).get(str(session.id))
 
         async with sessions() as update_db:
@@ -167,11 +185,16 @@ async def test_executor_observes_bypass_to_guarded_update_during_active_turn(db_
             in {"action.requested", "action.risk_assessed", "action.waiting_decision"}
         ]
         assert authorization_events
-        assert all(event.payload["evaluated_policy_version"] == 2 for event in authorization_events)
+        assert all(
+            event.payload["evaluated_policy_version"] == 2
+            for event in authorization_events
+        )
 
 
 @pytest.mark.asyncio
-async def test_authorization_update_increments_once_and_resolves_coherent_snapshot(db_session) -> None:
+async def test_authorization_update_increments_once_and_resolves_coherent_snapshot(
+    db_session,
+) -> None:
     from app.services.agent_core.permissions.context import PermissionContextResolver
 
     session, _turn = await _create_session_and_turn(db_session)
@@ -214,7 +237,9 @@ async def test_authorization_update_increments_once_and_resolves_coherent_snapsh
 
 
 @pytest.mark.asyncio
-async def test_turn_level_execution_target_change_increments_policy_version(db_session) -> None:
+async def test_turn_level_execution_target_change_increments_policy_version(
+    db_session,
+) -> None:
     session, _turn = await _create_session_and_turn(db_session)
 
     await AgentCoreService(db_session).create_turn_record(
@@ -253,8 +278,12 @@ async def test_validation_failure_records_fresh_permission_context(db_session) -
 
 
 @pytest.mark.asyncio
-async def test_resume_rechecks_exposure_with_fresh_permission_context(db_engine) -> None:
-    sessions = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+async def test_resume_rechecks_exposure_with_fresh_permission_context(
+    db_engine,
+) -> None:
+    sessions = async_sessionmaker(
+        db_engine, expire_on_commit=False, class_=AsyncSession
+    )
     async with sessions() as loop_db:
         session, turn = await _create_session_and_turn(loop_db)
         executor = AgentToolExecutor(loop_db, _registry())
@@ -286,14 +315,18 @@ async def test_resume_rechecks_exposure_with_fresh_permission_context(db_engine)
                 updates={"mode": "plan"},
             )
 
-        resumed = await executor.resume_action(action_id=waiting.action_id, context=context)
+        resumed = await executor.resume_action(
+            action_id=waiting.action_id, context=context
+        )
 
         assert resumed.status == "failed"
         assert resumed.error["type"] == "PermissionDeniedError"
 
 
 @pytest.mark.asyncio
-async def test_legacy_remote_connection_alias_change_increments_policy_version(db_session) -> None:
+async def test_legacy_remote_connection_alias_change_increments_policy_version(
+    db_session,
+) -> None:
     db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
     await db_session.commit()
     service = AgentCoreService(db_session)
@@ -315,7 +348,9 @@ async def test_legacy_remote_connection_alias_change_increments_policy_version(d
 
 
 @pytest.mark.asyncio
-async def test_permission_context_is_deeply_immutable_and_snapshot_isolated(db_session) -> None:
+async def test_permission_context_is_deeply_immutable_and_snapshot_isolated(
+    db_session,
+) -> None:
     from app.services.agent_core.permissions.context import PermissionContextResolver
 
     session, _turn = await _create_session_and_turn(db_session)
@@ -350,7 +385,9 @@ async def test_permission_context_is_deeply_immutable_and_snapshot_isolated(db_s
 
 
 @pytest.mark.asyncio
-async def test_remote_permission_snapshot_contains_safe_identity_without_credentials(db_session) -> None:
+async def test_remote_permission_snapshot_contains_safe_identity_without_credentials(
+    db_session,
+) -> None:
     from app.services.agent_core.permissions.context import PermissionContextResolver
 
     session, _turn = await _create_session_and_turn(db_session)
@@ -412,10 +449,14 @@ async def test_remote_permission_snapshot_contains_safe_identity_without_credent
 
 
 @pytest.mark.asyncio
-async def test_remote_permission_snapshot_refreshes_connection_and_project_resources(db_engine) -> None:
+async def test_remote_permission_snapshot_refreshes_connection_and_project_resources(
+    db_engine,
+) -> None:
     from app.services.agent_core.permissions.context import PermissionContextResolver
 
-    sessions = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    sessions = async_sessionmaker(
+        db_engine, expire_on_commit=False, class_=AsyncSession
+    )
     async with sessions() as loop_db:
         loop_db.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
         connection = RemoteConnection(
@@ -510,7 +551,9 @@ async def test_remote_permission_snapshot_refreshes_connection_and_project_resou
 
 
 @pytest.mark.asyncio
-async def test_remote_permission_snapshot_falls_back_to_bounded_metadata_root(db_session) -> None:
+async def test_remote_permission_snapshot_falls_back_to_bounded_metadata_root(
+    db_session,
+) -> None:
     from app.services.agent_core.permissions.context import PermissionContextResolver
 
     db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
@@ -538,7 +581,9 @@ async def test_remote_permission_snapshot_falls_back_to_bounded_metadata_root(db
 
 
 @pytest.mark.asyncio
-async def test_noop_normalized_policy_updates_do_not_increment_version(db_session) -> None:
+async def test_noop_normalized_policy_updates_do_not_increment_version(
+    db_session,
+) -> None:
     session, _turn = await _create_session_and_turn(db_session)
     service = AgentCoreService(db_session)
 
@@ -574,7 +619,9 @@ async def test_noop_normalized_policy_updates_do_not_increment_version(db_sessio
 
 
 @pytest.mark.asyncio
-async def test_noop_turn_target_and_toolset_activation_do_not_increment_version(db_session) -> None:
+async def test_noop_turn_target_and_toolset_activation_do_not_increment_version(
+    db_session,
+) -> None:
     session, _turn = await _create_session_and_turn(db_session)
     service = AgentCoreService(db_session)
 
@@ -603,7 +650,9 @@ async def test_noop_turn_target_and_toolset_activation_do_not_increment_version(
 
 
 @pytest.mark.asyncio
-async def test_metadata_remote_boundary_changes_version_and_next_action_snapshot(db_session) -> None:
+async def test_metadata_remote_boundary_changes_version_and_next_action_snapshot(
+    db_session,
+) -> None:
     db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
     connection = RemoteConnection(
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -675,8 +724,41 @@ async def test_metadata_remote_boundary_changes_version_and_next_action_snapshot
             turn_id=str(turn.id),
         ),
         toolset_policy={"name": "execution"},
+        defer_execution=True,
     )
 
     action = await AgentActionRepository(db_session).get(result.action_id)
+    assert result.status == "requested"
     assert action.evaluated_policy_version == 2
     assert action.permission_context_snapshot["effective_roots"] == ["/analysis/b"]
+    assert action.permission_context_snapshot["command_risk"]["level"] == "act_low"
+    assert action.permission_context_snapshot["command_risk"]["effects"] == ["read"]
+    assert action.permission_context_snapshot["command_risk"]["target"] == {
+        "kind": "remote_ssh",
+        "trust_domain": "boundary.internal",
+        "identity": "analyst",
+        "connection_id": str(connection.id),
+        "network_allowed": True,
+        "privileged": False,
+    }
+
+    write_result = await AgentToolExecutor(
+        db_session,
+        build_default_tool_registry(),
+    ).execute(
+        tool_name="remote.exec",
+        input={"command": "touch output.txt"},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+        ),
+        toolset_policy={"name": "execution"},
+    )
+    write_action = await AgentActionRepository(db_session).get(write_result.action_id)
+    assert write_result.status == "waiting_decision"
+    assert write_action.permission_context_snapshot["command_risk"]["effects"] == [
+        "write"
+    ]

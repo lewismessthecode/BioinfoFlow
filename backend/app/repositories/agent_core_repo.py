@@ -509,19 +509,36 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         *,
         error: dict,
         completed_at: datetime,
+        risk_level: str | None = None,
+        risk_reasons: list | None = None,
+        affected_resources: list | None = None,
+        permission_decision: dict | None = None,
+        evaluated_policy_version: int | None = None,
+        permission_context_snapshot: dict | None = None,
     ) -> AgentAction | None:
+        values = {
+            "status": AgentActionStatus.FAILED,
+            "requires_resume": False,
+            "error": error,
+            "completed_at": completed_at,
+        }
+        for key, value in (
+            ("risk_level", risk_level),
+            ("risk_reasons", risk_reasons),
+            ("affected_resources", affected_resources),
+            ("permission_decision", permission_decision),
+            ("evaluated_policy_version", evaluated_policy_version),
+            ("permission_context_snapshot", permission_context_snapshot),
+        ):
+            if value is not None:
+                values[key] = value
         result = await self.session.execute(
             update(self.model)
             .where(
                 self.model.id == action_id,
                 self.model.status == AgentActionStatus.REQUESTED,
             )
-            .values(
-                status=AgentActionStatus.FAILED,
-                requires_resume=False,
-                error=error,
-                completed_at=completed_at,
-            )
+            .values(**values)
             .returning(self.model)
             .execution_options(populate_existing=True)
         )

@@ -21,6 +21,10 @@ from app.services.agent_core.permissions.context import (
     PermissionContextResolver,
 )
 from app.services.agent_core.permissions.risk import RiskAssessment
+from app.services.agent_core.permissions.command_risk import (
+    CommandRiskAssessment,
+    command_target_profile_from_context,
+)
 from app.services.agent_core.tools.approval import action_requires_resume
 from app.services.agent_core.tools.middleware import (
     normalize_tool_input,
@@ -117,7 +121,11 @@ def _artifact_descriptor(
     return None
 
 
-def _resolve_requested_risk(tool: AgentTool, normalized_input: dict[str, Any]):
+def _resolve_requested_risk(
+    tool: AgentTool,
+    normalized_input: dict[str, Any],
+    permission_context: PermissionContext,
+):
     """Let a tool dynamically raise its requested risk from its input.
 
     Most tools declare a static ``risk_level``. The ``bash`` tool overrides
@@ -127,7 +135,13 @@ def _resolve_requested_risk(tool: AgentTool, normalized_input: dict[str, Any]):
     """
     assess = getattr(tool, "assess_risk", None)
     if assess is not None:
-        dynamic = assess(normalized_input or {})
+        dynamic = assess(
+            normalized_input or {},
+            target=command_target_profile_from_context(
+                permission_context,
+                action_input=normalized_input,
+            ),
+        )
         if dynamic is not None:
             return dynamic
     return tool.spec.risk_level
@@ -138,8 +152,9 @@ def _produce_risk_assessment(
     tool: AgentTool,
     action_input: dict[str, Any],
     action_service: AgentActionService,
+    permission_context: PermissionContext,
 ) -> RiskAssessment:
-    requested = _resolve_requested_risk(tool, action_input)
+    requested = _resolve_requested_risk(tool, action_input, permission_context)
     if isinstance(requested, RiskAssessment):
         return requested
     return action_service.risk_engine.assess(
@@ -148,6 +163,14 @@ def _produce_risk_assessment(
         requested_level=requested,
         input=action_input,
     )
+
+
+def _snapshot_with_command_risk(
+    snapshot: dict[str, Any], risk: RiskAssessment
+) -> dict[str, Any]:
+    if not isinstance(risk, CommandRiskAssessment):
+        return snapshot
+    return {**snapshot, "command_risk": risk.audit_snapshot()}
 
 
 def _has_explicit_user_approval(permission_decision: dict[str, Any]) -> bool:
@@ -236,7 +259,22 @@ class AgentToolExecutor:
                 exc=exc,
                 commit=commit_action,
             )
-        requested_risk = _resolve_requested_risk(tool, normalized_input)
+        requested_risk = _resolve_requested_risk(
+            tool,
+            normalized_input,
+            permission_context,
+        )
+        permission_snapshot = _snapshot_with_command_risk(
+            permission_snapshot,
+            requested_risk
+            if isinstance(requested_risk, RiskAssessment)
+            else self.action_service.risk_engine.assess(
+                kind="tool",
+                name=tool.spec.name,
+                requested_level=requested_risk,
+                input=normalized_input,
+            ),
+        )
 
         action = await self.action_service.request_action(
             turn_id=context.turn_id,
@@ -258,7 +296,7 @@ class AgentToolExecutor:
             force_ask=tool.spec.interaction is not None,
             interaction=tool.spec.interaction,
             evaluated_policy_version=permission_context.policy_version,
-            permission_context_snapshot=permission_context.snapshot(),
+            permission_context_snapshot=permission_snapshot,
             commit=commit_action,
         )
         if action_requires_resume(action.status):
@@ -421,12 +459,22 @@ class AgentToolExecutor:
         *,
         action,
         error_message: str,
+        risk: RiskAssessment | None = None,
+        permission_decision: dict[str, Any] | None = None,
+        evaluated_policy_version: int | None = None,
+        permission_context_snapshot: dict[str, Any] | None = None,
     ) -> ToolExecutionResult:
         error = {"type": "PermissionDeniedError", "message": error_message}
         failed = await self.action_repo.fail_requested(
             str(action.id),
             error=error,
             completed_at=datetime.now(timezone.utc),
+            risk_level=risk.level if risk is not None else None,
+            risk_reasons=risk.reasons if risk is not None else None,
+            affected_resources=risk.affected_resources if risk is not None else None,
+            permission_decision=permission_decision,
+            evaluated_policy_version=evaluated_policy_version,
+            permission_context_snapshot=permission_context_snapshot,
         )
         if failed is None:
             return await self._current_result(str(action.id), fallback=action)
@@ -502,7 +550,9 @@ class AgentToolExecutor:
             tool=tool,
             action_input=action.normalized_input or action.input or {},
             action_service=self.action_service,
+            permission_context=permission_context,
         )
+        snapshot = _snapshot_with_command_risk(snapshot, current_risk)
         fresh_decision = self.action_service.permission_policy.decide(
             risk=current_risk,
             permission_mode=permission_context.permission_mode,
@@ -513,13 +563,25 @@ class AgentToolExecutor:
         hard_denied = (
             fresh_decision.decision == "deny"
             or current_risk.level == "critical"
+            or getattr(current_risk, "hard_blocked", False)
             or previous_decision.get("hard_blocked") is True
             or previous_decision.get("protected_resource_recheck") == "deny"
         )
         if hard_denied:
+            denied_decision = {
+                **fresh_decision.as_dict(),
+                "source": "policy_recheck",
+                "evaluated_policy_version": permission_context.policy_version,
+                "requires_explicit_approval": current_risk.requires_explicit_approval,
+                "hard_blocked": True,
+            }
             return await self._fail_requested_permission(
                 action=action,
                 error_message="Action is hard-blocked by the current safety floor.",
+                risk=current_risk,
+                permission_decision=denied_decision,
+                evaluated_policy_version=permission_context.policy_version,
+                permission_context_snapshot=snapshot,
             )
 
         requires_approval = (

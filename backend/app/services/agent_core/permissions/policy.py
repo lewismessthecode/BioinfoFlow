@@ -33,10 +33,10 @@ class PermissionPolicy:
         permission_mode: PermissionMode,
         automation_mode: AutomationMode,
     ) -> PermissionDecision:
-        if risk.level == "critical":
+        if risk.level == "critical" or getattr(risk, "hard_blocked", False):
             return PermissionDecision(
                 decision="deny",
-                reasons=["critical actions are hard-blocked"],
+                reasons=[*risk.reasons, "hard-blocked actions cannot be approved"],
                 risk_level=risk.level,
             )
 

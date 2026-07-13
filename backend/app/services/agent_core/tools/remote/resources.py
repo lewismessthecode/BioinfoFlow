@@ -12,8 +12,15 @@ from app.repositories.agent_core_repo import AgentSessionRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.authorization_service import AuthorizationService
-from app.services.agent_core.execution_target import selected_remote_connection_ids_from_policy
+from app.services.agent_core.execution_target import (
+    selected_remote_connection_ids_from_policy,
+)
 from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
+from app.services.agent_core.permissions.command_risk import (
+    CommandRiskAssessment,
+    CommandTargetProfile,
+    assess_command_risk,
+)
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.remote_execution import (
@@ -159,9 +166,13 @@ class RemoteConnectionsListTool:
     )
 
     def __init__(self, resolver_factory: ResolverFactory | None = None) -> None:
-        self.resolver_factory = resolver_factory or SessionMetadataRemoteConnectionResolver
+        self.resolver_factory = (
+            resolver_factory or SessionMetadataRemoteConnectionResolver
+        )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         resolver = self.resolver_factory(context.db)
         connections = await resolver.list(
             workspace_id=context.workspace_id,
@@ -171,7 +182,9 @@ class RemoteConnectionsListTool:
         search = str(input.get("search") or "").casefold()
         if search:
             connections = [
-                connection for connection in connections if _connection_matches(connection, search)
+                connection
+                for connection in connections
+                if _connection_matches(connection, search)
             ]
         limit = int(input.get("limit") or 50)
         return {
@@ -222,15 +235,41 @@ class RemoteExecTool:
         resolver_factory: ResolverFactory | None = None,
         executor: RemoteExecutor | None = None,
     ) -> None:
-        self.resolver_factory = resolver_factory or SessionMetadataRemoteConnectionResolver
+        self.resolver_factory = (
+            resolver_factory or SessionMetadataRemoteConnectionResolver
+        )
         self.executor = executor or SshRemoteExecutor()
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    def assess_risk(
+        self,
+        input: dict[str, Any],
+        *,
+        target: CommandTargetProfile | None = None,
+    ) -> CommandRiskAssessment | None:
+        command = input.get("command")
+        if not isinstance(command, str) or not command.strip() or target is None:
+            return None
+        connection_id = input.get("connection_id")
+        return assess_command_risk(
+            command,
+            target=target,
+            requested_connection_id=(
+                connection_id.strip()
+                if isinstance(connection_id, str) and connection_id.strip()
+                else None
+            ),
+        )
+
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         await _require_remote_operation_access(context)
         connection = await _resolve_connection(input, context, self.resolver_factory)
         command = _required_string(input, "command")
         working_directory = await _remote_working_directory(context, connection.id)
-        remote_command = _command_in_remote_working_directory(command, working_directory)
+        remote_command = _command_in_remote_working_directory(
+            command, working_directory
+        )
         result = await self.executor.run(
             connection,
             remote_command,
@@ -286,14 +325,20 @@ class RemoteReadFileTool:
         resolver_factory: ResolverFactory | None = None,
         executor: RemoteExecutor | None = None,
     ) -> None:
-        self.resolver_factory = resolver_factory or SessionMetadataRemoteConnectionResolver
+        self.resolver_factory = (
+            resolver_factory or SessionMetadataRemoteConnectionResolver
+        )
         self.executor = executor or SshRemoteExecutor()
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         await _require_remote_operation_access(context)
         connection = await _resolve_connection(input, context, self.resolver_factory)
         working_directory = await _remote_working_directory(context, connection.id)
-        path = _remote_path_for_context(_required_string(input, "path"), working_directory)
+        path = _remote_path_for_context(
+            _required_string(input, "path"), working_directory
+        )
         max_bytes = int(input.get("max_bytes") or 16000)
         result = await self.executor.run(
             connection,
@@ -359,14 +404,20 @@ class RemoteListDirTool:
         resolver_factory: ResolverFactory | None = None,
         executor: RemoteExecutor | None = None,
     ) -> None:
-        self.resolver_factory = resolver_factory or SessionMetadataRemoteConnectionResolver
+        self.resolver_factory = (
+            resolver_factory or SessionMetadataRemoteConnectionResolver
+        )
         self.executor = executor or SshRemoteExecutor()
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         await _require_remote_operation_access(context)
         connection = await _resolve_connection(input, context, self.resolver_factory)
         working_directory = await _remote_working_directory(context, connection.id)
-        path = _remote_path_for_context(_required_string(input, "path"), working_directory)
+        path = _remote_path_for_context(
+            _required_string(input, "path"), working_directory
+        )
         limit = int(input.get("limit") or 50)
         result = await self.executor.run(
             connection,
@@ -459,7 +510,9 @@ async def _selected_remote_connection_ids(
     return selected
 
 
-async def _session_remote_project_connection_id(db: AsyncSession, session) -> str | None:
+async def _session_remote_project_connection_id(
+    db: AsyncSession, session
+) -> str | None:
     project = await _session_remote_project(db, session)
     if not project:
         return None
@@ -487,7 +540,10 @@ async def _remote_working_directory(
     session = await AgentSessionRepository(context.db).get_fresh(str(session_id))
     if session is None:
         return None
-    if str(session.workspace_id) != context.workspace_id or str(session.user_id) != context.user_id:
+    if (
+        str(session.workspace_id) != context.workspace_id
+        or str(session.user_id) != context.user_id
+    ):
         return None
     boundary = await RemoteBoundaryResolver(context.db).resolve(
         agent_session=session,
@@ -496,7 +552,9 @@ async def _remote_working_directory(
     return boundary.effective_root
 
 
-def _command_in_remote_working_directory(command: str, working_directory: str | None) -> str:
+def _command_in_remote_working_directory(
+    command: str, working_directory: str | None
+) -> str:
     if not working_directory:
         return command
     return f"cd {shlex.quote(working_directory)} && {command}"
@@ -584,9 +642,7 @@ def _read_file_command(
     quoted_path = shlex.quote(path)
     read_bytes = max_bytes + 1
     return (
-        scope_guard
-        +
-        f"if [ -d {quoted_path} ]; then "
+        scope_guard + f"if [ -d {quoted_path} ]; then "
         "printf '%s\\n' 'remote path is a directory' >&2; exit 21; "
         f"fi; head -c {read_bytes} -- {quoted_path}"
     )
@@ -601,13 +657,11 @@ def _list_dir_command(
     quoted_path = shlex.quote(path)
     line_limit = limit + 1
     return (
-        scope_guard
-        +
-        f"dir={quoted_path}; "
+        scope_guard + f"dir={quoted_path}; "
         'if [ ! -d "$dir" ]; then '
         "printf '%s\\n' 'remote path is not a directory' >&2; exit 22; "
         "fi; "
-        "for child in \"$dir\"/* \"$dir\"/.[!.]* \"$dir\"/..?*; do "
+        'for child in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do '
         '[ -e "$child" ] || [ -L "$child" ] || continue; '
         "name=${child##*/}; "
         'if [ "$name" = . ] || [ "$name" = .. ]; then continue; fi; '

@@ -77,3 +77,39 @@ def test_env_wrapper_is_unwrapped_to_inner_command():
     assert classify_shell_command("env FOO=bar curl http://x") == "external"
     assert classify_shell_command("env -i ls") == "act_low"
     assert classify_shell_command("env") == "act_low"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo reboot",
+        "printf '%s\\n' shutdown",
+        'echo "safe data; reboot"',
+        "cat <<'EOF'\nreboot\nEOF",
+    ],
+)
+def test_hardline_words_in_data_are_not_treated_as_commands(command):
+    assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sudo reboot",
+        "env SAFE=1 /sbin/poweroff",
+        "sh -c 'shutdown -h now'",
+        "bash -lc 'rm --recursive --force /./'",
+        "command rm -rf -- //",
+        "timeout 5 sudo reboot",
+        "nice -n 5 rm -rf /",
+        "setsid /sbin/halt",
+        "eval 'rm -rf /'",
+        'echo "$(reboot)"',
+    ],
+)
+def test_hardline_commands_survive_common_wrappers(command):
+    assert classify_shell_command(command) == "critical"
+
+
+def test_quoted_command_substitution_literal_is_not_executed():
+    assert classify_shell_command("echo '$(reboot)'") != "critical"

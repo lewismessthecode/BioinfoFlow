@@ -22,15 +22,17 @@ from app.workspace import DEFAULT_WORKSPACE_ID
 def test_bash_assess_risk_escalates_out_of_root_paths():
     tool = ExecuteShellTool()
     # Safe inspection inside the sandbox auto-runs.
-    assert tool.assess_risk({"command": "cat README.md"}) == "act_low"
+    assert tool.assess_risk({"command": "cat README.md"}).level == "act_low"
     # Reaching an absolute path outside the allowed roots must ask, even though
     # `cat`/`find` are read-only executables.
-    assert tool.assess_risk({"command": "cat /etc/passwd"}) == "act_high"
-    assert tool.assess_risk({"command": "find / -maxdepth 1"}) == "act_high"
-    assert tool.assess_risk({"command": "cat $HOME/.ssh/id_rsa"}) == "act_high"
+    assert tool.assess_risk({"command": "cat /etc/passwd"}).level == "act_high"
+    assert tool.assess_risk({"command": "find / -maxdepth 1"}).level == "act_high"
+    assert tool.assess_risk({"command": "cat $HOME/.ssh/id_rsa"}).level == "act_high"
 
 
-async def _shell_context(db_session) -> tuple[AgentToolDispatcher, AgentToolContext, Path]:
+async def _shell_context(
+    db_session,
+) -> tuple[AgentToolDispatcher, AgentToolContext, Path]:
     workspace_root = Path(settings.bioinfoflow_home)
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     project = Project(
@@ -169,9 +171,13 @@ async def test_bash_tool_rejects_cwd_outside_allowed_roots(db_session):
 
 
 @pytest.mark.asyncio
-async def test_bash_tool_resumes_after_approval_without_registering_output_artifact(db_session, monkeypatch):
+async def test_bash_tool_resumes_after_approval_without_registering_output_artifact(
+    db_session, monkeypatch
+):
     dispatcher, context, workspace_root = await _shell_context(db_session)
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
 
     pending = await dispatcher.dispatch(
         tool_name="bash",
@@ -193,7 +199,9 @@ async def test_bash_tool_resumes_after_approval_without_registering_output_artif
     )
     assert decided.status == "requested"
 
-    resumed = await dispatcher.resume_action(action_id=pending.action_id, context=context)
+    resumed = await dispatcher.resume_action(
+        action_id=pending.action_id, context=context
+    )
     assert resumed.status == "completed"
     assert resumed.result["exit_code"] == 0
     assert resumed.result["stdout"].strip() == "before-approval"
@@ -218,9 +226,13 @@ async def test_bash_tool_resumes_after_approval_without_registering_output_artif
 
 
 @pytest.mark.asyncio
-async def test_bash_tool_uses_modified_input_when_approval_changes_command(db_session, monkeypatch):
+async def test_bash_tool_uses_modified_input_when_approval_changes_command(
+    db_session, monkeypatch
+):
     dispatcher, context, workspace_root = await _shell_context(db_session)
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
 
     pending = await dispatcher.dispatch(
         tool_name="bash",
@@ -245,8 +257,50 @@ async def test_bash_tool_uses_modified_input_when_approval_changes_command(db_se
     )
     assert decided.status == "requested"
 
-    resumed = await dispatcher.resume_action(action_id=pending.action_id, context=context)
+    resumed = await dispatcher.resume_action(
+        action_id=pending.action_id, context=context
+    )
     assert resumed.status == "completed"
     assert resumed.result["stdout"].strip() == "new-command"
     action = await AgentActionRepository(db_session).get(pending.action_id)
     assert "new-command" in action.input["command"]
+
+
+@pytest.mark.asyncio
+async def test_bash_resume_reassesses_modified_hardline_and_audits_denial(
+    db_session,
+    monkeypatch,
+):
+    dispatcher, context, workspace_root = await _shell_context(db_session)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
+
+    pending = await dispatcher.dispatch(
+        tool_name="bash",
+        input={
+            "command": f"{sys.executable} -c \"print('approval candidate')\"",
+            "cwd": str(workspace_root),
+        },
+        context=context,
+        permission_mode="guarded_auto",
+    )
+    await AgentCoreService(db_session).decide_action(
+        action_id=pending.action_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="modify",
+        note="replace with a different command",
+        modified_input={"command": "sudo rm -rf -- /./", "cwd": str(workspace_root)},
+    )
+
+    resumed = await dispatcher.resume_action(
+        action_id=pending.action_id, context=context
+    )
+    action = await AgentActionRepository(db_session).get_fresh(pending.action_id)
+
+    assert resumed.status == "failed"
+    assert resumed.error["type"] == "PermissionDeniedError"
+    assert action.risk_level == "critical"
+    assert action.permission_context_snapshot["command_risk"]["hard_blocked"] is True
+    assert action.permission_context_snapshot["command_risk"]["level"] == "critical"
