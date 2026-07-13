@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,13 +11,15 @@ from app.models.agent_core import AgentActionStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentArtifactRepository,
-    AgentSessionRepository,
 )
 from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.events import AgentEventType
-from app.services.agent_core.execution_target import execution_target_from_session
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
+from app.services.agent_core.permissions.context import (
+    PermissionContext,
+    PermissionContextResolver,
+)
 from app.services.agent_core.tools.approval import action_requires_resume
 from app.services.agent_core.tools.middleware import (
     normalize_tool_input,
@@ -122,12 +123,6 @@ def _resolve_requested_risk(tool: AgentTool, normalized_input: dict[str, Any]):
     return tool.spec.risk_level
 
 
-def _tool_role(session) -> str:
-    if session is not None and str(getattr(session, "role_profile", "")) == "worker":
-        return "worker"
-    return "orchestrator"
-
-
 @dataclass(frozen=True)
 class ToolExecutionResult:
     action_id: str
@@ -162,9 +157,16 @@ class AgentToolExecutor:
         execution_target: dict | str | None = None,
     ) -> ToolExecutionResult:
         tool = self.registry.get(tool_name)
-        session = await self._session_for_context(context)
-        if session is not None:
-            execution_target = execution_target_from_session(session)
+        permission_context = await PermissionContextResolver(self.session).resolve(
+            session_id=context.session_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
+        toolset_policy = permission_context.toolset_policy
+        permission_mode = permission_context.permission_mode
+        automation_mode = permission_context.automation_mode
+        role = permission_context.role
+        execution_target = permission_context.execution_target
         exposure = self.exposure.decide(
             tool_name=tool_name,
             policy=toolset_policy,
@@ -183,6 +185,7 @@ class AgentToolExecutor:
                 exposure_policy=exposure.policy,
                 automation_mode=automation_mode,
                 tool_call_id=tool_call_id,
+                permission_context=permission_context,
                 exc=exc,
             )
         requested_risk = _resolve_requested_risk(tool, normalized_input)
@@ -204,6 +207,8 @@ class AgentToolExecutor:
             exposure_policy=exposure.policy,
             force_ask=tool.spec.interaction is not None,
             interaction=tool.spec.interaction,
+            evaluated_policy_version=permission_context.policy_version,
+            permission_context_snapshot=permission_context.snapshot(),
         )
         if action_requires_resume(action.status):
             action = await self.action_repo.update_all(action, requires_resume=True)
@@ -232,6 +237,7 @@ class AgentToolExecutor:
         exposure_policy: dict | None,
         automation_mode: str,
         tool_call_id: str | None,
+        permission_context: PermissionContext,
         exc: BadRequestError,
     ) -> ToolExecutionResult:
         action_input = input if isinstance(input, dict) else {"_raw_input": input}
@@ -253,6 +259,8 @@ class AgentToolExecutor:
             exposure_policy=exposure_policy,
             force_ask=False,
             interaction=None,
+            evaluated_policy_version=permission_context.policy_version,
+            permission_context_snapshot=permission_context.snapshot(),
         )
         action = await self.action_repo.update_all(
             action,
@@ -289,18 +297,16 @@ class AgentToolExecutor:
         if decision.get("decision") not in {"allow", "approve", "modify", "answer"}:
             raise PermissionDeniedError("Agent action has not been approved")
         tool = self.registry.get(action.name)
-        session = await self._session_for_context(context)
+        permission_context = await PermissionContextResolver(self.session).resolve(
+            session_id=context.session_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
         exposure = self.exposure.decide(
             tool_name=tool.spec.name,
-            policy=(
-                getattr(session, "toolset_policy", None)
-                if session is not None
-                else action.exposure_policy
-            ),
-            role=_tool_role(session),
-            execution_target=(
-                execution_target_from_session(session) if session is not None else None
-            ),
+            policy=permission_context.toolset_policy,
+            role=permission_context.role,
+            execution_target=permission_context.execution_target,
         )
         if not exposure.allowed:
             return await self._record_permission_failure(
@@ -308,24 +314,6 @@ class AgentToolExecutor:
                 error_message="; ".join(exposure.reasons),
             )
         return await self._run_action(action=action, tool=tool, context=context)
-
-    async def _session_for_context(self, context: AgentToolContext):
-        session_id = getattr(context, "session_id", None)
-        if not session_id:
-            return None
-        try:
-            UUID(str(session_id))
-        except (TypeError, ValueError):
-            return None
-        session = await AgentSessionRepository(self.session).get(str(session_id))
-        if session is None:
-            return None
-        if (
-            str(session.workspace_id) != str(context.workspace_id)
-            or str(session.user_id) != str(context.user_id)
-        ):
-            return None
-        return session
 
     async def _record_permission_failure(
         self,

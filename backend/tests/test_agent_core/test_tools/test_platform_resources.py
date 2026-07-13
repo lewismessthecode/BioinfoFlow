@@ -71,6 +71,7 @@ async def _tool_context(db_session) -> tuple[AgentToolDispatcher, AgentToolConte
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
         title="Resource tools",
+        permission_mode="bypass",
     )
     turn = await core.create_turn_record(
         session_id=str(session.id),

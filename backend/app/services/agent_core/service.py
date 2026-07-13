@@ -189,7 +189,23 @@ class AgentCoreService:
             update_data["session_metadata"] = session_metadata_with_model_selection(
                 metadata, model_selection
             )
-        return await self.session_repo.update_all(session, **update_data)
+        authorization_fields = {
+            "role_profile",
+            "permission_mode",
+            "automation_mode",
+        }
+        changes_authorization = bool(authorization_fields.intersection(updates))
+        changes_authorization = changes_authorization or bool(updates.get("mode"))
+        changes_authorization = changes_authorization or "execution_target" in updates
+        if "metadata" in updates:
+            previous_target = (session.session_metadata or {}).get("execution_target")
+            next_target = (update_data.get("session_metadata") or {}).get("execution_target")
+            changes_authorization = changes_authorization or previous_target != next_target
+        return await self.session_repo.update_with_policy_version(
+            session,
+            increment_policy_version=changes_authorization,
+            **update_data,
+        )
 
     async def delete_session(
         self,
@@ -225,8 +241,9 @@ class AgentCoreService:
             user_id=user_id,
         )
         if execution_target is not None:
-            session = await self.session_repo.update_all(
+            session = await self.session_repo.update_with_policy_version(
                 session,
+                increment_policy_version=True,
                 session_metadata=session_metadata_with_execution_target(
                     getattr(session, "session_metadata", None),
                     execution_target,
@@ -497,6 +514,7 @@ class AgentCoreService:
             permission_decision={
                 "decision": decision,
                 "note": note,
+                "evaluated_policy_version": action.evaluated_policy_version,
                 "modified_input": modified_input,
                 "answer": answer,
             },
@@ -523,7 +541,11 @@ class AgentCoreService:
         session = await self.session_repo.get(session_id)
         if session is None:
             return
-        await self.session_repo.update_all(session, toolset_policy=EXECUTION_TOOLSET_POLICY)
+        await self.session_repo.update_with_policy_version(
+            session,
+            increment_policy_version=True,
+            toolset_policy=EXECUTION_TOOLSET_POLICY,
+        )
 
     async def resume_action(
         self,

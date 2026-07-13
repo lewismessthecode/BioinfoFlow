@@ -128,6 +128,7 @@ class AgentSessionRead(BaseModel):
     role_profile: str
     permission_mode: PermissionMode
     automation_mode: AutomationMode
+    permission_policy_version: int = 1
     default_model_profile_id: UUID | None = None
     runtime_mode: str = "api"
     prompt_snapshot: dict | None = None
@@ -221,6 +222,8 @@ class AgentActionRead(BaseModel):
     write_scope: list | None = None
     affected_resources: list | None = None
     permission_decision: dict | None = None
+    evaluated_policy_version: int | None = None
+    permission_context_snapshot: dict | None = None
     status: ActionStatus
     result: dict | None = None
     output_ref: dict | None = None

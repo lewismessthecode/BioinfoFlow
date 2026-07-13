@@ -71,6 +71,7 @@ class AgentSession(Base, UUIDMixin, TimestampMixin):
     role_profile: Mapped[str] = mapped_column(String(80), nullable=False, default="bioinformatician")
     permission_mode: Mapped[str] = mapped_column(String(40), nullable=False, default="guarded_auto")
     automation_mode: Mapped[str] = mapped_column(String(40), nullable=False, default="assisted")
+    permission_policy_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     default_model_profile_id: Mapped[str | None] = mapped_column(
         ForeignKey("llm_model_profiles.id", ondelete="SET NULL"),
         nullable=True,
@@ -281,6 +282,8 @@ class AgentAction(Base, UUIDMixin, TimestampMixin):
     write_scope: Mapped[list | None] = mapped_column(JSON, nullable=True)
     affected_resources: Mapped[list | None] = mapped_column(JSON, nullable=True)
     permission_decision: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    evaluated_policy_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    permission_context_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,

@@ -21,6 +21,37 @@ from app.schemas.common import Pagination
 class AgentSessionRepository(BaseRepository[AgentSession]):
     model = AgentSession
 
+    async def get_fresh(self, session_id: str) -> AgentSession | None:
+        stmt = (
+            select(self.model)
+            .where(self.model.id == session_id)
+            .execution_options(populate_existing=True)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def update_with_policy_version(
+        self,
+        session: AgentSession,
+        *,
+        increment_policy_version: bool,
+        **data: object,
+    ) -> AgentSession:
+        values = dict(data)
+        if increment_policy_version:
+            values["permission_policy_version"] = self.model.permission_policy_version + 1
+        stmt = (
+            update(self.model)
+            .where(self.model.id == session.id)
+            .values(**values)
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        result = await self.session.execute(stmt)
+        updated = result.scalar_one()
+        await self.session.commit()
+        return updated
+
     async def list_for_user(
         self,
         *,

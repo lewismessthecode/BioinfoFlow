@@ -646,6 +646,12 @@ async def test_unexposed_tool_is_denied_before_argument_validation(db_session):
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "plan"},
+    )
     turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,

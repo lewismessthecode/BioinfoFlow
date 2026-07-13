@@ -74,8 +74,9 @@ class ReadOnlySubagentRunner:
                 "parent_turn_id": runtime_context["turn_id"],
             },
         )
-        child_session = await service.session_repo.update_all(
+        child_session = await service.session_repo.update_with_policy_version(
             child_session,
+            increment_policy_version=True,
             toolset_policy={"name": "default", "allowed_tools": tool_names},
         )
         child_turn = await service.create_turn_record(

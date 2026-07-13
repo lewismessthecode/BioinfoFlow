@@ -42,6 +42,8 @@ class AgentActionService:
         exposure_policy: dict | None = None,
         force_ask: bool = False,
         interaction: str | None = None,
+        evaluated_policy_version: int | None = None,
+        permission_context_snapshot: dict | None = None,
     ):
         turn = await self.turn_repo.get(turn_id)
         if turn is None:
@@ -88,6 +90,8 @@ class AgentActionService:
             write_scope=write_scope,
             affected_resources=risk.affected_resources,
             permission_decision=decision.as_dict(),
+            evaluated_policy_version=evaluated_policy_version,
+            permission_context_snapshot=permission_context_snapshot,
             status=status,
             rollback_hint=rollback_hint,
             artifact_policy=artifact_policy,
@@ -96,7 +100,12 @@ class AgentActionService:
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             type=AgentEventType.ACTION_REQUESTED,
-            payload={"action_id": str(action.id), "kind": kind, "name": name},
+            payload={
+                "action_id": str(action.id),
+                "kind": kind,
+                "name": name,
+                "evaluated_policy_version": evaluated_policy_version,
+            },
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -106,6 +115,7 @@ class AgentActionService:
                 "action_id": str(action.id),
                 "risk_level": risk.level,
                 "reasons": risk.reasons,
+                "evaluated_policy_version": evaluated_policy_version,
             },
         )
         if decision.decision == "ask":
@@ -118,6 +128,7 @@ class AgentActionService:
                 "risk_level": risk.level,
                 "tool_call_id": tool_call_id,
                 "input_preview": input_preview,
+                "evaluated_policy_version": evaluated_policy_version,
             }
             block = _interaction_block(interaction, action_input)
             if block is not None:
