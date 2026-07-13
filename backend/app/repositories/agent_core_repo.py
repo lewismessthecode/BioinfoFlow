@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import desc, func, or_, select, update
 
 from app.models.agent_core import (
@@ -310,6 +312,58 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
 
 class AgentActionRepository(BaseRepository[AgentAction]):
     model = AgentAction
+
+    def ensure_clean_resume_claim_session(self) -> None:
+        """Require the resume worker's unit of work to be read-only.
+
+        The CAS deliberately commits its existing transaction before issuing
+        the conditional UPDATE so two SQLite readers can safely become
+        serialized writers. Resume workers use fresh sessions; rejecting a
+        dirty unit of work here prevents that boundary from committing an
+        unrelated caller mutation through autoflush.
+        """
+        if self.session.new or self.session.dirty or self.session.deleted:
+            raise RuntimeError("Atomic action resume claim requires a clean session")
+
+    async def claim_requested_resume(
+        self,
+        action_id: str,
+        *,
+        started_at: datetime,
+    ) -> tuple[AgentAction | None, bool]:
+        """Atomically claim one approved action for resume execution.
+
+        Resume workers first inspect the action and its surrounding session
+        policy. End that read transaction before the compare-and-set so SQLite
+        can serialize concurrent writers without attempting to upgrade two
+        stale read transactions. The conditional UPDATE remains the ownership
+        boundary on every database: exactly one worker can change the durable
+        ``requested + requires_resume`` state to ``running``.
+        """
+        self.ensure_clean_resume_claim_session()
+        await self.session.commit()
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == action_id,
+                self.model.status == AgentActionStatus.REQUESTED,
+                self.model.requires_resume.is_(True),
+            )
+            .values(
+                status=AgentActionStatus.RUNNING,
+                requires_resume=False,
+                started_at=started_at,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        claimed = result.rowcount == 1
+        await self.session.commit()
+        action = await self.session.scalar(
+            select(self.model)
+            .where(self.model.id == action_id)
+            .execution_options(populate_existing=True)
+        )
+        return action, claimed
 
     async def list_for_turn(self, turn_id: str) -> list[AgentAction]:
         stmt = (

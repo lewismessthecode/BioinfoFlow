@@ -1,15 +1,50 @@
 from __future__ import annotations
 
-import pytest
+import asyncio
+from datetime import datetime, timezone
 
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.models.agent_core import AgentActionStatus
 from app.models.workspace import Workspace
+from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.tools import (
     AgentToolContext,
     AgentToolDispatcher,
     build_default_tool_registry,
 )
+from app.services.agent_core.tools.registry import AgentToolRegistry
+from app.services.agent_core.tools.specs import AgentToolSpec
+from app.utils.exceptions import ConflictError
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+class _CountingApprovalTool:
+    spec = AgentToolSpec(
+        name="count_approved_execution",
+        description="Count executions of an approved side effect.",
+        input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+        output_schema={
+            "type": "object",
+            "properties": {"execution": {"type": "integer"}},
+            "required": ["execution"],
+            "additionalProperties": False,
+        },
+        risk_level="act_high",
+        write_scope=["test-counter"],
+    )
+
+    def __init__(self) -> None:
+        self.execution_count = 0
+
+    async def run(self, input, context):
+        del input, context
+        self.execution_count += 1
+        execution = self.execution_count
+        await asyncio.sleep(0.05)
+        return {"execution": execution}
 
 
 async def _interaction_context(db_session, *, mode: str = "execution"):
@@ -131,3 +166,306 @@ async def test_exit_plan_mode_flips_session_to_execution_on_approve(db_session, 
     resumed = await dispatcher.resume_action(action_id=pending.action_id, context=context)
     assert resumed.status == "completed"
     assert resumed.result == {"approved": True}
+
+
+@pytest.mark.asyncio
+async def test_concurrent_restart_workers_execute_approved_action_once(
+    db_engine,
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
+    db_session.add(workspace)
+    await db_session.commit()
+
+    core = AgentCoreService(db_session)
+    session = await core.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        title="Concurrent approval resume",
+        toolset_policy={"name": "execution"},
+    )
+    turn = await core.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Run the approved side effect exactly once.",
+    )
+    tool = _CountingApprovalTool()
+    registry = AgentToolRegistry()
+    registry.register(tool)
+    initial_dispatcher = AgentToolDispatcher(db_session, registry)
+    context_data = {
+        "workspace_id": DEFAULT_WORKSPACE_ID,
+        "user_id": "dev",
+        "session_id": str(session.id),
+        "turn_id": str(turn.id),
+    }
+
+    pending = await initial_dispatcher.dispatch(
+        tool_name=tool.spec.name,
+        input={},
+        context=AgentToolContext(db=db_session, **context_data),
+        permission_mode="ask_each_action",
+    )
+    assert pending.status == AgentActionStatus.WAITING_DECISION
+    decided = await core.decide_action(
+        action_id=pending.action_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    assert decided.status == AgentActionStatus.REQUESTED
+    assert decided.requires_resume is True
+
+    original_get = AgentActionRepository.get
+    both_workers_loaded = asyncio.Event()
+    load_lock = asyncio.Lock()
+    loaded_workers = 0
+
+    async def synchronized_requested_get(repo, action_id):
+        nonlocal loaded_workers
+        action = await original_get(repo, action_id)
+        if (
+            action is not None
+            and action.status == AgentActionStatus.REQUESTED
+            and action.requires_resume
+        ):
+            async with load_lock:
+                loaded_workers += 1
+                if loaded_workers == 2:
+                    both_workers_loaded.set()
+            await asyncio.wait_for(both_workers_loaded.wait(), timeout=1)
+        return action
+
+    monkeypatch.setattr(AgentActionRepository, "get", synchronized_requested_get)
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def resume_from_fresh_worker():
+        async with session_factory() as worker_session:
+            dispatcher = AgentToolDispatcher(worker_session, registry)
+            return await dispatcher.resume_action(
+                action_id=pending.action_id,
+                context=AgentToolContext(db=worker_session, **context_data),
+            )
+
+    worker_results = await asyncio.gather(
+        resume_from_fresh_worker(),
+        resume_from_fresh_worker(),
+    )
+
+    assert tool.execution_count == 1
+    assert sum(result.status == AgentActionStatus.COMPLETED for result in worker_results) == 1
+    assert all(
+        result.status in {AgentActionStatus.RUNNING, AgentActionStatus.COMPLETED}
+        for result in worker_results
+    )
+    async with session_factory() as verification_session:
+        action = await AgentActionRepository(verification_session).get(pending.action_id)
+        assert action is not None
+        assert action.status == AgentActionStatus.COMPLETED
+        events = await AgentEventRepository(verification_session).list_for_turn(
+            turn_id=str(turn.id)
+        )
+    assert sum(event.type == "action.started" for event in events) == 1
+    assert sum(event.type == "action.completed" for event in events) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("existing_status", "existing_result"),
+    [
+        (AgentActionStatus.RUNNING, None),
+        (AgentActionStatus.COMPLETED, {"execution": 1}),
+    ],
+)
+async def test_late_restart_worker_observes_existing_resume_without_execution(
+    db_engine,
+    db_session,
+    monkeypatch,
+    existing_status,
+    existing_result,
+):
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
+    db_session.add(workspace)
+    await db_session.commit()
+    core = AgentCoreService(db_session)
+    session = await core.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        toolset_policy={"name": "execution"},
+    )
+    turn = await core.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Resume once.",
+    )
+    tool = _CountingApprovalTool()
+    registry = AgentToolRegistry()
+    registry.register(tool)
+    context_data = {
+        "workspace_id": DEFAULT_WORKSPACE_ID,
+        "user_id": "dev",
+        "session_id": str(session.id),
+        "turn_id": str(turn.id),
+    }
+    pending = await AgentToolDispatcher(db_session, registry).dispatch(
+        tool_name=tool.spec.name,
+        input={},
+        context=AgentToolContext(db=db_session, **context_data),
+        permission_mode="ask_each_action",
+    )
+    decided = await core.decide_action(
+        action_id=pending.action_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    await AgentActionRepository(db_session).update_all(
+        decided,
+        status=existing_status,
+        result=existing_result,
+        requires_resume=False,
+        started_at=datetime.now(timezone.utc),
+        completed_at=(
+            datetime.now(timezone.utc)
+            if existing_status == AgentActionStatus.COMPLETED
+            else None
+        ),
+    )
+    before_events = await AgentEventRepository(db_session).list_for_turn(
+        turn_id=str(turn.id)
+    )
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async with session_factory() as worker_session:
+        observed = await AgentToolDispatcher(worker_session, registry).resume_action(
+            action_id=pending.action_id,
+            context=AgentToolContext(db=worker_session, **context_data),
+        )
+
+    assert observed.status == existing_status
+    assert observed.result == existing_result
+    assert tool.execution_count == 0
+    async with session_factory() as verification_session:
+        after_events = await AgentEventRepository(verification_session).list_for_turn(
+            turn_id=str(turn.id)
+        )
+    assert [event.type for event in after_events] == [
+        event.type for event in before_events
+    ]
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_requested_action_that_was_not_marked_for_resume(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    core, dispatcher, context, _session_id, _turn_id = await _interaction_context(db_session)
+    pending = await dispatcher.dispatch(
+        tool_name="ask_user",
+        input={"questions": []},
+        context=context,
+        permission_mode="bypass",
+    )
+    action = await AgentActionRepository(db_session).get(pending.action_id)
+    assert action is not None
+    await AgentActionRepository(db_session).update_all(
+        action,
+        status=AgentActionStatus.REQUESTED,
+        requires_resume=False,
+        permission_decision={"decision": "approve"},
+    )
+
+    with pytest.raises(ConflictError, match="not awaiting resume"):
+        await dispatcher.resume_action(action_id=pending.action_id, context=context)
+
+
+@pytest.mark.asyncio
+async def test_action_claim_refuses_to_commit_unrelated_pending_writes(
+    db_engine,
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
+    db_session.add(workspace)
+    await db_session.commit()
+    core = AgentCoreService(db_session)
+    session = await core.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        toolset_policy={"name": "execution"},
+    )
+    turn = await core.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Resume safely.",
+    )
+    tool = _CountingApprovalTool()
+    registry = AgentToolRegistry()
+    registry.register(tool)
+    pending = await AgentToolDispatcher(db_session, registry).dispatch(
+        tool_name=tool.spec.name,
+        input={},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+        ),
+        permission_mode="ask_each_action",
+    )
+    await core.decide_action(
+        action_id=pending.action_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async with session_factory() as worker_session:
+        pending_workspace = await worker_session.get(Workspace, DEFAULT_WORKSPACE_ID)
+        assert pending_workspace is not None
+        pending_workspace.name = "Must not be committed"
+        with pytest.raises(RuntimeError, match="clean session"):
+            await AgentActionRepository(worker_session).claim_requested_resume(
+                pending.action_id,
+                started_at=datetime.now(timezone.utc),
+            )
+        await worker_session.rollback()
+
+    async with session_factory() as verification_session:
+        persisted_workspace = await verification_session.get(
+            Workspace,
+            DEFAULT_WORKSPACE_ID,
+        )
+        persisted_action = await AgentActionRepository(verification_session).get(
+            pending.action_id
+        )
+    assert persisted_workspace is not None
+    assert persisted_workspace.name == "Team"
+    assert persisted_action is not None
+    assert persisted_action.status == AgentActionStatus.REQUESTED
+    assert persisted_action.requires_resume is True

@@ -275,6 +275,10 @@ class AgentToolExecutor:
         action_id: str,
         context: AgentToolContext,
     ) -> ToolExecutionResult:
+        # Resume workers are expected to own a fresh, read-only unit of work.
+        # Check before the first SELECT so autoflush cannot hide and later
+        # commit an unrelated pending mutation at the CAS boundary.
+        self.action_repo.ensure_clean_resume_claim_session()
         action = await self.action_repo.get(action_id)
         if action is None:
             raise PermissionDeniedError("Agent action is not accessible")
@@ -282,14 +286,33 @@ class AgentToolExecutor:
             raise PermissionDeniedError("Agent action is outside the current agent context")
         if action.kind != "tool":
             raise ConflictError("Only tool actions can be resumed")
+        decision = action.permission_decision or {}
+        if (
+            action.status
+            in {
+                AgentActionStatus.RUNNING,
+                AgentActionStatus.COMPLETED,
+            }
+            and decision.get("decision") in {"approve", "modify", "answer"}
+        ):
+            return self._result_from_action(action)
         if action.status != AgentActionStatus.REQUESTED:
             raise ConflictError(f"Agent action cannot be resumed from status: {action.status}")
+        if not action.requires_resume:
+            raise ConflictError("Agent action is not awaiting resume execution")
 
-        decision = action.permission_decision or {}
         if decision.get("decision") not in {"allow", "approve", "modify", "answer"}:
             raise PermissionDeniedError("Agent action has not been approved")
         tool = self.registry.get(action.name)
         session = await self._session_for_context(context)
+        action, claimed = await self.action_repo.claim_requested_resume(
+            action_id,
+            started_at=datetime.now(timezone.utc),
+        )
+        if action is None:
+            raise PermissionDeniedError("Agent action is not accessible")
+        if not claimed:
+            return self._result_from_action(action)
         exposure = self.exposure.decide(
             tool_name=tool.spec.name,
             policy=(
@@ -307,7 +330,23 @@ class AgentToolExecutor:
                 action=action,
                 error_message="; ".join(exposure.reasons),
             )
-        return await self._run_action(action=action, tool=tool, context=context)
+        return await self._run_action(
+            action=action,
+            tool=tool,
+            context=context,
+            already_running=True,
+        )
+
+    @staticmethod
+    def _result_from_action(action) -> ToolExecutionResult:
+        return ToolExecutionResult(
+            action_id=str(action.id),
+            status=action.status,
+            result=action.result,
+            permission_decision=action.permission_decision,
+            error=action.error,
+            requires_resume=action.requires_resume,
+        )
 
     async def _session_for_context(self, context: AgentToolContext):
         session_id = getattr(context, "session_id", None)
@@ -360,13 +399,15 @@ class AgentToolExecutor:
         action,
         tool: AgentTool,
         context: AgentToolContext,
+        already_running: bool = False,
     ) -> ToolExecutionResult:
-        action = await self.action_repo.update_all(
-            action,
-            status=AgentActionStatus.RUNNING,
-            requires_resume=False,
-            started_at=datetime.now(timezone.utc),
-        )
+        if not already_running:
+            action = await self.action_repo.update_all(
+                action,
+                status=AgentActionStatus.RUNNING,
+                requires_resume=False,
+                started_at=datetime.now(timezone.utc),
+            )
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
