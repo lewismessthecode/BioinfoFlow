@@ -13,6 +13,7 @@ from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.authorization_service import AuthorizationService
 from app.services.agent_core.execution_target import selected_remote_connection_ids_from_policy
+from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.remote_execution import (
@@ -483,15 +484,16 @@ async def _remote_working_directory(
     session_id = context.session_id
     if not session_id or not _is_uuid_string(str(session_id)):
         return None
-    session = await AgentSessionRepository(context.db).get(str(session_id))
+    session = await AgentSessionRepository(context.db).get_fresh(str(session_id))
     if session is None:
         return None
     if str(session.workspace_id) != context.workspace_id or str(session.user_id) != context.user_id:
         return None
-    project = await _session_remote_project(context.db, session)
-    if not project or str(project.remote_connection_id) != str(connection_id):
-        return None
-    return str(project.remote_root_path) if project.remote_root_path else None
+    boundary = await RemoteBoundaryResolver(context.db).resolve(
+        agent_session=session,
+        connection_id=connection_id,
+    )
+    return boundary.effective_root
 
 
 def _command_in_remote_working_directory(command: str, working_directory: str | None) -> str:

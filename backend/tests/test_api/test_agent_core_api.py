@@ -11,11 +11,14 @@ from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
 from app.models.agent_core import AgentEvent, AgentTurn
+from app.models.remote_connection import RemoteConnection
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.path_layout import project_home, skills_root
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.runtime import AgentCoreRuntime
+from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
+from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -84,6 +87,74 @@ async def test_permission_policy_version_and_action_audit_api_contract(
     legacy_payload = legacy_response.json()["data"]
     assert legacy_payload["evaluated_policy_version"] is None
     assert legacy_payload["permission_context_snapshot"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_remote_action_exposes_safe_executor_snapshot(
+    async_client,
+    db_session,
+):
+    connection = RemoteConnection(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        name="Sensitive remote",
+        host="safe-host.internal",
+        port=22,
+        username="analyst",
+        auth_method="password",
+        encrypted_password="encrypted-password-must-not-leak",
+        encrypted_private_key="encrypted-key-must-not-leak",
+        key_path="/sensitive/id_ed25519",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+    await db_session.refresh(connection)
+    create_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "title": "Remote action audit",
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            },
+        },
+    )
+    assert create_response.status_code == 201
+    session = create_response.json()["data"]
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="Run a remote diagnostic.",
+    )
+    result = await AgentToolExecutor(
+        db_session,
+        build_default_tool_registry(),
+    ).execute(
+        tool_name="remote.exec",
+        input={"command": "hostname"},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=session["workspace_id"],
+            user_id=session["user_id"],
+            session_id=session["id"],
+            turn_id=str(turn.id),
+        ),
+        toolset_policy={"name": "execution"},
+    )
+    assert result.status == "waiting_decision"
+
+    response = await async_client.get(f"/api/v1/agent/actions/{result.action_id}")
+
+    assert response.status_code == 200
+    action = response.json()["data"]
+    assert action["permission_context_snapshot"]["remote_identity"]["host"] == (
+        "safe-host.internal"
+    )
+    serialized = str(action)
+    assert "encrypted-password-must-not-leak" not in serialized
+    assert "encrypted-key-must-not-leak" not in serialized
+    assert "/sensitive/id_ed25519" not in serialized
 
 
 def _auth_user(

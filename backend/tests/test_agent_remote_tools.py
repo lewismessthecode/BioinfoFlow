@@ -525,6 +525,69 @@ async def test_remote_project_session_sets_connection_and_working_directory(db_s
 
 
 @pytest.mark.asyncio
+async def test_metadata_remote_root_is_shared_by_snapshot_and_structured_tool_enforcement(
+    db_session,
+):
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    connection = await RemoteConnectionService(db_session).create_connection(
+        {
+            "name": "Metadata root login",
+            "host": "metadata-root.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    session = await _create_agent_session(
+        db_session,
+        session_metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            },
+            "remote_project_root": "/metadata/project",
+        },
+    )
+    snapshot = (
+        await PermissionContextResolver(db_session).resolve(
+            session_id=str(session.id),
+            workspace_id="workspace-1",
+            user_id="user-1",
+        )
+    ).snapshot()
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="ACGT\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    tool = RemoteReadFileTool(executor=executor)
+
+    result = await tool.run(
+        {"connection_id": str(connection.id), "path": "inputs/sample.txt"},
+        _tool_context(db_session, session_id=str(session.id)),
+    )
+
+    assert snapshot["effective_roots"] == ["/metadata/project"]
+    assert result["working_directory"] == "/metadata/project"
+    command = executor.calls[0]["command"]
+    assert "root_real=$(realpath" in command
+    assert "/metadata/project/inputs/sample.txt" in command
+    with pytest.raises(BadRequestError, match="cannot escape"):
+        await tool.run(
+            {"connection_id": str(connection.id), "path": "../secret.txt"},
+            _tool_context(db_session, session_id=str(session.id)),
+        )
+
+
+@pytest.mark.asyncio
 async def test_remote_project_session_ignores_metadata_connection_override(db_session):
     service = RemoteConnectionService(db_session)
     project_connection = await service.create_connection(

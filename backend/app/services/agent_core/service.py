@@ -154,6 +154,7 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        previous_authorization = _authorization_state(session)
         update_data: dict[str, Any] = {}
         for key in (
             "title",
@@ -193,24 +194,19 @@ class AgentCoreService:
             update_data["session_metadata"] = session_metadata_with_model_selection(
                 metadata, model_selection
             )
-        authorization_fields = {
-            "role_profile",
-            "permission_mode",
-            "automation_mode",
-        }
-        changes_authorization = bool(authorization_fields.intersection(updates))
-        changes_authorization = changes_authorization or bool(updates.get("mode"))
-        changes_authorization = changes_authorization or "execution_target" in updates
-        if "metadata" in updates:
-            previous_target = execution_target_from_session(session)
-            next_target = normalize_execution_target(
-                None,
-                metadata=update_data.get("session_metadata"),
-            )
-            changes_authorization = changes_authorization or previous_target != next_target
+        next_authorization = _authorization_state(
+            session,
+            role_profile=update_data.get("role_profile", session.role_profile),
+            permission_mode=update_data.get("permission_mode", session.permission_mode),
+            automation_mode=update_data.get("automation_mode", session.automation_mode),
+            toolset_policy=update_data.get("toolset_policy", session.toolset_policy),
+            session_metadata=update_data.get(
+                "session_metadata", session.session_metadata
+            ),
+        )
         return await self.session_repo.update_with_policy_version(
             session,
-            increment_policy_version=changes_authorization,
+            increment_policy_version=previous_authorization != next_authorization,
             **update_data,
         )
 
@@ -248,13 +244,18 @@ class AgentCoreService:
             user_id=user_id,
         )
         if execution_target is not None:
+            previous_target = execution_target_from_session(session)
+            next_metadata = session_metadata_with_execution_target(
+                getattr(session, "session_metadata", None),
+                execution_target,
+            )
             session = await self.session_repo.update_with_policy_version(
                 session,
-                increment_policy_version=True,
-                session_metadata=session_metadata_with_execution_target(
-                    getattr(session, "session_metadata", None),
-                    execution_target,
+                increment_policy_version=(
+                    previous_target
+                    != normalize_execution_target(None, metadata=next_metadata)
                 ),
+                session_metadata=next_metadata,
             )
         normalized_active_skill_names = _validated_active_skill_names(active_skill_names)
         turn_metadata = _metadata_with_active_skill_names(
@@ -545,12 +546,15 @@ class AgentCoreService:
         return updated
 
     async def _activate_execution_toolset(self, session_id: str) -> None:
-        session = await self.session_repo.get(session_id)
+        session = await self.session_repo.get_fresh(session_id)
         if session is None:
             return
         await self.session_repo.update_with_policy_version(
             session,
-            increment_policy_version=True,
+            increment_policy_version=(
+                _normalized_toolset(session.toolset_policy)
+                != _normalized_toolset(EXECUTION_TOOLSET_POLICY)
+            ),
             toolset_policy=EXECUTION_TOOLSET_POLICY,
         )
 
@@ -570,6 +574,23 @@ class AgentCoreService:
             user_id=user_id,
         )
         enqueue_turn_resume(str(action.id), str(action.turn_id), str(turn.session_id))
+        return action
+
+    async def get_action(
+        self,
+        *,
+        action_id: str,
+        workspace_id: str,
+        user_id: str,
+    ):
+        action = await self.action_repo.get(action_id)
+        if action is None:
+            raise NotFoundError(f"Agent action not found: {action_id}")
+        await self.require_turn(
+            turn_id=str(action.turn_id),
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
         return action
 
     async def recover_orphaned_turns(self) -> dict[str, int]:
@@ -730,6 +751,54 @@ class AgentCoreService:
             user_id=user_id,
         )
         return artifact
+
+
+_UNSET = object()
+
+
+def _authorization_state(
+    session,
+    *,
+    role_profile: Any = _UNSET,
+    permission_mode: Any = _UNSET,
+    automation_mode: Any = _UNSET,
+    toolset_policy: Any = _UNSET,
+    session_metadata: Any = _UNSET,
+) -> tuple[Any, ...]:
+    metadata = (
+        session.session_metadata
+        if session_metadata is _UNSET
+        else session_metadata
+    )
+    return (
+        str(session.role_profile if role_profile is _UNSET else role_profile),
+        str(
+            session.permission_mode
+            if permission_mode is _UNSET
+            else permission_mode
+        ),
+        str(
+            session.automation_mode
+            if automation_mode is _UNSET
+            else automation_mode
+        ),
+        _normalized_toolset(
+            session.toolset_policy if toolset_policy is _UNSET else toolset_policy
+        ),
+        tuple(sorted(normalize_execution_target(None, metadata=metadata).items())),
+    )
+
+
+def _normalized_toolset(policy: Any) -> tuple[str, tuple[str, ...] | None]:
+    source = policy if isinstance(policy, dict) else {}
+    name = str(source.get("name") or "default").strip().lower()
+    allowed_tools = source.get("allowed_tools")
+    normalized_allowed = (
+        tuple(sorted({str(tool) for tool in allowed_tools if str(tool)}))
+        if isinstance(allowed_tools, list) and allowed_tools
+        else None
+    )
+    return name, normalized_allowed
 
 
 def _metadata_with_remote_project(metadata: dict | None, project) -> dict | None:

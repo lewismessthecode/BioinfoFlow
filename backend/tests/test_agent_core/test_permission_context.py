@@ -522,3 +522,68 @@ async def test_remote_permission_snapshot_falls_back_to_bounded_metadata_root(db
 
     assert snapshot["effective_roots"] == ["/legacy/remote/root"]
     assert snapshot["boundary"]["remote_exec"]["shell_root_confinement"] is False
+
+
+@pytest.mark.asyncio
+async def test_noop_normalized_policy_updates_do_not_increment_version(db_session) -> None:
+    session, _turn = await _create_session_and_turn(db_session)
+    service = AgentCoreService(db_session)
+
+    for updates in (
+        {"permission_mode": "guarded_auto"},
+        {"automation_mode": "assisted"},
+        {"role_profile": "bioinformatician"},
+        {"mode": "execution"},
+        {"execution_target": {"type": "local"}},
+    ):
+        session = await service.update_session(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            updates=updates,
+        )
+        assert session.permission_policy_version == 1
+
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"permission_mode": "ask_each_action"},
+    )
+    assert session.permission_policy_version == 2
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"permission_mode": "ask_each_action"},
+    )
+    assert session.permission_policy_version == 2
+
+
+@pytest.mark.asyncio
+async def test_noop_turn_target_and_toolset_activation_do_not_increment_version(db_session) -> None:
+    session, _turn = await _create_session_and_turn(db_session)
+    service = AgentCoreService(db_session)
+
+    await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep the same local target.",
+        execution_target={"kind": "local"},
+    )
+    await service._activate_execution_toolset(str(session.id))
+    fresh = await service.session_repo.get_fresh(str(session.id))
+    assert fresh.permission_policy_version == 1
+
+    changed = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "plan"},
+    )
+    assert changed.permission_policy_version == 2
+    await service._activate_execution_toolset(str(session.id))
+    await service._activate_execution_toolset(str(session.id))
+    fresh = await service.session_repo.get_fresh(str(session.id))
+    assert fresh.permission_policy_version == 3

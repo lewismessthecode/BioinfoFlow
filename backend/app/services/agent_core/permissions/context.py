@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import posixpath
 from types import MappingProxyType
 from typing import Any, Mapping
-from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentSessionRepository
-from app.repositories.remote_connection_repo import RemoteConnectionRepository
-from app.repositories.project_repo import ProjectRepository
 from app.models.agent_core import AgentSession
 from app.services.agent_core.execution_target import execution_target_from_session
+from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
 from app.services.agent_core.sandbox import FilesystemPolicy, SandboxRunner
 from app.utils.exceptions import PermissionDeniedError
 
@@ -88,57 +85,21 @@ class PermissionContextResolver:
         remote_identity: dict[str, Any] | None = None
         resource_revisions: dict[str, Any] = {}
         if target_type == "remote_ssh":
-            boundary: dict[str, Any] = {
-                "kind": "remote_ssh",
-                "enforcement": "remote_account",
-                "sandboxed": False,
-            }
-            effective_roots: tuple[str, ...] = ()
             connection_id = execution_target.get("connection_id")
-            if connection_id and _is_uuid(connection_id):
-                connection = await RemoteConnectionRepository(
-                    self.repository.session
-                ).get_for_workspace(
-                    connection_id,
-                    workspace_id=str(agent_session.workspace_id),
-                )
-                if connection is not None:
-                    remote_identity = {
-                        "connection_id": str(connection.id),
-                        "name": str(connection.name),
-                        "host": str(connection.host),
-                        "port": int(connection.port),
-                        "username": str(connection.username),
-                    }
-                    resource_revisions["remote_connection"] = _resource_revision(
-                        connection
-                    )
-            project = await _fresh_remote_project(
+            remote_boundary = await RemoteBoundaryResolver(
                 self.repository.session,
+            ).resolve(
                 agent_session=agent_session,
                 connection_id=connection_id,
             )
-            effective_root = (
-                _bounded_remote_root(project.remote_root_path)
-                if project is not None
-                else _metadata_remote_root(agent_session.session_metadata)
+            remote_identity = remote_boundary.remote_identity
+            resource_revisions = remote_boundary.resource_revisions
+            effective_roots = (
+                (remote_boundary.effective_root,)
+                if remote_boundary.effective_root
+                else ()
             )
-            if project is not None:
-                resource_revisions["project"] = _resource_revision(project)
-            if effective_root:
-                effective_roots = (effective_root,)
-            boundary["structured_remote_tools"] = {
-                "effective_root": effective_root,
-                "enforcement": (
-                    "lexical_path_validation_and_remote_realpath_guard"
-                    if effective_root
-                    else "none"
-                ),
-            }
-            boundary["remote_exec"] = {
-                "working_directory": effective_root,
-                "shell_root_confinement": False,
-            }
+            boundary = remote_boundary.audit_boundary()
         else:
             filesystem_policy = FilesystemPolicy()
             effective_roots = tuple(
@@ -205,68 +166,3 @@ def _thaw(value: Any) -> Any:
         return [_thaw(item) for item in value]
     return value
 
-
-def _is_uuid(value: str) -> bool:
-    try:
-        UUID(str(value))
-    except (TypeError, ValueError):
-        return False
-    return True
-
-
-async def _fresh_remote_project(
-    session: AsyncSession,
-    *,
-    agent_session: AgentSession,
-    connection_id: str | None,
-):
-    if not agent_session.project_id or not connection_id:
-        return None
-    project = await ProjectRepository(session).get_fresh(str(agent_session.project_id))
-    if project is None:
-        return None
-    if str(project.workspace_id) != str(agent_session.workspace_id):
-        return None
-    if str(project.storage_mode) != "remote":
-        return None
-    if str(project.remote_connection_id) != str(connection_id):
-        return None
-    return project
-
-
-def _metadata_remote_root(metadata: Any) -> str | None:
-    if not isinstance(metadata, dict):
-        return None
-    for key in ("remote_project_root", "remote_root_path"):
-        root = _bounded_remote_root(metadata.get(key))
-        if root:
-            return root
-    execution_target = metadata.get("execution_target")
-    if isinstance(execution_target, dict):
-        for key in ("remote_project_root", "remote_root_path"):
-            root = _bounded_remote_root(execution_target.get(key))
-            if root:
-                return root
-    return None
-
-
-def _bounded_remote_root(value: Any) -> str | None:
-    if (
-        not isinstance(value, str)
-        or not value
-        or len(value) > 1000
-        or "\x00" in value
-    ):
-        return None
-    normalized = posixpath.normpath(value.strip())
-    if not normalized.startswith("/") or normalized == "/":
-        return None
-    return normalized
-
-
-def _resource_revision(resource: Any) -> dict[str, str | None]:
-    updated_at = getattr(resource, "updated_at", None)
-    return {
-        "id": str(resource.id),
-        "updated_at": updated_at.isoformat() if updated_at is not None else None,
-    }

@@ -898,6 +898,21 @@ async def stream_session_events(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@router.get("/actions/{action_id}")
+async def get_action(
+    action_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    action = await AgentCoreService(db).get_action(
+        action_id=action_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return success_response(_dump_action(action), request=request)
+
+
 @router.post("/actions/{action_id}/decision")
 async def decide_action(
     action_id: str,
