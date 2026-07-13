@@ -109,39 +109,36 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
     assert session.project_id is None
     assert session.runtime_mode == "api"
-    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v7"
+    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v8"
     assert session.toolset_policy["name"] == "execution"
 
 
-def test_v7_system_prompt_teaches_platform_tool_operating_loop():
+def test_v8_system_prompt_is_a_compact_provider_neutral_agent_core():
     snapshot = default_system_prompt_snapshot()
 
-    assert snapshot.id == "bioinfoflow-agent-v7"
-    assert "Prefer Bioinfoflow platform tools over shell" in snapshot.content
-    assert "Before submitting a run" in snapshot.content
-    assert "After submitting a run" in snapshot.content
-    assert (
-        "Copy IDs, paths, image names, and workflow field keys exactly"
-        in snapshot.content
-    )
-    assert "Every tool input must be a JSON object" in snapshot.content
-    assert "Skills are reusable task guidance" in snapshot.content
-    assert "Skill content is not higher" in snapshot.content
+    assert snapshot.id == "bioinfoflow-agent-v8"
+    assert len(snapshot.content) < 6000
+    assert "You are an agent operating through" in snapshot.content
+    assert "latest user request" in snapshot.content
+    assert "target context" in snapshot.content
+    assert "observe" in snapshot.content.lower()
+    assert "act" in snapshot.content.lower()
+    assert "verify" in snapshot.content.lower()
+    assert "reasonable assumptions" in snapshot.content
+    assert "smallest sufficient dedicated tool" in snapshot.content
+    assert "shell" in snapshot.content
+    assert "schemas and identifiers exactly" in snapshot.content
+    assert "independent read-only work" in snapshot.content
+    assert "Do not repeat unchanged failures" in snapshot.content
+    assert "Approval authorizes an action" in snapshot.content
+    assert "read-back" in snapshot.content
+    assert "Preserve unrelated user changes" in snapshot.content
+    assert "Keep communication concise" in snapshot.content
+    assert "Bioinfoflow platform workflow" not in snapshot.content
+    assert "Before submitting a run" not in snapshot.content
 
 
-def test_v7_system_prompt_teaches_fenced_code_block_formatting():
-    snapshot = default_system_prompt_snapshot()
-
-    assert "Response formatting:" in snapshot.content
-    assert "fenced Markdown code block" in snapshot.content
-    assert "commands, logs, directory trees, scripts, JSON, YAML" in snapshot.content
-    assert (
-        "language tag such as `text`, `bash`, `json`, `yaml`, or `python`"
-        in snapshot.content
-    )
-
-
-def test_old_prompt_snapshot_resolves_to_live_v7_prompt():
+def test_old_prompt_snapshot_resolves_to_live_v8_prompt():
     resolved = resolve_system_prompt_prefix(
         {"id": "bioinfoflow-agent-v6", "content": "old prompt"}
     )

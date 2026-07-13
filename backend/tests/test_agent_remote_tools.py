@@ -7,6 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.agent_core.context.remote import render_remote_connection_context
+from app.services.agent_core.context import AgentContextAssembler
+from app.services.agent_core.execution_target import execution_target_from_session
+from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.tools import build_default_tool_registry
 from app.services.agent_core.tools.executor import _artifact_descriptor
 from app.services.agent_core.tools.remote import (
@@ -21,6 +24,7 @@ from app.services.agent_core.tools.specs import AgentToolContext
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.config import settings
 from app.models.workspace import WorkspaceMembership
+from app.path_layout import skills_root
 from app.services.remote_execution import RemoteCommandResult, RemoteConnectionConfig
 from app.services.remote_connection_service import RemoteConnectionService
 from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
@@ -1108,6 +1112,135 @@ def test_remote_ssh_toolset_exposure_hides_local_and_platform_tools():
     assert "ask_user" not in worker_tools
     assert "todo_write" not in worker_tools
     assert "projects.list" not in worker_tools
+
+
+@pytest.mark.asyncio
+async def test_current_remote_session_target_omits_stale_local_turn_context(db_session):
+    connection = await RemoteConnectionService(db_session).create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+        },
+        workspace_id="workspace-1",
+    )
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        execution_target={"type": "local"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Inspect Phoenix.",
+        execution_target={"type": "local"},
+    )
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        updates={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            }
+        },
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+    system_content = messages[0]["content"]
+
+    assert "## Remote connection" in system_content
+    assert "Working directory:" not in system_content
+    assert "Allowed filesystem roots:" not in system_content
+    assert "Active project:" not in system_content
+    assert "## Platform inventory" not in system_content
+    assert "## Bioinfoflow local platform" not in system_content
+
+
+@pytest.mark.asyncio
+async def test_phoenix_remote_task_context_and_tools_stay_remote_or_neutral(db_session):
+    connection = await RemoteConnectionService(db_session).create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+            "skill_instructions": "Use phoenixcli with profile sz01.",
+        },
+        workspace_id="workspace-1",
+    )
+    skill_dir = skills_root() / "phoenixcli-operator"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "name: phoenixcli-operator",
+                "description: Operate registered pipelines on remote Phoenix.",
+                "---",
+                "Use phoenixcli on the selected remote target and profile sz01.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        execution_target={
+            "type": "remote_ssh",
+            "connection_id": str(connection.id),
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Submit the registered Deaf_20 pipeline on Phoenix.",
+        active_skill_names=["phoenixcli-operator"],
+    )
+    registry = build_default_tool_registry()
+    exposed_tools = ToolsetExposure(registry).exposed_specs(
+        policy={"name": "execution"},
+        execution_target=execution_target_from_session(session),
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+        exposed_tools=exposed_tools,
+    )
+    system_content = messages[0]["content"]
+    exposed_names = {tool.name for tool in exposed_tools}
+
+    assert "Deaf_20" in messages[-1]["content"]
+    assert "## Remote connection" in system_content
+    assert "## Active skills for this turn" in system_content
+    assert "Use phoenixcli on the selected remote target" in system_content
+    assert "## Platform inventory" not in system_content
+    assert "## Bioinfoflow local platform" not in system_content
+    assert "Before submitting a run" not in system_content
+    assert "runs.submit" not in system_content
+    assert "runs.submit" not in exposed_names
+    assert "workflows.create" not in exposed_names
+    assert not any(
+        name.startswith(("files.", "projects.", "workflows.", "runs.", "images.", "scheduler."))
+        for name in exposed_names
+    )
+    assert {"remote.exec", "remote.read_file", "remote.list_dir"} <= exposed_names
 
 
 @pytest.mark.asyncio

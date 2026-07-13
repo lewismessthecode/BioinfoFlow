@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -143,6 +144,49 @@ async def test_context_compaction_supersedes_older_messages(db_session):
         for message in messages
     )
     assert not any(message.get("content") == "old assistant reply one" * 8 for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_local_context_keeps_platform_guidance_without_duplicating_tool_schemas(
+    db_session,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        execution_target={"type": "local"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Inspect the local platform.",
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+        exposed_tools=[
+            SimpleNamespace(
+                name="runs.submit",
+                description="Submit a registered workflow run.",
+            )
+        ],
+    )
+    system_content = messages[0]["content"]
+    platform_context = system_content.split("## Bioinfoflow local platform", 1)[1]
+
+    assert "Working directory:" in system_content
+    assert "Allowed filesystem roots:" in system_content
+    assert "## Platform inventory" in system_content
+    assert "## Bioinfoflow local platform" in system_content
+    assert "workflows.form_spec" in platform_context
+    assert "runs.submit.values" in platform_context
+    assert "read-back" in platform_context
+    assert len(platform_context) < 2500
+    assert "## Tools available this turn" not in system_content
 
 
 @pytest.mark.asyncio

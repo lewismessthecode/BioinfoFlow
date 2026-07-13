@@ -10,6 +10,7 @@ from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.context.instructions import (
     _remote_read_first_existing_command,
+    _target_metadata,
 )
 import app.services.agent_core.context as context_module
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -114,6 +115,49 @@ async def test_project_instruction_resolver_skips_local_symlink_escape(
     )
 
     assert context is None
+
+
+@pytest.mark.asyncio
+async def test_current_local_session_target_overrides_stale_remote_turn_target(
+    tmp_path,
+    monkeypatch,
+):
+    resolver_cls, _instruction_file_cls = _instruction_classes()
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    (repo_root / "AGENTS.md").write_text(
+        "current local instructions",
+        encoding="utf-8",
+    )
+    session = SimpleNamespace(
+        toolset_policy={"name": "execution"},
+        context_policy={"memory": "accepted_project_scope"},
+        session_metadata={"execution_target": {"type": "local"}},
+    )
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "trace_label": "retain this non-target field",
+                "remote_project_root": "/srv/stale",
+                "project_instruction_snapshot": "stale remote instructions",
+                "execution_target": {
+                    "type": "remote_ssh",
+                    "connection_id": "stale-conn",
+                    "cwd": "/srv/stale",
+                },
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+    context = await resolver_cls(max_bytes=32768).resolve(session, turn=turn)
+
+    assert target["trace_label"] == "retain this non-target field"
+    assert target["type"] == "local"
+    assert context is not None
+    assert "current local instructions" in context
+    assert "stale remote instructions" not in context
 
 
 @pytest.mark.asyncio

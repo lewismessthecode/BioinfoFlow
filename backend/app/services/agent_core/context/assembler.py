@@ -13,6 +13,10 @@ from app.repositories.workflow_repo import WorkflowRepository
 from app.services.agent_core.context.remote import render_remote_connection_context
 from app.services.agent_core.context.instructions import ProjectInstructionResolver
 from app.services.agent_core.context.system_prompt import resolve_system_prompt_prefix
+from app.services.agent_core.execution_target import (
+    execution_target_from_session,
+    is_remote_ssh_execution_target,
+)
 from app.services.agent_core.plugins import AgentPluginRegistry
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.skills import (
@@ -43,17 +47,20 @@ class AgentContextAssembler:
         exposed_tools=None,
     ) -> list[dict]:
         await self._compact_if_needed(agent_session=agent_session, turn=turn)
+        execution_target = execution_target_from_session(agent_session)
         # Stable, cache-friendly identity prefix comes first; everything that
         # changes per session/turn is appended after it.
         system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
         project_instruction_context = await self.project_instructions.resolve(
             agent_session,
             turn=turn,
+            execution_target=execution_target,
         )
         if project_instruction_context:
             system_sections.append(project_instruction_context)
         environment_context = await self._environment_context(
-            agent_session, exposed_tools
+            agent_session,
+            execution_target=execution_target,
         )
         if environment_context:
             system_sections.append(environment_context)
@@ -99,23 +106,27 @@ class AgentContextAssembler:
         if compacted is not None:
             agent_metrics.increment("transcript.compactions")
 
-    async def _environment_context(self, agent_session, exposed_tools=None) -> str:
-        """Dynamic per-turn environment, platform inventory, and tool list.
-
-        This is the single biggest fix for the "what can you do / I can't do
-        that" failure mode: the model sees its real working directory, the live
-        platform state, and the exact tools it can call every turn. Ordering is
-        deterministic so the preceding stable prefix stays cache-identical.
-        """
+    async def _environment_context(
+        self,
+        agent_session,
+        *,
+        execution_target: dict[str, str],
+    ) -> str:
+        """Render dynamic context without contradicting the current target."""
         toolset = (getattr(agent_session, "toolset_policy", None) or {}).get("name") or "default"
+        remote_target = is_remote_ssh_execution_target(execution_target)
         lines: list[str] = ["## Environment"]
-        lines.append(f"- Working directory: {settings.repo_root}")
-        allowed_roots = ", ".join(str(root) for root in FilesystemPolicy().allowed_roots)
-        lines.append(f"- Allowed filesystem roots: {allowed_roots}")
+        if not remote_target:
+            lines.append(f"- Working directory: {settings.repo_root}")
+            allowed_roots = ", ".join(
+                str(root) for root in FilesystemPolicy().allowed_roots
+            )
+            lines.append(f"- Allowed filesystem roots: {allowed_roots}")
         lines.append(f"- Workspace: {agent_session.workspace_id}")
-        lines.append(
-            f"- Active project: {agent_session.project_id or 'none (workspace scope)'}"
-        )
+        if not remote_target:
+            lines.append(
+                f"- Active project: {agent_session.project_id or 'none (workspace scope)'}"
+            )
         lines.append(
             "- Permission mode: "
             f"{getattr(agent_session, 'permission_mode', 'guarded_auto')} "
@@ -132,22 +143,22 @@ class AgentContextAssembler:
                 "exit_plan_mode with a concrete plan to request approval to act."
             )
 
-        remote_context = await render_remote_connection_context(self.db, agent_session)
-        if remote_context:
+        if remote_target:
+            remote_context = await render_remote_connection_context(
+                self.db,
+                agent_session,
+            )
+            if remote_context:
+                lines.append("")
+                lines.append(remote_context)
+        else:
+            inventory = await self._platform_inventory(agent_session)
+            if inventory:
+                lines.append("")
+                lines.append("## Platform inventory")
+                lines.extend(inventory)
             lines.append("")
-            lines.append(remote_context)
-
-        inventory = await self._platform_inventory(agent_session)
-        if inventory:
-            lines.append("")
-            lines.append("## Platform inventory")
-            lines.extend(inventory)
-
-        tool_lines = _exposed_tool_lines(exposed_tools)
-        if tool_lines:
-            lines.append("")
-            lines.append("## Tools available this turn")
-            lines.extend(tool_lines)
+            lines.append(_local_platform_context())
 
         return "\n".join(lines)
 
@@ -248,12 +259,20 @@ def _active_skill_names_for_turn(turn) -> list[str]:
     return [name for name in names if isinstance(name, str) and name.strip()]
 
 
-def _exposed_tool_lines(exposed_tools) -> list[str]:
-    if not exposed_tools:
-        return []
-    lines: list[str] = []
-    for spec in sorted(exposed_tools, key=lambda spec: spec.name):
-        summary = str(getattr(spec, "description", "") or "").strip()
-        first_sentence = summary.split(". ")[0].rstrip(".")
-        lines.append(f"- {spec.name}: {first_sentence}" if first_sentence else f"- {spec.name}")
-    return lines
+def _local_platform_context() -> str:
+    return """\
+## Bioinfoflow local platform
+- Prefer dedicated Bioinfoflow tools for platform state. Use shell for repository
+  work, tests, and operations with no dedicated platform tool.
+- Before `runs.submit`, identify the exact project and workflow, confirm the
+  project binding when relevant, and inspect `workflows.form_spec`. Copy its
+  field keys exactly into the `runs.submit.values` object; do not infer keys
+  from prose or filenames.
+- Use lifecycle mutations only for the requested action: create or update the
+  selected resource, submit/cancel/retry/resume the selected run, or perform the
+  explicit cleanup/delete. Do not add registration or binding work unless the
+  task requires it.
+- After any mutation, use the matching get/list/status tool for read-back
+  verification. For run diagnosis, gather the narrowest useful logs, outputs,
+  DAG, audit, scheduler, or resource evidence before explaining the result.
+"""
