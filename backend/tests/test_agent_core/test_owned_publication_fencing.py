@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -65,6 +67,256 @@ async def _replace_owner(session_factory, turn_id: str, owner_token: str) -> Non
             claimed_at=datetime.now(timezone.utc),
             lease_until=datetime.now(timezone.utc) + timedelta(minutes=5),
         )
+
+
+async def _assert_dirty_workspace_rejected(
+    session_factory,
+    operation: Callable[[AsyncSession], Awaitable[Any]],
+) -> None:
+    async with session_factory() as owned_session:
+        workspace = await owned_session.get(Workspace, DEFAULT_WORKSPACE_ID)
+        assert workspace is not None
+        workspace.name = "must not be published"
+        with pytest.raises(
+            RuntimeError,
+            match="Owner-conditioned publication requires a clean database session",
+        ):
+            await operation(owned_session)
+        await owned_session.rollback()
+
+    async with session_factory() as inspector:
+        workspace = await inspector.get(Workspace, DEFAULT_WORKSPACE_ID)
+        assert workspace is not None
+        assert workspace.name == "Team"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entrypoint",
+    [
+        "transcript_explicit",
+        "transcript_bound",
+        "event_explicit",
+        "event_bound",
+        "action",
+    ],
+)
+async def test_owned_service_entrypoints_reject_dirty_session_before_autoflush(
+    db_engine,
+    db_session,
+    entrypoint: str,
+) -> None:
+    session, turn = await _owned_turn(db_session)
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def operation(owned_session: AsyncSession) -> None:
+        if entrypoint.startswith("transcript"):
+            transcript = AgentTranscriptStore(
+                owned_session,
+                owned_turn_id=(
+                    str(turn.id) if entrypoint == "transcript_bound" else None
+                ),
+                expected_owner_token=(
+                    "owner-a" if entrypoint == "transcript_bound" else None
+                ),
+            )
+            await transcript.append_parts(
+                session_id=str(session.id),
+                turn_id=str(turn.id),
+                role="assistant",
+                parts=[text_part("must not publish")],
+                expected_owner_token=(
+                    "owner-a" if entrypoint == "transcript_explicit" else None
+                ),
+            )
+        elif entrypoint.startswith("event"):
+            ledger = AgentEventLedger(
+                owned_session,
+                owned_turn_id=str(turn.id) if entrypoint == "event_bound" else None,
+                expected_owner_token=(
+                    "owner-a" if entrypoint == "event_bound" else None
+                ),
+            )
+            await ledger.append(
+                session_id=str(session.id),
+                turn_id=str(turn.id),
+                type=AgentEventType.TURN_STARTED,
+                payload={},
+                expected_owner_token=(
+                    "owner-a" if entrypoint == "event_explicit" else None
+                ),
+            )
+        else:
+            await AgentActionService(owned_session).request_action(
+                turn_id=str(turn.id),
+                kind="tool",
+                name="must_not_publish",
+                input={},
+                permission_mode="bypass",
+                expected_owner_token="owner-a",
+            )
+
+    await _assert_dirty_workspace_rejected(session_factory, operation)
+
+    async with session_factory() as inspector:
+        assert (
+            await AgentMessageRepository(inspector).list_for_session(str(session.id))
+            == []
+        )
+        assert (
+            await AgentEventRepository(inspector).list_for_turn(turn_id=str(turn.id))
+            == []
+        )
+        assert await AgentActionRepository(inspector).list_for_turn(str(turn.id)) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["compact", "clear_turn", "clear_session"])
+async def test_owned_transcript_mutations_reject_dirty_session_before_autoflush(
+    db_engine,
+    db_session,
+    entrypoint: str,
+) -> None:
+    session, turn = await _owned_turn(db_session)
+    transcript = AgentTranscriptStore(db_session)
+    for index in range(4):
+        await transcript.append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="assistant",
+            parts=[text_part(f"message-{index}")],
+            metadata=(
+                {"continuation": {"response_id": "resp-old"}}
+                if index == 3
+                else None
+            ),
+        )
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def operation(owned_session: AsyncSession) -> None:
+        owned_transcript = AgentTranscriptStore(
+            owned_session,
+            owned_turn_id=str(turn.id),
+            expected_owner_token="owner-a",
+        )
+        if entrypoint == "compact":
+            await owned_transcript.compact_session(
+                session_id=str(session.id),
+                turn_id=str(turn.id),
+                threshold_chars=1,
+                preserve_recent_messages=1,
+            )
+        elif entrypoint == "clear_turn":
+            await owned_transcript.clear_turn_metadata(
+                turn_id=str(turn.id),
+                metadata_key="continuation",
+            )
+        else:
+            await owned_transcript.clear_session_metadata(
+                session_id=str(session.id),
+                metadata_key="continuation",
+            )
+
+    await _assert_dirty_workspace_rejected(session_factory, operation)
+
+    async with session_factory() as inspector:
+        messages = await AgentMessageRepository(inspector).list_for_session(
+            str(session.id)
+        )
+        assert [message.ordering_index for message in messages] == [1, 2, 3, 4]
+        assert all(message.status == "committed" for message in messages)
+        assert (messages[-1].message_metadata or {})["continuation"] == {
+            "response_id": "resp-old"
+        }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["turn", "session"])
+async def test_owned_metadata_replacement_repository_rejects_dirty_session_before_read(
+    db_engine,
+    db_session,
+    scope: str,
+) -> None:
+    session, turn = await _owned_turn(db_session)
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def operation(owned_session: AsyncSession) -> None:
+        data = {
+            "session_id": str(session.id),
+            "turn_id": str(turn.id),
+            "role": "assistant",
+            "content_parts": [text_part("must not replace")],
+            "message_metadata": {"continuation": {}},
+            "status": "committed",
+            "ordering_index": 1,
+        }
+        messages = AgentMessageRepository(owned_session)
+        if scope == "turn":
+            await messages.create_replacing_turn_metadata(
+                metadata_key="continuation",
+                expected_owner_token="owner-a",
+                **data,
+            )
+        else:
+            await messages.create_replacing_session_metadata(
+                metadata_key="continuation",
+                expected_owner_token="owner-a",
+                **data,
+            )
+
+    await _assert_dirty_workspace_rejected(session_factory, operation)
+
+    async with session_factory() as inspector:
+        assert (
+            await AgentMessageRepository(inspector).list_for_session(str(session.id))
+            == []
+        )
+
+
+@pytest.mark.asyncio
+async def test_non_owned_transcript_append_keeps_existing_dirty_session_behavior(
+    db_engine,
+    db_session,
+) -> None:
+    session, turn = await _owned_turn(db_session)
+    session_factory = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async with session_factory() as ordinary_session:
+        workspace = await ordinary_session.get(Workspace, DEFAULT_WORKSPACE_ID)
+        assert workspace is not None
+        workspace.name = "ordinary publication"
+        message = await AgentTranscriptStore(ordinary_session).append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="assistant",
+            parts=[text_part("ordinary append")],
+        )
+
+    async with session_factory() as inspector:
+        workspace = await inspector.get(Workspace, DEFAULT_WORKSPACE_ID)
+        assert workspace is not None
+        assert workspace.name == "ordinary publication"
+        messages = await AgentMessageRepository(inspector).list_for_session(
+            str(session.id)
+        )
+
+    assert str(messages[0].id) == str(message.id)
 
 
 @pytest.mark.asyncio

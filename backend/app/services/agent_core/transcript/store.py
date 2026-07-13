@@ -5,7 +5,10 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories.agent_core_repo import AgentMessageRepository
+from app.repositories.agent_core_repo import (
+    AgentMessageRepository,
+    ensure_clean_owned_publication_session,
+)
 from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.transcript.messages import parts_to_text, text_part
 
@@ -64,12 +67,14 @@ class AgentTranscriptStore:
             raise ValueError(
                 "turn- and session-scoped metadata replacement are exclusive"
             )
-        if (
-            expected_owner_token is None
-            and self.expected_owner_token is not None
-            and turn_id == self.owned_turn_id
-        ):
-            expected_owner_token = self.expected_owner_token
+        expected_owner_token = self._default_owner_token(
+            turn_id,
+            expected_owner_token,
+        )
+        if expected_owner_token is not None:
+            if turn_id is None:
+                raise ValueError("turn_id is required for owner-conditioned messages")
+            ensure_clean_owned_publication_session(self.messages.session)
         if ordering_index is None:
             ordering_index = await self.messages.next_ordering_index(session_id)
         data = {
@@ -104,8 +109,6 @@ class AgentTranscriptStore:
                 raise TurnOwnershipLostError("Agent turn ownership was replaced")
             return message
         if expected_owner_token is not None:
-            if turn_id is None:
-                raise ValueError("turn_id is required for owner-conditioned messages")
             message, owned = await self.messages.create_for_owned_turn(
                 turn_id=turn_id,
                 expected_owner_token=expected_owner_token,
@@ -200,6 +203,8 @@ class AgentTranscriptStore:
             turn_id,
             expected_owner_token,
         )
+        if expected_owner_token is not None:
+            ensure_clean_owned_publication_session(self.messages.session)
         owned = await self.messages.clear_turn_metadata(
             turn_id=turn_id,
             metadata_key=metadata_key,
@@ -221,6 +226,8 @@ class AgentTranscriptStore:
             effective_turn_id,
             expected_owner_token,
         )
+        if expected_owner_token is not None:
+            ensure_clean_owned_publication_session(self.messages.session)
         owned = await self.messages.clear_session_metadata(
             session_id=session_id,
             metadata_key=metadata_key,
@@ -239,6 +246,14 @@ class AgentTranscriptStore:
         preserve_recent_messages: int = 12,
         expected_owner_token: str | None = None,
     ) -> dict[str, Any] | None:
+        expected_owner_token = self._default_owner_token(
+            turn_id,
+            expected_owner_token,
+        )
+        if expected_owner_token is not None:
+            if turn_id is None:
+                raise ValueError("turn_id is required for owner-conditioned compaction")
+            ensure_clean_owned_publication_session(self.messages.session)
         committed = await self.messages.list_committed_for_session(session_id)
         if len(committed) <= preserve_recent_messages:
             return None
@@ -257,10 +272,6 @@ class AgentTranscriptStore:
         insert_before = committed[-preserve_recent_messages].ordering_index
         summary_text = self._build_summary(summary_candidates)
         superseded_message_ids = [str(message.id) for message in summary_candidates]
-        expected_owner_token = self._default_owner_token(
-            turn_id,
-            expected_owner_token,
-        )
         if expected_owner_token is None:
             await self.messages.shift_ordering_indices(
                 session_id,
@@ -279,8 +290,6 @@ class AgentTranscriptStore:
             )
             await self.messages.mark_superseded(superseded_message_ids)
         else:
-            if turn_id is None:
-                raise ValueError("turn_id is required for owner-conditioned compaction")
             summary_message, owned = await self.messages.compact_for_owned_turn(
                 session_id=session_id,
                 turn_id=turn_id,

@@ -5,7 +5,10 @@ import asyncio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories.agent_core_repo import AgentEventRepository
+from app.repositories.agent_core_repo import (
+    AgentEventRepository,
+    ensure_clean_owned_publication_session,
+)
 from app.services.agent_core.observability import agent_event_log_fields
 from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.utils.logging import get_logger
@@ -46,6 +49,10 @@ class AgentEventLedger:
             and turn_id == getattr(self, "owned_turn_id", None)
         ):
             expected_owner_token = self.expected_owner_token
+        if expected_owner_token is not None:
+            if turn_id is None:
+                raise ValueError("turn_id is required for owner-conditioned events")
+            ensure_clean_owned_publication_session(self.event_repo.session)
         lock = _session_seq_locks.setdefault(session_id, asyncio.Lock())
         for attempt in range(3):
             async with lock:
@@ -65,10 +72,6 @@ class AgentEventLedger:
                             **data,
                         )
                     else:
-                        if turn_id is None:
-                            raise ValueError(
-                                "turn_id is required for owner-conditioned events"
-                            )
                         event, owned = await self.event_repo.create_for_owned_turn(
                             turn_id=turn_id,
                             expected_owner_token=expected_owner_token,
