@@ -142,5 +142,5 @@ next gate before parallel final review and publication.
 - [x] Fetch `origin --prune` and rebase onto `origin/main` as required by `AGENTS.md`.
 - [x] Rerun full backend/frontend verification after the rebase.
 - [x] Inspect final status, diff, migration chain, commits, and requirement checklist.
-- [ ] Push `codex/permission-policy-refactor` with tracking.
-- [ ] Open a ready-for-review PR with a Conventional Commit title and a body covering root cause, architecture, local/remote behavior, migrations, UI, tests, and visual verification.
+- [x] Push `codex/permission-policy-refactor` with tracking.
+- [x] Open a ready-for-review PR with a Conventional Commit title and a body covering root cause, architecture, local/remote behavior, migrations, UI, tests, and visual verification.

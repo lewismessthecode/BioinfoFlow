@@ -2,9 +2,8 @@
 
 ## Status
 
-Accepted and implemented. Full backend/frontend verification, contract checks,
-parallel final review, finding remediation, and the required `origin/main`
-rebase have completed. Publication is the remaining release step.
+Accepted, implemented, verified, reviewed, rebased, and published for review in
+the pull request associated with `codex/permission-policy-refactor`.
 
 ## Problem
 
