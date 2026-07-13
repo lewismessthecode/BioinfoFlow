@@ -6,7 +6,12 @@ import pytest
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
-from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
+from app.models.llm import (
+    LlmModel,
+    LlmModelProfile,
+    LlmProvider,
+    LlmProviderCredential,
+)
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -1358,6 +1363,344 @@ async def test_team_member_cannot_write_workspace_or_global_llm_scope(
 
     assert workspace_response.status_code == 403
     assert global_response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_team_member_cannot_bind_provider_to_server_environment(
+    async_client,
+    app,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setenv("DATABASE_URL", "server-secret-value")
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        created = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Member provider",
+                "kind": "openai_compatible",
+                "base_url": "https://1.1.1.1/v1",
+            },
+        )
+        assert created.status_code == 201
+
+        response = await async_client.put(
+            f"/api/v1/llm/providers/{created.json()['data']['id']}/credential",
+            json={"source": "env", "env_var_name": "DATABASE_URL"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+    assert "DATABASE_URL" not in response.text
+    assert "server-secret-value" not in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://127.0.0.1:8000/v1",
+        "https://10.49.35.231:8000/v1",
+        "https://metadata.internal/v1",
+    ],
+)
+async def test_team_member_cannot_configure_internal_provider_endpoint(
+    async_client,
+    app,
+    monkeypatch,
+    base_url,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        response = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Internal target",
+                "kind": "openai_compatible",
+                "base_url": base_url,
+                "allow_insecure_http": True,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_team_member_can_save_public_hostname_when_dns_is_unavailable(
+    async_client,
+    app,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+
+    def dns_unavailable(*args, **kwargs):
+        del args, kwargs
+        raise OSError("DNS unavailable")
+
+    monkeypatch.setattr("socket.getaddrinfo", dns_unavailable)
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        response = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Offline-configured relay",
+                "kind": "openai_compatible",
+                "base_url": "https://relay.example.com/v1",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_team_member_cannot_update_provider_to_internal_endpoint(
+    async_client,
+    app,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        created = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Member public relay",
+                "kind": "openai_compatible",
+                "base_url": "https://1.1.1.1/v1",
+            },
+        )
+        assert created.status_code == 201
+
+        response = await async_client.patch(
+            f"/api/v1/llm/providers/{created.json()['data']['id']}",
+            json={"base_url": "https://127.0.0.1:8443/v1"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_team_admin_can_configure_internal_provider_and_env_credential(
+    async_client,
+    app,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setenv("INTERNAL_RELAY_API_KEY", "admin-managed-secret")
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="admin-1",
+        role="admin",
+    )
+    try:
+        created = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Admin internal relay",
+                "kind": "openai_compatible",
+                "base_url": "http://relay.internal:8000/v1",
+            },
+        )
+        assert created.status_code == 201
+
+        credential = await async_client.put(
+            f"/api/v1/llm/providers/{created.json()['data']['id']}/credential",
+            json={
+                "source": "env",
+                "env_var_name": "INTERNAL_RELAY_API_KEY",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert credential.status_code == 200
+    assert credential.json()["data"]["configured"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["test", "discover-models"])
+async def test_team_member_provider_network_operation_rechecks_resolved_target(
+    async_client,
+    app,
+    db_session,
+    monkeypatch,
+    operation,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    provider = LlmProvider(
+        name="Legacy rebinding provider",
+        kind="openai_compatible",
+        base_url="https://relay.example.com/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="member-1",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="relay-model",
+        display_name="Relay Model",
+    )
+
+    network_called = False
+
+    async def forbidden_probe(*args, **kwargs):
+        nonlocal network_called
+        del args, kwargs
+        network_called = True
+        raise AssertionError("provider probe must not reach an internal address")
+
+    class ForbiddenAsyncClient:
+        def __init__(self, *args, **kwargs):
+            nonlocal network_called
+            del args, kwargs
+            network_called = True
+            raise AssertionError("model discovery must not reach an internal address")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        forbidden_probe,
+    )
+    monkeypatch.setattr(
+        "app.services.llm.catalog.httpx.AsyncClient",
+        ForbiddenAsyncClient,
+    )
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [
+            (2, 1, 6, "", ("127.0.0.1", 0)),
+        ],
+    )
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        response = await async_client.post(
+            f"/api/v1/llm/providers/{provider.id}/{operation}",
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+    assert network_called is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["test", "discover-models"])
+async def test_team_member_cannot_use_legacy_server_environment_credential(
+    async_client,
+    app,
+    db_session,
+    monkeypatch,
+    operation,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setenv("DATABASE_URL", "legacy-server-secret")
+    provider = LlmProvider(
+        name="Legacy env provider",
+        kind="openai_compatible",
+        base_url="https://1.1.1.1/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="member-1",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    db_session.add(
+        LlmProviderCredential(
+            provider_id=str(provider.id),
+            source="env",
+            env_var_name="DATABASE_URL",
+            masked_hint="env:DATABASE_URL",
+            updated_by="member-1",
+        )
+    )
+    await db_session.commit()
+    await db_session.refresh(provider)
+    await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="legacy-model",
+        display_name="Legacy Model",
+    )
+
+    network_called = False
+
+    async def forbidden_probe(*args, **kwargs):
+        nonlocal network_called
+        del args, kwargs
+        network_called = True
+        raise AssertionError("provider probe must not use a server env credential")
+
+    class ForbiddenAsyncClient:
+        def __init__(self, *args, **kwargs):
+            nonlocal network_called
+            del args, kwargs
+            network_called = True
+            raise AssertionError("model discovery must not use a server env credential")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        forbidden_probe,
+    )
+    monkeypatch.setattr(
+        "app.services.llm.catalog.httpx.AsyncClient",
+        ForbiddenAsyncClient,
+    )
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("1.1.1.1", 0))],
+    )
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        response = await async_client.post(
+            f"/api/v1/llm/providers/{provider.id}/{operation}",
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+    assert network_called is False
+    assert "DATABASE_URL" not in response.text
+    assert "legacy-server-secret" not in response.text
 
 
 @pytest.mark.asyncio

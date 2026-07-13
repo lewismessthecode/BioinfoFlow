@@ -26,6 +26,10 @@ from app.services.llm.credentials import (
     resolve_credential_material,
     to_credential_read_dict,
 )
+from app.services.llm.access_policy import (
+    authorize_provider_endpoint,
+    authorize_server_environment_credential,
+)
 from app.services.llm.provider_templates import (
     ModelTemplate,
     ProviderTemplate,
@@ -71,6 +75,10 @@ class LlmCatalogService:
         _validate_provider_base_url(
             data.get("base_url"),
             allow_insecure_http=bool(data.get("allow_insecure_http", False)),
+        )
+        await authorize_provider_endpoint(
+            data.get("base_url"),
+            role=data.get("role"),
         )
         workspace_id, user_id = _tenant_fields_for_scope(
             scope=data.get("scope", "user"),
@@ -253,6 +261,10 @@ class LlmCatalogService:
                 updates.get("allow_insecure_http", provider.allow_insecure_http)
             ),
         )
+        await authorize_provider_endpoint(
+            updates.get("base_url", provider.base_url),
+            role=data.get("role"),
+        )
         if "scope" in updates:
             workspace_id, user_id = _tenant_fields_for_scope(
                 scope=updates["scope"],
@@ -311,6 +323,13 @@ class LlmCatalogService:
             return sanitize_provider_test_status(internal_status) or {}
 
         credential = await self.credential_repo.get_for_provider(str(provider.id))
+        await authorize_provider_endpoint(
+            provider.base_url,
+            role=role,
+            resolve_dns=True,
+        )
+        if credential is not None and credential.source == LlmCredentialSource.ENV:
+            authorize_server_environment_credential(role=role)
         result = await self.probe.probe(
             endpoint_id=str(provider.id),
             provider_kind=provider.kind,
@@ -352,6 +371,7 @@ class LlmCatalogService:
         existing = await self.credential_repo.get_for_provider(str(provider.id))
 
         if source == LlmCredentialSource.ENV:
+            authorize_server_environment_credential(role=role)
             env_var_name = str(data.get("env_var_name") or "").strip()
             if not env_var_name:
                 raise ValueError("Environment variable name is required")
@@ -509,6 +529,14 @@ class LlmCatalogService:
             user_id=user_id,
             role=role,
         )
+        await authorize_provider_endpoint(
+            provider.base_url,
+            role=role,
+            resolve_dns=True,
+        )
+        credential = await self.credential_repo.get_for_provider(str(provider.id))
+        if credential is not None and credential.source == LlmCredentialSource.ENV:
+            authorize_server_environment_credential(role=role)
         return await self.discover_models_unchecked(provider)
 
     async def discover_models_unchecked(
