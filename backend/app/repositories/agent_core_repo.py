@@ -537,6 +537,7 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         evaluated_policy_version: int | None = None,
         permission_context_snapshot: dict | None = None,
         expected_policy_version: int | None = None,
+        expected_turn_owner_token: str | None = None,
     ) -> AgentAction | None:
         values = {
             "status": AgentActionStatus.RUNNING,
@@ -567,6 +568,16 @@ class AgentActionRepository(BaseRepository[AgentAction]):
                     )
                 )
             )
+        if expected_turn_owner_token is not None:
+            conditions.append(
+                exists(
+                    select(AgentTurn.id).where(
+                        AgentTurn.id == self.model.turn_id,
+                        AgentTurn.status == AgentTurnStatus.RUNNING,
+                        AgentTurn.lease_owner_token == expected_turn_owner_token,
+                    )
+                )
+            )
         result = await self.session.execute(
             update(self.model)
             .where(*conditions)
@@ -585,6 +596,7 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         result: dict | None = None,
         output_summary: str | None = None,
         error: dict | None = None,
+        expected_turn_owner_token: str | None = None,
     ) -> AgentAction | None:
         values = {
             "status": status,
@@ -596,12 +608,23 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             values["output_summary"] = output_summary
         if error is not None:
             values["error"] = error
+        conditions = [
+            self.model.id == action_id,
+            self.model.status == AgentActionStatus.RUNNING,
+        ]
+        if expected_turn_owner_token is not None:
+            conditions.append(
+                exists(
+                    select(AgentTurn.id).where(
+                        AgentTurn.id == self.model.turn_id,
+                        AgentTurn.status == AgentTurnStatus.RUNNING,
+                        AgentTurn.lease_owner_token == expected_turn_owner_token,
+                    )
+                )
+            )
         updated = await self.session.execute(
             update(self.model)
-            .where(
-                self.model.id == action_id,
-                self.model.status == AgentActionStatus.RUNNING,
-            )
+            .where(*conditions)
             .values(**values)
             .returning(self.model)
             .execution_options(populate_existing=True)

@@ -2,19 +2,26 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.agent_core import AgentActionStatus, AgentToolCallBatchStatus
+from app.models.agent_core import (
+    AgentActionStatus,
+    AgentToolCallBatchStatus,
+    AgentTurnStatus,
+)
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentEventRepository,
     AgentSessionRepository,
     AgentToolCallBatchRepository,
+    AgentTurnRepository,
 )
 from app.services.agent_core import AgentCoreService
+from app.services.agent_core.core.lease import LEASE_LOSS_CANCELLATION
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.permissions.risk import RiskAssessment
 from app.services.agent_core.tools import (
@@ -308,6 +315,156 @@ async def test_cross_session_cancel_wins_over_running_tool_completion(
     assert current.status == AgentActionStatus.CANCELLED
     assert Counter(event.type for event in events)["action.completed"] == 0
     assert Counter(event.type for event in events)["action.failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_lease_loss_leaves_running_action_for_recovery(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    owner_token = "execution-owner"
+    await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        lease_owner_token=owner_token,
+        lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf fenced"},
+        normalized_input={"command": "printf fenced"},
+        risk_level="act_high",
+        permission_decision={"decision": "approve", "source": "user"},
+        status=AgentActionStatus.REQUESTED,
+    )
+    entered = asyncio.Event()
+
+    async def blocked_run(self, input, context):
+        del self, input, context
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(ExecuteShellTool, "run", blocked_run)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as worker, maker() as takeover:
+        worker_task = asyncio.create_task(
+            AgentToolDispatcher(worker, build_default_tool_registry()).resume_action(
+                action_id=str(action.id),
+                context=AgentToolContext(
+                    db=worker,
+                    workspace_id=DEFAULT_WORKSPACE_ID,
+                    user_id="dev",
+                    session_id=str(session.id),
+                    turn_id=str(turn.id),
+                    execution_owner_token=owner_token,
+                ),
+            )
+        )
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        replacement = await AgentTurnRepository(takeover).get_fresh(str(turn.id))
+        await AgentTurnRepository(takeover).update_all(
+            replacement,
+            lease_owner_token="replacement-owner",
+            lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        worker_task.cancel(LEASE_LOSS_CANCELLATION)
+        with pytest.raises(asyncio.CancelledError):
+            await worker_task
+
+        running = await AgentActionRepository(takeover).get_fresh(str(action.id))
+        assert running.status == AgentActionStatus.RUNNING
+        summary = await AgentCoreService(takeover).recover_orphaned_turns()
+        reconciled = await AgentActionRepository(takeover).get_fresh(str(action.id))
+        recovered_turn = await AgentTurnRepository(takeover).get_fresh(str(turn.id))
+
+    assert summary["failed"] == 1
+    assert reconciled.status == AgentActionStatus.CANCELLED
+    assert recovered_turn.status == AgentTurnStatus.FAILED
+    assert recovered_turn.error_code == "recovery_inflight_action"
+
+
+@pytest.mark.asyncio
+async def test_stale_owner_cannot_complete_tool_that_swallows_lease_loss(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    owner_token = "execution-owner"
+    await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        lease_owner_token=owner_token,
+        lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf swallowed"},
+        normalized_input={"command": "printf swallowed"},
+        risk_level="act_high",
+        permission_decision={"decision": "approve", "source": "user"},
+        status=AgentActionStatus.REQUESTED,
+    )
+    entered = asyncio.Event()
+
+    async def swallowing_run(self, input, context):
+        del self, input, context
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            pass
+        return {
+            "exit_code": 0,
+            "stdout": "too late",
+            "stderr": "",
+            "cwd": ".",
+            "command": "printf swallowed",
+        }
+
+    monkeypatch.setattr(ExecuteShellTool, "run", swallowing_run)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as worker, maker() as takeover:
+        worker_task = asyncio.create_task(
+            AgentToolDispatcher(worker, build_default_tool_registry()).resume_action(
+                action_id=str(action.id),
+                context=AgentToolContext(
+                    db=worker,
+                    workspace_id=DEFAULT_WORKSPACE_ID,
+                    user_id="dev",
+                    session_id=str(session.id),
+                    turn_id=str(turn.id),
+                    execution_owner_token=owner_token,
+                ),
+            )
+        )
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        replacement = await AgentTurnRepository(takeover).get_fresh(str(turn.id))
+        await AgentTurnRepository(takeover).update_all(
+            replacement,
+            lease_owner_token="replacement-owner",
+            lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+        )
+        worker_task.cancel(LEASE_LOSS_CANCELLATION)
+        result = await asyncio.wait_for(worker_task, timeout=2)
+        current = await AgentActionRepository(takeover).get_fresh(str(action.id))
+        events = await AgentEventRepository(takeover).list_for_turn(
+            turn_id=str(turn.id)
+        )
+
+    assert result.status == AgentActionStatus.RUNNING
+    assert current.status == AgentActionStatus.RUNNING
+    assert Counter(event.type for event in events)["action.completed"] == 0
+    assert Counter(event.type for event in events)["action.failed"] == 0
+    assert Counter(event.type for event in events)["action.cancelled"] == 0
 
 
 @pytest.mark.asyncio

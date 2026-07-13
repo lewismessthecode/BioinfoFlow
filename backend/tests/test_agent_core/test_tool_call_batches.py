@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.config import settings
 from app.models.agent_core import (
     AgentActionStatus,
     AgentToolCallBatchStatus,
@@ -25,6 +26,7 @@ from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.transcript import AgentTranscriptStore, tool_calls_part
 from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
+from app.services.agent_core.tools.execution import ExecuteShellTool
 from app.schemas.agent_core import AgentActionRead
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -1243,6 +1245,87 @@ async def test_execution_cancellation_cancels_committed_batch(db_session, monkey
     )
     assert actions[0].status == AgentActionStatus.CANCELLED
     assert batch.status == AgentToolCallBatchStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_lease_loss_fences_running_tool_until_recovery(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr(settings, "agent_turn_lease_seconds", 1)
+
+    async def fake_completion(*args, **kwargs):
+        del args, kwargs
+        return _response(
+            tool_calls=[("lease-loss", "bash", {"command": "printf fenced"})]
+        )
+
+    entered = asyncio.Event()
+
+    async def blocked_run(self, input, context):
+        del self, input, context
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(ExecuteShellTool, "run", blocked_run)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Fence the running tool when ownership changes.",
+    )
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as execution_session, maker() as takeover_session:
+        execution = asyncio.create_task(
+            AgentCoreService(execution_session).runtime.run_turn(str(turn.id))
+        )
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        replacement = await AgentTurnRepository(takeover_session).get_fresh(
+            str(turn.id)
+        )
+        await AgentTurnRepository(takeover_session).update_all(
+            replacement,
+            lease_owner_token="replacement-owner",
+            lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+        )
+
+        fenced_turn = await asyncio.wait_for(execution, timeout=2)
+        actions = await AgentActionRepository(takeover_session).list_for_turn(
+            str(turn.id)
+        )
+        assert fenced_turn.lease_owner_token == "replacement-owner"
+        assert len(actions) == 1
+        assert actions[0].status == AgentActionStatus.RUNNING
+
+        replacement = await AgentTurnRepository(takeover_session).get_fresh(
+            str(turn.id)
+        )
+        await AgentTurnRepository(takeover_session).update_all(
+            replacement,
+            lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        summary = await AgentCoreService(takeover_session).recover_orphaned_turns()
+        reconciled_action = await AgentActionRepository(takeover_session).get_fresh(
+            str(actions[0].id)
+        )
+        reconciled_turn = await AgentTurnRepository(takeover_session).get_fresh(
+            str(turn.id)
+        )
+
+    assert summary["failed"] == 1
+    assert reconciled_action.status == AgentActionStatus.CANCELLED
+    assert reconciled_turn.status == AgentTurnStatus.FAILED
+    assert reconciled_turn.error_code == "recovery_inflight_action"
 
 
 @pytest.mark.asyncio

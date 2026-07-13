@@ -25,6 +25,10 @@ from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.budget import IterationBudget
 from app.services.agent_core.core.guardrails import no_progress_detected
 from app.services.agent_core.core.interrupt import is_interrupt_requested
+from app.services.agent_core.core.lease import (
+    LEASE_LOSS_CANCELLATION,
+    is_lease_loss_cancellation,
+)
 from app.services.agent_core.core.retry import RetryPolicy, run_with_retry
 from app.services.agent_core.core.runtime_strategy import (
     RuntimeCapabilities,
@@ -210,7 +214,9 @@ class AgentLoopController:
                     completion_kwargs=completion_kwargs,
                     iteration_count=budget.used_iterations,
                 )
-            except asyncio.CancelledError:
+            except asyncio.CancelledError as exc:
+                if is_lease_loss_cancellation(exc):
+                    raise
                 if active_continuation_batch_id is not None:
                     await self.tool_batches.cancel_continuation(
                         active_continuation_batch_id
@@ -332,7 +338,9 @@ class AgentLoopController:
                     )
                     if active_continuation_batch_id is not None:
                         active_continuation_batch_id = None
-                except asyncio.CancelledError:
+                except asyncio.CancelledError as exc:
+                    if is_lease_loss_cancellation(exc):
+                        raise
                     if self._current_prepared_batch_id is not None:
                         await self._cancel_committed_batch(
                             self._current_prepared_batch_id,
@@ -489,6 +497,7 @@ class AgentLoopController:
             user_id=turn.user_id,
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
+            execution_owner_token=self._execution_owner_token,
         )
         prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
         try:
@@ -553,6 +562,9 @@ class AgentLoopController:
             await self.db.commit()
             self._current_prepared_batch_id = batch_id
         except asyncio.CancelledError as exc:
+            if is_lease_loss_cancellation(exc):
+                await self.db.rollback()
+                raise
             await self._persist_failed_preparation_batch(
                 batch_id=batch_id,
                 session_id=session_id,
@@ -642,7 +654,13 @@ class AgentLoopController:
         for _tool_call, tool_name, prepared_result in prepared:
             turn = await self._renew_turn_lease(turn)
             if turn is None:
-                raise asyncio.CancelledError
+                current_turn = await self.turns.get_fresh(turn_id)
+                if current_turn is not None and (
+                    current_turn.status == AgentTurnStatus.CANCELLED
+                    or is_interrupt_requested(current_turn)
+                ):
+                    raise asyncio.CancelledError
+                raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
             read_result = read_results_by_action.get(prepared_result.action_id)
             if read_result is not None:
                 result_signatures.append(_tool_result_signature(tool_name, read_result))
@@ -675,13 +693,14 @@ class AgentLoopController:
         if (
             turn is None
             or turn.status != AgentTurnStatus.RUNNING
-            or (
-                self._execution_owner_token is not None
-                and turn.lease_owner_token != self._execution_owner_token
-            )
             or is_interrupt_requested(turn)
         ):
             return None
+        if (
+            self._execution_owner_token is not None
+            and turn.lease_owner_token != self._execution_owner_token
+        ):
+            raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
         return turn
 
     async def _ensure_turn_allows_tool_execution(self, turn_id: str):
@@ -854,6 +873,7 @@ class AgentLoopController:
             user_id=turn.user_id,
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
+            execution_owner_token=self._execution_owner_token,
         )
         if action.tool_batch_id:
             failed_resume_status: str | None = None
@@ -1075,6 +1095,7 @@ class AgentLoopController:
                     user_id=turn.user_id,
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
+                    execution_owner_token=self._execution_owner_token,
                 ),
             )
 

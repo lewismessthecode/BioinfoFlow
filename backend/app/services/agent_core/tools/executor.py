@@ -13,6 +13,7 @@ from app.repositories.agent_core_repo import (
     AgentArtifactRepository,
 )
 from app.services.agent_core.actions import AgentActionService
+from app.services.agent_core.core.lease import is_lease_loss_cancellation
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
@@ -658,6 +659,7 @@ class AgentToolExecutor:
             evaluated_policy_version=permission_context.policy_version,
             permission_context_snapshot=snapshot,
             expected_policy_version=permission_context.policy_version,
+            expected_turn_owner_token=context.execution_owner_token,
         )
         if action is None:
             await self.session.rollback()
@@ -724,6 +726,7 @@ class AgentToolExecutor:
                 status=AgentActionStatus.FAILED,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
+                expected_turn_owner_token=execution_context.execution_owner_token,
             )
             if failed is None:
                 await self.session.rollback()
@@ -741,7 +744,10 @@ class AgentToolExecutor:
             return ToolExecutionResult(
                 action_id=str(action.id), status=action.status, error=error
             )
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
+            if is_lease_loss_cancellation(exc):
+                await self.session.rollback()
+                raise
             cancelled = await self.action_repo.transition_running(
                 str(action.id),
                 status=AgentActionStatus.CANCELLED,
@@ -750,6 +756,7 @@ class AgentToolExecutor:
                     "message": "Tool execution was cancelled.",
                 },
                 completed_at=datetime.now(timezone.utc),
+                expected_turn_owner_token=execution_context.execution_owner_token,
             )
             if cancelled is None:
                 await self.session.rollback()
@@ -772,6 +779,7 @@ class AgentToolExecutor:
                 status=AgentActionStatus.FAILED,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
+                expected_turn_owner_token=execution_context.execution_owner_token,
             )
             if failed is None:
                 await self.session.rollback()
@@ -796,6 +804,7 @@ class AgentToolExecutor:
             result=result,
             output_summary=summary,
             completed_at=datetime.now(timezone.utc),
+            expected_turn_owner_token=execution_context.execution_owner_token,
         )
         if completed is None:
             await self.session.rollback()

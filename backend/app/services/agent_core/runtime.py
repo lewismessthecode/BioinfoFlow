@@ -20,6 +20,10 @@ from app.repositories.llm_repo import (
     LlmProviderRepository,
 )
 from app.services.agent_core.core import AgentLoopController
+from app.services.agent_core.core.lease import (
+    LEASE_LOSS_CANCELLATION,
+    is_lease_loss_cancellation,
+)
 from app.services.agent_core.core.fallback import (
     build_fallback_model_ids,
     should_try_fallback,
@@ -109,7 +113,7 @@ class _TurnLeaseHeartbeat:
                 continue
             self.ownership_lost = True
             if self._owner_task is not None:
-                self._owner_task.cancel()
+                self._owner_task.cancel(LEASE_LOSS_CANCELLATION)
             return
 
 
@@ -209,8 +213,8 @@ class AgentCoreRuntime:
                     resume_action_id=resume_action_id,
                     heartbeat=heartbeat,
                 )
-        except asyncio.CancelledError:
-            if not heartbeat.ownership_lost:
+        except asyncio.CancelledError as exc:
+            if not heartbeat.ownership_lost and not is_lease_loss_cancellation(exc):
                 raise
             await self.turn_repo.session.rollback()
             return await self.turn_repo.get_fresh(turn_id)
