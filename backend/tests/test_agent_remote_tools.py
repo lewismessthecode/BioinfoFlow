@@ -713,6 +713,7 @@ async def test_remote_project_context_follows_explicit_execution_target_override
         input_text="Inspect the current Phoenix target.",
         execution_target=execution_target_from_session(session),
     )
+    await service.turn_repo.update_all(turn, status="completed")
     session = await service.update_session(
         session_id=str(session.id),
         workspace_id="workspace-1",
@@ -1568,6 +1569,7 @@ async def test_current_remote_session_target_omits_stale_local_turn_context(db_s
         input_text="Inspect Phoenix.",
         execution_target={"type": "local"},
     )
+    await service.turn_repo.update_all(turn, status="completed")
     session = await service.update_session(
         session_id=str(session.id),
         workspace_id="workspace-1",

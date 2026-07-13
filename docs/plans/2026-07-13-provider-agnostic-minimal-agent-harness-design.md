@@ -95,6 +95,11 @@ The current session execution target is authoritative for:
 - tool schema exposure; and
 - executor revalidation.
 
+The target is immutable while a session owns a nonterminal active turn. A user
+may switch targets after that turn completes, fails, or is cancelled. Runtime
+refresh and commit fences remain defense in depth for out-of-band database
+changes, without requiring a cross-provider response rollback protocol.
+
 Remote targets omit local repository paths and local Bioinfoflow platform
 inventory. Local targets retain them. A stale approved action is still checked
 against the current target before execution.

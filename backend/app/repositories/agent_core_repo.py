@@ -561,14 +561,27 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         *,
         expected_statuses: list[str],
         status: str,
+        turn_id: str | None = None,
+        expected_turn_claimed_at=None,
         **values,
     ) -> AgentAction | None:
+        conditions = [
+            self.model.id == action_id,
+            self.model.status.in_(expected_statuses),
+        ]
+        if turn_id is not None and expected_turn_claimed_at is not None:
+            conditions.append(
+                select(AgentTurn.id)
+                .where(
+                    AgentTurn.id == turn_id,
+                    AgentTurn.status == AgentTurnStatus.RUNNING,
+                    AgentTurn.claimed_at == expected_turn_claimed_at,
+                )
+                .exists()
+            )
         result = await self.session.execute(
             update(self.model)
-            .where(
-                self.model.id == action_id,
-                self.model.status.in_(expected_statuses),
-            )
+            .where(*conditions)
             .values(status=status, **values)
             .execution_options(synchronize_session=False)
         )

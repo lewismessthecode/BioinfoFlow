@@ -25,6 +25,7 @@ from app.services.agent_core import AgentCoreService
 from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.core import AgentLoopController
 from app.services.agent_core.core.types import LoopResult
+from app.services.agent_core.execution_target import session_metadata_with_execution_target
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools import AgentToolContext, AgentToolSpec
 from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
@@ -548,16 +549,13 @@ async def test_resume_fails_closed_when_remote_target_changes_without_input_conn
         tool_name=tool.name,
         execution_target=target_a,
     )
-    await service.update_session(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        updates={
-            "execution_target": {
-                "type": "remote_ssh",
-                "connection_id": "remote-b",
-            }
-        },
+    current_session = await service.session_repo.get_fresh(str(session.id))
+    await service.session_repo.update_all(
+        current_session,
+        session_metadata=session_metadata_with_execution_target(
+            current_session.session_metadata,
+            {"type": "remote_ssh", "connection_id": "remote-b"},
+        ),
     )
     registry = AgentToolRegistry()
     registry.register(tool)

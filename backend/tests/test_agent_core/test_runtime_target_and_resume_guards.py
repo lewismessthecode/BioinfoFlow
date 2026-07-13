@@ -18,6 +18,7 @@ from app.repositories.agent_core_repo import (
     AgentTurnRepository,
 )
 from app.services.agent_core import AgentCoreService
+from app.services.agent_core.execution_target import session_metadata_with_execution_target
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.utils.exceptions import ConflictError
@@ -106,6 +107,56 @@ def _provider_tool_names(kwargs: dict) -> set[str]:
 
 
 @pytest.mark.asyncio
+async def test_update_session_rejects_target_change_until_active_turn_is_terminal(
+    db_session: AsyncSession,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    local_target = {"type": "local"}
+    remote_target = {
+        "type": "remote_ssh",
+        "connection_id": "conn-1",
+    }
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        execution_target=local_target,
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep this turn on its original execution target.",
+    )
+
+    assert session.active_turn_id == str(turn.id)
+    with pytest.raises(ConflictError):
+        await service.update_session(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            updates={"execution_target": remote_target},
+        )
+
+    session = await service.session_repo.get_fresh(str(session.id))
+    assert session.session_metadata["execution_target"] == local_target
+
+    await service.turn_repo.update_all(turn, status=AgentTurnStatus.COMPLETED)
+    session = await service.session_repo.get_fresh(str(session.id))
+    assert session.active_turn_id == str(turn.id)
+
+    updated_session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"execution_target": remote_target},
+    )
+
+    assert updated_session.session_metadata["execution_target"] == remote_target
+
+
+@pytest.mark.asyncio
 async def test_active_turn_refreshes_target_before_next_tool_and_model_request(
     db_session: AsyncSession,
     db_engine,
@@ -162,16 +213,14 @@ async def test_active_turn_refreshes_target_before_next_tool_and_model_request(
         class_=AsyncSession,
     )
     async with session_maker() as independent_db:
-        await AgentCoreService(independent_db).update_session(
-            session_id=str(session.id),
-            workspace_id=DEFAULT_WORKSPACE_ID,
-            user_id="dev",
-            updates={
-                "execution_target": {
-                    "type": "remote_ssh",
-                    "connection_id": "conn-1",
-                }
-            },
+        independent_service = AgentCoreService(independent_db)
+        current_session = await independent_service.session_repo.get(str(session.id))
+        await independent_service.session_repo.update_all(
+            current_session,
+            session_metadata=session_metadata_with_execution_target(
+                current_session.session_metadata,
+                {"type": "remote_ssh", "connection_id": "conn-1"},
+            ),
         )
 
     release_first_response.set()
@@ -271,16 +320,14 @@ async def test_target_change_during_nonstream_response_commit_discards_stale_res
         class_=AsyncSession,
     )
     async with session_maker() as independent_db:
-        await AgentCoreService(independent_db).update_session(
-            session_id=str(session.id),
-            workspace_id=DEFAULT_WORKSPACE_ID,
-            user_id="dev",
-            updates={
-                "execution_target": {
-                    "type": "remote_ssh",
-                    "connection_id": "conn-1",
-                }
-            },
+        independent_service = AgentCoreService(independent_db)
+        current_session = await independent_service.session_repo.get(str(session.id))
+        await independent_service.session_repo.update_all(
+            current_session,
+            session_metadata=session_metadata_with_execution_target(
+                current_session.session_metadata,
+                {"type": "remote_ssh", "connection_id": "conn-1"},
+            ),
         )
 
     release_assistant_append.set()

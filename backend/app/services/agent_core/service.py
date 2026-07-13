@@ -18,7 +18,11 @@ from app.repositories.agent_core_repo import (
 )
 from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.events import AgentEventType
-from app.services.agent_core.execution_target import session_metadata_with_execution_target
+from app.services.agent_core.execution_target import (
+    execution_target_from_session,
+    session_execution_target_from_metadata,
+    session_metadata_with_execution_target,
+)
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.model_selection import (
     normalize_model_selection,
@@ -153,6 +157,32 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        if "execution_target" in updates:
+            next_metadata = session_metadata_with_execution_target(
+                getattr(session, "session_metadata", None),
+                updates["execution_target"],
+            )
+            target_changed = (
+                session_execution_target_from_metadata(next_metadata)
+                != execution_target_from_session(session)
+            )
+            active_turn_id = getattr(session, "active_turn_id", None)
+            if target_changed and active_turn_id is not None:
+                active_turn = await self.turn_repo.get_fresh(str(active_turn_id))
+                if active_turn is not None and active_turn.status not in {
+                    AgentTurnStatus.COMPLETED,
+                    AgentTurnStatus.FAILED,
+                    AgentTurnStatus.CANCELLED,
+                }:
+                    raise ConflictError(
+                        "Execution target cannot change while an agent turn is active"
+                    )
+                await self.session_repo.release_active_turn(
+                    str(session.id), str(active_turn_id)
+                )
+                refreshed = await self.session_repo.get_fresh(str(session.id))
+                if refreshed is not None:
+                    session = refreshed
         update_data: dict[str, Any] = {}
         for key in (
             "title",

@@ -23,6 +23,7 @@ from app.services.agent_core.context.system_prompt import (
     default_system_prompt_snapshot,
     resolve_system_prompt_prefix,
 )
+from app.services.agent_core.execution_target import session_metadata_with_execution_target
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.tools import (
     AgentToolContext,
@@ -1662,16 +1663,13 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
         user_id="dev",
         decision="approve",
     )
-    await service.update_session(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        updates={
-            "execution_target": {
-                "type": "remote_ssh",
-                "connection_id": "conn-1",
-            }
-        },
+    current_session = await service.session_repo.get_fresh(str(session.id))
+    await service.session_repo.update_all(
+        current_session,
+        session_metadata=session_metadata_with_execution_target(
+            current_session.session_metadata,
+            {"type": "remote_ssh", "connection_id": "conn-1"},
+        ),
     )
 
     resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))

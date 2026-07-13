@@ -566,7 +566,10 @@ Accepted final-review invariants:
   another process cannot falsely recover it;
 - require resume requests to match the turn's one pending observation; and
 - serialize assistant events and canonical transcript commits against the
-  execution-target row so a response from a superseded target is discarded.
+  execution-target row so a response from a superseded target is discarded;
+  reject execution-target changes while a nonterminal turn owns the session;
+  and fence every running-action terminal transition with the original turn
+  owner token, not only successful completion.
 
 - [ ] **Step 3: Commit review fixes when changes exist**
 

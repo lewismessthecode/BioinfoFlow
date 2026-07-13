@@ -473,6 +473,8 @@ class AgentToolExecutor:
                     str(action.id),
                     expected_statuses=[AgentActionStatus.RUNNING],
                     status=AgentActionStatus.CANCELLED,
+                    turn_id=context.turn_id,
+                    expected_turn_claimed_at=context.turn_claimed_at,
                     error={
                         "type": "TurnOwnershipLost",
                         "message": "The parent turn stopped before tool execution.",
@@ -518,6 +520,8 @@ class AgentToolExecutor:
                 str(action.id),
                 expected_statuses=[AgentActionStatus.RUNNING],
                 status=AgentActionStatus.FAILED,
+                turn_id=context.turn_id,
+                expected_turn_claimed_at=context.turn_claimed_at,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
             )
@@ -537,6 +541,8 @@ class AgentToolExecutor:
                 str(action.id),
                 expected_statuses=[AgentActionStatus.RUNNING],
                 status=AgentActionStatus.CANCELLED,
+                turn_id=context.turn_id,
+                expected_turn_claimed_at=context.turn_claimed_at,
                 error={"type": "CancelledError", "message": "Tool execution was cancelled."},
                 completed_at=datetime.now(timezone.utc),
             )
@@ -556,6 +562,8 @@ class AgentToolExecutor:
                 str(action.id),
                 expected_statuses=[AgentActionStatus.RUNNING],
                 status=AgentActionStatus.FAILED,
+                turn_id=context.turn_id,
+                expected_turn_claimed_at=context.turn_claimed_at,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
             )
