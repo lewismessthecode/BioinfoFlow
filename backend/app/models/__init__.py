@@ -24,7 +24,6 @@ from app.models.llm import (
     LlmModelProfile,
     LlmProvider,
     LlmProviderCredential,
-    LlmProviderKind,
     LlmProviderScope,
     LlmWireProtocol,
 )
@@ -69,7 +68,6 @@ __all__ = [
     "LlmProvider",
     "LlmProviderCredential",
     "LlmCredentialSource",
-    "LlmProviderKind",
     "LlmProviderScope",
     "LlmWireProtocol",
     "LlmModel",

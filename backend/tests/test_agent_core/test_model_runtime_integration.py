@@ -301,6 +301,61 @@ async def test_team_member_public_provider_carries_public_only_network_policy(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user_id", "role", "scope"),
+    [
+        ("member-1", "member", "workspace"),
+        ("admin-1", "admin", "user"),
+        ("owner-1", "owner", "global"),
+    ],
+)
+async def test_public_provider_scope_or_admin_authority_never_grants_unrestricted_network(
+    db_session,
+    monkeypatch,
+    user_id: str,
+    role: str,
+    scope: str,
+) -> None:
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("1.1.1.1", 0))],
+    )
+    session, turn = await _turn(db_session, user_id=user_id)
+    db_session.add(
+        WorkspaceMembership(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id=user_id,
+            role=role,
+        )
+    )
+    await db_session.commit()
+    await _select_catalog_model(
+        db_session,
+        session=session,
+        name=f"{scope}-public-provider",
+        user_id=("admin-1" if scope == "workspace" else user_id),
+        scope=scope,
+        base_url="https://relay.example.com/v1",
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="public provider completed"),
+            CompletionMetadata(response_id="public-shared-ok", finish_reason="stop"),
+        )
+    )
+
+    completed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    assert gateway.invocations[0].target.network_access == "public_only"
+
+
+@pytest.mark.asyncio
 async def test_team_admin_agent_invocation_preserves_private_env_provider_access(
     db_session,
     monkeypatch,

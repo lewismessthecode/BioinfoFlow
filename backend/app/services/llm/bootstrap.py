@@ -12,6 +12,7 @@ from app.repositories.llm_repo import (
     LlmProviderCredentialRepository,
     LlmProviderRepository,
 )
+from app.services.llm.access_policy import resolve_provider_network_access
 from app.services.llm.catalog import LlmCatalogService
 from app.services.llm.provider_templates import (
     ModelTemplate,
@@ -177,8 +178,14 @@ async def sync_environment_llm_catalog(
         # on demand from the settings UI ("Refresh models"). A short timeout
         # keeps an unreachable endpoint from stalling startup.
         try:
+            network_access = await resolve_provider_network_access(
+                provider.base_url,
+                private_endpoint_authorized=True,
+            )
             await catalog_service.discover_models_unchecked(
-                provider, timeout=_BOOTSTRAP_DISCOVERY_TIMEOUT
+                provider,
+                timeout=_BOOTSTRAP_DISCOVERY_TIMEOUT,
+                network_access=network_access,
             )
         except Exception as exc:  # noqa: BLE001 - resilience over precision
             logger.warning(

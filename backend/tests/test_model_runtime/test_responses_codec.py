@@ -45,6 +45,7 @@ def _invocation(
             endpoint_id="endpoint-responses",
             provider_kind="openai",
             model_name="gpt-test",
+            routed_model_name="openai/gpt-test",
             wire_protocol="responses",
             base_url="https://relay.example/v1",
             api_key="secret",
@@ -251,6 +252,7 @@ async def test_responses_codec_builds_complete_ordered_stateless_replay_across_t
         endpoint_id="endpoint-responses",
         provider_kind="openai",
         model_name="gpt-test",
+        routed_model_name="openai/gpt-test",
         wire_protocol="responses",
     )
     backend = QueueBackend()

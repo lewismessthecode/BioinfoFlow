@@ -4,7 +4,6 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
-from app.services.model_runtime.backend.naming import litellm_model_name
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelEvent,
@@ -56,10 +55,7 @@ class ChatCompletionsCodec:
                 )
 
         request: dict[str, Any] = {
-            "model": litellm_model_name(
-                invocation.target.provider_kind,
-                invocation.target.model_name,
-            ),
+            "model": invocation.target.resolved_model_name(),
             "messages": messages,
             "stream": invocation.stream,
             "max_tokens": invocation.max_output_tokens,

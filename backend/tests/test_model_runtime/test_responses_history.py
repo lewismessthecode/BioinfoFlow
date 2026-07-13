@@ -14,6 +14,7 @@ def test_completed_turn_assistant_text_uses_easy_input_message_shape() -> None:
             endpoint_id="endpoint-responses",
             provider_kind="openai",
             model_name="gpt-test",
+            routed_model_name="openai/gpt-test",
             wire_protocol="responses",
         ),
         instructions="Continue the conversation.",

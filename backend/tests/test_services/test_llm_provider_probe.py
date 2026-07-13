@@ -68,6 +68,7 @@ async def test_probe_uses_selected_protocol_with_minimal_canonical_invocation(
         model_id="gpt-test",
         wire_protocol=wire_protocol,
         base_url="https://relay.example/v1",
+        network_access="public_only",
         credential=CredentialMaterial(api_key=secret, source="stored"),
         credential_required=True,
     )
@@ -82,6 +83,7 @@ async def test_probe_uses_selected_protocol_with_minimal_canonical_invocation(
     assert invocation.target.wire_protocol == wire_protocol
     assert invocation.target.resolved_api_key() == secret
     assert invocation.target.base_url == "https://relay.example/v1"
+    assert invocation.target.network_access == "public_only"
     assert invocation.input_items == (TextPart(text="ping"),)
     assert invocation.instructions == "Reply with OK."
     assert invocation.tools == ()
@@ -105,6 +107,7 @@ async def test_probe_reports_missing_required_credential_without_calling_gateway
         model_id="gpt-test",
         wire_protocol="responses",
         base_url=None,
+        network_access="public_only",
         credential=CredentialMaterial(api_key=None, source="env"),
         credential_required=True,
     )
@@ -179,6 +182,7 @@ async def test_probe_returns_safe_structured_provider_failures(
         model_id="gpt-test",
         wire_protocol="responses",
         base_url=None,
+        network_access="public_only",
         credential=CredentialMaterial(api_key="secret", source="stored"),
         credential_required=True,
     )
@@ -209,6 +213,7 @@ async def test_probe_sanitizes_unexpected_failures_without_logging_or_chaining(
         model_id="gpt-test",
         wire_protocol="chat_completions",
         base_url=None,
+        network_access="public_only",
         credential=CredentialMaterial(api_key=secret, source="stored"),
         credential_required=True,
     )
@@ -238,6 +243,7 @@ async def test_probe_deadline_returns_safe_retryable_timeout_for_hanging_gateway
             model_id="gpt-test",
             wire_protocol="responses",
             base_url="https://relay.example/v1",
+            network_access="public_only",
             credential=CredentialMaterial(api_key=secret, source="stored"),
             credential_required=True,
         ),

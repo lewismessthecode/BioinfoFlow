@@ -5,7 +5,6 @@ import ipaddress
 from typing import Any
 from urllib.parse import urlparse
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -29,6 +28,7 @@ from app.services.llm.credentials import (
 from app.services.llm.access_policy import (
     authorize_provider_endpoint,
     authorize_server_environment_credential,
+    resolve_provider_network_access,
 )
 from app.services.llm.provider_templates import (
     ModelTemplate,
@@ -39,15 +39,20 @@ from app.services.llm.provider_templates import (
     normalize_openai_compatible_base_url,
     normalize_provider_base_url,
     provider_template_for_provider,
+    validate_provider_configuration,
 )
 from app.services.llm.probe import LlmProviderProbe
+from app.services.model_runtime.backend.litellm_network import (
+    network_policy_http_client,
+)
+from app.services.model_runtime.contracts import NetworkAccessPolicy
 from app.services.llm.test_status import (
     attach_provider_test_fingerprint,
     compute_provider_test_fingerprint,
     is_provider_test_status_current,
     sanitize_provider_test_status,
 )
-from app.utils.authorization import ADMIN_ROLES
+from app.utils.authorization import ADMIN_ROLES, can_manage_server_integrations
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
 
 
@@ -72,6 +77,10 @@ class LlmCatalogService:
         return [await self._refresh_provider_test_status(provider) for provider in providers]
 
     async def create_provider(self, data: dict[str, Any]):
+        kind, wire_protocol = validate_provider_configuration(
+            str(data["kind"]),
+            str(data.get("wire_protocol", "chat_completions")),
+        )
         _validate_provider_base_url(
             data.get("base_url"),
             allow_insecure_http=bool(data.get("allow_insecure_http", False)),
@@ -88,8 +97,8 @@ class LlmCatalogService:
         )
         return await self.provider_repo.create(
             name=data["name"],
-            kind=data["kind"],
-            wire_protocol=data.get("wire_protocol", "chat_completions"),
+            kind=kind,
+            wire_protocol=wire_protocol,
             base_url=data.get("base_url"),
             api_key_ref=data.get("api_key_ref"),
             scope=data.get("scope", "user"),
@@ -323,10 +332,11 @@ class LlmCatalogService:
             return sanitize_provider_test_status(internal_status) or {}
 
         credential = await self.credential_repo.get_for_provider(str(provider.id))
-        await authorize_provider_endpoint(
-            provider.base_url,
-            role=role,
-            resolve_dns=True,
+        probe_base_url = normalize_provider_base_url(provider.kind, provider.base_url)
+        network_access = await resolve_provider_network_access(
+            probe_base_url,
+            private_endpoint_authorized=can_manage_server_integrations(role),
+            resolve_dns=not can_manage_server_integrations(role),
         )
         if credential is not None and credential.source == LlmCredentialSource.ENV:
             authorize_server_environment_credential(role=role)
@@ -335,7 +345,8 @@ class LlmCatalogService:
             provider_kind=provider.kind,
             model_id=model.model_id,
             wire_protocol=provider.wire_protocol,
-            base_url=normalize_provider_base_url(provider.kind, provider.base_url),
+            base_url=probe_base_url,
+            network_access=network_access,
             credential=resolve_credential_material(credential),
             credential_required=_provider_requires_credential(provider),
         )
@@ -529,18 +540,25 @@ class LlmCatalogService:
             user_id=user_id,
             role=role,
         )
-        await authorize_provider_endpoint(
-            provider.base_url,
-            role=role,
-            resolve_dns=True,
+        network_access = await resolve_provider_network_access(
+            _provider_discovery_base_url(provider),
+            private_endpoint_authorized=can_manage_server_integrations(role),
+            resolve_dns=not can_manage_server_integrations(role),
         )
         credential = await self.credential_repo.get_for_provider(str(provider.id))
         if credential is not None and credential.source == LlmCredentialSource.ENV:
             authorize_server_environment_credential(role=role)
-        return await self.discover_models_unchecked(provider)
+        return await self.discover_models_unchecked(
+            provider,
+            network_access=network_access,
+        )
 
     async def discover_models_unchecked(
-        self, provider: LlmProvider, *, timeout: float = 10.0
+        self,
+        provider: LlmProvider,
+        *,
+        timeout: float = 10.0,
+        network_access: NetworkAccessPolicy,
     ):
         """Discover and upsert models without permission checks.
 
@@ -556,7 +574,10 @@ class LlmCatalogService:
             base_url = normalize_ollama_base_url(
                 provider.base_url or settings.ollama_base_url
             )
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with network_policy_http_client(
+                network_access=network_access,
+                timeout=timeout,
+            ) as client:
                 response = await client.get(f"{base_url}/api/tags")
                 response.raise_for_status()
             return [
@@ -576,7 +597,10 @@ class LlmCatalogService:
                 "x-api-key": material.api_key,
                 "anthropic-version": "2023-06-01",
             }
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with network_policy_http_client(
+                network_access=network_access,
+                timeout=timeout,
+            ) as client:
                 response = await client.get(
                     f"{base_url}/v1/models",
                     headers=headers,
@@ -596,7 +620,10 @@ class LlmCatalogService:
             material = await self._provider_credential_material(provider)
             if not material.api_key:
                 raise ValueError("Gemini API key is required for model discovery")
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with network_policy_http_client(
+                network_access=network_access,
+                timeout=timeout,
+            ) as client:
                 response = await client.get(
                     f"{base_url}/v1beta/models",
                     params={"key": material.api_key, "pageSize": 1000},
@@ -622,7 +649,10 @@ class LlmCatalogService:
                 if material.api_key
                 else None
             )
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with network_policy_http_client(
+                network_access=network_access,
+                timeout=timeout,
+            ) as client:
                 response = await client.get(f"{base_url}/models", headers=headers)
                 response.raise_for_status()
             return [
@@ -949,6 +979,16 @@ def _provider_requires_credential(provider: LlmProvider) -> bool:
     if template is not None and not template.api_key_required:
         return False
     return provider.kind != "ollama"
+
+
+def _provider_discovery_base_url(provider: LlmProvider) -> str | None:
+    template = provider_template_for_provider(provider)
+    discovery = template.discovery if template else "openai_models"
+    if discovery == "ollama_tags":
+        return normalize_ollama_base_url(
+            provider.base_url or settings.ollama_base_url
+        )
+    return provider.base_url or (template.default_base_url if template else None)
 
 
 def _clean_model_ids(raw_model_ids: Any) -> list[str]:

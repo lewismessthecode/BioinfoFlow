@@ -1,17 +1,4 @@
-export type LlmProviderKind =
-  | "openai"
-  | "anthropic"
-  | "gemini"
-  | "grok"
-  | "groq"
-  | "openrouter"
-  | "deepseek"
-  | "ollama"
-  | "vllm"
-  | "openai_compatible"
-  | "qwen"
-  | "kimi"
-  | "minimax"
+export type LlmProviderKind = string
 
 export type LlmProviderScope = "global" | "workspace" | "user"
 export type LlmWireProtocol = "chat_completions" | "responses"

@@ -4,7 +4,6 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
-from app.services.model_runtime.backend.naming import litellm_model_name
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelEvent,
@@ -97,10 +96,7 @@ class ResponsesCodec:
                 )
 
         request: dict[str, Any] = {
-            "model": _responses_model_name(
-                invocation.target.provider_kind,
-                invocation.target.model_name,
-            ),
+            "model": invocation.target.resolved_model_name(),
             "instructions": invocation.instructions,
             "input": input_items,
             "stream": invocation.stream,
@@ -491,13 +487,6 @@ def _safe_identifier(value: Any) -> str | None:
     return (
         value if value[0].isalnum() and all(char in allowed for char in value) else None
     )
-
-
-def _responses_model_name(provider_kind: str, model_name: str) -> str:
-    name = litellm_model_name(provider_kind, model_name)
-    if provider_kind == "openai" and not name.startswith("openai/"):
-        return f"openai/{name}"
-    return name
 
 
 def _phase(value: Any) -> Phase:

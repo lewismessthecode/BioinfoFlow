@@ -69,6 +69,34 @@ def test_provider_schema_rejects_unknown_wire_protocol() -> None:
         )
 
 
+def test_provider_schema_accepts_registered_litellm_provider_kind_strings() -> None:
+    provider = LlmProviderCreate(name="Azure OpenAI", kind="azure")
+
+    assert provider.kind == "azure"
+    assert provider.wire_protocol == "chat_completions"
+
+
+def test_provider_kind_openapi_contract_is_extensible_string_not_enum() -> None:
+    kind_schema = LlmProviderCreate.model_json_schema()["properties"]["kind"]
+
+    assert kind_schema["type"] == "string"
+    assert "enum" not in kind_schema
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["Azure", "azure/openai", "azure provider", "_azure", "a" * 41],
+)
+def test_provider_schema_rejects_malformed_provider_kind_strings(kind: str) -> None:
+    with pytest.raises(ValidationError, match="provider kind"):
+        LlmProviderCreate(name="Malformed", kind=kind)
+
+
+def test_provider_schema_rejects_unregistered_provider_kind() -> None:
+    with pytest.raises(ValidationError, match="Unsupported LLM provider kind"):
+        LlmProviderCreate(name="Unknown", kind="not_registered")
+
+
 def test_provider_schema_rejects_protocol_unsupported_by_kind() -> None:
     with pytest.raises(ValidationError, match="does not support"):
         LlmProviderCreate(

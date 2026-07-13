@@ -28,6 +28,7 @@ def _invocation(*, stream: bool = False) -> ModelInvocation:
             endpoint_id="endpoint-1",
             provider_kind="openai",
             model_name="gpt-test",
+            routed_model_name="gpt-test",
             wire_protocol="chat_completions",
             base_url="https://relay.example/v1",
             api_key="secret",
@@ -164,6 +165,7 @@ def test_encode_request_uses_catalog_litellm_provider_prefix() -> None:
         endpoint_id=invocation.target.endpoint_id,
         provider_kind="ollama",
         model_name="qwen3:8b",
+        routed_model_name="ollama_chat/qwen3:8b",
         wire_protocol="chat_completions",
         base_url="http://127.0.0.1:11434",
     )

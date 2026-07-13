@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any, Literal
 
 from app.models.llm import LlmWireProtocol
-from app.services.model_runtime.backend.naming import (
-    litellm_model_name as _litellm_model_name,
-)
 
 
 ProviderDiscovery = Literal[
@@ -16,6 +14,70 @@ ProviderDiscovery = Literal[
     "anthropic_models",
     "gemini_models",
 ]
+
+_PROVIDER_KIND_PATTERN = re.compile(
+    r"^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$"
+)
+
+
+def validate_provider_kind(kind: str) -> str:
+    if (
+        not isinstance(kind, str)
+        or kind != kind.strip()
+        or len(kind) > 40
+        or _PROVIDER_KIND_PATTERN.fullmatch(kind) is None
+    ):
+        raise ValueError(
+            "Invalid LLM provider kind; use 1-40 lowercase letters, numbers, "
+            "underscores, or hyphens, starting with a letter."
+        )
+    return kind
+
+
+@dataclass(frozen=True, kw_only=True)
+class ProviderAdapter:
+    kind: str
+    supported_wire_protocols: tuple[str, ...] = (
+        LlmWireProtocol.CHAT_COMPLETIONS,
+    )
+    default_wire_protocol: str = LlmWireProtocol.CHAT_COMPLETIONS
+    litellm_model_prefix: str = ""
+    responses_litellm_model_prefix: str | None = None
+
+    def __post_init__(self) -> None:
+        validate_provider_kind(self.kind)
+        if not self.supported_wire_protocols:
+            raise ValueError(
+                f"Provider kind {self.kind!r} must support at least one wire protocol."
+            )
+        for wire_protocol in self.supported_wire_protocols:
+            LlmWireProtocol.validate(wire_protocol)
+        if self.default_wire_protocol not in self.supported_wire_protocols:
+            raise ValueError(
+                f"Default wire protocol {self.default_wire_protocol!r} is not supported "
+                f"by provider kind {self.kind!r}."
+            )
+
+    def validate_wire_protocol(self, wire_protocol: str) -> str:
+        LlmWireProtocol.validate(wire_protocol)
+        if wire_protocol not in self.supported_wire_protocols:
+            raise ValueError(
+                f"Provider kind {self.kind!r} does not support wire protocol "
+                f"{wire_protocol!r}."
+            )
+        return wire_protocol
+
+    def route_model_name(self, model_name: str, wire_protocol: str) -> str:
+        self.validate_wire_protocol(wire_protocol)
+        prefix = self.litellm_model_prefix
+        if (
+            wire_protocol == LlmWireProtocol.RESPONSES
+            and self.responses_litellm_model_prefix is not None
+        ):
+            prefix = self.responses_litellm_model_prefix
+        if prefix and model_name.startswith(prefix):
+            return model_name
+        return f"{prefix}{model_name}"
 
 
 @dataclass(frozen=True)
@@ -53,11 +115,10 @@ class ModelTemplate:
     supports_reasoning: bool = False
 
 
-@dataclass(frozen=True)
-class ProviderTemplate:
+@dataclass(frozen=True, kw_only=True)
+class ProviderTemplate(ProviderAdapter):
     id: str
     name: str
-    kind: str
     docs_url: str
     discovery: ProviderDiscovery
     default_base_url: str | None = None
@@ -65,10 +126,6 @@ class ProviderTemplate:
     env_base_url_vars: tuple[str, ...] = ()
     env_model_vars: tuple[str, ...] = ()
     env_wire_protocol_vars: tuple[str, ...] = ()
-    supported_wire_protocols: tuple[str, ...] = (
-        LlmWireProtocol.CHAT_COMPLETIONS,
-    )
-    default_wire_protocol: str = LlmWireProtocol.CHAT_COMPLETIONS
     api_key_required: bool = True
     base_url_required: bool = False
     model_id_supported: bool = False
@@ -76,22 +133,12 @@ class ProviderTemplate:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for wire_protocol in self.supported_wire_protocols:
-            LlmWireProtocol.validate_for_kind(self.kind, wire_protocol)
-        if self.default_wire_protocol not in self.supported_wire_protocols:
-            raise ValueError(
-                f"Default wire protocol {self.default_wire_protocol!r} is not supported "
-                f"by provider template {self.id!r}."
-            )
+        super().__post_init__()
+        if not self.id.strip():
+            raise ValueError("Provider template id cannot be empty.")
 
     def validate_wire_protocol(self, wire_protocol: str) -> str:
-        LlmWireProtocol.validate_for_kind(self.kind, wire_protocol)
-        if wire_protocol not in self.supported_wire_protocols:
-            raise ValueError(
-                f"Provider template {self.id!r} does not support wire protocol "
-                f"{wire_protocol!r}."
-            )
-        return wire_protocol
+        return super().validate_wire_protocol(wire_protocol)
 
     def fields(self) -> list[ProviderFieldTemplate]:
         fields: list[ProviderFieldTemplate] = []
@@ -166,6 +213,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         env_base_url_vars=("OPENAI_BASE_URL",),
         env_wire_protocol_vars=("OPENAI_WIRE_PROTOCOL",),
         supported_wire_protocols=LlmWireProtocol.ALL,
+        responses_litellm_model_prefix="openai/",
     ),
     ProviderTemplate(
         id="anthropic",
@@ -175,6 +223,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         discovery="anthropic_models",
         default_base_url="https://api.anthropic.com",
         env_api_key_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
+        litellm_model_prefix="anthropic/",
     ),
     ProviderTemplate(
         id="gemini",
@@ -184,6 +233,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         discovery="gemini_models",
         default_base_url="https://generativelanguage.googleapis.com",
         env_api_key_vars=("GEMINI_API_KEY",),
+        litellm_model_prefix="gemini/",
     ),
     ProviderTemplate(
         id="grok",
@@ -193,6 +243,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         discovery="openai_models",
         default_base_url="https://api.x.ai/v1",
         env_api_key_vars=("XAI_API_KEY", "GROK_API_KEY"),
+        litellm_model_prefix="xai/",
     ),
     ProviderTemplate(
         id="groq",
@@ -202,6 +253,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         discovery="openai_models",
         default_base_url="https://api.groq.com/openai/v1",
         env_api_key_vars=("GROQ_API_KEY",),
+        litellm_model_prefix="groq/",
     ),
     ProviderTemplate(
         id="deepseek",
@@ -211,6 +263,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         discovery="openai_models",
         default_base_url="https://api.deepseek.com/v1",
         env_api_key_vars=("DEEPSEEK_API_KEY",),
+        litellm_model_prefix="deepseek/",
     ),
     ProviderTemplate(
         id="openrouter",
@@ -220,6 +273,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         discovery="openai_models",
         default_base_url="https://openrouter.ai/api/v1",
         env_api_key_vars=("OPENROUTER_API_KEY",),
+        litellm_model_prefix="openrouter/",
         model_id_supported=True,
     ),
     ProviderTemplate(
@@ -233,6 +287,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         api_key_required=False,
         base_url_required=True,
         model_id_supported=True,
+        litellm_model_prefix="ollama_chat/",
     ),
     ProviderTemplate(
         id="vllm",
@@ -247,6 +302,7 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         api_key_required=False,
         base_url_required=True,
         model_id_supported=True,
+        litellm_model_prefix="openai/",
     ),
     ProviderTemplate(
         id="openai-compatible",
@@ -260,26 +316,102 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         env_model_vars=("OPENAI_COMPATIBLE_MODEL",),
         env_wire_protocol_vars=("OPENAI_COMPATIBLE_WIRE_PROTOCOL",),
         supported_wire_protocols=LlmWireProtocol.ALL,
+        litellm_model_prefix="openai/",
         api_key_required=False,
         base_url_required=True,
         model_id_supported=True,
     ),
 )
 
-_TEMPLATES_BY_ID = {template.id: template for template in PROVIDER_TEMPLATES}
-_TEMPLATES_BY_KIND = {template.kind: template for template in PROVIDER_TEMPLATES}
+
+class ProviderRegistry:
+    def __init__(self, adapters: tuple[ProviderAdapter, ...]):
+        self._adapters_by_kind: dict[str, ProviderAdapter] = {}
+        self._templates_by_id: dict[str, ProviderTemplate] = {}
+        for adapter in adapters:
+            if adapter.kind in self._adapters_by_kind:
+                raise ValueError(f"Duplicate LLM provider kind: {adapter.kind}")
+            self._adapters_by_kind[adapter.kind] = adapter
+            if isinstance(adapter, ProviderTemplate):
+                if adapter.id in self._templates_by_id:
+                    raise ValueError(f"Duplicate LLM provider template: {adapter.id}")
+                self._templates_by_id[adapter.id] = adapter
+
+    def list_templates(self) -> list[ProviderTemplate]:
+        return list(self._templates_by_id.values())
+
+    def get_template(self, template_id: str) -> ProviderTemplate | None:
+        return self._templates_by_id.get(template_id)
+
+    def adapter_for_kind(self, kind: str) -> ProviderAdapter | None:
+        validate_provider_kind(kind)
+        return self._adapters_by_kind.get(kind)
+
+    def validate_configuration(
+        self,
+        kind: str,
+        wire_protocol: str,
+    ) -> tuple[str, str]:
+        adapter = self.adapter_for_kind(kind)
+        if adapter is None:
+            raise ValueError(f"Unsupported LLM provider kind: {kind!r}.")
+        return kind, adapter.validate_wire_protocol(wire_protocol)
+
+    def route_model_name(
+        self,
+        kind: str,
+        model_name: str,
+        wire_protocol: str,
+    ) -> str:
+        adapter = self.adapter_for_kind(kind)
+        if adapter is None:
+            raise ValueError(f"Unsupported LLM provider kind: {kind!r}.")
+        return adapter.route_model_name(model_name, wire_protocol)
+
+
+_HEADLESS_PROVIDER_ADAPTERS: tuple[ProviderAdapter, ...] = (
+    ProviderAdapter(kind="azure", litellm_model_prefix="azure/"),
+    ProviderAdapter(kind="qwen"),
+    ProviderAdapter(kind="kimi"),
+    ProviderAdapter(kind="minimax"),
+)
+
+PROVIDER_REGISTRY = ProviderRegistry(
+    (*PROVIDER_TEMPLATES, *_HEADLESS_PROVIDER_ADAPTERS)
+)
 
 
 def list_provider_templates() -> list[ProviderTemplate]:
-    return list(PROVIDER_TEMPLATES)
+    return PROVIDER_REGISTRY.list_templates()
 
 
 def get_provider_template(template_id: str) -> ProviderTemplate | None:
-    return _TEMPLATES_BY_ID.get(template_id)
+    return PROVIDER_REGISTRY.get_template(template_id)
 
 
 def provider_template_for_kind(kind: str) -> ProviderTemplate | None:
-    return _TEMPLATES_BY_KIND.get(kind)
+    adapter = PROVIDER_REGISTRY.adapter_for_kind(kind)
+    return adapter if isinstance(adapter, ProviderTemplate) else None
+
+
+def validate_provider_configuration(
+    kind: str,
+    wire_protocol: str,
+) -> tuple[str, str]:
+    return PROVIDER_REGISTRY.validate_configuration(kind, wire_protocol)
+
+
+def route_provider_model_name(
+    provider_kind: str,
+    model_name: str,
+    *,
+    wire_protocol: str,
+) -> str:
+    return PROVIDER_REGISTRY.route_model_name(
+        provider_kind,
+        model_name,
+        wire_protocol,
+    )
 
 
 def provider_template_for_provider(provider) -> ProviderTemplate | None:
@@ -337,9 +469,14 @@ def litellm_model_name(
     model: str,
     *,
     provider_metadata: dict[str, Any] | None = None,
+    wire_protocol: str = LlmWireProtocol.CHAT_COMPLETIONS,
 ) -> str:
     template: ProviderTemplate | None = None
     if provider_metadata:
         template_id = str(provider_metadata.get("providerTemplate") or "")
         template = get_provider_template(template_id) if template_id else None
-    return _litellm_model_name(template.kind if template else provider_kind, model)
+    return route_provider_model_name(
+        template.kind if template else provider_kind,
+        model,
+        wire_protocol=wire_protocol,
+    )
