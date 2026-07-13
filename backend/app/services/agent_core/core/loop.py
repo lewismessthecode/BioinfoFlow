@@ -218,6 +218,29 @@ class AgentLoopController:
                     continuation_batch_id=released_batch_id,
                 )
 
+            fresh_turn = await self._fresh_running_turn(turn_id)
+            if fresh_turn is None:
+                cancelled_turn = await self.turns.get_fresh(turn_id)
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.cancel_continuation(
+                        active_continuation_batch_id
+                    )
+                if cancelled_turn is None:
+                    return LoopResult(
+                        termination_reason="model_failed",
+                        final_text=None,
+                        iteration_count=budget.used_iterations,
+                        error_code="turn_not_found",
+                        error_message="Agent turn could not be loaded.",
+                        token_usage=token_usage,
+                    )
+                return LoopResult(
+                    termination_reason=_cancellation_reason(cancelled_turn),
+                    final_text=None,
+                    iteration_count=budget.used_iterations,
+                    token_usage=token_usage,
+                )
+            turn = fresh_turn
             message_id = f"assistant:{turn.id}:{budget.used_iterations}"
             if completion_kwargs.get("stream"):
                 streamed = await self._consume_stream_response(
@@ -236,6 +259,29 @@ class AgentLoopController:
                     allow_thinking=strategy.allow_thinking,
                 )
 
+            fresh_turn = await self._fresh_running_turn(turn_id)
+            if fresh_turn is None:
+                cancelled_turn = await self.turns.get_fresh(turn_id)
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.cancel_continuation(
+                        active_continuation_batch_id
+                    )
+                if cancelled_turn is None:
+                    return LoopResult(
+                        termination_reason="model_failed",
+                        final_text=None,
+                        iteration_count=budget.used_iterations,
+                        error_code="turn_not_found",
+                        error_message="Agent turn could not be loaded.",
+                        token_usage=token_usage,
+                    )
+                return LoopResult(
+                    termination_reason=_cancellation_reason(cancelled_turn),
+                    final_text=None,
+                    iteration_count=budget.used_iterations,
+                    token_usage=token_usage,
+                )
+            turn = fresh_turn
             token_usage = _merge_usage(token_usage, streamed.token_usage)
             tool_calls = [
                 {
@@ -496,6 +542,17 @@ class AgentLoopController:
                 raise
             self._current_prepared_batch_id = None
             return False, [], None
+
+        fresh_turn = await self._ensure_turn_allows_tool_execution(turn_id)
+        if fresh_turn is None:
+            await self._cancel_committed_batch(
+                batch_id,
+                agent_session=agent_session,
+                turn=turn,
+            )
+            self._current_prepared_batch_id = None
+            raise asyncio.CancelledError
+        turn = fresh_turn
         interaction_ordinals = [
             ordinal
             for ordinal, call in enumerate(tool_calls)
@@ -563,6 +620,19 @@ class AgentLoopController:
                 claimed_batch_id = batch_id
         self._current_prepared_batch_id = None
         return waiting, result_signatures, claimed_batch_id
+
+    async def _fresh_running_turn(self, turn_id: str):
+        turn = await self.turns.get_fresh(turn_id)
+        if (
+            turn is None
+            or turn.status != AgentTurnStatus.RUNNING
+            or is_interrupt_requested(turn)
+        ):
+            return None
+        return turn
+
+    async def _ensure_turn_allows_tool_execution(self, turn_id: str):
+        return await self._fresh_running_turn(turn_id)
 
     async def _persist_failed_preparation_batch(
         self,

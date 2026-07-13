@@ -1058,6 +1058,10 @@ async def test_model_failure_releases_and_retries_continuing_batch(db_session, m
         user_id="dev",
         input_text="Recover a claimed continuation.",
     )
+    turn = await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+    )
 
     from app.services.agent_core.core.loop import AgentLoopController
 
@@ -1406,3 +1410,171 @@ async def test_cancel_and_interrupt_finalize_waiting_batch_idempotently(
     assert sum(event.type == event_type for event in events) == 1
     provider_tools = [message for message in provider_messages if message.get("role") == "tool"]
     assert [message["tool_call_id"] for message in provider_tools] == ["stop-1", "stop-2"]
+
+
+@pytest.mark.asyncio
+async def test_durable_cancel_while_model_is_awaiting_discards_tool_calls(
+    db_session, monkeypatch
+):
+    completion_started = asyncio.Event()
+    release_response = asyncio.Event()
+    tool_runs = 0
+
+    async def delayed_completion(*args, **kwargs):
+        del args, kwargs
+        completion_started.set()
+        await release_response.wait()
+        return _response(tool_calls=[("cancel-before-prepare", "projects__list", {})])
+
+    async def count_run(self, input, context):
+        nonlocal tool_runs
+        del self, input, context
+        tool_runs += 1
+        return {"projects": [], "total_count": 0}
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", delayed_completion)
+    monkeypatch.setattr("app.services.agent_core.service.cancel_turn_run", lambda *_: False)
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ListProjectsTool.run",
+        count_run,
+    )
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Cancel while the model is responding.",
+    )
+    session_id = str(session.id)
+    turn_id = str(turn.id)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+
+    async with maker() as worker_session, maker() as cancelling_session:
+        worker_task = asyncio.create_task(
+            AgentCoreService(worker_session).runtime.run_turn(turn_id)
+        )
+        await asyncio.wait_for(completion_started.wait(), timeout=1)
+        await AgentCoreService(cancelling_session).cancel_turn(
+            turn_id=turn_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+        release_response.set()
+        cancelled = await asyncio.wait_for(worker_task, timeout=2)
+
+    async with maker() as fresh:
+        fresh_turn = await AgentTurnRepository(fresh).get_fresh(turn_id)
+        batches, _ = await AgentToolCallBatchRepository(fresh).list(limit=10)
+        actions = await AgentActionRepository(fresh).list_for_turn(turn_id)
+        messages = await AgentMessageRepository(fresh).list_for_session(session_id)
+
+    assert cancelled.status == AgentTurnStatus.CANCELLED
+    assert fresh_turn.status == AgentTurnStatus.CANCELLED
+    assert batches == []
+    assert actions == []
+    assert tool_runs == 0
+    assert not any(message.role == "assistant" for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_durable_cancel_after_prepare_commit_prevents_tool_execution(
+    db_session, monkeypatch
+):
+    prepared_committed = asyncio.Event()
+    release_execution_guard = asyncio.Event()
+    tool_runs = 0
+    model_calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal model_calls
+        del args, kwargs
+        model_calls += 1
+        if model_calls == 1:
+            return _response(
+                tool_calls=[("cancel-after-prepare", "projects__list", {})]
+            )
+        return _response(text="must not continue")
+
+    async def count_run(self, input, context):
+        nonlocal tool_runs
+        del self, input, context
+        tool_runs += 1
+        return {"projects": [], "total_count": 0}
+
+    from app.services.agent_core.core.loop import AgentLoopController
+
+    original_guard = getattr(
+        AgentLoopController, "_ensure_turn_allows_tool_execution", None
+    )
+
+    async def pause_after_commit(self, turn_id):
+        prepared_committed.set()
+        await release_execution_guard.wait()
+        assert original_guard is not None
+        return await original_guard(self, turn_id)
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr("app.services.agent_core.service.cancel_turn_run", lambda *_: False)
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ListProjectsTool.run",
+        count_run,
+    )
+    monkeypatch.setattr(
+        AgentLoopController,
+        "_ensure_turn_allows_tool_execution",
+        pause_after_commit,
+        raising=False,
+    )
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Cancel after durable preparation.",
+    )
+    session_id = str(session.id)
+    turn_id = str(turn.id)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+
+    async with maker() as worker_session, maker() as cancelling_session:
+        worker_task = asyncio.create_task(
+            AgentCoreService(worker_session).runtime.run_turn(turn_id)
+        )
+        await asyncio.wait_for(prepared_committed.wait(), timeout=1)
+        await AgentCoreService(cancelling_session).cancel_turn(
+            turn_id=turn_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+        release_execution_guard.set()
+        cancelled = await asyncio.wait_for(worker_task, timeout=2)
+
+    async with maker() as fresh:
+        fresh_turn = await AgentTurnRepository(fresh).get_fresh(turn_id)
+        actions = await AgentActionRepository(fresh).list_for_turn(turn_id)
+        batches, _ = await AgentToolCallBatchRepository(fresh).list(limit=10)
+        messages = await AgentMessageRepository(fresh).list_for_session(session_id)
+
+    assert cancelled.status == AgentTurnStatus.CANCELLED
+    assert fresh_turn.status == AgentTurnStatus.CANCELLED
+    assert tool_runs == 0
+    assert len(batches) == 1
+    assert batches[0].status == AgentToolCallBatchStatus.CANCELLED
+    assert len(actions) == 1
+    assert actions[0].status == AgentActionStatus.CANCELLED
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
+        "cancel-after-prepare"
+    ]
