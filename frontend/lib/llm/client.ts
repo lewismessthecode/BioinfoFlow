@@ -57,7 +57,9 @@ export const setupLlmProvider = async (input: LlmProviderSetupInput) => {
         name: input.name || null,
         base_url: input.baseUrl || null,
         api_key: input.apiKey || null,
-        wire_protocol: input.wireProtocol ?? "chat_completions",
+        ...(input.wireProtocol
+          ? { wire_protocol: input.wireProtocol }
+          : {}),
         model_ids: input.modelIds ?? [],
         discover: input.discover ?? false,
         scope: input.scope ?? "user",
