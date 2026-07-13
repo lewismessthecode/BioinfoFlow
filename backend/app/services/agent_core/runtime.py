@@ -20,6 +20,10 @@ from app.repositories.llm_repo import (
     LlmProviderRepository,
 )
 from app.services.agent_core.core import AgentLoopController
+from app.services.agent_core.approval_batches import (
+    TERMINAL_ACTION_STATUSES,
+    ordered_tool_call_batch,
+)
 from app.services.agent_core.core.fallback import (
     build_fallback_model_ids,
     should_try_fallback,
@@ -247,109 +251,114 @@ class AgentCoreRuntime:
         session,
     ) -> None:
         transcript = AgentTranscriptStore(self.turn_repo.session)
-        terminal_statuses = {
-            AgentActionStatus.COMPLETED,
-            AgentActionStatus.FAILED,
-            AgentActionStatus.CANCELLED,
-            AgentActionStatus.REJECTED,
-        }
-        matching_tool_result = await transcript.find_committed_tool_result(
-            session_id=str(session.id),
-            turn_id=str(turn.id),
-            tool_call_id=action.tool_call_id,
+        batch = await ordered_tool_call_batch(
+            action_repo=action_repo,
+            transcript=transcript,
+            action=action,
         )
-        if action.status in terminal_statuses:
-            if matching_tool_result is None:
-                error = action.error
-                if action.status == AgentActionStatus.REJECTED and not error:
-                    error = {
-                        "type": "UserRejected",
-                        "message": "The user rejected this tool call.",
-                    }
-                await transcript.append_parts(
-                    session_id=str(session.id),
-                    turn_id=str(turn.id),
-                    role="tool",
-                    parts=[
-                        text_part(
-                            json.dumps(
-                                {
-                                    "tool": action.name,
-                                    "status": action.status,
-                                    "result": action.result,
-                                    "error": error,
-                                },
-                                separators=(",", ":"),
-                                default=str,
-                            )
-                        )
-                    ],
-                    metadata={
-                        "tool_call_id": action.tool_call_id,
-                        "tool": action.name,
-                        "is_error": bool(error)
-                        or action.status != AgentActionStatus.COMPLETED,
-                    },
-                    replace_session_metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
-                )
-            else:
-                await transcript.clear_session_metadata(
-                    session_id=str(session.id),
-                    metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
-                )
-            return
-
-        error = {
+        config_error = {
             "type": "ModelConfigurationChanged",
             "message": (
                 "The model configuration changed while approval was pending; "
                 "the tool was not executed."
             ),
         }
-        if matching_tool_result is None:
-            await transcript.append_parts(
+        now = datetime.now(timezone.utc)
+        for sibling in batch:
+            matching_tool_result = await transcript.find_committed_tool_result(
                 session_id=str(session.id),
                 turn_id=str(turn.id),
-                role="tool",
-                parts=[
-                    text_part(
-                        json.dumps(
-                            {
-                                "tool": action.name,
-                                "status": AgentActionStatus.FAILED,
-                                "result": None,
-                                "error": error,
-                            },
-                            separators=(",", ":"),
-                        )
+                tool_call_id=sibling.tool_call_id,
+            )
+            if sibling.status in TERMINAL_ACTION_STATUSES:
+                error = sibling.error
+                if sibling.status == AgentActionStatus.REJECTED and not error:
+                    error = {
+                        "type": "UserRejected",
+                        "message": "The user rejected this tool call.",
+                    }
+                if matching_tool_result is None:
+                    await self._append_failed_resume_tool_result(
+                        transcript=transcript,
+                        session=session,
+                        turn=turn,
+                        action=sibling,
+                        status=sibling.status,
+                        result=sibling.result,
+                        error=error,
                     )
-                ],
-                metadata={
-                    "tool_call_id": action.tool_call_id,
-                    "tool": action.name,
-                    "is_error": True,
-                },
-                replace_session_metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+                if sibling.requires_resume or sibling.completed_at is None:
+                    await action_repo.update_all(
+                        sibling,
+                        requires_resume=False,
+                        completed_at=sibling.completed_at or now,
+                    )
+                continue
+
+            if matching_tool_result is None:
+                await self._append_failed_resume_tool_result(
+                    transcript=transcript,
+                    session=session,
+                    turn=turn,
+                    action=sibling,
+                    status=AgentActionStatus.FAILED,
+                    result=None,
+                    error=config_error,
+                )
+            sibling = await action_repo.update_all(
+                sibling,
+                status=AgentActionStatus.FAILED,
+                error=config_error,
+                completed_at=now,
+                requires_resume=False,
             )
-        else:
-            await transcript.clear_session_metadata(
-                session_id=str(session.id),
-                metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+            await self.ledger.append(
+                session_id=str(sibling.session_id),
+                turn_id=str(sibling.turn_id),
+                type=AgentEventType.ACTION_FAILED,
+                payload={"action_id": str(sibling.id), "error": config_error},
             )
-        action = await action_repo.update_all(
-            action,
-            status=AgentActionStatus.FAILED,
-            error=error,
-            completed_at=datetime.now(timezone.utc),
-            requires_resume=False,
+            agent_metrics.increment("tools.failed")
+        await transcript.clear_session_metadata(
+            session_id=str(session.id),
+            metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
         )
-        await self.ledger.append(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
-            type=AgentEventType.ACTION_FAILED,
-            payload={"action_id": str(action.id), "error": error},
+
+    async def _append_failed_resume_tool_result(
+        self,
+        *,
+        transcript: AgentTranscriptStore,
+        session,
+        turn,
+        action,
+        status: str,
+        result,
+        error,
+    ) -> None:
+        await transcript.append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="tool",
+            parts=[
+                text_part(
+                    json.dumps(
+                        {
+                            "tool": action.name,
+                            "status": status,
+                            "result": result,
+                            "error": error,
+                        },
+                        separators=(",", ":"),
+                        default=str,
+                    )
+                )
+            ],
+            metadata={
+                "tool_call_id": action.tool_call_id,
+                "tool": action.name,
+                "is_error": bool(error) or status != AgentActionStatus.COMPLETED,
+            },
         )
-        agent_metrics.increment("tools.failed")
 
     async def _resolve_model_selection(self, *, turn, session) -> dict[str, Any] | None:
         snapshot = turn.model_profile_snapshot or {}

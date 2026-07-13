@@ -6,6 +6,7 @@ import sys
 
 import pytest
 
+from app.models.agent_core import AgentActionStatus, AgentTurnStatus
 from app.models.llm import (
     LlmCredentialSource,
     LlmModel,
@@ -1388,6 +1389,355 @@ async def test_responses_approval_resume_survives_service_restart(
     events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
     assert opaque_secret not in json.dumps([event.payload for event in events])
     assert opaque_secret not in caplog.text
+
+
+async def _responses_batch_approval_fixture(db_session, *, session, input_text: str):
+    provider = LlmProvider(
+        name="Responses batch approval provider",
+        kind="openai_compatible",
+        base_url="https://responses-batch.example/v1",
+        wire_protocol="responses",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    credential = LlmProviderCredential(
+        provider_id=str(provider.id),
+        source=LlmCredentialSource.STORED,
+        encrypted_secret=encrypt_secret("responses-batch-key"),
+        fingerprint="responses-batch-fingerprint",
+        masked_hint="resp...-key",
+        updated_by="dev",
+    )
+    db_session.add(credential)
+    model = LlmModel(
+        provider_id=str(provider.id),
+        model_id="gpt-responses-batch-test",
+        display_name="Responses batch test model",
+        supports_tools=True,
+        supports_streaming=True,
+    )
+    db_session.add(model)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    await AgentCoreService(db_session).session_repo.update_all(
+        session,
+        session_metadata={"model_selection": {"model_id": str(model.id)}},
+        toolset_policy={"name": "execution"},
+    )
+    routed_model_name = route_provider_model_name(
+        "openai_compatible",
+        model.model_id,
+        wire_protocol="responses",
+    )
+    target_revision = derive_model_target_revision(
+        endpoint_id=str(provider.id),
+        provider_kind="openai_compatible",
+        model_name=model.model_id,
+        wire_protocol="responses",
+        routed_model_name=routed_model_name,
+        base_url=provider.base_url,
+        credential_material=resolve_credential_material(credential),
+    )
+    continuation_target = ModelTarget(
+        endpoint_id=str(provider.id),
+        provider_kind="openai_compatible",
+        model_name=model.model_id,
+        routed_model_name=routed_model_name,
+        wire_protocol="responses",
+        base_url=provider.base_url,
+        target_revision=target_revision,
+    ).continuation_target()
+    return provider, ResponsesContinuation(
+        response_id="resp-batch-approval",
+        canonical_input_count=1,
+        canonical_input_digest=canonical_input_prefix_digest(
+            (TextPart(text=input_text),)
+        ),
+        output_items=(),
+        target=continuation_target,
+    )
+
+
+@pytest.mark.asyncio
+async def test_responses_tool_call_batch_waits_for_every_approval_before_resume(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    input_text = "Run both commands only after deciding each approval."
+    session, turn = await _turn(db_session, input_text=input_text)
+    _provider, continuation = await _responses_batch_approval_fixture(
+        db_session,
+        session=session,
+        input_text=input_text,
+    )
+    first_marker = tmp_path / "first-approved.txt"
+    rejected_marker = tmp_path / "second-rejected.txt"
+    first_command = (
+        f'{sys.executable} -c "from pathlib import Path; '
+        f"Path({str(first_marker)!r}).write_text('ran')\""
+    )
+    rejected_command = (
+        f'{sys.executable} -c "from pathlib import Path; '
+        f"Path({str(rejected_marker)!r}).write_text('ran')\""
+    )
+    gateway = FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="call-responses-batch-first",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {"command": first_command, "cwd": str(settings.bioinfoflow_home)}
+                ),
+            ),
+            ToolCallDelta(
+                index=1,
+                call_id="call-responses-batch-second",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {"command": rejected_command, "cwd": str(settings.bioinfoflow_home)}
+                ),
+            ),
+            CompletionMetadata(
+                response_id="resp-batch-approval",
+                finish_reason="tool_calls",
+                continuation=continuation,
+            ),
+        ),
+        (
+            TextDelta(text="The approved batch is resolved.", phase="final_answer"),
+            CompletionMetadata(response_id="resp-batch-final", finish_reason="stop"),
+        ),
+    )
+    waiting = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+
+    assert waiting.status == AgentTurnStatus.WAITING_APPROVAL
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions_by_call_id = {action.tool_call_id: action for action in actions}
+    first_action = actions_by_call_id["call-responses-batch-first"]
+    second_action = actions_by_call_id["call-responses-batch-second"]
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_: None)
+    await AgentCoreService(db_session).decide_action(
+        action_id=str(first_action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+
+    still_waiting = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).resume_turn_after_action(str(first_action.id))
+
+    assert still_waiting.status == AgentTurnStatus.WAITING_APPROVAL
+    assert len(gateway.invocations) == 1
+    assert first_marker.read_text() == "ran"
+    assert not rejected_marker.exists()
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions_by_call_id = {action.tool_call_id: action for action in actions}
+    assert [
+        actions_by_call_id[call_id].status
+        for call_id in ("call-responses-batch-first", "call-responses-batch-second")
+    ] == [
+        AgentActionStatus.COMPLETED,
+        AgentActionStatus.WAITING_DECISION,
+    ]
+    assert [
+        actions_by_call_id[call_id].requires_resume
+        for call_id in ("call-responses-batch-first", "call-responses-batch-second")
+    ] == [False, True]
+    tool_messages = [
+        message
+        for message in await AgentMessageRepository(db_session).list_for_session(
+            str(session.id)
+        )
+        if message.role == "tool"
+    ]
+    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
+        "call-responses-batch-first"
+    ]
+
+    idempotent_retry = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).resume_turn_after_action(str(first_action.id))
+    assert idempotent_retry.status == AgentTurnStatus.WAITING_APPROVAL
+    assert len(gateway.invocations) == 1
+    tool_messages = [
+        message
+        for message in await AgentMessageRepository(db_session).list_for_session(
+            str(session.id)
+        )
+        if message.role == "tool"
+    ]
+    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
+        "call-responses-batch-first"
+    ]
+
+    await AgentCoreService(db_session).decide_action(
+        action_id=str(second_action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="reject",
+    )
+    completed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).resume_turn_after_action(str(second_action.id))
+
+    assert completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "The approved batch is resolved."
+    assert len(gateway.invocations) == 2
+    assert not rejected_marker.exists()
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions_by_call_id = {action.tool_call_id: action for action in actions}
+    assert [
+        actions_by_call_id[call_id].status
+        for call_id in ("call-responses-batch-first", "call-responses-batch-second")
+    ] == [
+        AgentActionStatus.COMPLETED,
+        AgentActionStatus.REJECTED,
+    ]
+    assert [
+        actions_by_call_id[call_id].requires_resume
+        for call_id in ("call-responses-batch-first", "call-responses-batch-second")
+    ] == [False, False]
+    tool_results = [
+        item
+        for item in gateway.invocations[1].input_items
+        if isinstance(item, ToolResultPart)
+    ]
+    assert [item.call_id for item in tool_results] == [
+        "call-responses-batch-first",
+        "call-responses-batch-second",
+    ]
+    assert tool_results[0].is_error is False
+    assert tool_results[1].is_error is True
+    assert "UserRejected" in tool_results[1].output
+
+
+@pytest.mark.asyncio
+async def test_responses_config_rotation_closes_entire_pending_tool_call_batch(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    input_text = "Request two commands, then wait for both decisions."
+    session, turn = await _turn(db_session, input_text=input_text)
+    provider, continuation = await _responses_batch_approval_fixture(
+        db_session,
+        session=session,
+        input_text=input_text,
+    )
+    markers = [tmp_path / "rotation-first.txt", tmp_path / "rotation-second.txt"]
+    gateway = FakeModelGateway(
+        (
+            *(
+                ToolCallDelta(
+                    index=index,
+                    call_id=f"call-responses-rotation-{index + 1}",
+                    name="bash",
+                    arguments_delta=json.dumps(
+                        {
+                            "command": (
+                                f'{sys.executable} -c "from pathlib import Path; '
+                                f"Path({str(marker)!r}).write_text('ran')\""
+                            ),
+                            "cwd": str(settings.bioinfoflow_home),
+                        }
+                    ),
+                )
+                for index, marker in enumerate(markers)
+            ),
+            CompletionMetadata(
+                response_id="resp-batch-approval",
+                finish_reason="tool_calls",
+                continuation=continuation,
+            ),
+        )
+    )
+    waiting = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(str(turn.id))
+    assert waiting.status == AgentTurnStatus.WAITING_APPROVAL
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions_by_call_id = {action.tool_call_id: action for action in actions}
+    first_action = actions_by_call_id["call-responses-rotation-1"]
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_: None)
+    await AgentCoreService(db_session).decide_action(
+        action_id=str(first_action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    provider.base_url = "https://responses-batch-rotated.example/v1"
+    await db_session.commit()
+
+    failed = await AgentCoreRuntime(
+        db_session,
+        model_gateway=gateway,
+    ).resume_turn_after_action(str(first_action.id))
+
+    assert failed.status == AgentTurnStatus.FAILED
+    assert failed.error_code == "model_selection_missing"
+    assert len(gateway.invocations) == 1
+    assert all(not marker.exists() for marker in markers)
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions_by_call_id = {action.tool_call_id: action for action in actions}
+    rotation_call_ids = ("call-responses-rotation-1", "call-responses-rotation-2")
+    assert [actions_by_call_id[call_id].status for call_id in rotation_call_ids] == [
+        AgentActionStatus.FAILED,
+        AgentActionStatus.FAILED,
+    ]
+    assert [
+        actions_by_call_id[call_id].requires_resume for call_id in rotation_call_ids
+    ] == [False, False]
+    assert all(
+        (actions_by_call_id[call_id].error or {}).get("type")
+        == "ModelConfigurationChanged"
+        for call_id in rotation_call_ids
+    )
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
+        "call-responses-rotation-1",
+        "call-responses-rotation-2",
+    ]
+    assert all(
+        "_responses_continuation" not in (message.message_metadata or {})
+        for message in messages
+    )
+
+    follow_up_gateway = FakeModelGateway(
+        (
+            TextDelta(text="The follow-up turn completed.", phase="final_answer"),
+            CompletionMetadata(response_id="resp-follow-up", finish_reason="stop"),
+        )
+    )
+    follow_up_turn = await AgentCoreService(db_session).create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Continue after the cancelled approval batch.",
+    )
+    follow_up = await AgentCoreRuntime(
+        db_session,
+        model_gateway=follow_up_gateway,
+    ).run_turn(str(follow_up_turn.id))
+
+    assert follow_up.status == AgentTurnStatus.COMPLETED
+    assert follow_up.final_text == "The follow-up turn completed."
+    assert follow_up_gateway.invocations[0].continuation is None
 
 
 @pytest.mark.asyncio

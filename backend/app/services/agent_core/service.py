@@ -501,6 +501,12 @@ class AgentCoreService:
                 "answer": answer,
             },
             status=status,
+            requires_resume=(False if status == AgentActionStatus.REJECTED else True),
+            completed_at=(
+                datetime.now(timezone.utc)
+                if status == AgentActionStatus.REJECTED
+                else None
+            ),
         )
         await self.ledger.append(
             session_id=str(action.session_id),
