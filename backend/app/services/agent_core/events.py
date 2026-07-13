@@ -11,6 +11,7 @@ class AgentEventType:
     TURN_NO_PROGRESS = "turn.no_progress"
     TURN_RECOVERY_ENQUEUED = "turn.recovery.enqueued"
     TURN_RECOVERY_FAILED = "turn.recovery.failed"
+    TRANSCRIPT_TOOL_GROUP_REPAIRED = "transcript.tool_group_repaired"
     MODEL_SELECTED = "model.selected"
     MODEL_RETRYING = "model.retrying"
     MODEL_FALLBACK = "model.fallback"

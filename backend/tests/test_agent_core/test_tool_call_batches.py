@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 
 import pytest
 
@@ -15,7 +16,9 @@ from app.repositories.agent_core_repo import (
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.transcript import AgentTranscriptStore, tool_calls_part
+from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
 from app.schemas.agent_core import AgentActionRead
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -342,7 +345,7 @@ async def test_interaction_call_is_exclusive_and_cancels_batch_siblings(
 
 
 @pytest.mark.asyncio
-async def test_provider_messages_omit_incomplete_tool_call_group(db_session):
+async def test_provider_messages_repair_and_audit_incomplete_tool_call_group(db_session):
     await _seed_runtime(db_session)
     service = AgentCoreService(db_session)
     session = await service.create_session(
@@ -391,8 +394,26 @@ async def test_provider_messages_omit_incomplete_tool_call_group(db_session):
         turn=turn,
     )
 
-    assert not any(message.get("tool_calls") for message in messages)
-    assert not any(message.get("role") == "tool" for message in messages)
+    assistant = next(message for message in messages if message.get("tool_calls"))
+    assert [call["id"] for call in assistant["tool_calls"]] == [
+        "unmatched-1",
+        "unmatched-2",
+    ]
+    tool_messages = [message for message in messages if message.get("role") == "tool"]
+    assert [message["tool_call_id"] for message in tool_messages] == [
+        "unmatched-1",
+        "unmatched-2",
+    ]
+    assert "TranscriptRepair" in tool_messages[1]["content"]
+    stored = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    repairs = [
+        message
+        for message in stored
+        if (message.message_metadata or {}).get("transcript_repair") is True
+    ]
+    assert len(repairs) == 1
+    events = await service.event_repo.list_for_turn(turn_id=str(turn.id))
+    assert any(event.type == "transcript.tool_group_repaired" for event in events)
 
 
 @pytest.mark.asyncio
@@ -517,3 +538,444 @@ async def test_compaction_does_not_split_assistant_tool_result_group(db_session)
         "compact-1",
         "compact-2",
     ]
+
+
+@pytest.mark.asyncio
+async def test_continuation_claim_has_one_winner_across_database_sessions(db_session):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Claim once.",
+    )
+    batch = await AgentToolCallBatchRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        status=AgentToolCallBatchStatus.READY,
+        tool_call_count=1,
+    )
+    await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        tool_batch_id=str(batch.id),
+        tool_call_ordinal=0,
+        tool_call_id="claim",
+        kind="tool",
+        name="projects.list",
+        input={},
+        risk_level="read",
+        status=AgentActionStatus.COMPLETED,
+    )
+    maker = async_sessionmaker(bind=db_session.bind, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as first, maker() as second:
+        results = await asyncio.gather(
+            ToolCallBatchCoordinator(first).claim_continuation(str(batch.id)),
+            ToolCallBatchCoordinator(second).claim_continuation(str(batch.id)),
+        )
+
+    assert sorted(results) == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_reads_overlap_across_non_read_sibling(db_session, monkeypatch):
+    started = 0
+    both_started = asyncio.Event()
+
+    async def overlapping_read(self, input, context):
+        nonlocal started
+        del self, input, context
+        started += 1
+        if started == 2:
+            both_started.set()
+        await asyncio.wait_for(both_started.wait(), timeout=1)
+        return {"projects": [], "total_count": 0}
+
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ListProjectsTool.run",
+        overlapping_read,
+    )
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_: None)
+    calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        return _response(
+            tool_calls=[
+                ("overlap-1", "projects__list", {}),
+                ("approval-between", "bash", {"command": "printf later"}),
+                ("overlap-2", "projects__list", {}),
+            ]
+        )
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="guarded_auto",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Overlap independent reads.",
+    )
+
+    waiting = await service.runtime.run_turn(str(turn.id))
+
+    assert waiting.status == "waiting_approval"
+    assert started == 2
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    assert [actions[0].status, actions[2].status] == [
+        AgentActionStatus.COMPLETED,
+        AgentActionStatus.COMPLETED,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_provider_call_id_is_scoped_to_each_batch(db_session, monkeypatch):
+    calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args
+        calls += 1
+        if calls <= 2:
+            return _response(tool_calls=[("duplicate-id", "projects__list", {})])
+        tool_results = [item for item in kwargs["messages"] if item["role"] == "tool"]
+        assert [item["tool_call_id"] for item in tool_results] == [
+            "duplicate-id",
+            "duplicate-id",
+        ]
+        return _response(text="two batches complete")
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Reuse provider ids safely.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    assert completed.final_text == "two batches complete"
+
+
+@pytest.mark.asyncio
+async def test_prepare_failure_repairs_every_call_with_terminal_result(db_session, monkeypatch):
+    calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args
+        calls += 1
+        if calls == 1:
+            return _response(
+                tool_calls=[
+                    ("prepare-1", "projects__list", {}),
+                    ("prepare-2", "projects__list", {}),
+                    ("prepare-3", "projects__list", {}),
+                ]
+            )
+        tool_results = [item for item in kwargs["messages"] if item["role"] == "tool"]
+        assert [item["tool_call_id"] for item in tool_results] == [
+            "prepare-1",
+            "prepare-2",
+            "prepare-3",
+        ]
+        assert all("BatchPreparationError" in item["content"] for item in tool_results)
+        return _response(text="repaired")
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    from app.services.agent_core.tools.executor import AgentToolExecutor
+
+    original_execute = AgentToolExecutor.execute
+    prepares = 0
+
+    async def fail_second_prepare(self, **kwargs):
+        nonlocal prepares
+        prepares += 1
+        if prepares == 2:
+            raise RuntimeError("synthetic prepare failure")
+        return await original_execute(self, **kwargs)
+
+    monkeypatch.setattr(AgentToolExecutor, "execute", fail_second_prepare)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Repair preparation.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    assert len(actions) == 3
+    assert all(action.status == AgentActionStatus.FAILED for action in actions)
+    batch = await AgentToolCallBatchRepository(db_session).get(str(actions[0].tool_batch_id))
+    assert batch is not None
+    assert batch.status == AgentToolCallBatchStatus.TERMINAL
+
+
+@pytest.mark.asyncio
+async def test_batch_stays_continuing_until_next_model_message_is_persisted(
+    db_session,
+    monkeypatch,
+):
+    calls = 0
+    maker = async_sessionmaker(bind=db_session.bind, expire_on_commit=False, class_=AsyncSession)
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        if calls == 1:
+            return _response(tool_calls=[("continue-state", "projects__list", {})])
+        async with maker() as check_session:
+            batches, _ = await AgentToolCallBatchRepository(check_session).list(limit=10)
+            assert batches[0].status == AgentToolCallBatchStatus.CONTINUING
+        return _response(text="persisted continuation")
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep claim until persistence.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    batches, _ = await AgentToolCallBatchRepository(db_session).list(limit=10)
+    assert batches[0].status == AgentToolCallBatchStatus.TERMINAL
+
+
+@pytest.mark.asyncio
+async def test_model_failure_leaves_continuing_batch_recoverable(db_session, monkeypatch):
+    calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        if calls == 1:
+            return _response(tool_calls=[("recover-continuing", "projects__list", {})])
+        raise RuntimeError("model unavailable after claim")
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Recover a claimed continuation.",
+    )
+
+    failed = await service.runtime.run_turn(str(turn.id))
+
+    assert failed.status == "failed"
+    batches, _ = await AgentToolCallBatchRepository(db_session).list(limit=10)
+    assert batches[0].status == AgentToolCallBatchStatus.CONTINUING
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("batch_status", "action_status", "expected_outcome", "expected_wakeup"),
+    [
+        (
+            AgentToolCallBatchStatus.WAITING,
+            AgentActionStatus.WAITING_DECISION,
+            "waiting",
+            None,
+        ),
+        (
+            AgentToolCallBatchStatus.WAITING,
+            AgentActionStatus.REQUESTED,
+            "enqueued",
+            "resume",
+        ),
+        (
+            AgentToolCallBatchStatus.CONTINUING,
+            AgentActionStatus.COMPLETED,
+            "enqueued",
+            "resume",
+        ),
+        (
+            AgentToolCallBatchStatus.READY,
+            AgentActionStatus.COMPLETED,
+            "enqueued",
+            "resume",
+        ),
+    ],
+)
+async def test_restart_recovery_is_batch_first_with_fresh_session_and_empty_runner(
+    db_session,
+    monkeypatch,
+    batch_status,
+    action_status,
+    expected_outcome,
+    expected_wakeup,
+):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Recover from durable batch state.",
+    )
+    turn = await service.turn_repo.update_all(turn, status="waiting_approval")
+    batch = await AgentToolCallBatchRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        status=batch_status,
+        tool_call_count=1,
+    )
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        tool_batch_id=str(batch.id),
+        tool_call_ordinal=0,
+        tool_call_id="restart",
+        kind="tool",
+        name="projects.list",
+        input={},
+        risk_level="read",
+        status=action_status,
+        result={} if action_status == AgentActionStatus.COMPLETED else None,
+    )
+
+    from app.services.agent_core import runner as runner_module
+    from app.services.agent_core import service as service_module
+
+    runner_module._RUNNING_TURNS.clear()
+    runner_module._PENDING_TURN_TASK_FACTORIES.clear()
+    wakeups: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        service_module,
+        "enqueue_turn_resume",
+        lambda action_id, *_: wakeups.append(("resume", action_id)),
+    )
+    monkeypatch.setattr(
+        service_module,
+        "enqueue_turn_run",
+        lambda turn_id, *_: wakeups.append(("run", turn_id)),
+    )
+    maker = async_sessionmaker(bind=db_session.bind, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as restarted_session:
+        summary = await AgentCoreService(restarted_session).recover_orphaned_turns()
+        recovered_batch = await AgentToolCallBatchRepository(restarted_session).get(
+            str(batch.id)
+        )
+
+    assert summary[expected_outcome] == 1
+    if expected_wakeup is None:
+        assert wakeups == []
+    else:
+        assert wakeups == [(expected_wakeup, str(action.id))]
+    if batch_status == AgentToolCallBatchStatus.CONTINUING:
+        assert recovered_batch.status == AgentToolCallBatchStatus.READY
+
+
+@pytest.mark.asyncio
+async def test_restart_repairs_partially_prepared_evaluating_batch(db_session, monkeypatch):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Recover partial preparation.",
+    )
+    await service.turn_repo.update_all(turn, status="waiting_approval")
+    transcript = AgentTranscriptStore(db_session)
+    await transcript.append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[
+            tool_calls_part(
+                [
+                    {"id": "partial-1", "type": "function", "function": {"name": "projects__list", "arguments": "{}"}},
+                    {"id": "partial-2", "type": "function", "function": {"name": "projects__list", "arguments": "{}"}},
+                ]
+            )
+        ],
+    )
+    batch = await AgentToolCallBatchRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        status=AgentToolCallBatchStatus.EVALUATING,
+        tool_call_count=2,
+    )
+    await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        tool_batch_id=str(batch.id),
+        tool_call_ordinal=0,
+        tool_call_id="partial-1",
+        kind="tool",
+        name="projects.list",
+        input={},
+        risk_level="read",
+        status=AgentActionStatus.COMPLETED,
+        result={},
+    )
+    from app.services.agent_core import service as service_module
+
+    wakeups: list[str] = []
+    monkeypatch.setattr(
+        service_module,
+        "enqueue_turn_resume",
+        lambda action_id, *_: wakeups.append(action_id),
+    )
+    maker = async_sessionmaker(bind=db_session.bind, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as restarted:
+        summary = await AgentCoreService(restarted).recover_orphaned_turns()
+        repaired = await AgentActionRepository(restarted).list_for_batch(str(batch.id))
+
+    assert summary["enqueued"] == 1
+    assert len(repaired) == 2
+    assert repaired[1].status == AgentActionStatus.FAILED
+    assert repaired[1].error["type"] == "BatchPreparationError"
+    assert wakeups == [str(repaired[1].id)]

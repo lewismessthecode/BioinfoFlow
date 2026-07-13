@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import desc, func, or_, select, update
+from datetime import datetime, timezone
 
 from app.models.agent_core import (
     AgentAction,
@@ -290,6 +291,36 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
         if any(action.status == AgentActionStatus.RUNNING for action in actions):
             return "running"
         return "waiting"
+
+    async def list_nonterminal_for_turn(self, turn_id: str) -> list[AgentToolCallBatch]:
+        stmt = (
+            select(self.model)
+            .where(
+                self.model.turn_id == turn_id,
+                self.model.status != "terminal",
+            )
+            .order_by(desc(self.model.created_at), desc(self.model.id))
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def claim_ready(self, batch_id: str) -> bool:
+        stmt = (
+            update(self.model)
+            .where(
+                self.model.id == batch_id,
+                self.model.status == "ready",
+            )
+            .values(
+                status="continuing",
+                continuation_claimed_at=datetime.now(timezone.utc),
+            )
+            .returning(self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        claimed = result.scalar_one_or_none() is not None
+        await self.session.commit()
+        return claimed
 
 
 class AgentArtifactRepository(BaseRepository[AgentArtifact]):

@@ -41,20 +41,9 @@ class ToolCallBatchCoordinator:
         return state
 
     async def claim_continuation(self, batch_id: str) -> bool:
-        batch = await self.batches.get(batch_id)
-        if batch is None or batch.status not in {
-            AgentToolCallBatchStatus.READY,
-            AgentToolCallBatchStatus.WAITING,
-        }:
-            return False
         if await self.batches.continuation_state(batch_id) != "ready":
             return False
-        await self.batches.update_all(
-            batch,
-            status=AgentToolCallBatchStatus.CONTINUING,
-            continuation_claimed_at=datetime.now(timezone.utc),
-        )
-        return True
+        return await self.batches.claim_ready(batch_id)
 
     async def mark_terminal(self, batch_id: str) -> None:
         batch = await self.batches.get(batch_id)
@@ -64,3 +53,45 @@ class ToolCallBatchCoordinator:
                 status=AgentToolCallBatchStatus.TERMINAL,
                 completed_at=datetime.now(timezone.utc),
             )
+
+    async def repair_preparation_failure(
+        self,
+        *,
+        batch_id: str,
+        session_id: str,
+        turn_id: str,
+        tool_calls: list[dict],
+        error_message: str,
+    ) -> None:
+        error = {"type": "BatchPreparationError", "message": error_message}
+        existing = {
+            action.tool_call_ordinal: action
+            for action in await self.actions.list_for_batch(batch_id)
+        }
+        for ordinal, tool_call in enumerate(tool_calls):
+            action = existing.get(ordinal)
+            if action is None:
+                action = await self.actions.create(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    tool_batch_id=batch_id,
+                    tool_call_ordinal=ordinal,
+                    tool_call_id=tool_call.get("id"),
+                    kind="tool",
+                    name=str(tool_call.get("name") or "unknown"),
+                    input=tool_call.get("arguments") or {},
+                    normalized_input=tool_call.get("arguments") or {},
+                    risk_level="act_high",
+                    status="failed",
+                    error=error,
+                    completed_at=datetime.now(timezone.utc),
+                )
+            elif action.status not in {"completed", "failed", "cancelled", "rejected"}:
+                await self.actions.update_all(
+                    action,
+                    status="failed",
+                    requires_resume=False,
+                    error=error,
+                    completed_at=datetime.now(timezone.utc),
+                )
+        await self.settle(batch_id)

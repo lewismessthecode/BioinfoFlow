@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import app.services.agent_core.ledger as ledger_module
 from app.config import settings
 from app.models.llm import LlmModel, LlmProvider
+from app.models.agent_core import AgentActionStatus
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import (
@@ -635,7 +636,10 @@ async def test_worker_tool_call_is_rechecked_against_worker_exposure(
 
     assert completed_turn.termination_reason == "tool_failed"
     assert completed_turn.error_code == "tool_not_exposed"
-    assert await AgentActionRepository(db_session).list_for_turn(str(turn.id)) == []
+    repaired_actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert len(repaired_actions) == 1
+    assert repaired_actions[0].status == AgentActionStatus.FAILED
+    assert repaired_actions[0].error["type"] == "BatchPreparationError"
 
 
 @pytest.mark.asyncio

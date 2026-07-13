@@ -76,6 +76,7 @@ class AgentLoopController:
         capabilities: RuntimeCapabilities = RuntimeCapabilities(),
         strategy: RuntimeStrategy = RuntimeStrategy(),
         max_tokens: int | None = None,
+        continuation_batch_id: str | None = None,
     ) -> LoopResult:
         turn = await self.turns.get(turn_id)
         if turn is None:
@@ -103,6 +104,7 @@ class AgentLoopController:
         previous_tool_result_signatures: list[str] = []
         repeated_tool_call_count = 0
         empty_response_retries_remaining = 1
+        active_continuation_batch_id = continuation_batch_id
 
         while budget.consume():
             turn = await self.turns.get(turn_id)
@@ -215,11 +217,16 @@ class AgentLoopController:
                     tool_calls=tool_calls,
                     text=streamed.text or None,
                 )
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.mark_terminal(active_continuation_batch_id)
+                    active_continuation_batch_id = None
                 try:
-                    waiting, tool_result_signatures = await self._execute_tool_calls(
+                    waiting, tool_result_signatures, claimed_batch_id = (
+                        await self._execute_tool_calls(
                         agent_session=agent_session,
                         turn=turn,
                         tool_calls=tool_calls,
+                    )
                     )
                 except asyncio.CancelledError:
                     return LoopResult(
@@ -244,6 +251,7 @@ class AgentLoopController:
                         iteration_count=budget.used_iterations,
                         token_usage=token_usage,
                     )
+                active_continuation_batch_id = claimed_batch_id
                 repeated_tool_call_count = (
                     repeated_tool_call_count + 1
                     if previous_tool_call_signatures == tool_call_signatures
@@ -310,6 +318,9 @@ class AgentLoopController:
                 parts=[text_part(final_text)],
                 metadata={"provider": provider, "model": model},
             )
+            if active_continuation_batch_id is not None:
+                await self.tool_batches.mark_terminal(active_continuation_batch_id)
+                active_continuation_batch_id = None
             return LoopResult(
                 termination_reason="assistant_final",
                 final_text=final_text,
@@ -332,12 +343,15 @@ class AgentLoopController:
         agent_session,
         turn,
         tool_calls: list[dict],
-    ) -> tuple[bool, list[str]]:
+    ) -> tuple[bool, list[str], str | None]:
+        session_id = str(agent_session.id)
+        turn_id = str(turn.id)
         batch_record = await self.tool_batches.create(
-            session_id=str(agent_session.id),
-            turn_id=str(turn.id),
+            session_id=session_id,
+            turn_id=turn_id,
             tool_call_count=len(tool_calls),
         )
+        batch_id = str(batch_record.id)
         context = AgentToolContext(
             db=self.db,
             workspace_id=str(turn.workspace_id),
@@ -346,72 +360,92 @@ class AgentLoopController:
             turn_id=str(turn.id),
         )
         prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
-        for ordinal, tool_call in enumerate(tool_calls):
-            tool_name = decode_provider_tool_name(tool_call["name"])
-            result = await self.executor.execute(
-                tool_name=tool_name,
-                input=tool_call["arguments"],
-                context=context,
-                toolset_policy=agent_session.toolset_policy,
-                permission_mode=agent_session.permission_mode,
-                automation_mode=agent_session.automation_mode,
-                tool_call_id=tool_call["id"],
-                tool_batch_id=str(batch_record.id),
-                tool_call_ordinal=ordinal,
-                defer_execution=True,
-                role=_tool_role(agent_session),
-                execution_target=execution_target_from_session(agent_session),
+        try:
+            for ordinal, tool_call in enumerate(tool_calls):
+                tool_name = decode_provider_tool_name(tool_call["name"])
+                result = await self.executor.execute(
+                    tool_name=tool_name,
+                    input=tool_call["arguments"],
+                    context=context,
+                    toolset_policy=agent_session.toolset_policy,
+                    permission_mode=agent_session.permission_mode,
+                    automation_mode=agent_session.automation_mode,
+                    tool_call_id=tool_call["id"],
+                    tool_batch_id=batch_id,
+                    tool_call_ordinal=ordinal,
+                    defer_execution=True,
+                    role=_tool_role(agent_session),
+                    execution_target=execution_target_from_session(agent_session),
+                )
+                prepared.append((tool_call, tool_name, result))
+        except Exception as exc:  # noqa: BLE001 - repair every provider call in the batch
+            await self.db.rollback()
+            await self.tool_batches.repair_preparation_failure(
+                batch_id=batch_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                tool_calls=tool_calls,
+                error_message=str(exc),
             )
-            prepared.append((tool_call, tool_name, result))
+            agent_session = await self.sessions.get(session_id)
+            turn = await self.turns.get(turn_id)
+            if agent_session is None or turn is None:
+                raise
+            await self._append_missing_batch_results(
+                agent_session=agent_session,
+                turn=turn,
+                batch_id=batch_id,
+            )
+            await self.tool_batches.mark_terminal(batch_id)
+            if isinstance(exc, PermissionDeniedError):
+                raise
+            return False, [], None
         interaction_ordinals = [
             ordinal
             for ordinal, call in enumerate(tool_calls)
             if self.registry.get(decode_provider_tool_name(call["name"])).spec.interaction
         ]
         if interaction_ordinals:
-            return await self._execute_interaction_batch(
+            waiting, signatures = await self._execute_interaction_batch(
                 agent_session=agent_session,
                 turn=turn,
                 prepared=prepared,
-                batch_id=str(batch_record.id),
+                batch_id=batch_id,
                 interaction_ordinal=interaction_ordinals[0],
             )
+            return waiting, signatures, None
         waiting = False
         result_signatures: list[str] = []
-        index = 0
-        while index < len(prepared):
-            turn = await self._renew_turn_lease(turn)
-            tool_call, tool_name, prepared_result = prepared[index]
-            if (
-                prepared_result.status == AgentActionStatus.REQUESTED
-                and self._is_concurrent_read_only_tool(tool_name)
-            ):
-                batch: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
-                while index < len(prepared):
-                    candidate, candidate_name, candidate_result = prepared[index]
-                    if (
-                        candidate_result.status != AgentActionStatus.REQUESTED
-                        or not self._is_concurrent_read_only_tool(candidate_name)
-                    ):
-                        break
-                    batch.append((candidate, candidate_name, candidate_result))
-                    index += 1
-                results = await asyncio.gather(
-                    *[
-                        self._execute_tool_call_isolated(
-                            agent_session=agent_session,
-                            turn=turn,
-                            action_id=item_result.action_id,
-                        )
-                        for _item, _name, item_result in batch
-                    ]
+        read_candidates = [
+            item
+            for item in prepared
+            if item[2].status == AgentActionStatus.REQUESTED
+            and self._is_concurrent_read_only_tool(item[1])
+        ]
+        read_results = await asyncio.gather(
+            *[
+                self._execute_tool_call_isolated(
+                    agent_session=agent_session,
+                    turn=turn,
+                    action_id=prepared_result.action_id,
                 )
-                for (item, name, _prepared_result), result in zip(batch, results, strict=False):
-                    result_signatures.append(_tool_result_signature(name, result))
+                for _tool_call, _tool_name, prepared_result in read_candidates
+            ]
+        )
+        read_results_by_action = {
+            prepared_result.action_id: result
+            for (_call, _name, prepared_result), result in zip(
+                read_candidates, read_results, strict=True
+            )
+        }
+        for _tool_call, tool_name, prepared_result in prepared:
+            turn = await self._renew_turn_lease(turn)
+            read_result = read_results_by_action.get(prepared_result.action_id)
+            if read_result is not None:
+                result_signatures.append(_tool_result_signature(tool_name, read_result))
                 continue
             if prepared_result.requires_resume:
                 waiting = True
-                index += 1
                 continue
             result = prepared_result
             if prepared_result.status == AgentActionStatus.REQUESTED:
@@ -420,16 +454,17 @@ class AgentLoopController:
                     context=context,
                 )
             result_signatures.append(_tool_result_signature(tool_name, result))
-            index += 1
-        state = await self.tool_batches.settle(str(batch_record.id))
+        state = await self.tool_batches.settle(batch_id)
+        claimed_batch_id: str | None = None
         if state == "ready":
             await self._append_missing_batch_results(
                 agent_session=agent_session,
                 turn=turn,
-                batch_id=str(batch_record.id),
+                batch_id=batch_id,
             )
-            await self.tool_batches.mark_terminal(str(batch_record.id))
-        return waiting, result_signatures
+            if await self.tool_batches.claim_continuation(batch_id):
+                claimed_batch_id = batch_id
+        return waiting, result_signatures, claimed_batch_id
 
     async def _execute_interaction_batch(
         self,
@@ -551,7 +586,6 @@ class AgentLoopController:
                 turn=turn,
                 batch_id=str(action.tool_batch_id),
             )
-            await self.tool_batches.mark_terminal(str(action.tool_batch_id))
         else:
             if action.status == AgentActionStatus.REJECTED:
                 result = ToolExecutionResult(
@@ -567,12 +601,19 @@ class AgentLoopController:
                     action_id=action_id,
                     context=context,
                 )
-            if not await self._has_tool_result(str(agent_session.id), action.tool_call_id):
+            if not await self._has_tool_result(
+                str(agent_session.id),
+                tool_call_id=action.tool_call_id,
+                action_id=str(action.id),
+                batch_id=None,
+            ):
                 await self._append_tool_result(
                     agent_session=agent_session,
                     turn=turn,
                     tool_name=action.name,
                     tool_call_id=action.tool_call_id,
+                    action_id=str(action.id),
+                    batch_id=None,
                     result=result,
                 )
             if result.status not in {"completed", AgentActionStatus.REJECTED}:
@@ -591,6 +632,9 @@ class AgentLoopController:
             strategy=strategy,
             request_args=request_args,
             max_tokens=max_tokens,
+            continuation_batch_id=(
+                str(action.tool_batch_id) if action.tool_batch_id else None
+            ),
         )
 
     async def _append_assistant_tool_calls(
@@ -622,6 +666,8 @@ class AgentLoopController:
         turn,
         tool_name: str,
         tool_call_id: str | None,
+        action_id: str | None,
+        batch_id: str | None,
         result,
     ) -> None:
         await self.transcript.append_parts(
@@ -642,7 +688,12 @@ class AgentLoopController:
                     )
                 )
             ],
-            metadata={"tool_call_id": tool_call_id, "tool": tool_name},
+            metadata={
+                "tool_call_id": tool_call_id,
+                "tool": tool_name,
+                "action_id": action_id,
+                "tool_batch_id": batch_id,
+            },
         )
 
     async def _execute_tool_call_isolated(
@@ -671,19 +722,39 @@ class AgentLoopController:
                 ),
             )
 
-    async def _has_tool_result(self, session_id: str, tool_call_id: str | None) -> bool:
+    async def _has_tool_result(
+        self,
+        session_id: str,
+        *,
+        tool_call_id: str | None,
+        action_id: str | None,
+        batch_id: str | None,
+    ) -> bool:
         if not tool_call_id:
             return False
         messages = await self.transcript.list_messages(session_id)
-        return any(
-            message.role == "tool"
-            and (message.message_metadata or {}).get("tool_call_id") == tool_call_id
-            for message in messages
-        )
+        for message in messages:
+            if message.role != "tool":
+                continue
+            metadata = message.message_metadata or {}
+            if action_id and metadata.get("action_id") == action_id:
+                return True
+            if batch_id and metadata.get("tool_batch_id") == batch_id:
+                if metadata.get("tool_call_id") == tool_call_id:
+                    return True
+            if not batch_id and not metadata.get("tool_batch_id"):
+                if metadata.get("tool_call_id") == tool_call_id:
+                    return True
+        return False
 
     async def _append_missing_batch_results(self, *, agent_session, turn, batch_id: str) -> None:
         for batch_action in await self.actions.list_for_batch(batch_id):
-            if await self._has_tool_result(str(agent_session.id), batch_action.tool_call_id):
+            if await self._has_tool_result(
+                str(agent_session.id),
+                tool_call_id=batch_action.tool_call_id,
+                action_id=str(batch_action.id),
+                batch_id=batch_id,
+            ):
                 continue
             if batch_action.status == AgentActionStatus.REJECTED:
                 result = ToolExecutionResult(
@@ -703,6 +774,8 @@ class AgentLoopController:
                 turn=turn,
                 tool_name=batch_action.name,
                 tool_call_id=batch_action.tool_call_id,
+                action_id=str(batch_action.id),
+                batch_id=batch_id,
                 result=result,
             )
 

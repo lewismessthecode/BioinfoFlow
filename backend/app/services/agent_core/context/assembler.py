@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.agent_core import AgentMemoryStatus
+from app.models.agent_core import AgentActionStatus, AgentMemoryStatus
 from app.path_layout import state_root
-from app.repositories.agent_core_repo import AgentMemoryRepository
+from app.repositories.agent_core_repo import AgentActionRepository, AgentMemoryRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.run_repo import RunRepository
@@ -22,6 +24,8 @@ from app.services.agent_core.skills import (
     resolve_active_skills,
 )
 from app.services.agent_core.metrics import agent_metrics
+from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.transcript import (
     AgentTranscriptStore,
     provider_message_from_parts,
@@ -42,6 +46,10 @@ class AgentContextAssembler:
         turn,
         exposed_tools=None,
     ) -> list[dict]:
+        await self._repair_incomplete_tool_groups(
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        )
         await self._compact_if_needed(agent_session=agent_session, turn=turn)
         # Stable, cache-friendly identity prefix comes first; everything that
         # changes per session/turn is appended after it.
@@ -85,6 +93,90 @@ class AgentContextAssembler:
             for message in messages
             if message.get("content") or message.get("tool_calls")
         ]
+
+    async def _repair_incomplete_tool_groups(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        messages = await self.transcript.list_messages(session_id)
+        index = 0
+        while index < len(messages):
+            message = messages[index]
+            if message.status != "committed" or message.role != "assistant":
+                index += 1
+                continue
+            provider_message = provider_message_from_parts(
+                message.role,
+                message.content_parts or [],
+                message.message_metadata,
+            )
+            tool_calls = provider_message.get("tool_calls") or []
+            if not tool_calls:
+                index += 1
+                continue
+            expected = [str(call["id"]) for call in tool_calls if call.get("id")]
+            cursor = index + 1
+            seen: set[str] = set()
+            while cursor < len(messages) and messages[cursor].role == "tool":
+                metadata = messages[cursor].message_metadata or {}
+                if metadata.get("tool_call_id"):
+                    seen.add(str(metadata["tool_call_id"]))
+                cursor += 1
+            missing = [tool_call_id for tool_call_id in expected if tool_call_id not in seen]
+            if missing:
+                turn_actions = await AgentActionRepository(self.db).list_for_turn(turn_id)
+                unresolved_ids = {
+                    str(action.tool_call_id)
+                    for action in turn_actions
+                    if action.tool_call_id
+                    and action.status
+                    in {
+                        AgentActionStatus.WAITING_DECISION,
+                        AgentActionStatus.REQUESTED,
+                        AgentActionStatus.RUNNING,
+                    }
+                }
+                if any(tool_call_id in unresolved_ids for tool_call_id in missing):
+                    index = cursor
+                    continue
+                for tool_call_id in missing:
+                    await self.transcript.append_text(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        role="tool",
+                        text=json.dumps(
+                            {
+                                "status": "failed",
+                                "error": {
+                                    "type": "TranscriptRepair",
+                                    "message": "Missing durable tool result was repaired.",
+                                },
+                            },
+                            separators=(",", ":"),
+                        ),
+                        metadata={
+                            "tool_call_id": tool_call_id,
+                            "transcript_repair": True,
+                            "assistant_message_id": str(message.id),
+                        },
+                    )
+                await AgentEventLedger(self.db).append(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    type=AgentEventType.TRANSCRIPT_TOOL_GROUP_REPAIRED,
+                    payload={
+                        "assistant_message_id": str(message.id),
+                        "missing_tool_call_ids": missing,
+                    },
+                    visibility="audit",
+                )
+                messages = await self.transcript.list_messages(session_id)
+                cursor = index + 1
+                while cursor < len(messages) and messages[cursor].role == "tool":
+                    cursor += 1
+            index = cursor
     async def _compact_if_needed(self, *, agent_session, turn) -> None:
         policy = getattr(agent_session, "compression_state", None) or {}
         if not bool(policy.get("enabled", False)):
@@ -267,8 +359,10 @@ def _complete_provider_groups(messages: list[dict]) -> list[dict]:
                 if tool_message.get("tool_call_id"):
                     seen.append(str(tool_message["tool_call_id"]))
                 cursor += 1
-            if expected and seen == expected:
-                complete.extend(group)
+            if expected and len(seen) == len(expected) and set(seen) == set(expected):
+                by_id = {str(item["tool_call_id"]): item for item in group[1:]}
+                complete.append(message)
+                complete.extend(by_id[tool_call_id] for tool_call_id in expected)
             index = cursor
             continue
         if message.get("role") != "tool":

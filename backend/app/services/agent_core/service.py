@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,6 +15,7 @@ from app.repositories.agent_core_repo import (
     AgentEventRepository,
     AgentSessionRepository,
     AgentTurnRepository,
+    AgentToolCallBatchRepository,
 )
 from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.events import AgentEventType
@@ -43,6 +46,7 @@ from app.services.agent_core.skills import (
     resolve_active_skills,
 )
 from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
+from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part
 from app.utils.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
 
@@ -54,10 +58,12 @@ class AgentCoreService:
         self.turn_repo = AgentTurnRepository(session)
         self.event_repo = AgentEventRepository(session)
         self.action_repo = AgentActionRepository(session)
+        self.tool_batch_repo = AgentToolCallBatchRepository(session)
         self.artifact_repo = AgentArtifactRepository(session)
         self.project_repo = ProjectRepository(session)
         self.ledger = AgentEventLedger(session)
         self.runtime = AgentCoreRuntime(session)
+        self.transcript = AgentTranscriptStore(session)
 
     async def create_session(
         self,
@@ -636,6 +642,70 @@ class AgentCoreService:
         latest_action = open_actions[0] if open_actions else None
         now = datetime.now(timezone.utc)
 
+        batches = await self.tool_batch_repo.list_nonterminal_for_turn(turn_id)
+        latest_batch = batches[0] if batches else None
+        if latest_batch is not None:
+            batch_actions = await self.action_repo.list_for_batch(str(latest_batch.id))
+            batch_state = await self.tool_batch_repo.continuation_state(
+                str(latest_batch.id)
+            )
+            if batch_state == "evaluating":
+                recovered_calls = await self._recoverable_tool_calls(
+                    session_id=str(turn.session_id),
+                    turn_id=str(turn.id),
+                    expected_count=latest_batch.tool_call_count,
+                )
+                if recovered_calls is not None:
+                    await ToolCallBatchCoordinator(self.db).repair_preparation_failure(
+                        batch_id=str(latest_batch.id),
+                        session_id=str(turn.session_id),
+                        turn_id=str(turn.id),
+                        tool_calls=recovered_calls,
+                        error_message="Agent process stopped while preparing the tool batch.",
+                    )
+                    batch_state = await self.tool_batch_repo.continuation_state(
+                        str(latest_batch.id)
+                    )
+                    batch_actions = await self.action_repo.list_for_batch(
+                        str(latest_batch.id)
+                    )
+            if batch_state == "ready" and batch_actions:
+                if latest_batch.status == "continuing":
+                    latest_batch = await self.tool_batch_repo.update_all(
+                        latest_batch,
+                        status="ready",
+                        continuation_claimed_at=None,
+                    )
+                await self.turn_repo.update_all(
+                    turn,
+                    status=AgentTurnStatus.RUNNING,
+                    completed_at=None,
+                    error_code=None,
+                    error_message=None,
+                    claimed_at=None,
+                    lease_until=None,
+                    loop_state={
+                        "state": "running",
+                        "recovered": True,
+                        "tool_batch_id": str(latest_batch.id),
+                    },
+                )
+                resume_action = batch_actions[-1]
+                await self.ledger.append(
+                    session_id=str(turn.session_id),
+                    turn_id=str(turn.id),
+                    type=AgentEventType.TURN_RECOVERY_ENQUEUED,
+                    payload={
+                        "mode": "batch_resume",
+                        "action_id": str(resume_action.id),
+                        "tool_batch_id": str(latest_batch.id),
+                    },
+                )
+                enqueue_turn_resume(
+                    str(resume_action.id), str(turn.id), str(turn.session_id)
+                )
+                return "enqueued"
+
         if latest_action is not None and latest_action.status == AgentActionStatus.WAITING_DECISION:
             await self.turn_repo.update_all(
                 turn,
@@ -709,6 +779,39 @@ class AgentCoreService:
         )
         enqueue_turn_run(str(turn.id), str(turn.session_id))
         return "enqueued"
+
+    async def _recoverable_tool_calls(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        expected_count: int,
+    ) -> list[dict] | None:
+        messages = await self.transcript.list_messages(session_id)
+        for message in reversed(messages):
+            if str(message.turn_id) != turn_id or message.role != "assistant":
+                continue
+            for part in message.content_parts or []:
+                calls = part.get("tool_calls") if part.get("type") == "tool_calls" else None
+                if not isinstance(calls, list) or len(calls) != expected_count:
+                    continue
+                recovered: list[dict] = []
+                for call in calls:
+                    function = call.get("function") or {}
+                    raw_arguments = function.get("arguments") or "{}"
+                    try:
+                        arguments = json.loads(raw_arguments)
+                    except (TypeError, ValueError):
+                        arguments = {"_raw_arguments": str(raw_arguments)}
+                    recovered.append(
+                        {
+                            "id": call.get("id"),
+                            "name": function.get("name") or "unknown",
+                            "arguments": arguments,
+                        }
+                    )
+                return recovered
+        return None
 
     async def _cancel_open_actions(self, turn_id: str, *, cancelled_at: datetime) -> None:
         for action in await self.action_repo.list_open_for_turn(turn_id):
