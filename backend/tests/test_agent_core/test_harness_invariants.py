@@ -1053,11 +1053,17 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
             message.tool_calls = [AskCall(), ListCall()]
         else:
             persisted_turn = await service.turn_repo.get(turn_id)
-            assert persisted_turn.loop_state["progress"] == {
-                "previous_tool_calls": [],
-                "previous_tool_results": [],
-                "repeat_count": 0,
-            }
+            progress = persisted_turn.loop_state["progress"]
+            assert [
+                json.loads(signature)["name"]
+                for signature in progress["previous_tool_calls"]
+            ] == ["ask_user", "projects__list"]
+            assert [
+                json.loads(signature)["status"]
+                for signature in progress["previous_tool_results"]
+            ] == ["completed", "deferred"]
+            assert progress["repeat_count"] == 1
+            assert "pending_observation" not in progress
             emitted_ids = {
                 call["id"]
                 for item in kwargs["messages"]
@@ -1108,13 +1114,14 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
     assert waiting_turn.status == "waiting_approval"
     assert [action.name for action in actions] == ["ask_user"]
     progress = waiting_turn.loop_state["progress"]
-    assert [json.loads(signature)["name"] for signature in progress["previous_tool_calls"]] == [
+    pending = progress["pending_observation"]
+    assert [json.loads(signature)["name"] for signature in pending["tool_calls"]] == [
         "ask_user",
         "projects__list",
     ]
-    assert [
-        json.loads(signature)["status"] for signature in progress["previous_tool_results"]
-    ] == ["deferred"]
+    pending_results = [json.loads(signature) for signature in pending["tool_results"]]
+    assert [result["status"] for result in pending_results] == ["pending", "deferred"]
+    assert pending_results[0]["tool_call_id"] == "tool-call-question"
     assert progress["repeat_count"] == 0
     deferred_message = next(message for message in messages if message.role == "tool")
     assert deferred_message.message_metadata["tool_call_id"] == "tool-call-projects"
@@ -1131,6 +1138,203 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
 
     assert model_calls == 2
     assert resumed_turn.status == "completed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+async def test_repeated_approval_results_contribute_to_no_progress_history(
+    db_session,
+    monkeypatch,
+    decision,
+):
+    model_calls = 0
+
+    async def repeated_approval_completion(*args, **kwargs):
+        nonlocal model_calls
+        del args, kwargs
+        model_calls += 1
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        class FakeFunction:
+            name = "bash"
+            arguments = json.dumps(
+                {
+                    "command": f"{sys.executable} -c 'print(\"stable\")'",
+                    "cwd": str(settings.bioinfoflow_home),
+                }
+            )
+
+        class FakeToolCall:
+            id = f"tool-call-approval-{model_calls}"
+            function = FakeFunction()
+
+        message = FakeMessage()
+        message.content = ""
+        message.tool_calls = [FakeToolCall()]
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.acompletion",
+        repeated_approval_completion,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id=f"repeated-{decision}-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(
+        session,
+        toolset_policy={"name": "execution"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Repeat the same approval-gated observation.",
+    )
+
+    current_turn = await service.runtime.run_turn(str(turn.id))
+    for repeat_index in range(3):
+        assert current_turn.status == "waiting_approval"
+        actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+        pending_action = next(
+            action for action in actions if action.status == "waiting_decision"
+        )
+        await service.decide_action(
+            action_id=str(pending_action.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            decision=decision,
+        )
+        current_turn = await service.runtime.resume_turn_after_action(
+            str(pending_action.id)
+        )
+        if repeat_index < 2:
+            assert current_turn.status == "waiting_approval"
+
+    assert model_calls == 3
+    assert current_turn.status == "failed"
+    assert current_turn.termination_reason == "no_progress"
+    assert current_turn.error_code == "no_progress_detected"
+    assert current_turn.loop_state["progress"]["repeat_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_ask_each_action_static_reads_execute_once_and_close_all_call_ids(
+    db_session,
+    monkeypatch,
+):
+    model_calls = 0
+
+    async def read_batch_completion(*args, **kwargs):
+        nonlocal model_calls
+        model_calls += 1
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        message = FakeMessage()
+        if model_calls == 1:
+            class ProjectsFunction:
+                name = "projects__list"
+                arguments = "{}"
+
+            class WorkflowsFunction:
+                name = "workflows__list"
+                arguments = "{}"
+
+            class ProjectsCall:
+                id = "tool-call-static-projects"
+                function = ProjectsFunction()
+
+            class WorkflowsCall:
+                id = "tool-call-static-workflows"
+                function = WorkflowsFunction()
+
+            message.content = ""
+            message.tool_calls = [ProjectsCall(), WorkflowsCall()]
+        else:
+            emitted_ids = {
+                call["id"]
+                for item in kwargs["messages"]
+                for call in item.get("tool_calls", [])
+            }
+            result_ids = {
+                item.get("tool_call_id")
+                for item in kwargs["messages"]
+                if item.get("role") == "tool"
+            }
+            assert emitted_ids == result_ids
+            message.content = "Both static reads completed."
+            message.tool_calls = None
+
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.acompletion", read_batch_completion
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="ask-each-read-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="ask_each_action",
+    )
+    session = await service.session_repo.update_all(
+        session,
+        toolset_policy={"name": "execution"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Read projects and workflows once.",
+    )
+
+    completed_turn = await service.runtime.run_turn(str(turn.id))
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+
+    assert completed_turn.status == "completed"
+    assert model_calls == 2
+    assert sorted(action.name for action in actions) == ["projects.list", "workflows.list"]
+    assert all(action.status == "completed" for action in actions)
+    assert {message.message_metadata.get("tool_call_id") for message in messages if message.role == "tool"} == {
+        "tool-call-static-projects",
+        "tool-call-static-workflows",
+    }
 
 
 @pytest.mark.asyncio

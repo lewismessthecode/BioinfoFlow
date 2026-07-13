@@ -272,10 +272,12 @@ class AgentLoopController:
                         turn,
                         budget=budget,
                         token_usage=token_usage,
-                        progress=_progress_payload(
-                            tool_call_signatures,
-                            tool_result_signatures,
-                            0,
+                        progress=_pending_progress_payload(
+                            previous_tool_calls=previous_tool_call_signatures,
+                            previous_tool_results=previous_tool_result_signatures,
+                            repeat_count=repeated_tool_call_count,
+                            pending_tool_calls=tool_call_signatures,
+                            pending_tool_results=tool_result_signatures,
                         ),
                     )
                     return LoopResult(
@@ -419,6 +421,9 @@ class AgentLoopController:
                 )
                 for (item, name), result in zip(batch, results, strict=False):
                     if result.requires_resume:
+                        result_signatures.append(
+                            _pending_tool_result_signature(name, item.get("id"))
+                        )
                         result_signatures.extend(
                             await self._append_deferred_tool_results(
                                 agent_session=agent_session,
@@ -455,6 +460,9 @@ class AgentLoopController:
                 execution_target=execution_target_from_session(agent_session),
             )
             if result.requires_resume:
+                result_signatures.append(
+                    _pending_tool_result_signature(tool_name, tool_call.get("id"))
+                )
                 result_signatures.extend(
                     await self._append_deferred_tool_results(
                         agent_session=agent_session,
@@ -552,9 +560,52 @@ class AgentLoopController:
                 error_code="tool_resume_failed",
                 error_message=f"Approved tool action finished with status: {result.status}",
             )
-        loop_state = dict(getattr(turn, "loop_state", None) or {})
-        loop_state["progress"] = _progress_payload([], [], 0)
-        await self.turns.update_all(turn, loop_state=loop_state)
+        previous_progress = _progress_state(getattr(turn, "loop_state", None))
+        pending_observation = _pending_observation(getattr(turn, "loop_state", None))
+        if pending_observation is not None:
+            completed_tool_calls = pending_observation["tool_calls"]
+            completed_tool_results = pending_observation["tool_results"]
+            sentinel = _pending_tool_result_signature(action.name, action.tool_call_id)
+            try:
+                pending_index = completed_tool_results.index(sentinel)
+            except ValueError:
+                pending_index = -1
+            if pending_index >= 0:
+                completed_tool_results[pending_index] = _tool_result_signature(
+                    action.name,
+                    result,
+                )
+                repeat_count = next_repeat_count(
+                    previous_progress["previous_tool_calls"],
+                    completed_tool_calls,
+                    previous_tool_results=previous_progress["previous_tool_results"],
+                    next_tool_results=completed_tool_results,
+                    repeat_count=previous_progress["repeat_count"],
+                )
+                loop_state = dict(getattr(turn, "loop_state", None) or {})
+                loop_state["progress"] = _progress_payload(
+                    completed_tool_calls,
+                    completed_tool_results,
+                    repeat_count,
+                )
+                turn = await self.turns.update_all(turn, loop_state=loop_state)
+                if no_progress_detected(
+                    previous_progress["previous_tool_calls"],
+                    completed_tool_calls,
+                    previous_tool_results=previous_progress["previous_tool_results"],
+                    next_tool_results=completed_tool_results,
+                    repeat_count=repeat_count,
+                ):
+                    return LoopResult(
+                        termination_reason="no_progress",
+                        final_text=None,
+                        iteration_count=persisted_iteration_count,
+                        token_usage=persisted_token_usage,
+                        error_code="no_progress_detected",
+                        error_message=(
+                            "Agent repeated the same tool call without making progress."
+                        ),
+                    )
         return await self.run_turn(
             turn_id=str(turn.id),
             provider=provider,
@@ -1244,6 +1295,56 @@ def _progress_payload(
         "previous_tool_results": list(previous_tool_results),
         "repeat_count": int(repeat_count),
     }
+
+
+def _pending_progress_payload(
+    *,
+    previous_tool_calls: list[str],
+    previous_tool_results: list[str],
+    repeat_count: int,
+    pending_tool_calls: list[str],
+    pending_tool_results: list[str],
+) -> dict[str, Any]:
+    progress = _progress_payload(
+        previous_tool_calls,
+        previous_tool_results,
+        repeat_count,
+    )
+    progress["pending_observation"] = {
+        "tool_calls": list(pending_tool_calls),
+        "tool_results": list(pending_tool_results),
+    }
+    return progress
+
+
+def _pending_observation(loop_state: dict[str, Any] | None) -> dict[str, list[str]] | None:
+    progress = (loop_state or {}).get("progress")
+    if not isinstance(progress, dict):
+        return None
+    pending = progress.get("pending_observation")
+    if not isinstance(pending, dict):
+        return None
+    tool_calls = pending.get("tool_calls")
+    tool_results = pending.get("tool_results")
+    if not isinstance(tool_calls, list) or not isinstance(tool_results, list):
+        return None
+    return {
+        "tool_calls": [str(item) for item in tool_calls],
+        "tool_results": [str(item) for item in tool_results],
+    }
+
+
+def _pending_tool_result_signature(tool_name: str, tool_call_id: str | None) -> str:
+    return json.dumps(
+        {
+            "tool": tool_name,
+            "status": "pending",
+            "tool_call_id": str(tool_call_id or ""),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def _deferred_tool_result(tool_name: str) -> ToolExecutionResult:
