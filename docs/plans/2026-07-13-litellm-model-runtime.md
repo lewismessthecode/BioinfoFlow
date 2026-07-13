@@ -411,13 +411,18 @@ Review hardening scope added after the first independent pass:
 - Make `model_runtime` imports independent of `llm` package import order and
   encode completed-turn assistant history as valid Responses input messages.
 - Move Responses replay finalization behind the codec interface, bind opaque
-  continuation to its originating target, and keep only one live continuation
-  anchor per turn.
+  continuation to its originating target, keep one live continuation anchor per
+  session, and preserve it across completed turns until compaction or a target
+  change invalidates it.
 - Prevent ordinary team members from binding providers to arbitrary server
   environment variables or non-public backend network destinations while
-  preserving personal/dev and owner/admin relay workflows.
+  preserving personal/dev and owner/admin relay workflows. Enforce this at the
+  actual LiteLLM connect/redirect layer, not only with a preflight lookup.
 - Discard stale in-flight provider test results and keep omitted protocol fields
   omitted for compatibility clients.
+- Preserve phase through canonical context assembly, retain Chat assistant
+  text/tool message boundaries, block fallback after partial output, align demo
+  runtime contracts, and fail approval resume after endpoint/key rotation.
 
 - [ ] Every reviewer creates a dedicated goal before inspection. Spawn parallel
   independent reviewers for architecture boundaries,
