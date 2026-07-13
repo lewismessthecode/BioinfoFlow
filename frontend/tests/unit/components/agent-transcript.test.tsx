@@ -723,7 +723,7 @@ describe("AgentTranscript", () => {
       onDecision,
     })
 
-    expect(screen.getByTestId("inline-ask-user-card")).toBeInTheDocument()
+    expect(screen.getByTestId("inline-ask-user-card")).toHaveAttribute("tabindex", "-1")
     expect(screen.getByText("Recommended")).toBeInTheDocument()
     fireEvent.change(screen.getByPlaceholderText("Tell Bioinfoflow what to use"), {
       target: { value: "T2T-CHM13" },

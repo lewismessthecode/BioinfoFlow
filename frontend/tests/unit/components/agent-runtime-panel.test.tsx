@@ -528,10 +528,14 @@ describe("AgentSideDrawer", () => {
     expect(screen.queryByRole("button", { name: "tabs.environment" })).not.toBeInTheDocument()
   })
 
-  it("renders pending decision jump as an interactive button", () => {
+  it("scrolls and focuses the first pending decision control", () => {
     const target = document.createElement("div")
     target.id = "agent-decision-a1"
+    target.tabIndex = -1
     target.scrollIntoView = vi.fn()
+    const approve = document.createElement("button")
+    approve.textContent = "Approve"
+    target.appendChild(approve)
     document.body.appendChild(target)
 
     render(
@@ -546,7 +550,36 @@ describe("AgentSideDrawer", () => {
       block: "center",
       behavior: "smooth",
     })
+    expect(approve).toHaveFocus()
     target.remove()
+  })
+
+  it("uses instant scrolling and focuses the card for reduced motion", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({ matches: true }),
+    )
+    const target = document.createElement("div")
+    target.id = "agent-decision-a1"
+    target.tabIndex = -1
+    target.scrollIntoView = vi.fn()
+    document.body.appendChild(target)
+
+    render(
+      <AgentSideDrawer
+        events={[waitingEvent({ action_id: "a1", name: "bash" })]}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "approval.jumpToDecision" }))
+    expect(target.scrollIntoView).toHaveBeenCalledWith({
+      block: "center",
+      behavior: "auto",
+    })
+    expect(target).toHaveFocus()
+    target.remove()
+    vi.unstubAllGlobals()
   })
 })
 

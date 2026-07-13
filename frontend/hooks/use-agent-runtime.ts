@@ -105,9 +105,11 @@ export function useAgentRuntime(
   const [permissionUpdate, setPermissionUpdate] =
     useState<AgentPermissionUpdateState>(INITIAL_PERMISSION_UPDATE_STATE)
   const streamCursorRef = useRef(0)
+  const sessionListRefreshSequenceRef = useRef(0)
   const stateRefreshSequenceRef = useRef(0)
   const confirmedDraftPermissionModeRef = useRef(draftPermissionMode)
   const confirmedStorageValueRef = useRef(readStoredDraftPermissionMode())
+  const confirmedDraftSequenceRef = useRef(0)
   const confirmedSessionsRef = useRef(new Map<string, AgentRuntimeSession>())
   const latestSessionsRef = useRef<AgentRuntimeSession[]>([])
   const permissionUpdateSequenceRef = useRef(0)
@@ -161,9 +163,14 @@ export function useAgentRuntime(
   )
 
   const refreshSessions = useCallback(async () => {
+    const sequence = sessionListRefreshSequenceRef.current + 1
+    sessionListRefreshSequenceRef.current = sequence
+    const requestedActiveSessionId = activeSessionIdRef.current
     dispatch({ type: "loading" })
     try {
       const nextSessions = await listAgentRuntimeSessions(projectId)
+      if (sessionListRefreshSequenceRef.current !== sequence) return
+      if (activeSessionIdRef.current !== requestedActiveSessionId) return
       const pendingIntent = pendingPermissionIntentRef.current
       for (const session of nextSessions) {
         adoptPendingPermissionBaseline(pendingIntent, session)
@@ -186,6 +193,8 @@ export function useAgentRuntime(
       setActiveSessionId(nextActive)
       if (!nextActive) dispatch({ type: "session.selected", session: null })
     } catch (error) {
+      if (sessionListRefreshSequenceRef.current !== sequence) return
+      if (activeSessionIdRef.current !== requestedActiveSessionId) return
       dispatch({
         type: "error",
         message: error instanceof Error ? error.message : "Failed to load sessions",
@@ -555,6 +564,7 @@ export function useAgentRuntime(
         pendingPermissionIntentRef.current = null
         confirmedDraftPermissionModeRef.current = mode
         confirmedStorageValueRef.current = mode
+        confirmedDraftSequenceRef.current = draftSequence
         return Promise.resolve(null)
       }
 
@@ -592,9 +602,10 @@ export function useAgentRuntime(
               pendingPermissionIntentRef.current,
             ),
           )
-          if (permissionDraftSequenceRef.current === draftSequence) {
+          if (draftSequence >= confirmedDraftSequenceRef.current) {
             confirmedDraftPermissionModeRef.current = mode
             confirmedStorageValueRef.current = mode
+            confirmedDraftSequenceRef.current = draftSequence
           }
 
           if (

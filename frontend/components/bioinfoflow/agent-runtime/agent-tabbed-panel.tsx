@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils"
 import { ArtifactPreviewDrawer } from "./artifact-preview-drawer"
 import { BrowserTab } from "./browser-tab"
+import { jumpToDecisionTarget } from "./decision-focus"
 import { getPendingActions } from "./pending-actions"
 import { WorkspaceExplorerPanel } from "./workspace-explorer-panel"
 
@@ -138,10 +139,7 @@ export function AgentTabbedPanel({
     : null
   const jumpToPendingDecision = () => {
     if (!pendingDecisionActionId) return
-    document.getElementById(decisionScrollTargetId(pendingDecisionActionId))?.scrollIntoView({
-      block: "center",
-      behavior: "smooth",
-    })
+    jumpToDecisionTarget(decisionScrollTargetId(pendingDecisionActionId))
   }
   const onTabKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,

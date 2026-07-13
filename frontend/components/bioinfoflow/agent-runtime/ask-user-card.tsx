@@ -96,6 +96,7 @@ export function AskUserDecisionCard({
         inline && "mb-3",
       )}
       data-testid={testId}
+      tabIndex={readOnly ? undefined : -1}
     >
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
         <CircleHelp className="h-3.5 w-3.5 shrink-0" />
