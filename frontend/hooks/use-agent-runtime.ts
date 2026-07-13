@@ -559,8 +559,10 @@ export function useAgentRuntime(
             throw new Error("Permission update was superseded by a newer policy version")
           }
           confirmedSessionsRef.current.set(sessionId, updated)
-          confirmedDraftPermissionModeRef.current = mode
-          confirmedStorageValueRef.current = mode
+          if (permissionDraftSequenceRef.current === draftSequence) {
+            confirmedDraftPermissionModeRef.current = mode
+            confirmedStorageValueRef.current = mode
+          }
 
           if (
             permissionUpdateSequenceRef.current === sequence &&

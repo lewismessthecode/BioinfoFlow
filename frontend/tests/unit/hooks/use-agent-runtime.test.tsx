@@ -885,6 +885,55 @@ describe("useAgentRuntime", () => {
     expect(result.current.permissionUpdate.status).toBe("success")
   })
 
+  it("does not let an older session success replace a newer confirmed draft", async () => {
+    const firstRequest = deferred<AgentRuntimeSession>()
+    const session2 = { ...session, id: "session-2" }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.updateAgentRuntimeSessionPermissionMode
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockRejectedValueOnce(new Error("Session two failed"))
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let first!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      first = result.current.setPermissionMode("bypass")
+    })
+
+    rerender({ activeSessionId: "" })
+    await waitFor(() => expect(result.current.session).toBeNull())
+    await act(async () => {
+      await result.current.setPermissionMode("ask_each_action")
+    })
+
+    await act(async () => {
+      firstRequest.resolve({
+        ...session,
+        permission_mode: "bypass",
+        permission_policy_version: 2,
+      })
+      await first
+    })
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: session2, turns: [], events: [] })
+    rerender({ activeSessionId: "session-2" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
+    await act(async () => {
+      await result.current.setPermissionMode("guarded_auto")
+    })
+
+    expect(window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2")).toBe(
+      "ask_each_action",
+    )
+  })
+
   it("does not apply a completed permission transaction to a newly selected session", async () => {
     const request = deferred<AgentRuntimeSession>()
     const session2 = { ...session, id: "session-2", permission_policy_version: 7 }
