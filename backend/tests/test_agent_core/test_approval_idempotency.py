@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import event as sqlalchemy_event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -465,6 +466,175 @@ async def test_stale_owner_cannot_complete_tool_that_swallows_lease_loss(
     assert Counter(event.type for event in events)["action.completed"] == 0
     assert Counter(event.type for event in events)["action.failed"] == 0
     assert Counter(event.type for event in events)["action.cancelled"] == 0
+
+
+@pytest.mark.asyncio
+async def test_owner_fenced_action_transition_locks_turn_before_action_update(
+    db_session,
+):
+    session, turn = await _seed_session_turn(db_session)
+    owner_token = "execution-owner"
+    await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        lease_owner_token=owner_token,
+        lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf locked"},
+        normalized_input={"command": "printf locked"},
+        risk_level="act_high",
+        status=AgentActionStatus.RUNNING,
+    )
+    statements: list[str] = []
+
+    def record_sql(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(statement.lower().split()))
+
+    sqlalchemy_event.listen(
+        db_session.bind.sync_engine,
+        "before_cursor_execute",
+        record_sql,
+    )
+    try:
+        completed = await AgentActionRepository(db_session).transition_running(
+            str(action.id),
+            status=AgentActionStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc),
+            expected_turn_owner_token=owner_token,
+        )
+        await db_session.commit()
+    finally:
+        sqlalchemy_event.remove(
+            db_session.bind.sync_engine,
+            "before_cursor_execute",
+            record_sql,
+        )
+
+    turn_lock_index = next(
+        index
+        for index, statement in enumerate(statements)
+        if statement.startswith("update agent_turns")
+        and "lease_owner_token" in statement
+        and "status" in statement
+    )
+    action_update_index = next(
+        index
+        for index, statement in enumerate(statements)
+        if statement.startswith("update agent_actions")
+    )
+    assert completed is not None
+    assert turn_lock_index < action_update_index
+
+
+@pytest.mark.asyncio
+async def test_owner_fenced_action_transaction_serializes_replacement_claim(
+    db_session,
+):
+    session, turn = await _seed_session_turn(db_session)
+    owner_token = "execution-owner"
+    await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        lease_owner_token=owner_token,
+        lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf serialized"},
+        risk_level="act_high",
+        status=AgentActionStatus.RUNNING,
+    )
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as stale_worker, maker() as replacement_worker:
+        completed = await AgentActionRepository(stale_worker).transition_running(
+            str(action.id),
+            status=AgentActionStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc),
+            expected_turn_owner_token=owner_token,
+        )
+        replacement_claim = asyncio.create_task(
+            AgentTurnRepository(replacement_worker).claim_execution(
+                str(turn.id),
+                owner_token="replacement-owner",
+                claimed_at=datetime.now(timezone.utc),
+                lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+            )
+        )
+        await asyncio.sleep(0.05)
+        assert not replacement_claim.done()
+
+        await stale_worker.commit()
+        replacement = await asyncio.wait_for(replacement_claim, timeout=2)
+
+    assert completed is not None
+    assert replacement is not None
+    assert replacement.lease_owner_token == "replacement-owner"
+
+
+@pytest.mark.asyncio
+async def test_stale_owner_cannot_fail_or_cancel_open_actions(db_session):
+    session, turn = await _seed_session_turn(db_session)
+    await AgentTurnRepository(db_session).update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        lease_owner_token="replacement-owner",
+        lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+    failed_candidate = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf fail"},
+        risk_level="act_high",
+        status=AgentActionStatus.REQUESTED,
+    )
+    cancelled_candidate = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf cancel"},
+        risk_level="act_high",
+        status=AgentActionStatus.RUNNING,
+    )
+    failed_candidate_id = str(failed_candidate.id)
+    cancelled_candidate_id = str(cancelled_candidate.id)
+    repo = AgentActionRepository(db_session)
+
+    failed = await repo.fail_requested(
+        failed_candidate_id,
+        error={"type": "test", "message": "stale"},
+        completed_at=datetime.now(timezone.utc),
+        expected_turn_owner_token="stale-owner",
+    )
+    await db_session.rollback()
+    cancelled = await repo.cancel_open(
+        cancelled_candidate_id,
+        error={"type": "test", "message": "stale"},
+        completed_at=datetime.now(timezone.utc),
+        expected_turn_owner_token="stale-owner",
+    )
+    await db_session.rollback()
+
+    assert failed is None
+    assert cancelled is None
+    assert (
+        await repo.get_fresh(failed_candidate_id)
+    ).status == AgentActionStatus.REQUESTED
+    assert (
+        await repo.get_fresh(cancelled_candidate_id)
+    ).status == AgentActionStatus.RUNNING
 
 
 @pytest.mark.asyncio

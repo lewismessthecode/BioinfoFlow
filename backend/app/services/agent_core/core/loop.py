@@ -352,8 +352,9 @@ class AgentLoopController:
                         await self.tool_batches.cancel_continuation(
                             active_continuation_batch_id
                         )
+                    cancelled_turn = await self.turns.get_fresh(turn_id)
                     return LoopResult(
-                        termination_reason=_cancellation_reason(turn),
+                        termination_reason=_cancellation_reason(cancelled_turn or turn),
                         final_text=None,
                         iteration_count=budget.used_iterations,
                         token_usage=token_usage,
@@ -723,6 +724,11 @@ class AgentLoopController:
         prior_continuation_batch_id: str | None = None,
     ) -> None:
         await self.db.rollback()
+        if self._execution_owner_token is not None and not await self.turns.lock_execution_owner(
+            turn_id,
+            owner_token=self._execution_owner_token,
+        ):
+            raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
         agent_session = await self.sessions.get(session_id)
         turn = await self.turns.get(turn_id)
         if agent_session is None or turn is None:
@@ -774,6 +780,12 @@ class AgentLoopController:
     async def _cancel_committed_batch(
         self, batch_id: str, *, agent_session, turn
     ) -> None:
+        if self._execution_owner_token is not None and not await self.turns.lock_execution_owner(
+            str(turn.id),
+            owner_token=self._execution_owner_token,
+        ):
+            await self.db.rollback()
+            return
         now = datetime.now(timezone.utc)
         for action in await self.actions.list_for_batch(batch_id):
             if action.status in {
@@ -781,15 +793,14 @@ class AgentLoopController:
                 AgentActionStatus.REQUESTED,
                 AgentActionStatus.RUNNING,
             }:
-                await self.actions.update_all(
-                    action,
-                    status=AgentActionStatus.CANCELLED,
-                    requires_resume=False,
+                await self.actions.cancel_open(
+                    str(action.id),
                     error={
                         "type": "CancelledError",
                         "message": "Tool batch execution was cancelled.",
                     },
                     completed_at=now,
+                    expected_turn_owner_token=self._execution_owner_token,
                 )
         await self.tool_batches.batches.cancel_nonterminal(batch_id)
         await self._append_missing_batch_results(
@@ -819,6 +830,7 @@ class AgentLoopController:
                 result = await self.executor.cancel_action(
                     action_id=prepared_result.action_id,
                     reason="A user interaction in this tool-call batch is exclusive.",
+                    expected_turn_owner_token=self._execution_owner_token,
                 )
             result_signatures.append(_tool_result_signature(tool_name, result))
         await self.tool_batches.settle(batch_id)

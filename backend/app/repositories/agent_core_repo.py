@@ -228,6 +228,19 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         await self.session.commit()
         return renewed
 
+    async def lock_execution_owner(self, turn_id: str, *, owner_token: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.lease_owner_token == owner_token,
+            )
+            .values(updated_at=self.model.updated_at)
+            .returning(self.model.id)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def update_claimed_execution(
         self,
         turn_id: str,
@@ -539,6 +552,11 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         expected_policy_version: int | None = None,
         expected_turn_owner_token: str | None = None,
     ) -> AgentAction | None:
+        if expected_turn_owner_token is not None and not await self._lock_turn_owner(
+            action_id,
+            owner_token=expected_turn_owner_token,
+        ):
+            return None
         values = {
             "status": AgentActionStatus.RUNNING,
             "requires_resume": False,
@@ -568,16 +586,6 @@ class AgentActionRepository(BaseRepository[AgentAction]):
                     )
                 )
             )
-        if expected_turn_owner_token is not None:
-            conditions.append(
-                exists(
-                    select(AgentTurn.id).where(
-                        AgentTurn.id == self.model.turn_id,
-                        AgentTurn.status == AgentTurnStatus.RUNNING,
-                        AgentTurn.lease_owner_token == expected_turn_owner_token,
-                    )
-                )
-            )
         result = await self.session.execute(
             update(self.model)
             .where(*conditions)
@@ -598,6 +606,11 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         error: dict | None = None,
         expected_turn_owner_token: str | None = None,
     ) -> AgentAction | None:
+        if expected_turn_owner_token is not None and not await self._lock_turn_owner(
+            action_id,
+            owner_token=expected_turn_owner_token,
+        ):
+            return None
         values = {
             "status": status,
             "completed_at": completed_at,
@@ -612,16 +625,6 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             self.model.id == action_id,
             self.model.status == AgentActionStatus.RUNNING,
         ]
-        if expected_turn_owner_token is not None:
-            conditions.append(
-                exists(
-                    select(AgentTurn.id).where(
-                        AgentTurn.id == self.model.turn_id,
-                        AgentTurn.status == AgentTurnStatus.RUNNING,
-                        AgentTurn.lease_owner_token == expected_turn_owner_token,
-                    )
-                )
-            )
         updated = await self.session.execute(
             update(self.model)
             .where(*conditions)
@@ -637,7 +640,13 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         *,
         error: dict,
         completed_at: datetime,
+        expected_turn_owner_token: str | None = None,
     ) -> AgentAction | None:
+        if expected_turn_owner_token is not None and not await self._lock_turn_owner(
+            action_id,
+            owner_token=expected_turn_owner_token,
+        ):
+            return None
         updated = await self.session.execute(
             update(self.model)
             .where(
@@ -671,7 +680,13 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         permission_decision: dict,
         evaluated_policy_version: int,
         permission_context_snapshot: dict,
+        expected_turn_owner_token: str | None = None,
     ) -> AgentAction | None:
+        if expected_turn_owner_token is not None and not await self._lock_turn_owner(
+            action_id,
+            owner_token=expected_turn_owner_token,
+        ):
+            return None
         result = await self.session.execute(
             update(self.model)
             .where(
@@ -705,7 +720,13 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         permission_decision: dict | None = None,
         evaluated_policy_version: int | None = None,
         permission_context_snapshot: dict | None = None,
+        expected_turn_owner_token: str | None = None,
     ) -> AgentAction | None:
+        if expected_turn_owner_token is not None and not await self._lock_turn_owner(
+            action_id,
+            owner_token=expected_turn_owner_token,
+        ):
+            return None
         values = {
             "status": AgentActionStatus.FAILED,
             "requires_resume": False,
@@ -733,6 +754,17 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
+
+    async def _lock_turn_owner(self, action_id: str, *, owner_token: str) -> bool:
+        turn_id = await self.session.scalar(
+            select(self.model.turn_id).where(self.model.id == action_id)
+        )
+        if turn_id is None:
+            return False
+        return await AgentTurnRepository(self.session).lock_execution_owner(
+            str(turn_id),
+            owner_token=owner_token,
+        )
 
 
 class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):

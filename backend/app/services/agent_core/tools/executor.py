@@ -13,7 +13,10 @@ from app.repositories.agent_core_repo import (
     AgentArtifactRepository,
 )
 from app.services.agent_core.actions import AgentActionService
-from app.services.agent_core.core.lease import is_lease_loss_cancellation
+from app.services.agent_core.core.lease import (
+    LEASE_LOSS_CANCELLATION,
+    is_lease_loss_cancellation,
+)
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
@@ -371,17 +374,18 @@ class AgentToolExecutor:
             permission_context_snapshot=permission_context.snapshot(),
             commit=commit,
         )
-        update = (
-            self.action_repo.update_all
-            if commit
-            else self.action_repo.update_all_pending
-        )
-        action = await update(
-            action,
-            status=AgentActionStatus.FAILED,
+        failed = await self.action_repo.fail_requested(
+            str(action.id),
             error=error,
             completed_at=datetime.now(timezone.utc),
+            expected_turn_owner_token=context.execution_owner_token,
         )
+        if failed is None:
+            await self.session.rollback()
+            if context.execution_owner_token is not None:
+                raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
+            return await self._current_result(str(action.id), fallback=action)
+        action = failed
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
@@ -428,7 +432,11 @@ class AgentToolExecutor:
         return await self._run_action(action=action, tool=tool, context=context)
 
     async def cancel_action(
-        self, *, action_id: str, reason: str
+        self,
+        *,
+        action_id: str,
+        reason: str,
+        expected_turn_owner_token: str | None = None,
     ) -> ToolExecutionResult:
         action = await self.action_repo.get(action_id)
         if action is None:
@@ -438,6 +446,7 @@ class AgentToolExecutor:
             action_id,
             error=error,
             completed_at=datetime.now(timezone.utc),
+            expected_turn_owner_token=expected_turn_owner_token,
         )
         if cancelled is None:
             await self.session.rollback()
@@ -466,6 +475,7 @@ class AgentToolExecutor:
         permission_decision: dict[str, Any] | None = None,
         evaluated_policy_version: int | None = None,
         permission_context_snapshot: dict[str, Any] | None = None,
+        expected_turn_owner_token: str | None = None,
     ) -> ToolExecutionResult:
         error = {"type": "PermissionDeniedError", "message": error_message}
         failed = await self.action_repo.fail_requested(
@@ -478,8 +488,12 @@ class AgentToolExecutor:
             permission_decision=permission_decision,
             evaluated_policy_version=evaluated_policy_version,
             permission_context_snapshot=permission_context_snapshot,
+            expected_turn_owner_token=expected_turn_owner_token,
         )
         if failed is None:
+            await self.session.rollback()
+            if expected_turn_owner_token is not None:
+                raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
             return await self._current_result(str(action.id), fallback=action)
         await self.ledger.append(
             session_id=str(failed.session_id),
@@ -547,6 +561,7 @@ class AgentToolExecutor:
             return await self._fail_requested_permission(
                 action=action,
                 error_message="; ".join(exposure.reasons),
+                expected_turn_owner_token=context.execution_owner_token,
             )
 
         current_risk = _produce_risk_assessment(
@@ -585,6 +600,7 @@ class AgentToolExecutor:
                 permission_decision=denied_decision,
                 evaluated_policy_version=permission_context.policy_version,
                 permission_context_snapshot=snapshot,
+                expected_turn_owner_token=context.execution_owner_token,
             )
 
         requires_approval = (
@@ -605,6 +621,7 @@ class AgentToolExecutor:
                 permission_decision=permission_decision,
                 evaluated_policy_version=permission_context.policy_version,
                 permission_context_snapshot=snapshot,
+                expected_turn_owner_token=context.execution_owner_token,
             )
             if waiting is None:
                 await self.session.rollback()
@@ -682,6 +699,7 @@ class AgentToolExecutor:
                         "Permission policy changed repeatedly before the action "
                         "could be claimed."
                     ),
+                    expected_turn_owner_token=context.execution_owner_token,
                 )
             return await self._current_result(action_id, fallback=requested_action)
         try:
