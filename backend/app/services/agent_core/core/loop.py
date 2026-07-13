@@ -25,7 +25,10 @@ from app.services.agent_core.core.budget import IterationBudget
 from app.services.agent_core.core.guardrails import no_progress_detected
 from app.services.agent_core.core.interrupt import is_interrupt_requested
 from app.services.agent_core.core.retry import RetryPolicy, run_with_retry
-from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, RuntimeStrategy
+from app.services.agent_core.core.runtime_strategy import (
+    RuntimeCapabilities,
+    RuntimeStrategy,
+)
 from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import execution_target_from_session
@@ -33,12 +36,19 @@ from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
-from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
+from app.services.agent_core.tools.executor import (
+    AgentToolExecutor,
+    ToolExecutionResult,
+)
 from app.services.agent_core.tools.toolsets import (
     decode_provider_tool_name,
     model_tool_definitions,
 )
-from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
+from app.services.agent_core.transcript import (
+    AgentTranscriptStore,
+    text_part,
+    tool_calls_part,
+)
 from app.services.agent_core.transcript.messages import (
     RESPONSES_CONTINUATION_METADATA_KEY,
     latest_responses_continuation_anchor,
@@ -246,7 +256,9 @@ class AgentLoopController:
             token_usage = _merge_usage(token_usage, streamed.token_usage)
             tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
             if tool_calls:
-                tool_call_signatures = [_tool_call_signature(tool_call) for tool_call in tool_calls]
+                tool_call_signatures = [
+                    _tool_call_signature(tool_call) for tool_call in tool_calls
+                ]
                 await self._append_assistant_tool_calls(
                     agent_session=agent_session,
                     turn=turn,
@@ -362,7 +374,11 @@ class AgentLoopController:
                             streamed.continuation.advance_canonical_input(
                                 model_input_parts_from_message(
                                     "assistant",
-                                    [text_part(streamed.commentary, phase="commentary")],
+                                    [
+                                        text_part(
+                                            streamed.commentary, phase="commentary"
+                                        )
+                                    ],
                                 )
                             ),
                         ),
@@ -396,7 +412,9 @@ class AgentLoopController:
             parts.append(
                 text_part(
                     final_text,
-                    phase="final_answer" if target.wire_protocol == "responses" else None,
+                    phase="final_answer"
+                    if target.wire_protocol == "responses"
+                    else None,
                 )
             )
             final_continuation = (
@@ -584,6 +602,8 @@ class AgentLoopController:
                 result = _tool_result_for_terminal_action(sibling)
             else:
                 continue
+            if result.status not in TERMINAL_ACTION_STATUSES:
+                continue
             await self._append_tool_result(
                 agent_session=agent_session,
                 turn=turn,
@@ -608,7 +628,10 @@ class AgentLoopController:
                 turn_id=str(turn.id),
                 tool_call_id=sibling.tool_call_id,
             )
-            if sibling.status not in TERMINAL_ACTION_STATUSES or matching_tool_result is None:
+            if (
+                sibling.status not in TERMINAL_ACTION_STATUSES
+                or matching_tool_result is None
+            ):
                 batch_is_resolved = False
             elif sibling.status not in {
                 AgentActionStatus.COMPLETED,
@@ -670,7 +693,9 @@ class AgentLoopController:
                     phase="final_answer" if wire_protocol == "responses" else None,
                 )
             )
-        parts.append(tool_calls_part([_provider_tool_call(call) for call in tool_calls]))
+        parts.append(
+            tool_calls_part([_provider_tool_call(call) for call in tool_calls])
+        )
         if continuation is not None:
             continuation = continuation.advance_canonical_input(
                 model_input_parts_from_message("assistant", parts)
@@ -750,7 +775,9 @@ class AgentLoopController:
             )
         return None
 
-    async def _execute_tool_call_isolated(self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str):
+    async def _execute_tool_call_isolated(
+        self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str
+    ):
         bind = self.db.bind
         session_factory = (
             async_sessionmaker(bind=bind, expire_on_commit=False)
@@ -879,7 +906,9 @@ class AgentLoopController:
                         index=event.index,
                     ),
                 )
-                started_before = bool(state.call_id and state.name) if seen_before else False
+                started_before = (
+                    bool(state.call_id and state.name) if seen_before else False
+                )
                 if event.call_id:
                     state.call_id = event.call_id
                 if event.name:
@@ -1046,10 +1075,14 @@ class AgentLoopController:
         current_turn = await self.turns.get(str(turn.id))
         if current_turn is None:
             return None
-        if current_turn.status == AgentTurnStatus.CANCELLED and result.termination_reason not in {
-            "cancelled",
-            "interrupted",
-        }:
+        if (
+            current_turn.status == AgentTurnStatus.CANCELLED
+            and result.termination_reason
+            not in {
+                "cancelled",
+                "interrupted",
+            }
+        ):
             return current_turn
         turn = current_turn
 
@@ -1090,7 +1123,11 @@ class AgentLoopController:
             lease_until=None,
             completed_at=datetime.now(timezone.utc)
             if status
-            in {AgentTurnStatus.COMPLETED, AgentTurnStatus.FAILED, AgentTurnStatus.CANCELLED}
+            in {
+                AgentTurnStatus.COMPLETED,
+                AgentTurnStatus.FAILED,
+                AgentTurnStatus.CANCELLED,
+            }
             else None,
         )
         if result.termination_reason == "assistant_final":
@@ -1188,8 +1225,12 @@ def _turn_lease_duration():
 def _retry_policy() -> RetryPolicy:
     return RetryPolicy(
         max_attempts=max(int(settings.agent_retry_max_attempts or 1), 1),
-        base_delay_seconds=max(float(settings.agent_retry_base_delay_seconds or 0.0), 0.0),
-        max_delay_seconds=max(float(settings.agent_retry_max_delay_seconds or 0.0), 0.0),
+        base_delay_seconds=max(
+            float(settings.agent_retry_base_delay_seconds or 0.0), 0.0
+        ),
+        max_delay_seconds=max(
+            float(settings.agent_retry_max_delay_seconds or 0.0), 0.0
+        ),
     )
 
 

@@ -60,11 +60,70 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
         total_count = await self.session.scalar(count_stmt)
         total = total_count or 0
-        return items, Pagination(limit=limit, has_more=total > len(items), total_count=total)
+        return items, Pagination(
+            limit=limit, has_more=total > len(items), total_count=total
+        )
 
 
 class AgentTurnRepository(BaseRepository[AgentTurn]):
     model = AgentTurn
+
+    def ensure_clean_resume_claim_session(self) -> None:
+        """Require a resume worker to claim ownership from a clean unit of work."""
+        if self.session.new or self.session.dirty or self.session.deleted:
+            raise RuntimeError("Atomic turn resume claim requires a clean session")
+
+    async def claim_action_resume(
+        self,
+        turn_id: str,
+        *,
+        claimed_at: datetime,
+        lease_until: datetime,
+    ) -> tuple[AgentTurn | None, bool]:
+        """Atomically claim ownership of approval-resume side effects.
+
+        A normal approval wait and a recovery-enqueued running turn are both
+        claimable when they have no active lease. The conditional UPDATE is
+        the cross-process ownership boundary and uses only portable SQL so it
+        has the same compare-and-set semantics on SQLite and PostgreSQL.
+        """
+        self.ensure_clean_resume_claim_session()
+        await self.session.commit()
+        no_active_lease = or_(
+            self.model.lease_until.is_(None),
+            self.model.lease_until <= claimed_at,
+        )
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.WAITING_APPROVAL,
+                        AgentTurnStatus.RUNNING,
+                    ]
+                ),
+                no_active_lease,
+            )
+            .values(
+                status=AgentTurnStatus.RUNNING,
+                started_at=func.coalesce(self.model.started_at, claimed_at),
+                completed_at=None,
+                error_code=None,
+                error_message=None,
+                claimed_at=claimed_at,
+                lease_until=lease_until,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        claimed = result.rowcount == 1
+        await self.session.commit()
+        turn = await self.session.scalar(
+            select(self.model)
+            .where(self.model.id == turn_id)
+            .execution_options(populate_existing=True)
+        )
+        return turn, claimed
 
     async def list_for_session(self, session_id: str) -> list[AgentTurn]:
         stmt = (
@@ -150,7 +209,9 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
                 return message
         return None
 
-    async def shift_ordering_indices(self, session_id: str, *, starting_at: int, delta: int = 1) -> None:
+    async def shift_ordering_indices(
+        self, session_id: str, *, starting_at: int, delta: int = 1
+    ) -> None:
         if delta == 0:
             return
         await self.session.execute(
@@ -172,7 +233,9 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
             message.status = "superseded"
         await self.session.commit()
 
-    async def update_message(self, message: AgentMessage, **data: object) -> AgentMessage:
+    async def update_message(
+        self, message: AgentMessage, **data: object
+    ) -> AgentMessage:
         for key, value in data.items():
             setattr(message, key, value)
         await self.session.commit()
@@ -270,7 +333,9 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
     model = AgentEvent
 
     async def next_seq(self, session_id: str) -> int:
-        stmt = select(func.max(self.model.seq)).where(self.model.session_id == session_id)
+        stmt = select(func.max(self.model.seq)).where(
+            self.model.session_id == session_id
+        )
         current = await self.session.scalar(stmt)
         return int(current or 0) + 1
 

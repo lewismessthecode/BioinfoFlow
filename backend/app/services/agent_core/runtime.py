@@ -149,7 +149,9 @@ class AgentCoreRuntime:
                 error_code="model_selection_missing",
             )
 
-        result = await self._run_model_attempts(turn=turn, session=session, resolved=resolved)
+        result = await self._run_model_attempts(
+            turn=turn, session=session, resolved=resolved
+        )
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
             return None
@@ -176,6 +178,17 @@ class AgentCoreRuntime:
         }:
             return turn
 
+        now = datetime.now(timezone.utc)
+        turn, claimed = await self.turn_repo.claim_action_resume(
+            str(turn.id),
+            claimed_at=now,
+            lease_until=now + _turn_lease_duration(),
+        )
+        if turn is None:
+            return None
+        if not claimed:
+            return turn
+
         session = await self.session_repo.get(str(turn.session_id))
         if session is None:
             return await self._fail_turn(
@@ -184,17 +197,6 @@ class AgentCoreRuntime:
                 error_code="session_not_found",
             )
 
-        now = datetime.now(timezone.utc)
-        turn = await self.turn_repo.update_all(
-            turn,
-            status=AgentTurnStatus.RUNNING,
-            started_at=turn.started_at or now,
-            completed_at=None,
-            error_code=None,
-            error_message=None,
-            claimed_at=now,
-            lease_until=now + _turn_lease_duration(),
-        )
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -209,7 +211,9 @@ class AgentCoreRuntime:
             resume_action_id=action_id,
         )
 
-        resolved = await self._resolve_resume_model_selection(turn=turn, session=session)
+        resolved = await self._resolve_resume_model_selection(
+            turn=turn, session=session
+        )
         if resolved is None:
             await self._close_failed_resume_action(
                 action_repo=action_repo,
@@ -369,7 +373,10 @@ class AgentCoreRuntime:
                     {"profile_id": snapshot.get("requested_model_profile_id")}
                 ),
             ),
-            ("turn", normalize_model_selection(snapshot.get("requested_model_selection"))),
+            (
+                "turn",
+                normalize_model_selection(snapshot.get("requested_model_selection")),
+            ),
             (
                 "session",
                 session_model_selection_from_metadata(
@@ -378,7 +385,9 @@ class AgentCoreRuntime:
             ),
             (
                 "session_profile",
-                normalize_model_selection({"profile_id": session.default_model_profile_id}),
+                normalize_model_selection(
+                    {"profile_id": session.default_model_profile_id}
+                ),
             ),
         ]
         for source, selection in candidates:
@@ -516,9 +525,7 @@ class AgentCoreRuntime:
         ):
             return None
         material = resolve_credential_material(credential)
-        wire_protocol = str(
-            getattr(provider, "wire_protocol", "chat_completions")
-        )
+        wire_protocol = str(getattr(provider, "wire_protocol", "chat_completions"))
         routed_model_name = route_provider_model_name(
             provider.kind,
             model.model_id,
@@ -586,7 +593,9 @@ class AgentCoreRuntime:
                 key=_default_provider_rank,
             )
             for provider in scoped:
-                credential = await self.llm_credentials.get_for_provider(str(provider.id))
+                credential = await self.llm_credentials.get_for_provider(
+                    str(provider.id)
+                )
                 metadata = provider.provider_metadata or {}
                 if scope == "global" and not (
                     metadata.get("envManaged") is True
@@ -621,7 +630,12 @@ class AgentCoreRuntime:
             self.turn_repo.session,
             model_gateway=self.model_gateway,
         )
-        attempts = [resolved, *await self._resolve_fallback_candidates(turn=turn, session=session, resolved=resolved)]
+        attempts = [
+            resolved,
+            *await self._resolve_fallback_candidates(
+                turn=turn, session=session, resolved=resolved
+            ),
+        ]
         next_resume_action_id = resume_action_id
         for attempt_index, candidate in enumerate(attempts):
             fresh_turn = await self.turn_repo.get(str(turn.id))
@@ -677,7 +691,9 @@ class AgentCoreRuntime:
                 )
             if not should_try_fallback(result) or attempt_index == len(attempts) - 1:
                 return result
-        raise RuntimeError("Agent runtime exhausted model attempts without returning a result.")
+        raise RuntimeError(
+            "Agent runtime exhausted model attempts without returning a result."
+        )
 
     async def _persist_model_resolution(
         self,
@@ -710,9 +726,7 @@ class AgentCoreRuntime:
             "wire_protocol": resolved.get("wire_protocol") or "chat_completions",
             "base_url": request_args.get("api_base"),
         }
-        snapshot["_resolved_model_target_revision"] = resolved.get(
-            "target_revision"
-        )
+        snapshot["_resolved_model_target_revision"] = resolved.get("target_revision")
         if resolved.get("model_id"):
             snapshot["resolved_model_id"] = resolved["model_id"]
         if resolved.get("profile_id"):
@@ -879,6 +893,8 @@ def _target_identity_matches_snapshot(
         "wire_protocol": snapshot.get("wire_protocol") or "chat_completions",
         "base_url": snapshot.get("base_url"),
     }
+
+
 def _turn_lease_duration() -> timedelta:
     seconds = max(int(getattr(settings, "agent_turn_lease_seconds", 300) or 300), 1)
     return timedelta(seconds=seconds)
