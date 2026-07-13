@@ -12,7 +12,10 @@ from app.repositories.agent_core_repo import AgentSessionRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.authorization_service import AuthorizationService
-from app.services.agent_core.execution_target import selected_remote_connection_ids_from_policy
+from app.services.agent_core.execution_target import (
+    execution_target_from_session,
+    selected_remote_connection_ids_from_policy,
+)
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.remote_execution import (
@@ -437,6 +440,10 @@ async def _selected_remote_connection_ids(
         return []
     if str(session.workspace_id) != workspace_id or str(session.user_id) != user_id:
         return []
+    execution_target = execution_target_from_session(session)
+    target_connection_id = execution_target.get("connection_id")
+    if target_connection_id and _is_uuid_string(target_connection_id):
+        return [target_connection_id]
     project_connection_id = await _session_remote_project_connection_id(db, session)
     if project_connection_id:
         return [project_connection_id]

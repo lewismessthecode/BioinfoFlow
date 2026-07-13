@@ -591,7 +591,7 @@ async def test_remote_project_session_ignores_metadata_connection_override(db_se
 
 
 @pytest.mark.asyncio
-async def test_remote_project_resolver_ignores_metadata_added_after_session_create(
+async def test_remote_project_resolver_follows_current_metadata_target(
     db_session,
 ):
     service = RemoteConnectionService(db_session)
@@ -649,13 +649,198 @@ async def test_remote_project_resolver_ignores_metadata_added_after_session_crea
         session_id=str(agent_session.id),
     )
 
-    assert [connection.id for connection in connections] == [str(project_connection.id)]
+    assert [connection.id for connection in connections] == [str(metadata_connection.id)]
     with pytest.raises(NotFoundError):
         await resolver.get(
-            str(metadata_connection.id),
+            str(project_connection.id),
             workspace_id="workspace-1",
             user_id="user-1",
             session_id=str(agent_session.id),
+        )
+
+
+@pytest.mark.asyncio
+async def test_remote_project_context_follows_explicit_execution_target_override(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "agent_project_instructions_max_bytes", 0)
+    connection_service = RemoteConnectionService(db_session)
+    project_connection = await connection_service.create_connection(
+        {
+            "name": "Project Phoenix",
+            "host": "project-phoenix.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "project-phoenix",
+        },
+        workspace_id="workspace-1",
+    )
+    target_connection = await connection_service.create_connection(
+        {
+            "name": "Current Phoenix",
+            "host": "current-phoenix.example.org",
+            "port": 22,
+            "username": "bob",
+            "auth_method": "ssh_config",
+            "ssh_alias": "current-phoenix",
+        },
+        workspace_id="workspace-1",
+    )
+    from app.services.project_service import ProjectService
+
+    project = await ProjectService(db_session).create_project(
+        {
+            "name": "Project A",
+            "workspace_id": "workspace-1",
+            "remote_connection_id": str(project_connection.id),
+            "remote_root_path": "/remote/project-a",
+        },
+        user_id="user-1",
+    )
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Inspect the current Phoenix target.",
+        execution_target=execution_target_from_session(session),
+    )
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        updates={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(target_connection.id),
+            }
+        },
+    )
+    exposed_tools = ToolsetExposure(build_default_tool_registry()).exposed_specs(
+        policy={"name": "execution"},
+        execution_target=execution_target_from_session(session),
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+        exposed_tools=exposed_tools,
+    )
+    system_content = messages[0]["content"]
+    exposed_names = {tool.name for tool in exposed_tools}
+
+    assert f"Selected remote connection: Current Phoenix ({target_connection.id})" in system_content
+    assert "bob@current-phoenix.example.org" in system_content
+    assert "Project Phoenix" not in system_content
+    assert "project-phoenix.example.org" not in system_content
+    assert "## Remote project" not in system_content
+    assert "/remote/project-a" not in system_content
+    assert "Working directory:" not in system_content
+    assert "## Platform inventory" not in system_content
+    assert "## Bioinfoflow local platform" not in system_content
+    assert not any(
+        name.startswith(("files.", "projects.", "workflows.", "runs.", "images.", "scheduler."))
+        for name in exposed_names
+    )
+
+
+@pytest.mark.asyncio
+async def test_remote_exec_follows_explicit_target_instead_of_project_connection(
+    db_session,
+):
+    connection_service = RemoteConnectionService(db_session)
+    project_connection = await connection_service.create_connection(
+        {
+            "name": "Project Phoenix",
+            "host": "project-phoenix.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "project-phoenix",
+        },
+        workspace_id="workspace-1",
+    )
+    target_connection = await connection_service.create_connection(
+        {
+            "name": "Current Phoenix",
+            "host": "current-phoenix.example.org",
+            "port": 22,
+            "username": "bob",
+            "auth_method": "ssh_config",
+            "ssh_alias": "current-phoenix",
+        },
+        workspace_id="workspace-1",
+    )
+    from app.services.project_service import ProjectService
+
+    project = await ProjectService(db_session).create_project(
+        {
+            "name": "Project A",
+            "workspace_id": "workspace-1",
+            "remote_connection_id": str(project_connection.id),
+            "remote_root_path": "/remote/project-a",
+        },
+        user_id="user-1",
+    )
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+    )
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        updates={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(target_connection.id),
+            }
+        },
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="current-phoenix.example.org\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    resolver = DatabaseRemoteConnectionResolver(db_session)
+    tool = RemoteExecTool(executor=executor)
+
+    connections = await resolver.list(
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(session.id),
+    )
+    result = await tool.run(
+        {"command": "hostname"},
+        _tool_context(db_session, session_id=str(session.id)),
+    )
+
+    assert [connection.id for connection in connections] == [str(target_connection.id)]
+    assert result["connection"]["id"] == str(target_connection.id)
+    assert result["working_directory"] is None
+    assert executor.calls[0]["connection"].id == str(target_connection.id)
+    assert executor.calls[0]["command"] == "hostname"
+    with pytest.raises(NotFoundError):
+        await resolver.get(
+            str(project_connection.id),
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(session.id),
         )
 
 

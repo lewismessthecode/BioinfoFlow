@@ -20,16 +20,23 @@ async def render_remote_connection_context(
     db: AsyncSession,
     agent_session,
     *,
+    execution_target: dict[str, str] | None = None,
     resolver_factory: ResolverFactory | None = None,
 ) -> str | None:
     remote_project = await selected_remote_project(db, agent_session)
-    connection_id = (
-        str(remote_project.remote_connection_id)
-        if remote_project
-        else selected_remote_connection_id(agent_session)
+    connection_id = _selected_id_from_policy(
+        {"execution_target": execution_target}
+        if execution_target is not None
+        else getattr(agent_session, "session_metadata", None)
     )
     if not connection_id:
+        connection_id = selected_remote_connection_id(agent_session)
+    if not connection_id and remote_project:
+        connection_id = str(remote_project.remote_connection_id)
+    if not connection_id:
         return None
+    if remote_project and str(remote_project.remote_connection_id) != connection_id:
+        remote_project = None
     resolver = (resolver_factory or SessionMetadataRemoteConnectionResolver)(db)
     try:
         connection = await resolver.get(

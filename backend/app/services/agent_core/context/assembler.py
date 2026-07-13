@@ -147,6 +147,7 @@ class AgentContextAssembler:
             remote_context = await render_remote_connection_context(
                 self.db,
                 agent_session,
+                execution_target=execution_target,
             )
             if remote_context:
                 lines.append("")
