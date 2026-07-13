@@ -18,10 +18,16 @@ from app.repositories.agent_core_repo import (
 )
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.budget import IterationBudget
-from app.services.agent_core.core.guardrails import no_progress_detected
+from app.services.agent_core.core.guardrails import (
+    next_repeat_count,
+    no_progress_detected,
+)
 from app.services.agent_core.core.interrupt import is_interrupt_requested
 from app.services.agent_core.core.retry import RetryPolicy, run_with_retry
-from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, RuntimeStrategy
+from app.services.agent_core.core.runtime_strategy import (
+    RuntimeCapabilities,
+    RuntimeStrategy,
+)
 from app.services.agent_core.core.stream_adapter import (
     StreamCompletionResult,
     StreamToolCall,
@@ -37,12 +43,19 @@ from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
-from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
+from app.services.agent_core.tools.executor import (
+    AgentToolExecutor,
+    ToolExecutionResult,
+)
 from app.services.agent_core.tools.toolsets import (
     decode_provider_tool_name,
     provider_tool_specs,
 )
-from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
+from app.services.agent_core.transcript import (
+    AgentTranscriptStore,
+    text_part,
+    tool_calls_part,
+)
 from app.services.llm.provider_templates import litellm_model_name
 from app.utils.exceptions import PermissionDeniedError
 from app.utils.logging import get_logger
@@ -93,7 +106,12 @@ class AgentLoopController:
                 error_message="Agent session could not be loaded.",
             )
 
-        budget = IterationBudget(max_iterations=_max_iterations())
+        persisted_budget = dict(getattr(turn, "budget_snapshot", None) or {})
+        persisted_max_iterations = int(persisted_budget.get("max_iterations") or 0)
+        budget = IterationBudget(
+            max_iterations=persisted_max_iterations or _max_iterations(),
+            used_iterations=int(getattr(turn, "iteration_count", 0) or 0),
+        )
         tools_enabled = capabilities.supports_tools and strategy.allow_tools
         role = (
             "worker"
@@ -111,10 +129,11 @@ class AgentLoopController:
             else []
         )
         tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
-        token_usage: dict[str, Any] | None = None
-        previous_tool_call_signatures: list[str] = []
-        previous_tool_result_signatures: list[str] = []
-        repeated_tool_call_count = 0
+        token_usage = dict(getattr(turn, "token_usage", None) or {}) or None
+        progress = _progress_state(getattr(turn, "loop_state", None))
+        previous_tool_call_signatures = progress["previous_tool_calls"]
+        previous_tool_result_signatures = progress["previous_tool_results"]
+        repeated_tool_call_count = progress["repeat_count"]
         empty_response_retries_remaining = 1
 
         while budget.consume():
@@ -127,6 +146,16 @@ class AgentLoopController:
                     error_code="turn_not_found",
                     error_message="Agent turn could not be loaded.",
                 )
+            turn = await self._checkpoint_loop_state(
+                turn,
+                budget=budget,
+                token_usage=token_usage,
+                progress=_progress_payload(
+                    previous_tool_call_signatures,
+                    previous_tool_result_signatures,
+                    repeated_tool_call_count,
+                ),
+            )
             if turn.status == AgentTurnStatus.CANCELLED or is_interrupt_requested(turn):
                 return LoopResult(
                     termination_reason=_cancellation_reason(turn),
@@ -193,9 +222,21 @@ class AgentLoopController:
                 )
 
             token_usage = _merge_usage(token_usage, streamed.token_usage)
+            turn = await self._checkpoint_loop_state(
+                turn,
+                budget=budget,
+                token_usage=token_usage,
+                progress=_progress_payload(
+                    previous_tool_call_signatures,
+                    previous_tool_result_signatures,
+                    repeated_tool_call_count,
+                ),
+            )
             tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
             if tool_calls:
-                tool_call_signatures = [_tool_call_signature(tool_call) for tool_call in tool_calls]
+                tool_call_signatures = [
+                    _tool_call_signature(tool_call) for tool_call in tool_calls
+                ]
                 await self._append_assistant_tool_calls(
                     agent_session=agent_session,
                     turn=turn,
@@ -233,10 +274,22 @@ class AgentLoopController:
                         iteration_count=budget.used_iterations,
                         token_usage=token_usage,
                     )
-                repeated_tool_call_count = (
-                    repeated_tool_call_count + 1
-                    if previous_tool_call_signatures == tool_call_signatures
-                    else 1
+                repeated_tool_call_count = next_repeat_count(
+                    previous_tool_call_signatures,
+                    tool_call_signatures,
+                    previous_tool_results=previous_tool_result_signatures,
+                    next_tool_results=tool_result_signatures,
+                    repeat_count=repeated_tool_call_count,
+                )
+                turn = await self._checkpoint_loop_state(
+                    turn,
+                    budget=budget,
+                    token_usage=token_usage,
+                    progress=_progress_payload(
+                        tool_call_signatures,
+                        tool_result_signatures,
+                        repeated_tool_call_count,
+                    ),
                 )
                 if no_progress_detected(
                     previous_tool_call_signatures,
@@ -270,6 +323,12 @@ class AgentLoopController:
             previous_tool_call_signatures = []
             previous_tool_result_signatures = []
             repeated_tool_call_count = 0
+            turn = await self._checkpoint_loop_state(
+                turn,
+                budget=budget,
+                token_usage=token_usage,
+                progress=_progress_payload([], [], 0),
+            )
             final_text = streamed.text
             if not final_text:
                 if empty_response_retries_remaining > 0:
@@ -322,7 +381,6 @@ class AgentLoopController:
         turn,
         tool_calls: list[dict],
     ) -> tuple[bool, list[str]]:
-        waiting = False
         result_signatures: list[str] = []
         index = 0
         while index < len(tool_calls):
@@ -351,8 +409,14 @@ class AgentLoopController:
                 )
                 for (item, name), result in zip(batch, results, strict=False):
                     if result.requires_resume:
-                        waiting = True
-                        continue
+                        result_signatures.extend(
+                            await self._append_deferred_tool_results(
+                                agent_session=agent_session,
+                                turn=turn,
+                                tool_calls=tool_calls[index:],
+                            )
+                        )
+                        return True, result_signatures
                     result_signatures.append(_tool_result_signature(name, result))
                     await self._append_tool_result(
                         agent_session=agent_session,
@@ -381,9 +445,14 @@ class AgentLoopController:
                 execution_target=execution_target_from_session(agent_session),
             )
             if result.requires_resume:
-                waiting = True
-                index += 1
-                continue
+                result_signatures.extend(
+                    await self._append_deferred_tool_results(
+                        agent_session=agent_session,
+                        turn=turn,
+                        tool_calls=tool_calls[index + 1 :],
+                    )
+                )
+                return True, result_signatures
             result_signatures.append(_tool_result_signature(tool_name, result))
             await self._append_tool_result(
                 agent_session=agent_session,
@@ -393,7 +462,7 @@ class AgentLoopController:
                 result=result,
             )
             index += 1
-        return waiting, result_signatures
+        return False, result_signatures
 
     async def resume_turn_from_action(
         self,
@@ -424,12 +493,15 @@ class AgentLoopController:
                 error_code="turn_not_found",
                 error_message="Agent turn could not be loaded for resume.",
             )
+        persisted_iteration_count = int(getattr(turn, "iteration_count", 0) or 0)
+        persisted_token_usage = dict(getattr(turn, "token_usage", None) or {}) or None
         agent_session = await self.sessions.get(str(action.session_id))
         if agent_session is None:
             return LoopResult(
                 termination_reason="model_failed",
                 final_text=None,
-                iteration_count=0,
+                iteration_count=persisted_iteration_count,
+                token_usage=persisted_token_usage,
                 error_code="session_not_found",
                 error_message="Agent session could not be loaded for resume.",
             )
@@ -438,7 +510,10 @@ class AgentLoopController:
             result = ToolExecutionResult(
                 action_id=str(action.id),
                 status=action.status,
-                error={"type": "UserRejected", "message": "The user rejected this tool call."},
+                error={
+                    "type": "UserRejected",
+                    "message": "The user rejected this tool call.",
+                },
             )
         else:
             result = await self.executor.resume_action(
@@ -462,7 +537,8 @@ class AgentLoopController:
             return LoopResult(
                 termination_reason="model_failed",
                 final_text=None,
-                iteration_count=0,
+                iteration_count=persisted_iteration_count,
+                token_usage=persisted_token_usage,
                 error_code="tool_resume_failed",
                 error_message=f"Approved tool action finished with status: {result.status}",
             )
@@ -489,7 +565,9 @@ class AgentLoopController:
         parts: list[dict[str, Any]] = []
         if text:
             parts.append(text_part(text))
-        parts.append(tool_calls_part([_provider_tool_call(call) for call in tool_calls]))
+        parts.append(
+            tool_calls_part([_provider_tool_call(call) for call in tool_calls])
+        )
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
@@ -528,7 +606,30 @@ class AgentLoopController:
             metadata={"tool_call_id": tool_call_id, "tool": tool_name},
         )
 
-    async def _execute_tool_call_isolated(self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str):
+    async def _append_deferred_tool_results(
+        self,
+        *,
+        agent_session,
+        turn,
+        tool_calls: list[dict[str, Any]],
+    ) -> list[str]:
+        signatures: list[str] = []
+        for tool_call in tool_calls:
+            tool_name = decode_provider_tool_name(tool_call["name"])
+            result = _deferred_tool_result(tool_name)
+            signatures.append(_tool_result_signature(tool_name, result))
+            await self._append_tool_result(
+                agent_session=agent_session,
+                turn=turn,
+                tool_name=tool_name,
+                tool_call_id=tool_call.get("id"),
+                result=result,
+            )
+        return signatures
+
+    async def _execute_tool_call_isolated(
+        self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str
+    ):
         bind = self.db.bind
         session_factory = (
             async_sessionmaker(bind=bind, expire_on_commit=False)
@@ -557,7 +658,29 @@ class AgentLoopController:
 
     def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:
         spec = self.registry.get(tool_name).spec
-        return spec.risk_level == "read" and not spec.write_scope
+        return (
+            spec.risk_level == "read"
+            and not spec.write_scope
+            and spec.interaction is None
+        )
+
+    async def _checkpoint_loop_state(
+        self,
+        turn,
+        *,
+        budget: IterationBudget,
+        token_usage: dict[str, Any] | None,
+        progress: dict[str, Any],
+    ):
+        loop_state = dict(getattr(turn, "loop_state", None) or {})
+        loop_state["progress"] = progress
+        return await self.turns.update_all(
+            turn,
+            iteration_count=budget.used_iterations,
+            budget_snapshot=budget.snapshot(),
+            token_usage=token_usage,
+            loop_state=loop_state,
+        )
 
     async def _call_model_with_retry(
         self,
@@ -566,7 +689,9 @@ class AgentLoopController:
         completion_kwargs: dict[str, Any],
         iteration_count: int,
     ) -> Any:
-        async def _on_retry(next_attempt: int, exc: Exception, delay_seconds: float) -> None:
+        async def _on_retry(
+            next_attempt: int, exc: Exception, delay_seconds: float
+        ) -> None:
             await self.ledger.append(
                 session_id=str(turn.session_id),
                 turn_id=str(turn.id),
@@ -689,7 +814,9 @@ class AgentLoopController:
                         index=delta.index,
                     ),
                 )
-                started_before = bool(state.call_id and state.name) if seen_before else False
+                started_before = (
+                    bool(state.call_id and state.name) if seen_before else False
+                )
                 if delta.call_id:
                     state.call_id = delta.call_id
                 if delta.name:
@@ -785,7 +912,9 @@ class AgentLoopController:
         allow_thinking: bool,
     ) -> StreamCompletionResult:
         usage = _extract_token_usage(response)
-        thinking_text = extract_response_thinking(response).strip() if allow_thinking else ""
+        thinking_text = (
+            extract_response_thinking(response).strip() if allow_thinking else ""
+        )
         if thinking_text:
             await self.ledger.append(
                 session_id=str(agent_session.id),
@@ -797,7 +926,10 @@ class AgentLoopController:
                     "index": 0,
                 },
             )
-        tool_calls = [_stream_tool_call_from_payload(item, index) for index, item in enumerate(_extract_tool_calls(response))]
+        tool_calls = [
+            _stream_tool_call_from_payload(item, index)
+            for index, item in enumerate(_extract_tool_calls(response))
+        ]
         for tool_call in tool_calls:
             await self.ledger.append(
                 session_id=str(agent_session.id),
@@ -851,10 +983,14 @@ class AgentLoopController:
         current_turn = await self.turns.get(str(turn.id))
         if current_turn is None:
             return None
-        if current_turn.status == AgentTurnStatus.CANCELLED and result.termination_reason not in {
-            "cancelled",
-            "interrupted",
-        }:
+        if (
+            current_turn.status == AgentTurnStatus.CANCELLED
+            and result.termination_reason
+            not in {
+                "cancelled",
+                "interrupted",
+            }
+        ):
             return current_turn
         turn = current_turn
 
@@ -877,6 +1013,12 @@ class AgentLoopController:
             status = AgentTurnStatus.FAILED
             event_type = AgentEventType.TURN_FAILED
 
+        loop_state = dict(getattr(turn, "loop_state", None) or {})
+        loop_state["termination_reason"] = result.termination_reason
+        persisted_budget = dict(getattr(turn, "budget_snapshot", None) or {})
+        max_iterations = int(
+            persisted_budget.get("max_iterations") or _max_iterations()
+        )
         updated = await self.turns.update_all(
             turn,
             status=status,
@@ -886,16 +1028,20 @@ class AgentLoopController:
             iteration_count=result.iteration_count,
             budget_snapshot={
                 "used_iterations": result.iteration_count,
-                "max_iterations": _max_iterations(),
+                "max_iterations": max_iterations,
             },
-            loop_state={"termination_reason": result.termination_reason},
+            loop_state=loop_state,
             error_code=result.error_code,
             error_message=result.error_message,
             claimed_at=None,
             lease_until=None,
             completed_at=datetime.now(timezone.utc)
             if status
-            in {AgentTurnStatus.COMPLETED, AgentTurnStatus.FAILED, AgentTurnStatus.CANCELLED}
+            in {
+                AgentTurnStatus.COMPLETED,
+                AgentTurnStatus.FAILED,
+                AgentTurnStatus.CANCELLED,
+            }
             else None,
         )
         if result.termination_reason == "assistant_final":
@@ -943,7 +1089,11 @@ def _extract_response_text(response: Any) -> str:
     if isinstance(content, list):
         parts: list[str] = []
         for item in content:
-            text = item.get("text") if isinstance(item, dict) else getattr(item, "text", None)
+            text = (
+                item.get("text")
+                if isinstance(item, dict)
+                else getattr(item, "text", None)
+            )
             if isinstance(text, str) and text.strip():
                 parts.append(text.strip())
         return "\n".join(parts).strip()
@@ -1055,11 +1205,56 @@ def _merge_usage(
     return merged
 
 
+def _progress_state(loop_state: dict[str, Any] | None) -> dict[str, Any]:
+    raw = (loop_state or {}).get("progress")
+    if not isinstance(raw, dict):
+        return _progress_payload([], [], 0)
+    calls = raw.get("previous_tool_calls")
+    results = raw.get("previous_tool_results")
+    repeat_count = raw.get("repeat_count")
+    return _progress_payload(
+        [str(item) for item in calls] if isinstance(calls, list) else [],
+        [str(item) for item in results] if isinstance(results, list) else [],
+        max(int(repeat_count or 0), 0),
+    )
+
+
+def _progress_payload(
+    previous_tool_calls: list[str],
+    previous_tool_results: list[str],
+    repeat_count: int,
+) -> dict[str, Any]:
+    return {
+        "previous_tool_calls": list(previous_tool_calls),
+        "previous_tool_results": list(previous_tool_results),
+        "repeat_count": int(repeat_count),
+    }
+
+
+def _deferred_tool_result(tool_name: str) -> ToolExecutionResult:
+    return ToolExecutionResult(
+        action_id="",
+        status="deferred",
+        error={
+            "type": "DeferredToolCall",
+            "message": (
+                f"{tool_name} was not executed because an earlier tool call is waiting "
+                "for user input or approval. Call it again if it is still needed after "
+                "the turn resumes."
+            ),
+        },
+    )
+
+
 def _retry_policy() -> RetryPolicy:
     return RetryPolicy(
         max_attempts=max(int(settings.agent_retry_max_attempts or 1), 1),
-        base_delay_seconds=max(float(settings.agent_retry_base_delay_seconds or 0.0), 0.0),
-        max_delay_seconds=max(float(settings.agent_retry_max_delay_seconds or 0.0), 0.0),
+        base_delay_seconds=max(
+            float(settings.agent_retry_base_delay_seconds or 0.0), 0.0
+        ),
+        max_delay_seconds=max(
+            float(settings.agent_retry_max_delay_seconds or 0.0), 0.0
+        ),
     )
 
 

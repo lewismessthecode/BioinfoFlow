@@ -145,6 +145,116 @@ def test_agent_max_iterations_defaults_to_90(monkeypatch):
     assert Settings(_env_file=None).agent_max_iterations == 90
 
 
+@pytest.mark.asyncio
+async def test_runtime_approval_resume_uses_remaining_turn_budget(
+    db_session, monkeypatch
+):
+    model_calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal model_calls
+        model_calls += 1
+
+        usage_values = {
+            1: {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+            2: {"prompt_tokens": 7, "completion_tokens": 11, "total_tokens": 18},
+        }
+
+        class FakeUsage:
+            def model_dump(self):
+                return usage_values.get(model_calls, {})
+
+        class FakeResponse:
+            usage = FakeUsage()
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        class FakeFunction:
+            if model_calls == 1:
+                name = "bash"
+                arguments = json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"approved\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
+                )
+            else:
+                name = "projects__list"
+                arguments = "{}"
+
+        class FakeToolCall:
+            id = f"tool-call-{model_calls}"
+            function = FakeFunction()
+
+        message = FakeMessage()
+        if model_calls <= 2:
+            message.content = ""
+            message.tool_calls = [FakeToolCall()]
+        else:
+            message.content = "A third model call must not fit in this turn budget."
+            message.tool_calls = None
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr(settings, "agent_max_iterations", 2)
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="approval-budget-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(
+        session,
+        toolset_policy={"name": "execution"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Run the approved tool within one bounded turn.",
+    )
+
+    waiting_turn = await service.runtime.run_turn(str(turn.id))
+    assert waiting_turn.status == "waiting_approval"
+    monkeypatch.setattr(settings, "agent_max_iterations", 5)
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    await service.decide_action(
+        action_id=str(actions[0].id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+    resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
+
+    assert model_calls == 2
+    assert resumed_turn.status == "failed"
+    assert resumed_turn.error_code == "iteration_budget_exhausted"
+    assert resumed_turn.iteration_count == 2
+    assert resumed_turn.budget_snapshot == {
+        "used_iterations": 2,
+        "max_iterations": 2,
+    }
+    assert resumed_turn.token_usage == {
+        "prompt_tokens": 9,
+        "completion_tokens": 14,
+        "total_tokens": 23,
+    }
+
+
 def test_agent_max_rounds_legacy_env_is_rejected(monkeypatch):
     monkeypatch.delenv("AGENT_MAX_ITERATIONS", raising=False)
     monkeypatch.setenv("AGENT_MAX_ROUNDS", "12")
@@ -198,7 +308,9 @@ async def test_context_replays_committed_transcript_messages(db_session, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_runtime_retries_transient_model_failure_and_records_event(db_session, monkeypatch):
+async def test_runtime_retries_transient_model_failure_and_records_event(
+    db_session, monkeypatch
+):
     attempts = 0
 
     async def flaky_completion(*args, **kwargs):
@@ -268,7 +380,9 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fallback_completion)
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.acompletion", fallback_completion
+    )
     monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
@@ -286,8 +400,12 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
     db_session.add(provider)
     await db_session.commit()
     await db_session.refresh(provider)
-    primary = await _seed_catalog_model(db_session, model_id="primary-model", provider=provider)
-    fallback = await _seed_catalog_model(db_session, model_id="fallback-model", provider=provider)
+    primary = await _seed_catalog_model(
+        db_session, model_id="primary-model", provider=provider
+    )
+    fallback = await _seed_catalog_model(
+        db_session, model_id="fallback-model", provider=provider
+    )
     profile = LlmModelProfile(
         name="Fallback profile",
         task_type="agent",
@@ -320,12 +438,16 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
 
     assert completed_turn.status == "completed"
     assert completed_turn.final_text == "Answered from fallback."
-    assert completed_turn.model_profile_snapshot["resolved_model_id"] == str(fallback.id)
+    assert completed_turn.model_profile_snapshot["resolved_model_id"] == str(
+        fallback.id
+    )
     assert any(event.type == "model.fallback" for event in events)
 
 
 @pytest.mark.asyncio
-async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session, monkeypatch):
+async def test_runtime_stops_on_repeated_tool_calls_without_progress(
+    db_session, monkeypatch
+):
     calls = 0
 
     async def looping_completion(*args, **kwargs):
@@ -358,7 +480,9 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session,
         response.choices = [choice]
         return response
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", looping_completion)
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.acompletion", looping_completion
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="no-progress-model")
 
@@ -385,7 +509,9 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session,
 
 
 @pytest.mark.asyncio
-async def test_runtime_allows_repeated_tool_polling_when_results_change(db_session, monkeypatch):
+async def test_runtime_allows_repeated_tool_polling_when_results_change(
+    db_session, monkeypatch
+):
     calls = 0
     tool_executions = 0
 
@@ -400,6 +526,7 @@ async def test_runtime_allows_repeated_tool_polling_when_results_change(db_sessi
             pass
 
         if calls <= 3:
+
             class FakeMessage:
                 pass
 
@@ -415,6 +542,7 @@ async def test_runtime_allows_repeated_tool_polling_when_results_change(db_sessi
             message.content = ""
             message.tool_calls = [FakeToolCall()]
         else:
+
             class FakeMessage:
                 content = "The repeated status check completed."
                 tool_calls = None
@@ -436,7 +564,9 @@ async def test_runtime_allows_repeated_tool_polling_when_results_change(db_sessi
             result={"state": f"running-{tool_executions}"},
         )
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", polling_completion)
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.acompletion", polling_completion
+    )
     monkeypatch.setattr(
         "app.services.agent_core.tools.executor.AgentToolExecutor.execute",
         changing_tool_result,
@@ -467,7 +597,98 @@ async def test_runtime_allows_repeated_tool_polling_when_results_change(db_sessi
 
 
 @pytest.mark.asyncio
-async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(db_session, monkeypatch):
+async def test_runtime_resets_repeat_grace_when_tool_results_change(
+    db_session, monkeypatch
+):
+    model_calls = 0
+    tool_executions = 0
+    states = ["running-1", "running-2", "running-3", "running-3"]
+
+    async def polling_completion(*args, **kwargs):
+        nonlocal model_calls
+        model_calls += 1
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        if model_calls <= len(states):
+
+            class FakeMessage:
+                pass
+
+            class FakeFunction:
+                name = "projects__list"
+                arguments = "{}"
+
+            class FakeToolCall:
+                id = f"tool-call-{model_calls}"
+                function = FakeFunction()
+
+            message = FakeMessage()
+            message.content = ""
+            message.tool_calls = [FakeToolCall()]
+        else:
+
+            class FakeMessage:
+                content = "Polling completed after one stable observation."
+                tool_calls = None
+
+            message = FakeMessage()
+
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    async def changing_then_stable_result(*args, **kwargs):
+        nonlocal tool_executions
+        tool_executions += 1
+        return ToolExecutionResult(
+            action_id=f"action-{tool_executions}",
+            status="completed",
+            result={"state": states[tool_executions - 1]},
+        )
+
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.acompletion", polling_completion
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.executor.AgentToolExecutor.execute",
+        changing_then_stable_result,
+    )
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="stable-polling-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Poll until the result has been stable long enough.",
+    )
+    completed_turn = await service.runtime.run_turn(str(turn.id))
+
+    assert model_calls == 5
+    assert tool_executions == 4
+    assert completed_turn.status == "completed"
+    assert (
+        completed_turn.final_text == "Polling completed after one stable observation."
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(
+    db_session, monkeypatch
+):
     async def fake_completion(*args, **kwargs):
         class FakeResponse:
             usage = None
@@ -505,7 +726,9 @@ async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(db_session,
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
-    session = await service.session_repo.update_all(session, toolset_policy={"name": "plan"})
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "plan"}
+    )
     turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -544,6 +767,7 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
 
         message = FakeMessage()
         if calls == 1:
+
             class FakeFunction:
                 name = "bash"
                 arguments = json.dumps(
@@ -585,7 +809,9 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
-    session = await service.session_repo.update_all(session, toolset_policy={"name": "execution"})
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "execution"}
+    )
     turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
