@@ -197,10 +197,12 @@ export function useAgentRuntime(
     } catch (error) {
       if (sessionListRefreshSequenceRef.current !== sequence) return
       if (activeSessionIdRef.current !== requestedActiveSessionId) return
-      dispatch({
-        type: "error",
-        message: error instanceof Error ? error.message : "Failed to load sessions",
-      })
+      if (!requestedActiveSessionId) {
+        dispatch({
+          type: "error",
+          message: error instanceof Error ? error.message : "Failed to load sessions",
+        })
+      }
     }
   }, [activeSessionId, isControlledDraft, projectId, setActiveSessionId, updateSessions])
 

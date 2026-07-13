@@ -664,11 +664,12 @@ describe("useAgentRuntime", () => {
     const newer = deferred<AgentRuntimeSession[]>()
     const { result } = renderHook(() =>
       useAgentRuntime(null, {
-        activeSessionId: "session-1",
+        activeSessionId: "",
         onActiveSessionIdChange: vi.fn(),
       }),
     )
-    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(result.current.state.status).toBe("idle"))
 
     mocks.listAgentRuntimeSessions
       .mockReturnValueOnce(older.promise)
@@ -688,8 +689,36 @@ describe("useAgentRuntime", () => {
       await olderRefresh
     })
 
-    expect(result.current.state.status).not.toBe("error")
+    expect(result.current.state.status).toBe("idle")
     expect(result.current.state.error).toBeNull()
+  })
+
+  it("surfaces session-list loading and errors when no session is active", async () => {
+    const sessionList = deferred<AgentRuntimeSession[]>()
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(result.current.state.status).toBe("idle"))
+
+    mocks.listAgentRuntimeSessions.mockReturnValueOnce(sessionList.promise)
+    let refresh!: Promise<void>
+    act(() => {
+      refresh = result.current.refreshSessions()
+    })
+
+    expect(result.current.state.status).toBe("loading")
+
+    await act(async () => {
+      sessionList.reject(new Error("Session list unavailable"))
+      await refresh
+    })
+
+    expect(result.current.state.status).toBe("error")
+    expect(result.current.state.error).toBe("Session list unavailable")
   })
 
   it("keeps loaded runtime state stable during an active session-list refresh", async () => {
@@ -709,10 +738,14 @@ describe("useAgentRuntime", () => {
     await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
     await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
     await act(async () => {
-      initialState.resolve({ session, turns: [], events: [] })
+      initialState.resolve({
+        session,
+        turns: [{ ...turn, status: "running" }],
+        events: [],
+      })
       await initialState.promise
     })
-    await waitFor(() => expect(result.current.state.status).toBe("idle"))
+    await waitFor(() => expect(result.current.state.status).toBe("running"))
 
     mocks.listAgentRuntimeSessions.mockReturnValueOnce(sessionList.promise)
     let refresh!: Promise<void>
@@ -720,14 +753,101 @@ describe("useAgentRuntime", () => {
       refresh = result.current.refreshSessions()
     })
 
-    expect(result.current.state.status).toBe("idle")
+    expect(result.current.state.status).toBe("running")
 
     await act(async () => {
       sessionList.resolve([session])
       await refresh
     })
 
+    expect(result.current.state.status).toBe("running")
+  })
+
+  it("keeps loaded runtime state stable when an active session-list refresh recovers", async () => {
+    const initialState = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    mocks.getAgentRuntimeState.mockReturnValueOnce(initialState.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    await act(async () => {
+      initialState.resolve({ session, turns: [], events: [] })
+      await initialState.promise
+    })
+    await waitFor(() => expect(result.current.state.status).toBe("idle"))
+
+    mocks.listAgentRuntimeSessions.mockRejectedValueOnce(
+      new Error("Session list unavailable"),
+    )
+    await act(async () => {
+      await result.current.refreshSessions()
+    })
+
     expect(result.current.state.status).toBe("idle")
+    expect(result.current.state.error).toBeNull()
+
+    mocks.listAgentRuntimeSessions.mockResolvedValueOnce([session])
+    await act(async () => {
+      await result.current.refreshSessions()
+    })
+
+    expect(result.current.state.status).toBe("idle")
+    expect(result.current.state.error).toBeNull()
+  })
+
+  it("preserves an active runtime error across session-list failure and retry", async () => {
+    const initialState = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    mocks.getAgentRuntimeState.mockReturnValueOnce(initialState.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    await act(async () => {
+      initialState.resolve({ session, turns: [], events: [] })
+      await initialState.promise
+    })
+    await waitFor(() => expect(result.current.state.status).toBe("idle"))
+
+    mocks.getAgentRuntimeState.mockRejectedValueOnce(
+      new Error("Runtime state unavailable"),
+    )
+    await act(async () => {
+      await result.current.refreshState("session-1")
+    })
+    expect(result.current.state.status).toBe("error")
+    expect(result.current.state.error).toBe("Runtime state unavailable")
+
+    mocks.listAgentRuntimeSessions.mockRejectedValueOnce(
+      new Error("Session list unavailable"),
+    )
+    await act(async () => {
+      await result.current.refreshSessions()
+    })
+    expect(result.current.state.status).toBe("error")
+    expect(result.current.state.error).toBe("Runtime state unavailable")
+
+    mocks.listAgentRuntimeSessions.mockResolvedValueOnce([session])
+    await act(async () => {
+      await result.current.refreshSessions()
+    })
+    expect(result.current.state.status).toBe("error")
+    expect(result.current.state.error).toBe("Runtime state unavailable")
   })
 
   it("ignores stale state refreshes for inactive sessions", async () => {
