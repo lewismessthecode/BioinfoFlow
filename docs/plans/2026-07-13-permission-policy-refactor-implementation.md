@@ -113,7 +113,7 @@ next gate before parallel final review and publication.
 - [x] Add independent approval-card progress/error state and prevent duplicate decisions.
 - [x] Add complete English and Simplified Chinese messages.
 - [x] Run focused tests, frontend lint, i18n lint, and dead-code lint if exports change.
-- [ ] With `AUTH_MODE=dev`, visually verify desktop and narrow layouts for local/remote targets, zero/one/multiple pending actions, busy, and error states.
+- [ ] With `AUTH_MODE=dev`, visually verify desktop and narrow layouts for local/remote targets, zero/one/multiple pending actions, busy, and error states. Blocked in this environment because Docker was unavailable and the in-app browser reported no available browser; equivalent states passed component/integration tests.
 - [x] Commit `feat: clarify agent permission controls`.
 
 ## Task 6: Documentation, Compatibility, and Final Verification
@@ -124,23 +124,23 @@ next gate before parallel final review and publication.
 - [x] Document approval policy versus sandbox/SSH authority, policy versions, batch barriers, pending strategy, hard blocks, and recovery.
 - [x] Regenerate or update OpenAPI contracts using the repository's established command and inspect the diff.
 - [x] Run `rtk git diff --check`.
-- [ ] From `backend/`, run `rtk uv run pytest` and `rtk uv run ruff check .`.
-- [ ] From `frontend/`, run `rtk bun run lint`, `rtk bun run lint:i18n`, `rtk bun run lint:dead-code`, and `rtk bun run test`.
-- [ ] Run the frontend production build if dependencies and environment permit.
+- [x] From `backend/`, run `rtk uv run pytest` and `rtk uv run ruff check .`.
+- [x] From `frontend/`, run `rtk bun run lint`, `rtk bun run lint:i18n`, `rtk bun run lint:dead-code`, and `rtk bun run test`.
+- [x] Run the frontend production build if dependencies and environment permit.
 - [x] Commit `docs: document agent permission boundaries`.
 
 ## Task 7: Parallel Final Review and Findings
 
-- [ ] Dispatch independent reviewers for specification compliance, backend concurrency/correctness, security/remote boundary, and frontend UX/accessibility.
-- [ ] Give every reviewer its own dedicated goal and the exact commit range.
-- [ ] Classify every finding with evidence; reject invalid findings with technical reasoning.
-- [ ] Fix all critical and important findings with failing tests first, rerun their focused and broad verification, and commit findings by concern.
-- [ ] Re-dispatch reviewers over the repaired range and require all review gates to pass.
+- [x] Dispatch independent reviewers for specification compliance, backend concurrency/correctness, security/remote boundary, and frontend UX/accessibility.
+- [x] Give every reviewer its own dedicated goal and the exact commit range.
+- [x] Classify every finding with evidence; reject invalid findings with technical reasoning.
+- [x] Fix all critical and important findings with failing tests first, rerun their focused and broad verification, and commit findings by concern.
+- [x] Re-dispatch reviewers over the repaired range and require all review gates to pass.
 
 ## Task 8: Rebase and Publish
 
-- [ ] Fetch `origin --prune` and rebase onto `origin/main` as required by `AGENTS.md`.
-- [ ] Rerun full backend/frontend verification after the rebase.
-- [ ] Inspect final status, diff, migration chain, commits, and requirement checklist.
+- [x] Fetch `origin --prune` and rebase onto `origin/main` as required by `AGENTS.md`.
+- [x] Rerun full backend/frontend verification after the rebase.
+- [x] Inspect final status, diff, migration chain, commits, and requirement checklist.
 - [ ] Push `codex/permission-policy-refactor` with tracking.
 - [ ] Open a ready-for-review PR with a Conventional Commit title and a body covering root cause, architecture, local/remote behavior, migrations, UI, tests, and visual verification.

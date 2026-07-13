@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted and implemented through the documentation/contract phase. Full-suite
-verification, parallel final review, rebase, and publication remain pending.
+Accepted and implemented. Full backend/frontend verification, contract checks,
+parallel final review, finding remediation, and the required `origin/main`
+rebase have completed. Publication is the remaining release step.
 
 ## Problem
 

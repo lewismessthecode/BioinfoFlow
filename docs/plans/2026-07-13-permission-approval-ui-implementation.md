@@ -66,4 +66,4 @@
 - [x] Run focused hook/client/composer/workbench/card/i18n tests.
 - [x] Run `rtk bun run lint`, `rtk bun run lint:i18n`, `rtk bun run lint:dead-code`, `rtk bun run test`, and `rtk bun run build` from `frontend/`.
 - [ ] With `AUTH_MODE=dev`, visually verify desktop and narrow layouts for local/remote targets with zero, one, and multiple pending approvals when services can be started. Blocked in this environment because the in-app browser runtime reported no available browsers and Docker was unavailable; equivalent component/integration states passed automated tests.
-- [ ] Run `rtk git diff --check`, review the staged diff, and commit `feat: clarify agent permission controls`.
+- [x] Run `rtk git diff --check`, review the staged diff, and commit the permission-control UI phases.
