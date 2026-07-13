@@ -610,12 +610,16 @@ def _short_option_cluster_match(
     target: str,
     no_value_options: set[str],
     consuming_options: set[str],
+    optional_value_options: dict[str, re.Pattern[str]] | None = None,
     allow_unknown_no_value: bool = False,
 ) -> _ShortOptionClusterMatch:
     if not arg.startswith("-") or arg.startswith("--") or arg == "-":
         return _ShortOptionClusterMatch()
     cluster = arg[1:]
-    for index, option in enumerate(cluster):
+    optional_values = optional_value_options or {}
+    index = 0
+    while index < len(cluster):
+        option = cluster[index]
         if option == target:
             return _ShortOptionClusterMatch(
                 matched=True,
@@ -623,8 +627,17 @@ def _short_option_cluster_match(
             )
         if option in consuming_options:
             return _ShortOptionClusterMatch()
+        optional_value = optional_values.get(option)
+        if optional_value is not None:
+            match = optional_value.match(cluster, index + 1)
+            if match is not None:
+                index = match.end()
+            else:
+                index += 1
+            continue
         if option not in no_value_options and not allow_unknown_no_value:
             return _ShortOptionClusterMatch(ambiguous=True)
+        index += 1
     return _ShortOptionClusterMatch()
 
 
@@ -896,18 +909,22 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
                     "a",
                     "c",
                     "d",
+                    "f",
                     "l",
                     "n",
                     "p",
                     "s",
+                    "S",
                     "t",
                     "T",
                     "u",
                     "U",
                     "w",
                     "W",
+                    "X",
                 },
                 consuming_options={"F", "I", "M", "V", "i", "m", "x"},
+                optional_value_options={"0": re.compile(r"(?:x[0-9A-Fa-f]+|[0-7]*)")},
             )
             if not bundled.matched:
                 bundled = _short_option_cluster_match(
@@ -917,18 +934,24 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
                         "a",
                         "c",
                         "d",
+                        "f",
                         "l",
                         "n",
                         "p",
                         "s",
+                        "S",
                         "t",
                         "T",
                         "u",
                         "U",
                         "w",
                         "W",
+                        "X",
                     },
                     consuming_options={"F", "I", "M", "V", "i", "m", "x"},
+                    optional_value_options={
+                        "0": re.compile(r"(?:x[0-9A-Fa-f]+|[0-7]*)")
+                    },
                 )
             if bundled.matched:
                 if bundled.value:
@@ -957,17 +980,19 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
                     "y",
                 },
                 consuming_options={
-                    "0",
                     "C",
                     "E",
                     "F",
                     "I",
                     "K",
                     "T",
-                    "W",
                     "i",
                     "r",
                     "x",
+                },
+                optional_value_options={
+                    "0": re.compile(r"[0-7]*"),
+                    "W": re.compile(r"(?:[0-2]|:[A-Za-z][A-Za-z0-9_-]*)?"),
                 },
             )
             if bundled.matched:
