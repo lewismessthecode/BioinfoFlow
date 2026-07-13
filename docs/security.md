@@ -81,8 +81,9 @@ Security expectations:
 - treat command-risk path checks as lexical defense in depth: they recognize
   explicit destinations and symlinks created in the same command, but cannot
   prove the target of pre-existing symlinks or inspect archive contents before
-  extraction; the local OS sandbox or remote Unix account and server policy is
-  the enforcement boundary
+  extraction; opaque archive extraction and unsupported indirect shell syntax
+  therefore require explicit approval, while the local OS sandbox or remote
+  Unix account and server policy remains the enforcement boundary
 - connection authorization is scoped to the connection selected in the Agent
   session; a command cannot substitute another connection id
 - remember that remote project terminals are backend-mediated SSH PTY sessions;

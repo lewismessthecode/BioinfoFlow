@@ -131,7 +131,7 @@ def assess_command_risk(
     nodes = _parse_command_nodes(_strip_heredoc_bodies(command))
     effects = _command_effects(nodes)
     sink_safety = _analyze_write_sink_safety(nodes)
-    execution_safety = _analyze_indirect_execution_safety(nodes)
+    execution_safety = _analyze_indirect_execution_safety(nodes, command=command)
     referenced_paths, path_analysis_confident = _referenced_paths(nodes, target=target)
     protected_resources = _protected_resources(
         [*referenced_paths, *sink_safety.protected_paths]
@@ -363,7 +363,7 @@ _DESTRUCTIVE_EXECUTABLES = frozenset(
 _WRAPPERS = frozenset(
     {"env", "command", "exec", "nohup", "sudo", "timeout", "nice", "setsid"}
 )
-_SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})
+_SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "ash"})
 _INLINE_INTERPRETER_PATTERNS = (
     ("python", re.compile(r"python(?:\d+(?:\.\d+)*)?")),
     ("python", re.compile(r"pypy(?:\d+(?:\.\d+)*)?")),
@@ -386,6 +386,13 @@ class _CommandNode:
     operator_before: str | None = None
 
 
+@dataclass(frozen=True)
+class _UnwrappedCommand:
+    tokens: tuple[str, ...]
+    elevated: bool = False
+    confident: bool = True
+
+
 def classify_command_level(command: str) -> RiskLevel:
     """Return the semantic risk floor for a shell command string."""
     text = (command or "").strip()
@@ -393,7 +400,11 @@ def classify_command_level(command: str) -> RiskLevel:
         return "act_low"
     if _looks_like_fork_bomb(text):
         return "critical"
-    substitutions = _command_substitutions(text)
+    substitutions = [
+        *_command_substitutions(text),
+        *_process_substitutions(text),
+        *_heredoc_bodies(text),
+    ]
     if any(classify_command_level(inner) == "critical" for inner in substitutions):
         return "critical"
 
@@ -420,7 +431,7 @@ def classify_command_level(command: str) -> RiskLevel:
 
 
 def _classify_node(node: _CommandNode) -> RiskLevel:
-    tokens, elevated = _unwrap_command(list(node.tokens))
+    tokens, elevated = _unwrap_command(_strip_shell_control_tokens(list(node.tokens)))
     if not tokens:
         return "act_low"
     executable = _basename(tokens[0])
@@ -442,7 +453,7 @@ def _classify_node(node: _CommandNode) -> RiskLevel:
         return classify_command_level(" ".join(args))
     if executable in _SHUTDOWN_EXECUTABLES:
         return "critical"
-    if executable == "systemctl" and _first_positional(args) in _SHUTDOWN_EXECUTABLES:
+    if executable == "systemctl" and _systemctl_verb(args)[0] in _SHUTDOWN_EXECUTABLES:
         return "critical"
     if executable == "busybox":
         nested = _busybox_command(args)
@@ -538,6 +549,9 @@ def _parse_command_nodes(text: str) -> list[_CommandNode]:
         operator: str | None = None
         if char == "\n" or char == ";":
             operator = ";"
+        elif char == "|" and index > 0 and text[index - 1] == ">":
+            index += 1
+            continue
         elif char in {"|", "&"}:
             operator = (
                 char * 2 if index + 1 < len(text) and text[index + 1] == char else char
@@ -566,7 +580,13 @@ def _parse_command_nodes(text: str) -> list[_CommandNode]:
 
 
 def _unwrap_command(tokens: list[str]) -> tuple[list[str], bool]:
+    result = _unwrap_command_details(tokens)
+    return list(result.tokens), result.elevated
+
+
+def _unwrap_command_details(tokens: list[str]) -> _UnwrappedCommand:
     elevated = False
+    confident = True
     while tokens:
         while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]):
             tokens.pop(0)
@@ -578,39 +598,161 @@ def _unwrap_command(tokens: list[str]) -> tuple[list[str], bool]:
         tokens.pop(0)
         if executable == "sudo":
             elevated = True
-            tokens = _skip_sudo_options(tokens)
+            tokens, wrapper_confident = _skip_wrapper_options(
+                tokens,
+                no_value={
+                    "-A",
+                    "--askpass",
+                    "-b",
+                    "--background",
+                    "-E",
+                    "--preserve-env",
+                    "-H",
+                    "--set-home",
+                    "-K",
+                    "--remove-timestamp",
+                    "-k",
+                    "--reset-timestamp",
+                    "-n",
+                    "--non-interactive",
+                    "-P",
+                    "--preserve-groups",
+                    "-S",
+                    "--stdin",
+                },
+                value_options={
+                    "-u",
+                    "--user",
+                    "-g",
+                    "--group",
+                    "-h",
+                    "--host",
+                    "-p",
+                    "--prompt",
+                    "-C",
+                    "--close-from",
+                    "-T",
+                    "--command-timeout",
+                    "-R",
+                    "--chroot",
+                    "-D",
+                    "--chdir",
+                },
+            )
+            confident = confident and wrapper_confident
         elif executable == "env":
-            while tokens and (
-                tokens[0].startswith("-")
-                or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0])
+            if any(
+                arg == "-S"
+                or arg == "--split-string"
+                or arg.startswith("--split-string=")
+                for arg in tokens
             ):
+                confident = False
+            tokens, wrapper_confident = _skip_wrapper_options(
+                tokens,
+                no_value={"-i", "--ignore-environment", "-0", "--null"},
+                value_options={
+                    "-u",
+                    "--unset",
+                    "-C",
+                    "--chdir",
+                    "-S",
+                    "--split-string",
+                },
+            )
+            confident = confident and wrapper_confident
+            while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]):
                 tokens.pop(0)
         elif executable == "timeout":
-            while tokens and tokens[0].startswith("-"):
-                tokens.pop(0)
+            tokens, wrapper_confident = _skip_wrapper_options(
+                tokens,
+                no_value={"--foreground", "--preserve-status", "-v", "--verbose"},
+                value_options={"-s", "--signal", "-k", "--kill-after"},
+            )
+            confident = confident and wrapper_confident
             if tokens:
                 tokens.pop(0)
         elif executable == "nice":
-            if tokens[:1] == ["-n"]:
-                tokens = tokens[2:]
-            else:
-                while tokens and tokens[0].startswith("-"):
-                    tokens.pop(0)
-        elif executable == "setsid":
-            while tokens and tokens[0].startswith("-"):
+            if tokens and re.fullmatch(r"-\d+", tokens[0]):
                 tokens.pop(0)
-    return tokens, elevated
+            else:
+                tokens, wrapper_confident = _skip_wrapper_options(
+                    tokens,
+                    no_value=set(),
+                    value_options={"-n", "--adjustment"},
+                )
+                confident = confident and wrapper_confident
+        elif executable == "setsid":
+            tokens, wrapper_confident = _skip_wrapper_options(
+                tokens,
+                no_value={"-c", "--ctty", "-f", "--fork", "-w", "--wait"},
+                value_options=set(),
+            )
+            confident = confident and wrapper_confident
+        elif executable == "command":
+            if tokens[:1] and tokens[0] in {"-v", "-V"}:
+                query = tokens[1:2]
+                return _UnwrappedCommand(
+                    tokens=tuple(["type", *query]),
+                    elevated=elevated,
+                    confident=confident,
+                )
+            tokens, wrapper_confident = _skip_wrapper_options(
+                tokens,
+                no_value={"-p"},
+                value_options=set(),
+            )
+            confident = confident and wrapper_confident
+        elif executable == "nohup":
+            tokens, wrapper_confident = _skip_wrapper_options(
+                tokens,
+                no_value=set(),
+                value_options=set(),
+            )
+            confident = confident and wrapper_confident
+        elif executable == "exec":
+            tokens, wrapper_confident = _skip_wrapper_options(
+                tokens,
+                no_value={"-c", "-l"},
+                value_options={"-a"},
+            )
+            confident = confident and wrapper_confident
+    return _UnwrappedCommand(
+        tokens=tuple(tokens), elevated=elevated, confident=confident
+    )
 
 
-def _skip_sudo_options(tokens: list[str]) -> list[str]:
-    takes_value = {"-u", "-g", "-h", "-p", "-C", "-T", "-R", "-D"}
+def _skip_wrapper_options(
+    tokens: list[str],
+    *,
+    no_value: set[str],
+    value_options: set[str],
+) -> tuple[list[str], bool]:
     index = 0
-    while index < len(tokens) and tokens[index].startswith("-"):
+    confident = True
+    while index < len(tokens):
         option = tokens[index]
-        index += 1
-        if option in takes_value and index < len(tokens):
+        if option == "--":
             index += 1
-    return tokens[index:]
+            break
+        if not option.startswith("-") or option == "-":
+            break
+        if "=" in option and option.split("=", 1)[0] in value_options:
+            index += 1
+            continue
+        if option in no_value:
+            index += 1
+            continue
+        if option not in value_options:
+            confident = False
+            index += 1
+            continue
+        index += 1
+        if index < len(tokens):
+            index += 1
+        else:
+            confident = False
+    return tokens[index:], confident
 
 
 def _shell_command_argument(args: list[str]) -> str | None:
@@ -633,6 +775,16 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
     for index, arg in enumerate(args):
         if arg in flags and index + 1 < len(args):
             return args[index + 1]
+        if executable == "node" and any(
+            arg.startswith(f"{flag}=") for flag in {"--eval", "--print"}
+        ):
+            return arg.split("=", 1)[1]
+        if executable == "python" and arg.startswith("-c") and arg != "-c":
+            return arg[2:]
+        if executable in {"ruby", "perl"} and arg.startswith("-e") and arg != "-e":
+            return arg[2:]
+        if executable == "php" and arg.startswith("-r") and arg != "-r":
+            return arg[2:]
     return None
 
 
@@ -663,6 +815,77 @@ def _inline_code_contains_known_hardline(code: str) -> bool:
 
 def _first_positional(args: list[str]) -> str | None:
     return next((arg for arg in args if not arg.startswith("-")), None)
+
+
+def _systemctl_verb(args: list[str]) -> tuple[str | None, bool]:
+    remaining, confident = _skip_wrapper_options(
+        list(args),
+        no_value={
+            "--ask-password",
+            "--no-ask-password",
+            "--no-block",
+            "--no-legend",
+            "--no-pager",
+            "--no-wall",
+            "--quiet",
+            "-q",
+            "--runtime",
+            "--system",
+            "--user",
+        },
+        value_options={
+            "-H",
+            "--host",
+            "-M",
+            "--machine",
+            "--root",
+            "--image",
+            "-t",
+            "--type",
+            "--state",
+            "-p",
+            "--property",
+        },
+    )
+    return (remaining[0] if remaining else None), confident
+
+
+_SHELL_CONTROL_WORDS = frozenset(
+    {
+        "if",
+        "then",
+        "elif",
+        "else",
+        "fi",
+        "while",
+        "until",
+        "for",
+        "select",
+        "do",
+        "done",
+        "case",
+        "esac",
+        "{",
+        "}",
+    }
+)
+_SHELL_COMMAND_PREFIX_WORDS = frozenset(
+    {"if", "then", "elif", "else", "while", "until", "do", "{"}
+)
+
+
+def _strip_shell_control_tokens(tokens: list[str]) -> list[str]:
+    normalized = list(tokens)
+    while normalized and normalized[0] in _SHELL_COMMAND_PREFIX_WORDS:
+        normalized.pop(0)
+    grouped = bool(normalized and normalized[0].startswith("("))
+    if grouped:
+        normalized[0] = normalized[0][1:]
+    while normalized and normalized[-1] in _SHELL_CONTROL_WORDS:
+        normalized.pop()
+    if grouped and normalized and normalized[-1].endswith(")"):
+        normalized[-1] = normalized[-1][:-1]
+    return [token for token in normalized if token]
 
 
 def _busybox_command(args: list[str]) -> list[str]:
@@ -788,12 +1011,33 @@ class _IndirectExecutionSafety:
 
 def _analyze_indirect_execution_safety(
     nodes: list[_CommandNode],
+    *,
+    command: str,
 ) -> _IndirectExecutionSafety:
     reasons: list[str] = []
+    if _process_substitutions(command):
+        reasons.append(
+            "process substitution is indirect shell execution and requires explicit approval"
+        )
+    if _heredoc_bodies(command):
+        reasons.append(
+            "heredoc input can supply executable shell source and requires explicit approval"
+        )
     for node in nodes:
-        tokens, _ = _unwrap_command(list(node.tokens))
+        unwrapped = _unwrap_command_details(
+            _strip_shell_control_tokens(list(node.tokens))
+        )
+        tokens = list(unwrapped.tokens)
+        if not unwrapped.confident:
+            reasons.append(
+                "wrapper option semantics cannot be proven safe and require explicit approval"
+            )
         if not tokens:
             continue
+        if _node_has_shell_control_syntax(node):
+            reasons.append(
+                "compound shell syntax cannot be proven safe and requires explicit approval"
+            )
         executable = _basename(tokens[0])
         args = tokens[1:]
         if executable in _SHELLS:
@@ -823,9 +1067,22 @@ def _analyze_indirect_execution_safety(
                     reasons.append(
                         "xargs supplies an indirect runtime target to an elevated command"
                     )
+        elif executable == "systemctl" and not _systemctl_verb(args)[1]:
+            reasons.append(
+                "systemctl option semantics cannot be proven safe and require explicit approval"
+            )
     return _IndirectExecutionSafety(
         requires_explicit_approval=bool(reasons),
         reasons=tuple(_dedupe(reasons)),
+    )
+
+
+def _node_has_shell_control_syntax(node: _CommandNode) -> bool:
+    if not node.tokens:
+        return False
+    first = node.tokens[0]
+    return (
+        first in _SHELL_CONTROL_WORDS or first.startswith("(") or first.startswith("{")
     )
 
 
@@ -852,6 +1109,15 @@ def _analyze_write_sink_safety(nodes: list[_CommandNode]) -> _WriteSinkSafety:
     reasons: list[str] = []
     protected_paths: list[str] = []
     for node in nodes:
+        tokens, _ = _unwrap_command(list(node.tokens))
+        executable = _basename(tokens[0]) if tokens else ""
+        args = tokens[1:]
+        if _archive_extracts(executable, args):
+            requires_explicit = True
+            low_confidence = True
+            reasons.append(
+                "archive members cannot be proven to avoid protected destinations"
+            )
         symlink = _symlink_binding(node)
         if symlink is not None:
             link, target = symlink
@@ -974,11 +1240,17 @@ def _write_sink_destinations(node: _CommandNode) -> list[str]:
     tokens, _ = _unwrap_command(list(node.tokens))
     if not tokens:
         return []
-    destinations = [
-        tokens[index + 1]
-        for index in range(len(tokens) - 1)
-        if tokens[index] in {">", ">>"}
-    ]
+    destinations: list[str] = []
+    for index, token in enumerate(tokens):
+        if token not in {">", ">>"}:
+            continue
+        destination_index = (
+            index + 2 if tokens[index + 1 : index + 2] == ["|"] else index + 1
+        )
+        if destination_index < len(tokens):
+            destinations.append(tokens[destination_index])
+        else:
+            destinations.append("$UNRESOLVED_MISSING_OUTPUT")
     executable = _basename(tokens[0])
     args = tokens[1:]
     before_redirect = args[:]
@@ -1009,9 +1281,7 @@ def _write_sink_destinations(node: _CommandNode) -> list[str]:
     elif executable == "ln":
         destinations.extend(_link_destinations(args))
     elif executable == "tar" and _tar_extracts(args):
-        destinations.extend(
-            _output_option_destinations(args, {"-C", "--directory"})
-        )
+        destinations.extend(_output_option_destinations(args, {"-C", "--directory"}))
     elif executable == "unzip":
         destinations.extend(_output_option_destinations(args, {"-d"}))
     elif executable == "rsync":
@@ -1022,9 +1292,7 @@ def _write_sink_destinations(node: _CommandNode) -> list[str]:
 
 
 def _link_destinations(args: list[str]) -> list[str]:
-    target_directories = _output_option_destinations(
-        args, {"-t", "--target-directory"}
-    )
+    target_directories = _output_option_destinations(args, {"-t", "--target-directory"})
     if target_directories:
         return target_directories
     positional = [arg for arg in args if not arg.startswith("-")]
@@ -1040,8 +1308,82 @@ def _tar_extracts(args: list[str]) -> bool:
 
 
 def _rsync_destinations(args: list[str]) -> list[str]:
-    positional = [arg for arg in args if not arg.startswith("-")]
-    return positional[-1:]
+    value_options = {
+        "-e",
+        "--rsh",
+        "-f",
+        "--filter",
+        "--exclude",
+        "--include",
+        "--exclude-from",
+        "--include-from",
+        "--files-from",
+        "--rsync-path",
+        "--password-file",
+        "--log-file",
+        "--log-file-format",
+        "--backup-dir",
+        "--suffix",
+        "--temp-dir",
+        "--partial-dir",
+        "--compare-dest",
+        "--copy-dest",
+        "--link-dest",
+        "--timeout",
+        "--contimeout",
+        "--bwlimit",
+        "--max-size",
+        "--min-size",
+        "--chmod",
+        "--chown",
+        "--usermap",
+        "--groupmap",
+        "-M",
+        "--remote-option",
+    }
+    output_options = {
+        "--log-file",
+        "--backup-dir",
+        "--temp-dir",
+        "--partial-dir",
+    }
+    positionals: list[str] = []
+    additional_sinks: list[str] = []
+    uncertain = False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            positionals.extend(args[index + 1 :])
+            break
+        if arg.startswith("--") and "=" in arg:
+            option, value = arg.split("=", 1)
+            if option in output_options:
+                additional_sinks.append(value)
+            elif option not in value_options:
+                uncertain = True
+            index += 1
+            continue
+        if arg in value_options:
+            if index + 1 >= len(args):
+                uncertain = True
+                break
+            if arg in output_options:
+                additional_sinks.append(args[index + 1])
+            index += 2
+            continue
+        if arg.startswith(("-e", "-f", "-M")) and len(arg) > 2:
+            index += 1
+            continue
+        if arg.startswith("-"):
+            index += 1
+            continue
+        positionals.append(arg)
+        index += 1
+    destinations = [*positionals[-1:], *additional_sinks]
+    if uncertain:
+        destinations.append("$UNRESOLVED_RSYNC_OPTION")
+    return destinations
 
 
 def _unknown_mutator_protected_paths(node: _CommandNode) -> list[str]:
@@ -1060,7 +1402,20 @@ def _unknown_mutator_protected_paths(node: _CommandNode) -> list[str]:
     ):
         return []
     candidates = [arg for arg in args if not arg.startswith("-")]
+    candidates.extend(
+        arg.split("=", 1)[1]
+        for arg in args
+        if arg.startswith("-") and "=" in arg and arg.split("=", 1)[1]
+    )
     return [item["path"] for item in _protected_resources(candidates)]
+
+
+def _archive_extracts(executable: str, args: list[str]) -> bool:
+    if executable == "tar":
+        return _tar_extracts(args)
+    if executable != "unzip":
+        return False
+    return not any(arg in {"-l", "-t", "-v", "--version"} for arg in args)
 
 
 def _copy_move_destinations(executable: str, args: list[str]) -> list[str]:
@@ -1648,6 +2003,73 @@ def _command_substitutions(text: str) -> list[str]:
     return substitutions
 
 
+def _process_substitutions(text: str) -> list[str]:
+    substitutions: list[str] = []
+    quote: str | None = None
+    escaped = False
+    index = 0
+    while index < len(text) - 1:
+        char = text[index]
+        if escaped:
+            escaped = False
+            index += 1
+            continue
+        if char == "\\" and quote != "'":
+            escaped = True
+            index += 1
+            continue
+        if quote:
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            index += 1
+            continue
+        if char in {"<", ">"} and text[index + 1] == "(":
+            end = _matching_parenthesis(text, index + 1)
+            if end is None:
+                index += 2
+                continue
+            substitutions.append(text[index + 2 : end])
+            index = end + 1
+            continue
+        index += 1
+    return substitutions
+
+
+def _heredoc_bodies(text: str) -> list[str]:
+    lines = text.splitlines()
+    bodies: list[str] = []
+    index = 0
+    while index < len(lines):
+        match = re.search(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1", lines[index])
+        if match is None:
+            index += 1
+            continue
+        prefix_nodes = _parse_command_nodes(lines[index][: match.start()])
+        receiver = _executable(prefix_nodes[-1].tokens) if prefix_nodes else None
+        delimiter = match.group(2)
+        body: list[str] = []
+        index += 1
+        while index < len(lines) and lines[index].lstrip("\t") != delimiter:
+            body.append(lines[index])
+            index += 1
+        if _heredoc_receiver_can_execute(receiver):
+            bodies.append("\n".join(body))
+        index += 1
+    return bodies
+
+
+def _heredoc_receiver_can_execute(executable: str | None) -> bool:
+    if executable is None:
+        return True
+    if executable in _SHELLS or _interpreter_family(executable) is not None:
+        return True
+    return executable not in _READ_EXECUTABLES
+
+
 def _matching_parenthesis(text: str, opening: int) -> int | None:
     depth = 0
     quote: str | None = None
@@ -1799,9 +2221,7 @@ def _node_writes(tokens: list[str], executable: str, args: list[str]) -> bool:
         return True
     if executable == "tar" and _tar_extracts(args):
         return True
-    if executable == "unzip" and not any(
-        arg in {"-l", "-t", "-v"} for arg in args
-    ):
+    if executable == "unzip" and not any(arg in {"-l", "-t", "-v"} for arg in args):
         return True
     if executable == "sort" and _has_output_option(args, {"-o", "--output"}):
         return True

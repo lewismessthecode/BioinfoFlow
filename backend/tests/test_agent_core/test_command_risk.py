@@ -44,6 +44,7 @@ REMOTE = CommandTargetProfile(
     network_allowed=True,
     connection_id="conn-a",
 )
+BYPASS_TARGETS = [LOCAL_UNSANDBOXED, REMOTE]
 
 
 @pytest.mark.parametrize(
@@ -676,7 +677,7 @@ def test_versioned_and_alternate_inline_interpreters_require_approval(command):
     "command",
     [
         "python3.13 -c 'import os; os.system(\"reboot\")'",
-        "nodejs -e 'require(\"child_process\").execSync(\"reboot\")'",
+        'nodejs -e \'require("child_process").execSync("reboot")\'',
         "ruby3.4 -e 'system(\"reboot\")'",
         "perl5.40 -e 'system(\"reboot\")'",
         "php8.4 -r 'system(\"reboot\");'",
@@ -696,6 +697,183 @@ def test_versioned_interpreter_literal_hardlines_are_denied(command):
         )
         .decision
         == "deny"
+    )
+
+
+@pytest.mark.parametrize("target", BYPASS_TARGETS, ids=["local", "ssh"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "command -p reboot",
+        "command -- reboot",
+        "nohup -- reboot",
+        "exec -a harmless reboot",
+        "sudo --user root reboot",
+        "timeout --signal KILL 1 reboot",
+        "nice --adjustment 10 reboot",
+        "systemctl --host remote reboot",
+        "busybox ash -c reboot",
+        "xargs command -p reboot",
+        "find / -exec command -p rm -rf {} +",
+        "(reboot)",
+        "{ reboot; }",
+        "if true; then reboot; fi",
+        "cat <(reboot)",
+        "sh <<'EOF'\nreboot\nEOF",
+    ],
+)
+def test_literal_catastrophic_nested_commands_are_denied_in_bypass(target, command):
+    assessment = assess_command_risk(command, target=target)
+
+    assert assessment.hard_blocked is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "deny"
+    )
+
+
+@pytest.mark.parametrize("target", BYPASS_TARGETS, ids=["local", "ssh"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "(printf ok)",
+        "if true; then printf ok; fi",
+        "for reboot in one; do printf ok; done",
+        "diff <(cat before.txt) <(cat after.txt)",
+        "sh <<'EOF'\nprintf ok\nEOF",
+        "env --split-string='printf ok'",
+    ],
+)
+def test_unsupported_shell_grammar_fails_ask_in_bypass(target, command):
+    assessment = assess_command_risk(command, target=target)
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize("target", BYPASS_TARGETS, ids=["local", "ssh"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python3.13 '-cprint(\"ok\")'",
+        "nodejs '--eval=console.log(\"ok\")'",
+        "ruby3.4 '-eputs(\"ok\")'",
+        "perl5.40 '-eprint(\"ok\")'",
+    ],
+)
+def test_attached_inline_interpreter_source_requires_approval(target, command):
+    assessment = assess_command_risk(command, target=target)
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize("target", BYPASS_TARGETS, ids=["local", "ssh"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python3.13 '-cimport os; os.system(\"reboot\")'",
+        'nodejs \'--eval=require("child_process").execSync("reboot")\'',
+        "ruby3.4 '-esystem(\"reboot\")'",
+        "perl5.40 '-esystem(\"reboot\")'",
+    ],
+)
+def test_attached_inline_interpreter_hardlines_are_denied(target, command):
+    assessment = assess_command_risk(command, target=target)
+
+    assert assessment.hard_blocked is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "deny"
+    )
+
+
+@pytest.mark.parametrize("target", BYPASS_TARGETS, ids=["local", "ssh"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf x >| /home/alice/.ssh/config",
+        "rsync payload /home/alice/.ssh/authorized_keys --log-file /tmp/rsync.log",
+        "credential-rewriter --dest=/home/alice/.ssh/config",
+        "tar -xf payload.tar -C /home/alice",
+        "unzip payload.zip -d /home/alice",
+    ],
+)
+def test_opaque_or_protected_write_sinks_fail_ask_in_bypass(target, command):
+    assessment = assess_command_risk(command, target=target)
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize("target", BYPASS_TARGETS, ids=["local", "ssh"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "command -v reboot",
+        "tar -tf payload.tar",
+        "unzip -l payload.zip",
+        "python3.13 script.py",
+    ],
+)
+def test_provable_non_inline_or_read_only_analogs_do_not_force_approval(
+    target, command
+):
+    assessment = assess_command_risk(command, target=target)
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is False
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "allow"
     )
 
 

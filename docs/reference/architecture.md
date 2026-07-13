@@ -213,8 +213,11 @@ symlink-sensitive remote paths require approval when safety cannot be proven.
 Protected command destinations are detected lexically, including common link,
 archive-extraction, and synchronization forms. This analysis does not resolve
 pre-existing filesystem symlinks or inspect archive members, so it is defense in
-depth rather than an OS boundary; actual confinement comes from the active local
-sandbox or the remote Unix account and server controls.
+depth rather than an OS boundary. Opaque archive extraction, process
+substitution, executable heredocs, compound shell grammar, and wrapper options
+that cannot be parsed confidently require explicit approval even in bypass
+mode. Actual confinement comes from the active local sandbox or the remote Unix
+account and server controls.
 
 ## Remote Connections
 
