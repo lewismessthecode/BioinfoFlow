@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent_core_repo import AgentEventRepository
 from app.services.agent_core.observability import agent_event_log_fields
+from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.utils.logging import get_logger
 
 
@@ -15,8 +16,16 @@ logger = get_logger(__name__)
 
 
 class AgentEventLedger:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        owned_turn_id: str | None = None,
+        expected_owner_token: str | None = None,
+    ):
         self.event_repo = AgentEventRepository(session)
+        self.owned_turn_id = owned_turn_id
+        self.expected_owner_token = expected_owner_token
 
     async def append(
         self,
@@ -27,21 +36,48 @@ class AgentEventLedger:
         payload: dict | None = None,
         visibility: str = "user",
         schema_version: int = 1,
+        expected_owner_token: str | None = None,
+        after_owner_fenced_transition: bool = False,
     ):
+        if (
+            not after_owner_fenced_transition
+            and expected_owner_token is None
+            and getattr(self, "expected_owner_token", None) is not None
+            and turn_id == getattr(self, "owned_turn_id", None)
+        ):
+            expected_owner_token = self.expected_owner_token
         lock = _session_seq_locks.setdefault(session_id, asyncio.Lock())
         for attempt in range(3):
             async with lock:
                 seq = await self.event_repo.next_seq(session_id)
                 try:
-                    event = await self.event_repo.create(
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        seq=seq,
-                        type=type,
-                        payload=payload or {},
-                        visibility=visibility,
-                        schema_version=schema_version,
-                    )
+                    data = {
+                        "session_id": session_id,
+                        "seq": seq,
+                        "type": type,
+                        "payload": payload or {},
+                        "visibility": visibility,
+                        "schema_version": schema_version,
+                    }
+                    if expected_owner_token is None:
+                        event = await self.event_repo.create(
+                            turn_id=turn_id,
+                            **data,
+                        )
+                    else:
+                        if turn_id is None:
+                            raise ValueError(
+                                "turn_id is required for owner-conditioned events"
+                            )
+                        event, owned = await self.event_repo.create_for_owned_turn(
+                            turn_id=turn_id,
+                            expected_owner_token=expected_owner_token,
+                            **data,
+                        )
+                        if not owned or event is None:
+                            raise TurnOwnershipLostError(
+                                "Agent turn ownership was replaced"
+                            )
                     logger.debug(
                         "agent_core.event.appended",
                         **agent_event_log_fields(

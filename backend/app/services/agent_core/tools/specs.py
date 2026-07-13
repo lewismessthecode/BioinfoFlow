@@ -38,6 +38,7 @@ class AgentToolContext:
     session_id: str
     turn_id: str
     ownership_guard: Callable[[], Awaitable[None]] | None = None
+    expected_owner_token: str | None = None
 
     async def ensure_turn_ownership(self) -> None:
         if self.ownership_guard is not None:
@@ -47,5 +48,7 @@ class AgentToolContext:
 class AgentTool(Protocol):
     spec: AgentToolSpec
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         """Run the tool through typed platform/domain service boundaries."""

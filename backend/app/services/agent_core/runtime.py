@@ -146,6 +146,7 @@ class AgentCoreRuntime:
             turn_id=str(turn.id),
             type=AgentEventType.TURN_STARTED,
             payload={},
+            expected_owner_token=ownership.owner_token,
         )
         logger.info(
             "agent_core.turn.started",
@@ -272,6 +273,7 @@ class AgentCoreRuntime:
             turn_id=str(turn.id),
             type=AgentEventType.TURN_STARTED,
             payload={"resume_action_id": action_id},
+            expected_owner_token=ownership.owner_token,
         )
         logger.info(
             "agent_core.turn.started",
@@ -329,7 +331,11 @@ class AgentCoreRuntime:
         session,
         ownership: TurnOwnership,
     ) -> None:
-        transcript = AgentTranscriptStore(self.turn_repo.session)
+        transcript = AgentTranscriptStore(
+            self.turn_repo.session,
+            owned_turn_id=str(turn.id),
+            expected_owner_token=ownership.owner_token,
+        )
         batch = await ordered_tool_call_batch(
             action_repo=action_repo,
             transcript=transcript,
@@ -368,11 +374,16 @@ class AgentCoreRuntime:
                         error=error,
                     )
                 if sibling.requires_resume or sibling.completed_at is None:
-                    await action_repo.update_all(
+                    updated, owned = await action_repo.update_all_owned(
                         sibling,
+                        expected_owner_token=ownership.owner_token,
                         requires_resume=False,
                         completed_at=sibling.completed_at or now,
                     )
+                    if not owned or updated is None:
+                        raise TurnOwnershipLostError(
+                            "Agent turn ownership was replaced"
+                        )
                 continue
 
             if matching_tool_result is None:
@@ -385,18 +396,22 @@ class AgentCoreRuntime:
                     result=None,
                     error=config_error,
                 )
-            sibling = await action_repo.update_all(
+            sibling, owned = await action_repo.update_all_owned(
                 sibling,
+                expected_owner_token=ownership.owner_token,
                 status=AgentActionStatus.FAILED,
                 error=config_error,
                 completed_at=now,
                 requires_resume=False,
             )
+            if not owned or sibling is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
             await self.ledger.append(
                 session_id=str(sibling.session_id),
                 turn_id=str(sibling.turn_id),
                 type=AgentEventType.ACTION_FAILED,
                 payload={"action_id": str(sibling.id), "error": config_error},
+                expected_owner_token=ownership.owner_token,
             )
             agent_metrics.increment("tools.failed")
         await transcript.clear_session_metadata(
@@ -737,6 +752,7 @@ class AgentCoreRuntime:
                         "model": candidate["model"],
                         "source": candidate["source"],
                     },
+                    expected_owner_token=ownership.owner_token,
                 )
             else:
                 await self.ledger.append(
@@ -749,6 +765,7 @@ class AgentCoreRuntime:
                         "model": candidate["model"],
                         "source": candidate["source"],
                     },
+                    expected_owner_token=ownership.owner_token,
                 )
                 agent_metrics.increment("models.fallbacks")
 
