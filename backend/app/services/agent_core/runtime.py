@@ -248,11 +248,50 @@ class AgentCoreRuntime:
             AgentActionStatus.CANCELLED,
             AgentActionStatus.REJECTED,
         }
+        matching_tool_result = await transcript.find_committed_tool_result(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            tool_call_id=action.tool_call_id,
+        )
         if action.status in terminal_statuses:
-            await transcript.clear_session_metadata(
-                session_id=str(session.id),
-                metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
-            )
+            if matching_tool_result is None:
+                error = action.error
+                if action.status == AgentActionStatus.REJECTED and not error:
+                    error = {
+                        "type": "UserRejected",
+                        "message": "The user rejected this tool call.",
+                    }
+                await transcript.append_parts(
+                    session_id=str(session.id),
+                    turn_id=str(turn.id),
+                    role="tool",
+                    parts=[
+                        text_part(
+                            json.dumps(
+                                {
+                                    "tool": action.name,
+                                    "status": action.status,
+                                    "result": action.result,
+                                    "error": error,
+                                },
+                                separators=(",", ":"),
+                                default=str,
+                            )
+                        )
+                    ],
+                    metadata={
+                        "tool_call_id": action.tool_call_id,
+                        "tool": action.name,
+                        "is_error": bool(error)
+                        or action.status != AgentActionStatus.COMPLETED,
+                    },
+                    replace_session_metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+                )
+            else:
+                await transcript.clear_session_metadata(
+                    session_id=str(session.id),
+                    metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+                )
             return
 
         error = {
@@ -262,30 +301,36 @@ class AgentCoreRuntime:
                 "the tool was not executed."
             ),
         }
-        await transcript.append_parts(
-            session_id=str(session.id),
-            turn_id=str(turn.id),
-            role="tool",
-            parts=[
-                text_part(
-                    json.dumps(
-                        {
-                            "tool": action.name,
-                            "status": AgentActionStatus.FAILED,
-                            "result": None,
-                            "error": error,
-                        },
-                        separators=(",", ":"),
+        if matching_tool_result is None:
+            await transcript.append_parts(
+                session_id=str(session.id),
+                turn_id=str(turn.id),
+                role="tool",
+                parts=[
+                    text_part(
+                        json.dumps(
+                            {
+                                "tool": action.name,
+                                "status": AgentActionStatus.FAILED,
+                                "result": None,
+                                "error": error,
+                            },
+                            separators=(",", ":"),
+                        )
                     )
-                )
-            ],
-            metadata={
-                "tool_call_id": action.tool_call_id,
-                "tool": action.name,
-                "is_error": True,
-            },
-            replace_session_metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
-        )
+                ],
+                metadata={
+                    "tool_call_id": action.tool_call_id,
+                    "tool": action.name,
+                    "is_error": True,
+                },
+                replace_session_metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+            )
+        else:
+            await transcript.clear_session_metadata(
+                session_id=str(session.id),
+                metadata_key=RESPONSES_CONTINUATION_METADATA_KEY,
+            )
         action = await action_repo.update_all(
             action,
             status=AgentActionStatus.FAILED,

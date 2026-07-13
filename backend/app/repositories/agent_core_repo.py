@@ -122,6 +122,32 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_committed_tool_result(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        tool_call_id: str | None,
+    ) -> AgentMessage | None:
+        if not tool_call_id:
+            return None
+        stmt = (
+            select(self.model)
+            .where(
+                self.model.session_id == session_id,
+                self.model.turn_id == turn_id,
+                self.model.role == "tool",
+                self.model.status == AgentMessageStatus.COMMITTED,
+            )
+            .order_by(desc(self.model.ordering_index), desc(self.model.id))
+        )
+        result = await self.session.execute(stmt)
+        for message in result.scalars().all():
+            metadata = message.message_metadata or {}
+            if metadata.get("tool_call_id") == tool_call_id:
+                return message
+        return None
+
     async def shift_ordering_indices(self, session_id: str, *, starting_at: int, delta: int = 1) -> None:
         if delta == 0:
             return
