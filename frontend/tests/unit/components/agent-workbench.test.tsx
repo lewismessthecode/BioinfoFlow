@@ -1037,6 +1037,37 @@ describe("AgentWorkbench", () => {
     expect(screen.queryByTestId("agent-mobile-sidecar-overlay")).not.toBeInTheDocument()
   })
 
+  it("closes the mobile workspace dialog before jumping to a pending decision", async () => {
+    useIsMobileMock.mockReturnValue(true)
+    setupRuntime({
+      session: baseSession,
+      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
+      events: [waitingDecisionEvent],
+      status: "running",
+    })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+
+    const approvalCard = screen.getByTestId("inline-approval-card")
+    approvalCard.scrollIntoView = vi.fn()
+    const approveButton = within(approvalCard).getByRole("button", { name: "Approve" })
+
+    fireEvent.click(
+      within(screen.getByTestId("artifact-panel")).getByRole("button", {
+        name: "Needs confirmation · Jump",
+      }),
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("agent-mobile-sidecar-overlay")).not.toBeInTheDocument()
+      expect(approvalCard.scrollIntoView).toHaveBeenCalled()
+      expect(approveButton).toHaveFocus()
+    })
+  })
+
   it("moves the composer to the bottom after a turn exists", () => {
     workspaceProjectsMock = [
       {

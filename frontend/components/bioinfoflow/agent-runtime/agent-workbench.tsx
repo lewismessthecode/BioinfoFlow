@@ -32,7 +32,7 @@ import { AgentTabbedPanel, type AgentTabbedPanelTab } from "./agent-tabbed-panel
 import { AgentTodoDock } from "./agent-todo-dock"
 import { AgentTranscript } from "./agent-transcript"
 import { ComposerApprovalPopover } from "./composer-approval-popover"
-import { scheduleDecisionFocusHandoff } from "./decision-focus"
+import { jumpToDecisionTarget, scheduleDecisionFocusHandoff } from "./decision-focus"
 import { getPendingActions, parseWaitingDecision } from "./pending-actions"
 import type { AgentDecisionHandler } from "./types"
 import { todosFromArtifact } from "./artifact-viewers"
@@ -832,6 +832,14 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       setSidecarOpen(false)
     }, [])
 
+    const jumpFromMobileSidecar = useCallback(
+      (targetId: string) => {
+        closeSidecar()
+        window.requestAnimationFrame(() => jumpToDecisionTarget(targetId))
+      },
+      [closeSidecar],
+    )
+
     useEffect(() => {
       if (desktopSidecarVisible || mobileSidecarVisible) return
       if (desktopSidecarFocusTargetRef.current !== "navbar") return
@@ -1347,6 +1355,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
               onBrowserSrcChange={setBrowserSrc}
               onClose={() => closeSidecar()}
               onAddContext={addContextAttachment}
+              onJumpToPendingDecision={jumpFromMobileSidecar}
               variant="mobile"
               className="flex h-full w-full flex-col rounded-xl border border-border/70 shadow-[0_18px_48px_rgba(36,35,33,0.10)]"
             />

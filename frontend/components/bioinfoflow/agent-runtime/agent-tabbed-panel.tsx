@@ -34,6 +34,7 @@ type AgentTabbedPanelProps = {
   onBrowserSrcChange: (value: string) => void
   onClose: () => void
   onAddContext?: (path: string) => void
+  onJumpToPendingDecision?: (targetId: string) => void
   variant?: "desktop" | "mobile"
   hideHeader?: boolean
   className?: string
@@ -62,6 +63,7 @@ export function AgentTabbedPanel({
   onBrowserSrcChange,
   onClose,
   onAddContext,
+  onJumpToPendingDecision,
   variant = "desktop",
   hideHeader = false,
   className,
@@ -139,7 +141,12 @@ export function AgentTabbedPanel({
     : null
   const jumpToPendingDecision = () => {
     if (!pendingDecisionActionId) return
-    jumpToDecisionTarget(decisionScrollTargetId(pendingDecisionActionId))
+    const targetId = decisionScrollTargetId(pendingDecisionActionId)
+    if (onJumpToPendingDecision) {
+      onJumpToPendingDecision(targetId)
+      return
+    }
+    jumpToDecisionTarget(targetId)
   }
   const onTabKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,
