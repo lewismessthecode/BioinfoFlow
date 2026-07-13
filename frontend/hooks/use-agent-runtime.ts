@@ -559,6 +559,22 @@ export function useAgentRuntime(
             throw new Error("Permission update was superseded by a newer policy version")
           }
           confirmedSessionsRef.current.set(sessionId, updated)
+          const pendingIntent = pendingPermissionIntentRef.current
+          if (
+            pendingIntent?.sessionId === sessionId &&
+            pendingIntent.sequence > sequence
+          ) {
+            pendingIntent.basePolicyVersion = Math.max(
+              pendingIntent.basePolicyVersion,
+              sessionPolicyVersion(updated),
+            )
+          }
+          updateSessions((current) =>
+            applyPendingPermissionIntent(
+              mergeSessionList(current, updated),
+              pendingPermissionIntentRef.current,
+            ),
+          )
           if (permissionDraftSequenceRef.current === draftSequence) {
             confirmedDraftPermissionModeRef.current = mode
             confirmedStorageValueRef.current = mode
@@ -569,7 +585,6 @@ export function useAgentRuntime(
             activeSessionIdRef.current === sessionId
           ) {
             pendingPermissionIntentRef.current = null
-            updateSessions((current) => mergeSessionList(current, updated))
             setPermissionUpdate({
               status: "success",
               mode,

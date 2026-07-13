@@ -975,6 +975,55 @@ describe("useAgentRuntime", () => {
     expect(result.current.permissionUpdate.status).toBe("idle")
   })
 
+  it("merges an authoritative permission response after switching away and back", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    const session2 = { ...session, id: "session-2" }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(request.promise)
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: session2, turns: [], events: [] })
+    rerender({ activeSessionId: "session-2" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session, turns: [], events: [] })
+    rerender({ activeSessionId: "session-1" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    await act(async () => {
+      await result.current.refreshState("session-1")
+    })
+    expect(result.current.session?.permission_policy_version ?? 0).toBeLessThan(2)
+
+    await act(async () => {
+      request.resolve({
+        ...session,
+        permission_mode: "bypass",
+        permission_policy_version: 2,
+      })
+      await update
+    })
+
+    expect(result.current.session).toMatchObject({
+      id: "session-1",
+      permission_mode: "bypass",
+      permission_policy_version: 2,
+    })
+    expect(result.current.permissionUpdate.status).toBe("idle")
+  })
+
   it("does not surface a failed permission transaction on a newly selected session", async () => {
     const request = deferred<AgentRuntimeSession>()
     const session2 = { ...session, id: "session-2", permission_policy_version: 7 }
