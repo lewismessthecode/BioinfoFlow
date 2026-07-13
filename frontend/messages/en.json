@@ -2281,7 +2281,18 @@
       "retry": "Retry",
       "endpointLabel": "Endpoint",
       "apiKeyLabel": "API key",
-      "modelIdLabel": "Model ID"
+      "modelIdLabel": "Model ID",
+      "protocolLabel": "Protocol",
+      "protocolChat": "Chat Completions",
+      "protocolResponses": "Responses",
+      "test": "Test",
+      "testing": "Testing...",
+      "testModelLabel": "Test model",
+      "noTestModels": "No model available",
+      "testSucceeded": "Connection verified",
+      "testFailed": "Connection failed",
+      "settingsChanged": "Settings changed. Save and test again.",
+      "retryable": "Retryable"
     },
     "registries": {
       "title": "Container Registries",
