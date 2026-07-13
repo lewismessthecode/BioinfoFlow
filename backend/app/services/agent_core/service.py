@@ -575,7 +575,11 @@ class AgentCoreService:
                 claimed_at=None,
                 lease_until=None,
                 completed_at=None,
-                loop_state={"state": "waiting_approval", "recovered": True},
+                loop_state=_recovery_loop_state(
+                    turn,
+                    state="waiting_approval",
+                    recovered=True,
+                ),
             )
             return "waiting"
 
@@ -588,7 +592,12 @@ class AgentCoreService:
                 error_message=None,
                 claimed_at=None,
                 lease_until=None,
-                loop_state={"state": "running", "recovered": True, "resume_action_id": str(latest_action.id)},
+                loop_state=_recovery_loop_state(
+                    turn,
+                    state="running",
+                    recovered=True,
+                    resume_action_id=str(latest_action.id),
+                ),
             )
             await self.ledger.append(
                 session_id=str(turn.session_id),
@@ -612,7 +621,11 @@ class AgentCoreService:
                 completed_at=now,
                 claimed_at=None,
                 lease_until=None,
-                loop_state={"termination_reason": "model_failed", "recovered": True},
+                loop_state=_recovery_loop_state(
+                    turn,
+                    termination_reason="model_failed",
+                    recovered=True,
+                ),
             )
             await self.ledger.append(
                 session_id=str(turn.session_id),
@@ -631,7 +644,11 @@ class AgentCoreService:
             error_message=None,
             claimed_at=None,
             lease_until=None,
-            loop_state={"state": "queued", "recovered": True},
+            loop_state=_recovery_loop_state(
+                turn,
+                state="queued",
+                recovered=True,
+            ),
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
@@ -909,3 +926,9 @@ def _is_sensitive_context_path(path) -> bool:
     if name.startswith(".env."):
         return True
     return path.is_file() and path.suffix.lower() in _DENIED_CONTEXT_SUFFIXES
+
+
+def _recovery_loop_state(turn, **updates: Any) -> dict[str, Any]:
+    loop_state = dict(getattr(turn, "loop_state", None) or {})
+    loop_state.update(updates)
+    return loop_state

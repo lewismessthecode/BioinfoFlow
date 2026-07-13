@@ -5,6 +5,7 @@ import json
 import sys
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings, settings
 from app.models.agent_core import AgentActionStatus
@@ -362,10 +363,40 @@ async def test_runtime_retries_transient_model_failure_and_records_event(
 
 @pytest.mark.asyncio
 async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
+    model_calls: list[str] = []
+
     async def fallback_completion(*args, **kwargs):
         model_name = str(kwargs["model"])
+        selected = "primary" if "primary-model" in model_name else "fallback"
+        model_calls.append(selected)
+
+        class FakeUsage:
+            def model_dump(self):
+                if selected == "primary":
+                    return {
+                        "prompt_tokens": 1,
+                        "completion_tokens": 2,
+                        "total_tokens": 3,
+                    }
+                return {
+                    "prompt_tokens": 5,
+                    "completion_tokens": 7,
+                    "total_tokens": 12,
+                }
+
         if "primary-model" in model_name:
-            raise RuntimeError("Provider timed out")
+            class FakeMessage:
+                content = ""
+                tool_calls = None
+
+            class FakeChoice:
+                message = FakeMessage()
+
+            class FakeResponse:
+                choices = [FakeChoice()]
+                usage = FakeUsage()
+
+            return FakeResponse()
 
         class FakeMessage:
             content = "Answered from fallback."
@@ -376,7 +407,7 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
 
         class FakeResponse:
             choices = [FakeChoice()]
-            usage = None
+            usage = FakeUsage()
 
         return FakeResponse()
 
@@ -385,7 +416,8 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
     )
     monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
-    monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 1)
+    monkeypatch.setattr(settings, "agent_max_iterations", 3)
     await _workspace(db_session)
     provider = LlmProvider(
         name="fallback provider",
@@ -438,6 +470,17 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
 
     assert completed_turn.status == "completed"
     assert completed_turn.final_text == "Answered from fallback."
+    assert model_calls == ["primary", "primary", "fallback"]
+    assert completed_turn.iteration_count == 3
+    assert completed_turn.budget_snapshot == {
+        "used_iterations": 3,
+        "max_iterations": 3,
+    }
+    assert completed_turn.token_usage == {
+        "prompt_tokens": 7,
+        "completion_tokens": 11,
+        "total_tokens": 18,
+    }
     assert completed_turn.model_profile_snapshot["resolved_model_id"] == str(
         fallback.id
     )
@@ -748,9 +791,15 @@ async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(
 
 
 @pytest.mark.asyncio
-async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatch):
+async def test_recovery_reenqueues_requested_tool_actions(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
     calls = 0
     resumed: list[tuple[str, str]] = []
+    recovery_service = None
+    turn_id = ""
 
     async def fake_completion(*args, **kwargs):
         nonlocal calls
@@ -784,6 +833,13 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
             message.content = ""
             message.tool_calls = [FakeToolCall()]
         else:
+            recovered_turn = await recovery_service.turn_repo.get(turn_id)
+            progress = recovered_turn.loop_state["progress"]
+            assert [
+                json.loads(signature)["status"]
+                for signature in progress["previous_tool_results"]
+            ] == ["completed"]
+            assert "pending_observation" not in progress
             message.content = "Recovered."
             message.tool_calls = None
 
@@ -818,6 +874,7 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
         user_id="dev",
         input_text="Approve and recover this action.",
     )
+    turn_id = str(turn.id)
     waiting_turn = await service.runtime.run_turn(str(turn.id))
     action = (await AgentActionRepository(db_session).list_for_turn(str(turn.id)))[0]
 
@@ -831,10 +888,26 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
     assert decided.status == AgentActionStatus.REQUESTED
 
     resumed.clear()
-    summary = await service.recover_orphaned_turns()
+    session_maker = async_sessionmaker(
+        db_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    async with session_maker() as recovery_db:
+        recovery_service = AgentCoreService(recovery_db)
+        summary = await recovery_service.recover_orphaned_turns()
+        recovered_turn = await recovery_service.turn_repo.get(str(turn.id))
 
-    assert summary["enqueued"] == 1
-    assert resumed == [(str(action.id), str(turn.id))]
+        assert summary["enqueued"] == 1
+        assert resumed == [(str(action.id), str(turn.id))]
+        assert "pending_observation" in recovered_turn.loop_state["progress"]
+
+        completed_turn = await recovery_service.runtime.resume_turn_after_action(
+            str(action.id)
+        )
+
+        assert completed_turn.status == "completed"
+        assert completed_turn.final_text == "Recovered."
 
 
 @pytest.mark.asyncio

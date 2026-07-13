@@ -1069,12 +1069,13 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
                 for item in kwargs["messages"]
                 for call in item.get("tool_calls", [])
             }
-            result_ids = {
+            result_ids = [
                 item.get("tool_call_id")
                 for item in kwargs["messages"]
                 if item.get("role") == "tool"
-            }
-            assert emitted_ids == result_ids
+            ]
+            assert emitted_ids == set(result_ids)
+            assert result_ids == ["tool-call-question", "tool-call-projects"]
             message.content = "Continued after the answer."
             message.tool_calls = None
 
@@ -1123,9 +1124,7 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
     assert [result["status"] for result in pending_results] == ["pending", "deferred"]
     assert pending_results[0]["tool_call_id"] == "tool-call-question"
     assert progress["repeat_count"] == 0
-    deferred_message = next(message for message in messages if message.role == "tool")
-    assert deferred_message.message_metadata["tool_call_id"] == "tool-call-projects"
-    assert "DeferredToolCall" in deferred_message.content_parts[0]["text"]
+    assert not any(message.role == "tool" for message in messages)
 
     await service.decide_action(
         action_id=str(actions[0].id),
@@ -1138,6 +1137,13 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
 
     assert model_calls == 2
     assert resumed_turn.status == "completed"
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
+        "tool-call-question",
+        "tool-call-projects",
+    ]
+    assert "DeferredToolCall" in tool_messages[1].content_parts[0]["text"]
 
 
 @pytest.mark.asyncio
@@ -1430,11 +1436,7 @@ async def test_dynamic_risk_read_tool_does_not_join_concurrent_batch(
 
     assert waiting_turn.status == "waiting_approval"
     assert [action.name for action in actions] == ["dynamic.read"]
-    deferred_message = next(message for message in messages if message.role == "tool")
-    assert deferred_message.message_metadata["tool_call_id"] == (
-        "tool-call-projects-after-dynamic"
-    )
-    assert "DeferredToolCall" in deferred_message.content_parts[0]["text"]
+    assert not any(message.role == "tool" for message in messages)
 
 
 @pytest.mark.asyncio
@@ -1493,12 +1495,13 @@ async def test_tool_batch_stops_at_first_approval_and_defers_later_mutation(
                 for item in kwargs["messages"]
                 for call in item.get("tool_calls", [])
             }
-            result_ids = {
+            result_ids = [
                 item.get("tool_call_id")
                 for item in kwargs["messages"]
                 if item.get("role") == "tool"
-            }
-            assert emitted_ids == result_ids
+            ]
+            assert emitted_ids == set(result_ids)
+            assert result_ids == ["tool-call-bash", "tool-call-write"]
             message.content = "Continued without the deferred mutation."
             message.tool_calls = None
 
@@ -1541,9 +1544,7 @@ async def test_tool_batch_stops_at_first_approval_and_defers_later_mutation(
     assert waiting_turn.status == "waiting_approval"
     assert [action.name for action in actions] == ["bash"]
     assert not deferred_path.exists()
-    deferred_message = next(message for message in messages if message.role == "tool")
-    assert deferred_message.message_metadata["tool_call_id"] == "tool-call-write"
-    assert "DeferredToolCall" in deferred_message.content_parts[0]["text"]
+    assert not any(message.role == "tool" for message in messages)
 
     await service.decide_action(
         action_id=str(actions[0].id),
@@ -1556,6 +1557,13 @@ async def test_tool_batch_stops_at_first_approval_and_defers_later_mutation(
     assert model_calls == 2
     assert resumed_turn.status == "completed"
     assert not deferred_path.exists()
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
+        "tool-call-bash",
+        "tool-call-write",
+    ]
+    assert "DeferredToolCall" in tool_messages[1].content_parts[0]["text"]
 
 
 @pytest.mark.asyncio

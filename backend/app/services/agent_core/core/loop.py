@@ -246,7 +246,11 @@ class AgentLoopController:
                     text=streamed.text or None,
                 )
                 try:
-                    waiting, tool_result_signatures = await self._execute_tool_calls(
+                    (
+                        waiting,
+                        tool_result_signatures,
+                        deferred_tool_calls,
+                    ) = await self._execute_tool_calls(
                         agent_session=agent_session,
                         turn=turn,
                         tool_calls=tool_calls,
@@ -278,6 +282,7 @@ class AgentLoopController:
                             repeat_count=repeated_tool_call_count,
                             pending_tool_calls=tool_call_signatures,
                             pending_tool_results=tool_result_signatures,
+                            deferred_tool_calls=deferred_tool_calls,
                         ),
                     )
                     return LoopResult(
@@ -392,8 +397,9 @@ class AgentLoopController:
         agent_session,
         turn,
         tool_calls: list[dict],
-    ) -> tuple[bool, list[str]]:
+    ) -> tuple[bool, list[str], list[dict[str, str]]]:
         result_signatures: list[str] = []
+        deferred_tool_calls: list[dict[str, str]] = []
         index = 0
         while index < len(tool_calls):
             turn = await self._renew_turn_lease(turn)
@@ -424,14 +430,11 @@ class AgentLoopController:
                         result_signatures.append(
                             _pending_tool_result_signature(name, item.get("id"))
                         )
-                        result_signatures.extend(
-                            await self._append_deferred_tool_results(
-                                agent_session=agent_session,
-                                turn=turn,
-                                tool_calls=tool_calls[index:],
-                            )
+                        deferred_signatures, deferred_tool_calls = (
+                            self._deferred_tool_results(tool_calls[index:])
                         )
-                        return True, result_signatures
+                        result_signatures.extend(deferred_signatures)
+                        return True, result_signatures, deferred_tool_calls
                     result_signatures.append(_tool_result_signature(name, result))
                     await self._append_tool_result(
                         agent_session=agent_session,
@@ -463,14 +466,11 @@ class AgentLoopController:
                 result_signatures.append(
                     _pending_tool_result_signature(tool_name, tool_call.get("id"))
                 )
-                result_signatures.extend(
-                    await self._append_deferred_tool_results(
-                        agent_session=agent_session,
-                        turn=turn,
-                        tool_calls=tool_calls[index + 1 :],
-                    )
+                deferred_signatures, deferred_tool_calls = self._deferred_tool_results(
+                    tool_calls[index + 1 :]
                 )
-                return True, result_signatures
+                result_signatures.extend(deferred_signatures)
+                return True, result_signatures, deferred_tool_calls
             result_signatures.append(_tool_result_signature(tool_name, result))
             await self._append_tool_result(
                 agent_session=agent_session,
@@ -480,7 +480,7 @@ class AgentLoopController:
                 result=result,
             )
             index += 1
-        return False, result_signatures
+        return False, result_signatures, deferred_tool_calls
 
     async def resume_turn_from_action(
         self,
@@ -544,6 +544,7 @@ class AgentLoopController:
                     turn_id=str(turn.id),
                 ),
             )
+        pending_observation = _pending_observation(getattr(turn, "loop_state", None))
         await self._append_tool_result(
             agent_session=agent_session,
             turn=turn,
@@ -551,6 +552,16 @@ class AgentLoopController:
             tool_call_id=action.tool_call_id,
             result=result,
         )
+        if pending_observation is not None:
+            for deferred_call in pending_observation["deferred_tool_calls"]:
+                deferred_name = deferred_call["tool_name"]
+                await self._append_tool_result(
+                    agent_session=agent_session,
+                    turn=turn,
+                    tool_name=deferred_name,
+                    tool_call_id=deferred_call["tool_call_id"],
+                    result=_deferred_tool_result(deferred_name),
+                )
         if result.status not in {"completed", AgentActionStatus.REJECTED}:
             return LoopResult(
                 termination_reason="model_failed",
@@ -561,7 +572,6 @@ class AgentLoopController:
                 error_message=f"Approved tool action finished with status: {result.status}",
             )
         previous_progress = _progress_state(getattr(turn, "loop_state", None))
-        pending_observation = _pending_observation(getattr(turn, "loop_state", None))
         if pending_observation is not None:
             completed_tool_calls = pending_observation["tool_calls"]
             completed_tool_results = pending_observation["tool_results"]
@@ -670,26 +680,23 @@ class AgentLoopController:
             metadata={"tool_call_id": tool_call_id, "tool": tool_name},
         )
 
-    async def _append_deferred_tool_results(
+    def _deferred_tool_results(
         self,
-        *,
-        agent_session,
-        turn,
         tool_calls: list[dict[str, Any]],
-    ) -> list[str]:
+    ) -> tuple[list[str], list[dict[str, str]]]:
         signatures: list[str] = []
+        descriptors: list[dict[str, str]] = []
         for tool_call in tool_calls:
             tool_name = decode_provider_tool_name(tool_call["name"])
             result = _deferred_tool_result(tool_name)
             signatures.append(_tool_result_signature(tool_name, result))
-            await self._append_tool_result(
-                agent_session=agent_session,
-                turn=turn,
-                tool_name=tool_name,
-                tool_call_id=tool_call.get("id"),
-                result=result,
+            descriptors.append(
+                {
+                    "tool_name": tool_name,
+                    "tool_call_id": str(tool_call.get("id") or ""),
+                }
             )
-        return signatures
+        return signatures, descriptors
 
     async def _execute_tool_call_isolated(
         self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str
@@ -1304,6 +1311,7 @@ def _pending_progress_payload(
     repeat_count: int,
     pending_tool_calls: list[str],
     pending_tool_results: list[str],
+    deferred_tool_calls: list[dict[str, str]],
 ) -> dict[str, Any]:
     progress = _progress_payload(
         previous_tool_calls,
@@ -1313,11 +1321,12 @@ def _pending_progress_payload(
     progress["pending_observation"] = {
         "tool_calls": list(pending_tool_calls),
         "tool_results": list(pending_tool_results),
+        "deferred_tool_calls": [dict(item) for item in deferred_tool_calls],
     }
     return progress
 
 
-def _pending_observation(loop_state: dict[str, Any] | None) -> dict[str, list[str]] | None:
+def _pending_observation(loop_state: dict[str, Any] | None) -> dict[str, Any] | None:
     progress = (loop_state or {}).get("progress")
     if not isinstance(progress, dict):
         return None
@@ -1326,11 +1335,25 @@ def _pending_observation(loop_state: dict[str, Any] | None) -> dict[str, list[st
         return None
     tool_calls = pending.get("tool_calls")
     tool_results = pending.get("tool_results")
-    if not isinstance(tool_calls, list) or not isinstance(tool_results, list):
+    deferred_tool_calls = pending.get("deferred_tool_calls") or []
+    if (
+        not isinstance(tool_calls, list)
+        or not isinstance(tool_results, list)
+        or not isinstance(deferred_tool_calls, list)
+    ):
         return None
+    descriptors = [
+        {
+            "tool_name": str(item.get("tool_name") or ""),
+            "tool_call_id": str(item.get("tool_call_id") or ""),
+        }
+        for item in deferred_tool_calls
+        if isinstance(item, dict)
+    ]
     return {
         "tool_calls": [str(item) for item in tool_calls],
         "tool_results": [str(item) for item in tool_results],
+        "deferred_tool_calls": descriptors,
     }
 
 
