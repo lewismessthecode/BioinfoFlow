@@ -25,6 +25,8 @@ from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.transcript import AgentTranscriptStore, tool_calls_part
 from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
 from app.schemas.agent_core import AgentActionRead
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -650,6 +652,63 @@ async def test_continuation_claim_has_one_winner_across_database_sessions(db_ses
 
 
 @pytest.mark.asyncio
+async def test_concurrent_batch_preparation_reserves_distinct_turn_ordinals(
+    db_session, monkeypatch
+):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Prepare concurrently.",
+    )
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    both_read_same_counter = asyncio.Event()
+    readers = 0
+
+    async def synchronize_legacy_read(self, turn_id):
+        nonlocal readers
+        current = await self.session.scalar(
+            select(func.max(self.model.batch_ordinal)).where(
+                self.model.turn_id == turn_id
+            )
+        )
+        readers += 1
+        if readers == 2:
+            both_read_same_counter.set()
+        await both_read_same_counter.wait()
+        return int(current or 0) + 1
+
+    monkeypatch.setattr(
+        AgentToolCallBatchRepository,
+        "next_ordinal",
+        synchronize_legacy_read,
+        raising=False,
+    )
+
+    async def prepare(worker_session):
+        batch = await ToolCallBatchCoordinator(worker_session).create(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            tool_call_count=1,
+            commit=False,
+        )
+        await worker_session.commit()
+        return batch.batch_ordinal
+
+    async with maker() as first, maker() as second:
+        ordinals = await asyncio.gather(prepare(first), prepare(second))
+
+    assert sorted(ordinals) == [1, 2]
+
+
+@pytest.mark.asyncio
 async def test_duplicate_settle_never_downgrades_claimed_or_terminal_batch(db_session):
     await _seed_runtime(db_session)
     service = AgentCoreService(db_session)
@@ -790,6 +849,81 @@ async def test_duplicate_provider_call_id_is_scoped_to_each_batch(db_session, mo
 
 
 @pytest.mark.asyncio
+async def test_duplicate_provider_call_ids_are_normalized_within_one_batch(
+    db_session, monkeypatch
+):
+    async def fake_completion(*args, **kwargs):
+        del args, kwargs
+        return _response(
+            tool_calls=[
+                ("same-provider-id", "bash", {"command": "printf one"}),
+                ("same-provider-id", "bash", {"command": "printf two"}),
+                ("", "bash", {"command": "printf three"}),
+            ]
+        )
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr("app.services.agent_core.service.cancel_turn_run", lambda *_: False)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="ask_each_action",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep duplicate provider calls pairable.",
+    )
+
+    waiting = await service.runtime.run_turn(str(turn.id))
+
+    assert waiting.status == "waiting_approval"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    action_call_ids = [action.tool_call_id for action in actions]
+    assert len(action_call_ids) == len(set(action_call_ids)) == 3
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    assistant = next(message for message in messages if message.role == "assistant")
+    assistant_calls = next(
+        part["tool_calls"]
+        for part in assistant.content_parts
+        if part.get("type") == "tool_calls"
+    )
+    assert [call["id"] for call in assistant_calls] == action_call_ids
+    assert assistant.message_metadata["provider_tool_call_ids"] == [
+        {
+            "ordinal": 0,
+            "provider_id": "same-provider-id",
+            "internal_id": action_call_ids[0],
+        },
+        {
+            "ordinal": 1,
+            "provider_id": "same-provider-id",
+            "internal_id": action_call_ids[1],
+        },
+        {
+            "ordinal": 2,
+            "provider_id": None,
+            "internal_id": action_call_ids[2],
+        },
+    ]
+    await service.cancel_turn(
+        turn_id=str(turn.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == (
+        action_call_ids
+    )
+
+
+@pytest.mark.asyncio
 async def test_prepare_failure_repairs_every_call_with_terminal_result(db_session, monkeypatch):
     calls = 0
 
@@ -850,6 +984,67 @@ async def test_prepare_failure_repairs_every_call_with_terminal_result(db_sessio
     batch = await AgentToolCallBatchRepository(db_session).get(str(actions[0].tool_batch_id))
     assert batch is not None
     assert batch.status == AgentToolCallBatchStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_batch_flush_failure_rolls_back_and_repairs_complete_terminal_group(
+    db_session, monkeypatch
+):
+    model_calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal model_calls
+        del args
+        model_calls += 1
+        if model_calls == 1:
+            return _response(
+                tool_calls=[
+                    ("flush-1", "bash", {"command": "printf one"}),
+                    ("flush-2", "bash", {"command": "printf two"}),
+                ]
+            )
+        tool_results = [item for item in kwargs["messages"] if item["role"] == "tool"]
+        assert [item["tool_call_id"] for item in tool_results] == [
+            "flush-1",
+            "flush-2",
+        ]
+        assert all("BatchPreparationError" in item["content"] for item in tool_results)
+        return _response(text="flush repaired")
+
+    original_create = ToolCallBatchCoordinator.create
+    create_calls = 0
+
+    async def fail_first_batch_flush(self, **kwargs):
+        nonlocal create_calls
+        create_calls += 1
+        if create_calls == 1:
+            raise IntegrityError("INSERT agent_tool_call_batches", {}, Exception("race"))
+        return await original_create(self, **kwargs)
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(ToolCallBatchCoordinator, "create", fail_first_batch_flush)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Repair a failed batch flush.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert completed.status == AgentTurnStatus.COMPLETED
+    assert completed.final_text == "flush repaired"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert len(actions) == 2
+    assert all(action.status == AgentActionStatus.FAILED for action in actions)
+    batches, _ = await AgentToolCallBatchRepository(db_session).list(limit=10)
+    assert len(batches) == 1
+    assert batches[0].status == AgentToolCallBatchStatus.FAILED
 
 
 @pytest.mark.asyncio

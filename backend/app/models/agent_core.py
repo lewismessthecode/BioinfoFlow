@@ -164,6 +164,12 @@ class AgentTurn(Base, UUIDMixin, TimestampMixin):
     termination_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
     loop_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     iteration_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tool_batch_sequence: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
     budget_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     interrupt_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

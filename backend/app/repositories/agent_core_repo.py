@@ -322,11 +322,17 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def next_ordinal(self, turn_id: str) -> int:
-        current = await self.session.scalar(
-            select(func.max(self.model.batch_ordinal)).where(self.model.turn_id == turn_id)
+    async def reserve_next_ordinal(self, turn_id: str) -> int:
+        result = await self.session.execute(
+            update(AgentTurn)
+            .where(AgentTurn.id == turn_id)
+            .values(tool_batch_sequence=AgentTurn.tool_batch_sequence + 1)
+            .returning(AgentTurn.tool_batch_sequence)
         )
-        return int(current or 0) + 1
+        ordinal = result.scalar_one_or_none()
+        if ordinal is None:
+            raise RuntimeError(f"Cannot reserve tool batch ordinal for missing turn: {turn_id}")
+        return int(ordinal)
 
     async def continuation_state(self, batch_id: str) -> str:
         batch = await self.get(batch_id)

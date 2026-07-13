@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import uuid4
 
 import app.database as app_database
 from litellm import acompletion
@@ -283,14 +284,11 @@ class AgentLoopController:
                 )
             turn = fresh_turn
             token_usage = _merge_usage(token_usage, streamed.token_usage)
-            tool_calls = [
-                {
-                    **_tool_call_dict(item),
-                    "id": _tool_call_dict(item).get("id")
-                    or f"bioinfoflow-{turn.id}-{budget.used_iterations}-{index}",
-                }
-                for index, item in enumerate(streamed.tool_calls)
-            ]
+            tool_calls = _normalize_tool_calls(
+                streamed.tool_calls,
+                turn_id=str(turn.id),
+                iteration_count=budget.used_iterations,
+            )
             if tool_calls:
                 tool_call_signatures = [_tool_call_signature(tool_call) for tool_call in tool_calls]
                 try:
@@ -457,23 +455,7 @@ class AgentLoopController:
     ) -> tuple[bool, list[str], str | None]:
         session_id = str(agent_session.id)
         turn_id = str(turn.id)
-        batch_record = await self.tool_batches.create(
-            session_id=session_id,
-            turn_id=turn_id,
-            tool_call_count=len(tool_calls),
-            commit=False,
-        )
-        batch_id = str(batch_record.id)
-        await self._append_assistant_tool_calls(
-            agent_session=agent_session,
-            turn=turn,
-            provider=provider,
-            model=model,
-            tool_calls=tool_calls,
-            text=text,
-            batch_id=batch_id,
-            commit=False,
-        )
+        batch_id = str(uuid4())
         context = AgentToolContext(
             db=self.db,
             workspace_id=str(turn.workspace_id),
@@ -483,6 +465,23 @@ class AgentLoopController:
         )
         prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
         try:
+            await self.tool_batches.create(
+                session_id=session_id,
+                turn_id=turn_id,
+                tool_call_count=len(tool_calls),
+                batch_id=batch_id,
+                commit=False,
+            )
+            await self._append_assistant_tool_calls(
+                agent_session=agent_session,
+                turn=turn,
+                provider=provider,
+                model=model,
+                tool_calls=tool_calls,
+                text=text,
+                batch_id=batch_id,
+                commit=False,
+            )
             for ordinal, tool_call in enumerate(tool_calls):
                 tool_name = decode_provider_tool_name(tool_call["name"])
                 result = await self.executor.execute(
@@ -510,8 +509,8 @@ class AgentLoopController:
         except asyncio.CancelledError as exc:
             await self._persist_failed_preparation_batch(
                 batch_id=batch_id,
-                agent_session=agent_session,
-                turn=turn,
+                session_id=session_id,
+                turn_id=turn_id,
                 tool_calls=tool_calls,
                 provider=provider,
                 model=model,
@@ -526,8 +525,8 @@ class AgentLoopController:
         except Exception as exc:  # noqa: BLE001 - replace with a complete terminal batch
             await self._persist_failed_preparation_batch(
                 batch_id=batch_id,
-                agent_session=agent_session,
-                turn=turn,
+                session_id=session_id,
+                turn_id=turn_id,
                 tool_calls=tool_calls,
                 provider=provider,
                 model=model,
@@ -638,8 +637,8 @@ class AgentLoopController:
         self,
         *,
         batch_id: str,
-        agent_session,
-        turn,
+        session_id: str,
+        turn_id: str,
         tool_calls: list[dict],
         provider: str,
         model: str,
@@ -650,8 +649,6 @@ class AgentLoopController:
         error_message: str,
         prior_continuation_batch_id: str | None = None,
     ) -> None:
-        session_id = str(agent_session.id)
-        turn_id = str(turn.id)
         await self.db.rollback()
         agent_session = await self.sessions.get(session_id)
         turn = await self.turns.get(turn_id)
@@ -923,6 +920,14 @@ class AgentLoopController:
                 "kind": "tool_calls",
                 "tool_batch_id": batch_id,
                 "turn_id": str(turn.id),
+                "provider_tool_call_ids": [
+                    {
+                        "ordinal": ordinal,
+                        "provider_id": call.get("provider_tool_call_id"),
+                        "internal_id": call["id"],
+                    }
+                    for ordinal, call in enumerate(tool_calls)
+                ],
             },
             commit=commit,
         )
@@ -1188,12 +1193,14 @@ class AgentLoopController:
                     StreamToolCall(
                         call_id=delta.call_id or f"tool_call_{delta.index + 1}",
                         name=delta.name or "",
+                        provider_call_id=delta.call_id,
                         index=delta.index,
                     ),
                 )
                 started_before = bool(state.call_id and state.name) if seen_before else False
                 if delta.call_id:
                     state.call_id = delta.call_id
+                    state.provider_call_id = delta.call_id
                 if delta.name:
                     state.name = delta.name
                 if not started_before and state.call_id and state.name:
@@ -1482,7 +1489,7 @@ def _extract_tool_calls(response: Any) -> list[dict[str, Any]]:
             parsed_arguments = {}
         calls.append(
             {
-                "id": call_id or f"tool_call_{len(calls) + 1}",
+                "id": call_id,
                 "name": name,
                 "arguments": parsed_arguments,
             }
@@ -1508,6 +1515,7 @@ def _provider_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
 def _tool_call_dict(tool_call: StreamToolCall) -> dict[str, Any]:
     return {
         "id": tool_call.call_id,
+        "provider_tool_call_id": tool_call.provider_call_id,
         "name": tool_call.name,
         "arguments": tool_call.arguments(),
     }
@@ -1517,9 +1525,11 @@ def _stream_tool_call_from_payload(
     tool_call: dict[str, Any],
     index: int,
 ) -> StreamToolCall:
+    provider_call_id = tool_call.get("id")
     return StreamToolCall(
-        call_id=str(tool_call.get("id") or f"tool_call_{index + 1}"),
+        call_id=str(provider_call_id or f"tool_call_{index + 1}"),
         name=str(tool_call.get("name") or ""),
+        provider_call_id=str(provider_call_id) if provider_call_id else None,
         arguments_text=json.dumps(
             tool_call.get("arguments") or {},
             separators=(",", ":"),
@@ -1527,6 +1537,32 @@ def _stream_tool_call_from_payload(
         ),
         index=index,
     )
+
+
+def _normalize_tool_calls(
+    tool_calls: list[StreamToolCall],
+    *,
+    turn_id: str,
+    iteration_count: int,
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(tool_calls):
+        call = _tool_call_dict(item)
+        provider_id = call.get("provider_tool_call_id")
+        internal_id = str(provider_id).strip() if provider_id else ""
+        if not internal_id or internal_id in seen_ids:
+            internal_id = f"bioinfoflow-{turn_id}-{iteration_count}-{index}"
+            suffix = 1
+            while internal_id in seen_ids:
+                internal_id = (
+                    f"bioinfoflow-{turn_id}-{iteration_count}-{index}-{suffix}"
+                )
+                suffix += 1
+        seen_ids.add(internal_id)
+        call["id"] = internal_id
+        normalized.append(call)
+    return normalized
 
 
 def _extract_token_usage(response: Any) -> dict[str, Any] | None:

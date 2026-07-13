@@ -9,6 +9,7 @@ from typing import Any
 class StreamToolCall:
     call_id: str
     name: str
+    provider_call_id: str | None = None
     arguments_text: str = ""
     index: int = 0
 
@@ -69,11 +70,13 @@ async def collect_stream_result(response: Any) -> StreamCompletionResult:
                 StreamToolCall(
                     call_id=delta.call_id or f"tool_call_{delta.index + 1}",
                     name=delta.name or "",
+                    provider_call_id=delta.call_id,
                     index=delta.index,
                 ),
             )
             if delta.call_id:
                 state.call_id = delta.call_id
+                state.provider_call_id = delta.call_id
             if delta.name:
                 state.name = delta.name
             if delta.arguments_delta:

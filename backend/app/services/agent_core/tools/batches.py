@@ -33,7 +33,7 @@ class ToolCallBatchCoordinator:
             "turn_id": turn_id,
             "status": AgentToolCallBatchStatus.EVALUATING,
             "tool_call_count": tool_call_count,
-            "batch_ordinal": await self.batches.next_ordinal(turn_id),
+            "batch_ordinal": await self.batches.reserve_next_ordinal(turn_id),
         }
         if batch_id is not None:
             values["id"] = batch_id
