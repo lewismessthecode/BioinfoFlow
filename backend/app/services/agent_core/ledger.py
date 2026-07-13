@@ -34,16 +34,23 @@ class AgentEventLedger:
             async with lock:
                 seq = await self.event_repo.next_seq(session_id)
                 try:
-                    create = self.event_repo.create if commit else self.event_repo.add
-                    event = await create(
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        seq=seq,
-                        type=type,
-                        payload=payload or {},
-                        visibility=visibility,
-                        schema_version=schema_version,
-                    )
+                    values = {
+                        "session_id": session_id,
+                        "turn_id": turn_id,
+                        "seq": seq,
+                        "type": type,
+                        "payload": payload or {},
+                        "visibility": visibility,
+                        "schema_version": schema_version,
+                    }
+                    if commit:
+                        event = await self.event_repo.create(**values)
+                    else:
+                        # A savepoint lets a cross-process sequence collision
+                        # retry without rolling back the caller's surrounding
+                        # CAS/update transaction.
+                        async with self.event_repo.session.begin_nested():
+                            event = await self.event_repo.add(**values)
                     logger.debug(
                         "agent_core.event.appended",
                         **agent_event_log_fields(
@@ -56,7 +63,8 @@ class AgentEventLedger:
                     )
                     return event
                 except IntegrityError:
-                    await self.event_repo.session.rollback()
+                    if commit:
+                        await self.event_repo.session.rollback()
                     if attempt == 2:
                         raise
                     continue

@@ -15,6 +15,8 @@ class AgentEventType:
     MODEL_SELECTED = "model.selected"
     MODEL_RETRYING = "model.retrying"
     MODEL_FALLBACK = "model.fallback"
+    PERMISSION_POLICY_UPDATED = "permission.policy_updated"
+    PERMISSION_PENDING_RECONCILED = "permission.pending_reconciled"
     ASSISTANT_TEXT_DELTA = "assistant.text.delta"
     ASSISTANT_TEXT_COMPLETED = "assistant.text.completed"
     ASSISTANT_THINKING_DELTA = "assistant.thinking.delta"

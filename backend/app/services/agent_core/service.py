@@ -48,7 +48,12 @@ from app.services.agent_core.skills import (
 from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
 from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part
-from app.utils.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
+from app.utils.exceptions import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+)
 
 
 class AgentCoreService:
@@ -105,7 +110,10 @@ class AgentCoreService:
             runtime_mode="api",
             prompt_snapshot=default_system_prompt_snapshot().as_dict(),
             toolset_policy=toolset_policy or EXECUTION_TOOLSET_POLICY,
-            context_policy={"memory": "accepted_project_scope", "transcript": "canonical"},
+            context_policy={
+                "memory": "accepted_project_scope",
+                "transcript": "canonical",
+            },
             compression_state={
                 "enabled": True,
                 "threshold_chars": int(settings.agent_compact_threshold),
@@ -144,7 +152,10 @@ class AgentCoreService:
         session = await self.session_repo.get(session_id)
         if session is None or session.status == AgentSessionStatus.DELETED:
             raise NotFoundError(f"Agent session not found: {session_id}")
-        if str(session.workspace_id) != str(workspace_id) or str(session.user_id) != user_id:
+        if (
+            str(session.workspace_id) != str(workspace_id)
+            or str(session.user_id) != user_id
+        ):
             raise PermissionDeniedError("Agent session is not accessible")
         return session
 
@@ -156,6 +167,7 @@ class AgentCoreService:
         user_id: str,
         updates: dict[str, Any],
     ):
+        pending_strategy = updates.pop("pending_strategy", "future_only")
         session = await self.require_session(
             session_id=session_id,
             workspace_id=workspace_id,
@@ -188,9 +200,13 @@ class AgentCoreService:
             or "execution_target" in updates
         ):
             current_metadata = (
-                session.session_metadata if hasattr(session, "session_metadata") else None
+                session.session_metadata
+                if hasattr(session, "session_metadata")
+                else None
             )
-            metadata = updates["metadata"] if "metadata" in updates else current_metadata
+            metadata = (
+                updates["metadata"] if "metadata" in updates else current_metadata
+            )
             execution_target = (
                 updates["execution_target"]
                 if "execution_target" in updates
@@ -225,11 +241,107 @@ class AgentCoreService:
                 ),
             ),
         )
-        return await self.session_repo.update_with_policy_version(
-            session,
-            increment_policy_version=previous_authorization != next_authorization,
-            **update_data,
-        )
+        policy_changed = previous_authorization != next_authorization
+        wakeups: list[tuple[str, str, str]] = []
+        reconciliation = {
+            "affected_count": 0,
+            "excluded_count": 0,
+            "already_resolved_count": 0,
+        }
+        try:
+            if update_data or policy_changed:
+                updated = await self.session_repo.update_with_policy_version(
+                    session,
+                    increment_policy_version=policy_changed,
+                    commit=False,
+                    **update_data,
+                )
+            else:
+                updated = await self.session_repo.get_fresh(str(session.id))
+                if updated is None:
+                    raise NotFoundError(f"Agent session not found: {session.id}")
+
+            if policy_changed:
+                await self.ledger.append(
+                    session_id=str(updated.id),
+                    turn_id=None,
+                    type=AgentEventType.PERMISSION_POLICY_UPDATED,
+                    payload={
+                        "permission_policy_version": updated.permission_policy_version,
+                        "permission_mode": updated.permission_mode,
+                        "pending_strategy": pending_strategy,
+                    },
+                    visibility="audit",
+                    commit=False,
+                )
+
+            if pending_strategy == "approve_pending_tools":
+                active_actions = await self.action_repo.list_for_active_batches(
+                    str(updated.id)
+                )
+                for action in active_actions:
+                    if action.status != AgentActionStatus.WAITING_DECISION:
+                        reconciliation["already_resolved_count"] += 1
+                        continue
+                    if action.name in {"ask_user", "exit_plan_mode"}:
+                        reconciliation["excluded_count"] += 1
+                        continue
+                    decision_payload = {
+                        "decision": "approve",
+                        "note": "Approved by permission policy update",
+                        "source": "pending_strategy",
+                        "evaluated_policy_version": action.evaluated_policy_version,
+                        "modified_input": None,
+                        "answer": None,
+                    }
+                    decided = await self.action_repo.decide_waiting(
+                        str(action.id),
+                        status=AgentActionStatus.REQUESTED,
+                        input=action.input or {},
+                        permission_decision=decision_payload,
+                    )
+                    if decided is None:
+                        reconciliation["already_resolved_count"] += 1
+                        continue
+                    reconciliation["affected_count"] += 1
+                    await self.ledger.append(
+                        session_id=str(decided.session_id),
+                        turn_id=str(decided.turn_id),
+                        type=AgentEventType.ACTION_DECISION_RECORDED,
+                        payload={
+                            "action_id": str(decided.id),
+                            "decision": "approve",
+                            "source": "pending_strategy",
+                            "permission_policy_version": updated.permission_policy_version,
+                        },
+                        commit=False,
+                    )
+                    wakeups.append(
+                        (str(decided.id), str(decided.turn_id), str(decided.session_id))
+                    )
+                await self.ledger.append(
+                    session_id=str(updated.id),
+                    turn_id=None,
+                    type=AgentEventType.PERMISSION_PENDING_RECONCILED,
+                    payload={
+                        "pending_strategy": pending_strategy,
+                        "permission_policy_version": updated.permission_policy_version,
+                        **reconciliation,
+                    },
+                    visibility="audit",
+                    commit=False,
+                )
+
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+
+        setattr(updated, "pending_strategy", pending_strategy)
+        setattr(updated, "pending_reconciliation", reconciliation)
+        for action_id, turn_id, updated_session_id in wakeups:
+            enqueue_turn_resume(action_id, turn_id, updated_session_id)
+        return updated
 
     async def delete_session(
         self,
@@ -278,7 +390,9 @@ class AgentCoreService:
                 ),
                 session_metadata=next_metadata,
             )
-        normalized_active_skill_names = _validated_active_skill_names(active_skill_names)
+        normalized_active_skill_names = _validated_active_skill_names(
+            active_skill_names
+        )
         turn_metadata = _metadata_with_active_skill_names(
             metadata,
             normalized_active_skill_names,
@@ -292,7 +406,9 @@ class AgentCoreService:
             input_text=input_text,
             input_parts=input_parts,
         )
-        if not session.title and not await self.turn_repo.list_for_session(str(session.id)):
+        if not session.title and not await self.turn_repo.list_for_session(
+            str(session.id)
+        ):
             session = await self.session_repo.update_all(
                 session,
                 title=_generated_session_title(input_text),
@@ -457,7 +573,8 @@ class AgentCoreService:
         existing_action_results = {
             str((message.message_metadata or {}).get("action_id"))
             for message in messages
-            if message.role == "tool" and (message.message_metadata or {}).get("action_id")
+            if message.role == "tool"
+            and (message.message_metadata or {}).get("action_id")
         }
         now = datetime.now(timezone.utc)
         batches = await self.tool_batch_repo.list_nonterminal_for_turn(turn_id)
@@ -559,7 +676,7 @@ class AgentCoreService:
         modified_input: dict | None = None,
         answer: dict | None = None,
     ):
-        action = await self.action_repo.get(action_id)
+        action = await self.action_repo.get_fresh(action_id)
         if action is None:
             raise NotFoundError(f"Agent action not found: {action_id}")
         await self.require_turn(
@@ -567,62 +684,81 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        if action.status != AgentActionStatus.WAITING_DECISION:
-            raise ConflictError(f"Agent action is not waiting for a decision: {action.status}")
-
         next_input = action.input
         if decision == "modify":
             if modified_input is None:
-                raise BadRequestError("modified_input is required when decision is modify")
+                raise BadRequestError(
+                    "modified_input is required when decision is modify"
+                )
             next_input = modified_input
         elif decision == "answer":
             # Thread the user's reply back into the tool input under a reserved
             # key; ask_user echoes it as the tool result on resume.
             next_input = {**(action.input or {}), "_user_answer": answer or {}}
 
-        # When a plan is approved, flip the session into the execution toolset
-        # *before* enqueueing resume — the resume worker reads the session
-        # toolset fresh, so the model gains write/exec tools on the next round.
-        if decision == "approve" and action.name == "exit_plan_mode":
-            await self._activate_execution_toolset(str(action.session_id))
-
         status = (
             AgentActionStatus.REJECTED
             if decision == "reject"
             else AgentActionStatus.REQUESTED
         )
-        updated = await self.action_repo.update_all(
-            action,
-            input=next_input,
-            normalized_input=next_input,
-            redacted_input=next_input,
-            permission_decision={
-                "decision": decision,
-                "note": note,
-                "evaluated_policy_version": action.evaluated_policy_version,
-                "modified_input": modified_input,
-                "answer": answer,
-            },
+        decision_payload = {
+            "decision": decision,
+            "note": note,
+            "evaluated_policy_version": action.evaluated_policy_version,
+            "modified_input": modified_input,
+            "answer": answer,
+        }
+        updated = await self.action_repo.decide_waiting(
+            action_id,
             status=status,
+            input=next_input,
+            permission_decision=decision_payload,
         )
-        await self.ledger.append(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
-            type=AgentEventType.ACTION_DECISION_RECORDED,
-            payload={
-                "action_id": str(action.id),
-                "decision": decision,
-                "note": note,
-                **({"answer": answer} if decision == "answer" else {}),
-            },
-        )
-        if decision in {"approve", "modify", "reject", "answer"} and updated.kind == "tool":
+        if updated is None:
+            current = await self.action_repo.get_fresh(action_id)
+            if current is not None and _same_action_decision(
+                current.permission_decision,
+                decision_payload,
+            ):
+                return current
+            current_status = current.status if current is not None else "missing"
+            raise ConflictError(
+                "Agent action already has a different decision "
+                f"or terminal state: {current_status}"
+            )
+
+        try:
+            # Plan approval and its tool decision are one transaction. A
+            # duplicate request cannot increment the policy version twice.
+            if decision == "approve" and updated.name == "exit_plan_mode":
+                await self._activate_execution_toolset(
+                    str(updated.session_id), commit=False
+                )
+            await self.ledger.append(
+                session_id=str(updated.session_id),
+                turn_id=str(updated.turn_id),
+                type=AgentEventType.ACTION_DECISION_RECORDED,
+                payload={
+                    "action_id": str(updated.id),
+                    "decision": decision,
+                    "note": note,
+                    **({"answer": answer} if decision == "answer" else {}),
+                },
+                commit=False,
+            )
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+        if updated.kind == "tool":
             enqueue_turn_resume(
                 str(updated.id), str(updated.turn_id), str(updated.session_id)
             )
         return updated
 
-    async def _activate_execution_toolset(self, session_id: str) -> None:
+    async def _activate_execution_toolset(
+        self, session_id: str, *, commit: bool = True
+    ) -> None:
         session = await self.session_repo.get_fresh(session_id)
         if session is None:
             return
@@ -633,6 +769,7 @@ class AgentCoreService:
                 != _normalized_toolset(EXECUTION_TOOLSET_POLICY)
             ),
             toolset_policy=EXECUTION_TOOLSET_POLICY,
+            commit=commit,
         )
 
     async def resume_action(
@@ -751,7 +888,10 @@ class AgentCoreService:
                     completed_at=now,
                     claimed_at=None,
                     lease_until=None,
-                    loop_state={"termination_reason": "model_failed", "recovered": True},
+                    loop_state={
+                        "termination_reason": "model_failed",
+                        "recovered": True,
+                    },
                 )
                 await self.ledger.append(
                     session_id=str(turn.session_id),
@@ -848,7 +988,10 @@ class AgentCoreService:
                 )
                 return "enqueued"
 
-        if latest_action is not None and latest_action.status == AgentActionStatus.WAITING_DECISION:
+        if (
+            latest_action is not None
+            and latest_action.status == AgentActionStatus.WAITING_DECISION
+        ):
             await self.turn_repo.update_all(
                 turn,
                 status=AgentTurnStatus.WAITING_APPROVAL,
@@ -859,7 +1002,10 @@ class AgentCoreService:
             )
             return "waiting"
 
-        if latest_action is not None and latest_action.status == AgentActionStatus.REQUESTED:
+        if (
+            latest_action is not None
+            and latest_action.status == AgentActionStatus.REQUESTED
+        ):
             await self.turn_repo.update_all(
                 turn,
                 status=AgentTurnStatus.RUNNING,
@@ -868,7 +1014,11 @@ class AgentCoreService:
                 error_message=None,
                 claimed_at=None,
                 lease_until=None,
-                loop_state={"state": "running", "recovered": True, "resume_action_id": str(latest_action.id)},
+                loop_state={
+                    "state": "running",
+                    "recovered": True,
+                    "resume_action_id": str(latest_action.id),
+                },
             )
             await self.ledger.append(
                 session_id=str(turn.session_id),
@@ -881,7 +1031,10 @@ class AgentCoreService:
             )
             return "enqueued"
 
-        if latest_action is not None and latest_action.status == AgentActionStatus.RUNNING:
+        if (
+            latest_action is not None
+            and latest_action.status == AgentActionStatus.RUNNING
+        ):
             await self._cancel_open_actions(turn_id, cancelled_at=now)
             await self.turn_repo.update_all(
                 turn,
@@ -934,7 +1087,9 @@ class AgentCoreService:
             if str(message.turn_id) != turn_id or message.role != "assistant":
                 continue
             for part in message.content_parts or []:
-                calls = part.get("tool_calls") if part.get("type") == "tool_calls" else None
+                calls = (
+                    part.get("tool_calls") if part.get("type") == "tool_calls" else None
+                )
                 if not isinstance(calls, list) or len(calls) != expected_count:
                     continue
                 recovered: list[dict] = []
@@ -955,12 +1110,17 @@ class AgentCoreService:
                 return recovered
         return None
 
-    async def _cancel_open_actions(self, turn_id: str, *, cancelled_at: datetime) -> None:
+    async def _cancel_open_actions(
+        self, turn_id: str, *, cancelled_at: datetime
+    ) -> None:
         for action in await self.action_repo.list_open_for_turn(turn_id):
             await self.action_repo.update_all(
                 action,
                 status=AgentActionStatus.CANCELLED,
-                error={"type": "CancelledError", "message": "Action cancelled with its parent turn."},
+                error={
+                    "type": "CancelledError",
+                    "message": "Action cancelled with its parent turn.",
+                },
                 completed_at=cancelled_at,
             )
             await self.ledger.append(
@@ -1030,22 +1190,12 @@ def _authorization_state(
     remote_boundary_fingerprint: tuple[Any, ...] | None = None,
 ) -> tuple[Any, ...]:
     metadata = (
-        session.session_metadata
-        if session_metadata is _UNSET
-        else session_metadata
+        session.session_metadata if session_metadata is _UNSET else session_metadata
     )
     return (
         str(session.role_profile if role_profile is _UNSET else role_profile),
-        str(
-            session.permission_mode
-            if permission_mode is _UNSET
-            else permission_mode
-        ),
-        str(
-            session.automation_mode
-            if automation_mode is _UNSET
-            else automation_mode
-        ),
+        str(session.permission_mode if permission_mode is _UNSET else permission_mode),
+        str(session.automation_mode if automation_mode is _UNSET else automation_mode),
         _normalized_toolset(
             session.toolset_policy if toolset_policy is _UNSET else toolset_policy
         ),
@@ -1163,7 +1313,9 @@ _WORKFLOW_REF_SCOPES = frozenset({"project", "global"})
 _WORKFLOW_REF_MAX_FIELD_LENGTH = 256
 
 
-def _transcript_parts_for_turn(*, input_text: str, input_parts: list[dict] | None) -> list[dict]:
+def _transcript_parts_for_turn(
+    *, input_text: str, input_parts: list[dict] | None
+) -> list[dict]:
     if not input_parts:
         return [text_part(input_text)]
 
@@ -1194,11 +1346,15 @@ def _file_ref_text(part: dict) -> str:
         path, must_exist=True, allow_directory=False
     )
     if _is_sensitive_context_path(target):
-        raise PermissionDeniedError(f"File cannot be attached to agent context: {target}")
+        raise PermissionDeniedError(
+            f"File cannot be attached to agent context: {target}"
+        )
 
     label = str(part.get("label") or target.name)
     if part.get("includeContent") is False:
-        return f"Attached file reference: {label}\nPath: {target}\nContent: not included."
+        return (
+            f"Attached file reference: {label}\nPath: {target}\nContent: not included."
+        )
 
     size = target.stat().st_size
     with target.open("rb") as file:
@@ -1227,7 +1383,9 @@ def _workflow_ref_text(part: dict) -> str:
     if scope and scope not in _WORKFLOW_REF_SCOPES:
         raise BadRequestError("workflow_ref scope must be project or global")
 
-    lines = [f"Workflow context: {_workflow_ref_label(scope=scope, project_id=project_id)}"]
+    lines = [
+        f"Workflow context: {_workflow_ref_label(scope=scope, project_id=project_id)}"
+    ]
     if workflow_id:
         lines.append(f"Workflow ID: {workflow_id}")
     if project_id:
@@ -1254,8 +1412,7 @@ def _validate_workflow_ref_keys(part: dict) -> None:
     unsupported = sorted(set(part) - _WORKFLOW_REF_ALLOWED_KEYS)
     if unsupported:
         raise BadRequestError(
-            "workflow_ref input part has unsupported fields: "
-            + ", ".join(unsupported)
+            "workflow_ref input part has unsupported fields: " + ", ".join(unsupported)
         )
     for discriminator in ("kind", "type"):
         value = part.get(discriminator)
@@ -1289,3 +1446,12 @@ def _is_sensitive_context_path(path) -> bool:
     if name.startswith(".env."):
         return True
     return path.is_file() and path.suffix.lower() in _DENIED_CONTEXT_SUFFIXES
+
+
+def _same_action_decision(current: dict | None, requested: dict) -> bool:
+    if not isinstance(current, dict):
+        return False
+    return all(
+        current.get(key) == requested.get(key)
+        for key in ("decision", "note", "modified_input", "answer")
+    )

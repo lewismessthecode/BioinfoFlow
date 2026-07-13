@@ -13,6 +13,7 @@ from app.models.agent_core import (
     AgentSession,
     AgentSessionStatus,
     AgentToolCallBatch,
+    AgentToolCallBatchStatus,
     AgentTurn,
     AgentTurnStatus,
 )
@@ -37,11 +38,14 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         session: AgentSession,
         *,
         increment_policy_version: bool,
+        commit: bool = True,
         **data: object,
     ) -> AgentSession:
         values = dict(data)
         if increment_policy_version:
-            values["permission_policy_version"] = self.model.permission_policy_version + 1
+            values["permission_policy_version"] = (
+                self.model.permission_policy_version + 1
+            )
         stmt = (
             update(self.model)
             .where(self.model.id == session.id)
@@ -51,7 +55,10 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         )
         result = await self.session.execute(stmt)
         updated = result.scalar_one()
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return updated
 
     async def list_for_user(
@@ -90,7 +97,9 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
         total_count = await self.session.scalar(count_stmt)
         total = total_count or 0
-        return items, Pagination(limit=limit, has_more=total > len(items), total_count=total)
+        return items, Pagination(
+            limit=limit, has_more=total > len(items), total_count=total
+        )
 
 
 class AgentTurnRepository(BaseRepository[AgentTurn]):
@@ -196,7 +205,9 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def shift_ordering_indices(self, session_id: str, *, starting_at: int, delta: int = 1) -> None:
+    async def shift_ordering_indices(
+        self, session_id: str, *, starting_at: int, delta: int = 1
+    ) -> None:
         if delta == 0:
             return
         await self.session.execute(
@@ -218,7 +229,9 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
             message.status = "superseded"
         await self.session.commit()
 
-    async def update_message(self, message: AgentMessage, **data: object) -> AgentMessage:
+    async def update_message(
+        self, message: AgentMessage, **data: object
+    ) -> AgentMessage:
         for key, value in data.items():
             setattr(message, key, value)
         await self.session.commit()
@@ -230,7 +243,9 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
     model = AgentEvent
 
     async def next_seq(self, session_id: str) -> int:
-        stmt = select(func.max(self.model.seq)).where(self.model.session_id == session_id)
+        stmt = select(func.max(self.model.seq)).where(
+            self.model.session_id == session_id
+        )
         current = await self.session.scalar(stmt)
         return int(current or 0) + 1
 
@@ -273,6 +288,14 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
 class AgentActionRepository(BaseRepository[AgentAction]):
     model = AgentAction
 
+    async def get_fresh(self, action_id: str) -> AgentAction | None:
+        result = await self.session.execute(
+            select(self.model)
+            .where(self.model.id == action_id)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
     async def list_for_turn(self, turn_id: str) -> list[AgentAction]:
         stmt = (
             select(self.model)
@@ -309,6 +332,105 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_for_active_batches(self, session_id: str) -> list[AgentAction]:
+        stmt = (
+            select(self.model)
+            .join(
+                AgentToolCallBatch,
+                AgentToolCallBatch.id == self.model.tool_batch_id,
+            )
+            .where(
+                self.model.session_id == session_id,
+                self.model.kind == "tool",
+                AgentToolCallBatch.status.not_in(
+                    [
+                        AgentToolCallBatchStatus.TERMINAL,
+                        AgentToolCallBatchStatus.FAILED,
+                        AgentToolCallBatchStatus.CANCELLED,
+                    ]
+                ),
+            )
+            .order_by(
+                AgentToolCallBatch.batch_ordinal,
+                self.model.tool_call_ordinal,
+                self.model.id,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def decide_waiting(
+        self,
+        action_id: str,
+        *,
+        status: str,
+        input: dict,
+        permission_decision: dict,
+    ) -> AgentAction | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == action_id,
+                self.model.status == AgentActionStatus.WAITING_DECISION,
+            )
+            .values(
+                input=input,
+                normalized_input=input,
+                redacted_input=input,
+                permission_decision=permission_decision,
+                status=status,
+            )
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
+    async def claim_requested(
+        self,
+        action_id: str,
+        *,
+        started_at: datetime,
+    ) -> AgentAction | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == action_id,
+                self.model.status == AgentActionStatus.REQUESTED,
+            )
+            .values(
+                status=AgentActionStatus.RUNNING,
+                requires_resume=False,
+                started_at=started_at,
+            )
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
+    async def fail_requested(
+        self,
+        action_id: str,
+        *,
+        error: dict,
+        completed_at: datetime,
+    ) -> AgentAction | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == action_id,
+                self.model.status == AgentActionStatus.REQUESTED,
+            )
+            .values(
+                status=AgentActionStatus.FAILED,
+                requires_resume=False,
+                error=error,
+                completed_at=completed_at,
+            )
+            .returning(self.model)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
 
 class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
     model = AgentToolCallBatch
@@ -331,7 +453,9 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
         )
         ordinal = result.scalar_one_or_none()
         if ordinal is None:
-            raise RuntimeError(f"Cannot reserve tool batch ordinal for missing turn: {turn_id}")
+            raise RuntimeError(
+                f"Cannot reserve tool batch ordinal for missing turn: {turn_id}"
+            )
         return int(ordinal)
 
     async def continuation_state(self, batch_id: str) -> str:
@@ -362,7 +486,11 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
                 self.model.turn_id == turn_id,
                 self.model.status.not_in(["terminal", "failed", "cancelled"]),
             )
-            .order_by(self.model.batch_ordinal.asc().nullsfirst(), self.model.created_at, self.model.id)
+            .order_by(
+                self.model.batch_ordinal.asc().nullsfirst(),
+                self.model.created_at,
+                self.model.id,
+            )
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

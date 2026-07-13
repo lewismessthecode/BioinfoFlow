@@ -42,7 +42,9 @@ ActionStatus = Literal[
     "cancelled",
     "rejected",
 ]
-RiskLevel = Literal["read", "act_low", "act_high", "destructive", "external", "critical"]
+RiskLevel = Literal[
+    "read", "act_low", "act_high", "destructive", "external", "critical"
+]
 ActionDecision = Literal["approve", "reject", "modify", "answer"]
 MemoryStatus = Literal["proposed", "accepted", "rejected", "disabled"]
 
@@ -115,6 +117,13 @@ class AgentSessionUpdate(BaseModel):
     execution_target: AgentExecutionTarget | None = None
     status: SessionStatus | None = None
     metadata: dict | None = None
+    pending_strategy: Literal["future_only", "approve_pending_tools"] = "future_only"
+
+
+class AgentPendingReconciliation(BaseModel):
+    affected_count: int = 0
+    excluded_count: int = 0
+    already_resolved_count: int = 0
 
 
 class AgentSessionRead(BaseModel):
@@ -143,6 +152,8 @@ class AgentSessionRead(BaseModel):
     token_usage_summary: AgentTokenUsageSummary | None = None
     status: SessionStatus
     metadata: dict | None = Field(default=None, validation_alias="session_metadata")
+    pending_strategy: Literal["future_only", "approve_pending_tools"] | None = None
+    pending_reconciliation: AgentPendingReconciliation | None = None
     created_at: datetime
     updated_at: datetime
 

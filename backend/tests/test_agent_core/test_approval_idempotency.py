@@ -1,0 +1,459 @@
+from __future__ import annotations
+
+import asyncio
+from collections import Counter
+
+import pytest
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.models.agent_core import AgentActionStatus, AgentToolCallBatchStatus
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentEventRepository,
+    AgentToolCallBatchRepository,
+)
+from app.services.agent_core import AgentCoreService
+from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.tools import (
+    AgentToolContext,
+    AgentToolDispatcher,
+    build_default_tool_registry,
+)
+from app.services.agent_core.tools.execution import ExecuteShellTool
+from app.utils.exceptions import ConflictError
+from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+async def _seed_session_turn(db_session):
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="guarded_auto",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Exercise approval concurrency.",
+    )
+    return session, turn
+
+
+@pytest.mark.asyncio
+async def test_concurrent_identical_decisions_are_idempotent_and_wake_once(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf approved"},
+        normalized_input={"command": "printf approved"},
+        risk_level="act_high",
+        permission_decision={"decision": "ask"},
+        status=AgentActionStatus.WAITING_DECISION,
+    )
+    wakeups: list[str] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda action_id, *_: wakeups.append(action_id),
+    )
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as first, maker() as second:
+        results = await asyncio.gather(
+            AgentCoreService(first).decide_action(
+                action_id=str(action.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                decision="approve",
+                note="same",
+            ),
+            AgentCoreService(second).decide_action(
+                action_id=str(action.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                decision="approve",
+                note="same",
+            ),
+        )
+
+    assert {result.status for result in results} == {AgentActionStatus.REQUESTED}
+    assert wakeups == [str(action.id)]
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    assert Counter(event.type for event in events)["action.decision_recorded"] == 1
+
+
+@pytest.mark.asyncio
+async def test_conflicting_duplicate_decision_returns_stable_conflict(db_session):
+    session, turn = await _seed_session_turn(db_session)
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf approved"},
+        risk_level="act_high",
+        permission_decision={"decision": "ask"},
+        status=AgentActionStatus.WAITING_DECISION,
+    )
+    await AgentCoreService(db_session).decide_action(
+        action_id=str(action.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="approve",
+    )
+
+    with pytest.raises(ConflictError, match="already has a different decision"):
+        await AgentCoreService(db_session).decide_action(
+            action_id=str(action.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            decision="reject",
+        )
+
+
+@pytest.mark.asyncio
+async def test_decision_api_replays_identical_request_and_conflicts_on_change(
+    async_client, db_session, monkeypatch
+):
+    created = (await async_client.post("/api/v1/agent/sessions", json={})).json()[
+        "data"
+    ]
+    turn = await AgentCoreService(db_session).create_turn_record(
+        session_id=created["id"],
+        workspace_id=created["workspace_id"],
+        user_id=created["user_id"],
+        input_text="Replay one decision.",
+    )
+    action = await AgentActionRepository(db_session).create(
+        session_id=created["id"],
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf approved"},
+        risk_level="act_high",
+        permission_decision={"decision": "ask"},
+        status=AgentActionStatus.WAITING_DECISION,
+    )
+    wakeups: list[str] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda action_id, *_: wakeups.append(action_id),
+    )
+
+    first = await async_client.post(
+        f"/api/v1/agent/actions/{action.id}/decision",
+        json={"decision": "approve", "note": "stable"},
+    )
+    replay = await async_client.post(
+        f"/api/v1/agent/actions/{action.id}/decision",
+        json={"decision": "approve", "note": "stable"},
+    )
+    conflict = await async_client.post(
+        f"/api/v1/agent/actions/{action.id}/decision",
+        json={"decision": "reject", "note": "changed"},
+    )
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert conflict.status_code == 409
+    assert "already has a different decision" in conflict.json()["error"]["message"]
+    assert wakeups == [str(action.id)]
+
+
+@pytest.mark.asyncio
+async def test_two_workers_claim_requested_action_before_side_effect(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf once"},
+        normalized_input={"command": "printf once"},
+        risk_level="act_high",
+        permission_decision={"decision": "approve"},
+        status=AgentActionStatus.REQUESTED,
+    )
+    side_effects = 0
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def counted_run(self, input, context):
+        del self, input, context
+        nonlocal side_effects
+        side_effects += 1
+        entered.set()
+        await release.wait()
+        return {
+            "exit_code": 0,
+            "stdout": "once",
+            "stderr": "",
+            "cwd": ".",
+            "command": "printf once",
+        }
+
+    monkeypatch.setattr(ExecuteShellTool, "run", counted_run)
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+
+    async def resume(worker: AsyncSession):
+        return await AgentToolDispatcher(
+            worker, build_default_tool_registry()
+        ).resume_action(
+            action_id=str(action.id),
+            context=AgentToolContext(
+                db=worker,
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                session_id=str(session.id),
+                turn_id=str(turn.id),
+            ),
+        )
+
+    async with maker() as first, maker() as second:
+        first_task = asyncio.create_task(resume(first))
+        await entered.wait()
+        second_result = await resume(second)
+        release.set()
+        first_result = await first_task
+
+    assert side_effects == 1
+    assert {first_result.status, second_result.status} <= {
+        AgentActionStatus.RUNNING,
+        AgentActionStatus.COMPLETED,
+    }
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    assert Counter(event.type for event in events)["action.started"] == 1
+
+
+@pytest.mark.asyncio
+async def test_requested_action_rechecks_fresh_catastrophic_hard_block(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "rm -rf /"},
+        normalized_input={"command": "rm -rf /"},
+        risk_level="act_high",
+        permission_decision={"decision": "approve"},
+        status=AgentActionStatus.REQUESTED,
+    )
+    side_effects = 0
+
+    async def forbidden_run(self, input, context):
+        del self, input, context
+        nonlocal side_effects
+        side_effects += 1
+        return {}
+
+    monkeypatch.setattr(ExecuteShellTool, "run", forbidden_run)
+    result = await AgentToolDispatcher(
+        db_session, build_default_tool_registry()
+    ).resume_action(
+        action_id=str(action.id),
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+        ),
+    )
+
+    assert result.status == AgentActionStatus.FAILED
+    assert result.error["type"] == "PermissionDeniedError"
+    assert "hard-blocked" in result.error["message"]
+    assert side_effects == 0
+
+
+@pytest.mark.asyncio
+async def test_pending_strategy_defaults_future_only_and_approves_eligible_active_batch(
+    async_client, db_session, monkeypatch
+):
+    created = (
+        await async_client.post(
+            "/api/v1/agent/sessions", json={"permission_mode": "guarded_auto"}
+        )
+    ).json()["data"]
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=created["id"],
+        workspace_id=created["workspace_id"],
+        user_id=created["user_id"],
+        input_text="Reconcile active approvals.",
+    )
+    batch = await AgentToolCallBatchRepository(db_session).create(
+        session_id=created["id"],
+        turn_id=str(turn.id),
+        status=AgentToolCallBatchStatus.WAITING,
+        tool_call_count=4,
+        batch_ordinal=1,
+    )
+    actions = []
+    for ordinal, (name, status) in enumerate(
+        [
+            ("bash", AgentActionStatus.WAITING_DECISION),
+            ("ask_user", AgentActionStatus.WAITING_DECISION),
+            ("exit_plan_mode", AgentActionStatus.WAITING_DECISION),
+            ("bash", AgentActionStatus.REQUESTED),
+        ]
+    ):
+        actions.append(
+            await AgentActionRepository(db_session).create(
+                session_id=created["id"],
+                turn_id=str(turn.id),
+                tool_batch_id=str(batch.id),
+                tool_call_ordinal=ordinal,
+                tool_call_id=f"pending-{ordinal}",
+                kind="tool",
+                name=name,
+                input={"command": "printf ok"} if name == "bash" else {},
+                risk_level="act_high",
+                permission_decision={"decision": "ask"},
+                status=status,
+            )
+        )
+    wakeups: list[str] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda action_id, *_: wakeups.append(action_id),
+    )
+
+    future = await async_client.patch(
+        f"/api/v1/agent/sessions/{created['id']}",
+        json={"permission_mode": "bypass"},
+    )
+    assert future.status_code == 200
+    assert future.json()["data"]["pending_strategy"] == "future_only"
+    assert future.json()["data"]["pending_reconciliation"] == {
+        "affected_count": 0,
+        "excluded_count": 0,
+        "already_resolved_count": 0,
+    }
+    assert (
+        await AgentActionRepository(db_session).get_fresh(str(actions[0].id))
+    ).status == AgentActionStatus.WAITING_DECISION
+
+    approve = await async_client.patch(
+        f"/api/v1/agent/sessions/{created['id']}",
+        json={
+            "permission_mode": "bypass",
+            "pending_strategy": "approve_pending_tools",
+        },
+    )
+    assert approve.status_code == 200
+    data = approve.json()["data"]
+    assert data["permission_policy_version"] == 2
+    assert data["pending_strategy"] == "approve_pending_tools"
+    assert data["pending_reconciliation"] == {
+        "affected_count": 1,
+        "excluded_count": 2,
+        "already_resolved_count": 1,
+    }
+    assert (
+        await AgentActionRepository(db_session).get_fresh(str(actions[0].id))
+    ).status == AgentActionStatus.REQUESTED
+    assert wakeups == [str(actions[0].id)]
+
+
+@pytest.mark.asyncio
+async def test_pending_policy_update_and_reconciliation_roll_back_together(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    batch = await AgentToolCallBatchRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        status=AgentToolCallBatchStatus.WAITING,
+        tool_call_count=1,
+        batch_ordinal=1,
+    )
+    action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        tool_batch_id=str(batch.id),
+        tool_call_ordinal=0,
+        tool_call_id="atomic",
+        kind="tool",
+        name="bash",
+        input={"command": "printf ok"},
+        risk_level="act_high",
+        permission_decision={"decision": "ask"},
+        status=AgentActionStatus.WAITING_DECISION,
+    )
+
+    async def fail_event(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("ledger unavailable")
+
+    service = AgentCoreService(db_session)
+    session_id = str(session.id)
+    action_id = str(action.id)
+    monkeypatch.setattr(service.ledger, "append", fail_event)
+    with pytest.raises(RuntimeError, match="ledger unavailable"):
+        await service.update_session(
+            session_id=session_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            updates={
+                "permission_mode": "bypass",
+                "pending_strategy": "approve_pending_tools",
+            },
+        )
+    await db_session.rollback()
+
+    assert (
+        await service.session_repo.get_fresh(session_id)
+    ).permission_mode == "guarded_auto"
+    assert (
+        await AgentActionRepository(db_session).get_fresh(action_id)
+    ).status == AgentActionStatus.WAITING_DECISION
+
+
+@pytest.mark.asyncio
+async def test_transactional_ledger_retry_preserves_outer_state(
+    db_session, monkeypatch
+):
+    session, turn = await _seed_session_turn(db_session)
+    session.title = "preserve outer transaction"
+    ledger = AgentEventLedger(db_session)
+    original_add = ledger.event_repo.add
+    attempts = 0
+
+    async def collide_once(**values):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise IntegrityError("duplicate seq", values, Exception("collision"))
+        return await original_add(**values)
+
+    monkeypatch.setattr(ledger.event_repo, "add", collide_once)
+    await ledger.append(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        type="test.transactional_event",
+        commit=False,
+    )
+    await db_session.commit()
+
+    assert attempts == 2
+    assert (
+        await AgentCoreService(db_session).session_repo.get_fresh(str(session.id))
+    ).title == ("preserve outer transaction")
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    assert [event.type for event in events].count("test.transactional_event") == 1

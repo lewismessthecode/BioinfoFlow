@@ -49,7 +49,11 @@ def _artifact_descriptor(
 
     if artifact_type == "todo_list":
         todos = result.get("todos") if isinstance(result.get("todos"), list) else []
-        completed = sum(1 for todo in todos if isinstance(todo, dict) and todo.get("status") == "completed")
+        completed = sum(
+            1
+            for todo in todos
+            if isinstance(todo, dict) and todo.get("status") == "completed"
+        )
         return {
             "type": "todo_list",
             "title": "Tasks",
@@ -78,7 +82,11 @@ def _artifact_descriptor(
         }
 
     if artifact_type in {"project", "workflow", "run", "image"}:
-        inner = result.get(artifact_type) if isinstance(result.get(artifact_type), dict) else result
+        inner = (
+            result.get(artifact_type)
+            if isinstance(result.get(artifact_type), dict)
+            else result
+        )
         title = (
             inner.get("name")
             or inner.get("full_name")
@@ -99,7 +107,8 @@ def _artifact_descriptor(
     if isinstance(result.get("result"), dict):
         command_result = result["result"]
     if (
-        artifact_type in {"command", "remote_command", "remote_file", "remote_directory"}
+        artifact_type
+        in {"command", "remote_command", "remote_file", "remote_directory"}
         or policy.get("stdout")
         or policy.get("stderr")
     ) and any(key in command_result for key in ("stdout", "stderr", "exit_code")):
@@ -292,7 +301,11 @@ class AgentToolExecutor:
             permission_context_snapshot=permission_context.snapshot(),
             commit=commit,
         )
-        update = self.action_repo.update_all if commit else self.action_repo.update_all_pending
+        update = (
+            self.action_repo.update_all
+            if commit
+            else self.action_repo.update_all_pending
+        )
         action = await update(
             action,
             status=AgentActionStatus.FAILED,
@@ -307,7 +320,9 @@ class AgentToolExecutor:
             commit=commit,
         )
         agent_metrics.increment("tools.failed")
-        return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
+        return ToolExecutionResult(
+            action_id=str(action.id), status=action.status, error=error
+        )
 
     async def resume_action(
         self,
@@ -318,12 +333,23 @@ class AgentToolExecutor:
         action = await self.action_repo.get(action_id)
         if action is None:
             raise PermissionDeniedError("Agent action is not accessible")
-        if str(action.session_id) != context.session_id or str(action.turn_id) != context.turn_id:
-            raise PermissionDeniedError("Agent action is outside the current agent context")
+        if (
+            str(action.session_id) != context.session_id
+            or str(action.turn_id) != context.turn_id
+        ):
+            raise PermissionDeniedError(
+                "Agent action is outside the current agent context"
+            )
         if action.kind != "tool":
             raise ConflictError("Only tool actions can be resumed")
         if action.status != AgentActionStatus.REQUESTED:
-            raise ConflictError(f"Agent action cannot be resumed from status: {action.status}")
+            return ToolExecutionResult(
+                action_id=str(action.id),
+                status=action.status,
+                result=action.result,
+                permission_decision=action.permission_decision,
+                error=action.error,
+            )
 
         decision = action.permission_decision or {}
         if decision.get("decision") not in {"allow", "approve", "modify", "answer"}:
@@ -347,7 +373,9 @@ class AgentToolExecutor:
             )
         return await self._run_action(action=action, tool=tool, context=context)
 
-    async def cancel_action(self, *, action_id: str, reason: str) -> ToolExecutionResult:
+    async def cancel_action(
+        self, *, action_id: str, reason: str
+    ) -> ToolExecutionResult:
         action = await self.action_repo.get(action_id)
         if action is None:
             raise ConflictError("Tool action does not exist")
@@ -363,9 +391,15 @@ class AgentToolExecutor:
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
             type=AgentEventType.ACTION_CANCELLED,
-            payload={"action_id": str(action.id), "tool": action.name, "reason": reason},
+            payload={
+                "action_id": str(action.id),
+                "tool": action.name,
+                "reason": reason,
+            },
         )
-        return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
+        return ToolExecutionResult(
+            action_id=str(action.id), status=action.status, error=error
+        )
 
     async def _record_permission_failure(
         self,
@@ -401,24 +435,90 @@ class AgentToolExecutor:
         tool: AgentTool,
         context: AgentToolContext,
     ) -> ToolExecutionResult:
-        action = await self.action_repo.update_all(
-            action,
-            status=AgentActionStatus.RUNNING,
-            requires_resume=False,
-            started_at=datetime.now(timezone.utc),
+        current_risk = _resolve_requested_risk(
+            tool, action.normalized_input or action.input or {}
         )
-        await self.ledger.append(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
-            type=AgentEventType.ACTION_STARTED,
-            payload={
-                "action_id": str(action.id),
-                "tool": tool.spec.name,
-                "name": action.name,
-                "tool_call_id": str(action.tool_call_id) if action.tool_call_id else None,
-                "input_preview": action.input_preview,
-            },
+        permission_decision = action.permission_decision or {}
+        safety_floor_changed = (
+            current_risk == "critical"
+            or permission_decision.get("hard_blocked") is True
+            or permission_decision.get("protected_resource_recheck") == "deny"
         )
+        if safety_floor_changed:
+            error = {
+                "type": "PermissionDeniedError",
+                "message": "Action is hard-blocked by the current safety floor.",
+            }
+            failed = await self.action_repo.fail_requested(
+                str(action.id), error=error, completed_at=datetime.now(timezone.utc)
+            )
+            if failed is None:
+                current = await self.action_repo.get_fresh(str(action.id))
+                return ToolExecutionResult(
+                    action_id=str(action.id),
+                    status=current.status if current is not None else action.status,
+                    result=current.result if current is not None else None,
+                    permission_decision=(
+                        current.permission_decision
+                        if current is not None
+                        else action.permission_decision
+                    ),
+                    error=current.error if current is not None else None,
+                )
+            try:
+                await self.ledger.append(
+                    session_id=str(failed.session_id),
+                    turn_id=str(failed.turn_id),
+                    type=AgentEventType.ACTION_FAILED,
+                    payload={"action_id": str(failed.id), "error": error},
+                    commit=False,
+                )
+                await self.session.commit()
+            except Exception:
+                await self.session.rollback()
+                raise
+            agent_metrics.increment("tools.failed")
+            return ToolExecutionResult(
+                action_id=str(failed.id), status=failed.status, error=error
+            )
+
+        action_id = str(action.id)
+        action = await self.action_repo.claim_requested(
+            action_id, started_at=datetime.now(timezone.utc)
+        )
+        if action is None:
+            current = await self.action_repo.get_fresh(action_id)
+            return ToolExecutionResult(
+                action_id=str(current.id) if current is not None else action_id,
+                status=current.status
+                if current is not None
+                else AgentActionStatus.FAILED,
+                result=current.result if current is not None else None,
+                permission_decision=current.permission_decision
+                if current is not None
+                else None,
+                error=current.error if current is not None else None,
+            )
+        try:
+            await self.ledger.append(
+                session_id=str(action.session_id),
+                turn_id=str(action.turn_id),
+                type=AgentEventType.ACTION_STARTED,
+                payload={
+                    "action_id": str(action.id),
+                    "tool": tool.spec.name,
+                    "name": action.name,
+                    "tool_call_id": str(action.tool_call_id)
+                    if action.tool_call_id
+                    else None,
+                    "input_preview": action.input_preview,
+                },
+                commit=False,
+            )
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
         agent_metrics.increment("tools.started")
         try:
             raw_result = await asyncio.wait_for(
@@ -445,12 +545,17 @@ class AgentToolExecutor:
                 payload={"action_id": str(action.id), "error": error},
             )
             agent_metrics.increment("tools.failed")
-            return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
+            return ToolExecutionResult(
+                action_id=str(action.id), status=action.status, error=error
+            )
         except asyncio.CancelledError:
             action = await self.action_repo.update_all(
                 action,
                 status=AgentActionStatus.CANCELLED,
-                error={"type": "CancelledError", "message": "Tool execution was cancelled."},
+                error={
+                    "type": "CancelledError",
+                    "message": "Tool execution was cancelled.",
+                },
                 completed_at=datetime.now(timezone.utc),
             )
             await self.ledger.append(
@@ -476,9 +581,13 @@ class AgentToolExecutor:
                 payload={"action_id": str(action.id), "error": error},
             )
             agent_metrics.increment("tools.failed")
-            return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
+            return ToolExecutionResult(
+                action_id=str(action.id), status=action.status, error=error
+            )
 
-        artifact_ids = await self._register_artifacts(action=action, tool=tool, result=result)
+        artifact_ids = await self._register_artifacts(
+            action=action, tool=tool, result=result
+        )
         action = await self.action_repo.update_all(
             action,
             status=AgentActionStatus.COMPLETED,
@@ -493,7 +602,9 @@ class AgentToolExecutor:
             payload={
                 "action_id": str(action.id),
                 "name": action.name,
-                "tool_call_id": str(action.tool_call_id) if action.tool_call_id else None,
+                "tool_call_id": str(action.tool_call_id)
+                if action.tool_call_id
+                else None,
                 "input_preview": action.input_preview,
                 "result": result,
                 "artifact_ids": artifact_ids,
@@ -507,7 +618,9 @@ class AgentToolExecutor:
             permission_decision=action.permission_decision,
         )
 
-    async def _register_artifacts(self, *, action, tool: AgentTool, result: dict[str, Any]) -> list[str]:
+    async def _register_artifacts(
+        self, *, action, tool: AgentTool, result: dict[str, Any]
+    ) -> list[str]:
         policy = action.artifact_policy or tool.spec.artifact_policy or {}
         descriptor = _artifact_descriptor(
             policy=policy,

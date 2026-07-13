@@ -186,7 +186,7 @@ class AgentContextAssembler:
                                 else (existing.message_metadata or {}).get("action_id")
                             ),
                             "transcript_repair": True,
-                            "assistant_message_id": str(message.id),
+                            "provider_message_id": str(message.id),
                             "original_message_id": str(existing.id),
                         }
                     else:
@@ -216,7 +216,7 @@ class AgentContextAssembler:
                                 else None
                             ),
                             "transcript_repair": True,
-                            "assistant_message_id": str(message.id),
+                            "provider_message_id": str(message.id),
                         }
                     await self.transcript.append_parts(
                         session_id=session_id,
@@ -234,7 +234,7 @@ class AgentContextAssembler:
                     turn_id=group_turn_id,
                     type=AgentEventType.TRANSCRIPT_TOOL_GROUP_REPAIRED,
                     payload={
-                        "assistant_message_id": str(message.id),
+                        "provider_message_id": str(message.id),
                         "missing_tool_call_ids": missing,
                         "tool_batch_id": batch_id,
                     },

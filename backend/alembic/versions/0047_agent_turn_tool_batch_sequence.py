@@ -17,7 +17,13 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(table_name: str) -> bool:
+    return table_name in sa.inspect(op.get_bind()).get_table_names()
+
+
 def upgrade() -> None:
+    if not _table_exists("agent_turns"):
+        return
     with op.batch_alter_table("agent_turns") as batch:
         batch.add_column(
             sa.Column(
@@ -45,5 +51,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _table_exists("agent_turns"):
+        return
     with op.batch_alter_table("agent_turns") as batch:
         batch.drop_column("tool_batch_sequence")
