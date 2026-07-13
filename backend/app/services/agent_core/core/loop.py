@@ -203,6 +203,7 @@ class AgentLoopController:
                     token_usage=token_usage,
                 )
 
+            turn = await self._renew_turn_lease(turn)
             message_id = f"assistant:{turn.id}:{budget.used_iterations}"
             if completion_kwargs.get("stream"):
                 streamed = await self._consume_stream_response(
@@ -951,6 +952,7 @@ class AgentLoopController:
         usage: dict[str, Any] | None = None
 
         async for chunk in response:
+            turn = await self._renew_turn_lease(turn)
             usage = _merge_usage(usage, _extract_token_usage(chunk))
 
             reasoning_delta = extract_reasoning_delta(chunk)

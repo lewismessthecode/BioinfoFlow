@@ -409,6 +409,65 @@ async def test_action_completion_artifact_and_events_commit_atomically(
 
 
 @pytest.mark.asyncio
+async def test_concurrent_action_completions_allocate_unique_event_sequences(
+    db_session,
+    db_engine,
+):
+    await _workspace(db_session)
+    _service, session, turn, first_action = await _session_turn_and_action(
+        db_session,
+        tool_name="concurrent.first",
+    )
+    second_action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="concurrent.second",
+        tool_call_id="concurrent-second-call",
+        input={},
+        normalized_input={},
+        exposure_policy={"name": "execution", "execution_target": {"type": "local"}},
+        risk_level="read",
+        permission_decision={"decision": "approve"},
+        status=AgentActionStatus.REQUESTED,
+    )
+    now = datetime.now(timezone.utc)
+    await AgentActionRepository(db_session).claim_requested(
+        str(first_action.id), started_at=now
+    )
+    await AgentActionRepository(db_session).claim_requested(
+        str(second_action.id), started_at=now
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def complete(action_id: str):
+        async with maker() as independent_db:
+            return await AgentActionRepository(independent_db).complete_running(
+                action_id,
+                result={"ok": True},
+                output_summary="done",
+                completed_at=datetime.now(timezone.utc),
+                artifact_descriptor=None,
+                artifact_event_type="artifact.created",
+                action_event_type="action.completed",
+            )
+
+    completions = await asyncio.gather(
+        complete(str(first_action.id)),
+        complete(str(second_action.id)),
+    )
+
+    assert all(item is not None for item in completions)
+    async with maker() as inspect_db:
+        events = await AgentEventRepository(inspect_db).list_for_turn(
+            turn_id=str(turn.id), after_seq=0
+        )
+    completion_events = [event for event in events if event.type == "action.completed"]
+    assert len(completion_events) == 2
+    assert len({event.seq for event in completion_events}) == 2
+
+
+@pytest.mark.asyncio
 async def test_resume_fails_closed_when_remote_target_changes_without_input_connection_id(
     db_session,
 ):
@@ -771,6 +830,62 @@ async def test_recovery_skips_running_turn_with_unexpired_lease(
 
 
 @pytest.mark.asyncio
+async def test_recovery_claim_and_worker_renewal_are_atomic(
+    db_session,
+    db_engine,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Race recovery against a worker heartbeat.",
+    )
+    old_claim = datetime.now(timezone.utc) - timedelta(minutes=10)
+    await service.turn_repo.update_all(
+        turn,
+        status="running",
+        claimed_at=old_claim,
+        lease_until=old_claim + timedelta(minutes=1),
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    recovery_claim = datetime.now(timezone.utc)
+
+    async def renew_worker():
+        async with maker() as renew_db:
+            return await AgentCoreService(renew_db).turn_repo.update_if_claimed(
+                str(turn.id),
+                expected_claimed_at=old_claim,
+                lease_until=recovery_claim + timedelta(minutes=5),
+            )
+
+    async def claim_recovery():
+        async with maker() as recovery_db:
+            return await AgentCoreService(
+                recovery_db
+            ).turn_repo.claim_expired_for_recovery(
+                str(turn.id),
+                expected_claimed_at=old_claim,
+                claimed_at=recovery_claim,
+                lease_until=recovery_claim + timedelta(minutes=5),
+            )
+
+    renewed, recovered = await asyncio.gather(renew_worker(), claim_recovery())
+
+    assert sum(item is not None for item in (renewed, recovered)) == 1
+    async with maker() as inspect_db:
+        stored = await AgentCoreService(inspect_db).turn_repo.get(str(turn.id))
+    expected_claim = recovery_claim if recovered is not None else old_claim
+    assert stored.claimed_at.replace(tzinfo=timezone.utc) == expected_claim
+
+
+@pytest.mark.asyncio
 async def test_stale_turn_owner_cannot_overwrite_takeover_completion(
     db_session,
     db_engine,
@@ -841,6 +956,74 @@ async def test_stale_turn_owner_cannot_overwrite_takeover_completion(
 
     assert stale_result.final_text == "new owner"
     assert stored.final_text == "new owner"
+
+
+@pytest.mark.asyncio
+async def test_stale_stream_owner_emits_no_assistant_events_after_takeover(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    model = await _seed_model(db_session, model_id="stream-owner-model")
+    model.supports_streaming = True
+    await db_session.commit()
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Do not emit after losing stream ownership.",
+    )
+    stream_waiting = asyncio.Event()
+    release_stream = asyncio.Event()
+
+    async def blocked_stream():
+        stream_waiting.set()
+        await release_stream.wait()
+        yield {"choices": [{"delta": {"content": "stale output"}}]}
+
+    async def fake_completion(*args, **kwargs):
+        del args, kwargs
+        return blocked_stream()
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async with maker() as old_worker_db:
+        old_task = asyncio.create_task(
+            AgentCoreRuntime(old_worker_db).run_turn(str(turn.id))
+        )
+        await stream_waiting.wait()
+        async with maker() as takeover_db:
+            takeover_service = AgentCoreService(takeover_db)
+            current = await takeover_service.turn_repo.get(str(turn.id))
+            await takeover_service.turn_repo.update_all(
+                current,
+                lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
+            )
+            takeover_time = datetime.now(timezone.utc)
+            claimed = await takeover_service.turn_repo.claim_for_run(
+                str(turn.id),
+                claimed_at=takeover_time,
+                lease_until=takeover_time + timedelta(minutes=5),
+            )
+            assert claimed is not None
+        release_stream.set()
+        returned = await old_task
+
+    async with maker() as inspect_db:
+        events = await AgentEventRepository(inspect_db).list_for_turn(
+            turn_id=str(turn.id), after_seq=0
+        )
+
+    assert returned.status == "running"
+    assert all(not event.type.startswith("assistant.text") for event in events)
 
 
 @pytest.mark.asyncio
@@ -1099,6 +1282,13 @@ async def test_stream_tool_call_ids_are_unique_when_provider_omits_them(
         user_id="dev",
         input_text="Normalize streamed tool call identities.",
     )
+    claim_time = datetime.now(timezone.utc)
+    turn = await service.turn_repo.claim_for_run(
+        str(turn.id),
+        claimed_at=claim_time,
+        lease_until=claim_time + timedelta(minutes=5),
+    )
+    assert turn is not None
     controller = AgentLoopController(db_session)
 
     async def missing_id_stream():

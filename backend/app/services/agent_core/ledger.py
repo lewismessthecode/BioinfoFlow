@@ -5,7 +5,7 @@ import asyncio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories.agent_core_repo import AgentEventRepository
+from app.repositories.agent_core_repo import AgentEventRepository, AgentSessionRepository
 from app.services.agent_core.observability import agent_event_log_fields
 from app.utils.logging import get_logger
 
@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 class AgentEventLedger:
     def __init__(self, session: AsyncSession):
         self.event_repo = AgentEventRepository(session)
+        self.session_repo = AgentSessionRepository(session)
 
     async def append(
         self,
@@ -31,6 +32,8 @@ class AgentEventLedger:
         lock = _session_seq_locks.setdefault(session_id, asyncio.Lock())
         for attempt in range(3):
             async with lock:
+                if await self.session_repo.lock_for_update(session_id) is None:
+                    raise RuntimeError("Agent session disappeared before event append")
                 seq = await self.event_repo.next_seq(session_id)
                 try:
                     event = await self.event_repo.create(

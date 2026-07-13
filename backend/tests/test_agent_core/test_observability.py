@@ -38,6 +38,11 @@ async def test_event_ledger_logs_appended_events_at_debug_not_info(monkeypatch):
     debug_calls: list[tuple[str, dict]] = []
     info_calls: list[tuple[str, dict]] = []
 
+    class FakeSessionRepository:
+        async def lock_for_update(self, session_id: str):
+            assert session_id == "session-1"
+            return object()
+
     class FakeLogger:
         def debug(self, event_name: str, **fields):
             debug_calls.append((event_name, fields))
@@ -58,6 +63,7 @@ async def test_event_ledger_logs_appended_events_at_debug_not_info(monkeypatch):
     monkeypatch.setattr(ledger_module, "logger", FakeLogger())
     ledger = AgentEventLedger.__new__(AgentEventLedger)
     ledger.event_repo = FakeRepo()
+    ledger.session_repo = FakeSessionRepository()
 
     event = await ledger.append(
         session_id="session-1",

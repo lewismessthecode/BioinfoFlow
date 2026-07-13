@@ -260,12 +260,16 @@ class AgentToolExecutor:
             force_ask=False,
             interaction=None,
         )
-        action = await self.action_repo.update_all(
-            action,
+        updated = await self.action_repo.transition_if_status(
+            str(action.id),
+            expected_statuses=[AgentActionStatus.REQUESTED],
             status=AgentActionStatus.FAILED,
             error=error,
             completed_at=datetime.now(timezone.utc),
         )
+        if updated is None:
+            return await self._current_action_result(str(action.id))
+        action = updated
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),

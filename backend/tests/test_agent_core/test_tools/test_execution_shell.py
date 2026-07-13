@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -119,6 +122,38 @@ async def test_bash_tool_auto_runs_safe_command_with_pipe_and_glob(db_session):
     assert started.payload["input_preview"] == "echo agent-core-ok | cat"
     assert completed.payload["name"] == "bash"
     assert completed.payload["input_preview"] == "echo agent-core-ok | cat"
+
+
+@pytest.mark.asyncio
+async def test_bash_tool_cancellation_kills_descendant_processes(db_session, tmp_path):
+    _dispatcher, context, workspace_root = await _shell_context(db_session)
+    child_pid_file = tmp_path / "shell-child.pid"
+    command = f"sleep 30 & echo $! > {shlex.quote(str(child_pid_file))}; wait"
+    task = asyncio.create_task(
+        ExecuteShellTool().run(
+            {"command": command, "cwd": str(workspace_root)},
+            context,
+        )
+    )
+    for _ in range(100):
+        if child_pid_file.exists():
+            break
+        await asyncio.sleep(0.01)
+    assert child_pid_file.exists()
+    child_pid = int(child_pid_file.read_text().strip())
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    for _ in range(100):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.01)
+
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
 
 
 @pytest.mark.asyncio

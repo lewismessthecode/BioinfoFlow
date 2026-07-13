@@ -23,6 +23,14 @@ from app.schemas.common import Pagination
 class AgentSessionRepository(BaseRepository[AgentSession]):
     model = AgentSession
 
+    async def lock_for_update(self, session_id: str) -> AgentSession | None:
+        result = await self.session.execute(
+            select(self.model)
+            .where(self.model.id == session_id)
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def claim_active_turn(self, session_id: str, turn_id: str) -> bool:
         result = await self.session.execute(
             update(self.model)
@@ -262,6 +270,33 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             return None
         return await self.get_fresh(turn_id)
 
+    async def claim_expired_for_recovery(
+        self,
+        turn_id: str,
+        *,
+        expected_claimed_at,
+        claimed_at,
+        lease_until,
+    ) -> AgentTurn | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.claimed_at == expected_claimed_at,
+                or_(
+                    self.model.lease_until.is_(None),
+                    self.model.lease_until <= claimed_at,
+                ),
+            )
+            .values(claimed_at=claimed_at, lease_until=lease_until)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        if result.rowcount != 1:
+            return None
+        return await self.get_fresh(turn_id)
+
     async def get_fresh(self, turn_id: str) -> AgentTurn | None:
         result = await self.session.execute(
             select(self.model)
@@ -474,6 +509,15 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         artifact_event_type: str,
         action_event_type: str,
     ) -> tuple[AgentAction, list[str]] | None:
+        session_id = await self.session.scalar(
+            select(self.model.session_id).where(self.model.id == action_id)
+        )
+        if session_id is None:
+            return None
+        if await AgentSessionRepository(self.session).lock_for_update(
+            str(session_id)
+        ) is None:
+            return None
         transition = await self.session.execute(
             update(self.model)
             .where(

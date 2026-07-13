@@ -423,6 +423,11 @@ async def test_event_sequence_is_session_scoped_across_turns(db_session, monkeyp
 
 @pytest.mark.asyncio
 async def test_event_ledger_serializes_concurrent_sequence_allocation():
+    class FakeSessionRepository:
+        async def lock_for_update(self, session_id: str):
+            assert session_id == "session-1"
+            return object()
+
     class FakeSession:
         async def rollback(self):
             return None
@@ -453,6 +458,7 @@ async def test_event_ledger_serializes_concurrent_sequence_allocation():
 
     ledger = AgentEventLedger.__new__(AgentEventLedger)
     ledger.event_repo = RacingEventRepository()
+    ledger.session_repo = FakeSessionRepository()
 
     first, second = await asyncio.gather(
         ledger.append(
@@ -473,6 +479,11 @@ async def test_event_ledger_serializes_concurrent_sequence_allocation():
 @pytest.mark.asyncio
 async def test_event_ledger_logs_event_append_at_debug(monkeypatch):
     records: list[tuple[str, str, dict]] = []
+
+    class FakeSessionRepository:
+        async def lock_for_update(self, session_id: str):
+            assert session_id == "session-1"
+            return object()
 
     class SpyLogger:
         def info(self, event: str, **fields):
@@ -502,6 +513,7 @@ async def test_event_ledger_logs_event_append_at_debug(monkeypatch):
     monkeypatch.setattr(ledger_module, "logger", SpyLogger())
     ledger = AgentEventLedger.__new__(AgentEventLedger)
     ledger.event_repo = FakeEventRepository()
+    ledger.session_repo = FakeSessionRepository()
 
     await ledger.append(
         session_id="session-1",
