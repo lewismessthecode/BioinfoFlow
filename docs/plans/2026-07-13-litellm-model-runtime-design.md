@@ -240,15 +240,17 @@ replays those items plus the matching `function_call_output` only when that targ
 identity still matches. This state survives approval pauses and process restart
 without exposing raw reasoning or depending on provider-side storage.
 
-Continuation metadata is stored as one replaceable, turn-scoped anchor in the
+Continuation metadata is stored as one replaceable, session-scoped anchor in the
 durable transcript metadata used by AgentCore resume. Tool-result messages do not
-copy it, a target change discards it, and a final answer clears it. It is treated
-as opaque provider state: public transcript/API serializers omit it, logs and
-ledger events may report only its presence and item count, and compaction must
-preserve the latest live continuation chain until the turn finishes. It follows
-the session/transcript retention and deletion lifecycle; completing, deleting,
-or expiring the owning session removes the need to replay it. The encrypted
-reasoning payload is never decrypted or rendered by Bioinfoflow.
+copy it, a target change discards it, and a completed turn advances the anchor so
+the next turn can replay the prior encrypted reasoning/output items without
+duplicating canonical text. If transcript compaction changes canonical item
+counts, the old anchor is cleared and the compacted transcript becomes the new
+source. The metadata is treated as opaque provider state: public transcript/API
+serializers omit it, and logs and ledger events may report only its presence and
+item count. It follows the session/transcript retention and deletion lifecycle;
+deleting or expiring the owning session removes it. The encrypted reasoning
+payload is never decrypted or rendered by Bioinfoflow.
 
 ## AgentCore Integration
 
@@ -278,7 +280,10 @@ rewrites.
 
 Assistant text metadata preserves phase. Commentary may be persisted and
 rendered as progress, but `turn.final_text` is derived only from final-answer
-content.
+content. Model context is assembled directly from canonical content parts so
+`commentary` and `final_answer` remain distinct through the Responses request.
+Chat encoding recombines assistant text and its adjacent tool calls into one
+assistant message for compatibility with strict relays.
 
 Existing character-count compaction remains compatible during this campaign.
 Native Responses compaction is a follow-up capability. Encrypted reasoning
@@ -336,6 +341,8 @@ For this campaign:
 - LiteLLM backend performs one invocation attempt per Bioinfoflow retry.
 - Bioinfoflow structured retry policy handles replay-safe transient failures.
 - Bioinfoflow profile fallback handles different semantic models.
+- A failure after visible text or tool output starts is not replay-safe and
+  cannot trigger semantic fallback.
 
 A later LiteLLM Router enhancement may own load balancing and cooldown among
 equivalent deployments of one logical model. It must not also own cross-model
@@ -357,6 +364,13 @@ fallback.
   discovery operations re-resolve the hostname immediately before network I/O
   and reject private, loopback, link-local, reserved, internal, or unresolvable
   targets for ordinary team members.
+- The actual LiteLLM transport for member-owned endpoints pins validated public
+  DNS answers, rejects non-public redirect targets, disables environment proxies,
+  and keeps the restricted client alive for the full stream.
+- Approval resume compares the persisted endpoint/protocol and a credential
+  configuration revision fingerprint with current configuration. A rotated
+  endpoint or credential fails closed instead of sending a new key to an old
+  endpoint.
 
 ## Acceptance Criteria
 
@@ -368,7 +382,7 @@ fallback.
 - The configured relay completes `gpt-5.4-mini` through Responses.
 - Responses text, tools, usage, and phase are normalized into AgentCore events.
 - Responses continuation is codec-owned, target-bound, and persisted at most
-  once per active turn.
+  once per session.
 - Tool approvals pause and resume with stable call IDs for both protocols.
 - Provider test executes the same gateway path used by AgentCore.
 - Ordinary team members cannot use provider configuration to read arbitrary
