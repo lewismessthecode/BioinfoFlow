@@ -61,7 +61,10 @@ async def render_remote_connection_context(
         f"- SSH target: {connection.display_target}",
         f"- Status: {connection.status}",
         "- Prefer remote.read_file and remote.list_dir for read-only inspection.",
-        "- remote.exec can run short diagnostics and is approval-gated as an elevated action.",
+        (
+            "- remote.exec runs approval-gated bounded remote commands for diagnostics "
+            "and operational CLIs; each call retains timeout and output limits."
+        ),
     ]
     if remote_project:
         lines.extend(

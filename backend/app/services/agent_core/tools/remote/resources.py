@@ -186,8 +186,9 @@ class RemoteExecTool:
     spec = AgentToolSpec(
         name="remote.exec",
         description=(
-            "Run a short SSH diagnostic command on a selected remote connection. "
-            "Use for commands such as hostname, uname, df, module avail, or nextflow -version."
+            "Run an approval-gated, bounded command on a selected remote connection. "
+            "Use for operational CLIs as well as diagnostics; each call is constrained "
+            "by explicit timeout and output limits."
         ),
         input_schema={
             "type": "object",
@@ -212,7 +213,7 @@ class RemoteExecTool:
         risk_level="act_high",
         read_scope=["remote_connections"],
         write_scope=["remote_shell"],
-        audit="Run a bounded diagnostic command over SSH.",
+        audit="Run an approval-gated bounded remote command over SSH.",
         rollback_hint="Inspect the command and remote shell history; undo any remote changes manually.",
         timeout_seconds=70,
         artifact_policy={"stdout": True, "stderr": True, "type": "remote_command"},

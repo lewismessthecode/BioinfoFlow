@@ -9,6 +9,7 @@ import pytest
 from app.services.agent_core.context.remote import render_remote_connection_context
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.execution_target import execution_target_from_session
+from app.services.agent_core.memory import AgentMemoryService
 from app.services.agent_core.service import AgentCoreService
 from app.services.agent_core.tools import build_default_tool_registry
 from app.services.agent_core.tools.executor import _artifact_descriptor
@@ -751,6 +752,142 @@ async def test_remote_project_context_follows_explicit_execution_target_override
 
 
 @pytest.mark.asyncio
+async def test_phoenix_remote_target_suppresses_conflicting_local_project_memory(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "agent_project_instructions_max_bytes", 0)
+    connection = await RemoteConnectionService(db_session).create_connection(
+        {
+            "name": "Phoenix sz01",
+            "host": "phoenix.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix",
+        },
+        workspace_id="workspace-1",
+    )
+    from app.services.project_service import ProjectService
+
+    project = await ProjectService(db_session).create_project(
+        {"name": "Local Deaf_20", "workspace_id": "workspace-1"},
+        user_id="user-1",
+    )
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+    )
+    memory = await AgentMemoryService(db_session).propose_memory(
+        workspace_id="workspace-1",
+        project_id=str(project.id),
+        scope="project",
+        type="runs.submit",
+        content={"sentinel": "LOCAL-RUNS-SUBMIT-DEAF-20"},
+    )
+    await AgentMemoryService(db_session).update_memory_status(
+        memory_id=str(memory.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        status="accepted",
+    )
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        updates={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            }
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Submit Deaf_20 with phoenixcli on sz01.",
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+    all_context = "\n".join(message.get("content", "") for message in messages[:-1])
+
+    assert "Phoenix sz01" in messages[0]["content"]
+    assert "LOCAL-RUNS-SUBMIT-DEAF-20" not in all_context
+
+
+@pytest.mark.asyncio
+async def test_matching_remote_project_keeps_project_scoped_memory(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "agent_project_instructions_max_bytes", 0)
+    connection = await RemoteConnectionService(db_session).create_connection(
+        {
+            "name": "Matching Phoenix",
+            "host": "matching-phoenix.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "matching-phoenix",
+        },
+        workspace_id="workspace-1",
+    )
+    from app.services.project_service import ProjectService
+
+    project = await ProjectService(db_session).create_project(
+        {
+            "name": "Remote Deaf_20",
+            "workspace_id": "workspace-1",
+            "remote_connection_id": str(connection.id),
+            "remote_root_path": "/remote/deaf-20",
+        },
+        user_id="user-1",
+    )
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        execution_target={
+            "type": "remote_ssh",
+            "connection_id": str(connection.id),
+        },
+    )
+    memory = await AgentMemoryService(db_session).propose_memory(
+        workspace_id="workspace-1",
+        project_id=str(project.id),
+        scope="project",
+        type="remote_cli",
+        content={"sentinel": "MATCHING-REMOTE-MEMORY-VISIBLE"},
+    )
+    await AgentMemoryService(db_session).update_memory_status(
+        memory_id=str(memory.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        status="accepted",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Use the matching remote project context.",
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+
+    assert "MATCHING-REMOTE-MEMORY-VISIBLE" in messages[1]["content"]
+
+
+@pytest.mark.asyncio
 async def test_remote_exec_follows_explicit_target_instead_of_project_connection(
     db_session,
 ):
@@ -1246,6 +1383,13 @@ def test_default_registry_registers_remote_tools_with_expected_exposure():
     assert "remote.read_file" in exposure.exposed_names(policy={"name": "default"})
     assert "remote.list_dir" in exposure.exposed_names(policy={"name": "default"})
     assert registry.get("remote.exec").spec.risk_level == "act_high"
+    remote_exec = registry.get("remote.exec").spec
+    assert "approval-gated" in remote_exec.description
+    assert "bounded" in remote_exec.description
+    assert "operational CLI" in remote_exec.description
+    assert "short SSH diagnostic" not in remote_exec.description
+    assert remote_exec.input_schema["properties"]["timeout_seconds"]["maximum"] == 60
+    assert remote_exec.input_schema["properties"]["output_limit"]["maximum"] == 50000
     assert registry.get("remote.read_file").spec.risk_level == "read"
     assert registry.get("remote.read_file").spec.write_scope == []
     assert registry.get("remote.list_dir").spec.risk_level == "read"
@@ -1506,12 +1650,14 @@ async def test_phoenix_remote_task_context_and_tools_stay_remote_or_neutral(db_s
         turn=turn,
     )
     system_content = messages[0]["content"]
+    task_context = messages[1]["content"]
     exposed_names = {tool.name for tool in exposed_tools}
 
     assert "Deaf_20" in messages[-1]["content"]
     assert "## Remote connection" in system_content
-    assert "## Active skills for this turn" in system_content
-    assert "Use phoenixcli on the selected remote target" in system_content
+    assert "## Active skills for this turn" not in system_content
+    assert "## Active skills for this turn" in task_context
+    assert "Use phoenixcli on the selected remote target" in task_context
     assert "## Platform inventory" not in system_content
     assert "## Bioinfoflow local platform" not in system_content
     assert "Before submitting a run" not in system_content
@@ -1544,6 +1690,10 @@ async def test_remote_connection_context_renders_selected_connection(db_session)
     assert context is not None
     assert "Selected remote connection: HPC login (conn-1)" in context
     assert "alice@login.cluster.example.org" in context
+    assert "approval-gated bounded remote commands" in context
+    assert "operational CLIs" in context
+    assert "timeout and output limits" in context
+    assert "short diagnostics" not in context
     assert "Use module load nextflow before launching workflows." in context
 
 

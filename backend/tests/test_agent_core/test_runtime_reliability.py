@@ -303,9 +303,15 @@ async def test_context_replays_committed_transcript_messages(db_session, monkeyp
         turn=completed_turn,
     )
 
-    assert [message["role"] for message in messages] == ["system", "user", "assistant"]
-    assert messages[1]["content"] == "Replay this transcript."
-    assert messages[2]["content"] == "Committed assistant reply."
+    assert [message["role"] for message in messages] == [
+        "system",
+        "user",
+        "user",
+        "assistant",
+    ]
+    assert "## Task context" in messages[1]["content"]
+    assert messages[2]["content"] == "Replay this transcript."
+    assert messages[3]["content"] == "Committed assistant reply."
 
 
 @pytest.mark.asyncio
@@ -549,6 +555,7 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(
     assert failed_turn.termination_reason == "no_progress"
     assert failed_turn.error_code == "no_progress_detected"
     assert events[-1].type == "turn.no_progress"
+    assert sum(event.type == "turn.no_progress" for event in events) == 1
 
 
 @pytest.mark.asyncio

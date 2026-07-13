@@ -226,12 +226,15 @@ async def test_context_assembler_injects_project_instructions_before_environment
         turn=turn,
     )
     system_content = messages[0]["content"]
+    task_context = messages[1]["content"]
 
-    assert "## Project instructions" in system_content
-    assert "assembler root instruction" in system_content
-    assert system_content.index("## Project instructions") < system_content.index(
-        "## Environment"
-    )
+    assert [message["role"] for message in messages] == ["system", "user", "user"]
+    assert "## Environment" in system_content
+    assert "## Project instructions" not in system_content
+    assert "## Task context" in task_context
+    assert "## Project instructions" in task_context
+    assert "assembler root instruction" in task_context
+    assert messages[-1]["content"] == "Use the repo rules."
 
 
 @pytest.mark.asyncio

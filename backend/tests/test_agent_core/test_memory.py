@@ -5,6 +5,7 @@ import pytest
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
+from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.memory import AgentMemoryService
 from app.services.agent_core.tools import (
     AgentToolContext,
@@ -150,3 +151,58 @@ async def test_memory_tools_run_through_action_ledger(db_session):
     assert "action.completed" in event_types
     assert "memory.proposed" in event_types
     assert "memory.read" in event_types
+
+
+@pytest.mark.asyncio
+async def test_projectless_context_reads_only_workspace_scoped_memory(db_session):
+    core, project, _project_session, _project_turn = await _memory_context(db_session)
+    memory_service = AgentMemoryService(db_session)
+
+    workspace_memory = await memory_service.propose_memory(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        project_id=None,
+        scope="workspace",
+        type="shared_convention",
+        content={"sentinel": "WORKSPACE-MEMORY-VISIBLE"},
+    )
+    await memory_service.update_memory_status(
+        memory_id=str(workspace_memory.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        status="accepted",
+    )
+    project_memory = await memory_service.propose_memory(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        project_id=str(project.id),
+        scope="project",
+        type="runs.submit",
+        content={"sentinel": "OTHER-PROJECT-MEMORY-HIDDEN"},
+    )
+    await memory_service.update_memory_status(
+        memory_id=str(project_memory.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        status="accepted",
+    )
+    session = await core.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await core.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Use workspace memory only.",
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+    system_content = messages[0]["content"]
+    task_context = messages[1]["content"]
+
+    assert "WORKSPACE-MEMORY-VISIBLE" in task_context
+    assert "OTHER-PROJECT-MEMORY-HIDDEN" not in task_context
+    assert "WORKSPACE-MEMORY-VISIBLE" not in system_content
