@@ -4,6 +4,7 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
+from app.services.model_runtime.backend.naming import litellm_model_name
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelEvent,
@@ -16,7 +17,6 @@ from app.services.model_runtime.contracts import (
     ToolResultPart,
     UsageReport,
 )
-from app.services.llm.provider_templates import litellm_model_name
 
 
 class ChatCompletionsCodec:
@@ -103,6 +103,15 @@ class ChatCompletionsCodec:
         if usage is not None:
             yield usage
         yield _completion_metadata(response, choice)
+
+    def finalize_event(
+        self,
+        invocation: ModelInvocation,
+        request: dict[str, Any],
+        event: ModelEvent,
+    ) -> ModelEvent:
+        del invocation, request
+        return event
 
     async def _decode_stream(self, response: Any) -> AsyncIterator[ModelEvent]:
         response_id: str | None = None

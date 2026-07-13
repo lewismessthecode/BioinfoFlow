@@ -42,6 +42,18 @@ from app.utils.exceptions import BadRequestError, PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
+def test_model_gateway_has_no_responses_specific_continuation_assembly() -> None:
+    source = (
+        Path(__file__).parents[2]
+        / "app/services/model_runtime/gateway.py"
+    ).read_text()
+
+    assert "_merge_replay_input" not in source
+    assert "_stable_replay_key" not in source
+    assert 'wire_protocol == "responses"' not in source
+    assert "ResponsesContinuation" not in source
+
+
 async def _workspace(db_session) -> Workspace:
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     db_session.add(workspace)

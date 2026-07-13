@@ -14,6 +14,7 @@ from app.services.agent_core.transcript.messages import (
     tool_calls_part,
 )
 from app.services.model_runtime.contracts import (
+    ModelTarget,
     ResponsesContinuation,
     TextPart,
     ToolCallPart,
@@ -150,10 +151,18 @@ def test_tool_result_uses_metadata_call_id_and_error_flag():
 
 def test_responses_phase_and_private_continuation_round_trip_without_public_leak():
     secret = "encrypted-private-reasoning"
+    target = ModelTarget(
+        endpoint_id="endpoint-1",
+        provider_kind="openai_compatible",
+        model_name="gpt-test",
+        wire_protocol="responses",
+        base_url="https://relay.example/v1",
+    )
     continuation = ResponsesContinuation(
         response_id="resp-1",
         canonical_input_count=3,
         output_items=({"type": "reasoning", "encrypted_content": secret},),
+        target=target.continuation_target(),
     )
     metadata = metadata_with_responses_continuation(
         {"provider": "openai_compatible"},
@@ -163,6 +172,7 @@ def test_responses_phase_and_private_continuation_round_trip_without_public_leak
     restored = responses_continuation_from_metadata(metadata)
     assert restored is not None
     assert restored.to_private_dict() == continuation.to_private_dict()
+    assert restored.matches_target(target)
     parts = [
         text_part("Working.", phase="commentary"),
         text_part("Done.", phase="final_answer"),
@@ -172,6 +182,24 @@ def test_responses_phase_and_private_continuation_round_trip_without_public_leak
         TextPart(text="Done.", phase="final_answer"),
     )
     assert secret not in repr(provider_message_from_parts("assistant", parts, metadata))
+
+
+def test_unbound_responses_continuation_is_not_persisted() -> None:
+    metadata = metadata_with_responses_continuation(
+        {"kind": "tool_calls"},
+        ResponsesContinuation(
+            response_id="resp-unbound",
+            output_items=(
+                {
+                    "type": "reasoning",
+                    "encrypted_content": "unsafe-unbound-state",
+                },
+            ),
+        ),
+    )
+
+    assert metadata == {"kind": "tool_calls"}
+    assert "unsafe-unbound-state" not in repr(metadata)
 
 def test_context_messages_shape_model_instructions_and_inputs_without_secrets():
     secret = "sentinel-context-secret"

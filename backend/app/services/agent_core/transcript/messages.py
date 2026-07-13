@@ -5,6 +5,7 @@ from typing import Any
 
 from app.services.model_runtime.contracts import (
     InputPart,
+    ModelTarget,
     ResponsesContinuation,
     TextPart,
     ToolCallPart,
@@ -12,7 +13,7 @@ from app.services.model_runtime.contracts import (
 )
 
 
-_RESPONSES_CONTINUATION_KEY = "_responses_continuation"
+RESPONSES_CONTINUATION_METADATA_KEY = "_responses_continuation"
 
 
 def text_part(text: str, *, phase: str | None = None) -> dict[str, str]:
@@ -129,9 +130,9 @@ def metadata_with_responses_continuation(
     continuation: ResponsesContinuation | None,
 ) -> dict[str, Any] | None:
     result = dict(metadata or {})
-    if continuation is None:
+    if continuation is None or continuation.target is None:
         return result or None
-    result[_RESPONSES_CONTINUATION_KEY] = continuation.to_private_dict()
+    result[RESPONSES_CONTINUATION_METADATA_KEY] = continuation.to_private_dict()
     return result
 
 
@@ -141,7 +142,7 @@ def responses_continuation_from_metadata(
     if not isinstance(metadata, dict):
         return None
     return ResponsesContinuation.from_private_dict(
-        metadata.get(_RESPONSES_CONTINUATION_KEY)
+        metadata.get(RESPONSES_CONTINUATION_METADATA_KEY)
     )
 
 
@@ -149,6 +150,7 @@ def latest_responses_continuation(
     messages: list[Any],
     *,
     turn_id: str,
+    target: ModelTarget | None = None,
 ) -> ResponsesContinuation | None:
     for message in reversed(messages):
         if str(getattr(message, "turn_id", "")) != turn_id:
@@ -158,7 +160,9 @@ def latest_responses_continuation(
         continuation = responses_continuation_from_metadata(
             getattr(message, "message_metadata", None)
         )
-        if continuation is not None:
+        if continuation is not None and (
+            target is None or continuation.matches_target(target)
+        ):
             return continuation
     return None
 

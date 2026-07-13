@@ -187,10 +187,18 @@ def test_model_error_is_structured_immutable_and_never_serializes_its_cause() ->
 
 def test_responses_continuation_private_round_trip_and_count_advance() -> None:
     secret = "opaque-private-reasoning"
+    target = ModelTarget(
+        endpoint_id="endpoint-1",
+        provider_kind="openai_compatible",
+        model_name="gpt-test",
+        wire_protocol="responses",
+        base_url="https://relay.example/v1",
+    )
     continuation = ResponsesContinuation(
         response_id="resp-1",
         output_items=({"type": "reasoning", "encrypted_content": secret},),
         canonical_input_count=3,
+        target=target.continuation_target(),
     )
 
     private_payload = continuation.to_private_dict()
@@ -203,6 +211,7 @@ def test_responses_continuation_private_round_trip_and_count_advance() -> None:
     advanced = restored.advance_canonical_input_count(2)
     assert advanced.canonical_input_count == 5
     assert advanced.opaque_output_items() == restored.opaque_output_items()
+    assert advanced.matches_target(target)
     assert secret not in repr(continuation)
     assert secret not in repr(asdict(continuation))
 

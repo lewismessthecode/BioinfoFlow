@@ -42,21 +42,40 @@ class AgentTranscriptStore:
         metadata: dict[str, Any] | None = None,
         status: str = "committed",
         ordering_index: int | None = None,
+        replace_turn_metadata_key: str | None = None,
     ):
         if ordering_index is None:
             ordering_index = await self.messages.next_ordering_index(session_id)
+        data = {
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "role": role,
+            "content_parts": parts,
+            "message_metadata": metadata,
+            "status": status,
+            "ordering_index": ordering_index,
+        }
+        if replace_turn_metadata_key is not None:
+            if turn_id is None:
+                raise ValueError(
+                    "turn_id is required when replacing turn-scoped metadata"
+                )
+            return await self.messages.create_replacing_turn_metadata(
+                metadata_key=replace_turn_metadata_key,
+                **data,
+            )
         return await self.messages.create(
-            session_id=session_id,
-            turn_id=turn_id,
-            role=role,
-            content_parts=parts,
-            message_metadata=metadata,
-            status=status,
-            ordering_index=ordering_index,
+            **data,
         )
 
     async def list_messages(self, session_id: str):
         return await self.messages.list_for_session(session_id)
+
+    async def clear_turn_metadata(self, *, turn_id: str, metadata_key: str) -> None:
+        await self.messages.clear_turn_metadata(
+            turn_id=turn_id,
+            metadata_key=metadata_key,
+        )
 
     async def compact_session(
         self,

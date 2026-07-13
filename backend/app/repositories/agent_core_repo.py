@@ -8,6 +8,7 @@ from app.models.agent_core import (
     AgentArtifact,
     AgentEvent,
     AgentMessage,
+    AgentMessageStatus,
     AgentMemory,
     AgentSession,
     AgentSessionStatus,
@@ -149,6 +150,48 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         await self.session.commit()
         await self.session.refresh(message)
         return message
+
+    async def create_replacing_turn_metadata(
+        self,
+        *,
+        metadata_key: str,
+        **data: object,
+    ) -> AgentMessage:
+        turn_id = str(data["turn_id"])
+        stmt = select(self.model).where(
+            self.model.turn_id == turn_id,
+            self.model.status == AgentMessageStatus.COMMITTED,
+        )
+        result = await self.session.execute(stmt)
+        for message in result.scalars().all():
+            metadata = dict(message.message_metadata or {})
+            if metadata_key not in metadata:
+                continue
+            metadata.pop(metadata_key)
+            message.message_metadata = metadata or None
+        message = self.model(**data)
+        self.session.add(message)
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        await self.session.refresh(message)
+        return message
+
+    async def clear_turn_metadata(self, *, turn_id: str, metadata_key: str) -> None:
+        stmt = select(self.model).where(self.model.turn_id == turn_id)
+        result = await self.session.execute(stmt)
+        changed = False
+        for message in result.scalars().all():
+            metadata = dict(message.message_metadata or {})
+            if metadata_key not in metadata:
+                continue
+            metadata.pop(metadata_key)
+            message.message_metadata = metadata or None
+            changed = True
+        if changed:
+            await self.session.commit()
 
 
 class AgentEventRepository(BaseRepository[AgentEvent]):

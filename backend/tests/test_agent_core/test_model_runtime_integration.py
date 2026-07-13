@@ -38,6 +38,10 @@ from app.services.model_runtime.contracts import (
 )
 from app.services.model_runtime.errors import ModelError
 from app.services.agent_core.transcript import provider_message_from_parts
+from app.services.agent_core.transcript.messages import (
+    metadata_with_responses_continuation,
+)
+from app.services.agent_core.transcript.store import AgentTranscriptStore
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -128,6 +132,12 @@ async def test_responses_commentary_does_not_complete_without_final_answer(
     db_session,
 ) -> None:
     session, turn = await _turn(db_session, input_text="Work in two visible phases.")
+    target = ModelTarget(
+        endpoint_id="endpoint-responses",
+        provider_kind="openai_compatible",
+        model_name="gpt-responses-test",
+        wire_protocol="responses",
+    )
     continuation = ResponsesContinuation(
         response_id="resp-commentary",
         canonical_input_count=1,
@@ -140,6 +150,7 @@ async def test_responses_commentary_does_not_complete_without_final_answer(
                 "content": [{"type": "output_text", "text": "Still checking."}],
             },
         ),
+        target=target.continuation_target(),
     )
     gateway = FakeModelGateway(
         (
@@ -155,13 +166,6 @@ async def test_responses_commentary_does_not_complete_without_final_answer(
             CompletionMetadata(response_id="resp-final", finish_reason="stop"),
         ),
     )
-    target = ModelTarget(
-        endpoint_id="endpoint-responses",
-        provider_kind="openai_compatible",
-        model_name="gpt-responses-test",
-        wire_protocol="responses",
-    )
-
     result = await AgentLoopController(db_session, model_gateway=gateway).run_turn(
         turn_id=str(turn.id),
         target=target,
@@ -646,6 +650,13 @@ async def test_responses_approval_resume_survives_service_restart(
     )
 
     opaque_secret = "encrypted-reasoning-must-stay-private"
+    continuation_target = ModelTarget(
+        endpoint_id=str(provider.id),
+        provider_kind="openai_compatible",
+        model_name="gpt-responses-test",
+        wire_protocol="responses",
+        base_url="https://responses.example/v1",
+    ).continuation_target()
     first_continuation = ResponsesContinuation(
         response_id="resp-approval",
         canonical_input_count=1,
@@ -675,6 +686,7 @@ async def test_responses_approval_resume_survives_service_restart(
                 ),
             },
         ),
+        target=continuation_target,
     )
     gateway = FakeModelGateway(
         (
@@ -719,6 +731,7 @@ async def test_responses_approval_resume_survives_service_restart(
                             ],
                         },
                     ),
+                    target=continuation_target,
                 ),
             ),
         ),
@@ -740,6 +753,15 @@ async def test_responses_approval_resume_survives_service_restart(
     }
     messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
     assistant = next(message for message in messages if message.role == "assistant")
+    assert sum(
+        "_responses_continuation" in (message.message_metadata or {})
+        for message in messages
+    ) == 1
+    assert all(
+        "_responses_continuation" not in (message.message_metadata or {})
+        for message in messages
+        if message.role == "tool"
+    )
     assert opaque_secret in json.dumps(assistant.message_metadata)
     assert opaque_secret not in json.dumps(
         provider_message_from_parts(
@@ -818,6 +840,12 @@ async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplic
     monkeypatch,
 ) -> None:
     _session, turn = await _turn(db_session, input_text="Run two commands, then finish.")
+    target = ModelTarget(
+        endpoint_id="endpoint-responses",
+        provider_kind="openai_compatible",
+        model_name="gpt-responses-test",
+        wire_protocol="responses",
+    )
     gateway = FakeModelGateway(
         (
             ToolCallDelta(
@@ -840,6 +868,7 @@ async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplic
                             "arguments": '{"command":"first"}',
                         },
                     ),
+                    target=target.continuation_target(),
                 ),
             ),
         ),
@@ -864,6 +893,7 @@ async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplic
                             "arguments": '{"command":"second"}',
                         },
                     ),
+                    target=target.continuation_target(),
                 ),
             ),
         ),
@@ -883,13 +913,6 @@ async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplic
         )
 
     monkeypatch.setattr(controller.executor, "execute", completed_execution)
-    target = ModelTarget(
-        endpoint_id="endpoint-responses",
-        provider_kind="openai_compatible",
-        model_name="gpt-responses-test",
-        wire_protocol="responses",
-    )
-
     result = await controller.run_turn(turn_id=str(turn.id), target=target)
 
     assert result.termination_reason == "assistant_final"
@@ -914,6 +937,84 @@ async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplic
         ]
         if isinstance(item, ToolResultPart)
     ] == ["call-two"]
+
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(turn.session_id)
+    )
+    continuation_messages = [
+        message
+        for message in messages
+        if "_responses_continuation" in (message.message_metadata or {})
+    ]
+    assert continuation_messages == []
+    assert all(
+        "_responses_continuation" not in (message.message_metadata or {})
+        for message in messages
+        if message.role == "tool"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fallback_target_change_discards_durable_responses_continuation(
+    db_session,
+) -> None:
+    session, turn = await _turn(db_session, input_text="Use a fallback if needed.")
+    responses_target = ModelTarget(
+        endpoint_id="responses-endpoint",
+        provider_kind="openai_compatible",
+        model_name="responses-model",
+        wire_protocol="responses",
+        base_url="https://responses.example/v1",
+    )
+    await AgentTranscriptStore(db_session).append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[{"type": "text", "text": "Trying another model."}],
+        metadata=metadata_with_responses_continuation(
+            {"kind": "commentary"},
+            ResponsesContinuation(
+                response_id="resp-primary",
+                output_items=(
+                    {
+                        "type": "reasoning",
+                        "encrypted_content": "discard-on-fallback",
+                    },
+                ),
+                canonical_input_count=2,
+                target=responses_target.continuation_target(),
+            ),
+        ),
+    )
+    gateway = FakeModelGateway(
+        (
+            TextDelta(text="Fallback completed."),
+            CompletionMetadata(response_id="chat-fallback", finish_reason="stop"),
+        )
+    )
+    fallback_target = ModelTarget(
+        endpoint_id="chat-endpoint",
+        provider_kind="anthropic",
+        model_name="fallback-model",
+        wire_protocol="chat_completions",
+        base_url="https://fallback.example/v1",
+    )
+
+    result = await AgentLoopController(db_session, model_gateway=gateway).run_turn(
+        turn_id=str(turn.id),
+        target=fallback_target,
+    )
+
+    assert result.termination_reason == "assistant_final"
+    assert gateway.invocations[0].continuation is None
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    assert all(
+        "_responses_continuation" not in (message.message_metadata or {})
+        for message in messages
+    )
+    assert "discard-on-fallback" not in repr(
+        [message.message_metadata for message in messages]
+    )
 
 
 @pytest.mark.asyncio

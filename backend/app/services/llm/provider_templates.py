@@ -4,6 +4,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.models.llm import LlmWireProtocol
+from app.services.model_runtime.backend.naming import (
+    litellm_model_name as _litellm_model_name,
+)
 
 
 ProviderDiscovery = Literal[
@@ -57,7 +60,6 @@ class ProviderTemplate:
     kind: str
     docs_url: str
     discovery: ProviderDiscovery
-    litellm_prefix: str = ""
     default_base_url: str | None = None
     env_api_key_vars: tuple[str, ...] = ()
     env_base_url_vars: tuple[str, ...] = ()
@@ -171,7 +173,6 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="anthropic",
         docs_url="https://console.anthropic.com/settings/keys",
         discovery="anthropic_models",
-        litellm_prefix="anthropic/",
         default_base_url="https://api.anthropic.com",
         env_api_key_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
     ),
@@ -181,7 +182,6 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="gemini",
         docs_url="https://aistudio.google.com/apikey",
         discovery="gemini_models",
-        litellm_prefix="gemini/",
         default_base_url="https://generativelanguage.googleapis.com",
         env_api_key_vars=("GEMINI_API_KEY",),
     ),
@@ -191,7 +191,6 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="grok",
         docs_url="https://console.x.ai/",
         discovery="openai_models",
-        litellm_prefix="xai/",
         default_base_url="https://api.x.ai/v1",
         env_api_key_vars=("XAI_API_KEY", "GROK_API_KEY"),
     ),
@@ -201,7 +200,6 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="groq",
         docs_url="https://console.groq.com/keys",
         discovery="openai_models",
-        litellm_prefix="groq/",
         default_base_url="https://api.groq.com/openai/v1",
         env_api_key_vars=("GROQ_API_KEY",),
     ),
@@ -211,7 +209,6 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="deepseek",
         docs_url="https://platform.deepseek.com/api_keys",
         discovery="openai_models",
-        litellm_prefix="deepseek/",
         default_base_url="https://api.deepseek.com/v1",
         env_api_key_vars=("DEEPSEEK_API_KEY",),
     ),
@@ -221,7 +218,6 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="openrouter",
         docs_url="https://openrouter.ai/settings/keys",
         discovery="openai_models",
-        litellm_prefix="openrouter/",
         default_base_url="https://openrouter.ai/api/v1",
         env_api_key_vars=("OPENROUTER_API_KEY",),
         model_id_supported=True,
@@ -232,7 +228,6 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="ollama",
         docs_url="https://ollama.com/download",
         discovery="ollama_tags",
-        litellm_prefix="ollama_chat/",
         default_base_url="http://localhost:11434",
         env_base_url_vars=("OLLAMA_BASE_URL",),
         api_key_required=False,
@@ -245,7 +240,6 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="vllm",
         docs_url="https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html",
         discovery="openai_models",
-        litellm_prefix="openai/",
         default_base_url="http://localhost:8000/v1",
         env_api_key_vars=("VLLM_API_KEY",),
         env_base_url_vars=("VLLM_BASE_URL",),
@@ -260,7 +254,6 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         kind="openai_compatible",
         docs_url="https://platform.openai.com/docs/api-reference",
         discovery="openai_models",
-        litellm_prefix="openai/",
         default_base_url="https://api.example.com/v1",
         env_api_key_vars=("OPENAI_COMPATIBLE_API_KEY",),
         env_base_url_vars=("OPENAI_COMPATIBLE_BASE_URL",),
@@ -345,12 +338,8 @@ def litellm_model_name(
     *,
     provider_metadata: dict[str, Any] | None = None,
 ) -> str:
-    template = None
+    template: ProviderTemplate | None = None
     if provider_metadata:
         template_id = str(provider_metadata.get("providerTemplate") or "")
         template = get_provider_template(template_id) if template_id else None
-    template = template or provider_template_for_kind(provider_kind)
-    prefix = template.litellm_prefix if template else ""
-    if prefix and model.startswith(prefix):
-        return model
-    return f"{prefix}{model}"
+    return _litellm_model_name(template.kind if template else provider_kind, model)

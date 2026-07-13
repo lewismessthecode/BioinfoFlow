@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
-from app.services.llm.provider_templates import litellm_model_name
+from app.services.model_runtime.backend.naming import litellm_model_name
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelEvent,
@@ -42,14 +42,19 @@ class ResponsesCodec:
 
     def encode_request(self, invocation: ModelInvocation) -> dict[str, Any]:
         input_items: list[dict[str, Any]] = []
-        if invocation.continuation is not None:
+        continuation = invocation.continuation
+        if continuation is not None and not continuation.matches_target(
+            invocation.target
+        ):
+            continuation = None
+        if continuation is not None:
             input_items.extend(
                 _jsonable(item)
-                for item in invocation.continuation.opaque_output_items()
+                for item in continuation.opaque_output_items()
             )
         canonical_input_count = (
-            invocation.continuation.canonical_input_count
-            if invocation.continuation is not None
+            continuation.canonical_input_count
+            if continuation is not None
             else 0
         )
         for item in invocation.input_items[canonical_input_count:]:
@@ -65,8 +70,7 @@ class ResponsesCodec:
                     input_items.append(
                         {
                             "role": "assistant",
-                            "phase": item.phase,
-                            "content": [{"type": "output_text", "text": item.text}],
+                            "content": item.text,
                         }
                     )
             elif isinstance(item, ToolCallPart):
@@ -114,6 +118,29 @@ class ResponsesCodec:
                 for tool in invocation.tools
             ]
         return request
+
+    def finalize_event(
+        self,
+        invocation: ModelInvocation,
+        request: dict[str, Any],
+        event: ModelEvent,
+    ) -> ModelEvent:
+        if not isinstance(event, CompletionMetadata) or event.continuation is None:
+            return event
+        replay_input = _merge_replay_input(
+            request.get("input"),
+            event.continuation.opaque_output_items(),
+        )
+        return CompletionMetadata(
+            response_id=event.response_id,
+            finish_reason=event.finish_reason,
+            continuation=ResponsesContinuation(
+                response_id=event.response_id,
+                output_items=replay_input,
+                canonical_input_count=len(invocation.input_items),
+                target=invocation.target.continuation_target(),
+            ),
+        )
 
     async def decode_response(self, response: Any) -> AsyncIterator[ModelEvent]:
         if hasattr(response, "__aiter__"):
@@ -364,6 +391,41 @@ def _continuation(
         response_id=response_id,
         output_items=tuple(_jsonable(item) for item in output),
     )
+
+
+def _merge_replay_input(
+    request_input: Any,
+    current_output: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    candidates = [
+        *(
+            item
+            for item in request_input
+            if isinstance(request_input, (list, tuple)) and isinstance(item, dict)
+        ),
+        *current_output,
+    ]
+    for item in candidates:
+        key = _stable_replay_key(item)
+        if key is not None and key in seen:
+            continue
+        if key is not None:
+            seen.add(key)
+        merged.append(item)
+    return tuple(merged)
+
+
+def _stable_replay_key(item: dict[str, Any]) -> tuple[str, str] | None:
+    item_id = item.get("id")
+    if isinstance(item_id, str) and item_id:
+        return "id", item_id
+    if item.get("type") == "function_call":
+        call_id = item.get("call_id")
+        if isinstance(call_id, str) and call_id:
+            return "function_call", call_id
+    return None
 
 
 def _terminal_error(

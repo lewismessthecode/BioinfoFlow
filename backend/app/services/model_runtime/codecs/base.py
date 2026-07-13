@@ -12,3 +12,10 @@ class ModelCodec(Protocol):
     def encode_request(self, invocation: ModelInvocation) -> dict[str, Any]: ...
 
     def decode_response(self, response: Any) -> AsyncIterator[ModelEvent]: ...
+
+    def finalize_event(
+        self,
+        invocation: ModelInvocation,
+        request: dict[str, Any],
+        event: ModelEvent,
+    ) -> ModelEvent: ...
