@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -224,6 +225,16 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        unresolved_turn = await self.turn_repo.find_with_pending_observation(
+            str(session.id)
+        )
+        unresolved_calls = await AgentTranscriptStore(self.db).unresolved_tool_calls(
+            str(session.id)
+        )
+        if unresolved_turn is not None or unresolved_calls:
+            raise ConflictError(
+                "Cannot create a new turn while a prior turn has unresolved tool calls"
+            )
         if execution_target is not None:
             session = await self.session_repo.update_all(
                 session,
@@ -564,6 +575,8 @@ class AgentCoreService:
         }:
             return "skipped"
 
+        turn = await self._reconcile_pending_observation(turn)
+
         open_actions = await self.action_repo.list_open_for_turn(turn_id)
         latest_action = open_actions[0] if open_actions else None
         now = datetime.now(timezone.utc)
@@ -635,6 +648,23 @@ class AgentCoreService:
             )
             return "failed"
 
+        for unresolved_call in await AgentTranscriptStore(
+            self.db
+        ).unresolved_tool_calls(str(turn.session_id), turn_id=str(turn.id)):
+            await AgentTranscriptStore(self.db).append_tool_result_once(
+                session_id=str(turn.session_id),
+                turn_id=str(turn.id),
+                tool_call_id=unresolved_call["tool_call_id"],
+                tool_name=unresolved_call["tool_name"],
+                status="failed",
+                error={
+                    "type": "RecoveryInterruptedToolCall",
+                    "message": (
+                        "The agent process stopped before this tool call produced a result."
+                    ),
+                },
+            )
+
         await self.turn_repo.update_all(
             turn,
             status=AgentTurnStatus.QUEUED,
@@ -661,11 +691,21 @@ class AgentCoreService:
 
     async def _cancel_open_actions(self, turn_id: str, *, cancelled_at: datetime) -> None:
         for action in await self.action_repo.list_open_for_turn(turn_id):
-            await self.action_repo.update_all(
+            updated = await self.action_repo.update_all(
                 action,
                 status=AgentActionStatus.CANCELLED,
                 error={"type": "CancelledError", "message": "Action cancelled with its parent turn."},
                 completed_at=cancelled_at,
+                requires_resume=False,
+            )
+            await AgentTranscriptStore(self.db).append_tool_result_once(
+                session_id=str(updated.session_id),
+                turn_id=str(updated.turn_id),
+                tool_call_id=updated.tool_call_id,
+                tool_name=updated.name,
+                status=updated.status,
+                result=updated.result,
+                error=updated.error,
             )
             await self.ledger.append(
                 session_id=str(action.session_id),
@@ -673,6 +713,107 @@ class AgentCoreService:
                 type=AgentEventType.ACTION_CANCELLED,
                 payload={"action_id": str(action.id), "tool": action.name},
             )
+        turn = await self.turn_repo.get(turn_id)
+        if turn is None:
+            return
+        progress = ((getattr(turn, "loop_state", None) or {}).get("progress") or {})
+        pending = progress.get("pending_observation")
+        if not isinstance(pending, dict):
+            return
+        for deferred in pending.get("deferred_tool_calls") or []:
+            if not isinstance(deferred, dict):
+                continue
+            await AgentTranscriptStore(self.db).append_tool_result_once(
+                session_id=str(turn.session_id),
+                turn_id=str(turn.id),
+                tool_call_id=str(deferred.get("tool_call_id") or ""),
+                tool_name=str(deferred.get("tool_name") or ""),
+                status="deferred",
+                error={
+                    "type": "DeferredToolCall",
+                    "message": "Tool call was deferred because its parent turn was cancelled.",
+                },
+            )
+
+    async def _reconcile_pending_observation(self, turn):
+        loop_state = dict(getattr(turn, "loop_state", None) or {})
+        progress = dict(loop_state.get("progress") or {})
+        pending = progress.get("pending_observation")
+        if not isinstance(pending, dict):
+            return turn
+        pending_results = list(pending.get("tool_results") or [])
+        actions = await self.action_repo.list_for_turn(str(turn.id))
+        terminal_statuses = {
+            AgentActionStatus.COMPLETED,
+            AgentActionStatus.FAILED,
+            AgentActionStatus.CANCELLED,
+            AgentActionStatus.REJECTED,
+        }
+        matched_action = None
+        matched_index = -1
+        for index, signature in enumerate(pending_results):
+            try:
+                descriptor = json.loads(signature)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if descriptor.get("status") != "pending":
+                continue
+            call_id = str(descriptor.get("tool_call_id") or "")
+            matched_action = next(
+                (
+                    action
+                    for action in actions
+                    if str(action.tool_call_id or "") == call_id
+                    and action.status in terminal_statuses
+                ),
+                None,
+            )
+            if matched_action is not None:
+                matched_index = index
+                break
+        if matched_action is None:
+            return turn
+
+        error = matched_action.error
+        if matched_action.status == AgentActionStatus.REJECTED and not error:
+            error = {
+                "type": "UserRejected",
+                "message": "The user rejected this tool call.",
+            }
+        await AgentTranscriptStore(self.db).append_tool_result_once(
+            session_id=str(turn.session_id),
+            turn_id=str(turn.id),
+            tool_call_id=matched_action.tool_call_id,
+            tool_name=matched_action.name,
+            status=matched_action.status,
+            result=matched_action.result,
+            error=error,
+        )
+        pending_results[matched_index] = _recovery_result_signature(
+            tool_name=matched_action.name,
+            status=matched_action.status,
+            result=matched_action.result,
+            error=error,
+        )
+        for deferred in pending.get("deferred_tool_calls") or []:
+            if not isinstance(deferred, dict):
+                continue
+            await AgentTranscriptStore(self.db).append_tool_result_once(
+                session_id=str(turn.session_id),
+                turn_id=str(turn.id),
+                tool_call_id=str(deferred.get("tool_call_id") or ""),
+                tool_name=str(deferred.get("tool_name") or ""),
+                status="deferred",
+                error={
+                    "type": "DeferredToolCall",
+                    "message": "Tool call was deferred by an earlier approval boundary.",
+                },
+            )
+        progress["previous_tool_calls"] = list(pending.get("tool_calls") or [])
+        progress["previous_tool_results"] = pending_results
+        progress.pop("pending_observation", None)
+        loop_state["progress"] = progress
+        return await self.turn_repo.update_all(turn, loop_state=loop_state)
 
     async def list_artifacts_for_session(
         self,
@@ -732,6 +873,27 @@ def _metadata_with_remote_project(metadata: dict | None, project) -> dict | None
     merged["remote_project_id"] = str(project.id)
     merged["remote_project_root"] = str(remote_root_path)
     return merged
+
+
+def _recovery_result_signature(
+    *,
+    tool_name: str,
+    status: str,
+    result: dict | None,
+    error: dict | None,
+) -> str:
+    return json.dumps(
+        {
+            "tool": tool_name,
+            "status": status,
+            "result": result,
+            "error": error,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
 
 
 def _metadata_with_active_skill_names(

@@ -89,6 +89,22 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_with_pending_observation(
+        self,
+        session_id: str,
+        *,
+        exclude_turn_id: str | None = None,
+    ) -> AgentTurn | None:
+        for turn in await self.list_for_session(session_id):
+            if exclude_turn_id is not None and str(turn.id) == exclude_turn_id:
+                continue
+            progress = (turn.loop_state or {}).get("progress")
+            if isinstance(progress, dict) and isinstance(
+                progress.get("pending_observation"), dict
+            ):
+                return turn
+        return None
+
 
 class AgentMessageRepository(BaseRepository[AgentMessage]):
     model = AgentMessage
@@ -197,6 +213,26 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
 
 class AgentActionRepository(BaseRepository[AgentAction]):
     model = AgentAction
+
+    async def claim_requested(self, action_id: str, *, started_at) -> AgentAction | None:
+        """Atomically transition one approved action into execution ownership."""
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == action_id,
+                self.model.status == AgentActionStatus.REQUESTED,
+            )
+            .values(
+                status=AgentActionStatus.RUNNING,
+                requires_resume=False,
+                started_at=started_at,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        if result.rowcount != 1:
+            return None
+        return await self.session.get(self.model, action_id, populate_existing=True)
 
     async def list_for_turn(self, turn_id: str) -> list[AgentAction]:
         stmt = (

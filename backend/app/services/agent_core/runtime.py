@@ -35,6 +35,7 @@ from app.services.agent_core.model_selection import (
     session_model_selection_from_metadata,
 )
 from app.services.agent_core.observability import truncate_log_value
+from app.services.agent_core.transcript import AgentTranscriptStore
 from app.services.llm.provider_templates import normalize_provider_base_url
 from app.services.llm.credentials import resolve_credential_material
 from app.services.llm.catalog import (
@@ -78,6 +79,24 @@ class AgentCoreRuntime:
                 turn,
                 error_message="Agent session could not be loaded for this turn.",
                 error_code="session_not_found",
+            )
+        unresolved_turn = await self.turn_repo.find_with_pending_observation(
+            str(turn.session_id),
+            exclude_turn_id=str(turn.id),
+        )
+        unresolved_calls = await AgentTranscriptStore(
+            self.turn_repo.session
+        ).unresolved_tool_calls(str(turn.session_id))
+        unresolved_other_turn = any(
+            item["turn_id"] != str(turn.id) for item in unresolved_calls
+        )
+        if unresolved_turn is not None or unresolved_other_turn:
+            return await self._fail_turn(
+                turn,
+                error_message=(
+                    "A prior turn in this session still has unresolved tool calls."
+                ),
+                error_code="prior_turn_unresolved_tool_calls",
             )
 
         now = datetime.now(timezone.utc)
@@ -150,6 +169,24 @@ class AgentCoreRuntime:
                 error_message="Agent session could not be loaded for this turn.",
                 error_code="session_not_found",
             )
+        unresolved_turn = await self.turn_repo.find_with_pending_observation(
+            str(turn.session_id),
+            exclude_turn_id=str(turn.id),
+        )
+        unresolved_calls = await AgentTranscriptStore(
+            self.turn_repo.session
+        ).unresolved_tool_calls(str(turn.session_id))
+        unresolved_other_turn = any(
+            item["turn_id"] != str(turn.id) for item in unresolved_calls
+        )
+        if unresolved_turn is not None or unresolved_other_turn:
+            return await self._fail_turn(
+                turn,
+                error_message=(
+                    "A prior turn in this session still has unresolved tool calls."
+                ),
+                error_code="prior_turn_unresolved_tool_calls",
+            )
 
         now = datetime.now(timezone.utc)
         turn = await self.turn_repo.update_all(
@@ -194,6 +231,8 @@ class AgentCoreRuntime:
             resolved=resolved,
             resume_action_id=action_id,
         )
+        if result.termination_reason == "action_in_progress":
+            return await self.turn_repo.get(str(turn.id))
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
             return None

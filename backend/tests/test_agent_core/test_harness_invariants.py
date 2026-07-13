@@ -876,6 +876,7 @@ async def test_approval_resume_executes_tool_and_continues_turn(
     assert waiting_turn.status == "waiting_approval"
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
     assert actions[0].status == "waiting_decision"
+    assert actions[0].exposure_policy["execution_target"] == {"type": "local"}
 
     decided = await service.decide_action(
         action_id=str(actions[0].id),
@@ -1652,14 +1653,23 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
         str(turn.id)
     )
     assert updated_actions[0].status == "failed"
-    assert updated_actions[0].error["type"] == "PermissionDeniedError"
+    assert updated_actions[0].error["type"] == "ExecutionTargetMismatch"
     messages = await AgentMessageRepository(db_session).list_for_session(
         str(session.id)
     )
     tool_message = next(message for message in messages if message.role == "tool")
     tool_payload = json.loads(tool_message.content_parts[0]["text"])
     assert tool_payload["status"] == "failed"
-    assert tool_payload["error"]["type"] == "PermissionDeniedError"
+    assert tool_payload["error"]["type"] == "ExecutionTargetMismatch"
+    persisted_turn = await service.turn_repo.get(str(turn.id))
+    assert "pending_observation" not in persisted_turn.loop_state["progress"]
+    followup = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Continue after the failed stale action.",
+    )
+    assert followup.status == "queued"
 
 
 @pytest.mark.asyncio

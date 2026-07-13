@@ -231,6 +231,13 @@ class AgentLoopController:
                     repeated_tool_call_count,
                 ),
             )
+            if turn.status == AgentTurnStatus.CANCELLED or is_interrupt_requested(turn):
+                return LoopResult(
+                    termination_reason=_cancellation_reason(turn),
+                    final_text=None,
+                    iteration_count=budget.used_iterations,
+                    token_usage=token_usage,
+                )
             tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
             if tool_calls:
                 tool_call_signatures = [
@@ -314,16 +321,6 @@ class AgentLoopController:
                     next_tool_results=tool_result_signatures,
                     repeat_count=repeated_tool_call_count,
                 ):
-                    await self.ledger.append(
-                        session_id=str(agent_session.id),
-                        turn_id=str(turn.id),
-                        type=AgentEventType.TURN_NO_PROGRESS,
-                        payload={
-                            "tool_calls": tool_call_signatures,
-                            "tool_results": tool_result_signatures,
-                            "iteration_count": budget.used_iterations,
-                        },
-                    )
                     return LoopResult(
                         termination_reason="no_progress",
                         final_text=None,
@@ -402,6 +399,21 @@ class AgentLoopController:
         index = 0
         while index < len(tool_calls):
             turn = await self._renew_turn_lease(turn)
+            await self.db.refresh(turn)
+            if turn.status == AgentTurnStatus.CANCELLED or is_interrupt_requested(turn):
+                await self._append_closed_tool_calls(
+                    agent_session=agent_session,
+                    turn=turn,
+                    tool_calls=tool_calls[index:],
+                    status="cancelled",
+                    error={
+                        "type": "InterruptedError"
+                        if is_interrupt_requested(turn)
+                        else "CancelledError",
+                        "message": "Tool call was cancelled before execution.",
+                    },
+                )
+                raise asyncio.CancelledError
             tool_call = tool_calls[index]
             tool_name = decode_provider_tool_name(tool_call["name"])
             if self._is_concurrent_read_only_tool(tool_name):
@@ -422,9 +434,23 @@ class AgentLoopController:
                             tool_name=name,
                         )
                         for item, name in batch
-                    ]
+                    ],
+                    return_exceptions=True,
                 )
+                first_error: BaseException | None = None
                 for (item, name), result in zip(batch, results, strict=False):
+                    if isinstance(result, BaseException):
+                        failure = _failed_tool_result(result)
+                        result_signatures.append(_tool_result_signature(name, failure))
+                        await self._append_tool_result(
+                            agent_session=agent_session,
+                            turn=turn,
+                            tool_name=name,
+                            tool_call_id=item.get("id"),
+                            result=failure,
+                        )
+                        first_error = first_error or result
+                        continue
                     if result.requires_resume:
                         result_signatures.append(
                             _pending_tool_result_signature(name, item.get("id"))
@@ -442,25 +468,58 @@ class AgentLoopController:
                         tool_call_id=item.get("id"),
                         result=result,
                     )
+                if first_error is not None:
+                    await self._append_closed_tool_calls(
+                        agent_session=agent_session,
+                        turn=turn,
+                        tool_calls=tool_calls[index:],
+                        status="deferred",
+                        error={
+                            "type": "DeferredToolCall",
+                            "message": "Tool call was deferred after an earlier tool failed.",
+                        },
+                    )
+                    raise first_error
                 continue
 
-            result = await self.executor.execute(
-                tool_name=tool_name,
-                input=tool_call["arguments"],
-                context=AgentToolContext(
-                    db=self.db,
-                    workspace_id=str(turn.workspace_id),
-                    user_id=turn.user_id,
-                    session_id=str(agent_session.id),
-                    turn_id=str(turn.id),
-                ),
-                toolset_policy=agent_session.toolset_policy,
-                permission_mode=agent_session.permission_mode,
-                automation_mode=agent_session.automation_mode,
-                tool_call_id=tool_call.get("id"),
-                role=_tool_role(agent_session),
-                execution_target=execution_target_from_session(agent_session),
-            )
+            try:
+                result = await self.executor.execute(
+                    tool_name=tool_name,
+                    input=tool_call["arguments"],
+                    context=AgentToolContext(
+                        db=self.db,
+                        workspace_id=str(turn.workspace_id),
+                        user_id=turn.user_id,
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                    ),
+                    toolset_policy=agent_session.toolset_policy,
+                    permission_mode=agent_session.permission_mode,
+                    automation_mode=agent_session.automation_mode,
+                    tool_call_id=tool_call.get("id"),
+                    role=_tool_role(agent_session),
+                    execution_target=execution_target_from_session(agent_session),
+                )
+            except BaseException as exc:
+                failure = _failed_tool_result(exc)
+                await self._append_tool_result(
+                    agent_session=agent_session,
+                    turn=turn,
+                    tool_name=tool_name,
+                    tool_call_id=tool_call.get("id"),
+                    result=failure,
+                )
+                await self._append_closed_tool_calls(
+                    agent_session=agent_session,
+                    turn=turn,
+                    tool_calls=tool_calls[index + 1 :],
+                    status="deferred",
+                    error={
+                        "type": "DeferredToolCall",
+                        "message": "Tool call was deferred after an earlier tool failed.",
+                    },
+                )
+                raise
             if result.requires_resume:
                 result_signatures.append(
                     _pending_tool_result_signature(tool_name, tool_call.get("id"))
@@ -523,7 +582,25 @@ class AgentLoopController:
                 error_message="Agent session could not be loaded for resume.",
             )
 
-        if action.status == AgentActionStatus.REJECTED:
+        if action.status == AgentActionStatus.RUNNING:
+            return LoopResult(
+                termination_reason="action_in_progress",
+                final_text=None,
+                iteration_count=persisted_iteration_count,
+                token_usage=persisted_token_usage,
+            )
+        if action.status in {
+            AgentActionStatus.COMPLETED,
+            AgentActionStatus.FAILED,
+            AgentActionStatus.CANCELLED,
+        }:
+            result = ToolExecutionResult(
+                action_id=str(action.id),
+                status=action.status,
+                result=action.result,
+                error=action.error,
+            )
+        elif action.status == AgentActionStatus.REJECTED:
             result = ToolExecutionResult(
                 action_id=str(action.id),
                 status=action.status,
@@ -543,6 +620,13 @@ class AgentLoopController:
                     turn_id=str(turn.id),
                 ),
             )
+        if (result.error or {}).get("type") == "ActionAlreadyClaimed":
+            return LoopResult(
+                termination_reason="action_in_progress",
+                final_text=None,
+                iteration_count=persisted_iteration_count,
+                token_usage=persisted_token_usage,
+            )
         pending_observation = _pending_observation(getattr(turn, "loop_state", None))
         await self._append_tool_result(
             agent_session=agent_session,
@@ -561,15 +645,6 @@ class AgentLoopController:
                     tool_call_id=deferred_call["tool_call_id"],
                     result=_deferred_tool_result(deferred_name),
                 )
-        if result.status not in {"completed", AgentActionStatus.REJECTED}:
-            return LoopResult(
-                termination_reason="model_failed",
-                final_text=None,
-                iteration_count=persisted_iteration_count,
-                token_usage=persisted_token_usage,
-                error_code="tool_resume_failed",
-                error_message=f"Approved tool action finished with status: {result.status}",
-            )
         previous_progress = _progress_state(getattr(turn, "loop_state", None))
         if pending_observation is not None:
             completed_tool_calls = pending_observation["tool_calls"]
@@ -598,7 +673,10 @@ class AgentLoopController:
                     repeat_count,
                 )
                 turn = await self.turns.update_all(turn, loop_state=loop_state)
-                if no_progress_detected(
+                if result.status in {
+                    "completed",
+                    AgentActionStatus.REJECTED,
+                } and no_progress_detected(
                     previous_progress["previous_tool_calls"],
                     completed_tool_calls,
                     previous_tool_results=previous_progress["previous_tool_results"],
@@ -615,6 +693,15 @@ class AgentLoopController:
                             "Agent repeated the same tool call without making progress."
                         ),
                     )
+        if result.status not in {"completed", AgentActionStatus.REJECTED}:
+            return LoopResult(
+                termination_reason="model_failed",
+                final_text=None,
+                iteration_count=persisted_iteration_count,
+                token_usage=persisted_token_usage,
+                error_code="tool_resume_failed",
+                error_message=f"Approved tool action finished with status: {result.status}",
+            )
         return await self.run_turn(
             turn_id=str(turn.id),
             provider=provider,
@@ -658,26 +745,38 @@ class AgentLoopController:
         tool_call_id: str | None,
         result,
     ) -> None:
-        await self.transcript.append_parts(
+        await self.transcript.append_tool_result_once(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
-            role="tool",
-            parts=[
-                text_part(
-                    json.dumps(
-                        {
-                            "tool": tool_name,
-                            "status": result.status,
-                            "result": result.result,
-                            "error": result.error,
-                        },
-                        separators=(",", ":"),
-                        default=str,
-                    )
-                )
-            ],
-            metadata={"tool_call_id": tool_call_id, "tool": tool_name},
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            status=result.status,
+            result=result.result,
+            error=result.error,
         )
+
+    async def _append_closed_tool_calls(
+        self,
+        *,
+        agent_session,
+        turn,
+        tool_calls: list[dict[str, Any]],
+        status: str,
+        error: dict[str, Any],
+    ) -> None:
+        for tool_call in tool_calls:
+            tool_name = decode_provider_tool_name(tool_call["name"])
+            await self._append_tool_result(
+                agent_session=agent_session,
+                turn=turn,
+                tool_name=tool_name,
+                tool_call_id=tool_call.get("id"),
+                result=ToolExecutionResult(
+                    action_id="",
+                    status=status,
+                    error=error,
+                ),
+            )
 
     def _deferred_tool_results(
         self,
@@ -707,6 +806,27 @@ class AgentLoopController:
             else app_database.async_session_maker
         )
         async with session_factory() as session:
+            current_turn = await AgentTurnRepository(session).get(str(turn.id))
+            if current_turn is None:
+                return ToolExecutionResult(
+                    action_id="",
+                    status="cancelled",
+                    error={"type": "CancelledError", "message": "Turn no longer exists."},
+                )
+            await session.refresh(current_turn)
+            if current_turn.status == AgentTurnStatus.CANCELLED or is_interrupt_requested(
+                current_turn
+            ):
+                return ToolExecutionResult(
+                    action_id="",
+                    status="cancelled",
+                    error={
+                        "type": "InterruptedError"
+                        if is_interrupt_requested(current_turn)
+                        else "CancelledError",
+                        "message": "Tool call was cancelled before execution.",
+                    },
+                )
             executor = AgentToolExecutor(session, build_default_tool_registry())
             return await executor.execute(
                 tool_name=tool_name,
@@ -1381,6 +1501,20 @@ def _deferred_tool_result(tool_name: str) -> ToolExecutionResult:
                 "the turn resumes."
             ),
         },
+    )
+
+
+def _failed_tool_result(exc: BaseException) -> ToolExecutionResult:
+    if isinstance(exc, asyncio.CancelledError):
+        return ToolExecutionResult(
+            action_id="",
+            status="cancelled",
+            error={"type": "CancelledError", "message": "Tool execution was cancelled."},
+        )
+    return ToolExecutionResult(
+        action_id="",
+        status="failed",
+        error={"type": exc.__class__.__name__, "message": str(exc)},
     )
 
 

@@ -201,7 +201,10 @@ class AgentToolExecutor:
             rollback_hint=tool.spec.rollback_hint,
             artifact_policy=tool.spec.artifact_policy,
             tool_call_id=tool_call_id,
-            exposure_policy=exposure.policy,
+            exposure_policy={
+                **exposure.policy,
+                "execution_target": execution_target,
+            },
             force_ask=tool.spec.interaction is not None,
             interaction=tool.spec.interaction,
         )
@@ -290,6 +293,25 @@ class AgentToolExecutor:
             raise PermissionDeniedError("Agent action has not been approved")
         tool = self.registry.get(action.name)
         session = await self._session_for_context(context)
+        current_execution_target = (
+            execution_target_from_session(session) if session is not None else None
+        )
+        approved_execution_target = (action.exposure_policy or {}).get(
+            "execution_target"
+        )
+        if (
+            approved_execution_target is None
+            or current_execution_target != approved_execution_target
+        ):
+            return await self._record_permission_failure(
+                action=action,
+                error_type="ExecutionTargetMismatch",
+                error_message=(
+                    "Approved action execution target no longer matches the current "
+                    f"session target: approved={approved_execution_target!r}, "
+                    f"current={current_execution_target!r}"
+                ),
+            )
         exposure = self.exposure.decide(
             tool_name=tool.spec.name,
             policy=(
@@ -332,8 +354,9 @@ class AgentToolExecutor:
         *,
         action,
         error_message: str,
+        error_type: str = "PermissionDeniedError",
     ) -> ToolExecutionResult:
-        error = {"type": "PermissionDeniedError", "message": error_message}
+        error = {"type": error_type, "message": error_message}
         action = await self.action_repo.update_all(
             action,
             status=AgentActionStatus.FAILED,
@@ -361,12 +384,27 @@ class AgentToolExecutor:
         tool: AgentTool,
         context: AgentToolContext,
     ) -> ToolExecutionResult:
-        action = await self.action_repo.update_all(
-            action,
-            status=AgentActionStatus.RUNNING,
-            requires_resume=False,
+        claimed = await self.action_repo.claim_requested(
+            str(action.id),
             started_at=datetime.now(timezone.utc),
         )
+        if claimed is None:
+            current = await self.action_repo.get(str(action.id))
+            if current is None:
+                raise ConflictError("Agent action disappeared before execution")
+            await self.session.refresh(current)
+            return ToolExecutionResult(
+                action_id=str(current.id),
+                status=current.status,
+                result=current.result,
+                permission_decision=current.permission_decision,
+                error={
+                    "type": "ActionAlreadyClaimed",
+                    "message": "Another worker already claimed this approved action.",
+                },
+                requires_resume=bool(current.requires_resume),
+            )
+        action = claimed
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
