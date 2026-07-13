@@ -6,10 +6,93 @@ import pytest
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.services.llm.bootstrap import sync_environment_llm_catalog
 from app.services.llm.catalog import LlmCatalogService, _validate_provider_base_url
+from app.services.llm.provider_templates import get_provider_template
 
 
-async def _noop_discovery(self, provider):
+async def _noop_discovery(self, provider, **kwargs):
+    del kwargs
     return []
+
+
+def test_provider_templates_expose_explicit_supported_and_default_protocols() -> None:
+    openai = get_provider_template("openai")
+    compatible = get_provider_template("openai-compatible")
+    anthropic = get_provider_template("anthropic")
+
+    assert openai is not None
+    assert compatible is not None
+    assert anthropic is not None
+    assert openai.supported_wire_protocols == ("chat_completions", "responses")
+    assert compatible.supported_wire_protocols == ("chat_completions", "responses")
+    assert openai.default_wire_protocol == "chat_completions"
+    assert anthropic.supported_wire_protocols == ("chat_completions",)
+    assert anthropic.default_wire_protocol == "chat_completions"
+    assert openai.as_dict()["supported_wire_protocols"] == [
+        "chat_completions",
+        "responses",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_environment_bootstrap_persists_explicit_protocol(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_COMPATIBLE_BASE_URL", "https://relay.example/v1")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_MODEL", "gpt-test")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_WIRE_PROTOCOL", "responses")
+    monkeypatch.setattr(
+        "app.services.llm.bootstrap.LlmCatalogService.discover_models_unchecked",
+        _noop_discovery,
+    )
+
+    await sync_environment_llm_catalog(db_session)
+
+    provider = (
+        await db_session.execute(
+            LlmProvider.__table__.select().where(
+                LlmProvider.kind == "openai_compatible"
+            )
+        )
+    ).mappings().one()
+    assert provider["wire_protocol"] == "responses"
+
+
+@pytest.mark.asyncio
+async def test_environment_bootstrap_defaults_missing_protocol_to_chat(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_COMPATIBLE_BASE_URL", "https://relay.example/v1")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_MODEL", "gpt-test")
+    monkeypatch.delenv("OPENAI_COMPATIBLE_WIRE_PROTOCOL", raising=False)
+    monkeypatch.setattr(
+        "app.services.llm.bootstrap.LlmCatalogService.discover_models_unchecked",
+        _noop_discovery,
+    )
+
+    await sync_environment_llm_catalog(db_session)
+
+    provider = (
+        await db_session.execute(
+            LlmProvider.__table__.select().where(
+                LlmProvider.kind == "openai_compatible"
+            )
+        )
+    ).mappings().one()
+    assert provider["wire_protocol"] == "chat_completions"
+
+
+@pytest.mark.asyncio
+async def test_environment_bootstrap_rejects_invalid_explicit_protocol(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_COMPATIBLE_BASE_URL", "https://relay.example/v1")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_WIRE_PROTOCOL", "guess")
+
+    with pytest.raises(ValueError, match="wire protocol"):
+        await sync_environment_llm_catalog(db_session)
 
 
 @pytest.mark.parametrize(

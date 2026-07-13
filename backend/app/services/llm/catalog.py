@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.llm import LlmCredentialSource, LlmModelProfile, LlmProvider
+from app.schemas.llm import LlmProviderUpdate
 from app.repositories.llm_repo import (
     LlmModelProfileRepository,
     LlmModelRepository,
@@ -71,6 +72,7 @@ class LlmCatalogService:
         return await self.provider_repo.create(
             name=data["name"],
             kind=data["kind"],
+            wire_protocol=data.get("wire_protocol", "chat_completions"),
             base_url=data.get("base_url"),
             api_key_ref=data.get("api_key_ref"),
             scope=data.get("scope", "user"),
@@ -132,6 +134,10 @@ class LlmCatalogService:
                     "role": data.get("role"),
                     "name": str(data.get("name") or provider.name or template.name),
                     "kind": template.kind,
+                    "wire_protocol": data.get(
+                        "wire_protocol",
+                        provider.wire_protocol,
+                    ),
                     "base_url": base_url,
                     "allow_insecure_http": allow_insecure_http,
                     "metadata": metadata,
@@ -189,6 +195,11 @@ class LlmCatalogService:
             workspace_id=data["workspace_id"],
             user_id=data["user_id"],
             role=data.get("role"),
+        )
+        requested_update = LlmProviderUpdate.model_validate(data)
+        requested_update.validate_merged_wire_protocol(
+            current_kind=provider.kind,
+            current_wire_protocol=provider.wire_protocol,
         )
         updates = _strip_none(data)
         _drop_request_tenant_fields(updates)

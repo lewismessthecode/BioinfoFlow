@@ -26,6 +26,7 @@ from app.models.llm import (
     LlmProviderCredential,
     LlmProviderKind,
     LlmProviderScope,
+    LlmWireProtocol,
 )
 from app.models.notification import NotificationConfig
 from app.models.project import Project
@@ -70,6 +71,7 @@ __all__ = [
     "LlmCredentialSource",
     "LlmProviderKind",
     "LlmProviderScope",
+    "LlmWireProtocol",
     "LlmModel",
     "LlmModelProfile",
     "Project",

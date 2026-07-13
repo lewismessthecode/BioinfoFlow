@@ -79,6 +79,7 @@ def test_model_target_and_invocation_hide_credentials_from_public_surfaces() -> 
 
     assert target.resolved_api_key() == secret
     assert continuation.opaque_output_items() == ({"encrypted_content": secret},)
+    assert continuation.canonical_input_count == 0
     assert secret not in repr(target)
     assert secret not in repr(continuation)
     assert secret not in repr(invocation)
@@ -182,3 +183,38 @@ def test_model_error_is_structured_immutable_and_never_serializes_its_cause() ->
     }
     with pytest.raises(FrozenInstanceError):
         error.retryable = False  # type: ignore[misc]
+
+
+def test_responses_continuation_private_round_trip_and_count_advance() -> None:
+    secret = "opaque-private-reasoning"
+    continuation = ResponsesContinuation(
+        response_id="resp-1",
+        output_items=({"type": "reasoning", "encrypted_content": secret},),
+        canonical_input_count=3,
+    )
+
+    private_payload = continuation.to_private_dict()
+    restored = ResponsesContinuation.from_private_dict(private_payload)
+
+    assert restored is not None
+    assert restored.response_id == "resp-1"
+    assert restored.canonical_input_count == 3
+    assert restored.opaque_output_items() == continuation.opaque_output_items()
+    advanced = restored.advance_canonical_input_count(2)
+    assert advanced.canonical_input_count == 5
+    assert advanced.opaque_output_items() == restored.opaque_output_items()
+    assert secret not in repr(continuation)
+    assert secret not in repr(asdict(continuation))
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {},
+        {"output_items": "not-a-list"},
+        {"output_items": ["not-an-object"]},
+    ],
+)
+def test_responses_continuation_rejects_invalid_private_payload(payload: object) -> None:
+    assert ResponsesContinuation.from_private_dict(payload) is None

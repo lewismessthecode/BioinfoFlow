@@ -269,11 +269,15 @@ class AgentCoreRuntime:
         if candidate is None:
             return None
         resolved_target = snapshot.get("resolved_model_target")
-        if isinstance(resolved_target, dict) and not _target_matches_snapshot(
-            candidate,
-            resolved_target,
-        ):
-            return None
+        if isinstance(resolved_target, dict):
+            if not _target_identity_matches_snapshot(candidate, resolved_target):
+                return None
+            request_args = dict(candidate.get("request_args") or {})
+            request_args["api_base"] = resolved_target.get("base_url")
+            candidate["request_args"] = request_args
+            candidate["wire_protocol"] = (
+                resolved_target.get("wire_protocol") or "chat_completions"
+            )
         capabilities = snapshot.get("resolved_model_capabilities")
         if isinstance(capabilities, dict):
             candidate["capabilities"] = capabilities
@@ -638,17 +642,18 @@ def _model_target(resolved: dict[str, Any]) -> ModelTarget:
     )
 
 
-def _target_matches_snapshot(
+def _target_identity_matches_snapshot(
     resolved: dict[str, Any],
     snapshot: dict[str, Any],
 ) -> bool:
-    request_args = resolved.get("request_args") or {}
-    return snapshot == {
+    return {
         "endpoint_id": str(resolved.get("endpoint_id") or ""),
         "provider_kind": resolved.get("provider"),
         "model_name": resolved.get("model"),
-        "wire_protocol": resolved.get("wire_protocol") or "chat_completions",
-        "base_url": request_args.get("api_base"),
+    } == {
+        "endpoint_id": snapshot.get("endpoint_id"),
+        "provider_kind": snapshot.get("provider_kind"),
+        "model_name": snapshot.get("model_name"),
     }
 
 

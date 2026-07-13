@@ -82,6 +82,48 @@ async def test_chat_backend_calls_injected_acompletion_once_with_retries_disable
 
 
 @pytest.mark.asyncio
+async def test_responses_backend_calls_injected_aresponses_once_with_retries_disabled():
+    calls: list[dict[str, Any]] = []
+    response = object()
+
+    async def fail_acompletion(**kwargs: Any) -> object:
+        raise AssertionError(f"Chat backend must not be called: {kwargs}")
+
+    async def fake_aresponses(**kwargs: Any) -> object:
+        calls.append(kwargs)
+        return response
+
+    backend = LiteLLMBackend(
+        acompletion_fn=fail_acompletion,
+        aresponses_fn=fake_aresponses,
+    )
+
+    result = await backend.invoke(
+        "responses",
+        {
+            "model": "openai/gpt-test",
+            "input": [{"role": "user", "content": "ping"}],
+            "store": False,
+            "num_retries": 9,
+        },
+    )
+
+    assert result is response
+    assert calls == [
+        {
+            "model": "openai/gpt-test",
+            "input": [{"role": "user", "content": "ping"}],
+            "store": False,
+            "num_retries": 0,
+        }
+    ]
+
+
+def test_default_gateway_registers_chat_and_responses_codecs() -> None:
+    assert repr(ModelGateway()) == "ModelGateway(protocols=[chat_completions, responses])"
+
+
+@pytest.mark.asyncio
 async def test_gateway_dispatches_chat_through_registered_codec_and_backend():
     invocation = ModelInvocation(
         target=ModelTarget(

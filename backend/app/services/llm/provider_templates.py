@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from app.models.llm import LlmWireProtocol
+
 
 ProviderDiscovery = Literal[
     "static",
@@ -60,11 +62,34 @@ class ProviderTemplate:
     env_api_key_vars: tuple[str, ...] = ()
     env_base_url_vars: tuple[str, ...] = ()
     env_model_vars: tuple[str, ...] = ()
+    env_wire_protocol_vars: tuple[str, ...] = ()
+    supported_wire_protocols: tuple[str, ...] = (
+        LlmWireProtocol.CHAT_COMPLETIONS,
+    )
+    default_wire_protocol: str = LlmWireProtocol.CHAT_COMPLETIONS
     api_key_required: bool = True
     base_url_required: bool = False
     model_id_supported: bool = False
     models: tuple[ModelTemplate, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for wire_protocol in self.supported_wire_protocols:
+            LlmWireProtocol.validate_for_kind(self.kind, wire_protocol)
+        if self.default_wire_protocol not in self.supported_wire_protocols:
+            raise ValueError(
+                f"Default wire protocol {self.default_wire_protocol!r} is not supported "
+                f"by provider template {self.id!r}."
+            )
+
+    def validate_wire_protocol(self, wire_protocol: str) -> str:
+        LlmWireProtocol.validate_for_kind(self.kind, wire_protocol)
+        if wire_protocol not in self.supported_wire_protocols:
+            raise ValueError(
+                f"Provider template {self.id!r} does not support wire protocol "
+                f"{wire_protocol!r}."
+            )
+        return wire_protocol
 
     def fields(self) -> list[ProviderFieldTemplate]:
         fields: list[ProviderFieldTemplate] = []
@@ -107,6 +132,8 @@ class ProviderTemplate:
             "docs_url": self.docs_url,
             "discovery": self.discovery,
             "default_base_url": self.default_base_url,
+            "supported_wire_protocols": list(self.supported_wire_protocols),
+            "default_wire_protocol": self.default_wire_protocol,
             "fields": [field.as_dict() for field in self.fields()],
             "models": [
                 {
@@ -135,6 +162,8 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         default_base_url="https://api.openai.com/v1",
         env_api_key_vars=("OPENAI_API_KEY",),
         env_base_url_vars=("OPENAI_BASE_URL",),
+        env_wire_protocol_vars=("OPENAI_WIRE_PROTOCOL",),
+        supported_wire_protocols=LlmWireProtocol.ALL,
     ),
     ProviderTemplate(
         id="anthropic",
@@ -236,6 +265,8 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         env_api_key_vars=("OPENAI_COMPATIBLE_API_KEY",),
         env_base_url_vars=("OPENAI_COMPATIBLE_BASE_URL",),
         env_model_vars=("OPENAI_COMPATIBLE_MODEL",),
+        env_wire_protocol_vars=("OPENAI_COMPATIBLE_WIRE_PROTOCOL",),
+        supported_wire_protocols=LlmWireProtocol.ALL,
         api_key_required=False,
         base_url_required=True,
         model_id_supported=True,
