@@ -411,6 +411,8 @@ def classify_command_level(command: str) -> RiskLevel:
     nodes = _parse_command_nodes(_strip_heredoc_bodies(text))
     if _compound_alias_targets_unsafe_device(nodes):
         return "critical"
+    if _dynamic_command_hardline(nodes) or _invoked_function_hardline(nodes):
+        return "critical"
     highest: RiskLevel = "act_high" if substitutions or "<(" in text else "read"
     previous: _CommandNode | None = None
     for node in nodes:
@@ -421,7 +423,15 @@ def classify_command_level(command: str) -> RiskLevel:
             previous is not None
             and node.operator_before == "|"
             and _executable(previous.tokens) in {"curl", "wget"}
-            and _executable(node.tokens) in _SHELLS
+            and _is_shell_stdin_target(node.tokens)
+        ):
+            return "critical"
+        if (
+            previous is not None
+            and node.operator_before == "|"
+            and _is_shell_stdin_target(node.tokens)
+            and (source := _literal_shell_source(previous)) is not None
+            and classify_command_level(source) == "critical"
         ):
             return "critical"
         if _RANK[level] > _RANK[highest]:
@@ -431,6 +441,9 @@ def classify_command_level(command: str) -> RiskLevel:
 
 
 def _classify_node(node: _CommandNode) -> RiskLevel:
+    env_split = _env_split_command(list(node.tokens))
+    if env_split:
+        return _classify_node(_CommandNode(tokens=tuple(env_split)))
     tokens, elevated = _unwrap_command(_strip_shell_control_tokens(list(node.tokens)))
     if not tokens:
         return "act_low"
@@ -582,6 +595,39 @@ def _parse_command_nodes(text: str) -> list[_CommandNode]:
 def _unwrap_command(tokens: list[str]) -> tuple[list[str], bool]:
     result = _unwrap_command_details(tokens)
     return list(result.tokens), result.elevated
+
+
+def _env_split_command(tokens: list[str]) -> list[str] | None:
+    if not tokens or _basename(tokens[0]) != "env":
+        return None
+    index = 1
+    while index < len(tokens):
+        arg = tokens[index]
+        if arg in {"-S", "--split-string"}:
+            if index + 1 >= len(tokens):
+                return []
+            try:
+                split = shlex.split(tokens[index + 1])
+            except ValueError:
+                return []
+            return [*split, *tokens[index + 2 :]]
+        if arg.startswith("--split-string="):
+            try:
+                split = shlex.split(arg.split("=", 1)[1])
+            except ValueError:
+                return []
+            return [*split, *tokens[index + 1 :]]
+        if arg in {"-u", "--unset", "-C", "--chdir"}:
+            index += 2
+            continue
+        if arg.startswith(("--unset=", "--chdir=")):
+            index += 1
+            continue
+        if arg.startswith("-") or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", arg):
+            index += 1
+            continue
+        break
+    return None
 
 
 def _unwrap_command_details(tokens: list[str]) -> _UnwrappedCommand:
@@ -768,10 +814,12 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
     flags = {"-c"}
     if executable == "node":
         flags = {"-e", "--eval", "-p", "--print"}
-    elif executable in {"ruby", "perl"}:
+    elif executable == "ruby":
         flags = {"-e"}
+    elif executable == "perl":
+        flags = {"-e", "-E"}
     elif executable == "php":
-        flags = {"-r"}
+        flags = {"-r", "-B", "-R", "-F", "-E"}
     for index, arg in enumerate(args):
         if arg in flags and index + 1 < len(args):
             return args[index + 1]
@@ -781,10 +829,13 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
             return arg.split("=", 1)[1]
         if executable == "python" and arg.startswith("-c") and arg != "-c":
             return arg[2:]
-        if executable in {"ruby", "perl"} and arg.startswith("-e") and arg != "-e":
+        if executable == "ruby" and arg.startswith("-e") and arg != "-e":
             return arg[2:]
-        if executable == "php" and arg.startswith("-r") and arg != "-r":
+        if executable == "perl" and arg[:2] in {"-e", "-E"} and len(arg) > 2:
             return arg[2:]
+        if executable == "php" and arg[:2] in {"-r", "-B", "-R", "-F", "-E"}:
+            if len(arg) > 2:
+                return arg[2:]
     return None
 
 
@@ -886,6 +937,136 @@ def _strip_shell_control_tokens(tokens: list[str]) -> list[str]:
     if grouped and normalized and normalized[-1].endswith(")"):
         normalized[-1] = normalized[-1][:-1]
     return [token for token in normalized if token]
+
+
+def _literal_shell_source(node: _CommandNode) -> str | None:
+    tokens, _ = _unwrap_command(list(node.tokens))
+    if not tokens:
+        return None
+    executable = _basename(tokens[0])
+    args = tokens[1:]
+    if executable not in {"echo", "printf"} or not args:
+        return None
+    if args[:1] == ["--"]:
+        args = args[1:]
+    if not args or any(arg.startswith("-") for arg in args):
+        return None
+    if executable == "printf" and "%" in args[0]:
+        return None
+    if any(any(marker in arg for marker in ("$", "`")) for arg in args):
+        return None
+    return " ".join(args)
+
+
+def _is_shell_stdin_target(tokens: tuple[str, ...]) -> bool:
+    unwrapped, _ = _unwrap_command(list(tokens))
+    if not unwrapped:
+        return False
+    executable = _basename(unwrapped[0])
+    if executable in _SHELLS:
+        return True
+    if executable != "busybox":
+        return False
+    nested = _busybox_command(unwrapped[1:])
+    return bool(nested and _basename(nested[0]) in _SHELLS)
+
+
+def _assignment_values(node: _CommandNode) -> dict[str, str] | None:
+    values: dict[str, str] = {}
+    for token in node.tokens:
+        match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", token)
+        if match is None:
+            return None
+        values[match.group(1)] = match.group(2)
+    return values or None
+
+
+def _resolve_dynamic_command_word(word: str, variables: dict[str, str]) -> str | None:
+    if not word.startswith("$"):
+        return None
+    unresolved = False
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal unresolved
+        name = match.group(1) or match.group(2)
+        value = variables.get(name)
+        if value is None:
+            unresolved = True
+            return ""
+        return value
+
+    resolved = re.sub(
+        r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)",
+        replace,
+        word,
+    )
+    return None if unresolved or "$" in resolved else resolved
+
+
+def _dynamic_command_hardline(nodes: list[_CommandNode]) -> bool:
+    variables: dict[str, str] = {}
+    for node in nodes:
+        assignments = _assignment_values(node)
+        if assignments is not None:
+            variables.update(assignments)
+            continue
+        tokens, _ = _unwrap_command(_strip_shell_control_tokens(list(node.tokens)))
+        if not tokens:
+            continue
+        resolved = _resolve_dynamic_command_word(tokens[0], variables)
+        if resolved and classify_command_level(resolved) == "critical":
+            return True
+    return False
+
+
+def _has_dynamic_command_execution(nodes: list[_CommandNode]) -> bool:
+    for node in nodes:
+        tokens, _ = _unwrap_command(_strip_shell_control_tokens(list(node.tokens)))
+        if tokens and tokens[0].startswith("$"):
+            return True
+    return False
+
+
+def _function_definitions(nodes: list[_CommandNode]) -> dict[str, str]:
+    definitions: dict[str, str] = {}
+    for node in nodes:
+        if not node.tokens:
+            continue
+        tokens = list(node.tokens)
+        name: str | None = None
+        body_start = 0
+        if tokens[0] == "function" and len(tokens) > 1:
+            candidate = tokens[1]
+            if candidate.endswith("()"):
+                candidate = candidate[:-2]
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", candidate):
+                name = candidate
+                body_start = 2
+        else:
+            match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\(\)\{?", tokens[0])
+            if match is not None:
+                name = match.group(1)
+                body_start = 1
+        if name is None:
+            continue
+        if tokens[body_start : body_start + 1] == ["{"]:
+            body_start += 1
+        body = _strip_shell_control_tokens(tokens[body_start:])
+        definitions[name] = " ".join(body)
+    return definitions
+
+
+def _invoked_function_hardline(nodes: list[_CommandNode]) -> bool:
+    definitions = _function_definitions(nodes)
+    if not definitions:
+        return False
+    for node in nodes:
+        if not node.tokens:
+            continue
+        body = definitions.get(_basename(node.tokens[0]))
+        if body and classify_command_level(body) == "critical":
+            return True
+    return False
 
 
 def _busybox_command(args: list[str]) -> list[str]:
@@ -1023,6 +1204,14 @@ def _analyze_indirect_execution_safety(
         reasons.append(
             "heredoc input can supply executable shell source and requires explicit approval"
         )
+    if _has_dynamic_command_execution(nodes):
+        reasons.append(
+            "dynamic command-name expansion cannot be proven safe and requires explicit approval"
+        )
+    if _function_definitions(nodes):
+        reasons.append(
+            "shell function execution cannot be proven safe and requires explicit approval"
+        )
     for node in nodes:
         unwrapped = _unwrap_command_details(
             _strip_shell_control_tokens(list(node.tokens))
@@ -1040,6 +1229,10 @@ def _analyze_indirect_execution_safety(
             )
         executable = _basename(tokens[0])
         args = tokens[1:]
+        if node.operator_before == "|" and _is_shell_stdin_target(node.tokens):
+            reasons.append(
+                "piping generated source into a shell requires explicit approval"
+            )
         if executable in _SHELLS:
             command_arg = _shell_command_argument(args)
             if command_arg is not None and (
@@ -1066,6 +1259,22 @@ def _analyze_indirect_execution_safety(
                 ):
                     reasons.append(
                         "xargs supplies an indirect runtime target to an elevated command"
+                    )
+                elif _env_split_command(nested) is not None:
+                    reasons.append(
+                        "xargs delegates through env split-string execution and requires explicit approval"
+                    )
+        elif executable == "find":
+            for nested in _find_nested_commands(args):
+                nested_tokens, _ = _unwrap_command(list(nested))
+                nested_executable = _basename(nested_tokens[0]) if nested_tokens else ""
+                if (
+                    nested_executable in _SHELLS
+                    or _interpreter_family(nested_executable) is not None
+                    or _env_split_command(list(nested)) is not None
+                ):
+                    reasons.append(
+                        "find delegates to an indirect runtime target and requires explicit approval"
                     )
         elif executable == "systemctl" and not _systemctl_verb(args)[1]:
             reasons.append(
@@ -1281,7 +1490,7 @@ def _write_sink_destinations(node: _CommandNode) -> list[str]:
     elif executable == "ln":
         destinations.extend(_link_destinations(args))
     elif executable == "tar" and _tar_extracts(args):
-        destinations.extend(_output_option_destinations(args, {"-C", "--directory"}))
+        destinations.extend(_tar_directory_destinations(args))
     elif executable == "unzip":
         destinations.extend(_output_option_destinations(args, {"-d"}))
     elif executable == "rsync":
@@ -1300,11 +1509,38 @@ def _link_destinations(args: list[str]) -> list[str]:
 
 
 def _tar_extracts(args: list[str]) -> bool:
-    return any(
+    if any(
         arg in {"-x", "--extract", "--get"}
         or (arg.startswith("-") and not arg.startswith("--") and "x" in arg[1:])
         for arg in args
-    )
+    ):
+        return True
+    if not args or args[0].startswith("-"):
+        return False
+    return bool(re.fullmatch(r"[A-Za-z]+", args[0]) and "x" in args[0])
+
+
+def _tar_directory_destinations(args: list[str]) -> list[str]:
+    destinations = _output_option_destinations(args, {"-C", "--directory"})
+    if not args:
+        return destinations
+    option_word = args[0]
+    cluster = option_word[1:] if option_word.startswith("-") else option_word
+    if not cluster or not re.fullmatch(r"[A-Za-z]+", cluster):
+        return destinations
+    operand_index = 1
+    value_options = {"b", "C", "f", "g", "I", "K", "L", "M", "N", "T", "V", "X"}
+    for option in cluster:
+        if option not in value_options:
+            continue
+        if operand_index >= len(args):
+            if option == "C":
+                destinations.append("$UNRESOLVED_MISSING_OUTPUT")
+            break
+        if option == "C":
+            destinations.append(args[operand_index])
+        operand_index += 1
+    return _dedupe(destinations)
 
 
 def _rsync_destinations(args: list[str]) -> list[str]:
@@ -1332,20 +1568,39 @@ def _rsync_destinations(args: list[str]) -> list[str]:
         "--timeout",
         "--contimeout",
         "--bwlimit",
+        "--block-size",
+        "--checksum-choice",
+        "--checksum-seed",
+        "--compress-choice",
+        "--compress-level",
+        "--iconv",
+        "--max-delete",
         "--max-size",
         "--min-size",
+        "--modify-window",
+        "--out-format",
+        "--port",
+        "--protocol",
+        "--read-batch",
+        "--sockopts",
+        "--skip-compress",
+        "--write-batch",
         "--chmod",
         "--chown",
         "--usermap",
         "--groupmap",
         "-M",
         "--remote-option",
+        "-B",
+        "-T",
     }
     output_options = {
         "--log-file",
         "--backup-dir",
         "--temp-dir",
         "--partial-dir",
+        "--write-batch",
+        "-T",
     }
     positionals: list[str] = []
     additional_sinks: list[str] = []
@@ -1373,6 +1628,10 @@ def _rsync_destinations(args: list[str]) -> list[str]:
             index += 2
             continue
         if arg.startswith(("-e", "-f", "-M")) and len(arg) > 2:
+            index += 1
+            continue
+        if arg.startswith("--"):
+            uncertain = True
             index += 1
             continue
         if arg.startswith("-"):
@@ -1415,7 +1674,16 @@ def _archive_extracts(executable: str, args: list[str]) -> bool:
         return _tar_extracts(args)
     if executable != "unzip":
         return False
-    return not any(arg in {"-l", "-t", "-v", "--version"} for arg in args)
+    for arg in args:
+        if arg == "--":
+            break
+        if arg == "--version":
+            return False
+        if arg.startswith("-") and not arg.startswith("--"):
+            flags = arg[1:]
+            if "Z" in flags or any(flag in flags for flag in "ltvpc"):
+                return False
+    return True
 
 
 def _copy_move_destinations(executable: str, args: list[str]) -> list[str]:
@@ -1581,23 +1849,11 @@ def _xargs_command(args: list[str]) -> list[str]:
 
 
 def _xargs_nested_is_hardline(tokens: list[str]) -> bool:
-    unwrapped, _ = _unwrap_command(list(tokens))
-    if not unwrapped:
-        return False
     return classify_command_level(" ".join(tokens)) == "critical"
 
 
-def _find_is_hardline(args: list[str]) -> bool:
-    roots: list[str] = []
-    for arg in args:
-        if arg.startswith("-") or arg in {"!", "("}:
-            break
-        roots.append(arg)
-    scans_root = any(_rootish_path(root) for root in roots)
-    if not scans_root:
-        return False
-    if "-delete" in args:
-        return True
+def _find_nested_commands(args: list[str]) -> list[list[str]]:
+    commands: list[list[str]] = []
     for marker in ("-exec", "-execdir", "-ok", "-okdir"):
         start = 0
         while marker in args[start:]:
@@ -1612,16 +1868,30 @@ def _find_is_hardline(args: list[str]) -> bool:
             )
             nested = args[index + 1 : end]
             if nested:
-                level = classify_command_level(" ".join(nested))
-                nested_executable = _executable(tuple(nested))
-                if level in {"destructive", "critical"} or nested_executable in {
-                    "rm",
-                    "rmdir",
-                    "shred",
-                    "truncate",
-                }:
-                    return True
+                commands.append(nested)
             start = end + 1
+    return commands
+
+
+def _find_is_hardline(args: list[str]) -> bool:
+    roots: list[str] = []
+    for arg in args:
+        if arg.startswith("-") or arg in {"!", "("}:
+            break
+        roots.append(arg)
+    scans_root = any(_rootish_path(root) for root in roots)
+    if scans_root and "-delete" in args:
+        return True
+    for nested in _find_nested_commands(args):
+        level = classify_command_level(" ".join(nested))
+        nested_executable = _executable(tuple(nested))
+        if level == "critical":
+            return True
+        if scans_root and (
+            level == "destructive"
+            or nested_executable in {"rm", "rmdir", "shred", "truncate"}
+        ):
+            return True
     return False
 
 
@@ -2221,7 +2491,7 @@ def _node_writes(tokens: list[str], executable: str, args: list[str]) -> bool:
         return True
     if executable == "tar" and _tar_extracts(args):
         return True
-    if executable == "unzip" and not any(arg in {"-l", "-t", "-v"} for arg in args):
+    if executable == "unzip" and _archive_extracts(executable, args):
         return True
     if executable == "sort" and _has_output_option(args, {"-o", "--output"}):
         return True
