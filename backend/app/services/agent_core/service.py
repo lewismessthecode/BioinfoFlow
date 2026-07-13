@@ -40,6 +40,7 @@ from app.services.agent_core.skills import (
     resolve_active_skills,
 )
 from app.services.agent_core.tools.toolsets import EXECUTION_TOOLSET_POLICY
+from app.services.agent_core.tools.approval import action_matches_pending_observation
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part
 from app.utils.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
 
@@ -363,15 +364,22 @@ class AgentCoreService:
         )
         now = datetime.now(timezone.utc)
         cancelled_in_runner = cancel_turn_run(str(turn.id))
-        await self._cancel_open_actions(str(turn.id), cancelled_at=now)
         updated = await self.turn_repo.update_all(
             turn,
             status=AgentTurnStatus.CANCELLED,
             termination_reason="cancelled",
             completed_at=now,
-            loop_state={"termination_reason": "cancelled"},
+            loop_state={
+                **dict(getattr(turn, "loop_state", None) or {}),
+                "termination_reason": "cancelled",
+            },
             claimed_at=None,
             lease_until=None,
+        )
+        await self._cancel_open_actions(str(turn.id), cancelled_at=now)
+        updated = await self.turn_repo.update_all(
+            updated,
+            loop_state={"termination_reason": "cancelled"},
         )
         await self.session_repo.release_active_turn(
             str(updated.session_id), str(updated.id)
@@ -398,16 +406,23 @@ class AgentCoreService:
         )
         now = datetime.now(timezone.utc)
         cancelled_in_runner = cancel_turn_run(str(turn.id))
-        await self._cancel_open_actions(str(turn.id), cancelled_at=now)
         updated = await self.turn_repo.update_all(
             turn,
             status=AgentTurnStatus.CANCELLED,
             interrupt_requested_at=now,
             termination_reason="interrupted",
             completed_at=now,
-            loop_state={"termination_reason": "interrupted"},
+            loop_state={
+                **dict(getattr(turn, "loop_state", None) or {}),
+                "termination_reason": "interrupted",
+            },
             claimed_at=None,
             lease_until=None,
+        )
+        await self._cancel_open_actions(str(turn.id), cancelled_at=now)
+        updated = await self.turn_repo.update_all(
+            updated,
+            loop_state={"termination_reason": "interrupted"},
         )
         await self.session_repo.release_active_turn(
             str(updated.session_id), str(updated.id)
@@ -552,6 +567,15 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        if action.status not in {
+            AgentActionStatus.REQUESTED,
+            AgentActionStatus.REJECTED,
+        }:
+            raise ConflictError(
+                f"Agent action cannot resume from status: {action.status}"
+            )
+        if not action_matches_pending_observation(turn, action):
+            raise ConflictError("Agent action is not the turn's pending observation")
         enqueue_turn_resume(str(action.id), str(action.turn_id), str(turn.session_id))
         return action
 
@@ -580,19 +604,18 @@ class AgentCoreService:
             return "skipped"
         if _turn_lease_is_active(turn):
             return "skipped"
-        recovery_claimed_at = None
-        if turn.status == AgentTurnStatus.RUNNING:
-            recovery_now = datetime.now(timezone.utc)
-            recovered_turn = await self.turn_repo.claim_expired_for_recovery(
-                str(turn.id),
-                expected_claimed_at=turn.claimed_at,
-                claimed_at=recovery_now,
-                lease_until=recovery_now + _recovery_lease_duration(),
-            )
-            if recovered_turn is None:
-                return "skipped"
-            turn = recovered_turn
-            recovery_claimed_at = turn.claimed_at
+        recovery_now = datetime.now(timezone.utc)
+        recovered_turn = await self.turn_repo.claim_for_recovery(
+            str(turn.id),
+            expected_status=turn.status,
+            expected_claimed_at=turn.claimed_at,
+            claimed_at=recovery_now,
+            lease_until=recovery_now + _recovery_lease_duration(),
+        )
+        if recovered_turn is None:
+            return "skipped"
+        turn = recovered_turn
+        recovery_claimed_at = turn.claimed_at
         if not await self.session_repo.claim_active_turn(
             str(turn.session_id), str(turn.id)
         ):
@@ -736,9 +759,7 @@ class AgentCoreService:
         claim_token,
         **values,
     ):
-        if claim_token is None:
-            return await self.turn_repo.update_all(turn, **values)
-        return await self.turn_repo.update_if_claimed(
+        return await self.turn_repo.update_if_recovery_claimed(
             str(turn.id),
             expected_claimed_at=claim_token,
             **values,
@@ -889,9 +910,7 @@ class AgentCoreService:
         progress["previous_tool_results"] = pending_results
         progress.pop("pending_observation", None)
         loop_state["progress"] = progress
-        if claim_token is None:
-            return await self.turn_repo.update_all(turn, loop_state=loop_state)
-        updated = await self.turn_repo.update_if_claimed(
+        updated = await self.turn_repo.update_if_recovery_claimed(
             str(turn.id),
             expected_claimed_at=claim_token,
             loop_state=loop_state,

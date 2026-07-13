@@ -21,6 +21,7 @@ from app.repositories.agent_core_repo import (
 )
 from app.config import settings
 from app.services.agent_core import AgentCoreService
+from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.core import AgentLoopController
 from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.runtime import AgentCoreRuntime
@@ -572,6 +573,99 @@ async def test_cross_session_interrupt_after_model_response_executes_no_tool(
 
 
 @pytest.mark.asyncio
+async def test_interrupt_between_tool_eligibility_and_action_creation_executes_no_tool(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    calls: list[str] = []
+    tool = _CountingMutationTool(calls, name="interrupt-window.mutate")
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Interrupt after eligibility but before action creation.",
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    request_entered = asyncio.Event()
+    release_request = asyncio.Event()
+    original_request_action = AgentActionService.request_action
+
+    async def blocked_request_action(self, *args, **kwargs):
+        request_entered.set()
+        await release_request.wait()
+        return await original_request_action(self, *args, **kwargs)
+
+    monkeypatch.setattr(AgentActionService, "request_action", blocked_request_action)
+
+    async with maker() as run_db:
+        run_service = AgentCoreService(run_db)
+        claimed_at = datetime.now(timezone.utc)
+        claimed_turn = await run_service.turn_repo.claim_for_run(
+            str(turn.id),
+            claimed_at=claimed_at,
+            lease_until=claimed_at + timedelta(minutes=5),
+        )
+        assert claimed_turn is not None
+        agent_session = await run_service.session_repo.get(str(session.id))
+        assert agent_session is not None
+        controller = AgentLoopController(run_db)
+        controller.registry.register(tool)
+        tool_calls = [
+            {
+                "id": "interrupt-window-call",
+                "name": tool.name,
+                "arguments": {},
+            }
+        ]
+        await controller._append_assistant_tool_calls(
+            agent_session=agent_session,
+            turn=claimed_turn,
+            provider="test",
+            model="test",
+            tool_calls=tool_calls,
+        )
+        execute_task = asyncio.create_task(
+            controller._execute_tool_calls(
+                agent_session=agent_session,
+                turn=claimed_turn,
+                tool_calls=tool_calls,
+            )
+        )
+        await request_entered.wait()
+        async with maker() as interrupt_db:
+            await AgentCoreService(interrupt_db).interrupt_turn(
+                turn_id=str(turn.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+            )
+        release_request.set()
+        await asyncio.gather(execute_task, return_exceptions=True)
+
+    async with maker() as inspect_db:
+        actions = await AgentActionRepository(inspect_db).list_for_turn(str(turn.id))
+
+    assert calls == []
+    assert all(
+        action.status
+        not in {
+            AgentActionStatus.REQUESTED,
+            AgentActionStatus.WAITING_DECISION,
+            AgentActionStatus.RUNNING,
+        }
+        for action in actions
+    )
+
+
+@pytest.mark.asyncio
 async def test_session_rejects_second_turn_while_first_waits_on_model(
     db_session,
     db_engine,
@@ -827,6 +921,73 @@ async def test_recovery_skips_running_turn_with_unexpired_lease(
     assert turn.claimed_at.replace(tzinfo=timezone.utc) == now
     assert turn.lease_until is not None
     assert enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_recovery_cannot_requeue_turn_claimed_after_stale_state_read(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Race a stale recovery read against a live worker claim.",
+    )
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    recovery_reached_session_claim = asyncio.Event()
+    release_recovery = asyncio.Event()
+    enqueued: list[str] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda turn_id, _session_id=None: enqueued.append(turn_id),
+    )
+
+    async with maker() as recovery_db:
+        recovery_service = AgentCoreService(recovery_db)
+        original_claim_for_recovery = recovery_service.turn_repo.claim_for_recovery
+
+        async def blocked_claim_for_recovery(*args, **kwargs):
+            recovery_reached_session_claim.set()
+            await release_recovery.wait()
+            return await original_claim_for_recovery(*args, **kwargs)
+
+        monkeypatch.setattr(
+            recovery_service.turn_repo,
+            "claim_for_recovery",
+            blocked_claim_for_recovery,
+        )
+        recovery_task = asyncio.create_task(recovery_service.recover_orphaned_turns())
+        await recovery_reached_session_claim.wait()
+
+        worker_claimed_at = datetime.now(timezone.utc)
+        async with maker() as worker_db:
+            worker_turn = await AgentCoreService(worker_db).turn_repo.claim_for_run(
+                str(turn.id),
+                claimed_at=worker_claimed_at,
+                lease_until=worker_claimed_at + timedelta(minutes=5),
+            )
+            assert worker_turn is not None
+
+        release_recovery.set()
+        summary = await recovery_task
+
+    async with maker() as inspect_db:
+        stored = await AgentCoreService(inspect_db).turn_repo.get(str(turn.id))
+
+    assert stored.status == "running"
+    assert stored.claimed_at.replace(tzinfo=timezone.utc) == worker_claimed_at
+    assert stored.lease_until is not None
+    assert enqueued == []
+    assert summary["skipped"] == 1
 
 
 @pytest.mark.asyncio

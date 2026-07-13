@@ -9,10 +9,11 @@ from uuid import UUID
 import app.database as app_database
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.agent_core import AgentActionStatus
+from app.models.agent_core import AgentActionStatus, AgentTurnStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentSessionRepository,
+    AgentTurnRepository,
 )
 from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.events import AgentEventType
@@ -163,11 +164,20 @@ class AgentToolExecutor:
         tool_call_id: str | None = None,
         role: str = "orchestrator",
         execution_target: dict | str | None = None,
+        expected_execution_target: dict | str | None = None,
     ) -> ToolExecutionResult:
         tool = self.registry.get(tool_name)
         session = await self._session_for_context(context)
         if session is not None:
-            execution_target = execution_target_from_session(session)
+            current_execution_target = execution_target_from_session(session)
+            if (
+                expected_execution_target is not None
+                and current_execution_target != expected_execution_target
+            ):
+                raise PermissionDeniedError(
+                    "Session execution target changed before tool execution"
+                )
+            execution_target = current_execution_target
         exposure = self.exposure.decide(
             tool_name=tool_name,
             policy=toolset_policy,
@@ -210,6 +220,7 @@ class AgentToolExecutor:
             },
             force_ask=tool.spec.interaction is not None,
             interaction=tool.spec.interaction,
+            expected_turn_claimed_at=context.turn_claimed_at,
         )
         if action_requires_resume(action.status):
             action = await self.action_repo.update_all(action, requires_resume=True)
@@ -259,6 +270,7 @@ class AgentToolExecutor:
             exposure_policy=exposure_policy,
             force_ask=False,
             interaction=None,
+            expected_turn_claimed_at=context.turn_claimed_at,
         )
         updated = await self.action_repo.transition_if_status(
             str(action.id),
@@ -346,7 +358,7 @@ class AgentToolExecutor:
             UUID(str(session_id))
         except (TypeError, ValueError):
             return None
-        session = await AgentSessionRepository(self.session).get(str(session_id))
+        session = await AgentSessionRepository(self.session).get_fresh(str(session_id))
         if session is None:
             return None
         if (
@@ -412,12 +424,30 @@ class AgentToolExecutor:
         claimed = await self.action_repo.claim_requested(
             str(action.id),
             started_at=datetime.now(timezone.utc),
+            turn_id=context.turn_id,
+            expected_turn_claimed_at=context.turn_claimed_at,
         )
         if claimed is None:
             current = await self.action_repo.get(str(action.id))
             if current is None:
                 raise ConflictError("Agent action disappeared before execution")
             await self.session.refresh(current)
+            if (
+                current.status == AgentActionStatus.REQUESTED
+                and context.turn_claimed_at is not None
+            ):
+                cancelled = await self.action_repo.transition_if_status(
+                    str(current.id),
+                    expected_statuses=[AgentActionStatus.REQUESTED],
+                    status=AgentActionStatus.CANCELLED,
+                    error={
+                        "type": "TurnOwnershipLost",
+                        "message": "The parent turn stopped before tool execution.",
+                    },
+                    completed_at=datetime.now(timezone.utc),
+                )
+                if cancelled is not None:
+                    current = cancelled
             return ToolExecutionResult(
                 action_id=str(current.id),
                 status=current.status,
@@ -430,6 +460,31 @@ class AgentToolExecutor:
                 requires_resume=bool(current.requires_resume),
             )
         action = claimed
+        if context.turn_claimed_at is not None:
+            current_turn = await AgentTurnRepository(self.session).get_fresh(
+                context.turn_id
+            )
+            if current_turn is None or (
+                current_turn.status != AgentTurnStatus.RUNNING
+                or current_turn.claimed_at != context.turn_claimed_at
+            ):
+                cancelled = await self.action_repo.transition_if_status(
+                    str(action.id),
+                    expected_statuses=[AgentActionStatus.RUNNING],
+                    status=AgentActionStatus.CANCELLED,
+                    error={
+                        "type": "TurnOwnershipLost",
+                        "message": "The parent turn stopped before tool execution.",
+                    },
+                    completed_at=datetime.now(timezone.utc),
+                )
+                if cancelled is not None:
+                    action = cancelled
+                return ToolExecutionResult(
+                    action_id=str(action.id),
+                    status=action.status,
+                    error=action.error,
+                )
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),

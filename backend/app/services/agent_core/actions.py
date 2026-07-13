@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.agent_core import AgentActionStatus
+from app.models.agent_core import AgentActionStatus, AgentTurnStatus
 from app.repositories.agent_core_repo import AgentActionRepository, AgentTurnRepository
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
@@ -42,10 +43,16 @@ class AgentActionService:
         exposure_policy: dict | None = None,
         force_ask: bool = False,
         interaction: str | None = None,
+        expected_turn_claimed_at=None,
     ):
-        turn = await self.turn_repo.get(turn_id)
+        turn = await self.turn_repo.get_fresh(turn_id)
         if turn is None:
             raise NotFoundError(f"Agent turn not found: {turn_id}")
+        if expected_turn_claimed_at is not None and (
+            turn.status != AgentTurnStatus.RUNNING
+            or turn.claimed_at != expected_turn_claimed_at
+        ):
+            raise asyncio.CancelledError
 
         action_input = input or {}
         risk = self.risk_engine.assess(
@@ -92,6 +99,25 @@ class AgentActionService:
             rollback_hint=rollback_hint,
             artifact_policy=artifact_policy,
         )
+        if expected_turn_claimed_at is not None:
+            current_turn = await self.turn_repo.get_fresh(turn_id)
+            if current_turn is None or (
+                current_turn.status != AgentTurnStatus.RUNNING
+                or current_turn.claimed_at != expected_turn_claimed_at
+            ):
+                await self.action_repo.transition_if_status(
+                    str(action.id),
+                    expected_statuses=[
+                        AgentActionStatus.REQUESTED,
+                        AgentActionStatus.WAITING_DECISION,
+                    ],
+                    status=AgentActionStatus.CANCELLED,
+                    error={
+                        "type": "TurnOwnershipLost",
+                        "message": "The parent turn stopped before tool execution.",
+                    },
+                )
+                raise asyncio.CancelledError
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),

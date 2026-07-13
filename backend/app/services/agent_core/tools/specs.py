@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +37,7 @@ class AgentToolContext:
     user_id: str
     session_id: str
     turn_id: str
+    turn_claimed_at: datetime | None = None
 
 
 class AgentTool(Protocol):

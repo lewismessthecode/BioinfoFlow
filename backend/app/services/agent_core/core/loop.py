@@ -44,6 +44,7 @@ from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
+from app.services.agent_core.tools.approval import action_matches_pending_observation
 from app.services.agent_core.tools.executor import (
     AgentToolExecutor,
     ToolExecutionResult,
@@ -63,6 +64,10 @@ from app.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
+
+
+class _ExecutionTargetChanged(Exception):
+    pass
 
 
 class AgentLoopController:
@@ -114,22 +119,6 @@ class AgentLoopController:
             used_iterations=int(getattr(turn, "iteration_count", 0) or 0),
         )
         tools_enabled = capabilities.supports_tools and strategy.allow_tools
-        role = (
-            "worker"
-            if str(getattr(agent_session, "role_profile", "orchestrator")) == "worker"
-            else "orchestrator"
-        )
-        execution_target = execution_target_from_session(agent_session)
-        visible_tools = (
-            self.executor.exposure.exposed_specs(
-                policy=agent_session.toolset_policy,
-                role=role,
-                execution_target=execution_target,
-            )
-            if tools_enabled
-            else []
-        )
-        tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
         token_usage = dict(getattr(turn, "token_usage", None) or {}) or None
         progress = _progress_state(getattr(turn, "loop_state", None))
         previous_tool_call_signatures = progress["previous_tool_calls"]
@@ -165,6 +154,29 @@ class AgentLoopController:
                     token_usage=token_usage,
                 )
             turn = await self._renew_turn_lease(turn)
+
+            agent_session = await self.sessions.get_fresh(str(turn.session_id))
+            if agent_session is None:
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=budget.used_iterations,
+                    error_code="session_not_found",
+                    error_message="Agent session could not be loaded.",
+                    token_usage=token_usage,
+                )
+            role = _tool_role(agent_session)
+            execution_target = execution_target_from_session(agent_session)
+            visible_tools = (
+                self.executor.exposure.exposed_specs(
+                    policy=agent_session.toolset_policy,
+                    role=role,
+                    execution_target=execution_target,
+                )
+                if tools_enabled
+                else []
+            )
+            tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
 
             completion_kwargs = {
                 "model": litellm_model_name(provider, model),
@@ -205,22 +217,44 @@ class AgentLoopController:
 
             turn = await self._renew_turn_lease(turn)
             message_id = f"assistant:{turn.id}:{budget.used_iterations}"
-            if completion_kwargs.get("stream"):
-                streamed = await self._consume_stream_response(
-                    agent_session=agent_session,
-                    turn=turn,
-                    response=response,
-                    message_id=message_id,
-                    allow_thinking=strategy.allow_thinking,
-                )
-            else:
-                streamed = await self._consume_response(
-                    agent_session=agent_session,
-                    turn=turn,
-                    response=response,
-                    message_id=message_id,
-                    allow_thinking=strategy.allow_thinking,
-                )
+            try:
+                if completion_kwargs.get("stream"):
+                    streamed = await self._consume_stream_response(
+                        agent_session=agent_session,
+                        turn=turn,
+                        response=response,
+                        message_id=message_id,
+                        allow_thinking=strategy.allow_thinking,
+                        expected_execution_target=execution_target,
+                    )
+                else:
+                    fresh_session = await self.sessions.get_fresh(
+                        str(agent_session.id)
+                    )
+                    if fresh_session is None:
+                        return LoopResult(
+                            termination_reason="model_failed",
+                            final_text=None,
+                            iteration_count=budget.used_iterations,
+                            error_code="session_not_found",
+                            error_message="Agent session could not be loaded.",
+                            token_usage=token_usage,
+                        )
+                    if (
+                        execution_target_from_session(fresh_session)
+                        != execution_target
+                    ):
+                        continue
+                    agent_session = fresh_session
+                    streamed = await self._consume_response(
+                        agent_session=agent_session,
+                        turn=turn,
+                        response=response,
+                        message_id=message_id,
+                        allow_thinking=strategy.allow_thinking,
+                    )
+            except _ExecutionTargetChanged:
+                continue
 
             token_usage = _merge_usage(token_usage, streamed.token_usage)
             turn = await self._checkpoint_loop_state(
@@ -494,6 +528,7 @@ class AgentLoopController:
                         user_id=turn.user_id,
                         session_id=str(agent_session.id),
                         turn_id=str(turn.id),
+                        turn_claimed_at=turn.claimed_at,
                     ),
                     toolset_policy=agent_session.toolset_policy,
                     permission_mode=agent_session.permission_mode,
@@ -501,6 +536,9 @@ class AgentLoopController:
                     tool_call_id=tool_call.get("id"),
                     role=_tool_role(agent_session),
                     execution_target=execution_target_from_session(agent_session),
+                    expected_execution_target=execution_target_from_session(
+                        agent_session
+                    ),
                 )
             except BaseException as exc:
                 failure = _failed_tool_result(exc)
@@ -583,6 +621,15 @@ class AgentLoopController:
                 error_code="session_not_found",
                 error_message="Agent session could not be loaded for resume.",
             )
+        if not action_matches_pending_observation(turn, action):
+            return LoopResult(
+                termination_reason="action_in_progress",
+                final_text=None,
+                iteration_count=persisted_iteration_count,
+                token_usage=persisted_token_usage,
+                error_code="action_not_pending",
+                error_message="Agent action is not the turn's pending observation.",
+            )
 
         if action.status == AgentActionStatus.RUNNING:
             return LoopResult(
@@ -620,6 +667,7 @@ class AgentLoopController:
                     user_id=turn.user_id,
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
+                    turn_claimed_at=turn.claimed_at,
                 ),
             )
         if (result.error or {}).get("type") == "ActionAlreadyClaimed":
@@ -839,6 +887,7 @@ class AgentLoopController:
                     user_id=turn.user_id,
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
+                    turn_claimed_at=current_turn.claimed_at,
                 ),
                 toolset_policy=agent_session.toolset_policy,
                 permission_mode=agent_session.permission_mode,
@@ -846,6 +895,7 @@ class AgentLoopController:
                 tool_call_id=tool_call.get("id"),
                 role=_tool_role(agent_session),
                 execution_target=execution_target_from_session(agent_session),
+                expected_execution_target=execution_target_from_session(agent_session),
             )
 
     def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:
@@ -933,7 +983,16 @@ class AgentLoopController:
         response: Any,
         message_id: str,
         allow_thinking: bool,
+        expected_execution_target=None,
     ) -> StreamCompletionResult:
+        current_session = await self.sessions.get_fresh(str(agent_session.id))
+        if current_session is None or (
+            expected_execution_target is not None
+            and execution_target_from_session(current_session)
+            != expected_execution_target
+        ):
+            raise _ExecutionTargetChanged
+        agent_session = current_session
         if not hasattr(response, "__aiter__"):
             return await self._consume_response(
                 agent_session=agent_session,
@@ -953,6 +1012,17 @@ class AgentLoopController:
 
         async for chunk in response:
             turn = await self._renew_turn_lease(turn)
+            current_session = await self.sessions.get_fresh(str(agent_session.id))
+            if current_session is None or (
+                expected_execution_target is not None
+                and execution_target_from_session(current_session)
+                != expected_execution_target
+            ):
+                close = getattr(response, "aclose", None)
+                if close is not None:
+                    await close()
+                raise _ExecutionTargetChanged
+            agent_session = current_session
             usage = _merge_usage(usage, _extract_token_usage(chunk))
 
             reasoning_delta = extract_reasoning_delta(chunk)
@@ -1055,6 +1125,15 @@ class AgentLoopController:
                             "index": state.index,
                         },
                     )
+
+        current_session = await self.sessions.get_fresh(str(agent_session.id))
+        if current_session is None or (
+            expected_execution_target is not None
+            and execution_target_from_session(current_session)
+            != expected_execution_target
+        ):
+            raise _ExecutionTargetChanged
+        agent_session = current_session
 
         thinking_text = "".join(thinking_parts).strip()
         if allow_thinking and thinking_text and not thinking_completed:

@@ -36,6 +36,7 @@ from app.services.agent_core.model_selection import (
     session_model_selection_from_metadata,
 )
 from app.services.agent_core.observability import truncate_log_value
+from app.services.agent_core.tools.approval import action_matches_pending_observation
 from app.services.agent_core.transcript import AgentTranscriptStore
 from app.services.llm.provider_templates import normalize_provider_base_url
 from app.services.llm.credentials import resolve_credential_material
@@ -170,6 +171,8 @@ class AgentCoreRuntime:
         turn = await self.turn_repo.get(str(action.turn_id))
         if turn is None:
             return None
+        if not action_matches_pending_observation(turn, action):
+            return turn
         if turn.status in {
             AgentTurnStatus.COMPLETED,
             AgentTurnStatus.FAILED,

@@ -23,6 +23,14 @@ from app.schemas.common import Pagination
 class AgentSessionRepository(BaseRepository[AgentSession]):
     model = AgentSession
 
+    async def get_fresh(self, session_id: str) -> AgentSession | None:
+        result = await self.session.execute(
+            select(self.model)
+            .where(self.model.id == session_id)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
     async def lock_for_update(self, session_id: str) -> AgentSession | None:
         result = await self.session.execute(
             select(self.model)
@@ -214,8 +222,15 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
                 self.model.id == turn_id,
                 ~running_action_exists,
                 or_(
-                    self.model.status.in_(
-                        [AgentTurnStatus.QUEUED, AgentTurnStatus.WAITING_APPROVAL]
+                    (
+                        self.model.status.in_(
+                            [AgentTurnStatus.QUEUED, AgentTurnStatus.WAITING_APPROVAL]
+                        )
+                        & or_(
+                            self.model.claimed_at.is_(None),
+                            self.model.lease_until.is_(None),
+                            self.model.lease_until < claimed_at,
+                        )
                     ),
                     (
                         (self.model.status == AgentTurnStatus.RUNNING)
@@ -278,11 +293,28 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         claimed_at,
         lease_until,
     ) -> AgentTurn | None:
+        return await self.claim_for_recovery(
+            turn_id,
+            expected_status=AgentTurnStatus.RUNNING,
+            expected_claimed_at=expected_claimed_at,
+            claimed_at=claimed_at,
+            lease_until=lease_until,
+        )
+
+    async def claim_for_recovery(
+        self,
+        turn_id: str,
+        *,
+        expected_status: str,
+        expected_claimed_at,
+        claimed_at,
+        lease_until,
+    ) -> AgentTurn | None:
         result = await self.session.execute(
             update(self.model)
             .where(
                 self.model.id == turn_id,
-                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.status == expected_status,
                 self.model.claimed_at == expected_claimed_at,
                 or_(
                     self.model.lease_until.is_(None),
@@ -290,6 +322,34 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
                 ),
             )
             .values(claimed_at=claimed_at, lease_until=lease_until)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        if result.rowcount != 1:
+            return None
+        return await self.get_fresh(turn_id)
+
+    async def update_if_recovery_claimed(
+        self,
+        turn_id: str,
+        *,
+        expected_claimed_at,
+        **values,
+    ) -> AgentTurn | None:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                ),
+                self.model.claimed_at == expected_claimed_at,
+            )
+            .values(**values)
             .execution_options(synchronize_session=False)
         )
         await self.session.commit()
@@ -456,14 +516,32 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
 class AgentActionRepository(BaseRepository[AgentAction]):
     model = AgentAction
 
-    async def claim_requested(self, action_id: str, *, started_at) -> AgentAction | None:
+    async def claim_requested(
+        self,
+        action_id: str,
+        *,
+        started_at,
+        turn_id: str | None = None,
+        expected_turn_claimed_at=None,
+    ) -> AgentAction | None:
         """Atomically transition one approved action into execution ownership."""
+        conditions = [
+            self.model.id == action_id,
+            self.model.status == AgentActionStatus.REQUESTED,
+        ]
+        if turn_id is not None and expected_turn_claimed_at is not None:
+            conditions.append(
+                select(AgentTurn.id)
+                .where(
+                    AgentTurn.id == turn_id,
+                    AgentTurn.status == AgentTurnStatus.RUNNING,
+                    AgentTurn.claimed_at == expected_turn_claimed_at,
+                )
+                .exists()
+            )
         result = await self.session.execute(
             update(self.model)
-            .where(
-                self.model.id == action_id,
-                self.model.status == AgentActionStatus.REQUESTED,
-            )
+            .where(*conditions)
             .values(
                 status=AgentActionStatus.RUNNING,
                 requires_resume=False,
