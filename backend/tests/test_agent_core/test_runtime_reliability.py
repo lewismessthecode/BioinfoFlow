@@ -619,6 +619,68 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_startup_recovery_wakes_migrated_approved_turn_only(
+    db_session, monkeypatch
+):
+    resumed: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda action_id, turn_id, _session_id=None: resumed.append(
+            (action_id, turn_id)
+        ),
+    )
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    approved_turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Recover the approved legacy action.",
+    )
+    waiting_turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep waiting for a decision.",
+    )
+    await service.turn_repo.update_all(
+        waiting_turn,
+        status=AgentTurnStatus.WAITING_APPROVAL,
+    )
+    approved_action = await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(approved_turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf approved"},
+        risk_level="act_high",
+        status=AgentActionStatus.REQUESTED,
+    )
+    await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(waiting_turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf waiting"},
+        risk_level="act_high",
+        status=AgentActionStatus.WAITING_DECISION,
+    )
+
+    summary = await service.recover_orphaned_turns()
+
+    assert summary["enqueued"] == 1
+    assert resumed == [(str(approved_action.id), str(approved_turn.id))]
+    assert (
+        await service.turn_repo.get_fresh(str(waiting_turn.id))
+    ).status == AgentTurnStatus.WAITING_APPROVAL
+
+
+@pytest.mark.asyncio
 async def test_duplicate_run_turn_claims_once_across_database_sessions(
     db_session, monkeypatch
 ):
