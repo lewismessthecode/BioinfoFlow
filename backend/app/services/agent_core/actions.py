@@ -99,6 +99,7 @@ class AgentActionService:
             rollback_hint=rollback_hint,
             artifact_policy=artifact_policy,
         )
+        action_id = str(action.id)
         if expected_turn_claimed_at is not None:
             current_turn = await self.turn_repo.get_fresh(turn_id)
             if current_turn is None or (
@@ -106,7 +107,7 @@ class AgentActionService:
                 or current_turn.claimed_at != expected_turn_claimed_at
             ):
                 await self.action_repo.transition_if_status(
-                    str(action.id),
+                    action_id,
                     expected_statuses=[
                         AgentActionStatus.REQUESTED,
                         AgentActionStatus.WAITING_DECISION,
@@ -122,14 +123,14 @@ class AgentActionService:
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             type=AgentEventType.ACTION_REQUESTED,
-            payload={"action_id": str(action.id), "kind": kind, "name": name},
+            payload={"action_id": action_id, "kind": kind, "name": name},
         )
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             type=AgentEventType.ACTION_RISK_ASSESSED,
             payload={
-                "action_id": str(action.id),
+                "action_id": action_id,
                 "risk_level": risk.level,
                 "reasons": risk.reasons,
             },
@@ -138,7 +139,7 @@ class AgentActionService:
             # Enrich the waiting-decision event so the frontend renders the
             # approval / question / plan card without a second fetch.
             payload: dict = {
-                "action_id": str(action.id),
+                "action_id": action_id,
                 "name": name,
                 "kind": kind,
                 "risk_level": risk.level,
@@ -154,7 +155,10 @@ class AgentActionService:
                 type=AgentEventType.ACTION_WAITING_DECISION,
                 payload=payload,
             )
-        return action
+        refreshed = await self.action_repo.get(action_id)
+        if refreshed is None:
+            raise RuntimeError("Agent action disappeared after request persistence")
+        return refreshed
 
 
 def _interaction_block(interaction: str | None, action_input: dict) -> dict | None:
