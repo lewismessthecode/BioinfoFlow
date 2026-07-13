@@ -1,12 +1,33 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 import pytest
 
 from app.models.llm import LlmModel, LlmProvider
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
+from app.services.model_runtime.gateway import ModelGateway
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+class _FakeBackend:
+    def __init__(self, completion: Callable[..., Awaitable[Any]]) -> None:
+        self.completion = completion
+
+    async def invoke(self, wire_protocol: str, request: dict[str, Any]) -> Any:
+        assert wire_protocol == "chat_completions"
+        return await self.completion(**request)
+
+
+def _install_fake_completion(monkeypatch, completion) -> None:
+    gateway = ModelGateway(backend=_FakeBackend(completion))
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.ModelGateway",
+        lambda: gateway,
+    )
 
 
 async def _seed_catalog_model(db_session, *, model_id: str = "kernel-model") -> LlmModel:
@@ -55,7 +76,7 @@ async def test_agent_core_no_tool_runtime_writes_ordered_events(db_session, monk
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     model = await _seed_catalog_model(db_session)
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
@@ -113,7 +134,7 @@ async def test_agent_core_no_tool_runtime_persists_visible_failure(db_session, m
     async def failing_completion(*args, **kwargs):
         raise RuntimeError("Provider timed out")
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", failing_completion)
+    _install_fake_completion(monkeypatch, failing_completion)
 
     await _seed_catalog_model(db_session, model_id="failing-kernel-model")
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")

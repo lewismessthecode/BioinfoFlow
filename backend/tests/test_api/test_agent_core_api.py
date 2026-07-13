@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,7 +18,25 @@ from app.path_layout import project_home, skills_root
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
+from app.services.model_runtime.gateway import ModelGateway
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+class _FakeBackend:
+    def __init__(self, completion: Callable[..., Awaitable[Any]]) -> None:
+        self.completion = completion
+
+    async def invoke(self, wire_protocol: str, request: dict[str, Any]) -> Any:
+        assert wire_protocol == "chat_completions"
+        return await self.completion(**request)
+
+
+def _install_fake_completion(monkeypatch, completion) -> None:
+    gateway = ModelGateway(backend=_FakeBackend(completion))
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.ModelGateway",
+        lambda: gateway,
+    )
 
 
 def _auth_user(
@@ -360,7 +380,7 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     model = await _create_llm_model(async_client)
     project_id = await _create_project(async_client)
@@ -582,7 +602,8 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
     second_turn_row.token_usage = {
         "input_tokens": 800,
         "output_tokens": 200,
-        "completion_tokens_details": {"reasoning_tokens": 45},
+        "cached_input_tokens": 25,
+        "reasoning_tokens": 45,
     }
     second_turn_row.model_profile_snapshot = {
         **(second_turn_row.model_profile_snapshot or {}),
@@ -600,16 +621,18 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
         "input_tokens": 2000,
         "output_tokens": 500,
         "total_tokens": 2500,
-        "cached_input_tokens": 125,
+        "cached_input_tokens": 150,
         "reasoning_tokens": 45,
         "context_window": 128000,
         "max_output_tokens": 8192,
         "turns_with_usage": 2,
         "raw_totals": {
+            "cached_input_tokens": 25,
             "completion_tokens": 300,
             "input_tokens": 800,
             "output_tokens": 200,
             "prompt_tokens": 1200,
+            "reasoning_tokens": 45,
             "total_tokens": 1500,
         },
     }
@@ -630,7 +653,7 @@ async def test_agent_core_accepts_catalog_model_selection(async_client, monkeypa
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     model = await _create_llm_model(async_client)
@@ -840,7 +863,7 @@ async def test_agent_core_streams_text_and_reasoning_events(async_client, monkey
 
         return stream()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -959,7 +982,7 @@ async def test_agent_core_emits_tool_call_lifecycle_events(async_client, monkeyp
             return tool_call_stream()
         return final_text_stream()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     model = await _create_llm_model(async_client)
@@ -1025,7 +1048,7 @@ async def test_agent_core_ollama_catalog_selection_uses_root_api_base(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1103,7 +1126,7 @@ async def test_agent_core_anthropic_catalog_selection_preserves_native_api_base(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1181,7 +1204,7 @@ async def test_agent_core_profile_strategy_can_disable_streaming_thinking_and_to
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1273,7 +1296,7 @@ async def test_agent_core_tool_capable_catalog_model_receives_tools(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     model = await _create_llm_model(async_client)
@@ -1403,7 +1426,7 @@ async def test_agent_core_prefers_user_catalog_model_over_environment_global_def
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     global_provider = LlmProvider(
         name="Env vLLM",
@@ -1502,7 +1525,7 @@ async def test_agent_core_rejects_invisible_catalog_model_selection(
         completion = True
         raise AssertionError("invisible catalog model should not be called")
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
     invisible_model = await _create_scoped_llm_model(
         db_session,
         provider_user_id="other-user",

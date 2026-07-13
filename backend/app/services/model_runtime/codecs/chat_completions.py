@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 from app.services.model_runtime.contracts import (
@@ -195,6 +195,10 @@ def _usage_report(payload: Any) -> UsageReport | None:
     usage = _get(payload, "usage")
     if usage is None:
         return None
+    if hasattr(usage, "model_dump"):
+        dumped = usage.model_dump()
+        if isinstance(dumped, Mapping):
+            usage = dumped
     input_tokens = _int_or_zero(_get(usage, "prompt_tokens"))
     output_tokens = _int_or_zero(_get(usage, "completion_tokens"))
     total_tokens = _int_or_zero(_get(usage, "total_tokens"))
@@ -204,8 +208,8 @@ def _usage_report(payload: Any) -> UsageReport | None:
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
-        cached_input_tokens=_int_or_zero(_get(prompt_details, "cached_tokens")),
-        reasoning_tokens=_int_or_zero(_get(completion_details, "reasoning_tokens")),
+        cached_input_tokens=_optional_int(_get(prompt_details, "cached_tokens")),
+        reasoning_tokens=_optional_int(_get(completion_details, "reasoning_tokens")),
     )
 
 
@@ -221,8 +225,14 @@ def _merge_usage_reports(
         input_tokens=current.input_tokens + next_usage.input_tokens,
         output_tokens=current.output_tokens + next_usage.output_tokens,
         total_tokens=current.total_tokens + next_usage.total_tokens,
-        cached_input_tokens=current.cached_input_tokens + next_usage.cached_input_tokens,
-        reasoning_tokens=current.reasoning_tokens + next_usage.reasoning_tokens,
+        cached_input_tokens=_sum_optional_ints(
+            current.cached_input_tokens,
+            next_usage.cached_input_tokens,
+        ),
+        reasoning_tokens=_sum_optional_ints(
+            current.reasoning_tokens,
+            next_usage.reasoning_tokens,
+        ),
     )
 
 
@@ -270,3 +280,15 @@ def _argument_text(value: Any) -> str:
 
 def _int_or_zero(value: Any) -> int:
     return value if isinstance(value, int) else 0
+
+
+def _optional_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _sum_optional_ints(current: int | None, next_value: int | None) -> int | None:
+    if current is None:
+        return next_value
+    if next_value is None:
+        return current
+    return current + next_value

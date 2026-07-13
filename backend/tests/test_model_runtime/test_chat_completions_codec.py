@@ -301,6 +301,58 @@ async def test_decode_non_stream_serializes_dict_tool_arguments() -> None:
 
 
 @pytest.mark.asyncio
+async def test_decode_usage_from_model_dump_only_object() -> None:
+    class DumpOnlyUsage:
+        def model_dump(self) -> dict[str, Any]:
+            return {
+                "prompt_tokens": 17,
+                "completion_tokens": 9,
+                "total_tokens": 26,
+                "prompt_tokens_details": {"cached_tokens": 5},
+                "completion_tokens_details": {"reasoning_tokens": 3},
+            }
+
+    response = SimpleNamespace(
+        id="chatcmpl-usage-dump",
+        choices=[SimpleNamespace(finish_reason="stop", message={"content": "done"})],
+        usage=DumpOnlyUsage(),
+    )
+
+    events = [event async for event in ChatCompletionsCodec().decode_response(response)]
+
+    assert UsageReport(
+        input_tokens=17,
+        output_tokens=9,
+        total_tokens=26,
+        cached_input_tokens=5,
+        reasoning_tokens=3,
+    ) in events
+
+
+@pytest.mark.asyncio
+async def test_decode_usage_preserves_missing_optional_token_details() -> None:
+    response = SimpleNamespace(
+        id="chatcmpl-usage-basic",
+        choices=[SimpleNamespace(finish_reason="stop", message={"content": "done"})],
+        usage={
+            "prompt_tokens": 17,
+            "completion_tokens": 9,
+            "total_tokens": 26,
+        },
+    )
+
+    events = [event async for event in ChatCompletionsCodec().decode_response(response)]
+
+    assert UsageReport(
+        input_tokens=17,
+        output_tokens=9,
+        total_tokens=26,
+        cached_input_tokens=None,
+        reasoning_tokens=None,
+    ) in events
+
+
+@pytest.mark.asyncio
 async def test_decode_stream_response_emits_deltas_and_final_usage() -> None:
     response = _stream(
         SimpleNamespace(

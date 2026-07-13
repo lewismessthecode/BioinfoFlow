@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import app.database as app_database
-from litellm import acompletion
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
@@ -22,14 +22,6 @@ from app.services.agent_core.core.guardrails import no_progress_detected
 from app.services.agent_core.core.interrupt import is_interrupt_requested
 from app.services.agent_core.core.retry import RetryPolicy, run_with_retry
 from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, RuntimeStrategy
-from app.services.agent_core.core.stream_adapter import (
-    StreamCompletionResult,
-    StreamToolCall,
-    extract_reasoning_delta,
-    extract_text_delta,
-    extract_tool_call_deltas,
-    extract_response_thinking,
-)
 from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import execution_target_from_session
@@ -40,10 +32,19 @@ from app.services.agent_core.tools import AgentToolContext, build_default_tool_r
 from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
 from app.services.agent_core.tools.toolsets import (
     decode_provider_tool_name,
-    provider_tool_specs,
+    model_tool_definitions,
 )
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part, tool_calls_part
-from app.services.llm.provider_templates import litellm_model_name
+from app.services.model_runtime.contracts import (
+    ModelInvocation,
+    ModelTarget,
+    ReasoningDelta,
+    ResponseStarted,
+    TextDelta,
+    ToolCallDelta,
+    UsageReport,
+)
+from app.services.model_runtime.gateway import ModelGateway
 from app.utils.exceptions import PermissionDeniedError
 from app.utils.logging import get_logger
 
@@ -51,8 +52,36 @@ from app.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+@dataclass
+class _PendingToolCall:
+    call_id: str
+    name: str
+    arguments_text: str = ""
+    index: int = 0
+
+    def arguments(self) -> dict[str, Any]:
+        try:
+            value = json.loads(self.arguments_text or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+
+@dataclass
+class _ModelTurnResult:
+    text: str
+    thinking: str
+    tool_calls: list[_PendingToolCall]
+    token_usage: dict[str, Any] | None
+
+
 class AgentLoopController:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        model_gateway: ModelGateway | None = None,
+    ):
         self.db = session
         self.sessions = AgentSessionRepository(session)
         self.turns = AgentTurnRepository(session)
@@ -62,14 +91,13 @@ class AgentLoopController:
         self.transcript = AgentTranscriptStore(session)
         self.registry = build_default_tool_registry()
         self.executor = AgentToolExecutor(session, self.registry)
+        self.model_gateway = model_gateway or ModelGateway()
 
     async def run_turn(
         self,
         *,
         turn_id: str,
-        provider: str,
-        model: str,
-        request_args: dict[str, Any],
+        target: ModelTarget,
         capabilities: RuntimeCapabilities = RuntimeCapabilities(),
         strategy: RuntimeStrategy = RuntimeStrategy(),
         max_tokens: int | None = None,
@@ -110,7 +138,6 @@ class AgentLoopController:
             if tools_enabled
             else []
         )
-        tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
         token_usage: dict[str, Any] | None = None
         previous_tool_call_signatures: list[str] = []
         previous_tool_result_signatures: list[str] = []
@@ -136,26 +163,28 @@ class AgentLoopController:
                 )
             turn = await self._renew_turn_lease(turn)
 
-            completion_kwargs = {
-                "model": litellm_model_name(provider, model),
-                "messages": await self.context.provider_messages(
-                    agent_session=agent_session,
-                    turn=turn,
-                    exposed_tools=visible_tools,
-                ),
-                "max_tokens": max_tokens or settings.agent_max_tokens,
-                **request_args,
-            }
-            if tools_enabled and tool_payload:
-                completion_kwargs["tools"] = tool_payload
-            if capabilities.supports_streaming and strategy.use_streaming:
-                completion_kwargs["stream"] = True
+            model_context = await self.context.model_context(
+                agent_session=agent_session,
+                turn=turn,
+                exposed_tools=visible_tools,
+            )
+            invocation = ModelInvocation(
+                target=target,
+                instructions=model_context.instructions,
+                input_items=model_context.input_items,
+                tools=model_tool_definitions(visible_tools if tools_enabled else []),
+                stream=capabilities.supports_streaming and strategy.use_streaming,
+                max_output_tokens=max_tokens or settings.agent_max_tokens,
+                allow_reasoning=strategy.allow_thinking,
+            )
 
             try:
-                response = await self._call_model_with_retry(
+                streamed = await self._consume_model_events_with_retry(
+                    agent_session=agent_session,
                     turn=turn,
-                    completion_kwargs=completion_kwargs,
-                    iteration_count=budget.used_iterations,
+                    invocation=invocation,
+                    message_id=f"assistant:{turn.id}:{budget.used_iterations}",
+                    allow_thinking=strategy.allow_thinking,
                 )
             except asyncio.CancelledError:
                 return LoopResult(
@@ -174,24 +203,6 @@ class AgentLoopController:
                     token_usage=token_usage,
                 )
 
-            message_id = f"assistant:{turn.id}:{budget.used_iterations}"
-            if completion_kwargs.get("stream"):
-                streamed = await self._consume_stream_response(
-                    agent_session=agent_session,
-                    turn=turn,
-                    response=response,
-                    message_id=message_id,
-                    allow_thinking=strategy.allow_thinking,
-                )
-            else:
-                streamed = await self._consume_response(
-                    agent_session=agent_session,
-                    turn=turn,
-                    response=response,
-                    message_id=message_id,
-                    allow_thinking=strategy.allow_thinking,
-                )
-
             token_usage = _merge_usage(token_usage, streamed.token_usage)
             tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
             if tool_calls:
@@ -199,8 +210,8 @@ class AgentLoopController:
                 await self._append_assistant_tool_calls(
                     agent_session=agent_session,
                     turn=turn,
-                    provider=provider,
-                    model=model,
+                    provider=target.provider_kind,
+                    model=target.model_name,
                     tool_calls=tool_calls,
                     text=streamed.text or None,
                 )
@@ -297,7 +308,7 @@ class AgentLoopController:
                 turn_id=str(turn.id),
                 role="assistant",
                 parts=[text_part(final_text)],
-                metadata={"provider": provider, "model": model},
+                metadata={"provider": target.provider_kind, "model": target.model_name},
             )
             return LoopResult(
                 termination_reason="assistant_final",
@@ -399,9 +410,7 @@ class AgentLoopController:
         self,
         *,
         action_id: str,
-        provider: str,
-        model: str,
-        request_args: dict[str, Any],
+        target: ModelTarget,
         capabilities: RuntimeCapabilities = RuntimeCapabilities(),
         strategy: RuntimeStrategy = RuntimeStrategy(),
         max_tokens: int | None = None,
@@ -468,11 +477,9 @@ class AgentLoopController:
             )
         return await self.run_turn(
             turn_id=str(turn.id),
-            provider=provider,
-            model=model,
+            target=target,
             capabilities=capabilities,
             strategy=strategy,
-            request_args=request_args,
             max_tokens=max_tokens,
         )
 
@@ -525,7 +532,11 @@ class AgentLoopController:
                     )
                 )
             ],
-            metadata={"tool_call_id": tool_call_id, "tool": tool_name},
+            metadata={
+                "tool_call_id": tool_call_id,
+                "tool": tool_name,
+                "is_error": bool(result.error) or result.status != "completed",
+            },
         )
 
     async def _execute_tool_call_isolated(self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str):
@@ -559,33 +570,6 @@ class AgentLoopController:
         spec = self.registry.get(tool_name).spec
         return spec.risk_level == "read" and not spec.write_scope
 
-    async def _call_model_with_retry(
-        self,
-        *,
-        turn,
-        completion_kwargs: dict[str, Any],
-        iteration_count: int,
-    ) -> Any:
-        async def _on_retry(next_attempt: int, exc: Exception, delay_seconds: float) -> None:
-            await self.ledger.append(
-                session_id=str(turn.session_id),
-                turn_id=str(turn.id),
-                type=AgentEventType.MODEL_RETRYING,
-                payload={
-                    "next_attempt": next_attempt,
-                    "delay_seconds": delay_seconds,
-                    "error": str(exc),
-                    "iteration_count": iteration_count,
-                },
-            )
-            agent_metrics.increment("models.retries")
-
-        return await run_with_retry(
-            lambda: acompletion(**completion_kwargs),
-            policy=_retry_policy(),
-            on_retry=_on_retry,
-        )
-
     async def _renew_turn_lease(self, turn):
         now = datetime.now(timezone.utc)
         return await self.turns.update_all(
@@ -594,106 +578,93 @@ class AgentLoopController:
             lease_until=now + _turn_lease_duration(),
         )
 
-    async def _consume_stream_response(
+    async def _consume_model_events(
         self,
         *,
         agent_session,
         turn,
-        response: Any,
+        invocation: ModelInvocation,
         message_id: str,
         allow_thinking: bool,
-    ) -> StreamCompletionResult:
-        if not hasattr(response, "__aiter__"):
-            return await self._consume_response(
-                agent_session=agent_session,
-                turn=turn,
-                response=response,
-                message_id=message_id,
-                allow_thinking=allow_thinking,
-            )
-
+    ) -> _ModelTurnResult:
         text_parts: list[str] = []
         thinking_parts: list[str] = []
+        tool_calls: dict[int, _PendingToolCall] = {}
+        usage: dict[str, Any] | None = None
         text_index = 0
         thinking_index = 0
         thinking_completed = False
-        seen_tool_calls: dict[int, StreamToolCall] = {}
-        usage: dict[str, Any] | None = None
+        response_streaming = invocation.stream
 
-        async for chunk in response:
-            usage = _merge_usage(usage, _extract_token_usage(chunk))
-
-            reasoning_delta = extract_reasoning_delta(chunk)
-            if allow_thinking and reasoning_delta:
-                thinking_parts.append(reasoning_delta)
-                await self.ledger.append(
-                    session_id=str(agent_session.id),
-                    turn_id=str(turn.id),
-                    type=AgentEventType.ASSISTANT_THINKING_DELTA,
-                    payload={
-                        "message_id": message_id,
-                        "delta": reasoning_delta,
-                        "content": "".join(thinking_parts),
-                        "index": thinking_index,
-                    },
-                )
+        async for event in self.model_gateway.invoke(invocation):
+            if isinstance(event, ResponseStarted):
+                response_streaming = event.streaming
+            elif isinstance(event, ReasoningDelta):
+                if not allow_thinking or not event.text:
+                    continue
+                thinking_parts.append(event.text)
+                if response_streaming:
+                    await self.ledger.append(
+                        session_id=str(agent_session.id),
+                        turn_id=str(turn.id),
+                        type=AgentEventType.ASSISTANT_THINKING_DELTA,
+                        payload={
+                            "message_id": message_id,
+                            "delta": event.text,
+                            "content": "".join(thinking_parts),
+                            "index": thinking_index,
+                        },
+                    )
                 thinking_index += 1
-
-            text_delta = extract_text_delta(chunk)
-            if text_delta:
+            elif isinstance(event, TextDelta):
                 if allow_thinking and thinking_parts and not thinking_completed:
-                    await self.ledger.append(
-                        session_id=str(agent_session.id),
-                        turn_id=str(turn.id),
-                        type=AgentEventType.ASSISTANT_THINKING_COMPLETED,
-                        payload={
-                            "message_id": message_id,
-                            "content": "".join(thinking_parts).strip(),
-                            "index": max(thinking_index - 1, 0),
-                        },
+                    await self._complete_thinking(
+                        agent_session=agent_session,
+                        turn=turn,
+                        message_id=message_id,
+                        thinking_parts=thinking_parts,
+                        thinking_index=thinking_index,
                     )
                     thinking_completed = True
-                text_parts.append(text_delta)
-                await self.ledger.append(
-                    session_id=str(agent_session.id),
-                    turn_id=str(turn.id),
-                    type=AgentEventType.ASSISTANT_TEXT_DELTA,
-                    payload={
-                        "message_id": message_id,
-                        "delta": text_delta,
-                        "content": "".join(text_parts),
-                        "index": text_index,
-                    },
-                )
-                text_index += 1
-
-            for delta in extract_tool_call_deltas(chunk):
+                if event.text:
+                    text_parts.append(event.text)
+                    if response_streaming:
+                        await self.ledger.append(
+                            session_id=str(agent_session.id),
+                            turn_id=str(turn.id),
+                            type=AgentEventType.ASSISTANT_TEXT_DELTA,
+                            payload={
+                                "message_id": message_id,
+                                "delta": event.text,
+                                "content": "".join(text_parts),
+                                "index": text_index,
+                            },
+                        )
+                    text_index += 1
+            elif isinstance(event, ToolCallDelta):
                 if allow_thinking and thinking_parts and not thinking_completed:
-                    await self.ledger.append(
-                        session_id=str(agent_session.id),
-                        turn_id=str(turn.id),
-                        type=AgentEventType.ASSISTANT_THINKING_COMPLETED,
-                        payload={
-                            "message_id": message_id,
-                            "content": "".join(thinking_parts).strip(),
-                            "index": max(thinking_index - 1, 0),
-                        },
+                    await self._complete_thinking(
+                        agent_session=agent_session,
+                        turn=turn,
+                        message_id=message_id,
+                        thinking_parts=thinking_parts,
+                        thinking_index=thinking_index,
                     )
                     thinking_completed = True
-                seen_before = delta.index in seen_tool_calls
-                state = seen_tool_calls.setdefault(
-                    delta.index,
-                    StreamToolCall(
-                        call_id=delta.call_id or f"tool_call_{delta.index + 1}",
-                        name=delta.name or "",
-                        index=delta.index,
+                seen_before = event.index in tool_calls
+                state = tool_calls.setdefault(
+                    event.index,
+                    _PendingToolCall(
+                        call_id=event.call_id or f"tool_call_{event.index + 1}",
+                        name=event.name or "",
+                        index=event.index,
                     ),
                 )
                 started_before = bool(state.call_id and state.name) if seen_before else False
-                if delta.call_id:
-                    state.call_id = delta.call_id
-                if delta.name:
-                    state.name = delta.name
+                if event.call_id:
+                    state.call_id = event.call_id
+                if event.name:
+                    state.name = event.name
                 if not started_before and state.call_id and state.name:
                     await self.ledger.append(
                         session_id=str(agent_session.id),
@@ -707,38 +678,38 @@ class AgentLoopController:
                             "index": state.index,
                         },
                     )
-                if delta.arguments_delta:
-                    state.arguments_text += delta.arguments_delta
-                    await self.ledger.append(
-                        session_id=str(agent_session.id),
-                        turn_id=str(turn.id),
-                        type=AgentEventType.ASSISTANT_TOOL_CALL_DELTA,
-                        payload={
-                            "message_id": message_id,
-                            "call_id": state.call_id,
-                            "name": state.name,
-                            "arguments_delta": delta.arguments_delta,
-                            "arguments": state.arguments(),
-                            "status": "building",
-                            "index": state.index,
-                        },
-                    )
+                if event.arguments_delta:
+                    state.arguments_text += event.arguments_delta
+                    if response_streaming:
+                        await self.ledger.append(
+                            session_id=str(agent_session.id),
+                            turn_id=str(turn.id),
+                            type=AgentEventType.ASSISTANT_TOOL_CALL_DELTA,
+                            payload={
+                                "message_id": message_id,
+                                "call_id": state.call_id,
+                                "name": state.name,
+                                "arguments_delta": event.arguments_delta,
+                                "arguments": state.arguments(),
+                                "status": "building",
+                                "index": state.index,
+                            },
+                        )
+            elif isinstance(event, UsageReport):
+                usage = _merge_usage(usage, _usage_dict(event))
 
         thinking_text = "".join(thinking_parts).strip()
         if allow_thinking and thinking_text and not thinking_completed:
-            await self.ledger.append(
-                session_id=str(agent_session.id),
-                turn_id=str(turn.id),
-                type=AgentEventType.ASSISTANT_THINKING_COMPLETED,
-                payload={
-                    "message_id": message_id,
-                    "content": thinking_text,
-                    "index": max(thinking_index - 1, 0),
-                },
+            await self._complete_thinking(
+                agent_session=agent_session,
+                turn=turn,
+                message_id=message_id,
+                thinking_parts=thinking_parts,
+                thinking_index=thinking_index,
             )
 
-        tool_calls = [seen_tool_calls[index] for index in sorted(seen_tool_calls)]
-        for tool_call in tool_calls:
+        completed_calls = [tool_calls[index] for index in sorted(tool_calls)]
+        for tool_call in completed_calls:
             await self.ledger.append(
                 session_id=str(agent_session.id),
                 turn_id=str(turn.id),
@@ -766,85 +737,69 @@ class AgentLoopController:
                     "index": max(text_index - 1, 0),
                 },
             )
-
-        return StreamCompletionResult(
+        return _ModelTurnResult(
             text=final_text,
             thinking=thinking_text,
-            tool_calls=tool_calls,
+            tool_calls=completed_calls,
             token_usage=usage,
-            streamed=True,
         )
 
-    async def _consume_response(
+    async def _consume_model_events_with_retry(
         self,
         *,
         agent_session,
         turn,
-        response: Any,
+        invocation: ModelInvocation,
         message_id: str,
         allow_thinking: bool,
-    ) -> StreamCompletionResult:
-        usage = _extract_token_usage(response)
-        thinking_text = extract_response_thinking(response).strip() if allow_thinking else ""
-        if thinking_text:
+    ) -> _ModelTurnResult:
+        async def on_retry(
+            next_attempt: int,
+            exc: Exception,
+            delay_seconds: float,
+        ) -> None:
             await self.ledger.append(
-                session_id=str(agent_session.id),
+                session_id=str(turn.session_id),
                 turn_id=str(turn.id),
-                type=AgentEventType.ASSISTANT_THINKING_COMPLETED,
+                type=AgentEventType.MODEL_RETRYING,
                 payload={
-                    "message_id": message_id,
-                    "content": thinking_text,
-                    "index": 0,
+                    "next_attempt": next_attempt,
+                    "delay_seconds": delay_seconds,
+                    "error": str(exc),
                 },
             )
-        tool_calls = [_stream_tool_call_from_payload(item, index) for index, item in enumerate(_extract_tool_calls(response))]
-        for tool_call in tool_calls:
-            await self.ledger.append(
-                session_id=str(agent_session.id),
-                turn_id=str(turn.id),
-                type=AgentEventType.ASSISTANT_TOOL_CALL_STARTED,
-                payload={
-                    "message_id": message_id,
-                    "call_id": tool_call.call_id,
-                    "name": tool_call.name,
-                    "status": "building",
-                    "index": tool_call.index,
-                },
-            )
-            await self.ledger.append(
-                session_id=str(agent_session.id),
-                turn_id=str(turn.id),
-                type=AgentEventType.ASSISTANT_TOOL_CALL_COMPLETED,
-                payload={
-                    "message_id": message_id,
-                    "call_id": tool_call.call_id,
-                    "name": tool_call.name,
-                    "arguments": tool_call.arguments(),
-                    "status": "completed",
-                    "index": tool_call.index,
-                },
-            )
+            agent_metrics.increment("models.retries")
 
-        final_text = _extract_response_text(response)
-        if final_text:
-            await self.ledger.append(
-                session_id=str(agent_session.id),
-                turn_id=str(turn.id),
-                type=AgentEventType.ASSISTANT_TEXT_COMPLETED,
-                payload={
-                    "message_id": message_id,
-                    "text": final_text,
-                    "content": final_text,
-                    "index": 0,
-                },
-            )
+        return await run_with_retry(
+            lambda: self._consume_model_events(
+                agent_session=agent_session,
+                turn=turn,
+                invocation=invocation,
+                message_id=message_id,
+                allow_thinking=allow_thinking,
+            ),
+            policy=_retry_policy(),
+            on_retry=on_retry,
+        )
 
-        return StreamCompletionResult(
-            text=final_text,
-            thinking=thinking_text,
-            tool_calls=tool_calls,
-            token_usage=usage,
-            streamed=False,
+    async def _complete_thinking(
+        self,
+        *,
+        agent_session,
+        turn,
+        message_id: str,
+        thinking_parts: list[str],
+        thinking_index: int,
+    ) -> None:
+        await self.ledger.append(
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+            type=AgentEventType.ASSISTANT_THINKING_COMPLETED,
+            payload={
+                "message_id": message_id,
+                "content": "".join(thinking_parts).strip(),
+                "index": max(thinking_index - 1, 0),
+            },
         )
 
     async def complete_turn_from_result(self, *, turn, result: LoopResult):
@@ -932,60 +887,17 @@ class AgentLoopController:
         return updated
 
 
-def _extract_response_text(response: Any) -> str:
-    choices = _value(response, "choices") or []
-    if not choices:
-        return ""
-    message = _value(choices[0], "message")
-    content = _value(message, "content") or ""
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            text = item.get("text") if isinstance(item, dict) else getattr(item, "text", None)
-            if isinstance(text, str) and text.strip():
-                parts.append(text.strip())
-        return "\n".join(parts).strip()
-    return ""
-
-
-def _extract_tool_calls(response: Any) -> list[dict[str, Any]]:
-    choices = _value(response, "choices") or []
-    if not choices:
-        return []
-    message = _value(choices[0], "message")
-    raw_tool_calls = _value(message, "tool_calls") or []
-    calls: list[dict[str, Any]] = []
-    for raw in raw_tool_calls:
-        function = _value(raw, "function")
-        name = _value(function, "name")
-        arguments = _value(function, "arguments")
-        call_id = _value(raw, "id")
-        if isinstance(raw, dict):
-            function = raw.get("function") or {}
-            name = function.get("name")
-            arguments = function.get("arguments")
-            call_id = raw.get("id")
-        if not isinstance(name, str):
-            continue
-        if isinstance(arguments, str):
-            try:
-                parsed_arguments = json.loads(arguments or "{}")
-            except json.JSONDecodeError:
-                parsed_arguments = {}
-        elif isinstance(arguments, dict):
-            parsed_arguments = arguments
-        else:
-            parsed_arguments = {}
-        calls.append(
-            {
-                "id": call_id or f"tool_call_{len(calls) + 1}",
-                "name": name,
-                "arguments": parsed_arguments,
-            }
-        )
-    return calls
+def _usage_dict(usage: UsageReport) -> dict[str, int]:
+    result = {
+        "prompt_tokens": usage.input_tokens,
+        "completion_tokens": usage.output_tokens,
+        "total_tokens": usage.total_tokens,
+    }
+    if usage.cached_input_tokens is not None:
+        result["cached_input_tokens"] = usage.cached_input_tokens
+    if usage.reasoning_tokens is not None:
+        result["reasoning_tokens"] = usage.reasoning_tokens
+    return result
 
 
 def _provider_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
@@ -1003,39 +915,12 @@ def _provider_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _tool_call_dict(tool_call: StreamToolCall) -> dict[str, Any]:
+def _tool_call_dict(tool_call: _PendingToolCall) -> dict[str, Any]:
     return {
         "id": tool_call.call_id,
         "name": tool_call.name,
         "arguments": tool_call.arguments(),
     }
-
-
-def _stream_tool_call_from_payload(
-    tool_call: dict[str, Any],
-    index: int,
-) -> StreamToolCall:
-    return StreamToolCall(
-        call_id=str(tool_call.get("id") or f"tool_call_{index + 1}"),
-        name=str(tool_call.get("name") or ""),
-        arguments_text=json.dumps(
-            tool_call.get("arguments") or {},
-            separators=(",", ":"),
-            default=str,
-        ),
-        index=index,
-    )
-
-
-def _extract_token_usage(response: Any) -> dict[str, Any] | None:
-    usage = _value(response, "usage")
-    if usage is None:
-        return None
-    if hasattr(usage, "model_dump"):
-        return usage.model_dump()
-    if isinstance(usage, dict):
-        return usage
-    return {key: value for key, value in vars(usage).items() if not key.startswith("_")}
 
 
 def _merge_usage(
@@ -1055,17 +940,17 @@ def _merge_usage(
     return merged
 
 
+def _turn_lease_duration():
+    seconds = max(int(getattr(settings, "agent_turn_lease_seconds", 300) or 300), 1)
+    return timedelta(seconds=seconds)
+
+
 def _retry_policy() -> RetryPolicy:
     return RetryPolicy(
         max_attempts=max(int(settings.agent_retry_max_attempts or 1), 1),
         base_delay_seconds=max(float(settings.agent_retry_base_delay_seconds or 0.0), 0.0),
         max_delay_seconds=max(float(settings.agent_retry_max_delay_seconds or 0.0), 0.0),
     )
-
-
-def _turn_lease_duration():
-    seconds = max(int(getattr(settings, "agent_turn_lease_seconds", 300) or 300), 1)
-    return timedelta(seconds=seconds)
 
 
 def _tool_call_signature(tool_call: dict[str, Any]) -> str:

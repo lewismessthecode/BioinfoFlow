@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -26,6 +29,14 @@ from app.services.agent_core.transcript import (
     AgentTranscriptStore,
     provider_message_from_parts,
 )
+from app.services.agent_core.transcript.messages import model_input_parts_from_message
+from app.services.model_runtime.contracts import InputPart
+
+
+@dataclass(frozen=True)
+class AgentModelContext:
+    instructions: str
+    input_items: tuple[InputPart, ...]
 
 
 class AgentContextAssembler:
@@ -83,6 +94,20 @@ class AgentContextAssembler:
             for message in messages
             if message.get("content") or message.get("tool_calls")
         ]
+
+    async def model_context(
+        self,
+        *,
+        agent_session,
+        turn,
+        exposed_tools=None,
+    ) -> AgentModelContext:
+        messages = await self.provider_messages(
+            agent_session=agent_session,
+            turn=turn,
+            exposed_tools=exposed_tools,
+        )
+        return model_context_from_messages(messages)
 
     async def _compact_if_needed(self, *, agent_session, turn) -> None:
         policy = getattr(agent_session, "compression_state", None) or {}
@@ -246,6 +271,38 @@ def _active_skill_names_for_turn(turn) -> list[str]:
     if not isinstance(names, list):
         return []
     return [name for name in names if isinstance(name, str) and name.strip()]
+
+
+def model_context_from_messages(messages: list[dict[str, Any]]) -> AgentModelContext:
+    instruction_parts: list[str] = []
+    input_items: list[InputPart] = []
+    for message in messages:
+        role = str(message.get("role") or "")
+        text = message.get("content") if isinstance(message.get("content"), str) else ""
+        if role == "system":
+            if text:
+                instruction_parts.append(text)
+            continue
+        parts: list[dict[str, Any]] = []
+        if text:
+            parts.append({"type": "text", "text": text})
+        raw_calls = message.get("tool_calls")
+        if isinstance(raw_calls, list):
+            parts.append({"type": "tool_calls", "tool_calls": raw_calls})
+        input_items.extend(
+            model_input_parts_from_message(
+                role,
+                parts,
+                {
+                    "tool_call_id": message.get("tool_call_id"),
+                    "is_error": message.get("is_error", False),
+                },
+            )
+        )
+    return AgentModelContext(
+        instructions="\n\n".join(instruction_parts),
+        input_items=tuple(input_items),
+    )
 
 
 def _exposed_tool_lines(exposed_tools) -> list[str]:

@@ -6,7 +6,12 @@ from typing import Any
 from app.services.model_runtime.backend.litellm import LiteLLMBackend
 from app.services.model_runtime.codecs.base import ModelCodec
 from app.services.model_runtime.codecs.chat_completions import ChatCompletionsCodec
-from app.services.model_runtime.contracts import ModelEvent, ModelInvocation, WireProtocol
+from app.services.model_runtime.contracts import (
+    ModelEvent,
+    ModelInvocation,
+    ResponseStarted,
+    WireProtocol,
+)
 
 
 class ModelGateway:
@@ -44,5 +49,6 @@ class ModelGateway:
         if api_key is not None:
             request["api_key"] = api_key
         raw_response = await self._backend.invoke(wire_protocol, request)
+        yield ResponseStarted(streaming=hasattr(raw_response, "__aiter__"))
         async for event in codec.decode_response(raw_response):
             yield event

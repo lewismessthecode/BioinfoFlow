@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,16 @@ from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.agent_core.tools.toolsets import ToolsetExposure
+from app.services.model_runtime.contracts import (
+    CompletionMetadata,
+    ModelEvent,
+    ModelInvocation,
+    TextDelta,
+    ToolCallDelta,
+    ToolCallPart,
+    ToolResultPart,
+    UsageReport,
+)
 from app.utils.exceptions import BadRequestError, PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -60,6 +71,17 @@ class _FakeFilesystemPolicy:
         if not allow_directory:
             assert target.is_file()
         return target
+
+
+class _FakeModelGateway:
+    def __init__(self, *responses: tuple[ModelEvent, ...]) -> None:
+        self.responses = list(responses)
+        self.invocations: list[ModelInvocation] = []
+
+    async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
+        self.invocations.append(invocation)
+        for event in self.responses.pop(0):
+            yield event
 
 
 async def _seed_catalog_model(db_session, *, model_id: str = "harness-model") -> LlmModel:
@@ -298,30 +320,18 @@ async def test_file_ref_without_text_part_keeps_user_prompt(db_session, tmp_path
 
 
 @pytest.mark.asyncio
-async def test_turn_writes_canonical_user_and_assistant_messages(db_session, monkeypatch):
-    async def fake_completion(*args, **kwargs):
-        class FakeUsage:
-            def model_dump(self):
-                return {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8}
-
-        class FakeMessage:
-            content = "Use hg38 for this project."
-            tool_calls = None
-
-        class FakeChoice:
-            message = FakeMessage()
-
-        class FakeResponse:
-            choices = [FakeChoice()]
-            usage = FakeUsage()
-
-        return FakeResponse()
-
-    monkeypatch.setattr("app.services.agent_core.core.loop.acompletion", fake_completion)
+async def test_turn_writes_canonical_user_and_assistant_messages(db_session):
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    service.runtime.model_gateway = _FakeModelGateway(
+        (
+            TextDelta(text="Use hg38 for this project."),
+            UsageReport(input_tokens=3, output_tokens=5, total_tokens=8),
+            CompletionMetadata(response_id="chatcmpl-hg38", finish_reason="stop"),
+        )
+    )
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -350,26 +360,21 @@ async def test_turn_writes_canonical_user_and_assistant_messages(db_session, mon
 
 
 @pytest.mark.asyncio
-async def test_event_sequence_is_session_scoped_across_turns(db_session, monkeypatch):
-    async def fake_completion(*args, **kwargs):
-        class FakeMessage:
-            content = "ok"
-            tool_calls = None
-
-        class FakeChoice:
-            message = FakeMessage()
-
-        class FakeResponse:
-            choices = [FakeChoice()]
-            usage = None
-
-        return FakeResponse()
-
-    monkeypatch.setattr("app.services.agent_core.core.loop.acompletion", fake_completion)
+async def test_event_sequence_is_session_scoped_across_turns(db_session):
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    service.runtime.model_gateway = _FakeModelGateway(
+        (
+            TextDelta(text="ok"),
+            CompletionMetadata(response_id="chatcmpl-first", finish_reason="stop"),
+        ),
+        (
+            TextDelta(text="ok"),
+            CompletionMetadata(response_id="chatcmpl-second", finish_reason="stop"),
+        ),
+    )
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -571,51 +576,39 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
 
 @pytest.mark.asyncio
 async def test_worker_tool_call_is_rechecked_against_worker_exposure(
-    db_session, monkeypatch
+    db_session,
 ):
-    async def fake_completion(*args, **kwargs):
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeFunction:
-            name = "ask_user"
-            arguments = json.dumps(
-                {
-                    "questions": [
-                        {
-                            "question": "Should the worker pause?",
-                            "header": "Pause",
-                            "options": [
-                                {"label": "Yes", "description": "Pause."},
-                                {"label": "No", "description": "Continue."},
-                            ],
-                        }
-                    ]
-                }
-            )
-
-        class FakeToolCall:
-            id = "worker-ask-user"
-            function = FakeFunction()
-
-        class FakeMessage:
-            content = ""
-            tool_calls = [FakeToolCall()]
-
-        choice = FakeChoice()
-        choice.message = FakeMessage()
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.core.loop.acompletion", fake_completion)
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    service.runtime.model_gateway = _FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="worker-ask-user",
+                name="ask_user",
+                arguments_delta=json.dumps(
+                    {
+                        "questions": [
+                            {
+                                "question": "Should the worker pause?",
+                                "header": "Pause",
+                                "options": [
+                                    {"label": "Yes", "description": "Pause."},
+                                    {"label": "No", "description": "Continue."},
+                                ],
+                            }
+                        ]
+                    }
+                ),
+            ),
+            CompletionMetadata(
+                response_id="chatcmpl-worker",
+                finish_reason="tool_calls",
+            ),
+        )
+    )
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -753,66 +746,37 @@ async def test_executor_prefers_persisted_session_target_over_explicit_argument(
 
 @pytest.mark.asyncio
 async def test_approval_resume_executes_tool_and_continues_turn(db_session, monkeypatch):
-    calls = 0
-
-    async def fake_completion(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-
-        class FakeUsage:
-            def model_dump(self):
-                return {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
-
-        class FakeResponse:
-            usage = FakeUsage()
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        message = FakeMessage()
-        if calls == 1:
-            class FakeFunction:
-                name = "bash"
-                arguments = json.dumps(
-                    {
-                        "command": f"{sys.executable} -c 'print(\"approved-tool\")'",
-                        "cwd": str(settings.bioinfoflow_home),
-                    }
-                )
-
-            class FakeToolCall:
-                id = "tool-call-1"
-                function = FakeFunction()
-
-            message.content = ""
-            message.tool_calls = [FakeToolCall()]
-        else:
-            messages = kwargs["messages"]
-            assistant_tool_call = next(
-                message for message in messages if message.get("tool_calls")
-            )
-            tool_result = next(message for message in messages if message["role"] == "tool")
-            assert assistant_tool_call["tool_calls"][0]["id"] == "tool-call-1"
-            assert assistant_tool_call["tool_calls"][0]["function"]["name"] == "bash"
-            assert tool_result["tool_call_id"] == "tool-call-1"
-            message.content = "Final after approved tool."
-            message.tool_calls = None
-
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    gateway = _FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="tool-call-1",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"approved-tool\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
+                ),
+            ),
+            UsageReport(input_tokens=1, output_tokens=1, total_tokens=2),
+            CompletionMetadata(
+                response_id="chatcmpl-tool-call",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            TextDelta(text="Final after approved tool."),
+            UsageReport(input_tokens=1, output_tokens=1, total_tokens=2),
+            CompletionMetadata(response_id="chatcmpl-final", finish_reason="stop"),
+        ),
+    )
+    service.runtime.model_gateway = gateway
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -843,6 +807,17 @@ async def test_approval_resume_executes_tool_and_continues_turn(db_session, monk
     assert resumed_turn.status == "completed"
     assert resumed_turn.final_text == "Final after approved tool."
 
+    resumed_invocation = gateway.invocations[1]
+    tool_call = next(
+        item for item in resumed_invocation.input_items if isinstance(item, ToolCallPart)
+    )
+    tool_result = next(
+        item for item in resumed_invocation.input_items if isinstance(item, ToolResultPart)
+    )
+    assert tool_call.call_id == "tool-call-1"
+    assert tool_call.name == "bash"
+    assert tool_result.call_id == "tool-call-1"
+
     messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
     assert [message.role for message in messages] == ["user", "assistant", "tool", "assistant"]
     assert "approved-tool" in messages[2].content_parts[0]["text"]
@@ -850,59 +825,38 @@ async def test_approval_resume_executes_tool_and_continues_turn(db_session, monk
 
 @pytest.mark.asyncio
 async def test_rejected_tool_decision_continues_turn_with_tool_result(db_session, monkeypatch):
-    calls = 0
-
-    async def fake_completion(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        message = FakeMessage()
-        if calls == 1:
-            class FakeFunction:
-                name = "bash"
-                arguments = json.dumps(
-                    {
-                        "command": f"{sys.executable} -c 'print(\"should-not-run\")'",
-                        "cwd": str(settings.bioinfoflow_home),
-                    }
-                )
-
-            class FakeToolCall:
-                id = "tool-call-rejected"
-                function = FakeFunction()
-
-            message.content = ""
-            message.tool_calls = [FakeToolCall()]
-        else:
-            tool_result = next(
-                item for item in kwargs["messages"] if item["role"] == "tool"
-            )
-            assert tool_result["tool_call_id"] == "tool-call-rejected"
-            assert "UserRejected" in tool_result["content"]
-            message.content = "I will continue without running that tool."
-            message.tool_calls = None
-
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    gateway = _FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="tool-call-rejected",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"should-not-run\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
+                ),
+            ),
+            CompletionMetadata(
+                response_id="chatcmpl-rejected-tool",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            TextDelta(text="I will continue without running that tool."),
+            CompletionMetadata(
+                response_id="chatcmpl-rejected-final",
+                finish_reason="stop",
+            ),
+        ),
+    )
+    service.runtime.model_gateway = gateway
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -931,6 +885,13 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(db_session
     resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
     assert resumed_turn.status == "completed"
     assert resumed_turn.final_text == "I will continue without running that tool."
+    tool_result = next(
+        item
+        for item in gateway.invocations[1].input_items
+        if isinstance(item, ToolResultPart)
+    )
+    assert tool_result.call_id == "tool-call-rejected"
+    assert "UserRejected" in tool_result.output
 
 
 @pytest.mark.asyncio
@@ -938,41 +899,25 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
     db_session,
     monkeypatch,
 ):
-    async def fake_completion(*args, **kwargs):
-        del args, kwargs
-
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        class FakeFunction:
-            name = "bash"
-            arguments = json.dumps({"command": "pwd"})
-
-        class FakeToolCall:
-            id = "tool-call-stale"
-            function = FakeFunction()
-
-        message = FakeMessage()
-        message.content = ""
-        message.tool_calls = [FakeToolCall()]
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    service.runtime.model_gateway = _FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="tool-call-stale",
+                name="bash",
+                arguments_delta=json.dumps({"command": "pwd"}),
+            ),
+            CompletionMetadata(
+                response_id="chatcmpl-stale-tool",
+                finish_reason="tool_calls",
+            ),
+        )
+    )
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
