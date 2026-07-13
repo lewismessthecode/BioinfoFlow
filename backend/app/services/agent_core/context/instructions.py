@@ -236,6 +236,16 @@ def _target_metadata(
         if isinstance(policy_target, dict):
             merged.update(policy_target)
     current_target = execution_target or execution_target_from_session(agent_session)
+    project_connection_id = _first_string(merged, ("remote_connection_id",))
+    target_connection_id = _first_string(current_target, ("connection_id",))
+    if (
+        current_target.get("type") == "remote_ssh"
+        and project_connection_id
+        and target_connection_id
+        and project_connection_id != target_connection_id
+    ):
+        for key in ("remote_project_id", "remote_project_root", "remote_root_path"):
+            merged.pop(key, None)
     merged["execution_target"] = dict(current_target)
     merged.update(current_target)
     return merged

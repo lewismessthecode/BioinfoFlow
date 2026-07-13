@@ -329,6 +329,8 @@ async def test_remote_project_instruction_resolver_accepts_canonical_connection_
         workspace_id="workspace-1",
         user_id="user-1",
         session_metadata={
+            "remote_connection_id": "canonical-conn",
+            "remote_project_id": "project-1",
             "remote_project_root": "/srv/project",
             "execution_target": {
                 "type": "remote_ssh",
@@ -346,6 +348,68 @@ async def test_remote_project_instruction_resolver_accepts_canonical_connection_
     assert context is not None
     assert "canonical target" in context
     assert "Project instructions unavailable" not in context
+
+
+@pytest.mark.asyncio
+async def test_remote_project_instructions_drop_root_when_current_target_changes():
+    resolver_cls, instruction_file_cls = _instruction_classes()
+
+    class CapturingRemoteReader:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def read_first_existing(
+            self,
+            *,
+            agent_session,
+            connection_id: str,
+            directory: str,
+            filenames,
+            max_bytes: int,
+            remote_root: str,
+        ):
+            del agent_session, filenames, max_bytes
+            self.calls.append(
+                {
+                    "connection_id": connection_id,
+                    "directory": directory,
+                    "remote_root": remote_root,
+                }
+            )
+            return instruction_file_cls(
+                source=f"ssh://{connection_id}{directory}/AGENTS.md",
+                content="leaked project A instructions",
+                truncated=False,
+            )
+
+    reader = CapturingRemoteReader()
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "remote_connection_id": "conn-a",
+            "remote_project_id": "project-a",
+            "remote_project_root": "/srv/project-a",
+            "remote_root_path": "/srv/project-a",
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-b",
+            },
+        },
+    )
+
+    target = _target_metadata(session)
+    context = await resolver_cls(max_bytes=32768, remote_reader=reader).resolve(session)
+
+    assert target["connection_id"] == "conn-b"
+    assert "remote_project_id" not in target
+    assert "remote_project_root" not in target
+    assert "remote_root_path" not in target
+    assert reader.calls == []
+    assert context is not None
+    assert "/srv/project-a" not in context
+    assert "leaked project A instructions" not in context
 
 
 @pytest.mark.asyncio
