@@ -5,13 +5,20 @@ import asyncio
 
 import pytest
 
-from app.models.agent_core import AgentActionStatus, AgentToolCallBatchStatus
+from app.models.agent_core import (
+    AgentActionStatus,
+    AgentToolCallBatchStatus,
+    AgentTurnStatus,
+)
 from app.models.llm import LlmModel, LlmProvider
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
+    AgentEventRepository,
     AgentMessageRepository,
+    AgentSessionRepository,
     AgentToolCallBatchRepository,
+    AgentTurnRepository,
 )
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
@@ -129,7 +136,6 @@ async def test_three_approvals_continue_only_after_entire_batch_is_terminal(
         user_id="dev",
         input_text="Run three commands.",
     )
-
     waiting = await service.runtime.run_turn(str(turn.id))
 
     assert waiting.status == "waiting_approval"
@@ -1342,3 +1348,61 @@ async def test_recovery_never_crosses_earlier_unresolved_batch_when_timestamps_t
     monkeypatch.setattr(service_module, "enqueue_turn_resume", lambda action_id, *_: wakeups.append(action_id))
     assert await service._recover_turn(str(turn.id)) == "waiting"
     assert wakeups == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["cancel_turn", "interrupt_turn"])
+async def test_cancel_and_interrupt_finalize_waiting_batch_idempotently(
+    db_session, monkeypatch, operation
+):
+    async def fake_completion(*args, **kwargs):
+        del args, kwargs
+        return _response(
+            tool_calls=[
+                ("stop-1", "bash", {"command": "printf one"}),
+                ("stop-2", "bash", {"command": "printf two"}),
+            ]
+        )
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr("app.services.agent_core.service.cancel_turn_run", lambda *_: False)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", permission_mode="ask_each_action"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id), workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", input_text="Wait then stop."
+    )
+    session_id = str(session.id)
+    turn_id = str(turn.id)
+    waiting = await service.runtime.run_turn(str(turn.id))
+    assert waiting.status == "waiting_approval"
+
+    method = getattr(service, operation)
+    first = await method(turn_id=turn_id, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev")
+    second = await method(turn_id=turn_id, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev")
+    assert first.status == second.status == AgentTurnStatus.CANCELLED
+
+    maker = async_sessionmaker(bind=db_session.bind, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as fresh:
+        actions = await AgentActionRepository(fresh).list_for_turn(turn_id)
+        batches, _ = await AgentToolCallBatchRepository(fresh).list(limit=10)
+        messages = await AgentMessageRepository(fresh).list_for_session(session_id)
+        events = await AgentEventRepository(fresh).list_for_turn(turn_id=turn_id)
+        fresh_session = await AgentSessionRepository(fresh).get(session_id)
+        fresh_turn = await AgentTurnRepository(fresh).get(turn_id)
+        provider_messages = await AgentContextAssembler(fresh).provider_messages(
+            agent_session=fresh_session, turn=fresh_turn
+        )
+
+    assert all(action.status == AgentActionStatus.CANCELLED for action in actions)
+    assert all(batch.status == AgentToolCallBatchStatus.CANCELLED for batch in batches)
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
+        "stop-1", "stop-2"
+    ]
+    event_type = "turn.cancelled" if operation == "cancel_turn" else "turn.interrupted"
+    assert sum(event.type == event_type for event in events) == 1
+    provider_tools = [message for message in provider_messages if message.get("role") == "tool"]
+    assert [message["tool_call_id"] for message in provider_tools] == ["stop-1", "stop-2"]

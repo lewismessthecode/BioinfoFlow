@@ -96,6 +96,14 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
 class AgentTurnRepository(BaseRepository[AgentTurn]):
     model = AgentTurn
 
+    async def get_fresh(self, turn_id: str) -> AgentTurn | None:
+        result = await self.session.execute(
+            select(self.model)
+            .where(self.model.id == turn_id)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
     async def list_for_session(self, session_id: str) -> list[AgentTurn]:
         stmt = (
             select(self.model)
@@ -121,6 +129,40 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def claim_cancelled(
+        self,
+        turn_id: str,
+        *,
+        termination_reason: str,
+        interrupted_at=None,
+    ) -> bool:
+        values = {
+            "status": AgentTurnStatus.CANCELLED,
+            "termination_reason": termination_reason,
+            "completed_at": func.now(),
+            "loop_state": {"termination_reason": termination_reason},
+            "claimed_at": None,
+            "lease_until": None,
+        }
+        if interrupted_at is not None:
+            values["interrupt_requested_at"] = interrupted_at
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.not_in(
+                    [
+                        AgentTurnStatus.COMPLETED,
+                        AgentTurnStatus.FAILED,
+                        AgentTurnStatus.CANCELLED,
+                    ]
+                ),
+            )
+            .values(**values)
+            .returning(self.model.id)
+        )
+        return result.scalar_one_or_none() is not None
 
 
 class AgentMessageRepository(BaseRepository[AgentMessage]):
@@ -407,6 +449,18 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
         changed = result.scalar_one_or_none() is not None
         await self.session.commit()
         return changed
+
+    async def cancel_nonterminal_pending(self, batch_id: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == batch_id,
+                self.model.status.in_(["evaluating", "waiting", "ready", "continuing"]),
+            )
+            .values(status="cancelled", completed_at=datetime.now(timezone.utc))
+            .returning(self.model.id)
+        )
+        return result.scalar_one_or_none() is not None
 
 
 class AgentArtifactRepository(BaseRepository[AgentArtifact]):

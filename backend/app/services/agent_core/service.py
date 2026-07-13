@@ -401,25 +401,13 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        now = datetime.now(timezone.utc)
         cancelled_in_runner = cancel_turn_run(str(turn.id))
-        await self._cancel_open_actions(str(turn.id), cancelled_at=now)
-        updated = await self.turn_repo.update_all(
+        return await self._finalize_cancelled_turn(
             turn,
-            status=AgentTurnStatus.CANCELLED,
             termination_reason="cancelled",
-            completed_at=now,
-            loop_state={"termination_reason": "cancelled"},
-            claimed_at=None,
-            lease_until=None,
+            event_type=AgentEventType.TURN_CANCELLED,
+            event_payload={"task_cancelled": cancelled_in_runner},
         )
-        await self.ledger.append(
-            session_id=str(turn.session_id),
-            turn_id=str(turn.id),
-            type=AgentEventType.TURN_CANCELLED,
-            payload={"task_cancelled": cancelled_in_runner},
-        )
-        return updated
 
     async def interrupt_turn(
         self,
@@ -433,29 +421,97 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        now = datetime.now(timezone.utc)
         cancelled_in_runner = cancel_turn_run(str(turn.id))
-        await self._cancel_open_actions(str(turn.id), cancelled_at=now)
-        updated = await self.turn_repo.update_all(
+        return await self._finalize_cancelled_turn(
             turn,
-            status=AgentTurnStatus.CANCELLED,
-            interrupt_requested_at=now,
             termination_reason="interrupted",
-            completed_at=now,
-            loop_state={"termination_reason": "interrupted"},
-            claimed_at=None,
-            lease_until=None,
-        )
-        await self.ledger.append(
-            session_id=str(updated.session_id),
-            turn_id=str(updated.id),
-            type=AgentEventType.TURN_INTERRUPTED,
-            payload={
+            event_type=AgentEventType.TURN_INTERRUPTED,
+            event_payload={
                 "termination_reason": "interrupted",
                 "task_cancelled": cancelled_in_runner,
             },
+            interrupted_at=datetime.now(timezone.utc),
         )
-        return updated
+
+    async def _finalize_cancelled_turn(
+        self,
+        turn,
+        *,
+        termination_reason: str,
+        event_type: str,
+        event_payload: dict,
+        interrupted_at: datetime | None = None,
+    ):
+        turn_id = str(turn.id)
+        session_id = str(turn.session_id)
+        claimed = await self.turn_repo.claim_cancelled(
+            turn_id,
+            termination_reason=termination_reason,
+            interrupted_at=interrupted_at,
+        )
+        if not claimed:
+            await self.db.rollback()
+            return await self.turn_repo.get_fresh(turn_id)
+
+        messages = await self.transcript.list_messages(session_id)
+        existing_action_results = {
+            str((message.message_metadata or {}).get("action_id"))
+            for message in messages
+            if message.role == "tool" and (message.message_metadata or {}).get("action_id")
+        }
+        now = datetime.now(timezone.utc)
+        batches = await self.tool_batch_repo.list_nonterminal_for_turn(turn_id)
+        for batch in batches:
+            await self.tool_batch_repo.cancel_nonterminal_pending(str(batch.id))
+            for action in await self.action_repo.list_for_batch(str(batch.id)):
+                if action.status in {
+                    AgentActionStatus.WAITING_DECISION,
+                    AgentActionStatus.REQUESTED,
+                    AgentActionStatus.RUNNING,
+                }:
+                    action = await self.action_repo.update_all_pending(
+                        action,
+                        status=AgentActionStatus.CANCELLED,
+                        requires_resume=False,
+                        error={
+                            "type": "CancelledError",
+                            "message": f"Tool action cancelled because the turn was {termination_reason}.",
+                        },
+                        completed_at=now,
+                    )
+                if str(action.id) in existing_action_results:
+                    continue
+                await self.transcript.append_text(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    role="tool",
+                    text=json.dumps(
+                        {
+                            "tool": action.name,
+                            "status": action.status,
+                            "result": action.result,
+                            "error": action.error,
+                        },
+                        separators=(",", ":"),
+                        default=str,
+                    ),
+                    metadata={
+                        "tool_call_id": action.tool_call_id,
+                        "tool": action.name,
+                        "action_id": str(action.id),
+                        "tool_batch_id": str(batch.id),
+                    },
+                    commit=False,
+                )
+        await self.ledger.append(
+            session_id=session_id,
+            turn_id=turn_id,
+            type=event_type,
+            payload=event_payload,
+            commit=False,
+        )
+        await self.db.commit()
+        return await self.turn_repo.get_fresh(turn_id)
 
     async def list_events_for_turn(
         self,
