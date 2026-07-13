@@ -141,6 +141,27 @@ async def test_bash_tool_hard_blocks_catastrophic_command_even_in_bypass(db_sess
 
 
 @pytest.mark.asyncio
+async def test_bash_tool_asks_before_disabling_sandbox_even_in_bypass(db_session):
+    dispatcher, context, workspace_root = await _shell_context(db_session)
+
+    result = await dispatcher.dispatch(
+        tool_name="bash",
+        input={
+            "command": "pwd",
+            "cwd": str(workspace_root),
+            "dangerously_disable_sandbox": True,
+        },
+        context=context,
+        permission_mode="bypass",
+        automation_mode="autonomous",
+    )
+
+    assert result.status == "waiting_decision"
+    assert result.permission_decision["decision"] == "ask"
+    assert result.result is None
+
+
+@pytest.mark.asyncio
 async def test_bash_tool_defaults_cwd_to_repo_root(db_session):
     dispatcher, context, _workspace_root = await _shell_context(db_session)
 

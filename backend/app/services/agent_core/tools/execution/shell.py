@@ -90,6 +90,9 @@ class ExecuteShellTool:
                 write_roots=roots,
                 working_directory=str(input.get("cwd") or settings.repo_root),
                 network_allowed=runner.allow_network,
+                sandbox_bypass_requested=bool(
+                    input.get("dangerously_disable_sandbox", False)
+                ),
             )
         return assess_command_risk(command, target=target)
 

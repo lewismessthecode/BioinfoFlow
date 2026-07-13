@@ -38,7 +38,7 @@ the weaker remote boundary.
 4. Approval and execution transitions are idempotent across requests, workers,
    restarts, and duplicate queue delivery.
 5. Local and remote commands use one command-risk vocabulary with target-aware
-   adjustments and a small non-bypassable catastrophic floor.
+   adjustments and a small high-confidence catastrophic hard-deny floor.
 6. The UI makes future-only versus pending-action effects explicit and provides
    reliable loading, error, accessibility, and target-boundary feedback.
 7. Existing interaction tools such as user questions and plan approval remain
@@ -196,11 +196,13 @@ Target adaptation then changes the result:
 - unknown, variable, absolute-outside-root, or symlink-sensitive remote paths
   require approval rather than being treated as proven safe.
 
-The catastrophic hard block remains deliberately small and non-bypassable:
-root/protected-system recursive destruction, block-device overwrite or format,
-host shutdown/reboot, and fork-bomb equivalents. Detection must understand
-command positions, common wrappers, quoted root forms, command separators, and
-shell wrappers without flagging data strings such as `echo reboot`.
+The catastrophic hard block remains deliberately small: high-confidence matches
+for root/protected-system recursive destruction, block-device overwrite or
+format, direct host shutdown/reboot, and fork-bomb equivalents are hard denied.
+Detection must understand command positions, common wrappers, quoted root forms,
+command separators, and shell wrappers without flagging data strings such as
+`echo reboot`. Statically uncertain forms require approval; this classifier is
+defense in depth, not an operating-system boundary.
 
 Sensitive policy, credential, SSH, sudoers, and shell-startup writes are
 protected resources. They force an explicit decision even when ordinary
@@ -361,7 +363,9 @@ existing bounded/redacted action records.
 ## Security Boundary Statement
 
 “Full access” means Bioinfoflow does not request ordinary risk approvals for the
-selected target. It does not bypass catastrophic hard blocks, interaction
-requirements, workspace/admin policy, SSH account privileges, remote server
-controls, or an operating-system sandbox that remains configured. The UI and
-documentation must use this definition consistently.
+selected target. High-confidence catastrophic matches remain hard denied, and
+protected or indirect operations can still require explicit approval. It does
+not grant new workspace/admin or SSH privileges and does not disable a configured
+operating-system sandbox. Local OS enforcement or the remote account and server
+policy is the true security boundary. The UI and documentation must use this
+definition consistently.

@@ -80,9 +80,12 @@ stored as one durable batch: every call must have a terminal result before one
 database-claimed continuation may invoke the model again.
 
 "Full access" is the UI name for bypassing ordinary risk approvals on the
-selected target. It does not bypass catastrophic hard blocks, protected-resource
-approval, explicit user/plan interactions, workspace or administrator policy,
-an enabled local OS sandbox, or remote SSH account and server controls.
+selected target. High-confidence catastrophic matches remain hard denied;
+protected-resource writes, indirect command forms, and sandbox opt-out can still
+require explicit approval. The classifier is not a complete shell security
+boundary: actual confinement comes from an enabled local OS sandbox or, for SSH,
+the remote account and server controls. Explicit user/plan interactions and
+workspace or administrator policy remain independent.
 
 ## Remote Connections
 

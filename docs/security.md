@@ -123,11 +123,19 @@ The sandbox and approval policy are separate controls:
 
 "Full access" (`bypass`) skips ordinary risk prompts for the selected target.
 It does not disable an active local sandbox or bypass remote account authority.
-Catastrophic operations such as root filesystem destruction, unsafe block-device
-writes or formats, host shutdown/reboot, and fork-bomb equivalents remain
-non-bypassable. Writes to protected credentials, SSH configuration, sudoers,
-shell startup files, and permission-policy resources still require an explicit
-decision.
+High-confidence matches for catastrophic operations, including recognized root
+filesystem destruction, unsafe block-device writes or formats, direct host
+shutdown/reboot, and fork-bomb forms, are hard denied even in Full access.
+Dynamic or indirect command forms that cannot be proved safe require explicit
+approval, as do sandbox opt-out and writes to protected credentials, SSH
+configuration, sudoers, shell startup files, and permission-policy resources.
+
+Command classification is a policy and review aid, not complete shell
+confinement: obfuscated programs and runtime-generated arguments cannot all be
+understood statically. The enforceable boundary is an active local OS sandbox;
+for SSH execution it is the remote Unix account plus sudo, ACL, scheduler, and
+server policy. Keep those controls enabled even when approval prompts are
+relaxed.
 
 ## Agent Permission And Approval Integrity
 

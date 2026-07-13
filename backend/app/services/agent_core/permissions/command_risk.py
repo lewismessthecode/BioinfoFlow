@@ -35,6 +35,7 @@ class CommandTargetProfile:
     network_allowed: bool | None = None
     privileged: bool = False
     connection_id: str | None = None
+    sandbox_bypass_requested: bool = False
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,7 @@ def command_target_profile_from_context(
         network_allowed=(
             True if sandbox_disabled else bool(boundary.get("network_allowed", True))
         ),
+        sandbox_bypass_requested=sandbox_disabled,
     )
 
 
@@ -129,8 +131,11 @@ def assess_command_risk(
     nodes = _parse_command_nodes(_strip_heredoc_bodies(command))
     effects = _command_effects(nodes)
     sink_safety = _analyze_write_sink_safety(nodes)
+    execution_safety = _analyze_indirect_execution_safety(nodes)
     referenced_paths, path_analysis_confident = _referenced_paths(nodes, target=target)
-    protected_resources = _protected_resources(referenced_paths)
+    protected_resources = _protected_resources(
+        [*referenced_paths, *sink_safety.protected_paths]
+    )
     reasons = [f"command semantics classified as {level}"]
     hard_blocked = level == "critical"
 
@@ -187,14 +192,18 @@ def assess_command_risk(
     if sink_safety.low_confidence:
         confidence = "low"
 
-    protected_write = bool(protected_resources) and bool(
-        {"write", "delete"}.intersection(effects)
-    )
+    protected_write = bool(sink_safety.protected_paths)
     if protected_write:
         reasons.append("the command mutates a protected resource")
 
     if sink_safety.requires_explicit_approval:
         reasons.extend(sink_safety.reasons)
+    if execution_safety.requires_explicit_approval:
+        reasons.extend(execution_safety.reasons)
+    if target.sandbox_bypass_requested:
+        reasons.append(
+            "disabling the operating-system sandbox requires explicit approval"
+        )
 
     return CommandRiskAssessment(
         level=level,
@@ -203,7 +212,10 @@ def assess_command_risk(
             {"type": "path", "id": path} for path in referenced_paths[:32]
         ],
         requires_explicit_approval=(
-            protected_write or sink_safety.requires_explicit_approval
+            protected_write
+            or sink_safety.requires_explicit_approval
+            or execution_safety.requires_explicit_approval
+            or target.sandbox_bypass_requested
         ),
         effects=effects,
         confidence=confidence,
@@ -221,6 +233,7 @@ def assess_command_risk(
             "enforced": target.sandbox_strength == "enforced",
             "sandbox_strength": target.sandbox_strength,
             "working_directory": target.working_directory,
+            "sandbox_bypass_requested": target.sandbox_bypass_requested,
         },
         hard_blocked=hard_blocked,
     )
@@ -351,48 +364,13 @@ _WRAPPERS = frozenset(
     {"env", "command", "exec", "nohup", "sudo", "timeout", "nice", "setsid"}
 )
 _SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})
+_INLINE_INTERPRETERS = frozenset(
+    {"python", "python3", "pypy", "pypy3", "node", "ruby", "perl", "php"}
+)
 _SHUTDOWN_EXECUTABLES = frozenset({"shutdown", "reboot", "halt", "poweroff"})
 _ROOTISH = frozenset({"/", "/*", "~", "$HOME", "${HOME}", ".."})
 
-_GIT_READ = frozenset(
-    {
-        "status",
-        "log",
-        "diff",
-        "show",
-        "branch",
-        "rev-parse",
-        "ls-files",
-        "ls-remote",
-        "describe",
-        "blame",
-        "tag",
-        "remote",
-        "config",
-        "cat-file",
-        "shortlog",
-        "reflog",
-        "whatchanged",
-    }
-)
 _GIT_EXTERNAL = frozenset({"push", "pull", "fetch", "clone", "submodule"})
-_DOCKER_READ = frozenset(
-    {
-        "ps",
-        "images",
-        "image",
-        "inspect",
-        "logs",
-        "version",
-        "info",
-        "stats",
-        "top",
-        "port",
-        "history",
-        "search",
-        "context",
-    }
-)
 _DOCKER_EXTERNAL = frozenset({"pull", "push", "login", "logout"})
 _DOCKER_DESTRUCTIVE = frozenset({"rm", "rmi", "prune", "kill", "stop", "volume"})
 
@@ -448,13 +426,30 @@ def _classify_node(node: _CommandNode) -> RiskLevel:
         if command_arg is not None:
             inner = classify_command_level(command_arg)
             return _max_level("destructive" if elevated else "read", inner)
+    if executable in _INLINE_INTERPRETERS:
+        inline_code = _interpreter_inline_code(executable, args)
+        if inline_code is not None and _inline_code_contains_known_hardline(
+            inline_code
+        ):
+            return "critical"
     if executable == "eval" and args:
         return classify_command_level(" ".join(args))
     if executable in _SHUTDOWN_EXECUTABLES:
         return "critical"
+    if executable == "systemctl" and _first_positional(args) in _SHUTDOWN_EXECUTABLES:
+        return "critical"
+    if executable == "busybox":
+        nested = _busybox_command(args)
+        if nested:
+            return _classify_node(_CommandNode(tokens=tuple(nested)))
     if executable == "init" and next(
         (arg for arg in args if not arg.startswith("-")), None
     ) in {"0", "6"}:
+        return "critical"
+    if any(
+        _is_unsafe_device_write_target(destination)
+        for destination in _write_sink_destinations(node)
+    ):
         return "critical"
     if executable.startswith("mkfs"):
         targets = [arg for arg in args if not arg.startswith("-")]
@@ -463,14 +458,6 @@ def _classify_node(node: _CommandNode) -> RiskLevel:
             if any(_is_unsafe_device_write_target(path) for path in targets)
             else "destructive"
         )
-    if executable == "dd" and any(
-        _is_unsafe_device_assignment(arg, "of") for arg in args
-    ):
-        return "critical"
-    if _writes_unsafe_device(executable, args):
-        return "critical"
-    if _redirects_to_unsafe_device(tokens):
-        return "critical"
     if executable == "rm" and _recursive_rm_targets_root(args):
         return "critical"
     if executable == "chmod" and _recursive_chmod_targets_root(args):
@@ -493,6 +480,16 @@ def _classify_node(node: _CommandNode) -> RiskLevel:
         return _classify_git(args)
     if executable == "docker":
         return _classify_docker(args)
+    if executable == "sort":
+        if _has_output_option(args, {"-o", "--output"}):
+            return "act_high"
+        _, confident = _sort_file_arguments(args)
+        return "act_low" if confident else "act_high"
+    if executable == "diff":
+        if _has_output_option(args, {"--output"}):
+            return "act_high"
+        _, confident = _diff_file_arguments(args)
+        return "act_low" if confident else "act_high"
     if _is_read_only_platform_command(executable, args):
         return "act_low"
     if executable in {"sed", "perl"} and any(arg.startswith("-i") for arg in args):
@@ -619,6 +616,79 @@ def _shell_command_argument(args: list[str]) -> str | None:
     return None
 
 
+def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
+    flags = {"-c"}
+    if executable == "node":
+        flags = {"-e", "--eval", "-p", "--print"}
+    elif executable in {"ruby", "perl"}:
+        flags = {"-e"}
+    elif executable == "php":
+        flags = {"-r"}
+    for index, arg in enumerate(args):
+        if arg in flags and index + 1 < len(args):
+            return args[index + 1]
+    return None
+
+
+def _inline_code_contains_known_hardline(code: str) -> bool:
+    call_pattern = re.compile(
+        r"(?:\bos\s*\.\s*system|\bsystem|\bexec(?:v|ve|vp|vpe)?|"
+        r"\bsubprocess\s*\.\s*(?:run|call|check_call|check_output|Popen)|"
+        r"\bchild_process\s*\.\s*(?:exec|execSync|spawn|spawnSync))"
+        r"\s*\(([^)]*)\)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in call_pattern.finditer(code):
+        literals = [
+            value for _quote, value in re.findall(r"(['\"])(.*?)\1", match.group(1))
+        ]
+        if literals and classify_command_level(" ".join(literals)) == "critical":
+            return True
+    return False
+
+
+def _first_positional(args: list[str]) -> str | None:
+    return next((arg for arg in args if not arg.startswith("-")), None)
+
+
+def _busybox_command(args: list[str]) -> list[str]:
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        if args[index] in {"--help", "--list", "--list-full", "--install"}:
+            return []
+        index += 1
+    return args[index:]
+
+
+def _has_output_option(args: list[str], options: set[str]) -> bool:
+    return bool(_output_option_destinations(args, options))
+
+
+def _output_option_destinations(args: list[str], options: set[str]) -> list[str]:
+    destinations: list[str] = []
+    for index, arg in enumerate(args):
+        if arg in options:
+            destinations.append(
+                args[index + 1]
+                if index + 1 < len(args)
+                else "$UNRESOLVED_MISSING_OUTPUT"
+            )
+            continue
+        for option in options:
+            if option.startswith("--") and arg.startswith(f"{option}="):
+                destinations.append(
+                    arg.split("=", 1)[1] or "$UNRESOLVED_MISSING_OUTPUT"
+                )
+            elif (
+                option.startswith("-")
+                and not option.startswith("--")
+                and arg.startswith(option)
+                and arg != option
+            ):
+                destinations.append(arg[len(option) :])
+    return _dedupe(destinations)
+
+
 def _recursive_rm_targets_root(args: list[str]) -> bool:
     recursive = False
     targets: list[str] = []
@@ -653,20 +723,6 @@ def _rootish_path(value: str) -> bool:
         normalized = posixpath.normpath("/" + value.lstrip("/"))
         return normalized == "/"
     return False
-
-
-def _redirects_to_unsafe_device(tokens: list[str]) -> bool:
-    return any(
-        tokens[index] in {">", ">>"}
-        and _is_unsafe_device_write_target(tokens[index + 1])
-        for index in range(len(tokens) - 1)
-    )
-
-
-def _is_unsafe_device_assignment(value: str, key: str) -> bool:
-    return value.startswith(f"{key}=") and _is_unsafe_device_write_target(
-        value.split("=", 1)[1]
-    )
 
 
 _SAFE_DEVICE_WRITE_TARGETS = frozenset(
@@ -707,6 +763,71 @@ class _WriteSinkSafety:
     requires_explicit_approval: bool = False
     low_confidence: bool = False
     reasons: tuple[str, ...] = ()
+    protected_paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _IndirectExecutionSafety:
+    requires_explicit_approval: bool = False
+    reasons: tuple[str, ...] = ()
+
+
+def _analyze_indirect_execution_safety(
+    nodes: list[_CommandNode],
+) -> _IndirectExecutionSafety:
+    reasons: list[str] = []
+    for node in nodes:
+        tokens, _ = _unwrap_command(list(node.tokens))
+        if not tokens:
+            continue
+        executable = _basename(tokens[0])
+        args = tokens[1:]
+        if executable in _SHELLS:
+            command_arg = _shell_command_argument(args)
+            if command_arg is not None and (
+                _is_unresolved_inline_code(command_arg)
+                or _contains_danger_literal(command_arg)
+            ):
+                reasons.append(
+                    "unproven shell -c source or danger literal requires explicit approval"
+                )
+        elif executable in _INLINE_INTERPRETERS:
+            if _interpreter_inline_code(executable, args) is not None:
+                reasons.append(
+                    "inline interpreter source cannot be proven side-effect free"
+                )
+        elif executable == "xargs":
+            nested = _xargs_command(args)
+            if nested:
+                nested_level = classify_command_level(" ".join(nested))
+                nested_executable = _basename(nested[0])
+                if nested_level == "destructive" or nested_executable in {
+                    *_SHELLS,
+                    *_INLINE_INTERPRETERS,
+                }:
+                    reasons.append(
+                        "xargs supplies an indirect runtime target to an elevated command"
+                    )
+    return _IndirectExecutionSafety(
+        requires_explicit_approval=bool(reasons),
+        reasons=tuple(_dedupe(reasons)),
+    )
+
+
+def _is_unresolved_inline_code(code: str) -> bool:
+    stripped = code.strip()
+    return not stripped or any(marker in stripped for marker in ("$", "`", "$("))
+
+
+def _contains_danger_literal(code: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:^|[^A-Za-z0-9_])(?:shutdown|reboot|halt|poweroff|mkfs(?:\.[A-Za-z0-9_+-]+)?)(?:$|[^A-Za-z0-9_])",
+            code,
+            re.IGNORECASE,
+        )
+        or re.search(r"\brm\b[^\n]{0,80}\s-(?:[^\s]*r[^\s]*f|[^\s]*f[^\s]*r)\b", code)
+    )
 
 
 def _analyze_write_sink_safety(nodes: list[_CommandNode]) -> _WriteSinkSafety:
@@ -714,42 +835,46 @@ def _analyze_write_sink_safety(nodes: list[_CommandNode]) -> _WriteSinkSafety:
     requires_explicit = False
     low_confidence = False
     reasons: list[str] = []
+    protected_paths: list[str] = []
     for node in nodes:
         symlink = _symlink_binding(node)
         if symlink is not None:
             link, target = symlink
-            aliases[_alias_key(link)] = target
+            aliases[_alias_key(link)] = _resolve_alias_target(
+                _symlink_target_path(link, target), aliases
+            )
             continue
         for destination in _write_sink_destinations(node):
-            if _is_unresolved_sink_path(destination):
+            resolved_destination = _resolve_alias_target(destination, aliases)
+            protected_paths.extend(
+                item["path"] for item in _protected_resources([resolved_destination])
+            )
+            if _is_unresolved_sink_path(resolved_destination):
                 requires_explicit = True
                 low_confidence = True
-                reasons.append(
-                    "indirect or unresolved write destination requires explicit approval"
-                )
-                continue
-            alias_target = aliases.get(_alias_key(destination))
-            if alias_target is not None:
-                if _is_unresolved_sink_path(alias_target):
-                    requires_explicit = True
-                    low_confidence = True
+                if resolved_destination != destination:
                     reasons.append(
                         "write destination follows a symlink with an unresolved target"
                     )
-                elif _is_sensitive_pseudo_device_target(alias_target):
-                    requires_explicit = True
+                else:
+                    reasons.append(
+                        "indirect or unresolved write destination requires explicit approval"
+                    )
+            if _is_sensitive_pseudo_device_target(resolved_destination):
+                requires_explicit = True
+                if resolved_destination != destination:
                     reasons.append(
                         "write destination follows a symlink into a sensitive pseudo-device subtree"
                     )
-            if _is_sensitive_pseudo_device_target(destination):
-                requires_explicit = True
-                reasons.append(
-                    "write destination is in a sensitive non-block device subtree"
-                )
+                else:
+                    reasons.append(
+                        "write destination is in a sensitive non-block device subtree"
+                    )
     return _WriteSinkSafety(
         requires_explicit_approval=requires_explicit,
         low_confidence=low_confidence,
         reasons=tuple(_dedupe(reasons)),
+        protected_paths=tuple(_dedupe(protected_paths)),
     )
 
 
@@ -759,17 +884,40 @@ def _compound_alias_targets_unsafe_device(nodes: list[_CommandNode]) -> bool:
         symlink = _symlink_binding(node)
         if symlink is not None:
             link, target = symlink
-            aliases[_alias_key(link)] = target
+            aliases[_alias_key(link)] = _resolve_alias_target(
+                _symlink_target_path(link, target), aliases
+            )
             continue
         for destination in _write_sink_destinations(node):
-            target = aliases.get(_alias_key(destination))
-            if target is not None and _is_unsafe_device_write_target(target):
+            target = _resolve_alias_target(destination, aliases)
+            if target != destination and _is_unsafe_device_write_target(target):
                 return True
     return False
 
 
 def _alias_key(path: str) -> str:
     return path if _is_unresolved_sink_path(path) else posixpath.normpath(path)
+
+
+def _resolve_alias_target(path: str, aliases: dict[str, str]) -> str:
+    current = path
+    seen: set[str] = set()
+    while True:
+        key = _alias_key(current)
+        if key in seen:
+            return "$UNRESOLVED_SYMLINK_CYCLE"
+        seen.add(key)
+        target = aliases.get(key)
+        if target is None:
+            return current
+        current = target
+
+
+def _symlink_target_path(link: str, target: str) -> str:
+    if target.startswith(("/", "~", "$")) or _is_unresolved_sink_path(target):
+        return target
+    parent = posixpath.dirname(link)
+    return posixpath.normpath(posixpath.join(parent, target)) if parent else target
 
 
 def _symlink_binding(node: _CommandNode) -> tuple[str, str] | None:
@@ -807,7 +955,7 @@ def _write_sink_destinations(node: _CommandNode) -> list[str]:
     if executable == "tee":
         destinations.extend(positional)
     elif executable in {"cp", "install", "mv"}:
-        destinations.extend(_copy_move_destinations(args))
+        destinations.extend(_copy_move_destinations(executable, args))
     elif executable == "dd":
         destinations.extend(
             arg.split("=", 1)[1] for arg in args if arg.startswith("of=")
@@ -819,17 +967,96 @@ def _write_sink_destinations(node: _CommandNode) -> list[str]:
     elif executable in {"sed", "perl"} and any(arg.startswith("-i") for arg in args):
         destinations.extend(_editor_file_arguments(args))
     elif executable == "sort":
-        for index, arg in enumerate(args):
-            if arg in {"-o", "--output"} and index + 1 < len(args):
-                destinations.append(args[index + 1])
-            elif arg.startswith("--output="):
-                destinations.append(arg.split("=", 1)[1])
+        destinations.extend(_output_option_destinations(args, {"-o", "--output"}))
+    elif executable == "diff":
+        destinations.extend(_output_option_destinations(args, {"--output"}))
+    elif executable == "git" and args[:1] == ["diff"]:
+        destinations.extend(_output_option_destinations(args[1:], {"--output"}))
+    elif executable in {"rm", "rmdir", "touch", "mkdir", "chmod", "chown"}:
+        destinations.extend(positional)
     return _dedupe(destinations)
 
 
-def _copy_move_destinations(args: list[str]) -> list[str]:
+def _copy_move_destinations(executable: str, args: list[str]) -> list[str]:
     target_directories: list[str] = []
     positional: list[str] = []
+    uncertain = False
+    value_options = {
+        "-S",
+        "--suffix",
+        "--context",
+    }
+    no_value_options: set[str] = set()
+    if executable == "cp":
+        no_value_options.update(
+            {
+                "-a",
+                "--archive",
+                "-f",
+                "--force",
+                "-i",
+                "--interactive",
+                "-n",
+                "--no-clobber",
+                "-R",
+                "-r",
+                "--recursive",
+                "-u",
+                "--update",
+                "-v",
+                "--verbose",
+                "-P",
+                "--no-dereference",
+                "-L",
+                "--dereference",
+                "-H",
+                "-p",
+                "--parents",
+                "--remove-destination",
+                "--strip-trailing-slashes",
+                "--attributes-only",
+            }
+        )
+    elif executable == "mv":
+        no_value_options.update(
+            {
+                "-f",
+                "--force",
+                "-i",
+                "--interactive",
+                "-n",
+                "--no-clobber",
+                "-u",
+                "--update",
+                "-v",
+                "--verbose",
+                "-T",
+                "--no-target-directory",
+            }
+        )
+    else:
+        no_value_options.update(
+            {
+                "-b",
+                "-C",
+                "--compare",
+                "-D",
+                "-d",
+                "--directory",
+                "-p",
+                "--preserve-timestamps",
+                "-s",
+                "--strip",
+                "-T",
+                "--no-target-directory",
+                "-v",
+                "--verbose",
+            }
+        )
+    if executable == "install":
+        value_options.update(
+            {"-g", "--group", "-m", "--mode", "-o", "--owner", "--strip-program"}
+        )
     index = 0
     options_done = False
     while index < len(args):
@@ -848,25 +1075,36 @@ def _copy_move_destinations(args: list[str]) -> list[str]:
             target_directories.append(arg.split("=", 1)[1])
             index += 1
             continue
+        if not options_done and arg in value_options:
+            if index + 1 >= len(args):
+                uncertain = True
+                break
+            index += 2
+            continue
+        if not options_done and arg in no_value_options:
+            index += 1
+            continue
+        if not options_done and arg.startswith("--") and "=" in arg:
+            option, _value = arg.split("=", 1)
+            if option not in value_options and option not in {
+                "--backup",
+                "--preserve",
+                "--reflink",
+                "--sparse",
+            }:
+                uncertain = True
+            index += 1
+            continue
         if not options_done and arg.startswith("-"):
+            uncertain = True
             index += 1
             continue
         positional.append(arg)
         index += 1
-    if target_directories:
-        return target_directories
-    return positional[-1:] if positional else []
-
-
-def _writes_unsafe_device(executable: str, args: list[str]) -> bool:
-    positional = [arg for arg in args if not arg.startswith("-")]
-    if executable == "tee":
-        return any(_is_unsafe_device_write_target(path) for path in positional)
-    if executable in {"cp", "install", "mv"} and positional:
-        return _is_unsafe_device_write_target(positional[-1])
-    if executable in {"shred", "truncate"}:
-        return any(_is_unsafe_device_write_target(path) for path in positional)
-    return False
+    destinations = target_directories or positional[-1:]
+    if uncertain:
+        destinations.append("$UNRESOLVED_COPY_MOVE_OPTION")
+    return destinations
 
 
 def _xargs_command(args: list[str]) -> list[str]:
@@ -905,13 +1143,6 @@ def _xargs_nested_is_hardline(tokens: list[str]) -> bool:
     unwrapped, _ = _unwrap_command(list(tokens))
     if not unwrapped:
         return False
-    executable = _basename(unwrapped[0])
-    args = unwrapped[1:]
-    if executable == "rm" and any(
-        arg == "--recursive" or (arg.startswith("-") and "r" in arg.lower())
-        for arg in args
-    ):
-        return True
     return classify_command_level(" ".join(tokens)) == "critical"
 
 
@@ -954,33 +1185,320 @@ def _find_is_hardline(args: list[str]) -> bool:
 
 
 def _classify_git(args: list[str]) -> RiskLevel:
-    subcommand = next((arg for arg in args if not arg.startswith("-")), None)
-    if subcommand is None:
+    if not args:
         return "act_low"
+    if args in [["--version"], ["--help"]]:
+        return "act_low"
+    if args[0].startswith("-"):
+        return "act_high"
+    subcommand = args[0]
+    subargs = args[1:]
     if (subcommand == "reset" and "--hard" in args) or (
         subcommand == "clean" and any(arg.startswith("-f") for arg in args)
     ):
         return "destructive"
     if subcommand in _GIT_EXTERNAL:
         return "external"
-    if subcommand in _GIT_READ:
+    if _git_read_form(subcommand, subargs):
         return "act_low"
     return "act_high"
 
 
 def _classify_docker(args: list[str]) -> RiskLevel:
-    subcommand = next((arg for arg in args if not arg.startswith("-")), None)
-    if subcommand is None:
+    if not args:
         return "act_low"
+    if args in [["--version"], ["version"]]:
+        return "act_low"
+    if args[0].startswith("-"):
+        return "act_high"
+    subcommand = args[0]
+    subargs = args[1:]
     if subcommand == "system":
-        return "destructive" if "prune" in args else "act_low"
+        if subargs[:1] == ["prune"]:
+            return "destructive"
+        return "act_high"
+    if subcommand in {"image", "container", "volume", "network", "context"}:
+        return _classify_docker_group(subcommand, subargs)
     if subcommand in _DOCKER_DESTRUCTIVE:
         return "destructive"
     if subcommand in _DOCKER_EXTERNAL:
         return "external"
-    if subcommand in _DOCKER_READ:
+    if _docker_read_form(subcommand, subargs):
         return "act_low"
     return "act_high"
+
+
+def _git_read_form(subcommand: str, args: list[str]) -> bool:
+    if subcommand == "status":
+        return _known_read_args(
+            args,
+            no_value={
+                "-s",
+                "--short",
+                "-b",
+                "--branch",
+                "--porcelain",
+                "--long",
+                "-v",
+                "--verbose",
+                "--show-stash",
+                "--ahead-behind",
+                "--no-ahead-behind",
+            },
+            value_options={"-u", "--untracked-files", "--ignore-submodules"},
+            allow_positionals=False,
+        )
+    if subcommand == "branch":
+        return not args or _known_read_args(
+            args,
+            no_value={
+                "-a",
+                "--all",
+                "-r",
+                "--remotes",
+                "-l",
+                "--list",
+                "--show-current",
+                "-v",
+                "-vv",
+                "--verbose",
+                "--merged",
+                "--no-merged",
+            },
+            value_options={"--contains", "--no-contains", "--format", "--sort"},
+            allow_positionals=True,
+            require_read_selector=True,
+        )
+    if subcommand == "tag":
+        return not args or _known_read_args(
+            args,
+            no_value={"-l", "--list", "--contains", "--no-contains"},
+            value_options={"--points-at", "--format", "--sort"},
+            allow_positionals=True,
+            require_read_selector=True,
+        )
+    if subcommand == "remote":
+        return not args or args == ["-v"] or args == ["--verbose"]
+    if subcommand == "config":
+        return _git_config_is_read_only(args)
+    if subcommand in {
+        "log",
+        "show",
+        "diff",
+        "blame",
+        "shortlog",
+        "reflog",
+        "whatchanged",
+    }:
+        if _has_output_option(args, {"--output"}):
+            return False
+        return _known_read_args(
+            args,
+            no_value={
+                "--oneline",
+                "--stat",
+                "--name-only",
+                "--name-status",
+                "--summary",
+                "--check",
+                "--patch",
+                "-p",
+                "--no-patch",
+                "-s",
+                "--decorate",
+                "--graph",
+                "--all",
+                "--reverse",
+                "--raw",
+                "--compact-summary",
+                "--numstat",
+                "--shortstat",
+                "--color",
+                "--no-color",
+                "--cached",
+                "--staged",
+            },
+            value_options={
+                "-n",
+                "--max-count",
+                "--format",
+                "--pretty",
+                "--since",
+                "--until",
+                "--author",
+                "--grep",
+                "--diff-filter",
+                "--color",
+            },
+            allow_positionals=True,
+        )
+    if subcommand in {"rev-parse", "ls-files", "describe", "cat-file"}:
+        return _known_read_args(
+            args,
+            no_value={
+                "--show-toplevel",
+                "--show-current",
+                "--is-inside-work-tree",
+                "--git-dir",
+                "--short",
+                "--cached",
+                "--others",
+                "--stage",
+                "-t",
+                "-p",
+                "-s",
+            },
+            value_options={"--format", "--exclude-standard"},
+            allow_positionals=True,
+        )
+    return False
+
+
+def _git_config_is_read_only(args: list[str]) -> bool:
+    query_actions = {
+        "--get",
+        "--get-all",
+        "--get-regexp",
+        "--get-urlmatch",
+        "--list",
+        "-l",
+    }
+    read_modifiers = {
+        "--show-origin",
+        "--show-scope",
+        "--name-only",
+    }
+    if not args:
+        return False
+    if any(
+        arg
+        in {
+            "--unset",
+            "--unset-all",
+            "--add",
+            "--replace-all",
+            "--rename-section",
+            "--remove-section",
+            "--edit",
+        }
+        for arg in args
+    ):
+        return False
+    positionals = [arg for arg in args if not arg.startswith("-")]
+    unknown_options = [
+        arg
+        for arg in args
+        if arg.startswith("-")
+        and arg not in query_actions
+        and arg not in read_modifiers
+        and not arg.startswith("--type=")
+    ]
+    if unknown_options:
+        return False
+    if set(args).intersection(query_actions):
+        return True
+    return len(positionals) == 1
+
+
+def _classify_docker_group(group: str, args: list[str]) -> RiskLevel:
+    if not args or args[0].startswith("-"):
+        return "act_high"
+    subcommand = args[0]
+    subargs = args[1:]
+    if subcommand in {"rm", "prune"}:
+        return "destructive"
+    if subcommand in {"pull", "push"}:
+        return "external"
+    allowed: dict[str, set[str]] = {
+        "image": {"ls", "list", "inspect", "history"},
+        "container": {"ls", "list", "inspect", "logs", "stats", "top", "port"},
+        "volume": {"ls", "list", "inspect"},
+        "network": {"ls", "list", "inspect"},
+        "context": {"ls", "list", "show", "inspect"},
+    }
+    if subcommand not in allowed[group]:
+        return "act_high"
+    return "act_low" if _docker_read_form(subcommand, subargs) else "act_high"
+
+
+def _docker_read_form(subcommand: str, args: list[str]) -> bool:
+    if subcommand in {"version", "info"}:
+        return _known_read_args(
+            args,
+            no_value=set(),
+            value_options={"-f", "--format"},
+            allow_positionals=False,
+        )
+    if subcommand in {"ps", "images", "ls", "list"}:
+        return _known_read_args(
+            args,
+            no_value={"-a", "--all", "-q", "--quiet", "--no-trunc", "--digests"},
+            value_options={"-f", "--filter", "--format"},
+            allow_positionals=False,
+        )
+    if subcommand in {"inspect", "history"}:
+        return _known_read_args(
+            args,
+            no_value={"--size", "--no-trunc"},
+            value_options={"-f", "--format", "--type"},
+            allow_positionals=True,
+        )
+    if subcommand == "logs":
+        return _known_read_args(
+            args,
+            no_value={"--details", "-f", "--follow", "-t", "--timestamps"},
+            value_options={"--since", "--until", "-n", "--tail"},
+            allow_positionals=True,
+        )
+    if subcommand in {"stats", "top", "port"}:
+        return _known_read_args(
+            args,
+            no_value={"--all", "--no-stream", "--no-trunc"},
+            value_options={"--format"},
+            allow_positionals=True,
+        )
+    if subcommand == "show":
+        return not args
+    return False
+
+
+def _known_read_args(
+    args: list[str],
+    *,
+    no_value: set[str],
+    value_options: set[str],
+    allow_positionals: bool,
+    require_read_selector: bool = False,
+) -> bool:
+    selector_seen = False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            return allow_positionals and not require_read_selector or selector_seen
+        if arg.startswith("--") and "=" in arg:
+            option, _value = arg.split("=", 1)
+            if option not in value_options and option not in no_value:
+                return False
+            selector_seen = True
+            index += 1
+            continue
+        if arg in no_value:
+            selector_seen = True
+            index += 1
+            continue
+        if arg in value_options:
+            selector_seen = True
+            if index + 1 >= len(args):
+                return False
+            index += 2
+            continue
+        if arg.startswith("-"):
+            return False
+        if not allow_positionals:
+            return False
+        index += 1
+    return not require_read_selector or selector_seen
 
 
 def _basename(value: str) -> str:
@@ -1188,6 +1706,16 @@ def _node_writes(tokens: list[str], executable: str, args: list[str]) -> bool:
         "chown",
         "dd",
     }:
+        return True
+    if executable == "sort" and _has_output_option(args, {"-o", "--output"}):
+        return True
+    if executable == "diff" and _has_output_option(args, {"--output"}):
+        return True
+    if (
+        executable == "git"
+        and args[:1] == ["diff"]
+        and _has_output_option(args[1:], {"--output"})
+    ):
         return True
     return executable in {"sed", "perl"} and any(arg.startswith("-i") for arg in args)
 
@@ -1461,7 +1989,7 @@ def _diff_file_arguments(args: list[str]) -> tuple[list[str], bool]:
         "--context",
     }
     value_options = {"-U", "-C", "--label", "--exclude", "--exclude-from"}
-    return _option_aware_paths(args, no_value, value_options, set())
+    return _option_aware_paths(args, no_value, value_options, {"--output"})
 
 
 def _jq_file_arguments(args: list[str]) -> tuple[list[str], bool]:

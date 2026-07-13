@@ -58,6 +58,46 @@ def test_highest_risk_segment_wins_across_pipes_and_chains():
 @pytest.mark.parametrize(
     "command",
     [
+        "git branch feature/security",
+        "git tag v1.2.3",
+        "git remote add origin https://example.com/repo.git",
+        "git config user.email agent@example.com",
+        "git config --show-origin user.email agent@example.com",
+        "git status --definitely-unknown",
+        "git diff --output=changes.patch HEAD~1 HEAD",
+        "docker image rm bioinfoflow:test",
+        "docker context use production",
+        "docker ps --definitely-unknown",
+        "sort -o output.txt input.txt",
+        "sort --output=output.txt input.txt",
+        "diff --output=changes.patch before.txt after.txt",
+    ],
+)
+def test_mutating_or_unproven_read_family_forms_are_not_auto_run(command):
+    assert classify_shell_command(command) not in {"read", "act_low"}
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git status --short",
+        "git branch --show-current",
+        "git tag --list 'v*'",
+        "git config --get user.email",
+        "docker ps --all",
+        "docker image ls --quiet",
+        "docker context show",
+        "sort --reverse input.txt",
+        "diff --unified before.txt after.txt",
+    ],
+)
+def test_precisely_known_read_family_forms_remain_low_risk(command):
+    assert classify_shell_command(command) == "act_low"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "echo $(rm -rf x)",  # command substitution hides the inner command
         "echo `whoami`",  # backtick substitution
         "echo malicious > /etc/cron.d/x",  # write redirection from a read tool
@@ -111,6 +151,22 @@ def test_hardline_commands_survive_common_wrappers(command):
     assert classify_shell_command(command) == "critical"
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "systemctl reboot",
+        "systemctl poweroff",
+        "busybox reboot",
+        "busybox rm -rf /",
+        "python -c \"import os; os.system('reboot')\"",
+        "python3 -c \"import subprocess; subprocess.run(['rm', '-rf', '/'])\"",
+        "perl -e 'system(\"poweroff\")'",
+    ],
+)
+def test_high_confidence_direct_or_interpreter_hardlines_are_critical(command):
+    assert classify_shell_command(command) == "critical"
+
+
 def test_quoted_command_substitution_literal_is_not_executed():
     assert classify_shell_command("echo '$(reboot)'") != "critical"
 
@@ -118,7 +174,6 @@ def test_quoted_command_substitution_literal_is_not_executed():
 @pytest.mark.parametrize(
     "command",
     [
-        "printf '/\\n' | xargs rm -rf",
         "xargs rm -rf /",
         "find / -delete",
         "find / -exec rm -rf {} +",
@@ -132,6 +187,18 @@ def test_quoted_command_substitution_literal_is_not_executed():
 )
 def test_recursive_and_block_device_sinks_are_hard_blocked(command):
     assert classify_shell_command(command) == "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "xargs rm -rf",
+        "printf '/\\n' | xargs rm -rf",
+        "xargs sh -c '$COMMAND'",
+    ],
+)
+def test_xargs_with_unknown_runtime_target_is_not_blanket_critical(command):
+    assert classify_shell_command(command) != "critical"
 
 
 @pytest.mark.parametrize(
@@ -151,9 +218,11 @@ def test_recursive_and_device_sink_text_is_not_executable(command):
     [
         "printf image | tee /dev/md0",
         "cp disk.img /dev/dm-0",
+        "cp disk.img /dev/root --suffix .bak",
         "dd if=disk.img of=/dev/loop0 bs=1M",
         "install disk.img /dev/zram0",
         "mv disk.img /dev/rdisk0",
+        "mv disk.img /dev/root --suffix .bak",
         "tee /dev/mapper/vg-root < disk.img",
         "cp disk.img /dev/disk/by-id/nvme-array",
     ],

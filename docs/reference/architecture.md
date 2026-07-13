@@ -160,8 +160,11 @@ Permission modes control approval behavior:
 
 Automation policy, hard blocks, protected resources, interaction requirements,
 and the execution boundary remain independent. Full access does not grant new OS
-or SSH privileges and does not bypass catastrophic commands or mandatory user
-and plan interactions.
+or SSH privileges. High-confidence catastrophic command matches remain hard
+denied, while statically uncertain or indirect forms can require explicit
+approval. This classifier is defense in depth rather than confinement: the true
+boundary is the active local OS sandbox or the remote account and server policy.
+Mandatory user and plan interactions remain independent.
 
 `PermissionContextResolver` forces a fresh session read immediately before tool
 exposure and risk evaluation. It resolves a coherent snapshot of policy version,

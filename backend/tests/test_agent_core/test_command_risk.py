@@ -165,6 +165,7 @@ def test_assessment_records_semantics_and_canonical_boundary():
         "enforced": False,
         "sandbox_strength": "none",
         "working_directory": "/analysis/project",
+        "sandbox_bypass_requested": False,
     }
     assert any("remote SSH account" in reason for reason in assessment.reasons)
 
@@ -184,6 +185,121 @@ def test_protected_resource_writes_always_require_explicit_approval(command, kin
 
     assert assessment.requires_explicit_approval is True
     assert {item["kind"] for item in assessment.protected_resources} == {kind}
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "install payload ~/.ssh/authorized_keys",
+        "dd if=payload of=~/.ssh/authorized_keys",
+        "printf payload | tee ~/.ssh/authorized_keys",
+        "cp payload ~/.ssh/authorized_keys",
+        "cp payload ~/.ssh/authorized_keys --suffix .bak",
+        "mv payload ~/.ssh/authorized_keys",
+        "printf payload > ~/.ssh/authorized_keys",
+        "sort -o ~/.ssh/authorized_keys input.txt",
+        "sort -o~/.ssh/authorized_keys input.txt",
+        "diff --output=~/.ssh/changes.patch before.txt after.txt",
+        "diff --output ~/.ssh/changes.patch before.txt after.txt",
+        "git diff --output=~/.ssh/changes.patch HEAD~1 HEAD",
+        "git diff --output ~/.ssh/changes.patch HEAD~1 HEAD",
+    ],
+)
+def test_every_supported_write_sink_protects_credential_destinations(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.requires_explicit_approval is True
+    assert "write" in assessment.effects
+    assert {item["kind"] for item in assessment.protected_resources} == {"ssh"}
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+def test_unrelated_protected_read_does_not_turn_a_safe_sink_into_protected_write():
+    assessment = assess_command_risk(
+        "cat ~/.ssh/config && printf ok > output.txt",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.requires_explicit_approval is False
+    assert {item["kind"] for item in assessment.protected_resources} == {"ssh"}
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cp -r source output",
+        "mv --no-clobber source output",
+        "install -m 600 source output",
+    ],
+)
+def test_known_copy_move_options_keep_concrete_destinations_confident(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.requires_explicit_approval is False
+
+
+def test_protected_symlink_target_propagates_through_same_command_chain():
+    assessment = assess_command_risk(
+        "ln -s ~/.ssh/authorized_keys /tmp/key-a && "
+        "ln -s /tmp/key-a /tmp/key-b && "
+        "tee /tmp/key-b < payload",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.requires_explicit_approval is True
+    assert {item["path"] for item in assessment.protected_resources} == {
+        "~/.ssh/authorized_keys"
+    }
+
+
+def test_relative_symlink_target_is_resolved_from_link_directory_in_same_chain():
+    assessment = assess_command_risk(
+        "ln -s ~/.ssh/authorized_keys /tmp/key-a && "
+        "ln -s key-a /tmp/key-b && "
+        "tee /tmp/key-b < payload",
+        target=LOCAL_UNSANDBOXED,
+    )
+
+    assert assessment.requires_explicit_approval is True
+    assert {item["path"] for item in assessment.protected_resources} == {
+        "~/.ssh/authorized_keys"
+    }
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cp payload $DESTINATION",
+        "install --target-directory=$DESTINATION payload",
+        "dd if=payload of=$(resolve_destination)",
+        "printf payload | tee ${DESTINATION}",
+        "diff --output=$PATCH_PATH before.txt after.txt",
+    ],
+)
+def test_remote_indirect_write_destinations_require_explicit_approval(command):
+    assessment = assess_command_risk(command, target=REMOTE)
+
+    assert assessment.requires_explicit_approval is True
+    assert assessment.confidence == "low"
     assert (
         PermissionPolicy()
         .decide(
@@ -251,9 +367,11 @@ def test_nested_destructive_sink_is_denied_even_in_bypass():
     [
         "tee /dev/md0 < disk.img",
         "cp disk.img /dev/dm-0",
+        "cp disk.img /dev/root --suffix .bak",
         "dd if=disk.img of=/dev/loop0",
         "mkfs.ext4 /dev/zram0",
         "install disk.img /dev/rdisk0",
+        "mv disk.img /dev/root --suffix .bak",
     ],
 )
 def test_extended_block_device_sinks_are_denied_in_bypass(command):
@@ -426,3 +544,77 @@ def test_local_target_profile_records_per_command_sandbox_disable():
 
     assert target.sandbox_strength == "none"
     assert target.network_allowed is True
+    assert target.sandbox_bypass_requested is True
+
+
+def test_sandbox_opt_out_always_requires_explicit_approval_even_in_bypass():
+    context = SimpleNamespace(
+        execution_target=MappingProxyType({"type": "local"}),
+        boundary=MappingProxyType({"sandboxed": True, "network_allowed": False}),
+        effective_roots=("/workspace",),
+        remote_identity=None,
+    )
+    target = command_target_profile_from_context(
+        context,
+        action_input={
+            "cwd": "/workspace",
+            "command": "pwd",
+            "dangerously_disable_sandbox": True,
+        },
+    )
+
+    assessment = assess_command_risk("pwd", target=target)
+
+    assert assessment.requires_explicit_approval is True
+    assert assessment.boundary["sandbox_bypass_requested"] is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sh -c '$COMMAND'",
+        'bash -lc "echo reboot"',
+        "python -c \"print('reboot')\"",
+        'python3 -c "$SCRIPT"',
+        "node -e \"console.log('shutdown')\"",
+    ],
+)
+def test_unproven_inline_code_or_danger_literals_require_explicit_approval(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "xargs rm -rf",
+        "printf '/\\n' | xargs rm -rf",
+    ],
+)
+def test_unknown_xargs_destructive_targets_require_explicit_approval(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is True
