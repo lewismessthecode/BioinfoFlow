@@ -611,6 +611,12 @@ def _env_split_command(tokens: list[str]) -> list[str] | None:
             except ValueError:
                 return []
             return [*split, *tokens[index + 2 :]]
+        if arg.startswith("-S") and arg != "-S":
+            try:
+                split = shlex.split(arg[2:])
+            except ValueError:
+                return []
+            return [*split, *tokens[index + 1 :]]
         if arg.startswith("--split-string="):
             try:
                 split = shlex.split(arg.split("=", 1)[1])
@@ -689,6 +695,7 @@ def _unwrap_command_details(tokens: list[str]) -> _UnwrappedCommand:
         elif executable == "env":
             if any(
                 arg == "-S"
+                or (arg.startswith("-S") and arg != "-S")
                 or arg == "--split-string"
                 or arg.startswith("--split-string=")
                 for arg in tokens
@@ -823,6 +830,17 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
     for index, arg in enumerate(args):
         if arg in flags and index + 1 < len(args):
             return args[index + 1]
+        if executable in {"ruby", "perl"} and arg.startswith("-"):
+            bundled = re.fullmatch(
+                r"-[wWdvtT]*([eE])(.*)" if executable == "perl" else r"-[wdv]*e(.*)",
+                arg,
+            )
+            if bundled is not None:
+                inline = bundled.group(bundled.lastindex or 1)
+                if inline:
+                    return inline
+                if index + 1 < len(args):
+                    return args[index + 1]
         if executable == "node" and any(
             arg.startswith(f"{flag}=") for flag in {"--eval", "--print"}
         ):
@@ -1649,6 +1667,10 @@ def _rsync_destinations(args: list[str]) -> list[str]:
             index += 2
             continue
         if arg.startswith(("-e", "-f", "-M")) and len(arg) > 2:
+            index += 1
+            continue
+        if arg.startswith("-T") and len(arg) > 2:
+            additional_sinks.append(arg[2:])
             index += 1
             continue
         if arg.startswith("--"):

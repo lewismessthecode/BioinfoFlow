@@ -738,7 +738,12 @@ def test_versioned_interpreter_literal_hardlines_are_denied(command):
         "env -S 'reboot'",
         "env --split-string='reboot'",
         "xargs env --split-string='reboot'",
+        "env -Sreboot",
+        "xargs env -Sreboot",
         "perl5.40 '-Esystem(\"reboot\")'",
+        "perl5.40 -we 'system(\"reboot\")'",
+        "perl5.40 -wE 'system(\"reboot\")'",
+        "ruby3.4 -we 'system(\"reboot\")'",
         "php8.4 '-Bsystem(\"reboot\");'",
         "php8.4 '-Rsystem(\"reboot\");'",
         "php8.4 '-Esystem(\"reboot\");'",
@@ -770,6 +775,8 @@ def test_literal_catastrophic_nested_commands_are_denied_in_bypass(target, comma
         "diff <(cat before.txt) <(cat after.txt)",
         "sh <<'EOF'\nprintf ok\nEOF",
         "env --split-string='printf ok'",
+        "env '-Sprintf ok'",
+        "xargs env '-Sprintf ok'",
         "printf 'printf ok' | sh",
         "printf 'printf ok' | busybox sh",
         "safe=printf; $safe ok",
@@ -783,6 +790,9 @@ def test_literal_catastrophic_nested_commands_are_denied_in_bypass(target, comma
         "zsh -c 'f () { printf ok; }; f'",
         "find . -exec sh -c 'printf ok' {} +",
         "perl5.40 '-Eprint(\"ok\")'",
+        "perl5.40 -we 'print(\"ok\")'",
+        "perl5.40 -wE 'print(\"ok\")'",
+        "ruby3.4 -we 'puts(\"ok\")'",
         "php8.4 '-Becho \"ok\";'",
         "php8.4 '-Recho \"ok\";'",
         "php8.4 '-Eecho \"ok\";'",
@@ -871,6 +881,7 @@ def test_attached_inline_interpreter_hardlines_are_denied(target, command):
         "tar xCf /home/alice payload.tar",
         "unzip payload.zip -d /home/alice",
         "rsync payload /home/alice/.ssh/authorized_keys --out-format %n",
+        "rsync payload /tmp/output -T/home/alice/.ssh",
     ],
 )
 def test_opaque_or_protected_write_sinks_fail_ask_in_bypass(target, command):
@@ -912,6 +923,27 @@ def test_provable_non_inline_or_read_only_analogs_do_not_force_approval(
     target, command
 ):
     assessment = assess_command_risk(command, target=target)
+
+    assert assessment.hard_blocked is False
+    assert assessment.requires_explicit_approval is False
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "allow"
+    )
+
+
+@pytest.mark.parametrize("target", BYPASS_TARGETS, ids=["local", "ssh"])
+def test_non_protected_attached_rsync_temp_dir_does_not_force_approval(target):
+    assessment = assess_command_risk(
+        "rsync payload /tmp/output -T/tmp/rsync-work",
+        target=target,
+    )
 
     assert assessment.hard_blocked is False
     assert assessment.requires_explicit_approval is False
