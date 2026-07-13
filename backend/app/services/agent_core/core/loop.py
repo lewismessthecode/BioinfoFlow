@@ -268,6 +268,16 @@ class AgentLoopController:
                         error_message=str(exc),
                     )
                 if waiting:
+                    turn = await self._checkpoint_loop_state(
+                        turn,
+                        budget=budget,
+                        token_usage=token_usage,
+                        progress=_progress_payload(
+                            tool_call_signatures,
+                            tool_result_signatures,
+                            0,
+                        ),
+                    )
                     return LoopResult(
                         termination_reason="waiting_approval",
                         final_text=None,
@@ -542,6 +552,9 @@ class AgentLoopController:
                 error_code="tool_resume_failed",
                 error_message=f"Approved tool action finished with status: {result.status}",
             )
+        loop_state = dict(getattr(turn, "loop_state", None) or {})
+        loop_state["progress"] = _progress_payload([], [], 0)
+        await self.turns.update_all(turn, loop_state=loop_state)
         return await self.run_turn(
             turn_id=str(turn.id),
             provider=provider,
@@ -657,11 +670,13 @@ class AgentLoopController:
             )
 
     def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:
-        spec = self.registry.get(tool_name).spec
+        tool = self.registry.get(tool_name)
+        spec = tool.spec
         return (
             spec.risk_level == "read"
             and not spec.write_scope
             and spec.interaction is None
+            and not callable(getattr(tool, "assess_risk", None))
         )
 
     async def _checkpoint_loop_state(

@@ -24,7 +24,11 @@ from app.services.agent_core.context.system_prompt import (
     resolve_system_prompt_prefix,
 )
 from app.services.agent_core.ledger import AgentEventLedger
-from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
+from app.services.agent_core.tools import (
+    AgentToolContext,
+    AgentToolSpec,
+    build_default_tool_registry,
+)
 from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.utils.exceptions import BadRequestError, PermissionDeniedError
@@ -998,6 +1002,7 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
     monkeypatch,
 ):
     model_calls = 0
+    turn_id = ""
 
     async def fake_completion(*args, **kwargs):
         nonlocal model_calls
@@ -1047,6 +1052,12 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
             message.content = ""
             message.tool_calls = [AskCall(), ListCall()]
         else:
+            persisted_turn = await service.turn_repo.get(turn_id)
+            assert persisted_turn.loop_state["progress"] == {
+                "previous_tool_calls": [],
+                "previous_tool_results": [],
+                "repeat_count": 0,
+            }
             emitted_ids = {
                 call["id"]
                 for item in kwargs["messages"]
@@ -1086,6 +1097,7 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
         user_id="dev",
         input_text="Ask one question before doing anything else.",
     )
+    turn_id = str(turn.id)
 
     waiting_turn = await service.runtime.run_turn(str(turn.id))
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
@@ -1095,6 +1107,15 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
 
     assert waiting_turn.status == "waiting_approval"
     assert [action.name for action in actions] == ["ask_user"]
+    progress = waiting_turn.loop_state["progress"]
+    assert [json.loads(signature)["name"] for signature in progress["previous_tool_calls"]] == [
+        "ask_user",
+        "projects__list",
+    ]
+    assert [
+        json.loads(signature)["status"] for signature in progress["previous_tool_results"]
+    ] == ["deferred"]
+    assert progress["repeat_count"] == 0
     deferred_message = next(message for message in messages if message.role == "tool")
     assert deferred_message.message_metadata["tool_call_id"] == "tool-call-projects"
     assert "DeferredToolCall" in deferred_message.content_parts[0]["text"]
@@ -1110,6 +1131,106 @@ async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
 
     assert model_calls == 2
     assert resumed_turn.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_dynamic_risk_read_tool_does_not_join_concurrent_batch(
+    db_session,
+    monkeypatch,
+):
+    class DynamicRiskReadTool:
+        spec = AgentToolSpec(
+            name="dynamic.read",
+            description="A read-shaped tool whose input can elevate its risk.",
+            input_schema={"type": "object", "additionalProperties": False},
+            output_schema={"type": "object"},
+            risk_level="read",
+        )
+
+        def assess_risk(self, input):
+            del input
+            return "act_high"
+
+        async def run(self, input, context):
+            del input, context
+            return {"executed": True}
+
+    registry = build_default_tool_registry()
+    registry.register(DynamicRiskReadTool())
+    monkeypatch.setattr(
+        "app.services.agent_core.core.loop.build_default_tool_registry",
+        lambda: registry,
+    )
+
+    async def fake_completion(*args, **kwargs):
+        del args, kwargs
+
+        class FakeResponse:
+            usage = None
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        class DynamicFunction:
+            name = "dynamic__read"
+            arguments = "{}"
+
+        class ListFunction:
+            name = "projects__list"
+            arguments = "{}"
+
+        class DynamicCall:
+            id = "tool-call-dynamic"
+            function = DynamicFunction()
+
+        class ListCall:
+            id = "tool-call-projects-after-dynamic"
+            function = ListFunction()
+
+        message = FakeMessage()
+        message.content = ""
+        message.tool_calls = [DynamicCall(), ListCall()]
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session, model_id="dynamic-risk-batch-model")
+
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(
+        session,
+        toolset_policy={"name": "execution"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Run the dynamic read before listing projects.",
+    )
+
+    waiting_turn = await service.runtime.run_turn(str(turn.id))
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+
+    assert waiting_turn.status == "waiting_approval"
+    assert [action.name for action in actions] == ["dynamic.read"]
+    deferred_message = next(message for message in messages if message.role == "tool")
+    assert deferred_message.message_metadata["tool_call_id"] == (
+        "tool-call-projects-after-dynamic"
+    )
+    assert "DeferredToolCall" in deferred_message.content_parts[0]["text"]
 
 
 @pytest.mark.asyncio
