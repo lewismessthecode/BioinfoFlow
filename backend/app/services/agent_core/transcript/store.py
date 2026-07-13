@@ -43,7 +43,13 @@ class AgentTranscriptStore:
         status: str = "committed",
         ordering_index: int | None = None,
         replace_turn_metadata_key: str | None = None,
+        replace_session_metadata_key: str | None = None,
     ):
+        if (
+            replace_turn_metadata_key is not None
+            and replace_session_metadata_key is not None
+        ):
+            raise ValueError("turn- and session-scoped metadata replacement are exclusive")
         if ordering_index is None:
             ordering_index = await self.messages.next_ordering_index(session_id)
         data = {
@@ -64,6 +70,11 @@ class AgentTranscriptStore:
                 metadata_key=replace_turn_metadata_key,
                 **data,
             )
+        if replace_session_metadata_key is not None:
+            return await self.messages.create_replacing_session_metadata(
+                metadata_key=replace_session_metadata_key,
+                **data,
+            )
         return await self.messages.create(
             **data,
         )
@@ -74,6 +85,17 @@ class AgentTranscriptStore:
     async def clear_turn_metadata(self, *, turn_id: str, metadata_key: str) -> None:
         await self.messages.clear_turn_metadata(
             turn_id=turn_id,
+            metadata_key=metadata_key,
+        )
+
+    async def clear_session_metadata(
+        self,
+        *,
+        session_id: str,
+        metadata_key: str,
+    ) -> None:
+        await self.messages.clear_session_metadata(
+            session_id=session_id,
             metadata_key=metadata_key,
         )
 

@@ -29,6 +29,8 @@ dependencies = [
   "structlog",
   "miniwdl>=1.13.1",
   "httpx",
+  "aiohttp>=3.12",
+  "yarl>=1.18",
   "cryptography>=46",
   "typer>=0.15",
   "rich>=13.0",

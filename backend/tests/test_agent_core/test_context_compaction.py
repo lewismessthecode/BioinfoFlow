@@ -12,6 +12,7 @@ from app.repositories.agent_core_repo import AgentMessageRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.transcript import AgentTranscriptStore, text_part
+from app.services.model_runtime.contracts import TextPart
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -143,6 +144,45 @@ async def test_context_compaction_supersedes_older_messages(db_session):
         for message in messages
     )
     assert not any(message.get("content") == "old assistant reply one" * 8 for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_model_context_preserves_each_assistant_phase_from_canonical_parts(
+    db_session,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Continue the investigation.",
+    )
+    await AgentTranscriptStore(db_session).append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[
+            text_part("Checking inputs.", phase="commentary"),
+            text_part("Investigation complete.", phase="final_answer"),
+        ],
+    )
+
+    context = await AgentContextAssembler(db_session).model_context(
+        agent_session=session,
+        turn=turn,
+    )
+
+    assert context.input_items == (
+        TextPart(text="Continue the investigation."),
+        TextPart(text="Checking inputs.", phase="commentary"),
+        TextPart(text="Investigation complete.", phase="final_answer"),
+    )
 
 
 @pytest.mark.asyncio

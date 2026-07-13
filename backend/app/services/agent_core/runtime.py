@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +35,11 @@ from app.services.agent_core.model_selection import (
     session_model_selection_from_metadata,
 )
 from app.services.agent_core.observability import truncate_log_value
+from app.services.authorization_service import AuthorizationService
+from app.services.llm.access_policy import (
+    authorize_provider_endpoint,
+    authorize_server_environment_credential,
+)
 from app.services.llm.provider_templates import normalize_provider_base_url
 from app.services.llm.credentials import resolve_credential_material
 from app.services.llm.catalog import (
@@ -42,6 +49,8 @@ from app.services.llm.catalog import (
 from app.services.llm.credentials import credential_available, credential_configured
 from app.services.model_runtime.contracts import ModelTarget
 from app.services.model_runtime.gateway import ModelGateway
+from app.utils.authorization import can_manage_server_integrations
+from app.utils.exceptions import PermissionDeniedError
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -61,6 +70,7 @@ class AgentCoreRuntime:
         self.llm_profiles = LlmModelProfileRepository(session)
         self.llm_providers = LlmProviderRepository(session)
         self.llm_credentials = LlmProviderCredentialRepository(session)
+        self.authorization = AuthorizationService(session)
         self.model_gateway = model_gateway or ModelGateway()
 
     async def run_no_tool_turn(self, turn_id: str):
@@ -270,14 +280,14 @@ class AgentCoreRuntime:
             return None
         resolved_target = snapshot.get("resolved_model_target")
         if isinstance(resolved_target, dict):
-            if not _target_identity_matches_snapshot(candidate, resolved_target):
+            if not _target_identity_matches_snapshot(
+                candidate,
+                resolved_target,
+                expected_configuration_fingerprint=snapshot.get(
+                    "_resolved_model_configuration_fingerprint"
+                ),
+            ):
                 return None
-            request_args = dict(candidate.get("request_args") or {})
-            request_args["api_base"] = resolved_target.get("base_url")
-            candidate["request_args"] = request_args
-            candidate["wire_protocol"] = (
-                resolved_target.get("wire_protocol") or "chat_completions"
-            )
         capabilities = snapshot.get("resolved_model_capabilities")
         if isinstance(capabilities, dict):
             candidate["capabilities"] = capabilities
@@ -326,17 +336,48 @@ class AgentCoreRuntime:
         )
         if provider is None:
             return None
+        role = await self.authorization.resolve_workspace_role(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+        server_authorized = _provider_has_server_integration_authority(
+            provider,
+            role=role,
+        )
+        if not server_authorized:
+            try:
+                await authorize_provider_endpoint(
+                    provider.base_url,
+                    role=role,
+                    resolve_dns=True,
+                )
+            except PermissionDeniedError:
+                return None
         try:
             validate_provider_transport(provider)
         except ValueError:
             return None
         credential = await self.llm_credentials.get_for_provider(str(provider.id))
+        if (
+            not server_authorized
+            and credential is not None
+            and credential.source == "env"
+        ):
+            try:
+                authorize_server_environment_credential(role=role)
+            except PermissionDeniedError:
+                return None
         if not credential_available(
             credential,
             credential_required=_provider_requires_credential(provider),
         ):
             return None
         material = resolve_credential_material(credential)
+        configuration_fingerprint = _model_configuration_fingerprint(
+            provider=provider,
+            model=model,
+            credential=credential,
+        )
         request_args: dict[str, Any] = {}
         if material.api_key:
             request_args["api_key"] = material.api_key
@@ -362,6 +403,10 @@ class AgentCoreRuntime:
             "runtime_strategy": runtime_strategy.as_dict(),
             "request_args": request_args,
             "wire_protocol": str(getattr(provider, "wire_protocol", "chat_completions")),
+            "configuration_fingerprint": configuration_fingerprint,
+            "network_access": (
+                "unrestricted" if server_authorized else "public_only"
+            ),
         }
         if profile_id:
             result["profile_id"] = profile_id
@@ -508,6 +553,9 @@ class AgentCoreRuntime:
             "wire_protocol": resolved.get("wire_protocol") or "chat_completions",
             "base_url": request_args.get("api_base"),
         }
+        snapshot["_resolved_model_configuration_fingerprint"] = resolved.get(
+            "configuration_fingerprint"
+        )
         if resolved.get("model_id"):
             snapshot["resolved_model_id"] = resolved["model_id"]
         if resolved.get("profile_id"):
@@ -638,23 +686,79 @@ def _model_target(resolved: dict[str, Any]) -> ModelTarget:
         model_name=str(resolved["model"]),
         wire_protocol=str(resolved.get("wire_protocol") or "chat_completions"),
         base_url=request_args.get("api_base"),
+        network_access=str(resolved.get("network_access") or "unrestricted"),
         api_key=request_args.get("api_key"),
     )
+
+
+def _provider_has_server_integration_authority(provider, *, role: str | None) -> bool:
+    return str(getattr(provider, "scope", "user") or "user") in {
+        "global",
+        "workspace",
+    } or can_manage_server_integrations(role)
 
 
 def _target_identity_matches_snapshot(
     resolved: dict[str, Any],
     snapshot: dict[str, Any],
+    *,
+    expected_configuration_fingerprint: object,
 ) -> bool:
-    return {
+    if not isinstance(expected_configuration_fingerprint, str) or not (
+        expected_configuration_fingerprint
+    ):
+        return False
+    request_args = resolved.get("request_args") or {}
+    return resolved.get("configuration_fingerprint") == (
+        expected_configuration_fingerprint
+    ) and {
         "endpoint_id": str(resolved.get("endpoint_id") or ""),
         "provider_kind": resolved.get("provider"),
         "model_name": resolved.get("model"),
+        "wire_protocol": resolved.get("wire_protocol") or "chat_completions",
+        "base_url": request_args.get("api_base"),
     } == {
         "endpoint_id": snapshot.get("endpoint_id"),
         "provider_kind": snapshot.get("provider_kind"),
         "model_name": snapshot.get("model_name"),
+        "wire_protocol": snapshot.get("wire_protocol") or "chat_completions",
+        "base_url": snapshot.get("base_url"),
     }
+
+
+def _model_configuration_fingerprint(
+    *,
+    provider,
+    model,
+    credential,
+) -> str:
+    metadata = (
+        provider.provider_metadata
+        if isinstance(provider.provider_metadata, dict)
+        else {}
+    )
+    payload = {
+        "provider_id": str(provider.id),
+        "provider_kind": str(provider.kind),
+        "base_url": normalize_provider_base_url(provider.kind, provider.base_url),
+        "wire_protocol": str(
+            getattr(provider, "wire_protocol", "chat_completions")
+        ),
+        "provider_template": metadata.get("providerTemplate"),
+        "model_id": str(model.id),
+        "canonical_model": str(model.model_id),
+        "credential_source": getattr(credential, "source", "none"),
+        "credential_env_var": getattr(credential, "env_var_name", None),
+        "credential_fingerprint": getattr(credential, "fingerprint", None),
+        "credential_updated_at": str(getattr(credential, "updated_at", "") or ""),
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _turn_lease_duration() -> timedelta:

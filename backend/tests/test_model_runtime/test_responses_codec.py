@@ -122,6 +122,7 @@ def test_encode_request_uses_stateless_encrypted_reasoning_continuation() -> Non
             {
                 "role": "assistant",
                 "content": "No projects found.",
+                "phase": "commentary",
             },
         ],
         "tools": [
@@ -234,8 +235,15 @@ async def test_responses_codec_builds_complete_ordered_stateless_replay_across_t
             ]
             self.requests: list[dict[str, Any]] = []
 
-        async def invoke(self, wire_protocol: str, request: dict[str, Any]) -> Any:
+        async def invoke(
+            self,
+            wire_protocol: str,
+            request: dict[str, Any],
+            *,
+            network_access: str = "unrestricted",
+        ) -> Any:
             assert wire_protocol == "responses"
+            assert network_access == "unrestricted"
             self.requests.append(request)
             return self.responses.pop(0)
 

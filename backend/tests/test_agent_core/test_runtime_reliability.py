@@ -100,6 +100,18 @@ def test_non_model_termination_never_triggers_semantic_fallback(
     assert should_try_fallback(result) is False
 
 
+def test_model_failure_after_output_started_never_triggers_semantic_fallback() -> None:
+    result = LoopResult(
+        "model_failed",
+        None,
+        1,
+        error_code="model_request_failed",
+        model_replay_safe=False,
+    )
+
+    assert should_try_fallback(result) is False
+
+
 @pytest.mark.asyncio
 async def test_runtime_rejects_unapproved_public_http_provider(db_session):
     await _workspace(db_session)

@@ -34,7 +34,11 @@ def test_completed_turn_assistant_text_uses_easy_input_message_shape() -> None:
             "role": "user",
             "content": [{"type": "input_text", "text": "First question."}],
         },
-        {"role": "assistant", "content": "First answer."},
+        {
+            "role": "assistant",
+            "content": "First answer.",
+            "phase": "final_answer",
+        },
         {
             "role": "user",
             "content": [

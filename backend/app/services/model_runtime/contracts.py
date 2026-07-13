@@ -7,6 +7,7 @@ from typing import Any, Literal, TypeAlias
 
 Phase: TypeAlias = Literal["commentary", "final_answer"]
 WireProtocol: TypeAlias = Literal["chat_completions", "responses"]
+NetworkAccessPolicy: TypeAlias = Literal["public_only", "unrestricted"]
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class ModelTarget:
     model_name: str
     wire_protocol: WireProtocol
     base_url: str | None = None
+    network_access: NetworkAccessPolicy = "unrestricted"
     api_key: InitVar[str | None] = None
 
     def __post_init__(self, api_key: str | None) -> None:

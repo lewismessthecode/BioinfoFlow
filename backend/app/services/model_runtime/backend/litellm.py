@@ -6,7 +6,8 @@ from typing import Any
 
 import litellm
 
-from app.services.model_runtime.contracts import WireProtocol
+from app.services.model_runtime.backend.litellm_network import PublicNetworkHTTPHandler
+from app.services.model_runtime.contracts import NetworkAccessPolicy, WireProtocol
 from app.services.model_runtime.errors import ModelError
 
 
@@ -46,6 +47,8 @@ class LiteLLMBackend:
         self,
         wire_protocol: WireProtocol,
         request: Mapping[str, Any],
+        *,
+        network_access: NetworkAccessPolicy = "unrestricted",
     ) -> Any:
         if wire_protocol == "chat_completions":
             operation = self._acompletion
@@ -56,28 +59,41 @@ class LiteLLMBackend:
 
         request_kwargs = dict(request)
         request_kwargs["num_retries"] = 0
+        policy_client = (
+            PublicNetworkHTTPHandler()
+            if network_access == "public_only"
+            else None
+        )
+        if policy_client is not None:
+            request_kwargs["client"] = policy_client
         sensitive_values = _sensitive_values(request_kwargs)
         try:
             response = await operation(**request_kwargs)
         except ModelError:
+            await _close_policy_client(policy_client)
             raise
         except Exception as exc:
+            await _close_policy_client(policy_client)
             raise _provider_error(
                 exc,
                 replay_safe=True,
                 sensitive_values=sensitive_values,
             ) from None
-        return (
-            _safe_stream(response, sensitive_values=sensitive_values)
-            if hasattr(response, "__aiter__")
-            else response
-        )
+        if hasattr(response, "__aiter__"):
+            return _safe_stream(
+                response,
+                sensitive_values=sensitive_values,
+                policy_client=policy_client,
+            )
+        await _close_policy_client(policy_client)
+        return response
 
 
 def _safe_stream(
     response: Any,
     *,
     sensitive_values: tuple[str, ...],
+    policy_client: PublicNetworkHTTPHandler | None = None,
 ) -> AsyncIterator[Any]:
     async def iterate() -> AsyncIterator[Any]:
         yielded = False
@@ -95,8 +111,21 @@ def _safe_stream(
                 replay_safe=not yielded,
                 sensitive_values=sensitive_values,
             ) from None
+        finally:
+            await _close_policy_client(policy_client)
 
     return iterate()
+
+
+async def _close_policy_client(
+    policy_client: PublicNetworkHTTPHandler | None,
+) -> None:
+    if policy_client is None:
+        return
+    try:
+        await policy_client.close()
+    except Exception:
+        return
 
 
 def _provider_error(
