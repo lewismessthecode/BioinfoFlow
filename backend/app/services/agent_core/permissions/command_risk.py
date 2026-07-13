@@ -1047,8 +1047,23 @@ def _function_definitions(nodes: list[_CommandNode]) -> dict[str, str]:
             if match is not None:
                 name = match.group(1)
                 body_start = 1
+            elif re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", tokens[0]) and tokens[1:2] == [
+                "()"
+            ]:
+                name = tokens[0]
+                body_start = 2
+            elif re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", tokens[0]) and tokens[1:3] == [
+                "(",
+                ")",
+            ]:
+                name = tokens[0]
+                body_start = 3
         if name is None:
             continue
+        if tokens[body_start : body_start + 1] == ["()"]:
+            body_start += 1
+        elif tokens[body_start : body_start + 2] == ["(", ")"]:
+            body_start += 2
         if tokens[body_start : body_start + 1] == ["{"]:
             body_start += 1
         body = _strip_shell_control_tokens(tokens[body_start:])
@@ -1241,6 +1256,12 @@ def _analyze_indirect_execution_safety(
             ):
                 reasons.append(
                     "unproven shell -c source or danger literal requires explicit approval"
+                )
+            elif command_arg is not None and _function_definitions(
+                _parse_command_nodes(command_arg)
+            ):
+                reasons.append(
+                    "shell -c function execution cannot be proven safe and requires explicit approval"
                 )
         elif (interpreter := _interpreter_family(executable)) is not None:
             if _interpreter_inline_code(interpreter, args) is not None:
