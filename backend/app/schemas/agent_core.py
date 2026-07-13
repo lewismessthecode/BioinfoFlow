@@ -211,6 +211,8 @@ class AgentActionRead(BaseModel):
     kind: ActionKind
     name: str
     tool_call_id: str | None = None
+    tool_batch_id: UUID | None = None
+    tool_call_ordinal: int | None = None
     input: dict
     normalized_input: dict | None = None
     input_preview: str | None = None

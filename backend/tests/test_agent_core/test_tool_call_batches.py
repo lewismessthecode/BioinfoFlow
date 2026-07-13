@@ -1,0 +1,519 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from app.models.agent_core import AgentActionStatus, AgentToolCallBatchStatus
+from app.models.llm import LlmModel, LlmProvider
+from app.models.workspace import Workspace
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentMessageRepository,
+    AgentToolCallBatchRepository,
+)
+from app.services.agent_core import AgentCoreService
+from app.services.agent_core.context import AgentContextAssembler
+from app.services.agent_core.transcript import AgentTranscriptStore, tool_calls_part
+from app.schemas.agent_core import AgentActionRead
+from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+async def _seed_runtime(db_session) -> None:
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    provider = LlmProvider(
+        name="batch provider",
+        kind="openai_compatible",
+        base_url="https://models.internal.example/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    db_session.add(
+        LlmModel(
+            provider_id=str(provider.id),
+            model_id="batch-model",
+            display_name="batch-model",
+            supports_tools=True,
+            supports_streaming=False,
+        )
+    )
+    await db_session.commit()
+
+
+def test_action_read_contract_exposes_batch_identity_and_ordinal():
+    assert "tool_batch_id" in AgentActionRead.model_fields
+    assert "tool_call_ordinal" in AgentActionRead.model_fields
+
+
+def _response(*, tool_calls: list[tuple[str, str, dict]] | None = None, text: str = ""):
+    class Usage:
+        def model_dump(self):
+            return {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+
+    class Response:
+        usage = Usage()
+
+    class Choice:
+        pass
+
+    class Message:
+        pass
+
+    message = Message()
+    message.content = text
+    message.tool_calls = []
+    for call_id, name, arguments in tool_calls or []:
+        function = type("Function", (), {"name": name, "arguments": json.dumps(arguments)})()
+        message.tool_calls.append(
+            type("ToolCall", (), {"id": call_id, "function": function})()
+        )
+    if not message.tool_calls:
+        message.tool_calls = None
+    choice = Choice()
+    choice.message = message
+    response = Response()
+    response.choices = [choice]
+    return response
+
+
+@pytest.mark.asyncio
+async def test_three_approvals_continue_only_after_entire_batch_is_terminal(
+    db_session,
+    monkeypatch,
+):
+    calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args
+        calls += 1
+        if calls == 1:
+            return _response(
+                tool_calls=[
+                    ("call-1", "bash", {"command": "printf one"}),
+                    ("call-2", "bash", {"command": "printf two"}),
+                    ("call-3", "bash", {"command": "printf three"}),
+                ]
+            )
+        tool_results = [item for item in kwargs["messages"] if item["role"] == "tool"]
+        assert [item["tool_call_id"] for item in tool_results] == [
+            "call-1",
+            "call-2",
+            "call-3",
+        ]
+        assert len({item["tool_call_id"] for item in tool_results}) == 3
+        return _response(text="batch complete")
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_: None)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="ask_each_action",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Run three commands.",
+    )
+
+    waiting = await service.runtime.run_turn(str(turn.id))
+
+    assert waiting.status == "waiting_approval"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    assert [action.tool_call_ordinal for action in actions] == [0, 1, 2]
+    assert len({action.tool_batch_id for action in actions}) == 1
+    batch = await AgentToolCallBatchRepository(db_session).get(str(actions[0].tool_batch_id))
+    assert batch is not None
+    assert batch.status == AgentToolCallBatchStatus.WAITING
+
+    for action in actions[:2]:
+        await service.decide_action(
+            action_id=str(action.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            decision="approve",
+        )
+        assert calls == 1
+
+    await service.decide_action(
+        action_id=str(actions[2].id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="reject",
+    )
+    # The in-process runner coalesces wakeups by turn and may retain only the
+    # latest action id. That wakeup must drain every persisted requested action
+    # in the batch; correctness cannot depend on one callback per decision.
+    completed = await service.runtime.resume_turn_after_action(str(actions[2].id))
+
+    assert completed.status == "completed"
+    assert completed.final_text == "batch complete"
+    assert calls == 2
+    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert [message.message_metadata["tool_call_id"] for message in tool_messages] == [
+        "call-1",
+        "call-2",
+        "call-3",
+    ]
+    batch = await AgentToolCallBatchRepository(db_session).get(str(actions[0].tool_batch_id))
+    assert batch is not None
+    assert batch.status == AgentToolCallBatchStatus.TERMINAL
+
+
+@pytest.mark.asyncio
+async def test_batch_repository_restart_decision_uses_persisted_action_state(db_session):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Recover this batch.",
+    )
+    batches = AgentToolCallBatchRepository(db_session)
+    batch = await batches.create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        status=AgentToolCallBatchStatus.WAITING,
+        tool_call_count=2,
+    )
+    actions = AgentActionRepository(db_session)
+    for ordinal, status in enumerate(
+        [AgentActionStatus.COMPLETED, AgentActionStatus.WAITING_DECISION]
+    ):
+        await actions.create(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            tool_batch_id=str(batch.id),
+            tool_call_ordinal=ordinal,
+            tool_call_id=f"recover-{ordinal}",
+            kind="tool",
+            name="bash",
+            input={},
+            risk_level="act_high",
+            status=status,
+        )
+
+    assert await batches.continuation_state(str(batch.id)) == "waiting"
+    second = (await actions.list_for_batch(str(batch.id)))[1]
+    await actions.update_all(second, status=AgentActionStatus.REJECTED)
+
+    assert await batches.continuation_state(str(batch.id)) == "ready"
+
+
+@pytest.mark.asyncio
+async def test_incompletely_persisted_batch_never_becomes_ready(db_session):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Persist every call before continuation.",
+    )
+    batches = AgentToolCallBatchRepository(db_session)
+    batch = await batches.create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        status=AgentToolCallBatchStatus.EVALUATING,
+        tool_call_count=2,
+    )
+    await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        tool_batch_id=str(batch.id),
+        tool_call_ordinal=0,
+        tool_call_id="only-one",
+        kind="tool",
+        name="projects.list",
+        input={},
+        risk_level="read",
+        status=AgentActionStatus.COMPLETED,
+    )
+
+    assert await batches.continuation_state(str(batch.id)) == "evaluating"
+
+
+@pytest.mark.asyncio
+async def test_interaction_call_is_exclusive_and_cancels_batch_siblings(
+    db_session,
+    monkeypatch,
+):
+    calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args
+        calls += 1
+        if calls == 1:
+            return _response(
+                tool_calls=[
+                    ("read-before", "projects__list", {}),
+                    (
+                        "question",
+                        "ask_user",
+                        {
+                            "questions": [
+                                {
+                                    "question": "Continue?",
+                                    "header": "Choice",
+                                    "options": [
+                                        {"label": "Yes", "description": "Continue"},
+                                        {"label": "No", "description": "Stop"},
+                                    ],
+                                }
+                            ]
+                        },
+                    ),
+                    ("read-after", "projects__list", {}),
+                ]
+            )
+        tool_results = [item for item in kwargs["messages"] if item["role"] == "tool"]
+        assert [item["tool_call_id"] for item in tool_results] == [
+            "read-before",
+            "question",
+            "read-after",
+        ]
+        return _response(text="interaction complete")
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_: None)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Ask before any sibling work.",
+    )
+
+    waiting = await service.runtime.run_turn(str(turn.id))
+
+    assert waiting.status == "waiting_approval"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    assert [action.status for action in actions] == [
+        AgentActionStatus.CANCELLED,
+        AgentActionStatus.WAITING_DECISION,
+        AgentActionStatus.CANCELLED,
+    ]
+    assert all(action.tool_batch_id == actions[1].tool_batch_id for action in actions)
+    await service.decide_action(
+        action_id=str(actions[1].id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        decision="answer",
+        answer={"Choice": "Yes"},
+    )
+
+    completed = await service.runtime.resume_turn_after_action(str(actions[1].id))
+
+    assert completed.status == "completed"
+    assert completed.final_text == "interaction complete"
+
+
+@pytest.mark.asyncio
+async def test_provider_messages_omit_incomplete_tool_call_group(db_session):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Do not expose unmatched provider messages.",
+    )
+    transcript = AgentTranscriptStore(db_session)
+    await transcript.append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[
+            tool_calls_part(
+                [
+                    {
+                        "id": "unmatched-1",
+                        "type": "function",
+                        "function": {"name": "bash", "arguments": "{}"},
+                    },
+                    {
+                        "id": "unmatched-2",
+                        "type": "function",
+                        "function": {"name": "bash", "arguments": "{}"},
+                    },
+                ]
+            )
+        ],
+    )
+    await transcript.append_text(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="tool",
+        text="first only",
+        metadata={"tool_call_id": "unmatched-1"},
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+
+    assert not any(message.get("tool_calls") for message in messages)
+    assert not any(message.get("role") == "tool" for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_mixed_reads_complete_but_model_waits_for_approval(db_session, monkeypatch):
+    calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        return _response(
+            tool_calls=[
+                ("read-1", "projects__list", {}),
+                ("approval", "bash", {"command": "printf approved"}),
+                ("read-2", "projects__list", {}),
+            ]
+        )
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="guarded_auto",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Read around one approval.",
+    )
+
+    waiting = await service.runtime.run_turn(str(turn.id))
+
+    assert waiting.status == "waiting_approval"
+    assert calls == 1
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    actions.sort(key=lambda action: action.tool_call_ordinal)
+    assert [action.status for action in actions] == [
+        AgentActionStatus.COMPLETED,
+        AgentActionStatus.WAITING_DECISION,
+        AgentActionStatus.COMPLETED,
+    ]
+    batch_actions = await AgentActionRepository(db_session).list_for_batch(
+        str(actions[0].tool_batch_id)
+    )
+    assert [action.tool_call_id for action in batch_actions] == [
+        "read-1",
+        "approval",
+        "read-2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_compaction_does_not_split_assistant_tool_result_group(db_session):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    session = await service.session_repo.update_all(
+        session,
+        compression_state={
+            "enabled": True,
+            "threshold_chars": 1,
+            "preserve_recent_messages": 2,
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep tool groups atomic.",
+    )
+    transcript = AgentTranscriptStore(db_session)
+    await transcript.append_text(
+        session_id=str(session.id), turn_id=str(turn.id), role="assistant", text="old" * 100
+    )
+    batch_message = await transcript.append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[
+            tool_calls_part(
+                [
+                    {"id": "compact-1", "type": "function", "function": {"name": "x", "arguments": "{}"}},
+                    {"id": "compact-2", "type": "function", "function": {"name": "x", "arguments": "{}"}},
+                ]
+            )
+        ],
+    )
+    first_result = await transcript.append_text(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="tool",
+        text="one",
+        metadata={"tool_call_id": "compact-1"},
+    )
+    second_result = await transcript.append_text(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="tool",
+        text="two",
+        metadata={"tool_call_id": "compact-2"},
+    )
+
+    messages = await AgentContextAssembler(db_session).provider_messages(
+        agent_session=session,
+        turn=turn,
+    )
+    stored = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    by_id = {str(message.id): message for message in stored}
+
+    assert by_id[str(batch_message.id)].status == "committed"
+    assert by_id[str(first_result.id)].status == "committed"
+    assert by_id[str(second_result.id)].status == "committed"
+    assert [message.get("tool_call_id") for message in messages if message["role"] == "tool"] == [
+        "compact-1",
+        "compact-2",
+    ]

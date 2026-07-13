@@ -66,24 +66,25 @@ class AgentContextAssembler:
         messages: list[dict[str, str]] = [
             {"role": "system", "content": "\n\n".join(section for section in system_sections if section)}
         ]
+        transcript_messages = []
         for message in await self.transcript.list_messages(str(agent_session.id)):
             if message.status != "committed":
                 continue
             if message.role not in {"user", "assistant", "tool"}:
                 continue
-            messages.append(
+            transcript_messages.append(
                 provider_message_from_parts(
                     message.role,
                     message.content_parts or [],
                     getattr(message, "message_metadata", None),
                 )
             )
+        messages.extend(_complete_provider_groups(transcript_messages))
         return [
             message
             for message in messages
             if message.get("content") or message.get("tool_calls")
         ]
-
     async def _compact_if_needed(self, *, agent_session, turn) -> None:
         policy = getattr(agent_session, "compression_state", None) or {}
         if not bool(policy.get("enabled", False)):
@@ -246,6 +247,34 @@ def _active_skill_names_for_turn(turn) -> list[str]:
     if not isinstance(names, list):
         return []
     return [name for name in names if isinstance(name, str) and name.strip()]
+
+
+def _complete_provider_groups(messages: list[dict]) -> list[dict]:
+    """Exclude incomplete assistant/tool groups and orphan tool messages."""
+    complete: list[dict] = []
+    index = 0
+    while index < len(messages):
+        message = messages[index]
+        tool_calls = message.get("tool_calls") if message.get("role") == "assistant" else None
+        if tool_calls:
+            expected = [str(call.get("id")) for call in tool_calls if call.get("id")]
+            group = [message]
+            seen: list[str] = []
+            cursor = index + 1
+            while cursor < len(messages) and messages[cursor].get("role") == "tool":
+                tool_message = messages[cursor]
+                group.append(tool_message)
+                if tool_message.get("tool_call_id"):
+                    seen.append(str(tool_message["tool_call_id"]))
+                cursor += 1
+            if expected and seen == expected:
+                complete.extend(group)
+            index = cursor
+            continue
+        if message.get("role") != "tool":
+            complete.append(message)
+        index += 1
+    return complete
 
 
 def _exposed_tool_lines(exposed_tools) -> list[str]:

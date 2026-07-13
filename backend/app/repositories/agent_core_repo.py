@@ -11,6 +11,7 @@ from app.models.agent_core import (
     AgentMemory,
     AgentSession,
     AgentSessionStatus,
+    AgentToolCallBatch,
     AgentTurn,
     AgentTurnStatus,
 )
@@ -255,6 +256,40 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_for_batch(self, batch_id: str) -> list[AgentAction]:
+        stmt = (
+            select(self.model)
+            .where(self.model.tool_batch_id == batch_id)
+            .order_by(self.model.tool_call_ordinal, self.model.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+
+class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
+    model = AgentToolCallBatch
+
+    async def continuation_state(self, batch_id: str) -> str:
+        batch = await self.get(batch_id)
+        if batch is None:
+            return "missing"
+        actions = await AgentActionRepository(self.session).list_for_batch(batch_id)
+        if len(actions) != batch.tool_call_count:
+            return "evaluating"
+        terminal = {
+            AgentActionStatus.COMPLETED,
+            AgentActionStatus.FAILED,
+            AgentActionStatus.CANCELLED,
+            AgentActionStatus.REJECTED,
+        }
+        if all(action.status in terminal for action in actions):
+            return "ready"
+        if any(action.status == AgentActionStatus.REQUESTED for action in actions):
+            return "requested"
+        if any(action.status == AgentActionStatus.RUNNING for action in actions):
+            return "running"
+        return "waiting"
 
 
 class AgentArtifactRepository(BaseRepository[AgentArtifact]):

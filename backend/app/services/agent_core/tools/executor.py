@@ -153,6 +153,9 @@ class AgentToolExecutor:
         permission_mode: str = "guarded_auto",
         automation_mode: str = "assisted",
         tool_call_id: str | None = None,
+        tool_batch_id: str | None = None,
+        tool_call_ordinal: int | None = None,
+        defer_execution: bool = False,
         role: str = "orchestrator",
         execution_target: dict | str | None = None,
     ) -> ToolExecutionResult:
@@ -186,6 +189,8 @@ class AgentToolExecutor:
                 exposure_policy=exposure.policy,
                 automation_mode=automation_mode,
                 tool_call_id=tool_call_id,
+                tool_batch_id=tool_batch_id,
+                tool_call_ordinal=tool_call_ordinal,
                 permission_context=permission_context,
                 exc=exc,
             )
@@ -205,6 +210,8 @@ class AgentToolExecutor:
             rollback_hint=tool.spec.rollback_hint,
             artifact_policy=tool.spec.artifact_policy,
             tool_call_id=tool_call_id,
+            tool_batch_id=tool_batch_id,
+            tool_call_ordinal=tool_call_ordinal,
             exposure_policy=exposure.policy,
             force_ask=tool.spec.interaction is not None,
             interaction=tool.spec.interaction,
@@ -227,6 +234,14 @@ class AgentToolExecutor:
                 requires_resume=False,
             )
 
+        if defer_execution:
+            return ToolExecutionResult(
+                action_id=str(action.id),
+                status=action.status,
+                permission_decision=action.permission_decision,
+                requires_resume=False,
+            )
+
         return await self._run_action(action=action, tool=tool, context=context)
 
     async def _record_validation_failure(
@@ -238,6 +253,8 @@ class AgentToolExecutor:
         exposure_policy: dict | None,
         automation_mode: str,
         tool_call_id: str | None,
+        tool_batch_id: str | None,
+        tool_call_ordinal: int | None,
         permission_context: PermissionContext,
         exc: BadRequestError,
     ) -> ToolExecutionResult:
@@ -257,6 +274,8 @@ class AgentToolExecutor:
             rollback_hint=tool.spec.rollback_hint,
             artifact_policy=tool.spec.artifact_policy,
             tool_call_id=tool_call_id,
+            tool_batch_id=tool_batch_id,
+            tool_call_ordinal=tool_call_ordinal,
             exposure_policy=exposure_policy,
             force_ask=False,
             interaction=None,
@@ -315,6 +334,26 @@ class AgentToolExecutor:
                 error_message="; ".join(exposure.reasons),
             )
         return await self._run_action(action=action, tool=tool, context=context)
+
+    async def cancel_action(self, *, action_id: str, reason: str) -> ToolExecutionResult:
+        action = await self.action_repo.get(action_id)
+        if action is None:
+            raise ConflictError("Tool action does not exist")
+        error = {"type": "InteractionExclusive", "message": reason}
+        action = await self.action_repo.update_all(
+            action,
+            status=AgentActionStatus.CANCELLED,
+            requires_resume=False,
+            error=error,
+            completed_at=datetime.now(timezone.utc),
+        )
+        await self.ledger.append(
+            session_id=str(action.session_id),
+            turn_id=str(action.turn_id),
+            type=AgentEventType.ACTION_CANCELLED,
+            payload={"action_id": str(action.id), "tool": action.name, "reason": reason},
+        )
+        return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
 
     async def _record_permission_failure(
         self,

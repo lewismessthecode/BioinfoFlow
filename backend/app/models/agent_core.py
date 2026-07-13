@@ -40,6 +40,14 @@ class AgentActionStatus:
     REJECTED = "rejected"
 
 
+class AgentToolCallBatchStatus:
+    EVALUATING = "evaluating"
+    WAITING = "waiting"
+    READY = "ready"
+    CONTINUING = "continuing"
+    TERMINAL = "terminal"
+
+
 class AgentMemoryStatus:
     PROPOSED = "proposed"
     ACCEPTED = "accepted"
@@ -179,6 +187,11 @@ class AgentTurn(Base, UUIDMixin, TimestampMixin):
         back_populates="turn",
         cascade="all, delete-orphan",
     )
+    tool_call_batches = relationship(
+        "AgentToolCallBatch",
+        back_populates="turn",
+        cascade="all, delete-orphan",
+    )
     artifacts = relationship(
         "AgentArtifact",
         back_populates="turn",
@@ -250,8 +263,51 @@ class AgentEvent(Base, UUIDMixin, TimestampMixin):
     turn = relationship("AgentTurn", back_populates="events")
 
 
+class AgentToolCallBatch(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "agent_tool_call_batches"
+
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    turn_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_turns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default=AgentToolCallBatchStatus.EVALUATING,
+        index=True,
+    )
+    tool_call_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    continuation_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    turn = relationship("AgentTurn", back_populates="tool_call_batches")
+    actions = relationship("AgentAction", back_populates="tool_batch")
+
+
 class AgentAction(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "agent_actions"
+    __table_args__ = (
+        UniqueConstraint(
+            "tool_batch_id",
+            "tool_call_ordinal",
+            name="uq_agent_actions_tool_batch_ordinal",
+        ),
+        UniqueConstraint(
+            "tool_batch_id",
+            "tool_call_id",
+            name="uq_agent_actions_tool_batch_call_id",
+        ),
+    )
 
     session_id: Mapped[str] = mapped_column(
         ForeignKey("agent_sessions.id", ondelete="CASCADE"),
@@ -271,6 +327,12 @@ class AgentAction(Base, UUIDMixin, TimestampMixin):
     kind: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     tool_call_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    tool_batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_tool_call_batches.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    tool_call_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     input: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     normalized_input: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     input_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -304,6 +366,7 @@ class AgentAction(Base, UUIDMixin, TimestampMixin):
     session = relationship("AgentSession", back_populates="actions")
     turn = relationship("AgentTurn", back_populates="actions")
     parent_action = relationship("AgentAction", remote_side="AgentAction.id")
+    tool_batch = relationship("AgentToolCallBatch", back_populates="actions")
     artifacts = relationship("AgentArtifact", back_populates="action")
 
 

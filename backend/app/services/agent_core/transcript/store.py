@@ -73,13 +73,16 @@ class AgentTranscriptStore:
         if transcript_chars <= threshold_chars:
             return None
 
-        summary_candidates = committed[:-preserve_recent_messages]
+        preserve_start = len(committed) - preserve_recent_messages
+        while preserve_start > 0 and committed[preserve_start].role == "tool":
+            preserve_start -= 1
+        summary_candidates = committed[:preserve_start]
         if not summary_candidates:
             return None
         if len(summary_candidates) == 1 and self._is_compaction_summary(summary_candidates[0]):
             return None
 
-        insert_before = committed[-preserve_recent_messages].ordering_index
+        insert_before = committed[preserve_start].ordering_index
         await self.messages.shift_ordering_indices(session_id, starting_at=insert_before)
         summary_text = self._build_summary(summary_candidates)
         summary_message = await self.append_text(

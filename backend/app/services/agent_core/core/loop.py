@@ -38,6 +38,7 @@ from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.observability import truncate_log_value
 from app.services.agent_core.permissions.context import PermissionContextResolver
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
+from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
 from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
 from app.services.agent_core.tools.toolsets import (
     decode_provider_tool_name,
@@ -63,6 +64,7 @@ class AgentLoopController:
         self.transcript = AgentTranscriptStore(session)
         self.registry = build_default_tool_registry()
         self.executor = AgentToolExecutor(session, self.registry)
+        self.tool_batches = ToolCallBatchCoordinator(session)
 
     async def run_turn(
         self,
@@ -195,7 +197,14 @@ class AgentLoopController:
                 )
 
             token_usage = _merge_usage(token_usage, streamed.token_usage)
-            tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
+            tool_calls = [
+                {
+                    **_tool_call_dict(item),
+                    "id": _tool_call_dict(item).get("id")
+                    or f"bioinfoflow-{turn.id}-{budget.used_iterations}-{index}",
+                }
+                for index, item in enumerate(streamed.tool_calls)
+            ]
             if tool_calls:
                 tool_call_signatures = [_tool_call_signature(tool_call) for tool_call in tool_calls]
                 await self._append_assistant_tool_calls(
@@ -324,78 +333,129 @@ class AgentLoopController:
         turn,
         tool_calls: list[dict],
     ) -> tuple[bool, list[str]]:
+        batch_record = await self.tool_batches.create(
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+            tool_call_count=len(tool_calls),
+        )
+        context = AgentToolContext(
+            db=self.db,
+            workspace_id=str(turn.workspace_id),
+            user_id=turn.user_id,
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        )
+        prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
+        for ordinal, tool_call in enumerate(tool_calls):
+            tool_name = decode_provider_tool_name(tool_call["name"])
+            result = await self.executor.execute(
+                tool_name=tool_name,
+                input=tool_call["arguments"],
+                context=context,
+                toolset_policy=agent_session.toolset_policy,
+                permission_mode=agent_session.permission_mode,
+                automation_mode=agent_session.automation_mode,
+                tool_call_id=tool_call["id"],
+                tool_batch_id=str(batch_record.id),
+                tool_call_ordinal=ordinal,
+                defer_execution=True,
+                role=_tool_role(agent_session),
+                execution_target=execution_target_from_session(agent_session),
+            )
+            prepared.append((tool_call, tool_name, result))
+        interaction_ordinals = [
+            ordinal
+            for ordinal, call in enumerate(tool_calls)
+            if self.registry.get(decode_provider_tool_name(call["name"])).spec.interaction
+        ]
+        if interaction_ordinals:
+            return await self._execute_interaction_batch(
+                agent_session=agent_session,
+                turn=turn,
+                prepared=prepared,
+                batch_id=str(batch_record.id),
+                interaction_ordinal=interaction_ordinals[0],
+            )
         waiting = False
         result_signatures: list[str] = []
         index = 0
-        while index < len(tool_calls):
+        while index < len(prepared):
             turn = await self._renew_turn_lease(turn)
-            tool_call = tool_calls[index]
-            tool_name = decode_provider_tool_name(tool_call["name"])
-            if self._is_concurrent_read_only_tool(tool_name):
-                batch: list[tuple[dict[str, Any], str]] = []
-                while index < len(tool_calls):
-                    candidate = tool_calls[index]
-                    candidate_name = decode_provider_tool_name(candidate["name"])
-                    if not self._is_concurrent_read_only_tool(candidate_name):
+            tool_call, tool_name, prepared_result = prepared[index]
+            if (
+                prepared_result.status == AgentActionStatus.REQUESTED
+                and self._is_concurrent_read_only_tool(tool_name)
+            ):
+                batch: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
+                while index < len(prepared):
+                    candidate, candidate_name, candidate_result = prepared[index]
+                    if (
+                        candidate_result.status != AgentActionStatus.REQUESTED
+                        or not self._is_concurrent_read_only_tool(candidate_name)
+                    ):
                         break
-                    batch.append((candidate, candidate_name))
+                    batch.append((candidate, candidate_name, candidate_result))
                     index += 1
                 results = await asyncio.gather(
                     *[
                         self._execute_tool_call_isolated(
                             agent_session=agent_session,
                             turn=turn,
-                            tool_call=item,
-                            tool_name=name,
+                            action_id=item_result.action_id,
                         )
-                        for item, name in batch
+                        for _item, _name, item_result in batch
                     ]
                 )
-                for (item, name), result in zip(batch, results, strict=False):
-                    if result.requires_resume:
-                        waiting = True
-                        continue
+                for (item, name, _prepared_result), result in zip(batch, results, strict=False):
                     result_signatures.append(_tool_result_signature(name, result))
-                    await self._append_tool_result(
-                        agent_session=agent_session,
-                        turn=turn,
-                        tool_name=name,
-                        tool_call_id=item.get("id"),
-                        result=result,
-                    )
                 continue
-
-            result = await self.executor.execute(
-                tool_name=tool_name,
-                input=tool_call["arguments"],
-                context=AgentToolContext(
-                    db=self.db,
-                    workspace_id=str(turn.workspace_id),
-                    user_id=turn.user_id,
-                    session_id=str(agent_session.id),
-                    turn_id=str(turn.id),
-                ),
-                toolset_policy=agent_session.toolset_policy,
-                permission_mode=agent_session.permission_mode,
-                automation_mode=agent_session.automation_mode,
-                tool_call_id=tool_call.get("id"),
-                role=_tool_role(agent_session),
-                execution_target=execution_target_from_session(agent_session),
-            )
-            if result.requires_resume:
+            if prepared_result.requires_resume:
                 waiting = True
                 index += 1
                 continue
+            result = prepared_result
+            if prepared_result.status == AgentActionStatus.REQUESTED:
+                result = await self.executor.resume_action(
+                    action_id=prepared_result.action_id,
+                    context=context,
+                )
             result_signatures.append(_tool_result_signature(tool_name, result))
-            await self._append_tool_result(
+            index += 1
+        state = await self.tool_batches.settle(str(batch_record.id))
+        if state == "ready":
+            await self._append_missing_batch_results(
                 agent_session=agent_session,
                 turn=turn,
-                tool_name=tool_name,
-                tool_call_id=tool_call.get("id"),
-                result=result,
+                batch_id=str(batch_record.id),
             )
-            index += 1
+            await self.tool_batches.mark_terminal(str(batch_record.id))
         return waiting, result_signatures
+
+    async def _execute_interaction_batch(
+        self,
+        *,
+        agent_session,
+        turn,
+        prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]],
+        batch_id: str,
+        interaction_ordinal: int,
+    ) -> tuple[bool, list[str]]:
+        result_signatures: list[str] = []
+        for ordinal, (tool_call, tool_name, prepared_result) in enumerate(prepared):
+            if ordinal == interaction_ordinal:
+                continue
+            result = prepared_result
+            if prepared_result.status in {
+                AgentActionStatus.REQUESTED,
+                AgentActionStatus.WAITING_DECISION,
+            }:
+                result = await self.executor.cancel_action(
+                    action_id=prepared_result.action_id,
+                    reason="A user interaction in this tool-call batch is exclusive.",
+                )
+            result_signatures.append(_tool_result_signature(tool_name, result))
+        await self.tool_batches.settle(batch_id)
+        return True, result_signatures
 
     async def resume_turn_from_action(
         self,
@@ -436,38 +496,93 @@ class AgentLoopController:
                 error_message="Agent session could not be loaded for resume.",
             )
 
-        if action.status == AgentActionStatus.REJECTED:
-            result = ToolExecutionResult(
-                action_id=str(action.id),
-                status=action.status,
-                error={"type": "UserRejected", "message": "The user rejected this tool call."},
-            )
-        else:
-            result = await self.executor.resume_action(
-                action_id=action_id,
-                context=AgentToolContext(
-                    db=self.db,
-                    workspace_id=str(turn.workspace_id),
-                    user_id=turn.user_id,
-                    session_id=str(agent_session.id),
-                    turn_id=str(turn.id),
-                ),
-            )
-        await self._append_tool_result(
-            agent_session=agent_session,
-            turn=turn,
-            tool_name=action.name,
-            tool_call_id=action.tool_call_id,
-            result=result,
+        context = AgentToolContext(
+            db=self.db,
+            workspace_id=str(turn.workspace_id),
+            user_id=turn.user_id,
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
         )
-        if result.status not in {"completed", AgentActionStatus.REJECTED}:
-            return LoopResult(
-                termination_reason="model_failed",
-                final_text=None,
-                iteration_count=0,
-                error_code="tool_resume_failed",
-                error_message=f"Approved tool action finished with status: {result.status}",
+        if action.tool_batch_id:
+            failed_resume_status: str | None = None
+            for batch_action in await self.actions.list_for_batch(str(action.tool_batch_id)):
+                if batch_action.status != AgentActionStatus.REQUESTED:
+                    continue
+                result = await self.executor.resume_action(
+                    action_id=str(batch_action.id),
+                    context=context,
+                )
+                if result.status not in {
+                    AgentActionStatus.COMPLETED,
+                    AgentActionStatus.REJECTED,
+                }:
+                    failed_resume_status = result.status
+            if failed_resume_status is not None:
+                await self._append_missing_batch_results(
+                    agent_session=agent_session,
+                    turn=turn,
+                    batch_id=str(action.tool_batch_id),
+                )
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=0,
+                    error_code="tool_resume_failed",
+                    error_message=(
+                        "Approved tool action finished with status: "
+                        f"{failed_resume_status}"
+                    ),
+                )
+            state = await self.tool_batches.settle(str(action.tool_batch_id))
+            if state != "ready":
+                return LoopResult(
+                    termination_reason="waiting_approval",
+                    final_text=None,
+                    iteration_count=0,
+                )
+            if not await self.tool_batches.claim_continuation(str(action.tool_batch_id)):
+                return LoopResult(
+                    termination_reason="waiting_approval",
+                    final_text=None,
+                    iteration_count=0,
+                )
+            await self._append_missing_batch_results(
+                agent_session=agent_session,
+                turn=turn,
+                batch_id=str(action.tool_batch_id),
             )
+            await self.tool_batches.mark_terminal(str(action.tool_batch_id))
+        else:
+            if action.status == AgentActionStatus.REJECTED:
+                result = ToolExecutionResult(
+                    action_id=str(action.id),
+                    status=action.status,
+                    error={
+                        "type": "UserRejected",
+                        "message": "The user rejected this tool call.",
+                    },
+                )
+            else:
+                result = await self.executor.resume_action(
+                    action_id=action_id,
+                    context=context,
+                )
+            if not await self._has_tool_result(str(agent_session.id), action.tool_call_id):
+                await self._append_tool_result(
+                    agent_session=agent_session,
+                    turn=turn,
+                    tool_name=action.name,
+                    tool_call_id=action.tool_call_id,
+                    result=result,
+                )
+            if result.status not in {"completed", AgentActionStatus.REJECTED}:
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=0,
+                    error_code="tool_resume_failed",
+                    error_message=f"Approved tool action finished with status: {result.status}",
+                )
         return await self.run_turn(
             turn_id=str(turn.id),
             provider=provider,
@@ -530,7 +645,13 @@ class AgentLoopController:
             metadata={"tool_call_id": tool_call_id, "tool": tool_name},
         )
 
-    async def _execute_tool_call_isolated(self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str):
+    async def _execute_tool_call_isolated(
+        self,
+        *,
+        agent_session,
+        turn,
+        action_id: str,
+    ):
         bind = self.db.bind
         session_factory = (
             async_sessionmaker(bind=bind, expire_on_commit=False)
@@ -539,9 +660,8 @@ class AgentLoopController:
         )
         async with session_factory() as session:
             executor = AgentToolExecutor(session, build_default_tool_registry())
-            return await executor.execute(
-                tool_name=tool_name,
-                input=tool_call["arguments"],
+            return await executor.resume_action(
+                action_id=action_id,
                 context=AgentToolContext(
                     db=session,
                     workspace_id=str(turn.workspace_id),
@@ -549,12 +669,41 @@ class AgentLoopController:
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
                 ),
-                toolset_policy=agent_session.toolset_policy,
-                permission_mode=agent_session.permission_mode,
-                automation_mode=agent_session.automation_mode,
-                tool_call_id=tool_call.get("id"),
-                role=_tool_role(agent_session),
-                execution_target=execution_target_from_session(agent_session),
+            )
+
+    async def _has_tool_result(self, session_id: str, tool_call_id: str | None) -> bool:
+        if not tool_call_id:
+            return False
+        messages = await self.transcript.list_messages(session_id)
+        return any(
+            message.role == "tool"
+            and (message.message_metadata or {}).get("tool_call_id") == tool_call_id
+            for message in messages
+        )
+
+    async def _append_missing_batch_results(self, *, agent_session, turn, batch_id: str) -> None:
+        for batch_action in await self.actions.list_for_batch(batch_id):
+            if await self._has_tool_result(str(agent_session.id), batch_action.tool_call_id):
+                continue
+            if batch_action.status == AgentActionStatus.REJECTED:
+                result = ToolExecutionResult(
+                    action_id=str(batch_action.id),
+                    status=batch_action.status,
+                    error={"type": "UserRejected", "message": "The user rejected this tool call."},
+                )
+            else:
+                result = ToolExecutionResult(
+                    action_id=str(batch_action.id),
+                    status=batch_action.status,
+                    result=batch_action.result,
+                    error=batch_action.error,
+                )
+            await self._append_tool_result(
+                agent_session=agent_session,
+                turn=turn,
+                tool_name=batch_action.name,
+                tool_call_id=batch_action.tool_call_id,
+                result=result,
             )
 
     def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:
