@@ -626,7 +626,8 @@ class LlmCatalogService:
             ) as client:
                 response = await client.get(
                     f"{base_url}/v1beta/models",
-                    params={"key": material.api_key, "pageSize": 1000},
+                    headers={"x-goog-api-key": material.api_key},
+                    params={"pageSize": 1000},
                 )
                 response.raise_for_status()
             return [

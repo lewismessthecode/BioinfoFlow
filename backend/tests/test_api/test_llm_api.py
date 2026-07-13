@@ -579,7 +579,8 @@ async def test_gemini_provider_discovers_models_and_skips_non_generative(
 
         async def get(self, url: str, headers=None, params=None):
             assert url == "https://generativelanguage.googleapis.com/v1beta/models"
-            assert params == {"key": "gemini-key", "pageSize": 1000}
+            assert headers == {"x-goog-api-key": "gemini-key"}
+            assert params == {"pageSize": 1000}
             return httpx.Response(
                 200,
                 json={
@@ -622,6 +623,54 @@ async def test_gemini_provider_discovers_models_and_skips_non_generative(
     assert model_ids == {"gemini-3-pro"}
     gemini_model = next(model for model in models if model["model_id"] == "gemini-3-pro")
     assert gemini_model["context_length"] == 1000000
+
+
+@pytest.mark.asyncio
+async def test_gemini_discovery_error_logs_do_not_expose_api_key(
+    async_client,
+    monkeypatch,
+    caplog,
+):
+    secret = "sentinel-gemini-log-secret"
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None, params=None):
+            assert headers == {"x-goog-api-key": secret}
+            assert params == {"pageSize": 1000}
+            return httpx.Response(
+                403,
+                json={"error": {"message": "invalid credential"}},
+                request=httpx.Request("GET", url, params=params, headers=headers),
+            )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
+
+    setup = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={"template_id": "gemini", "api_key": secret, "scope": "user"},
+    )
+    assert setup.status_code == 200
+    provider = setup.json()["data"]["provider"]
+
+    response = await async_client.post(
+        f"/api/v1/llm/providers/{provider['id']}/discover-models",
+    )
+
+    assert response.status_code == 500
+    assert secret not in response.text
+    assert secret not in caplog.text
 
 
 @pytest.mark.asyncio

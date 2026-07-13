@@ -439,13 +439,29 @@ async def test_environment_bootstrap_runs_live_discovery(db_session, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_environment_bootstrap_swallows_discovery_errors(db_session, monkeypatch):
+async def test_environment_bootstrap_swallows_discovery_errors_without_logging_secrets(
+    db_session,
+    monkeypatch,
+    caplog,
+):
+    secret = "sentinel-bootstrap-gemini-secret"
     monkeypatch.setenv("VLLM_BASE_URL", "http://vllm.internal.test:8000/v1")
-    monkeypatch.setenv("VLLM_API_KEY", "vllm")
+    monkeypatch.setenv("VLLM_API_KEY", secret)
     monkeypatch.setenv("VLLM_MODEL", "deepseek_v4")
 
-    async def _boom(self, provider):
-        raise httpx.ConnectError("no route to host")
+    async def _boom(self, provider, **kwargs):
+        del self, provider, kwargs
+        request = httpx.Request(
+            "GET",
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            headers={"x-goog-api-key": secret},
+        )
+        response = httpx.Response(403, request=request)
+        raise httpx.HTTPStatusError(
+            "provider rejected discovery",
+            request=request,
+            response=response,
+        )
 
     monkeypatch.setattr(
         "app.services.llm.bootstrap.LlmCatalogService.discover_models_unchecked",
@@ -457,3 +473,4 @@ async def test_environment_bootstrap_swallows_discovery_errors(db_session, monke
 
     model = (await db_session.execute(LlmModel.__table__.select())).mappings().one()
     assert model["model_id"] == "deepseek_v4"
+    assert secret not in caplog.text
