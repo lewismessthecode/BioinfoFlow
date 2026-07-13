@@ -887,6 +887,64 @@ async def test_prepare_cancellation_terminalizes_entire_batch(db_session, monkey
 
 
 @pytest.mark.asyncio
+async def test_execution_cancellation_cancels_committed_batch(db_session, monkeypatch):
+    async def fake_completion(*args, **kwargs):
+        del args, kwargs
+        return _response(tool_calls=[("cancel-run", "projects__list", {})])
+
+    async def cancel_run(self, input, context):
+        del self, input, context
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(
+        "app.services.agent_core.tools.platform.projects.ListProjectsTool.run", cancel_run
+    )
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev")
+    turn = await service.create_turn_record(
+        session_id=str(session.id), workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", input_text="Cancel execution."
+    )
+    cancelled = await service.runtime.run_turn(str(turn.id))
+    assert cancelled.status == "cancelled"
+    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    batch = await AgentToolCallBatchRepository(db_session).get_fresh(str(actions[0].tool_batch_id))
+    assert actions[0].status == AgentActionStatus.CANCELLED
+    assert batch.status == AgentToolCallBatchStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_failed_b_preparation_terminalizes_prior_a_in_same_transition(db_session, monkeypatch):
+    calls = 0
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        if calls == 1:
+            return _response(tool_calls=[("a-read", "projects__list", {})])
+        return _response(tool_calls=[("b-denied", "ask_user", {"questions": []})])
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", role_profile="worker"
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id), workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", input_text="A then denied B."
+    )
+    failed = await service.runtime.run_turn(str(turn.id))
+    assert failed.error_code == "tool_not_exposed"
+    batches, _ = await AgentToolCallBatchRepository(db_session).list(limit=10)
+    batches.sort(key=lambda batch: batch.batch_ordinal)
+    assert [batch.batch_ordinal for batch in batches] == [1, 2]
+    assert batches[0].status == AgentToolCallBatchStatus.TERMINAL
+    assert batches[1].status == AgentToolCallBatchStatus.FAILED
+
+
+@pytest.mark.asyncio
 async def test_assistant_batch_and_all_actions_become_visible_atomically(db_session, monkeypatch):
     model_calls = 0
 
@@ -1251,3 +1309,36 @@ async def test_mixed_batch_recovery_uses_running_waiting_requested_priority(
     outcome = await service._recover_turn(str(turn.id))
 
     assert outcome == expected
+
+
+@pytest.mark.asyncio
+async def test_recovery_never_crosses_earlier_unresolved_batch_when_timestamps_tie(
+    db_session, monkeypatch
+):
+    await _seed_runtime(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(project_id=None, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev")
+    turn = await service.create_turn_record(
+        session_id=str(session.id), workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev", input_text="Order barriers."
+    )
+    await service.turn_repo.update_all(turn, status="waiting_approval")
+    batches = ToolCallBatchCoordinator(db_session)
+    first = await batches.create(session_id=str(session.id), turn_id=str(turn.id), tool_call_count=1)
+    second = await batches.create(session_id=str(session.id), turn_id=str(turn.id), tool_call_count=1)
+    await batches.batches.update_all(first, status=AgentToolCallBatchStatus.WAITING)
+    await batches.batches.update_all(second, status=AgentToolCallBatchStatus.WAITING, created_at=first.created_at)
+    await AgentActionRepository(db_session).create(
+        session_id=str(session.id), turn_id=str(turn.id), tool_batch_id=str(first.id), tool_call_ordinal=0,
+        tool_call_id="earlier", kind="tool", name="bash", input={}, risk_level="act_high",
+        status=AgentActionStatus.WAITING_DECISION,
+    )
+    await AgentActionRepository(db_session).create(
+        session_id=str(session.id), turn_id=str(turn.id), tool_batch_id=str(second.id), tool_call_ordinal=0,
+        tool_call_id="later", kind="tool", name="bash", input={}, risk_level="act_high",
+        status=AgentActionStatus.REQUESTED,
+    )
+    from app.services.agent_core import service as service_module
+    wakeups: list[str] = []
+    monkeypatch.setattr(service_module, "enqueue_turn_resume", lambda action_id, *_: wakeups.append(action_id))
+    assert await service._recover_turn(str(turn.id)) == "waiting"
+    assert wakeups == []

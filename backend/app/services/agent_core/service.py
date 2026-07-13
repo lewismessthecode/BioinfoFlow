@@ -643,6 +643,18 @@ class AgentCoreService:
         now = datetime.now(timezone.utc)
 
         batches = await self.tool_batch_repo.list_nonterminal_for_turn(turn_id)
+        if len(batches) > 1 and any(batch.batch_ordinal is None for batch in batches):
+            await self.turn_repo.update_all(
+                turn,
+                status=AgentTurnStatus.FAILED,
+                termination_reason="model_failed",
+                error_code="recovery_ambiguous_tool_batches",
+                error_message="Legacy tool batches cannot be ordered safely for recovery.",
+                completed_at=now,
+                claimed_at=None,
+                lease_until=None,
+            )
+            return "failed"
         latest_batch = batches[0] if batches else None
         if latest_batch is not None:
             batch_actions = await self.action_repo.list_for_batch(str(latest_batch.id))

@@ -140,11 +140,15 @@ class AgentContextAssembler:
                         for action in turn_actions
                         if str(action.tool_batch_id) == str(batch_id)
                     ]
-                actions_by_call_id = {
-                    str(action.tool_call_id): action
-                    for action in turn_actions
-                    if action.tool_call_id
-                }
+                actions_by_call_id = {}
+                for action in turn_actions:
+                    if not action.tool_call_id:
+                        continue
+                    call_id = str(action.tool_call_id)
+                    if call_id in actions_by_call_id:
+                        actions_by_call_id[call_id] = None
+                    else:
+                        actions_by_call_id[call_id] = action
                 unresolved_ids = {
                     str(action.tool_call_id)
                     for action in turn_actions
@@ -178,7 +182,7 @@ class AgentContextAssembler:
                             "tool_batch_id": batch_id,
                             "action_id": (
                                 str(actions_by_call_id[tool_call_id].id)
-                                if tool_call_id in actions_by_call_id
+                                if actions_by_call_id.get(tool_call_id) is not None
                                 else (existing.message_metadata or {}).get("action_id")
                             ),
                             "transcript_repair": True,
@@ -208,7 +212,7 @@ class AgentContextAssembler:
                             "tool_batch_id": batch_id,
                             "action_id": (
                                 str(actions_by_call_id[tool_call_id].id)
-                                if tool_call_id in actions_by_call_id
+                                if actions_by_call_id.get(tool_call_id) is not None
                                 else None
                             ),
                             "transcript_repair": True,

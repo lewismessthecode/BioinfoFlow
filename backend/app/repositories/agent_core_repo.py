@@ -280,6 +280,12 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def next_ordinal(self, turn_id: str) -> int:
+        current = await self.session.scalar(
+            select(func.max(self.model.batch_ordinal)).where(self.model.turn_id == turn_id)
+        )
+        return int(current or 0) + 1
+
     async def continuation_state(self, batch_id: str) -> str:
         batch = await self.get(batch_id)
         if batch is None:
@@ -308,7 +314,7 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
                 self.model.turn_id == turn_id,
                 self.model.status.not_in(["terminal", "failed", "cancelled"]),
             )
-            .order_by(desc(self.model.created_at), desc(self.model.id))
+            .order_by(self.model.batch_ordinal.asc().nullsfirst(), self.model.created_at, self.model.id)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -375,6 +381,29 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
             .returning(self.model.id)
         )
         result = await self.session.execute(stmt)
+        changed = result.scalar_one_or_none() is not None
+        await self.session.commit()
+        return changed
+
+    async def terminalize_continuing_pending(self, batch_id: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(self.model.id == batch_id, self.model.status == "continuing")
+            .values(status="terminal", completed_at=datetime.now(timezone.utc))
+            .returning(self.model.id)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def cancel_nonterminal(self, batch_id: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == batch_id,
+                self.model.status.in_(["evaluating", "waiting", "ready", "continuing"]),
+            )
+            .values(status="cancelled", completed_at=datetime.now(timezone.utc))
+            .returning(self.model.id)
+        )
         changed = result.scalar_one_or_none() is not None
         await self.session.commit()
         return changed

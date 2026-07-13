@@ -33,6 +33,7 @@ class ToolCallBatchCoordinator:
             "turn_id": turn_id,
             "status": AgentToolCallBatchStatus.EVALUATING,
             "tool_call_count": tool_call_count,
+            "batch_ordinal": await self.batches.next_ordinal(turn_id),
         }
         if batch_id is not None:
             values["id"] = batch_id
@@ -61,13 +62,10 @@ class ToolCallBatchCoordinator:
         return await self.batches.claim_ready(batch_id)
 
     async def mark_terminal(self, batch_id: str) -> None:
-        batch = await self.batches.get(batch_id)
-        if batch is not None:
-            await self.batches.update_all(
-                batch,
-                status=AgentToolCallBatchStatus.TERMINAL,
-                completed_at=datetime.now(timezone.utc),
-            )
+        await self.batches.terminalize_continuing(
+            batch_id, status=AgentToolCallBatchStatus.TERMINAL
+        )
+        await self.batches.get_fresh(batch_id)
 
     async def release_continuation(self, batch_id: str) -> bool:
         return await self.batches.release_continuing(batch_id)

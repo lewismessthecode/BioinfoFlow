@@ -69,6 +69,7 @@ class AgentLoopController:
         self.registry = build_default_tool_registry()
         self.executor = AgentToolExecutor(session, self.registry)
         self.tool_batches = ToolCallBatchCoordinator(session)
+        self._current_prepared_batch_id: str | None = None
 
     async def run_turn(
         self,
@@ -255,14 +256,19 @@ class AgentLoopController:
                         provider=provider,
                         model=model,
                         text=streamed.text or None,
+                        prior_continuation_batch_id=active_continuation_batch_id,
                     )
                     )
                     if active_continuation_batch_id is not None:
-                        await self.tool_batches.mark_terminal(
-                            active_continuation_batch_id
-                        )
                         active_continuation_batch_id = None
                 except asyncio.CancelledError:
+                    if self._current_prepared_batch_id is not None:
+                        await self._cancel_committed_batch(
+                            self._current_prepared_batch_id,
+                            agent_session=agent_session,
+                            turn=turn,
+                        )
+                        self._current_prepared_batch_id = None
                     if active_continuation_batch_id is not None:
                         await self.tool_batches.cancel_continuation(
                             active_continuation_batch_id
@@ -401,6 +407,7 @@ class AgentLoopController:
         provider: str,
         model: str,
         text: str | None,
+        prior_continuation_batch_id: str | None,
     ) -> tuple[bool, list[str], str | None]:
         session_id = str(agent_session.id)
         turn_id = str(turn.id)
@@ -448,7 +455,12 @@ class AgentLoopController:
                     execution_target=execution_target_from_session(agent_session),
                 )
                 prepared.append((tool_call, tool_name, result))
+            if prior_continuation_batch_id is not None:
+                await self.tool_batches.batches.terminalize_continuing_pending(
+                    prior_continuation_batch_id
+                )
             await self.db.commit()
+            self._current_prepared_batch_id = batch_id
         except asyncio.CancelledError as exc:
             await self._persist_failed_preparation_batch(
                 batch_id=batch_id,
@@ -462,6 +474,7 @@ class AgentLoopController:
                 batch_status=AgentToolCallBatchStatus.CANCELLED,
                 error_type="BatchPreparationCancelled",
                 error_message="Tool batch preparation was cancelled.",
+                prior_continuation_batch_id=prior_continuation_batch_id,
             )
             raise exc
         except Exception as exc:  # noqa: BLE001 - replace with a complete terminal batch
@@ -477,9 +490,11 @@ class AgentLoopController:
                 batch_status=AgentToolCallBatchStatus.FAILED,
                 error_type="BatchPreparationError",
                 error_message=str(exc),
+                prior_continuation_batch_id=prior_continuation_batch_id,
             )
             if isinstance(exc, PermissionDeniedError):
                 raise
+            self._current_prepared_batch_id = None
             return False, [], None
         interaction_ordinals = [
             ordinal
@@ -494,6 +509,7 @@ class AgentLoopController:
                 batch_id=batch_id,
                 interaction_ordinal=interaction_ordinals[0],
             )
+            self._current_prepared_batch_id = None
             return waiting, signatures, None
         waiting = False
         result_signatures: list[str] = []
@@ -545,6 +561,7 @@ class AgentLoopController:
             )
             if await self.tool_batches.claim_continuation(batch_id):
                 claimed_batch_id = batch_id
+        self._current_prepared_batch_id = None
         return waiting, result_signatures, claimed_batch_id
 
     async def _persist_failed_preparation_batch(
@@ -561,6 +578,7 @@ class AgentLoopController:
         batch_status: str,
         error_type: str,
         error_message: str,
+        prior_continuation_batch_id: str | None = None,
     ) -> None:
         session_id = str(agent_session.id)
         turn_id = str(turn.id)
@@ -601,15 +619,39 @@ class AgentLoopController:
             status=batch_status,
             completed_at=datetime.now(timezone.utc),
         )
-        await self.db.commit()
-        fresh_session = await self.sessions.get(session_id)
-        fresh_turn = await self.turns.get(turn_id)
-        if fresh_session is not None and fresh_turn is not None:
-            await self._append_missing_batch_results(
-                agent_session=fresh_session,
-                turn=fresh_turn,
-                batch_id=batch_id,
+        if prior_continuation_batch_id is not None:
+            await self.tool_batches.batches.terminalize_continuing_pending(
+                prior_continuation_batch_id
             )
+        await self._append_missing_batch_results(
+            agent_session=agent_session,
+            turn=turn,
+            batch_id=batch_id,
+            commit=False,
+        )
+        await self.db.commit()
+
+    async def _cancel_committed_batch(self, batch_id: str, *, agent_session, turn) -> None:
+        now = datetime.now(timezone.utc)
+        for action in await self.actions.list_for_batch(batch_id):
+            if action.status in {
+                AgentActionStatus.WAITING_DECISION,
+                AgentActionStatus.REQUESTED,
+                AgentActionStatus.RUNNING,
+            }:
+                await self.actions.update_all(
+                    action,
+                    status=AgentActionStatus.CANCELLED,
+                    requires_resume=False,
+                    error={"type": "CancelledError", "message": "Tool batch execution was cancelled."},
+                    completed_at=now,
+                )
+        await self.tool_batches.batches.cancel_nonterminal(batch_id)
+        await self._append_missing_batch_results(
+            agent_session=agent_session,
+            turn=turn,
+            batch_id=batch_id,
+        )
 
     async def _execute_interaction_batch(
         self,
@@ -825,6 +867,7 @@ class AgentLoopController:
         action_id: str | None,
         batch_id: str | None,
         result,
+        commit: bool = True,
     ) -> None:
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
@@ -850,6 +893,7 @@ class AgentLoopController:
                 "action_id": action_id,
                 "tool_batch_id": batch_id,
             },
+            commit=commit,
         )
 
     async def _execute_tool_call_isolated(
@@ -903,7 +947,14 @@ class AgentLoopController:
                     return True
         return False
 
-    async def _append_missing_batch_results(self, *, agent_session, turn, batch_id: str) -> None:
+    async def _append_missing_batch_results(
+        self,
+        *,
+        agent_session,
+        turn,
+        batch_id: str,
+        commit: bool = True,
+    ) -> None:
         for batch_action in await self.actions.list_for_batch(batch_id):
             if await self._has_tool_result(
                 str(agent_session.id),
@@ -933,6 +984,7 @@ class AgentLoopController:
                 action_id=str(batch_action.id),
                 batch_id=batch_id,
                 result=result,
+                commit=commit,
             )
 
     def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:

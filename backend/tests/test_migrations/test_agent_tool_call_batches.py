@@ -68,6 +68,10 @@ def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(tmp_path: P
         action_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(agent_actions)")
         }
+        batch_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(agent_tool_call_batches)")
+        }
         indexes = {
             row[1] for row in connection.execute("PRAGMA index_list(agent_actions)")
         }
@@ -78,6 +82,7 @@ def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(tmp_path: P
 
     assert "agent_tool_call_batches" in tables
     assert {"tool_batch_id", "tool_call_ordinal"} <= action_columns
+    assert "batch_ordinal" in batch_columns
     assert "sqlite_autoindex_agent_actions_1" in indexes
     assert legacy_action == (None, None)
     assert revision == (get_alembic_head_revision(),)

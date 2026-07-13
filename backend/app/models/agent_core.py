@@ -267,6 +267,9 @@ class AgentEvent(Base, UUIDMixin, TimestampMixin):
 
 class AgentToolCallBatch(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "agent_tool_call_batches"
+    __table_args__ = (
+        UniqueConstraint("turn_id", "batch_ordinal", name="uq_agent_tool_batches_turn_ordinal"),
+    )
 
     session_id: Mapped[str] = mapped_column(
         ForeignKey("agent_sessions.id", ondelete="CASCADE"),
@@ -285,6 +288,7 @@ class AgentToolCallBatch(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     tool_call_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    batch_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     continuation_claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
