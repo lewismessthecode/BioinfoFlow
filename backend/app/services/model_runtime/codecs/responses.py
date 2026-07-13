@@ -18,6 +18,7 @@ from app.services.model_runtime.contracts import (
     ToolCallPart,
     ToolResultPart,
     UsageReport,
+    canonical_input_prefix_digest,
 )
 from app.services.model_runtime.errors import ModelError
 
@@ -42,8 +43,9 @@ class ResponsesCodec:
     def encode_request(self, invocation: ModelInvocation) -> dict[str, Any]:
         input_items: list[dict[str, Any]] = []
         continuation = invocation.continuation
-        if continuation is not None and not continuation.matches_target(
-            invocation.target
+        if continuation is not None and (
+            not continuation.matches_target(invocation.target)
+            or not continuation.matches_canonical_input(invocation.input_items)
         ):
             continuation = None
         if continuation is not None:
@@ -135,6 +137,9 @@ class ResponsesCodec:
                 response_id=event.response_id,
                 output_items=replay_input,
                 canonical_input_count=len(invocation.input_items),
+                canonical_input_digest=canonical_input_prefix_digest(
+                    invocation.input_items
+                ),
                 target=invocation.target.continuation_target(),
             ),
         )

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-import hashlib
 import json
 from typing import Any
 
@@ -53,7 +52,10 @@ from app.services.llm.provider_templates import (
     normalize_provider_base_url,
     route_provider_model_name,
 )
-from app.services.llm.credentials import resolve_credential_material
+from app.services.llm.credentials import (
+    derive_model_target_revision,
+    resolve_credential_material,
+)
 from app.services.llm.catalog import (
     _provider_requires_credential,
     validate_provider_transport,
@@ -413,8 +415,8 @@ class AgentCoreRuntime:
             if not _target_identity_matches_snapshot(
                 candidate,
                 resolved_target,
-                expected_configuration_fingerprint=snapshot.get(
-                    "_resolved_model_configuration_fingerprint"
+                expected_target_revision=snapshot.get(
+                    "_resolved_model_target_revision"
                 ),
             ):
                 return None
@@ -505,21 +507,36 @@ class AgentCoreRuntime:
         ):
             return None
         material = resolve_credential_material(credential)
-        configuration_fingerprint = _model_configuration_fingerprint(
-            provider=provider,
-            model=model,
-            credential=credential,
+        wire_protocol = str(
+            getattr(provider, "wire_protocol", "chat_completions")
+        )
+        routed_model_name = route_provider_model_name(
+            provider.kind,
+            model.model_id,
+            wire_protocol=wire_protocol,
+        )
+        normalized_base_url = (
+            normalize_provider_base_url(provider.kind, provider.base_url)
+            if provider.base_url
+            else None
+        )
+        target_revision = derive_model_target_revision(
+            endpoint_id=str(provider.id),
+            provider_kind=str(provider.kind),
+            model_name=str(model.model_id),
+            wire_protocol=wire_protocol,
+            routed_model_name=routed_model_name,
+            base_url=normalized_base_url,
+            credential_material=material,
         )
         request_args: dict[str, Any] = {}
         if material.api_key:
             request_args["api_key"] = material.api_key
-        if provider.base_url:
+        if normalized_base_url:
             # Per-kind normalization keeps native base URLs intact (Anthropic
             # and Gemini stay at the host root; only OpenAI-compatible providers
             # get the /v1 suffix), so LiteLLM receives a valid api_base.
-            request_args["api_base"] = normalize_provider_base_url(
-                provider.kind, provider.base_url
-            )
+            request_args["api_base"] = normalized_base_url
         capabilities = capabilities_from_model(model)
         runtime_strategy = resolve_runtime_strategy(
             capabilities=capabilities,
@@ -529,20 +546,14 @@ class AgentCoreRuntime:
             "endpoint_id": str(provider.id),
             "provider": provider.kind,
             "model": model.model_id,
-            "routed_model_name": route_provider_model_name(
-                provider.kind,
-                model.model_id,
-                wire_protocol=str(
-                    getattr(provider, "wire_protocol", "chat_completions")
-                ),
-            ),
+            "routed_model_name": routed_model_name,
             "model_id": str(model.id),
             "source": source,
             "capabilities": capabilities.as_dict(),
             "runtime_strategy": runtime_strategy.as_dict(),
             "request_args": request_args,
-            "wire_protocol": str(getattr(provider, "wire_protocol", "chat_completions")),
-            "configuration_fingerprint": configuration_fingerprint,
+            "wire_protocol": wire_protocol,
+            "target_revision": target_revision,
             "network_access": network_access,
         }
         if profile_id:
@@ -690,8 +701,8 @@ class AgentCoreRuntime:
             "wire_protocol": resolved.get("wire_protocol") or "chat_completions",
             "base_url": request_args.get("api_base"),
         }
-        snapshot["_resolved_model_configuration_fingerprint"] = resolved.get(
-            "configuration_fingerprint"
+        snapshot["_resolved_model_target_revision"] = resolved.get(
+            "target_revision"
         )
         if resolved.get("model_id"):
             snapshot["resolved_model_id"] = resolved["model_id"]
@@ -826,6 +837,7 @@ def _model_target(resolved: dict[str, Any]) -> ModelTarget:
         base_url=request_args.get("api_base"),
         network_access=str(resolved.get("network_access") or "unrestricted"),
         api_key=request_args.get("api_key"),
+        target_revision=resolved.get("target_revision"),
     )
 
 
@@ -840,16 +852,12 @@ def _target_identity_matches_snapshot(
     resolved: dict[str, Any],
     snapshot: dict[str, Any],
     *,
-    expected_configuration_fingerprint: object,
+    expected_target_revision: object,
 ) -> bool:
-    if not isinstance(expected_configuration_fingerprint, str) or not (
-        expected_configuration_fingerprint
-    ):
+    if not isinstance(expected_target_revision, str) or not expected_target_revision:
         return False
     request_args = resolved.get("request_args") or {}
-    return resolved.get("configuration_fingerprint") == (
-        expected_configuration_fingerprint
-    ) and {
+    return resolved.get("target_revision") == expected_target_revision and {
         "endpoint_id": str(resolved.get("endpoint_id") or ""),
         "provider_kind": resolved.get("provider"),
         "model_name": resolved.get("model"),
@@ -862,43 +870,6 @@ def _target_identity_matches_snapshot(
         "wire_protocol": snapshot.get("wire_protocol") or "chat_completions",
         "base_url": snapshot.get("base_url"),
     }
-
-
-def _model_configuration_fingerprint(
-    *,
-    provider,
-    model,
-    credential,
-) -> str:
-    metadata = (
-        provider.provider_metadata
-        if isinstance(provider.provider_metadata, dict)
-        else {}
-    )
-    payload = {
-        "provider_id": str(provider.id),
-        "provider_kind": str(provider.kind),
-        "base_url": normalize_provider_base_url(provider.kind, provider.base_url),
-        "wire_protocol": str(
-            getattr(provider, "wire_protocol", "chat_completions")
-        ),
-        "provider_template": metadata.get("providerTemplate"),
-        "model_id": str(model.id),
-        "canonical_model": str(model.model_id),
-        "credential_source": getattr(credential, "source", "none"),
-        "credential_env_var": getattr(credential, "env_var_name", None),
-        "credential_fingerprint": getattr(credential, "fingerprint", None),
-        "credential_updated_at": str(getattr(credential, "updated_at", "") or ""),
-    }
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _turn_lease_duration() -> timedelta:
     seconds = max(int(getattr(settings, "agent_turn_lease_seconds", 300) or 300), 1)
     return timedelta(seconds=seconds)

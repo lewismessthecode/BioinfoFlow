@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError, asdict
 
 import pytest
 
+from app.services.model_runtime import contracts as runtime_contracts
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelInvocation,
@@ -193,11 +194,20 @@ def test_responses_continuation_private_round_trip_and_count_advance() -> None:
         model_name="gpt-test",
         wire_protocol="responses",
         base_url="https://relay.example/v1",
+        target_revision="opaque-revision-1",
+    )
+    canonical_prefix = (
+        TextPart(text="Start."),
+        TextPart(text="Working.", phase="commentary"),
+        ToolCallPart(call_id="call-1", name="step", arguments={"n": 1}),
     )
     continuation = ResponsesContinuation(
         response_id="resp-1",
         output_items=({"type": "reasoning", "encrypted_content": secret},),
         canonical_input_count=3,
+        canonical_input_digest=runtime_contracts.canonical_input_prefix_digest(
+            canonical_prefix
+        ),
         target=target.continuation_target(),
     )
 
@@ -208,8 +218,15 @@ def test_responses_continuation_private_round_trip_and_count_advance() -> None:
     assert restored.response_id == "resp-1"
     assert restored.canonical_input_count == 3
     assert restored.opaque_output_items() == continuation.opaque_output_items()
-    advanced = restored.advance_canonical_input_count(2)
+    appended = (
+        ToolResultPart(call_id="call-1", output="done"),
+        TextPart(text="Finished.", phase="final_answer"),
+    )
+    advanced = restored.advance_canonical_input(appended)
     assert advanced.canonical_input_count == 5
+    assert advanced.canonical_input_digest == runtime_contracts.canonical_input_prefix_digest(
+        canonical_prefix + appended
+    )
     assert advanced.opaque_output_items() == restored.opaque_output_items()
     assert advanced.matches_target(target)
     assert secret not in repr(continuation)
@@ -227,3 +244,50 @@ def test_responses_continuation_private_round_trip_and_count_advance() -> None:
 )
 def test_responses_continuation_rejects_invalid_private_payload(payload: object) -> None:
     assert ResponsesContinuation.from_private_dict(payload) is None
+
+
+def test_responses_continuation_target_revision_prevents_cross_credential_replay() -> None:
+    first_target = ModelTarget(
+        endpoint_id="endpoint-1",
+        provider_kind="openai_compatible",
+        model_name="gpt-test",
+        routed_model_name="openai/gpt-test",
+        wire_protocol="responses",
+        target_revision="credential-revision-a",
+    )
+    rotated_target = ModelTarget(
+        endpoint_id="endpoint-1",
+        provider_kind="openai_compatible",
+        model_name="gpt-test",
+        routed_model_name="openai/gpt-test",
+        wire_protocol="responses",
+        target_revision="credential-revision-b",
+    )
+    prefix = (TextPart(text="Start."),)
+    continuation = ResponsesContinuation(
+        response_id="resp-1",
+        output_items=({"type": "reasoning", "encrypted_content": "opaque"},),
+        canonical_input_count=1,
+        canonical_input_digest=runtime_contracts.canonical_input_prefix_digest(prefix),
+        target=first_target.continuation_target(),
+    )
+
+    assert continuation.matches_target(first_target)
+    assert not continuation.matches_target(rotated_target)
+
+
+def test_legacy_responses_continuation_without_revision_or_prefix_digest_fails_closed() -> None:
+    legacy_payload = {
+        "response_id": "resp-legacy",
+        "canonical_input_count": 1,
+        "output_items": [{"type": "reasoning", "encrypted_content": "opaque"}],
+        "target": {
+            "endpoint_id": "endpoint-1",
+            "provider_kind": "openai_compatible",
+            "model_name": "gpt-test",
+            "wire_protocol": "responses",
+            "base_url": None,
+        },
+    }
+
+    assert ResponsesContinuation.from_private_dict(legacy_payload) is None

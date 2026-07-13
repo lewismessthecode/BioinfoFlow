@@ -28,7 +28,7 @@ class _FakeBackend:
         network_access: str = "unrestricted",
     ) -> Any:
         assert wire_protocol == "chat_completions"
-        assert network_access == "unrestricted"
+        assert network_access == "public_only"
         return await self.completion(**request)
 
 

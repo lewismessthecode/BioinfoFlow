@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
+import hashlib
+import hmac
+import json
 from typing import Any, Literal, TypeAlias
 
 
@@ -47,14 +50,17 @@ class ModelTarget:
     base_url: str | None = None
     network_access: NetworkAccessPolicy = "unrestricted"
     api_key: InitVar[str | None] = None
+    target_revision: InitVar[str | None] = None
 
     def __post_init__(
         self,
         routed_model_name: str | None,
         api_key: str | None,
+        target_revision: str | None,
     ) -> None:
         object.__setattr__(self, "_routed_model_name", routed_model_name)
         object.__setattr__(self, "_resolved_api_key", api_key)
+        object.__setattr__(self, "_target_revision", target_revision)
 
     def resolved_model_name(self) -> str:
         if not self._routed_model_name:
@@ -63,6 +69,9 @@ class ModelTarget:
 
     def resolved_api_key(self) -> str | None:
         return self._resolved_api_key
+
+    def resolved_target_revision(self) -> str | None:
+        return self._target_revision
 
     def to_public_dict(self) -> dict[str, str | None]:
         return {
@@ -80,6 +89,7 @@ class ModelTarget:
             model_name=self.model_name,
             wire_protocol=self.wire_protocol,
             base_url=self.base_url,
+            target_revision=self._target_revision,
         )
 
 
@@ -90,6 +100,7 @@ class ContinuationTarget:
     model_name: str
     wire_protocol: WireProtocol
     base_url: str | None = None
+    target_revision: str | None = field(default=None, repr=False)
 
     def to_private_dict(self) -> dict[str, str | None]:
         return {
@@ -98,6 +109,7 @@ class ContinuationTarget:
             "model_name": self.model_name,
             "wire_protocol": self.wire_protocol,
             "base_url": self.base_url,
+            "target_revision": self.target_revision,
         }
 
     @classmethod
@@ -109,6 +121,7 @@ class ContinuationTarget:
         model_name = payload.get("model_name")
         wire_protocol = payload.get("wire_protocol")
         base_url = payload.get("base_url")
+        target_revision = payload.get("target_revision")
         if not all(
             isinstance(value, str) and value
             for value in (endpoint_id, provider_kind, model_name)
@@ -118,12 +131,15 @@ class ContinuationTarget:
             return None
         if base_url is not None and not isinstance(base_url, str):
             return None
+        if not isinstance(target_revision, str) or not target_revision:
+            return None
         return cls(
             endpoint_id=endpoint_id,
             provider_kind=provider_kind,
             model_name=model_name,
             wire_protocol=wire_protocol,
             base_url=base_url,
+            target_revision=target_revision,
         )
 
 
@@ -132,6 +148,7 @@ class ResponsesContinuation:
     response_id: str | None
     output_items: InitVar[tuple[dict[str, Any], ...]]
     canonical_input_count: int = 0
+    canonical_input_digest: str | None = field(default=None, repr=False)
     target: ContinuationTarget | None = None
 
     def __post_init__(self, output_items: tuple[dict[str, Any], ...]) -> None:
@@ -144,6 +161,7 @@ class ResponsesContinuation:
         return {
             "response_id": self.response_id,
             "canonical_input_count": self.canonical_input_count,
+            "canonical_input_digest": self.canonical_input_digest,
             "output_items": list(self.opaque_output_items()),
             "target": self.target.to_private_dict() if self.target is not None else None,
         }
@@ -159,32 +177,57 @@ class ResponsesContinuation:
             return None
         response_id = payload.get("response_id")
         canonical_input_count = payload.get("canonical_input_count")
+        canonical_input_digest = payload.get("canonical_input_digest")
         target = ContinuationTarget.from_private_dict(payload.get("target"))
-        if target is None:
+        if (
+            target is None
+            or not isinstance(canonical_input_count, int)
+            or isinstance(canonical_input_count, bool)
+            or canonical_input_count < 0
+            or not _valid_digest(canonical_input_digest)
+        ):
             return None
         return cls(
             response_id=response_id if isinstance(response_id, str) else None,
-            canonical_input_count=(
-                canonical_input_count
-                if isinstance(canonical_input_count, int)
-                and canonical_input_count >= 0
-                else 0
-            ),
+            canonical_input_count=canonical_input_count,
+            canonical_input_digest=canonical_input_digest,
             output_items=tuple(output_items),
             target=target,
         )
 
     def matches_target(self, target: ModelTarget) -> bool:
-        return self.target == target.continuation_target()
+        revision = target.resolved_target_revision()
+        return bool(
+            revision
+            and self.target is not None
+            and self.target.target_revision
+            and self.target == target.continuation_target()
+        )
 
-    def advance_canonical_input_count(
+    def matches_canonical_input(self, input_items: tuple[InputPart, ...]) -> bool:
+        return bool(
+            0 <= self.canonical_input_count <= len(input_items)
+            and _valid_digest(self.canonical_input_digest)
+            and hmac.compare_digest(
+                self.canonical_input_digest or "",
+                canonical_input_prefix_digest(
+                    input_items[: self.canonical_input_count]
+                ),
+            )
+        )
+
+    def advance_canonical_input(
         self,
-        canonical_parts_written: int,
+        canonical_parts: tuple[InputPart, ...],
     ) -> ResponsesContinuation:
+        if not _valid_digest(self.canonical_input_digest):
+            raise ValueError("Responses continuation is missing its canonical prefix digest.")
         return ResponsesContinuation(
             response_id=self.response_id,
-            canonical_input_count=(
-                self.canonical_input_count + max(canonical_parts_written, 0)
+            canonical_input_count=self.canonical_input_count + len(canonical_parts),
+            canonical_input_digest=_advance_canonical_input_digest(
+                self.canonical_input_digest or "",
+                canonical_parts,
             ),
             output_items=self.opaque_output_items(),
             target=self.target,
@@ -192,6 +235,67 @@ class ResponsesContinuation:
 
 
 InputPart: TypeAlias = TextPart | ToolCallPart | ToolResultPart
+
+
+_CANONICAL_INPUT_DIGEST_DOMAIN = b"bioinfoflow-canonical-input-prefix.v1"
+
+
+def canonical_input_prefix_digest(input_items: tuple[InputPart, ...]) -> str:
+    initial = hashlib.sha256(_CANONICAL_INPUT_DIGEST_DOMAIN).hexdigest()
+    return _advance_canonical_input_digest(initial, input_items)
+
+
+def _advance_canonical_input_digest(
+    current_digest: str,
+    input_items: tuple[InputPart, ...],
+) -> str:
+    state = bytes.fromhex(current_digest)
+    for item in input_items:
+        payload = _canonical_input_payload(item)
+        state = hashlib.sha256(
+            _CANONICAL_INPUT_DIGEST_DOMAIN
+            + b"\x00"
+            + state
+            + len(payload).to_bytes(8, "big")
+            + payload
+        ).digest()
+    return state.hex()
+
+
+def _canonical_input_payload(item: InputPart) -> bytes:
+    if isinstance(item, TextPart):
+        payload = {"type": "text", "text": item.text, "phase": item.phase}
+    elif isinstance(item, ToolCallPart):
+        payload = {
+            "type": "tool_call",
+            "call_id": item.call_id,
+            "name": item.name,
+            "arguments": item.arguments,
+        }
+    else:
+        payload = {
+            "type": "tool_result",
+            "call_id": item.call_id,
+            "output": item.output,
+            "is_error": item.is_error,
+        }
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+        default=str,
+    ).encode("utf-8")
+
+
+def _valid_digest(value: object) -> bool:
+    if not isinstance(value, str) or len(value) != 64:
+        return False
+    try:
+        bytes.fromhex(value)
+    except ValueError:
+        return False
+    return True
 
 
 @dataclass(frozen=True)

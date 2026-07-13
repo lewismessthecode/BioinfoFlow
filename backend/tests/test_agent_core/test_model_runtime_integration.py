@@ -26,7 +26,12 @@ from app.services.agent_core.core.runtime_strategy import RuntimeCapabilities, R
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools.executor import ToolExecutionResult
-from app.services.llm.credentials import encrypt_secret
+from app.services.llm.credentials import (
+    derive_model_target_revision,
+    encrypt_secret,
+    resolve_credential_material,
+)
+from app.services.llm.provider_templates import route_provider_model_name
 from app.services.model_runtime.contracts import (
     CompletionMetadata,
     ModelEvent,
@@ -42,6 +47,7 @@ from app.services.model_runtime.contracts import (
     ToolCallPart,
     ToolResultPart,
     UsageReport,
+    canonical_input_prefix_digest,
 )
 from app.services.model_runtime.errors import ModelError
 from app.services.agent_core.transcript import provider_message_from_parts
@@ -173,6 +179,7 @@ async def test_team_member_agent_invocation_rejects_hostname_resolving_private(
 ) -> None:
     monkeypatch.setattr(settings, "auth_mode", "team")
     monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "team-test-key")
     session, turn = await _turn(db_session, user_id="member-1")
     db_session.add(
         WorkspaceMembership(
@@ -217,6 +224,7 @@ async def test_team_member_agent_invocation_rejects_legacy_user_env_credential(
 ) -> None:
     monkeypatch.setattr(settings, "auth_mode", "team")
     monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "team-test-key")
     monkeypatch.setenv("DATABASE_URL", "legacy-server-secret")
     monkeypatch.setattr(
         "socket.getaddrinfo",
@@ -264,6 +272,7 @@ async def test_team_member_public_provider_carries_public_only_network_policy(
 ) -> None:
     monkeypatch.setattr(settings, "auth_mode", "team")
     monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "team-test-key")
     monkeypatch.setattr(
         "socket.getaddrinfo",
         lambda *args, **kwargs: [(2, 1, 6, "", ("1.1.1.1", 0))],
@@ -318,6 +327,7 @@ async def test_public_provider_scope_or_admin_authority_never_grants_unrestricte
 ) -> None:
     monkeypatch.setattr(settings, "auth_mode", "team")
     monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "team-test-key")
     monkeypatch.setattr(
         "socket.getaddrinfo",
         lambda *args, **kwargs: [(2, 1, 6, "", ("1.1.1.1", 0))],
@@ -362,6 +372,7 @@ async def test_team_admin_agent_invocation_preserves_private_env_provider_access
 ) -> None:
     monkeypatch.setattr(settings, "auth_mode", "team")
     monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "team-test-key")
     monkeypatch.setenv("ADMIN_RELAY_API_KEY", "admin-relay-secret")
     session, turn = await _turn(db_session, user_id="admin-1")
     db_session.add(
@@ -406,6 +417,7 @@ async def test_team_member_can_invoke_admin_managed_workspace_env_provider(
 ) -> None:
     monkeypatch.setattr(settings, "auth_mode", "team")
     monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "bioinfoflow_credential_key", "team-test-key")
     monkeypatch.setenv("WORKSPACE_RELAY_API_KEY", "workspace-relay-secret")
     session, turn = await _turn(db_session, user_id="member-1")
     db_session.add(
@@ -513,10 +525,14 @@ async def test_responses_commentary_does_not_complete_without_final_answer(
         provider_kind="openai_compatible",
         model_name="gpt-responses-test",
         wire_protocol="responses",
+        target_revision="commentary-target-revision",
     )
     continuation = ResponsesContinuation(
         response_id="resp-commentary",
         canonical_input_count=1,
+        canonical_input_digest=canonical_input_prefix_digest(
+            (TextPart(text="Work in two visible phases."),)
+        ),
         output_items=(
             {
                 "type": "message",
@@ -987,6 +1003,7 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
         ("none", "approve", False),
         ("endpoint", "approve", False),
         ("credential", "approve", False),
+        ("env_credential", "approve", False),
         pytest.param(
             "endpoint",
             "reject",
@@ -1027,14 +1044,25 @@ async def test_responses_approval_resume_survives_service_restart(
     db_session.add(provider)
     await db_session.commit()
     await db_session.refresh(provider)
-    credential = LlmProviderCredential(
-        provider_id=str(provider.id),
-        source=LlmCredentialSource.STORED,
-        encrypted_secret=encrypt_secret("initial-responses-key"),
-        fingerprint="initial-responses-fingerprint",
-        masked_hint="init...-key",
-        updated_by="dev",
-    )
+    if rotation == "env_credential":
+        monkeypatch.setenv("RESPONSES_APPROVAL_API_KEY", "initial-responses-key")
+        credential = LlmProviderCredential(
+            provider_id=str(provider.id),
+            source=LlmCredentialSource.ENV,
+            env_var_name="RESPONSES_APPROVAL_API_KEY",
+            fingerprint="initial-responses-fingerprint",
+            masked_hint="env:RESPONSES_APPROVAL_API_KEY",
+            updated_by="dev",
+        )
+    else:
+        credential = LlmProviderCredential(
+            provider_id=str(provider.id),
+            source=LlmCredentialSource.STORED,
+            encrypted_secret=encrypt_secret("initial-responses-key"),
+            fingerprint="initial-responses-fingerprint",
+            masked_hint="init...-key",
+            updated_by="dev",
+        )
     db_session.add(credential)
     await db_session.commit()
     model = LlmModel(
@@ -1059,16 +1087,41 @@ async def test_responses_approval_resume_survives_service_restart(
     )
 
     opaque_secret = "encrypted-reasoning-must-stay-private"
-    continuation_target = ModelTarget(
+    routed_model_name = route_provider_model_name(
+        "openai_compatible",
+        "gpt-responses-test",
+        wire_protocol="responses",
+    )
+    initial_target_revision = derive_model_target_revision(
         endpoint_id=str(provider.id),
         provider_kind="openai_compatible",
         model_name="gpt-responses-test",
         wire_protocol="responses",
+        routed_model_name=routed_model_name,
         base_url="https://responses.example/v1",
+        credential_material=resolve_credential_material(credential),
+    )
+    continuation_target = ModelTarget(
+        endpoint_id=str(provider.id),
+        provider_kind="openai_compatible",
+        model_name="gpt-responses-test",
+        routed_model_name=routed_model_name,
+        wire_protocol="responses",
+        base_url="https://responses.example/v1",
+        target_revision=initial_target_revision,
     ).continuation_target()
     first_continuation = ResponsesContinuation(
         response_id="resp-approval",
         canonical_input_count=1,
+        canonical_input_digest=canonical_input_prefix_digest(
+            (
+                TextPart(
+                    text=(
+                        "Explain the command, run it with approval, then report the result."
+                    )
+                ),
+            )
+        ),
         output_items=(
             {
                 "type": "reasoning",
@@ -1123,25 +1176,6 @@ async def test_responses_approval_resume_survives_service_restart(
             CompletionMetadata(
                 response_id="resp-final",
                 finish_reason="stop",
-                continuation=ResponsesContinuation(
-                    response_id="resp-final",
-                    canonical_input_count=4,
-                    output_items=(
-                        {
-                            "type": "message",
-                            "id": "msg_final",
-                            "role": "assistant",
-                            "phase": "final_answer",
-                            "content": [
-                                {
-                                    "type": "output_text",
-                                    "text": "Responses continuation completed.",
-                                }
-                            ],
-                        },
-                    ),
-                    target=continuation_target,
-                ),
             ),
         ),
     )
@@ -1230,6 +1264,8 @@ async def test_responses_approval_resume_survives_service_restart(
         credential.encrypted_secret = encrypt_secret("rotated-responses-key")
         credential.fingerprint = "rotated-responses-fingerprint"
         await db_session.commit()
+    elif rotation == "env_credential":
+        monkeypatch.setenv("RESPONSES_APPROVAL_API_KEY", "rotated-responses-key")
 
     resumed = await AgentCoreRuntime(
         db_session,
@@ -1365,6 +1401,7 @@ async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplic
         provider_kind="openai_compatible",
         model_name="gpt-responses-test",
         wire_protocol="responses",
+        target_revision="two-tool-target-revision",
     )
     gateway = FakeModelGateway(
         (
@@ -1380,6 +1417,9 @@ async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplic
                 continuation=ResponsesContinuation(
                     response_id="resp-one",
                     canonical_input_count=1,
+                    canonical_input_digest=canonical_input_prefix_digest(
+                        (TextPart(text="Run two commands, then finish."),)
+                    ),
                     output_items=(
                         {
                             "type": "function_call",
@@ -1405,6 +1445,23 @@ async def test_responses_two_tool_rounds_advance_canonical_suffix_without_duplic
                 continuation=ResponsesContinuation(
                     response_id="resp-two",
                     canonical_input_count=3,
+                    canonical_input_digest=canonical_input_prefix_digest(
+                        (
+                            TextPart(text="Run two commands, then finish."),
+                            ToolCallPart(
+                                call_id="call-one",
+                                name="bash",
+                                arguments={"command": "first"},
+                            ),
+                            ToolResultPart(
+                                call_id="call-one",
+                                output=(
+                                    '{"tool":"bash","status":"completed",'
+                                    '"result":{"ok":true},"error":null}'
+                                ),
+                            ),
+                        )
+                    ),
                     output_items=(
                         {
                             "type": "function_call",
@@ -1619,10 +1676,14 @@ async def test_completed_responses_turn_continues_into_next_turn_with_one_sessio
         provider_kind="openai_compatible",
         model_name="gpt-responses-session",
         wire_protocol="responses",
+        target_revision="session-target-revision",
     )
     first_continuation = ResponsesContinuation(
         response_id="resp-first-turn",
         canonical_input_count=1,
+        canonical_input_digest=canonical_input_prefix_digest(
+            (TextPart(text="Inspect the workflow and remember the result."),)
+        ),
         output_items=(
             {
                 "type": "reasoning",
@@ -1642,6 +1703,13 @@ async def test_completed_responses_turn_continues_into_next_turn_with_one_sessio
     second_continuation = ResponsesContinuation(
         response_id="resp-second-turn",
         canonical_input_count=3,
+        canonical_input_digest=canonical_input_prefix_digest(
+            (
+                TextPart(text="Inspect the workflow and remember the result."),
+                TextPart(text="First result.", phase="final_answer"),
+                TextPart(text="Use that result for a follow-up."),
+            )
+        ),
         output_items=(
             {
                 "type": "message",
@@ -1728,6 +1796,7 @@ async def test_cross_turn_responses_continuation_is_invalidated_when_context_com
         provider_kind="openai_compatible",
         model_name="gpt-responses-compaction",
         wire_protocol="responses",
+        target_revision="compaction-target-revision",
     )
     gateway = FakeModelGateway(
         (
@@ -1736,8 +1805,11 @@ async def test_cross_turn_responses_continuation_is_invalidated_when_context_com
                 response_id="resp-before-compaction",
                 finish_reason="completed",
                 continuation=ResponsesContinuation(
-                    response_id="resp-before-compaction",
-                    canonical_input_count=1,
+                        response_id="resp-before-compaction",
+                        canonical_input_count=1,
+                        canonical_input_digest=canonical_input_prefix_digest(
+                            (TextPart(text="A" * 80),)
+                        ),
                     output_items=(
                         {
                             "type": "reasoning",

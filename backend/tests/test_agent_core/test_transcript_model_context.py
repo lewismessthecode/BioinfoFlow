@@ -20,6 +20,7 @@ from app.services.model_runtime.contracts import (
     ToolCallPart,
     ToolDefinition,
     ToolResultPart,
+    canonical_input_prefix_digest,
 )
 
 
@@ -157,10 +158,18 @@ def test_responses_phase_and_private_continuation_round_trip_without_public_leak
         model_name="gpt-test",
         wire_protocol="responses",
         base_url="https://relay.example/v1",
+        target_revision="round-trip-target-revision",
     )
     continuation = ResponsesContinuation(
         response_id="resp-1",
         canonical_input_count=3,
+        canonical_input_digest=canonical_input_prefix_digest(
+            (
+                TextPart(text="Start."),
+                TextPart(text="Working.", phase="commentary"),
+                TextPart(text="Done.", phase="final_answer"),
+            )
+        ),
         output_items=({"type": "reasoning", "encrypted_content": secret},),
         target=target.continuation_target(),
     )
