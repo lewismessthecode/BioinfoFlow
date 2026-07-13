@@ -14,9 +14,76 @@ from app.models.agent_core import AgentEvent, AgentTurn
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
 from app.path_layout import project_home, skills_root
 from app.services.agent_core import AgentCoreService
+from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+@pytest.mark.asyncio
+async def test_permission_policy_version_and_action_audit_api_contract(
+    async_client,
+    db_session,
+):
+    created_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"title": "Permission audit"},
+    )
+    assert created_response.status_code == 201
+    created = created_response.json()["data"]
+    assert created["permission_policy_version"] == 1
+
+    updated_response = await async_client.patch(
+        f"/api/v1/agent/sessions/{created['id']}",
+        json={"permission_mode": "ask_each_action"},
+    )
+    assert updated_response.status_code == 200
+    updated = updated_response.json()["data"]
+    assert updated["permission_policy_version"] == 2
+
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=created["id"],
+        workspace_id=created["workspace_id"],
+        user_id=created["user_id"],
+        input_text="Create an auditable action.",
+    )
+    audited = await AgentActionService(db_session).request_action(
+        turn_id=str(turn.id),
+        kind="tool",
+        name="test.high",
+        requested_risk="act_high",
+        permission_mode="ask_each_action",
+        evaluated_policy_version=2,
+        permission_context_snapshot={"policy_version": 2},
+    )
+    audited_response = await async_client.post(
+        f"/api/v1/agent/actions/{audited.id}/decision",
+        json={"decision": "reject"},
+    )
+    assert audited_response.status_code == 200
+    audited_payload = audited_response.json()["data"]
+    assert audited_payload["evaluated_policy_version"] == 2
+    assert audited_payload["permission_context_snapshot"] == {"policy_version": 2}
+
+    legacy = await service.action_repo.create(
+        session_id=created["id"],
+        turn_id=str(turn.id),
+        kind="tool",
+        name="legacy.action",
+        input={},
+        risk_level="act_high",
+        permission_decision={"decision": "ask"},
+        status="waiting_decision",
+    )
+    legacy_response = await async_client.post(
+        f"/api/v1/agent/actions/{legacy.id}/decision",
+        json={"decision": "reject"},
+    )
+    assert legacy_response.status_code == 200
+    legacy_payload = legacy_response.json()["data"]
+    assert legacy_payload["evaluated_policy_version"] is None
+    assert legacy_payload["permission_context_snapshot"] is None
 
 
 def _auth_user(

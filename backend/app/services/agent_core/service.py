@@ -16,7 +16,11 @@ from app.repositories.agent_core_repo import (
 )
 from app.repositories.project_repo import ProjectRepository
 from app.services.agent_core.events import AgentEventType
-from app.services.agent_core.execution_target import session_metadata_with_execution_target
+from app.services.agent_core.execution_target import (
+    execution_target_from_session,
+    normalize_execution_target,
+    session_metadata_with_execution_target,
+)
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.model_selection import (
     normalize_model_selection,
@@ -198,8 +202,11 @@ class AgentCoreService:
         changes_authorization = changes_authorization or bool(updates.get("mode"))
         changes_authorization = changes_authorization or "execution_target" in updates
         if "metadata" in updates:
-            previous_target = (session.session_metadata or {}).get("execution_target")
-            next_target = (update_data.get("session_metadata") or {}).get("execution_target")
+            previous_target = execution_target_from_session(session)
+            next_target = normalize_execution_target(
+                None,
+                metadata=update_data.get("session_metadata"),
+            )
             changes_authorization = changes_authorization or previous_target != next_target
         return await self.session_repo.update_with_policy_version(
             session,

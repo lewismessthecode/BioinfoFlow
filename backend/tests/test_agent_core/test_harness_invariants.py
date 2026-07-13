@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.agent_core.ledger as ledger_module
 from app.config import settings
@@ -755,6 +756,109 @@ async def test_executor_prefers_persisted_session_target_over_explicit_argument(
             toolset_policy={"name": "execution"},
             execution_target={"type": "local"},
         )
+
+
+@pytest.mark.asyncio
+async def test_loop_refreshes_permission_context_before_each_model_iteration(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    calls = 0
+    session_id = ""
+
+    async def fake_completion(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        tool_names = {
+            tool["function"]["name"]
+            for tool in kwargs.get("tools", [])
+        }
+        system_text = kwargs["messages"][0]["content"]
+
+        class FakeUsage:
+            def model_dump(self):
+                return {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+
+        class FakeResponse:
+            usage = FakeUsage()
+
+        class FakeChoice:
+            pass
+
+        class FakeMessage:
+            pass
+
+        message = FakeMessage()
+        if calls == 1:
+            assert "bash" in tool_names
+            assert "Role profile: bioinformatician" in system_text
+            sessions = async_sessionmaker(
+                db_engine,
+                expire_on_commit=False,
+                class_=AsyncSession,
+            )
+            async with sessions() as update_db:
+                await AgentCoreService(update_db).update_session(
+                    session_id=session_id,
+                    workspace_id=DEFAULT_WORKSPACE_ID,
+                    user_id="dev",
+                    updates={
+                        "mode": "plan",
+                        "role_profile": "worker",
+                        "execution_target": {
+                            "type": "remote_ssh",
+                            "connection_id": "00000000-0000-0000-0000-000000000099",
+                        },
+                    },
+                )
+
+            class FakeFunction:
+                name = "memory.list"
+                arguments = "{}"
+
+            class FakeToolCall:
+                id = "tool-call-refresh"
+                function = FakeFunction()
+
+            message.content = ""
+            message.tool_calls = [FakeToolCall()]
+        else:
+            assert "bash" not in tool_names
+            assert "Role profile: worker" in system_text
+            assert "Toolset policy: plan" in system_text
+            message.content = "Refreshed policy observed."
+            message.tool_calls = None
+
+        choice = FakeChoice()
+        choice.message = message
+        response = FakeResponse()
+        response.choices = [choice]
+        return response
+
+    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    session_id = str(session.id)
+    turn = await service.create_turn_record(
+        session_id=session_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Refresh permissions between iterations.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    assert completed.final_text == "Refreshed policy observed."
+    assert calls == 2
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agent_core import AgentAction, AgentSession
+from app.models.remote_connection import RemoteConnection
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
@@ -286,3 +287,114 @@ async def test_resume_rechecks_exposure_with_fresh_permission_context(db_engine)
 
         assert resumed.status == "failed"
         assert resumed.error["type"] == "PermissionDeniedError"
+
+
+@pytest.mark.asyncio
+async def test_legacy_remote_connection_alias_change_increments_policy_version(db_session) -> None:
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    await db_session.commit()
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        metadata={"remote_connection_id": "conn-1"},
+    )
+
+    updated = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"metadata": {"remote_connection_id": "conn-2"}},
+    )
+
+    assert updated.permission_policy_version == 2
+
+
+@pytest.mark.asyncio
+async def test_permission_context_is_deeply_immutable_and_snapshot_isolated(db_session) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    session, _turn = await _create_session_and_turn(db_session)
+    session.toolset_policy = {
+        "name": "execution",
+        "allowed_tools": ["test.high"],
+        "credential": "must-not-leak",
+        "nested": {"mutable": True},
+    }
+    await db_session.commit()
+
+    context = await PermissionContextResolver(db_session).resolve(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    snapshot = context.snapshot()
+
+    with pytest.raises(TypeError):
+        context.toolset_policy["name"] = "plan"
+    snapshot["toolset_policy"]["name"] = "plan"
+    session.toolset_policy["allowed_tools"].append("other")
+
+    assert context.toolset_policy["name"] == "execution"
+    assert context.snapshot()["toolset_policy"] == {
+        "name": "execution",
+        "allowed_tools": ["test.high"],
+    }
+    assert "credential" not in context.snapshot()["toolset_policy"]
+    assert context.boundary["enforcement"] != "workspace"
+    assert context.snapshot()["effective_roots"]
+
+
+@pytest.mark.asyncio
+async def test_remote_permission_snapshot_contains_safe_identity_without_credentials(db_session) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    session, _turn = await _create_session_and_turn(db_session)
+    connection = RemoteConnection(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        name="Compute node",
+        host="compute.internal",
+        port=2222,
+        username="analyst",
+        auth_method="password",
+        encrypted_password="ciphertext-secret",
+        key_path="/secret/id_ed25519",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+    await db_session.refresh(connection)
+    await AgentCoreService(db_session).update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            }
+        },
+    )
+
+    snapshot = (
+        await PermissionContextResolver(db_session).resolve(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+    ).snapshot()
+
+    assert snapshot["remote_identity"] == {
+        "connection_id": str(connection.id),
+        "name": "Compute node",
+        "host": "compute.internal",
+        "port": 2222,
+        "username": "analyst",
+    }
+    assert snapshot["boundary"] == {
+        "kind": "remote_ssh",
+        "enforcement": "remote_account",
+        "sandboxed": False,
+    }
+    assert "ciphertext-secret" not in str(snapshot)
+    assert "/secret/id_ed25519" not in str(snapshot)

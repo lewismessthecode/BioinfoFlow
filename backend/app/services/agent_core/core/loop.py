@@ -36,6 +36,7 @@ from app.services.agent_core.execution_target import execution_target_from_sessi
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.observability import truncate_log_value
+from app.services.agent_core.permissions.context import PermissionContextResolver
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor, ToolExecutionResult
 from app.services.agent_core.tools.toolsets import (
@@ -95,22 +96,6 @@ class AgentLoopController:
 
         budget = IterationBudget(max_iterations=_max_iterations())
         tools_enabled = capabilities.supports_tools and strategy.allow_tools
-        role = (
-            "worker"
-            if str(getattr(agent_session, "role_profile", "orchestrator")) == "worker"
-            else "orchestrator"
-        )
-        execution_target = execution_target_from_session(agent_session)
-        visible_tools = (
-            self.executor.exposure.exposed_specs(
-                policy=agent_session.toolset_policy,
-                role=role,
-                execution_target=execution_target,
-            )
-            if tools_enabled
-            else []
-        )
-        tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
         token_usage: dict[str, Any] | None = None
         previous_tool_call_signatures: list[str] = []
         previous_tool_result_signatures: list[str] = []
@@ -135,6 +120,23 @@ class AgentLoopController:
                     token_usage=token_usage,
                 )
             turn = await self._renew_turn_lease(turn)
+            permission_context, agent_session = await PermissionContextResolver(
+                self.db
+            ).resolve_with_session(
+                session_id=str(turn.session_id),
+                workspace_id=str(turn.workspace_id),
+                user_id=turn.user_id,
+            )
+            visible_tools = (
+                self.executor.exposure.exposed_specs(
+                    policy=permission_context.snapshot()["toolset_policy"],
+                    role=permission_context.role,
+                    execution_target=permission_context.snapshot()["execution_target"],
+                )
+                if tools_enabled
+                else []
+            )
+            tool_payload = provider_tool_specs(visible_tools) if tools_enabled else []
 
             completion_kwargs = {
                 "model": litellm_model_name(provider, model),

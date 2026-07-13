@@ -118,6 +118,10 @@ def _action_read(action) -> AgentActionRead:
     return AgentActionRead.model_validate(action)
 
 
+def _dump_action(action) -> dict:
+    return _action_read(action).model_dump(mode="json", exclude_none=False)
+
+
 def _artifact_read(artifact) -> AgentArtifactRead:
     return AgentArtifactRead.model_validate(artifact)
 
@@ -912,7 +916,7 @@ async def decide_action(
         modified_input=payload.modified_input,
         answer=payload.answer,
     )
-    return success_response(_dump(_action_read(action)), request=request)
+    return success_response(_dump_action(action), request=request)
 
 
 @router.post("/actions/{action_id}/resume")
@@ -928,7 +932,7 @@ async def resume_action(
         workspace_id=user.workspace_id,
         user_id=user.id,
     )
-    return success_response(_dump(_action_read(action)), request=request)
+    return success_response(_dump_action(action), request=request)
 
 
 @router.get("/memories")

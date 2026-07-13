@@ -162,11 +162,12 @@ class AgentToolExecutor:
             workspace_id=context.workspace_id,
             user_id=context.user_id,
         )
-        toolset_policy = permission_context.toolset_policy
+        permission_snapshot = permission_context.snapshot()
+        toolset_policy = permission_snapshot["toolset_policy"]
         permission_mode = permission_context.permission_mode
         automation_mode = permission_context.automation_mode
         role = permission_context.role
-        execution_target = permission_context.execution_target
+        execution_target = permission_snapshot["execution_target"]
         exposure = self.exposure.decide(
             tool_name=tool_name,
             policy=toolset_policy,
@@ -304,9 +305,9 @@ class AgentToolExecutor:
         )
         exposure = self.exposure.decide(
             tool_name=tool.spec.name,
-            policy=permission_context.toolset_policy,
+            policy=permission_context.snapshot()["toolset_policy"],
             role=permission_context.role,
-            execution_target=permission_context.execution_target,
+            execution_target=permission_context.snapshot()["execution_target"],
         )
         if not exposure.allowed:
             return await self._record_permission_failure(
