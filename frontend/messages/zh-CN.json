@@ -2283,15 +2283,18 @@
       "apiKeyLabel": "API Key",
       "modelIdLabel": "模型 ID",
       "protocolLabel": "调用协议",
+      "protocolAriaLabel": "{provider} 调用协议",
       "protocolChat": "Chat Completions",
       "protocolResponses": "Responses",
       "test": "测试",
       "testing": "测试中...",
       "testModelLabel": "测试模型",
+      "testModelAriaLabel": "{provider} 测试模型",
       "noTestModels": "暂无可用模型",
       "testSucceeded": "连接验证成功",
       "testFailed": "连接验证失败",
       "settingsChanged": "设置已更改，请先保存后再测试。",
+      "testRequestFailed": "服务商测试请求失败，请重试。",
       "retryable": "可重试"
     },
     "registries": {

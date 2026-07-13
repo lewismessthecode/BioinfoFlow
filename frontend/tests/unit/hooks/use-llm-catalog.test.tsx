@@ -199,6 +199,43 @@ describe("useLlmCatalog", () => {
     )
   })
 
+  it("omits an unspecified wire protocol from provider setup requests", async () => {
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({ data: emptyConfiguration })
+      }
+      if (path === "/llm/provider-templates") {
+        return Promise.resolve({ data: [] })
+      }
+      if (path === "/llm/provider-setups") {
+        return Promise.resolve({
+          data: {
+            provider: { id: "provider-relay" },
+            models: [],
+            discovered: false,
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+    const { result } = renderHook(() => useLlmCatalog())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    await act(async () => {
+      await result.current.setupProvider({
+        templateId: "openai-compatible",
+        providerId: "provider-relay",
+      })
+    })
+
+    const setupCall = apiRequestMock.mock.calls.find(
+      ([path]) => path === "/llm/provider-setups",
+    )
+    expect(JSON.parse(setupCall?.[1]?.body ?? "{}")).not.toHaveProperty(
+      "wire_protocol",
+    )
+  })
+
   it("tests an optional selected model and returns the full safe probe result", async () => {
     let configurationCalls = 0
     apiRequestMock.mockImplementation((path: string) => {

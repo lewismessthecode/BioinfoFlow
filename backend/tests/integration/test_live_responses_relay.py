@@ -102,6 +102,15 @@ def test_live_relay_config_repr_redacts_api_key() -> None:
     assert secret not in repr(config)
 
 
+def test_secret_leak_guard_reports_a_fixed_redacted_message() -> None:
+    secret = "sentinel-secret-never-report"
+    with pytest.raises(pytest.fail.Exception) as caught:
+        _fail_if_secret_present(secret, f"unsafe surface: {secret}")
+
+    assert str(caught.value) == "Sensitive relay credential leaked into test evidence."
+    assert secret not in str(caught.value)
+
+
 @pytest.mark.asyncio
 async def test_responses_relay_contract_completes_full_agentcore_path(
     db_session,
@@ -372,8 +381,15 @@ def _assert_secret_absent(
         default=str,
         sort_keys=True,
     )
-    assert secret not in persisted
-    assert secret not in logs
+    _fail_if_secret_present(secret, persisted, logs)
+
+
+def _fail_if_secret_present(secret: str, *surfaces: str) -> None:
+    if secret and any(secret in surface for surface in surfaces):
+        pytest.fail(
+            "Sensitive relay credential leaked into test evidence.",
+            pytrace=False,
+        )
 
 
 def _mock_responses_sse() -> bytes:

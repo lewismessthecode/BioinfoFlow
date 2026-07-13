@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   CheckCircle2,
@@ -82,6 +82,7 @@ export function LlmCatalogPanel() {
   const [dirtyTemplateIds, setDirtyTemplateIds] = useState<Set<string>>(
     () => new Set(),
   )
+  const probeRevisionByTemplate = useRef<Record<string, number>>({})
 
   const providersByTemplate = useMemo(() => {
     const byTemplate = new Map<string, LlmConfiguredProvider>()
@@ -158,13 +159,19 @@ export function LlmCatalogPanel() {
     })
   }
 
-  const markTemplateDirty = (templateId: string) => {
+  const invalidateProbeResult = (templateId: string) => {
+    probeRevisionByTemplate.current[templateId] =
+      (probeRevisionByTemplate.current[templateId] ?? 0) + 1
     setProbeResults((current) => {
       if (!current[templateId]) return current
       const next = { ...current }
       delete next[templateId]
       return next
     })
+  }
+
+  const markTemplateDirty = (templateId: string) => {
+    invalidateProbeResult(templateId)
     setDirtyTemplateIds((current) => new Set(current).add(templateId))
   }
 
@@ -238,6 +245,7 @@ export function LlmCatalogPanel() {
       return next
     })
     clearRowError(template.id)
+    invalidateProbeResult(template.id)
     try {
       const hadConfiguredProvider = configuredProviders.some(providerIsUsable)
       const setupInput = buildSetupInput(template, false)
@@ -331,13 +339,21 @@ export function LlmCatalogPanel() {
     if (!selectedModelId) return
     setTestingTemplateIds((current) => new Set(current).add(template.id))
     clearRowError(template.id)
+    const probeRevision = probeRevisionByTemplate.current[template.id] ?? 0
     try {
       const result = await testProvider(provider.id, selectedModelId)
+      if ((probeRevisionByTemplate.current[template.id] ?? 0) !== probeRevision) {
+        return
+      }
       if (result) {
         setProbeResults((current) => ({
           ...current,
           [template.id]: result,
         }))
+      } else {
+        const message = t("providerCards.testRequestFailed")
+        setRowErrors((current) => ({ ...current, [template.id]: message }))
+        toast.error(message)
       }
     } finally {
       setTestingTemplateIds((current) => {
@@ -652,7 +668,9 @@ function ProtocolField({
       </Label>
       <select
         id={inputId}
-        aria-label={`${template.name} protocol`}
+        aria-label={t("providerCards.protocolAriaLabel", {
+          provider: template.name,
+        })}
         value={value}
         onChange={(event) => onChange(event.target.value as LlmWireProtocol)}
         className="h-9 w-full rounded-md border border-border/80 bg-background px-3 text-sm text-foreground shadow-none outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -701,7 +719,9 @@ function ProviderProbeControls({
           </Label>
           <select
             id={selectId}
-            aria-label={`${template.name} test model`}
+            aria-label={t("providerCards.testModelAriaLabel", {
+              provider: template.name,
+            })}
             value={selectedModelId}
             disabled={models.length === 0 || testing}
             onChange={(event) => onModelChange(event.target.value)}
