@@ -82,6 +82,19 @@ class AgentTranscriptStore:
     async def list_messages(self, session_id: str):
         return await self.messages.list_for_session(session_id)
 
+    async def find_committed_tool_result(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        tool_call_id: str | None,
+    ):
+        return await self.messages.find_committed_tool_result(
+            session_id=session_id,
+            turn_id=turn_id,
+            tool_call_id=tool_call_id,
+        )
+
     async def clear_turn_metadata(self, *, turn_id: str, metadata_key: str) -> None:
         await self.messages.clear_turn_metadata(
             turn_id=turn_id,

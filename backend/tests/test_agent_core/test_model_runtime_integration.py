@@ -47,6 +47,7 @@ from app.services.model_runtime.errors import ModelError
 from app.services.agent_core.transcript import provider_message_from_parts
 from app.services.agent_core.transcript.messages import (
     metadata_with_responses_continuation,
+    text_part,
 )
 from app.services.agent_core.transcript.store import AgentTranscriptStore
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -925,12 +926,33 @@ async def test_fallback_approval_resume_uses_exact_resolved_fallback_target(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("rotation", ["none", "endpoint", "credential"])
+@pytest.mark.parametrize(
+    ("rotation", "decision", "preexisting_tool_result"),
+    [
+        ("none", "approve", False),
+        ("endpoint", "approve", False),
+        ("credential", "approve", False),
+        pytest.param(
+            "endpoint",
+            "reject",
+            False,
+            id="endpoint-rejected-without-tool-result",
+        ),
+        pytest.param(
+            "endpoint",
+            "reject",
+            True,
+            id="endpoint-rejected-with-existing-tool-result",
+        ),
+    ],
+)
 async def test_responses_approval_resume_survives_service_restart(
     db_session,
     monkeypatch,
     caplog,
     rotation,
+    decision,
+    preexisting_tool_result,
 ) -> None:
     session, turn = await _turn(
         db_session,
@@ -1113,8 +1135,37 @@ async def test_responses_approval_resume_survives_service_restart(
         action_id=str(actions[0].id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
-        decision="approve",
+        decision=decision,
     )
+
+    rejected_error = {
+        "type": "UserRejected",
+        "message": "The user rejected this tool call.",
+    }
+    if preexisting_tool_result:
+        await AgentTranscriptStore(db_session).append_parts(
+            session_id=str(session.id),
+            turn_id=str(turn.id),
+            role="tool",
+            parts=[
+                text_part(
+                    json.dumps(
+                        {
+                            "tool": actions[0].name,
+                            "status": "rejected",
+                            "result": None,
+                            "error": rejected_error,
+                        },
+                        separators=(",", ":"),
+                    )
+                )
+            ],
+            metadata={
+                "tool_call_id": actions[0].tool_call_id,
+                "tool": actions[0].name,
+                "is_error": True,
+            },
+        )
 
     if rotation == "endpoint":
         provider.base_url = "https://changed.example/v1"
@@ -1137,15 +1188,21 @@ async def test_responses_approval_resume_survives_service_restart(
 
         failed_action = await AgentActionRepository(db_session).get(str(actions[0].id))
         assert failed_action is not None
-        assert failed_action.status == "failed"
-        assert failed_action.error == {
-            "type": "ModelConfigurationChanged",
-            "message": (
-                "The model configuration changed while approval was pending; "
-                "the tool was not executed."
-            ),
-        }
-        assert failed_action.completed_at is not None
+        if decision == "reject":
+            assert failed_action.status == "rejected"
+            assert failed_action.error is None
+            expected_tool_error = rejected_error
+        else:
+            assert failed_action.status == "failed"
+            assert failed_action.error == {
+                "type": "ModelConfigurationChanged",
+                "message": (
+                    "The model configuration changed while approval was pending; "
+                    "the tool was not executed."
+                ),
+            }
+            assert failed_action.completed_at is not None
+            expected_tool_error = failed_action.error
 
         messages = await AgentMessageRepository(db_session).list_for_session(
             str(session.id)
@@ -1164,11 +1221,19 @@ async def test_responses_approval_resume_survives_service_restart(
             matching_tool_results[0].message_metadata,
         )
         assert tool_message["is_error"] is True
-        assert json.loads(tool_message["content"])["error"] == failed_action.error
+        assert json.loads(tool_message["content"])["error"] == expected_tool_error
         assert all(
             "_responses_continuation" not in (message.message_metadata or {})
             for message in messages
         )
+
+        events = await AgentEventRepository(db_session).list_for_turn(
+            turn_id=str(turn.id)
+        )
+        action_failed_events = [
+            event for event in events if event.type == AgentEventType.ACTION_FAILED
+        ]
+        assert len(action_failed_events) == (0 if decision == "reject" else 1)
 
         follow_up_gateway = FakeModelGateway(
             (
