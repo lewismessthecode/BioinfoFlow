@@ -222,6 +222,15 @@ _CWD_KEYS = (
     "remote_cwd",
 )
 
+_PROJECT_TARGET_KEYS = (
+    "remote_project_id",
+    "remote_project_root",
+    "remote_root_path",
+    "project_instruction_snapshot",
+    "project_instructions_snapshot",
+    "project_instructions",
+)
+
 
 def _target_metadata(
     agent_session,
@@ -229,35 +238,42 @@ def _target_metadata(
     *,
     execution_target: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    current_target = execution_target or execution_target_from_session(agent_session)
+    target_connection_id = _first_string(current_target, ("connection_id",))
     merged: dict[str, Any] = {}
-    for policy in _policy_sources(agent_session, turn):
+    for source in _policy_sources(agent_session, turn):
+        policy = dict(source)
+        bound_connection_id = _policy_bound_connection_id(policy)
+        if (
+            current_target.get("type") == "remote_ssh"
+            and bound_connection_id
+            and target_connection_id
+            and bound_connection_id != target_connection_id
+        ):
+            for key in _PROJECT_TARGET_KEYS:
+                policy.pop(key, None)
         merged.update(policy)
         policy_target = policy.get("execution_target")
         if isinstance(policy_target, dict):
             merged.update(policy_target)
-    current_target = execution_target or execution_target_from_session(agent_session)
-    project_connection_id = _first_string(merged, ("remote_connection_id",))
-    target_connection_id = _first_string(current_target, ("connection_id",))
-    if (
-        current_target.get("type") == "remote_ssh"
-        and project_connection_id
-        and target_connection_id
-        and project_connection_id != target_connection_id
-    ):
-        for key in (
-            "remote_project_id",
-            "remote_project_root",
-            "remote_root_path",
-            "project_instruction_snapshot",
-            "project_instructions_snapshot",
-            "project_instructions",
-        ):
-            merged.pop(key, None)
     for key in ("kind", "target_type", "mode"):
         merged.pop(key, None)
     merged["execution_target"] = dict(current_target)
     merged.update(current_target)
     return merged
+
+
+def _policy_bound_connection_id(policy: dict[str, Any]) -> str:
+    if any(key in policy for key in _PROJECT_TARGET_KEYS):
+        project_connection_id = _first_string(policy, ("remote_connection_id",))
+        if project_connection_id:
+            return project_connection_id
+    policy_target = policy.get("execution_target")
+    if isinstance(policy_target, dict):
+        target_connection_id = _remote_connection_id(policy_target)
+        if target_connection_id:
+            return target_connection_id
+    return _remote_connection_id(policy)
 
 
 def _policy_sources(agent_session, turn=None):

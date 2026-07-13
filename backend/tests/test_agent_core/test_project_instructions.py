@@ -458,6 +458,93 @@ async def test_remote_project_instructions_drop_root_when_current_target_changes
 
 
 @pytest.mark.asyncio
+async def test_stale_turn_instruction_snapshot_is_bound_to_its_nested_target():
+    resolver_cls, _instruction_file_cls = _instruction_classes()
+
+    class CapturingRemoteReader:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def read_first_existing(self, **kwargs):
+            self.calls.append(kwargs)
+            return None
+
+    reader = CapturingRemoteReader()
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-b",
+            }
+        },
+    )
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "trace_label": "keep generic turn metadata",
+                "project_instruction_snapshot": "A-only",
+                "execution_target": {
+                    "type": "remote_ssh",
+                    "connection_id": "conn-a",
+                },
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+    context = await resolver_cls(max_bytes=32768, remote_reader=reader).resolve(
+        session,
+        turn=turn,
+    )
+
+    assert target["connection_id"] == "conn-b"
+    assert target["trace_label"] == "keep generic turn metadata"
+    assert "project_instruction_snapshot" not in target
+    assert reader.calls == []
+    assert context is not None
+    assert "A-only" not in context
+
+
+@pytest.mark.asyncio
+async def test_current_session_instruction_snapshot_for_target_is_preserved():
+    resolver_cls, _instruction_file_cls = _instruction_classes()
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "project_instruction_snapshot": "B-current",
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-b",
+            },
+        },
+    )
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "project_instruction_snapshot": "A-only",
+                "execution_target": {
+                    "type": "remote_ssh",
+                    "connection_id": "conn-a",
+                },
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+    context = await resolver_cls(max_bytes=32768).resolve(session, turn=turn)
+
+    assert target["project_instruction_snapshot"] == "B-current"
+    assert context is not None
+    assert "B-current" in context
+    assert "A-only" not in context
+
+
+@pytest.mark.asyncio
 async def test_remote_project_instruction_partial_failure_keeps_prior_files():
     resolver_cls, instruction_file_cls = _instruction_classes()
 
