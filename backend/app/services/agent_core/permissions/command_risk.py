@@ -910,7 +910,6 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
                     "c",
                     "d",
                     "f",
-                    "l",
                     "n",
                     "p",
                     "s",
@@ -924,7 +923,10 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
                     "X",
                 },
                 consuming_options={"F", "I", "M", "V", "i", "m", "x"},
-                optional_value_options={"0": re.compile(r"(?:x[0-9A-Fa-f]+|[0-7]*)")},
+                optional_value_options={
+                    "0": re.compile(r"(?:x[0-9A-Fa-f]+|[0-7]*)"),
+                    "l": re.compile(r"[0-7]*"),
+                },
             )
             if not bundled.matched:
                 bundled = _short_option_cluster_match(
@@ -935,7 +937,6 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
                         "c",
                         "d",
                         "f",
-                        "l",
                         "n",
                         "p",
                         "s",
@@ -950,7 +951,8 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
                     },
                     consuming_options={"F", "I", "M", "V", "i", "m", "x"},
                     optional_value_options={
-                        "0": re.compile(r"(?:x[0-9A-Fa-f]+|[0-7]*)")
+                        "0": re.compile(r"(?:x[0-9A-Fa-f]+|[0-7]*)"),
+                        "l": re.compile(r"[0-7]*"),
                     },
                 )
             if bundled.matched:
@@ -984,14 +986,14 @@ def _interpreter_inline_code(executable: str, args: list[str]) -> str | None:
                     "E",
                     "F",
                     "I",
-                    "K",
-                    "T",
                     "i",
                     "r",
                     "x",
                 },
                 optional_value_options={
                     "0": re.compile(r"[0-7]*"),
+                    "K": re.compile(r"[eEsSuUnNaA]?"),
+                    "T": re.compile(r"[0-9]*"),
                     "W": re.compile(r"(?:[0-2]|:[A-Za-z][A-Za-z0-9_-]*)?"),
                 },
             )
