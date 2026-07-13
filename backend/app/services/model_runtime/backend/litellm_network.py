@@ -88,6 +88,14 @@ def _public_network_session() -> ClientSession:
     )
 
 
+class PublicNetworkAiohttpTransport(LiteLLMAiohttpTransport):
+    """LiteLLM transport that never delegates public-only requests to a proxy."""
+
+    async def _get_proxy_settings(self, request: httpx.Request) -> None:
+        del request
+        return None
+
+
 class PublicNetworkHTTPHandler(AsyncHTTPHandler):
     """LiteLLM HTTP handler confined to public connect and redirect targets."""
 
@@ -110,7 +118,7 @@ class PublicNetworkHTTPHandler(AsyncHTTPHandler):
         shared_session: ClientSession | None = None,
     ) -> httpx.AsyncClient:
         del ssl_verify, shared_session
-        transport = LiteLLMAiohttpTransport(
+        transport = PublicNetworkAiohttpTransport(
             client=self._policy_session,
             owns_session=False,
         )
@@ -130,6 +138,7 @@ class PublicNetworkHTTPHandler(AsyncHTTPHandler):
 
 
 __all__ = [
+    "PublicNetworkAiohttpTransport",
     "PublicNetworkHTTPHandler",
     "PublicNetworkResolver",
     "ensure_public_request_url",

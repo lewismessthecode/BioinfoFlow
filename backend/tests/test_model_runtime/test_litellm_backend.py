@@ -211,6 +211,33 @@ async def test_public_network_http_handler_blocks_private_literal_before_connect
 
 
 @pytest.mark.asyncio
+async def test_public_network_http_handler_ignores_proxy_environment(monkeypatch):
+    proxy_url = "http://127.0.0.1:9876"
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
+        monkeypatch.setenv(name, proxy_url)
+    monkeypatch.setenv("NO_PROXY", "")
+    monkeypatch.setenv("no_proxy", "")
+
+    handler = PublicNetworkHTTPHandler()
+    client = handler.create_client(timeout=None, event_hooks={})
+    try:
+        transport = client._transport
+        request = httpx.Request("POST", "https://provider.example/v1/responses")
+
+        assert await transport._get_proxy_settings(request) is None
+    finally:
+        await client.aclose()
+        await handler.close()
+
+
+@pytest.mark.asyncio
 async def test_public_only_stream_keeps_policy_client_until_stream_closes():
     captured: list[PublicNetworkHTTPHandler] = []
 
