@@ -6,6 +6,7 @@ import type {
   AgentRuntimeTurn,
 } from "./types"
 import { buildAgentRuntimeTimeline } from "./timeline"
+import { mergeSessionByPolicyVersion } from "./session-policy"
 
 export type AgentRuntimeViewState = {
   session: AgentRuntimeSession | null
@@ -133,7 +134,10 @@ function fresherSession(
   incoming: AgentRuntimeSession,
 ) {
   if (!existing || existing.id !== incoming.id) return incoming
-  return timestamp(incoming.updated_at) >= timestamp(existing.updated_at) ? incoming : existing
+  const fresher =
+    timestamp(incoming.updated_at) >= timestamp(existing.updated_at) ? incoming : existing
+  const older = fresher === incoming ? existing : incoming
+  return mergeSessionByPolicyVersion(older, fresher)
 }
 
 function isTerminalTurn(status: AgentRuntimeTurn["status"]) {

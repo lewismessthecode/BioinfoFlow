@@ -13,7 +13,11 @@ import type {
 import { AskUserDecisionCard } from "./ask-user-card"
 import { DecisionSubmissionFeedback, useDecisionSubmission } from "./decision-submission"
 import { DecisionTargetBadge } from "./decision-target-badge"
-import { getPendingActions, parseWaitingDecision } from "./pending-actions"
+import {
+  buildPersistedTargetMap,
+  getPendingActions,
+  parseWaitingDecision,
+} from "./pending-actions"
 import type { AgentDecisionHandler } from "./types"
 
 export function PendingDecisionCards({
@@ -24,7 +28,12 @@ export function PendingDecisionCards({
   onDecision: AgentDecisionHandler
 }) {
   const decisions = useMemo(
-    () => getPendingActions(events).map((event) => parseWaitingDecision(event, events)),
+    () => {
+      const persistedTargets = buildPersistedTargetMap(events)
+      return getPendingActions(events).map((event) =>
+        parseWaitingDecision(event, persistedTargets),
+      )
+    },
     [events],
   )
   if (!decisions.length) return null

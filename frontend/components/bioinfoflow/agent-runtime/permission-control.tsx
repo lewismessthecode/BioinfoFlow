@@ -74,12 +74,26 @@ export function PermissionControl({
             className={cn(
               composerSelectorChipClassName,
               "inline-flex min-w-9 shrink items-center",
+              busy &&
+                "cursor-wait opacity-60 hover:border-transparent hover:bg-transparent active:scale-100",
               compact ? "max-w-9 px-2" : "max-w-[10rem] px-2",
             )}
             data-composer-chip="true"
-            disabled={disabled || busy}
+            disabled={disabled}
+            aria-disabled={busy || undefined}
             aria-label={t("permission.label")}
             aria-busy={busy}
+            onPointerDown={(event) => {
+              if (busy) event.preventDefault()
+            }}
+            onKeyDown={(event) => {
+              if (
+                busy &&
+                (event.key === "Enter" || event.key === " " || event.key === "ArrowDown")
+              ) {
+                event.preventDefault()
+              }
+            }}
           >
             <PermissionIcon className={composerSelectorIconClassName} />
             <span className={cn("min-w-0 truncate", compact && "sr-only")}>

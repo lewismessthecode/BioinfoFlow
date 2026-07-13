@@ -38,6 +38,7 @@ type AgentDecisionCard = AgentRuntimeDecisionView
 export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
   const decisions = new Map<string, AgentRuntimeEvent>()
   const resolvedWithoutDecision = new Map<string, AgentRuntimeEvent>()
+  const persistedTargets = buildPersistedTargetMap(events)
   for (const event of events) {
     const actionId = String(event.payload.action_id || "")
     if (!actionId) continue
@@ -53,7 +54,7 @@ export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
   return events
     .filter((event) => event.type === "action.waiting_decision")
     .map((event): AgentDecisionCard | null => {
-      const decision = parseWaitingDecision(event, events)
+      const decision = parseWaitingDecision(event, persistedTargets)
       if (!decision.actionId) return null
       const resolver = resolvedWithoutDecision.get(decision.actionId)
       if (resolver && !decisions.has(decision.actionId)) return null
@@ -73,13 +74,24 @@ export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
 
 export function parseWaitingDecision(
   event: AgentRuntimeEvent,
-  events: AgentRuntimeEvent[] = [],
+  persistedTargets: ReadonlyMap<string, AgentDecisionTarget | null> = new Map(),
 ): AgentWaitingDecision {
   const decision = parseRuntimeWaitingDecision(event)
   return {
     ...decision,
-    target: persistedTargetForAction(events, decision.actionId),
+    target: persistedTargets.get(decision.actionId) ?? null,
   }
+}
+
+export function buildPersistedTargetMap(events: AgentRuntimeEvent[]) {
+  const targets = new Map<string, AgentDecisionTarget | null>()
+  for (const event of events) {
+    if (event.type !== "action.risk_assessed") continue
+    const actionId = String(event.payload.action_id || "")
+    const target = parsePersistedTarget(event.payload.target)
+    if (actionId) targets.set(actionId, target)
+  }
+  return targets
 }
 
 function decisionCardFromEvent(
@@ -129,18 +141,7 @@ function decisionState(event: AgentRuntimeEvent): AgentRuntimeDecisionState {
   return "approved"
 }
 
-function persistedTargetForAction(
-  events: AgentRuntimeEvent[],
-  actionId: string,
-): AgentDecisionTarget | null {
-  const assessment = [...events]
-    .reverse()
-    .find(
-      (event) =>
-        event.type === "action.risk_assessed" &&
-        String(event.payload.action_id || "") === actionId,
-    )
-  const target = assessment?.payload.target
+function parsePersistedTarget(target: unknown): AgentDecisionTarget | null {
   if (!target || typeof target !== "object" || Array.isArray(target)) return null
   const record = target as Record<string, unknown>
   const kind = String(record.kind || "")

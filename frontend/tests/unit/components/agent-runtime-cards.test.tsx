@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { InlineApprovalCard } from "@/components/bioinfoflow/agent-runtime/inline-approval-card"
 import { PendingDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-decision-cards"
-import { getActionDecisionCards } from "@/components/bioinfoflow/agent-runtime/pending-actions"
+import {
+  buildPersistedTargetMap,
+  getActionDecisionCards,
+} from "@/components/bioinfoflow/agent-runtime/pending-actions"
 import type {
   AgentRuntimeDecisionView,
   AgentRuntimeEvent,
@@ -189,7 +192,74 @@ describe("agent decision cards", () => {
 
     expect(screen.getByText("Remote target: bioflow@sz01.example.org")).toBeInTheDocument()
   })
+
+  it("associates the latest persisted target with each action in one card pass", () => {
+    const events: AgentRuntimeEvent[] = [
+      riskEvent("action-1", 1, "old.example.org"),
+      riskEvent("action-2", 2, "second.example.org"),
+      riskEvent("action-1", 3, "new.example.org"),
+      waitingEvent("action-1", 4),
+      waitingEvent("action-2", 5),
+    ]
+
+    const decisions = getActionDecisionCards(events)
+
+    expect(decisions).toHaveLength(2)
+    expect(decisions.find((item) => item.actionId === "action-1")?.target).toMatchObject({
+      kind: "remote_ssh",
+      trustDomain: "new.example.org",
+    })
+    expect(decisions.find((item) => item.actionId === "action-2")?.target).toMatchObject({
+      kind: "remote_ssh",
+      trustDomain: "second.example.org",
+    })
+  })
+
+  it("clears an older persisted target when the latest assessment has no target", () => {
+    const latestAssessment = riskEvent("action-1", 2, "old.example.org")
+    latestAssessment.payload = { action_id: "action-1", target: null }
+
+    const [decision] = getActionDecisionCards([
+      riskEvent("action-1", 1, "old.example.org"),
+      latestAssessment,
+      waitingEvent("action-1", 3),
+    ])
+
+    expect(decision.target).toBeNull()
+  })
+
+  it("builds persisted targets with one event-type read per event", () => {
+    let typeReads = 0
+    const events = Array.from({ length: 20 }, (_, index) =>
+      new Proxy(riskEvent(`action-${index}`, index, `${index}.example.org`), {
+        get(target, property, receiver) {
+          if (property === "type") typeReads += 1
+          return Reflect.get(target, property, receiver)
+        },
+      }),
+    )
+
+    expect(buildPersistedTargetMap(events).size).toBe(20)
+    expect(typeReads).toBe(events.length)
+  })
 })
+
+function riskEvent(actionId: string, seq: number, trustDomain: string): AgentRuntimeEvent {
+  return {
+    ...waitingEvent(actionId, seq),
+    id: `risk-${actionId}-${seq}`,
+    type: "action.risk_assessed",
+    payload: {
+      action_id: actionId,
+      target: {
+        kind: "remote_ssh",
+        trust_domain: trustDomain,
+        identity: "bioflow",
+        connection_id: `connection-${actionId}`,
+      },
+    },
+  }
+}
 
 function waitingEvent(actionId: string, seq: number): AgentRuntimeEvent {
   return {

@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs"
 import { fireEvent, render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { useState } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent-runtime/agent-composer"
@@ -424,9 +426,57 @@ describe("AgentComposer", () => {
     )
 
     const trigger = screen.getByRole("button", { name: "Permission mode" })
-    expect(trigger).toBeDisabled()
+    expect(trigger).not.toBeDisabled()
+    expect(trigger).toHaveAttribute("aria-disabled", "true")
+    expect(trigger).toHaveClass("cursor-wait", "opacity-60")
     expect(trigger).toHaveAttribute("aria-busy", "true")
     expect(screen.getByRole("status")).toHaveTextContent("Updating permission mode...")
+  })
+
+  it("keeps focus on the permission trigger while an async update is pending", async () => {
+    const user = userEvent.setup()
+
+    function PermissionHarness() {
+      const [mode, setMode] = useState<"guarded_auto" | "bypass">("guarded_auto")
+      const [pending, setPending] = useState(false)
+      return (
+        <AgentComposer
+          value=""
+          onChange={vi.fn()}
+          onSubmit={vi.fn()}
+          onStop={vi.fn()}
+          isRunning={false}
+          permissionMode={mode}
+          onPermissionModeChange={(nextMode) => {
+            setMode(nextMode as "guarded_auto" | "bypass")
+            setPending(true)
+          }}
+          permissionUpdate={{
+            status: pending ? "pending" : "idle",
+            mode: pending ? mode : null,
+            pendingStrategy: pending ? "future_only" : null,
+            reconciliation: null,
+            error: null,
+          }}
+          models={[]}
+          selectedModel={null}
+          onSelectModel={vi.fn()}
+        />
+      )
+    }
+
+    render(<PermissionHarness />)
+    const trigger = screen.getByRole("button", { name: "Permission mode" })
+    await user.click(trigger)
+    await user.click(screen.getByRole("menuitemradio", { name: /Full access/ }))
+
+    expect(trigger).toHaveFocus()
+    expect(trigger).not.toBeDisabled()
+    expect(trigger).toHaveAttribute("aria-disabled", "true")
+    await user.keyboard("{Enter}")
+    expect(screen.queryByRole("menuitemradio")).not.toBeInTheDocument()
+    await user.keyboard("{ArrowDown}")
+    expect(screen.queryByRole("menuitemradio")).not.toBeInTheDocument()
   })
 
   it("keeps permission failures local and exposes a retry action", () => {

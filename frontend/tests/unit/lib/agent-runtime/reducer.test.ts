@@ -52,6 +52,49 @@ const session = (updatedAt = "2026-06-08T00:00:00Z"): AgentRuntimeSession => ({
 })
 
 describe("agentRuntimeReducer", () => {
+  it("does not replace a newer permission policy with a later stale state payload", () => {
+    const current = agentRuntimeReducer(initialAgentRuntimeState, {
+      type: "state.loaded",
+      payload: {
+        session: {
+          ...session("2026-06-08T00:00:00Z"),
+          role_profile: "admin",
+          permission_mode: "bypass",
+          permission_policy_version: 5,
+          toolset_policy: { name: "execution", allowed_tools: ["remote.exec"] },
+          metadata: { execution_target: { type: "remote_ssh", connection_id: "new" } },
+        },
+        turns: [],
+        events: [],
+      },
+    })
+
+    const refreshed = agentRuntimeReducer(current, {
+      type: "state.loaded",
+      payload: {
+        session: {
+          ...session("2026-06-08T00:01:00Z"),
+          role_profile: "bioinformatician",
+          permission_mode: "guarded_auto",
+          permission_policy_version: 4,
+          toolset_policy: { name: "plan" },
+          metadata: { execution_target: { type: "local" } },
+        },
+        turns: [],
+        events: [],
+      },
+    })
+
+    expect(refreshed.session).toMatchObject({
+      permission_mode: "bypass",
+      permission_policy_version: 5,
+      role_profile: "admin",
+      toolset_policy: { name: "execution", allowed_tools: ["remote.exec"] },
+      metadata: { execution_target: { type: "remote_ssh", connection_id: "new" } },
+      updated_at: "2026-06-08T00:01:00Z",
+    })
+  })
+
   it("keeps session events unique and ordered by sequence", () => {
     const loaded = agentRuntimeReducer(initialAgentRuntimeState, {
       type: "state.loaded",
