@@ -1134,6 +1134,63 @@ async def test_responses_approval_resume_survives_service_restart(
         assert resumed.status == "failed"
         assert resumed.error_code == "model_selection_missing"
         assert len(gateway.invocations) == 1
+
+        failed_action = await AgentActionRepository(db_session).get(str(actions[0].id))
+        assert failed_action is not None
+        assert failed_action.status == "failed"
+        assert failed_action.error == {
+            "type": "ModelConfigurationChanged",
+            "message": (
+                "The model configuration changed while approval was pending; "
+                "the tool was not executed."
+            ),
+        }
+        assert failed_action.completed_at is not None
+
+        messages = await AgentMessageRepository(db_session).list_for_session(
+            str(session.id)
+        )
+        matching_tool_results = [
+            message
+            for message in messages
+            if message.role == "tool"
+            and (message.message_metadata or {}).get("tool_call_id")
+            == "call-responses-bash"
+        ]
+        assert len(matching_tool_results) == 1
+        tool_message = provider_message_from_parts(
+            matching_tool_results[0].role,
+            matching_tool_results[0].content_parts,
+            matching_tool_results[0].message_metadata,
+        )
+        assert tool_message["is_error"] is True
+        assert json.loads(tool_message["content"])["error"] == failed_action.error
+        assert all(
+            "_responses_continuation" not in (message.message_metadata or {})
+            for message in messages
+        )
+
+        follow_up_gateway = FakeModelGateway(
+            (
+                TextDelta(text="The follow-up turn completed.", phase="final_answer"),
+                CompletionMetadata(response_id="resp-follow-up", finish_reason="stop"),
+            )
+        )
+        follow_up_turn = await AgentCoreService(db_session).create_turn_record(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Continue after the cancelled tool call.",
+        )
+        follow_up = await AgentCoreRuntime(
+            db_session,
+            model_gateway=follow_up_gateway,
+        ).run_turn(str(follow_up_turn.id))
+
+        assert follow_up.status == "completed"
+        assert follow_up.final_text == "The follow-up turn completed."
+        assert len(follow_up_gateway.invocations) == 1
+        assert follow_up_gateway.invocations[0].continuation is None
         return
 
     assert resumed.status == "completed"
