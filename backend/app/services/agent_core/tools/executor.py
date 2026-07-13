@@ -461,6 +461,7 @@ class AgentToolExecutor:
                 requires_resume=bool(current.requires_resume),
             )
         action = claimed
+        action_id = str(action.id)
         if context.turn_claimed_at is not None:
             current_turn = await AgentTurnRepository(self.session).get_fresh(
                 context.turn_id
@@ -488,19 +489,6 @@ class AgentToolExecutor:
                     status=action.status,
                     error=action.error,
                 )
-        await self.ledger.append(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
-            type=AgentEventType.ACTION_STARTED,
-            payload={
-                "action_id": str(action.id),
-                "tool": tool.spec.name,
-                "name": action.name,
-                "tool_call_id": str(action.tool_call_id) if action.tool_call_id else None,
-                "input_preview": action.input_preview,
-            },
-        )
-        agent_metrics.increment("tools.started")
         try:
             raw_result = await self._run_tool_with_cancellation(
                 action=action,
@@ -510,7 +498,7 @@ class AgentToolExecutor:
             validated_result = validate_tool_output(raw_result, tool.spec.output_schema)
             result, summary = normalize_tool_result(validated_result)
         except _DurableActionCancelled:
-            return await self._current_action_result(str(action.id))
+            return await self._current_action_result(action_id)
         except asyncio.TimeoutError:
             error = {
                 "type": "TimeoutError",
@@ -526,7 +514,7 @@ class AgentToolExecutor:
                 completed_at=datetime.now(timezone.utc),
             )
             if updated is None:
-                return await self._current_action_result(str(action.id))
+                return await self._current_action_result(action_id)
             action = updated
             await self.ledger.append(
                 session_id=str(action.session_id),
@@ -568,7 +556,7 @@ class AgentToolExecutor:
                 completed_at=datetime.now(timezone.utc),
             )
             if updated is None:
-                return await self._current_action_result(str(action.id))
+                return await self._current_action_result(action_id)
             action = updated
             await self.ledger.append(
                 session_id=str(action.session_id),
@@ -586,7 +574,6 @@ class AgentToolExecutor:
             result=result,
             action_input=action.normalized_input or action.input or {},
         )
-        action_id = str(action.id)
         completed = await self.action_repo.complete_running(
             action_id,
             result=result,
@@ -615,11 +602,25 @@ class AgentToolExecutor:
         tool: AgentTool,
         context: AgentToolContext,
     ) -> dict[str, Any]:
-        if not await self._durable_action_is_running(
+        started_action = await self.action_repo.begin_execution(
             str(action.id),
-            context=context,
-        ):
+            started_at=datetime.now(timezone.utc),
+            event_type=AgentEventType.ACTION_STARTED,
+            event_payload={
+                "action_id": str(action.id),
+                "tool": tool.spec.name,
+                "name": action.name,
+                "tool_call_id": (
+                    str(action.tool_call_id) if action.tool_call_id else None
+                ),
+                "input_preview": action.input_preview,
+            },
+            turn_id=context.turn_id,
+            expected_turn_claimed_at=context.turn_claimed_at,
+        )
+        if started_action is None:
             raise _DurableActionCancelled
+        action = started_action
         tool_task = asyncio.create_task(
             tool.run(action.normalized_input or action.input, context)
         )
@@ -632,6 +633,7 @@ class AgentToolExecutor:
             else None
         )
         try:
+            agent_metrics.increment("tools.started")
             waiters = {tool_task, cancellation_task}
             if heartbeat_task is not None:
                 waiters.add(heartbeat_task)
@@ -664,34 +666,6 @@ class AgentToolExecutor:
             if heartbeat_task is not None:
                 heartbeat_task.cancel()
                 await asyncio.gather(heartbeat_task, return_exceptions=True)
-
-    async def _durable_action_is_running(
-        self,
-        action_id: str,
-        *,
-        context: AgentToolContext,
-    ) -> bool:
-        bind = self.session.bind
-        session_factory = (
-            async_sessionmaker(bind=bind, expire_on_commit=False, class_=AsyncSession)
-            if bind is not None
-            else app_database.async_session_maker
-        )
-        async with session_factory() as check_db:
-            action = await AgentActionRepository(check_db).get(action_id)
-            if action is None:
-                return False
-            await check_db.refresh(action)
-            if action.status != AgentActionStatus.RUNNING:
-                return False
-            if context.turn_claimed_at is None:
-                return True
-            turn = await AgentTurnRepository(check_db).get_fresh(context.turn_id)
-            return bool(
-                turn is not None
-                and turn.status == AgentTurnStatus.RUNNING
-                and turn.claimed_at == context.turn_claimed_at
-            )
 
     async def _heartbeat_turn_lease(self, context: AgentToolContext) -> bool:
         claim_token = context.turn_claimed_at

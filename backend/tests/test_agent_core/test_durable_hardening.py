@@ -2211,3 +2211,122 @@ async def test_recovery_cancels_running_action_and_closes_pending_call(
     assert recovered.error_code == "recovery_inflight_action"
     assert len(results) == 1
     assert json.loads(results[0].content_parts[0]["text"])["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_stale_recovery_claim_cannot_cancel_running_action_after_takeover(
+    db_session,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    service, session, turn, action = await _session_turn_and_action(
+        db_session,
+        tool_name="blocking.mutate",
+    )
+    stale_claim = datetime.now(timezone.utc) - timedelta(minutes=10)
+    await AgentTranscriptStore(db_session).append_parts(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        role="assistant",
+        parts=[
+            tool_calls_part(
+                [
+                    {
+                        "id": action.tool_call_id,
+                        "type": "function",
+                        "function": {"name": action.name, "arguments": "{}"},
+                    },
+                    {
+                        "id": "deferred-after-takeover",
+                        "type": "function",
+                        "function": {"name": "projects__list", "arguments": "{}"},
+                    },
+                ]
+            )
+        ],
+    )
+    await service.turn_repo.update_all(
+        turn,
+        status="running",
+        claimed_at=stale_claim,
+        lease_until=stale_claim + timedelta(minutes=1),
+        loop_state={
+            "progress": {
+                "pending_observation": {
+                    "deferred_tool_calls": [
+                        {
+                            "tool_call_id": "deferred-after-takeover",
+                            "tool_name": "projects__list",
+                        }
+                    ]
+                }
+            }
+        },
+    )
+    await AgentActionRepository(db_session).update_all(
+        action,
+        status=AgentActionStatus.RUNNING,
+        requires_resume=False,
+    )
+
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    recovery_reached_action_transition = asyncio.Event()
+    release_stale_recovery = asyncio.Event()
+
+    async with maker() as stale_recovery_db, maker() as successor_recovery_db:
+        stale_recovery = AgentCoreService(stale_recovery_db)
+        original_transition = stale_recovery.action_repo.transition_if_status
+
+        async def transition_after_takeover(*args, **kwargs):
+            recovery_reached_action_transition.set()
+            await release_stale_recovery.wait()
+            return await original_transition(*args, **kwargs)
+
+        monkeypatch.setattr(
+            stale_recovery.action_repo,
+            "transition_if_status",
+            transition_after_takeover,
+        )
+        stale_recovery_task = asyncio.create_task(
+            stale_recovery._recover_turn(str(turn.id))
+        )
+        await asyncio.wait_for(recovery_reached_action_transition.wait(), timeout=1)
+
+        successor = AgentCoreService(successor_recovery_db)
+        claimed_by_stale_recovery = await successor.turn_repo.get_fresh(str(turn.id))
+        stale_recovery_claim = claimed_by_stale_recovery.claimed_at
+        expired = await successor.turn_repo.update_if_recovery_claimed(
+            str(turn.id),
+            expected_claimed_at=stale_recovery_claim,
+            lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        assert expired is not None
+        successor_claim = datetime.now(timezone.utc)
+        claimed_by_successor = await successor.turn_repo.claim_for_recovery(
+            str(turn.id),
+            expected_status=expired.status,
+            expected_claimed_at=stale_recovery_claim,
+            claimed_at=successor_claim,
+            lease_until=successor_claim + timedelta(minutes=5),
+        )
+        assert claimed_by_successor is not None
+
+        release_stale_recovery.set()
+        outcome = await stale_recovery_task
+
+        stored_action = await successor.action_repo.get(str(action.id))
+        await successor_recovery_db.refresh(stored_action)
+        stored_turn = await successor.turn_repo.get_fresh(str(turn.id))
+        messages = await AgentMessageRepository(successor_recovery_db).list_for_session(
+            str(session.id)
+        )
+        events = await AgentEventRepository(successor_recovery_db).list_for_turn(
+            turn_id=str(turn.id)
+        )
+
+    assert outcome == "skipped"
+    assert stored_action.status == AgentActionStatus.RUNNING
+    assert stored_turn.claimed_at.replace(tzinfo=timezone.utc) == successor_claim
+    assert not any(message.role == "tool" for message in messages)
+    assert not any(event.type == "action.cancelled" for event in events)

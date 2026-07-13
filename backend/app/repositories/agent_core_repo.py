@@ -31,6 +31,39 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         )
         return result.scalar_one_or_none()
 
+    async def update_if_target_mutable(
+        self,
+        session_id: str,
+        **values,
+    ) -> AgentSession | None:
+        active_nonterminal_turn = (
+            select(AgentTurn.id)
+            .where(
+                AgentTurn.id == self.model.active_turn_id,
+                AgentTurn.status.not_in(
+                    [
+                        AgentTurnStatus.COMPLETED,
+                        AgentTurnStatus.FAILED,
+                        AgentTurnStatus.CANCELLED,
+                    ]
+                ),
+            )
+            .exists()
+        )
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == session_id,
+                ~active_nonterminal_turn,
+            )
+            .values(active_turn_id=None, **values)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        if result.rowcount != 1:
+            return None
+        return await self.get_fresh(session_id)
+
     async def lock_for_update(self, session_id: str) -> AgentSession | None:
         result = await self.session.execute(
             select(self.model)
@@ -546,7 +579,7 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             .values(
                 status=AgentActionStatus.RUNNING,
                 requires_resume=False,
-                started_at=started_at,
+                started_at=None,
             )
             .execution_options(synchronize_session=False)
         )
@@ -554,6 +587,79 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         if result.rowcount != 1:
             return None
         return await self.session.get(self.model, action_id, populate_existing=True)
+
+    async def begin_execution(
+        self,
+        action_id: str,
+        *,
+        started_at,
+        event_type: str,
+        event_payload: dict,
+        turn_id: str | None = None,
+        expected_turn_claimed_at=None,
+    ) -> AgentAction | None:
+        session_id = await self.session.scalar(
+            select(self.model.session_id).where(self.model.id == action_id)
+        )
+        if session_id is None:
+            return None
+        if await AgentSessionRepository(self.session).lock_for_update(
+            str(session_id)
+        ) is None:
+            return None
+        conditions = [
+            self.model.id == action_id,
+            self.model.status == AgentActionStatus.RUNNING,
+            self.model.started_at.is_(None),
+        ]
+        if turn_id is not None and expected_turn_claimed_at is not None:
+            conditions.append(
+                select(AgentTurn.id)
+                .where(
+                    AgentTurn.id == turn_id,
+                    AgentTurn.status == AgentTurnStatus.RUNNING,
+                    AgentTurn.claimed_at == expected_turn_claimed_at,
+                )
+                .exists()
+            )
+        result = await self.session.execute(
+            update(self.model)
+            .where(*conditions)
+            .values(started_at=started_at)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            await self.session.rollback()
+            return None
+        action = await self.session.get(self.model, action_id, populate_existing=True)
+        if action is None:
+            await self.session.rollback()
+            return None
+        next_seq = int(
+            await self.session.scalar(
+                select(func.max(AgentEvent.seq)).where(
+                    AgentEvent.session_id == action.session_id
+                )
+            )
+            or 0
+        ) + 1
+        self.session.add(
+            AgentEvent(
+                session_id=action.session_id,
+                turn_id=action.turn_id,
+                seq=next_seq,
+                type=event_type,
+                payload=event_payload,
+                visibility="user",
+                schema_version=1,
+            )
+        )
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        return action
 
     async def transition_if_status(
         self,

@@ -157,32 +157,6 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        if "execution_target" in updates:
-            next_metadata = session_metadata_with_execution_target(
-                getattr(session, "session_metadata", None),
-                updates["execution_target"],
-            )
-            target_changed = (
-                session_execution_target_from_metadata(next_metadata)
-                != execution_target_from_session(session)
-            )
-            active_turn_id = getattr(session, "active_turn_id", None)
-            if target_changed and active_turn_id is not None:
-                active_turn = await self.turn_repo.get_fresh(str(active_turn_id))
-                if active_turn is not None and active_turn.status not in {
-                    AgentTurnStatus.COMPLETED,
-                    AgentTurnStatus.FAILED,
-                    AgentTurnStatus.CANCELLED,
-                }:
-                    raise ConflictError(
-                        "Execution target cannot change while an agent turn is active"
-                    )
-                await self.session_repo.release_active_turn(
-                    str(session.id), str(active_turn_id)
-                )
-                refreshed = await self.session_repo.get_fresh(str(session.id))
-                if refreshed is not None:
-                    session = refreshed
         update_data: dict[str, Any] = {}
         for key in (
             "title",
@@ -222,6 +196,23 @@ class AgentCoreService:
             update_data["session_metadata"] = session_metadata_with_model_selection(
                 metadata, model_selection
             )
+        target_changed = (
+            "session_metadata" in update_data
+            and session_execution_target_from_metadata(
+                update_data["session_metadata"]
+            )
+            != execution_target_from_session(session)
+        )
+        if target_changed:
+            updated = await self.session_repo.update_if_target_mutable(
+                str(session.id),
+                **update_data,
+            )
+            if updated is None:
+                raise ConflictError(
+                    "Execution target cannot change while an agent turn is active"
+                )
+            return updated
         return await self.session_repo.update_all(session, **update_data)
 
     async def delete_session(
@@ -708,7 +699,13 @@ class AgentCoreService:
             return "enqueued"
 
         if latest_action is not None and latest_action.status == AgentActionStatus.RUNNING:
-            await self._cancel_open_actions(turn_id, cancelled_at=now)
+            cancelled = await self._cancel_open_actions(
+                turn_id,
+                cancelled_at=now,
+                claim_token=recovery_claimed_at,
+            )
+            if not cancelled:
+                return "skipped"
             failed_turn = await self._update_recovery_turn(
                 turn,
                 claim_token=recovery_claimed_at,
@@ -795,7 +792,17 @@ class AgentCoreService:
             **values,
         )
 
-    async def _cancel_open_actions(self, turn_id: str, *, cancelled_at: datetime) -> None:
+    async def _cancel_open_actions(
+        self,
+        turn_id: str,
+        *,
+        cancelled_at: datetime,
+        claim_token=None,
+    ) -> bool:
+        if claim_token is not None and not await self._recovery_claim_is_current(
+            turn_id, claim_token
+        ):
+            return False
         for action in await self.action_repo.list_open_for_turn(turn_id):
             updated = await self.action_repo.transition_if_status(
                 str(action.id),
@@ -805,11 +812,17 @@ class AgentCoreService:
                     AgentActionStatus.RUNNING,
                 ],
                 status=AgentActionStatus.CANCELLED,
+                turn_id=turn_id,
+                expected_turn_claimed_at=claim_token,
                 error={"type": "CancelledError", "message": "Action cancelled with its parent turn."},
                 completed_at=cancelled_at,
                 requires_resume=False,
             )
             if updated is None:
+                if claim_token is not None and not await self._recovery_claim_is_current(
+                    turn_id, claim_token
+                ):
+                    return False
                 continue
             await AgentTranscriptStore(self.db).append_tool_result_once(
                 session_id=str(updated.session_id),
@@ -826,9 +839,13 @@ class AgentCoreService:
                 type=AgentEventType.ACTION_CANCELLED,
                 payload={"action_id": str(action.id), "tool": action.name},
             )
+        if claim_token is not None and not await self._recovery_claim_is_current(
+            turn_id, claim_token
+        ):
+            return False
         turn = await self.turn_repo.get(turn_id)
         if turn is None:
-            return
+            return False
         progress = ((getattr(turn, "loop_state", None) or {}).get("progress") or {})
         pending = progress.get("pending_observation")
         if isinstance(pending, dict):
@@ -861,6 +878,20 @@ class AgentCoreService:
                     "message": "Tool call was cancelled with its parent turn.",
                 },
             )
+        return True
+
+    async def _recovery_claim_is_current(self, turn_id: str, claim_token) -> bool:
+        turn = await self.turn_repo.get_fresh(turn_id)
+        return bool(
+            turn is not None
+            and turn.status
+            in {
+                AgentTurnStatus.QUEUED,
+                AgentTurnStatus.RUNNING,
+                AgentTurnStatus.WAITING_APPROVAL,
+            }
+            and turn.claimed_at == claim_token
+        )
 
     async def _reconcile_pending_observation(self, turn, *, claim_token=None):
         loop_state = dict(getattr(turn, "loop_state", None) or {})

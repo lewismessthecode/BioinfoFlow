@@ -157,6 +157,116 @@ async def test_update_session_rejects_target_change_until_active_turn_is_termina
 
 
 @pytest.mark.asyncio
+async def test_update_session_rejects_metadata_only_effective_target_change(
+    db_session: AsyncSession,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    remote_target = {
+        "type": "remote_ssh",
+        "connection_id": "conn-from-metadata",
+    }
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep metadata updates on this turn's local target.",
+    )
+
+    with pytest.raises(ConflictError):
+        await service.update_session(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            updates={"metadata": {"execution_target": remote_target}},
+        )
+
+    stored_session = await service.session_repo.get_fresh(str(session.id))
+    assert stored_session.active_turn_id == str(turn.id)
+    assert stored_session.session_metadata is None
+
+
+@pytest.mark.asyncio
+async def test_target_update_and_turn_claim_are_one_atomic_decision(
+    db_session: AsyncSession,
+    db_engine,
+    monkeypatch,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    local_target = {"type": "local"}
+    remote_target = {
+        "type": "remote_ssh",
+        "connection_id": "conn-racing-update",
+    }
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        execution_target=local_target,
+    )
+    session_id = str(session.id)
+    maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    target_check_complete = asyncio.Event()
+    release_target_update = asyncio.Event()
+
+    async with maker() as update_db, maker() as turn_db:
+        update_service = AgentCoreService(update_db)
+        original_require_session = update_service.require_session
+
+        async def require_session_then_pause(**kwargs):
+            checked_session = await original_require_session(**kwargs)
+            target_check_complete.set()
+            await release_target_update.wait()
+            return checked_session
+
+        monkeypatch.setattr(
+            update_service,
+            "require_session",
+            require_session_then_pause,
+        )
+        update_task = asyncio.create_task(
+            update_service.update_session(
+                session_id=session_id,
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+                updates={"execution_target": remote_target},
+            )
+        )
+        await asyncio.wait_for(target_check_complete.wait(), timeout=1)
+
+        turn = await AgentCoreService(turn_db).create_turn_record(
+            session_id=session_id,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            input_text="Claim the session while target update is in flight.",
+        )
+        release_target_update.set()
+        try:
+            updated_session = await update_task
+        except ConflictError:
+            updated_session = None
+
+    turn_won = turn is not None
+    target_update_won = updated_session is not None
+    assert int(turn_won) + int(target_update_won) <= 1
+
+    async with maker() as inspect_db:
+        stored_session = await AgentCoreService(inspect_db).session_repo.get_fresh(
+            session_id
+        )
+    assert not (
+        stored_session.active_turn_id == str(turn.id)
+        and stored_session.session_metadata["execution_target"] == remote_target
+    )
+
+
+@pytest.mark.asyncio
 async def test_active_turn_refreshes_target_before_next_tool_and_model_request(
     db_session: AsyncSession,
     db_engine,

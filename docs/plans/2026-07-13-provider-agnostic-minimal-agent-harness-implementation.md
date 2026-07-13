@@ -569,7 +569,12 @@ Accepted final-review invariants:
   execution-target row so a response from a superseded target is discarded;
   reject execution-target changes while a nonterminal turn owns the session;
   and fence every running-action terminal transition with the original turn
-  owner token, not only successful completion.
+  owner token, not only successful completion;
+- make target mutation and session turn-claim acquisition one conditional
+  database decision, including metadata-only target changes;
+- atomically persist the action execution-start boundary and its audit event
+  before scheduling the tool coroutine; and
+- bind recovery-driven action cancellation to the recovery owner token.
 
 - [ ] **Step 3: Commit review fixes when changes exist**
 
