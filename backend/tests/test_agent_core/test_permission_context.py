@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import pytest
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agent_core import AgentAction, AgentSession
 from app.models.remote_connection import RemoteConnection
+from app.models.project import Project
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
@@ -395,6 +397,128 @@ async def test_remote_permission_snapshot_contains_safe_identity_without_credent
         "kind": "remote_ssh",
         "enforcement": "remote_account",
         "sandboxed": False,
+        "structured_remote_tools": {
+            "effective_root": None,
+            "enforcement": "none",
+        },
+        "remote_exec": {
+            "working_directory": None,
+            "shell_root_confinement": False,
+        },
     }
     assert "ciphertext-secret" not in str(snapshot)
     assert "/secret/id_ed25519" not in str(snapshot)
+
+
+@pytest.mark.asyncio
+async def test_remote_permission_snapshot_refreshes_connection_and_project_resources(db_engine) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    sessions = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+    async with sessions() as loop_db:
+        loop_db.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+        connection = RemoteConnection(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            name="Compute",
+            host="host-a.internal",
+            port=22,
+            username="analyst",
+            auth_method="agent",
+        )
+        loop_db.add(connection)
+        await loop_db.commit()
+        await loop_db.refresh(connection)
+        project = Project(
+            name="Remote project",
+            storage_mode="remote",
+            remote_connection_id=str(connection.id),
+            remote_root_path="/analysis/root-a",
+            user_id="dev",
+            created_by_user_id="dev",
+            workspace_id=DEFAULT_WORKSPACE_ID,
+        )
+        loop_db.add(project)
+        await loop_db.commit()
+        await loop_db.refresh(project)
+        service = AgentCoreService(loop_db)
+        session = await service.create_session(
+            project_id=str(project.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            execution_target={
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            },
+        )
+        resolver = PermissionContextResolver(loop_db)
+        first = (
+            await resolver.resolve(
+                session_id=str(session.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+            )
+        ).snapshot()
+        assert first["policy_version"] == 1
+        assert first["remote_identity"]["host"] == "host-a.internal"
+        assert first["effective_roots"] == ["/analysis/root-a"]
+
+        async with sessions() as update_db:
+            fresh_connection = await update_db.get(RemoteConnection, connection.id)
+            fresh_project = await update_db.get(Project, project.id)
+            updated_at = datetime(2030, 1, 1, tzinfo=timezone.utc)
+            fresh_connection.host = "host-b.internal"
+            fresh_connection.updated_at = updated_at
+            fresh_project.remote_root_path = "/analysis/root-b"
+            fresh_project.updated_at = updated_at
+            await update_db.commit()
+
+        second = (
+            await resolver.resolve(
+                session_id=str(session.id),
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                user_id="dev",
+            )
+        ).snapshot()
+
+        assert second["policy_version"] == 1
+        assert second["remote_identity"]["host"] == "host-b.internal"
+        assert second["effective_roots"] == ["/analysis/root-b"]
+        assert second["boundary"]["structured_remote_tools"] == {
+            "effective_root": "/analysis/root-b",
+            "enforcement": "lexical_path_validation_and_remote_realpath_guard",
+        }
+        assert second["boundary"]["remote_exec"] == {
+            "working_directory": "/analysis/root-b",
+            "shell_root_confinement": False,
+        }
+        assert second["resource_revisions"] != first["resource_revisions"]
+        assert second["resource_revisions"]["remote_connection"]["updated_at"]
+        assert second["resource_revisions"]["project"]["updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_remote_permission_snapshot_falls_back_to_bounded_metadata_root(db_session) -> None:
+    from app.services.agent_core.permissions.context import PermissionContextResolver
+
+    db_session.add(Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team"))
+    await db_session.commit()
+    session = await AgentCoreService(db_session).create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        metadata={
+            "remote_connection_id": "connection-legacy",
+            "remote_project_root": "/legacy/remote/root",
+        },
+    )
+
+    snapshot = (
+        await PermissionContextResolver(db_session).resolve(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+        )
+    ).snapshot()
+
+    assert snapshot["effective_roots"] == ["/legacy/remote/root"]
+    assert snapshot["boundary"]["remote_exec"]["shell_root_confinement"] is False
