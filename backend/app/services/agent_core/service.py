@@ -801,11 +801,21 @@ class AgentCoreService:
         action = await self.action_repo.get(action_id)
         if action is None:
             raise NotFoundError(f"Agent action not found: {action_id}")
-        turn = await self.require_turn(
-            turn_id=str(action.turn_id),
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+        try:
+            turn = await self.require_turn(
+                turn_id=str(action.turn_id),
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+        except (NotFoundError, PermissionDeniedError) as exc:
+            raise NotFoundError("Agent action not found") from exc
+        if action.kind != "tool":
+            raise ConflictError("Only tool actions can be resumed")
+        if (
+            action.status != AgentActionStatus.REQUESTED
+            or not action.requires_resume
+        ):
+            raise ConflictError("Tool action is not awaiting resume")
         await self.turn_repo.queue_waiting_for_resume(
             str(turn.id),
             resume_batch_token=(

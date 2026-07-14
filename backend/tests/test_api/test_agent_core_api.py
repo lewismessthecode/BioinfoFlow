@@ -225,12 +225,75 @@ async def test_get_action_does_not_reveal_cross_scope_existence(
         missing = await async_client.get(
             "/api/v1/agent/actions/00000000-0000-0000-0000-000000000099"
         )
+        hidden_resume = await async_client.post(
+            f"/api/v1/agent/actions/{action.id}/resume"
+        )
+        missing_resume = await async_client.post(
+            "/api/v1/agent/actions/00000000-0000-0000-0000-000000000099/resume"
+        )
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 
     assert hidden.status_code == missing.status_code == 404
     assert hidden.json()["error"]["code"] == missing.json()["error"]["code"]
     assert hidden.json()["error"]["message"] == missing.json()["error"]["message"]
+    assert hidden_resume.status_code == missing_resume.status_code == 404
+    assert hidden_resume.json()["error"]["code"] == missing_resume.json()["error"][
+        "code"
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "status", "requires_resume", "message"),
+    [
+        ("platform", "requested", True, "Only tool actions can be resumed"),
+        ("tool", "completed", True, "Tool action is not awaiting resume"),
+        ("tool", "requested", False, "Tool action is not awaiting resume"),
+    ],
+)
+async def test_resume_action_rejects_actions_outside_external_resume_boundary(
+    async_client,
+    db_session,
+    kind: str,
+    status: str,
+    requires_resume: bool,
+    message: str,
+) -> None:
+    create_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"title": "Non-resumable action"},
+    )
+    assert create_response.status_code == 201
+    session = create_response.json()["data"]
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="Run an automatically allowed tool.",
+    )
+    action = await service.action_repo.create(
+        session_id=session["id"],
+        turn_id=str(turn.id),
+        kind=kind,
+        name="auto.allowed",
+        input={},
+        risk_level="read",
+        permission_decision={"decision": "allow"},
+        status=status,
+        requires_resume=requires_resume,
+        tool_call_id="call-auto-allowed",
+    )
+
+    response = await async_client.post(
+        f"/api/v1/agent/actions/{action.id}/resume"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["message"] == message
+    await db_session.refresh(turn)
+    assert turn.resume_batch_token is None
 
 
 def _auth_user(
