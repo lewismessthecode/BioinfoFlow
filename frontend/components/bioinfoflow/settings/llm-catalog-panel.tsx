@@ -266,7 +266,20 @@ export function LlmCatalogPanel() {
         return next
       })
       setFieldValue(template.id, "api_key", "", false)
-      if (result.discovered && result.models.length > 0) {
+      const shouldDiscoverModels =
+        setupInput.modelIds.length === 0 && template.discovery !== "static"
+      const discoveredModels = shouldDiscoverModels
+        ? await discoverModels(result.provider.id)
+        : null
+      if (shouldDiscoverModels && discoveredModels === null) {
+        toast.warning(t("providerCards.savedDiscoveryFailed"))
+      } else if (shouldDiscoverModels && discoveredModels?.length === 0) {
+        toast.warning(t("providerCards.savedNoModels"))
+      } else if (discoveredModels && discoveredModels.length > 0) {
+        toast.success(
+          t("providerCards.modelsDiscovered", { count: discoveredModels.length }),
+        )
+      } else if (result.discovered && result.models.length > 0) {
         toast.success(
           t("providerCards.modelsDiscovered", { count: result.models.length }),
         )

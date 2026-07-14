@@ -2267,6 +2267,8 @@
       "fromEnv": "来自 .env",
       "keySavedShort": "密钥已保存",
       "saved": "服务商已保存",
+      "savedDiscoveryFailed": "服务商已保存，但模型发现失败",
+      "savedNoModels": "服务商已保存，但未发现任何模型",
       "saveFailed": "服务商保存失败",
       "refreshModels": "刷新模型",
       "refreshingModels": "刷新中...",

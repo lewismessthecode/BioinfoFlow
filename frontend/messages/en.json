@@ -2267,6 +2267,8 @@
       "fromEnv": "From .env",
       "keySavedShort": "Key saved",
       "saved": "Provider saved",
+      "savedDiscoveryFailed": "Provider saved, but model discovery failed",
+      "savedNoModels": "Provider saved, but no models were found",
       "saveFailed": "Provider could not be saved",
       "refreshModels": "Refresh models",
       "refreshingModels": "Refreshing...",

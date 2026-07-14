@@ -6,6 +6,7 @@ import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-p
 const useLlmCatalogMock = vi.fn()
 const toastErrorMock = vi.fn()
 const toastSuccessMock = vi.fn()
+const toastWarningMock = vi.fn()
 const celebrateMilestoneMock = vi.fn()
 
 vi.mock("@/hooks/use-llm-catalog", () => ({
@@ -33,6 +34,9 @@ vi.mock("next-intl", () => ({
       "providerCards.refreshModels": "Refresh models",
       "providerCards.refreshingModels": "Refreshing...",
       "providerCards.modelsDiscovered": `${values?.count ?? 0} models found`,
+      "providerCards.savedDiscoveryFailed":
+        "Provider saved, but model discovery failed",
+      "providerCards.savedNoModels": "Provider saved, but no models were found",
       "providerCards.modelRefreshFailed": "Models could not be refreshed",
       "providerCards.modelIdPlaceholder": "Model ID",
       "providerCards.allowInsecureHttp": "Allow insecure HTTP",
@@ -69,6 +73,7 @@ vi.mock("sonner", () => ({
   toast: {
     error: (...args: unknown[]) => toastErrorMock(...args),
     success: (...args: unknown[]) => toastSuccessMock(...args),
+    warning: (...args: unknown[]) => toastWarningMock(...args),
   },
 }))
 
@@ -130,6 +135,7 @@ describe("LlmCatalogPanel", () => {
     useLlmCatalogMock.mockReset()
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
+    toastWarningMock.mockReset()
     celebrateMilestoneMock.mockReset()
   })
 
@@ -790,6 +796,122 @@ describe("LlmCatalogPanel", () => {
     expect(celebrateMilestoneMock).not.toHaveBeenCalled()
   })
 
+  it("discovers models after saving a discoverable provider without model ids", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai" },
+        models: [],
+        discovered: false,
+      },
+    })
+    const discoverModels = vi.fn().mockResolvedValue([
+      { id: "model-openai", model_id: "gpt-5.4-mini" },
+    ])
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      discoverModels,
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "sk-new" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(setupProvider).toHaveBeenCalledWith(
+        expect.objectContaining({ discover: false, modelIds: [] }),
+      )
+      expect(discoverModels).toHaveBeenCalledWith("provider-openai")
+    })
+    expect(toastSuccessMock).toHaveBeenCalledWith("1 models found")
+  })
+
+  it("keeps the provider saved when automatic model discovery fails", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai" },
+        models: [],
+        discovered: false,
+      },
+    })
+    const discoverModels = vi.fn().mockResolvedValue(null)
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      discoverModels,
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    const apiKeyInput = within(card).getByLabelText("OpenAI API key")
+    fireEvent.change(apiKeyInput, { target: { value: "sk-new" } })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() =>
+      expect(toastWarningMock).toHaveBeenCalledWith(
+        "Provider saved, but model discovery failed",
+      ),
+    )
+    expect(apiKeyInput).toHaveValue("")
+    expect(toastErrorMock).not.toHaveBeenCalled()
+    expect(toastSuccessMock).not.toHaveBeenCalled()
+  })
+
+  it("warns when automatic model discovery finds no models", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai" },
+        models: [],
+        discovered: false,
+      },
+    })
+    const discoverModels = vi.fn().mockResolvedValue([])
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      discoverModels,
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "sk-new" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() =>
+      expect(toastWarningMock).toHaveBeenCalledWith(
+        "Provider saved, but no models were found",
+      ),
+    )
+    expect(toastErrorMock).not.toHaveBeenCalled()
+    expect(toastSuccessMock).not.toHaveBeenCalled()
+  })
+
   it("celebrates the first provider key when setup creates the first usable keyed provider", async () => {
     const setupProvider = vi.fn().mockResolvedValue({
       ok: true,
@@ -897,6 +1019,7 @@ describe("LlmCatalogPanel", () => {
         discovered: false,
       },
     })
+    const discoverModels = vi.fn()
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
       configuredProviders: [],
@@ -904,7 +1027,7 @@ describe("LlmCatalogPanel", () => {
       isLoading: false,
       isMutating: false,
       error: null,
-      discoverModels: vi.fn(),
+      discoverModels,
       setupProvider,
     })
 
@@ -934,8 +1057,50 @@ describe("LlmCatalogPanel", () => {
         wireProtocol: "chat_completions",
       })
     })
+    expect(discoverModels).not.toHaveBeenCalled()
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
     expect(celebrateMilestoneMock).not.toHaveBeenCalled()
+  })
+
+  it("does not discover models after saving a static provider", async () => {
+    const staticTemplate = providerTemplate(
+      "static-provider",
+      "Static Provider",
+      "static_provider",
+      "static",
+      [field("api_key", "API key", true, true)],
+    )
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-static" },
+        models: [],
+        discovered: false,
+      },
+    })
+    const discoverModels = vi.fn()
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: [staticTemplate],
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      discoverModels,
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "Static Provider" })
+    fireEvent.change(within(card).getByLabelText("Static Provider API key"), {
+      target: { value: "static-key" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => expect(setupProvider).toHaveBeenCalled())
+    expect(discoverModels).not.toHaveBeenCalled()
+    expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
   })
 
   it("lets discoverable providers refresh models through provider setup", async () => {

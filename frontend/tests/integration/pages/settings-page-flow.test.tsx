@@ -12,12 +12,14 @@ const {
   testProviderMock,
   changePasswordMock,
   toastSuccessMock,
+  toastWarningMock,
   toastErrorMock,
 } = vi.hoisted(() => ({
   updateSettingsMock: vi.fn(),
   testProviderMock: vi.fn(),
   changePasswordMock: vi.fn(),
   toastSuccessMock: vi.fn(),
+  toastWarningMock: vi.fn(),
   toastErrorMock: vi.fn(),
 }))
 
@@ -107,6 +109,9 @@ vi.mock("next-intl", () => ({
       "providerCards.fromEnv": "From .env",
       "providerCards.keySavedShort": "Key saved",
       "providerCards.saved": "Provider saved",
+      "providerCards.savedDiscoveryFailed":
+        "Provider saved, but model discovery failed",
+      "providerCards.savedNoModels": "Provider saved, but no models were found",
       "providerCards.saveFailed": "Provider could not be saved",
       "providerCards.refreshModels": "Refresh models",
       "providerCards.refreshingModels": "Refreshing...",
@@ -162,6 +167,7 @@ vi.mock("@/lib/auth-client", () => ({
 vi.mock("sonner", () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccessMock(...args),
+    warning: (...args: unknown[]) => toastWarningMock(...args),
     error: (...args: unknown[]) => toastErrorMock(...args),
   },
 }))
@@ -187,6 +193,7 @@ describe("Settings page flow", () => {
     testProviderMock.mockReset()
     changePasswordMock.mockReset()
     toastSuccessMock.mockReset()
+    toastWarningMock.mockReset()
     toastErrorMock.mockReset()
     apiRequestMock.mockReset()
     useAppearanceMock.mockReturnValue({
@@ -336,6 +343,35 @@ describe("Settings page flow", () => {
             latency_ms: 42,
             retryable: false,
           },
+          meta: undefined,
+        }
+      }
+      if (
+        path === "/llm/providers/llm-provider-1/discover-models" ||
+        path === "/llm/providers/llm-provider-2/discover-models"
+      ) {
+        return {
+          data: [
+            {
+              id: path.includes("provider-1")
+                ? "llm-model-1"
+                : "llm-model-openrouter",
+              provider_id: path.includes("provider-1")
+                ? "llm-provider-1"
+                : "llm-provider-2",
+              model_id: path.includes("provider-1")
+                ? "gpt-5.4"
+                : "openai/gpt-5.4-mini",
+              display_name: path.includes("provider-1")
+                ? "GPT-5.4"
+                : "GPT-5.4 Mini",
+              supports_tools: true,
+              supports_streaming: true,
+              supports_vision: false,
+              supports_json_schema: true,
+              supports_reasoning: true,
+            },
+          ],
           meta: undefined,
         }
       }
@@ -538,9 +574,9 @@ describe("Settings page flow", () => {
         }),
       )
     })
-    expect(apiRequestMock).not.toHaveBeenCalledWith(
+    expect(apiRequestMock).toHaveBeenCalledWith(
       "/llm/providers/llm-provider-1/discover-models",
-      expect.anything(),
+      { method: "POST" },
     )
 
     const testModel = within(openAiCard).getByRole("combobox", {
