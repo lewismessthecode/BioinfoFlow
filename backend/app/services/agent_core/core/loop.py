@@ -28,7 +28,10 @@ from app.services.agent_core.approval_batches import (
 )
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.budget import IterationBudget
-from app.services.agent_core.core.guardrails import no_progress_detected
+from app.services.agent_core.core.guardrails import (
+    next_repeat_count,
+    no_progress_detected,
+)
 from app.services.agent_core.core.interrupt import is_interrupt_requested
 from app.services.agent_core.core.lease import (
     LEASE_LOSS_CANCELLATION,
@@ -41,7 +44,10 @@ from app.services.agent_core.core.runtime_strategy import (
 )
 from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.events import AgentEventType
-from app.services.agent_core.execution_target import execution_target_from_session
+from app.services.agent_core.execution_target import (
+    ExecutionTargetChangedError,
+    execution_target_from_session,
+)
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.ownership import (
@@ -190,12 +196,18 @@ class AgentLoopController:
                 error_message="Agent session could not be loaded.",
             )
 
-        budget = IterationBudget(max_iterations=_max_iterations())
+        persisted_budget = dict(getattr(turn, "budget_snapshot", None) or {})
+        persisted_max_iterations = int(persisted_budget.get("max_iterations") or 0)
+        budget = IterationBudget(
+            max_iterations=persisted_max_iterations or _max_iterations(),
+            used_iterations=int(getattr(turn, "iteration_count", 0) or 0),
+        )
         tools_enabled = capabilities.supports_tools and strategy.allow_tools
-        token_usage: dict[str, Any] | None = None
-        previous_tool_call_signatures: list[str] = []
-        previous_tool_result_signatures: list[str] = []
-        repeated_tool_call_count = 0
+        token_usage = dict(getattr(turn, "token_usage", None) or {}) or None
+        progress = _progress_state(getattr(turn, "loop_state", None))
+        previous_tool_call_signatures = progress["previous_tool_calls"]
+        previous_tool_result_signatures = progress["previous_tool_results"]
+        repeated_tool_call_count = progress["repeat_count"]
         empty_response_retries_remaining = 1
         active_continuation_batch_id = continuation_batch_id
         if active_continuation_batch_id is not None:
@@ -244,6 +256,16 @@ class AgentLoopController:
                     error_message="Agent turn execution lease ownership was lost.",
                     token_usage=token_usage,
                 )
+            turn = await self._checkpoint_loop_state(
+                turn,
+                budget=budget,
+                token_usage=token_usage,
+                progress=_progress_payload(
+                    previous_tool_call_signatures,
+                    previous_tool_result_signatures,
+                    repeated_tool_call_count,
+                ),
+            )
             permission_context, agent_session = await PermissionContextResolver(
                 self.db
             ).resolve_with_session(
@@ -251,11 +273,13 @@ class AgentLoopController:
                 workspace_id=str(turn.workspace_id),
                 user_id=turn.user_id,
             )
+            permission_snapshot = permission_context.snapshot()
+            expected_execution_target = permission_snapshot["execution_target"]
             visible_tools = (
                 self.executor.exposure.exposed_specs(
-                    policy=permission_context.snapshot()["toolset_policy"],
+                    policy=permission_snapshot["toolset_policy"],
                     role=permission_context.role,
-                    execution_target=permission_context.snapshot()["execution_target"],
+                    execution_target=expected_execution_target,
                 )
                 if tools_enabled
                 else []
@@ -344,6 +368,16 @@ class AgentLoopController:
                 )
 
             token_usage = _merge_usage(token_usage, streamed.token_usage)
+            turn = await self._checkpoint_loop_state(
+                turn,
+                budget=budget,
+                token_usage=token_usage,
+                progress=_progress_payload(
+                    previous_tool_call_signatures,
+                    previous_tool_result_signatures,
+                    repeated_tool_call_count,
+                ),
+            )
             tool_calls = _normalize_tool_calls(
                 streamed.tool_calls,
                 turn_id=str(turn.id),
@@ -369,9 +403,12 @@ class AgentLoopController:
                         continuation=streamed.continuation,
                         wire_protocol=target.wire_protocol,
                         prior_continuation_batch_id=active_continuation_batch_id,
+                        expected_execution_target=expected_execution_target,
                     )
                     if active_continuation_batch_id is not None:
                         active_continuation_batch_id = None
+                except ExecutionTargetChangedError:
+                    continue
                 except asyncio.CancelledError:
                     if self._current_prepared_batch_id is not None:
                         await self._cancel_committed_batch(
@@ -408,10 +445,22 @@ class AgentLoopController:
                         token_usage=token_usage,
                     )
                 active_continuation_batch_id = claimed_batch_id
-                repeated_tool_call_count = (
-                    repeated_tool_call_count + 1
-                    if previous_tool_call_signatures == tool_call_signatures
-                    else 1
+                repeated_tool_call_count = next_repeat_count(
+                    previous_tool_call_signatures,
+                    tool_call_signatures,
+                    previous_tool_results=previous_tool_result_signatures,
+                    next_tool_results=tool_result_signatures,
+                    repeat_count=repeated_tool_call_count,
+                )
+                turn = await self._checkpoint_loop_state(
+                    turn,
+                    budget=budget,
+                    token_usage=token_usage,
+                    progress=_progress_payload(
+                        tool_call_signatures,
+                        tool_result_signatures,
+                        repeated_tool_call_count,
+                    ),
                 )
                 if no_progress_detected(
                     previous_tool_call_signatures,
@@ -449,6 +498,12 @@ class AgentLoopController:
             previous_tool_call_signatures = []
             previous_tool_result_signatures = []
             repeated_tool_call_count = 0
+            turn = await self._checkpoint_loop_state(
+                turn,
+                budget=budget,
+                token_usage=token_usage,
+                progress=_progress_payload([], [], 0),
+            )
             final_text = streamed.text
             if not final_text:
                 refusal = next(
@@ -474,6 +529,23 @@ class AgentLoopController:
                     and streamed.continuation is not None
                 ):
                     await self._ensure_owned()
+                    try:
+                        fresh_session = await self._session_for_expected_target(
+                            str(agent_session.id),
+                            expected_execution_target=expected_execution_target,
+                        )
+                    except ExecutionTargetChangedError:
+                        continue
+                    if fresh_session is None:
+                        return LoopResult(
+                            termination_reason="model_failed",
+                            final_text=None,
+                            iteration_count=budget.used_iterations,
+                            token_usage=token_usage,
+                            error_code="session_not_found",
+                            error_message="Agent session could not be loaded.",
+                        )
+                    agent_session = fresh_session
                     await self.transcript.append_parts(
                         session_id=str(agent_session.id),
                         turn_id=str(turn.id),
@@ -550,6 +622,23 @@ class AgentLoopController:
                 else None
             )
             await self._ensure_owned()
+            try:
+                fresh_session = await self._session_for_expected_target(
+                    str(agent_session.id),
+                    expected_execution_target=expected_execution_target,
+                )
+            except ExecutionTargetChangedError:
+                continue
+            if fresh_session is None:
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=budget.used_iterations,
+                    token_usage=token_usage,
+                    error_code="session_not_found",
+                    error_message="Agent session could not be loaded.",
+                )
+            agent_session = fresh_session
             await self.transcript.append_parts(
                 session_id=str(agent_session.id),
                 turn_id=str(turn.id),
@@ -586,6 +675,23 @@ class AgentLoopController:
             error_message="Agent turn exhausted its iteration budget.",
         )
 
+    async def _session_for_expected_target(
+        self,
+        session_id: str,
+        *,
+        expected_execution_target: dict[str, str] | None,
+    ):
+        agent_session = await self.sessions.get_fresh(session_id)
+        if agent_session is None:
+            return None
+        if (
+            expected_execution_target is not None
+            and execution_target_from_session(agent_session)
+            != expected_execution_target
+        ):
+            raise ExecutionTargetChangedError
+        return agent_session
+
     async def _execute_tool_calls(
         self,
         *,
@@ -600,6 +706,7 @@ class AgentLoopController:
         continuation: ResponsesContinuation | None = None,
         wire_protocol: str = "chat_completions",
         prior_continuation_batch_id: str | None = None,
+        expected_execution_target: dict[str, str] | None = None,
     ) -> tuple[bool, list[str], str | None]:
         session_id = str(agent_session.id)
         turn_id = str(turn.id)
@@ -619,6 +726,13 @@ class AgentLoopController:
             locked_session = await self.sessions.lock_policy(session_id)
             if locked_session is None:
                 raise PermissionDeniedError("Agent session is not accessible")
+            if (
+                expected_execution_target is not None
+                and execution_target_from_session(locked_session)
+                != expected_execution_target
+            ):
+                await self.db.rollback()
+                raise ExecutionTargetChangedError
             if (
                 self._execution_owner_token is not None
                 and not await self.turns.lock_execution_owner(
@@ -690,6 +804,9 @@ class AgentLoopController:
             await self.db.commit()
             self._current_prepared_batch_id = batch_id
         except TurnOwnershipLostError:
+            await self.db.rollback()
+            raise
+        except ExecutionTargetChangedError:
             await self.db.rollback()
             raise
         except asyncio.CancelledError as exc:
@@ -853,12 +970,9 @@ class AgentLoopController:
             or is_interrupt_requested(turn)
         ):
             return None
-        if (
-            self._execution_owner_token is not None
-            and (
-                turn.status != AgentTurnStatus.RUNNING
-                or turn.owner_token != self._execution_owner_token
-            )
+        if self._execution_owner_token is not None and (
+            turn.status != AgentTurnStatus.RUNNING
+            or turn.owner_token != self._execution_owner_token
         ):
             raise TurnOwnershipLostError("Agent turn ownership was replaced")
         return turn
@@ -886,9 +1000,12 @@ class AgentLoopController:
         prior_continuation_batch_id: str | None = None,
     ) -> None:
         await self.db.rollback()
-        if self._execution_owner_token is not None and not await self.turns.lock_execution_owner(
-            turn_id,
-            owner_token=self._execution_owner_token,
+        if (
+            self._execution_owner_token is not None
+            and not await self.turns.lock_execution_owner(
+                turn_id,
+                owner_token=self._execution_owner_token,
+            )
         ):
             raise TurnOwnershipLostError("Agent turn ownership was replaced")
         agent_session = await self.sessions.get(session_id)
@@ -946,9 +1063,12 @@ class AgentLoopController:
     async def _cancel_committed_batch(
         self, batch_id: str, *, agent_session, turn_id: str
     ) -> None:
-        if self._execution_owner_token is not None and not await self.turns.lock_execution_owner(
-            turn_id,
-            owner_token=self._execution_owner_token,
+        if (
+            self._execution_owner_token is not None
+            and not await self.turns.lock_execution_owner(
+                turn_id,
+                owner_token=self._execution_owner_token,
+            )
         ):
             await self.db.rollback()
             return
@@ -1035,12 +1155,15 @@ class AgentLoopController:
                 error_code="turn_not_found",
                 error_message="Agent turn could not be loaded for resume.",
             )
+        persisted_iteration_count = int(getattr(turn, "iteration_count", 0) or 0)
+        persisted_token_usage = dict(getattr(turn, "token_usage", None) or {}) or None
         agent_session = await self.sessions.get(str(action.session_id))
         if agent_session is None:
             return LoopResult(
                 termination_reason="model_failed",
                 final_text=None,
-                iteration_count=0,
+                iteration_count=persisted_iteration_count,
+                token_usage=persisted_token_usage,
                 error_code="session_not_found",
                 error_message="Agent session could not be loaded for resume.",
             )
@@ -1091,7 +1214,8 @@ class AgentLoopController:
                     return LoopResult(
                         termination_reason="waiting_approval",
                         final_text=None,
-                        iteration_count=0,
+                        iteration_count=persisted_iteration_count,
+                        token_usage=persisted_token_usage,
                     )
                 if result.status not in {
                     AgentActionStatus.COMPLETED,
@@ -1107,7 +1231,8 @@ class AgentLoopController:
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
-                    iteration_count=0,
+                    iteration_count=persisted_iteration_count,
+                    token_usage=persisted_token_usage,
                     error_code="tool_resume_failed",
                     error_message=(
                         "Approved tool action finished with status: "
@@ -1119,7 +1244,8 @@ class AgentLoopController:
                 return LoopResult(
                     termination_reason="waiting_approval",
                     final_text=None,
-                    iteration_count=0,
+                    iteration_count=persisted_iteration_count,
+                    token_usage=persisted_token_usage,
                 )
             if not await self.tool_batches.claim_continuation(
                 str(action.tool_batch_id)
@@ -1127,7 +1253,8 @@ class AgentLoopController:
                 return LoopResult(
                     termination_reason="waiting_approval",
                     final_text=None,
-                    iteration_count=0,
+                    iteration_count=persisted_iteration_count,
+                    token_usage=persisted_token_usage,
                 )
             await self._append_missing_batch_results(
                 agent_session=agent_session,
@@ -1154,7 +1281,8 @@ class AgentLoopController:
                 return LoopResult(
                     termination_reason="waiting_approval",
                     final_text=None,
-                    iteration_count=0,
+                    iteration_count=persisted_iteration_count,
+                    token_usage=persisted_token_usage,
                 )
             if not await self._has_tool_result(
                 str(agent_session.id),
@@ -1175,7 +1303,8 @@ class AgentLoopController:
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
-                    iteration_count=0,
+                    iteration_count=persisted_iteration_count,
+                    token_usage=persisted_token_usage,
                     error_code="tool_resume_failed",
                     error_message=f"Approved tool action finished with status: {result.status}",
                 )
@@ -1449,7 +1578,47 @@ class AgentLoopController:
 
     def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:
         spec = self.registry.get(tool_name).spec
-        return spec.risk_level == "read" and not spec.write_scope
+        return (
+            spec.risk_level == "read"
+            and not spec.write_scope
+            and spec.interaction is None
+        )
+
+    async def _checkpoint_loop_state(
+        self,
+        turn,
+        *,
+        budget: IterationBudget,
+        token_usage: dict[str, Any] | None,
+        progress: dict[str, Any],
+    ):
+        loop_state = dict(getattr(turn, "loop_state", None) or {})
+        loop_state["progress"] = progress
+        values = {
+            "iteration_count": budget.used_iterations,
+            "budget_snapshot": budget.snapshot(),
+            "token_usage": token_usage,
+            "loop_state": loop_state,
+        }
+        if self.ownership is not None:
+            updated, owned = await self.turns.update_owned(
+                str(turn.id),
+                expected_owner_token=self.ownership.owner_token,
+                **values,
+            )
+            if not owned or updated is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            return updated
+        if self._execution_owner_token is not None:
+            updated = await self.turns.update_claimed_execution(
+                str(turn.id),
+                owner_token=self._execution_owner_token,
+                **values,
+            )
+            if updated is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            return updated
+        return await self.turns.update_all(turn, **values)
 
     async def _renew_turn_lease(self, turn):
         if self.ownership is not None:
@@ -1788,7 +1957,8 @@ class AgentLoopController:
             status = AgentTurnStatus.FAILED
             event_type = AgentEventType.TURN_FAILED
 
-        loop_state = {"termination_reason": result.termination_reason}
+        loop_state = dict(getattr(turn, "loop_state", None) or {})
+        loop_state["termination_reason"] = result.termination_reason
         if result.termination_reason == "waiting_approval":
             loop_state[
                 "pending_tool_call_ids"
@@ -1801,6 +1971,10 @@ class AgentLoopController:
             if result.termination_reason == "waiting_approval"
             else None
         )
+        persisted_budget = dict(getattr(turn, "budget_snapshot", None) or {})
+        max_iterations = int(
+            persisted_budget.get("max_iterations") or _max_iterations()
+        )
         values = dict(
             status=status,
             final_text=result.final_text,
@@ -1809,7 +1983,7 @@ class AgentLoopController:
             iteration_count=result.iteration_count,
             budget_snapshot={
                 "used_iterations": result.iteration_count,
-                "max_iterations": _max_iterations(),
+                "max_iterations": max_iterations,
             },
             loop_state=loop_state,
             error_code=result.error_code,
@@ -1860,6 +2034,15 @@ class AgentLoopController:
                 type=event_type,
                 payload=payload,
                 after_owner_fenced_transition=self.ownership is not None,
+            )
+        if status in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            await self.sessions.release_active_turn(
+                str(updated.session_id),
+                str(updated.id),
             )
         log_fields = {
             "session_id": str(updated.session_id),
@@ -1944,6 +2127,8 @@ def _normalize_tool_calls(
         call["id"] = internal_id
         normalized.append(call)
     return normalized
+
+
 def _merge_usage(
     current: dict[str, Any] | None,
     next_usage: dict[str, Any] | None,
@@ -2007,6 +2192,32 @@ def _tool_result_signature(tool_name: str, result: ToolExecutionResult) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
+
+
+def _progress_state(loop_state: dict[str, Any] | None) -> dict[str, Any]:
+    raw = (loop_state or {}).get("progress")
+    if not isinstance(raw, dict):
+        return _progress_payload([], [], 0)
+    calls = raw.get("previous_tool_calls")
+    results = raw.get("previous_tool_results")
+    repeat_count = raw.get("repeat_count")
+    return _progress_payload(
+        [str(item) for item in calls] if isinstance(calls, list) else [],
+        [str(item) for item in results] if isinstance(results, list) else [],
+        max(int(repeat_count or 0), 0),
+    )
+
+
+def _progress_payload(
+    previous_tool_calls: list[str],
+    previous_tool_results: list[str],
+    repeat_count: int,
+) -> dict[str, Any]:
+    return {
+        "previous_tool_calls": list(previous_tool_calls),
+        "previous_tool_results": list(previous_tool_results),
+        "repeat_count": int(repeat_count),
+    }
 
 
 def _tool_result_for_terminal_action(action) -> ToolExecutionResult:

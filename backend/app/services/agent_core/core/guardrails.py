@@ -1,6 +1,24 @@
 from __future__ import annotations
 
 
+def next_repeat_count(
+    previous_tool_calls: list[str],
+    next_tool_calls: list[str],
+    *,
+    previous_tool_results: list[str],
+    next_tool_results: list[str],
+    repeat_count: int,
+) -> int:
+    """Advance the repeat count only when both requests and observations match."""
+
+    if (
+        previous_tool_calls == next_tool_calls
+        and previous_tool_results == next_tool_results
+    ):
+        return repeat_count + 1
+    return 1
+
+
 def no_progress_detected(
     previous_tool_calls: list[str],
     next_tool_calls: list[str],

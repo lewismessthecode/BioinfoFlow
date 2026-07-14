@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.agent_core import AgentAction, AgentSession
+from app.models.agent_core import AgentAction, AgentSession, AgentTurnStatus
 from app.models.remote_connection import RemoteConnection
 from app.models.project import Project
 from app.models.workspace import Workspace
@@ -64,6 +64,12 @@ async def _create_session_and_turn(
         input_text="Evaluate a high-risk tool.",
     )
     return session, turn
+
+
+async def _complete_and_release_turn(db_session, session, turn) -> None:
+    service = AgentCoreService(db_session)
+    await service.turn_repo.update_all(turn, status=AgentTurnStatus.COMPLETED)
+    await service.session_repo.release_active_turn(str(session.id), str(turn.id))
 
 
 def _registry() -> AgentToolRegistry:
@@ -197,7 +203,7 @@ async def test_authorization_update_increments_once_and_resolves_coherent_snapsh
 ) -> None:
     from app.services.agent_core.permissions.context import PermissionContextResolver
 
-    session, _turn = await _create_session_and_turn(db_session)
+    session, turn = await _create_session_and_turn(db_session)
     service = AgentCoreService(db_session)
 
     renamed = await service.update_session(
@@ -207,6 +213,7 @@ async def test_authorization_update_increments_once_and_resolves_coherent_snapsh
         updates={"title": "No policy change"},
     )
     assert renamed.permission_policy_version == 1
+    await _complete_and_release_turn(db_session, session, turn)
 
     updated = await service.update_session(
         session_id=str(session.id),
@@ -240,7 +247,8 @@ async def test_authorization_update_increments_once_and_resolves_coherent_snapsh
 async def test_turn_level_execution_target_change_increments_policy_version(
     db_session,
 ) -> None:
-    session, _turn = await _create_session_and_turn(db_session)
+    session, turn = await _create_session_and_turn(db_session)
+    await _complete_and_release_turn(db_session, session, turn)
 
     await AgentCoreService(db_session).create_turn_record(
         session_id=str(session.id),
@@ -390,7 +398,8 @@ async def test_remote_permission_snapshot_contains_safe_identity_without_credent
 ) -> None:
     from app.services.agent_core.permissions.context import PermissionContextResolver
 
-    session, _turn = await _create_session_and_turn(db_session)
+    session, turn = await _create_session_and_turn(db_session)
+    await _complete_and_release_turn(db_session, session, turn)
     connection = RemoteConnection(
         workspace_id=DEFAULT_WORKSPACE_ID,
         name="Compute node",
@@ -622,8 +631,9 @@ async def test_noop_normalized_policy_updates_do_not_increment_version(
 async def test_noop_turn_target_and_toolset_activation_do_not_increment_version(
     db_session,
 ) -> None:
-    session, _turn = await _create_session_and_turn(db_session)
+    session, turn = await _create_session_and_turn(db_session)
     service = AgentCoreService(db_session)
+    await _complete_and_release_turn(db_session, session, turn)
 
     await service.create_turn_record(
         session_id=str(session.id),

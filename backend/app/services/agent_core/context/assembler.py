@@ -9,14 +9,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.agent_core import AgentActionStatus, AgentMemoryStatus
 from app.path_layout import state_root
-from app.repositories.agent_core_repo import AgentActionRepository, AgentMemoryRepository
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentMemoryRepository,
+)
 from app.repositories.image_repo import ImageRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.run_repo import RunRepository
 from app.repositories.workflow_repo import WorkflowRepository
-from app.services.agent_core.context.remote import render_remote_connection_context
+from app.services.agent_core.context.remote import (
+    render_remote_connection_context,
+    selected_remote_project,
+)
 from app.services.agent_core.context.instructions import ProjectInstructionResolver
 from app.services.agent_core.context.system_prompt import resolve_system_prompt_prefix
+from app.services.agent_core.execution_target import (
+    execution_target_from_session,
+    is_remote_ssh_execution_target,
+)
 from app.services.agent_core.plugins import AgentPluginRegistry
 from app.services.agent_core.sandbox import FilesystemPolicy
 from app.services.agent_core.skills import (
@@ -141,7 +151,9 @@ class AgentContextAssembler:
                     if metadata.get("tool_call_id"):
                         seen.append(str(metadata["tool_call_id"]))
                 cursor += 1
-            missing = [tool_call_id for tool_call_id in expected if tool_call_id not in seen]
+            missing = [
+                tool_call_id for tool_call_id in expected if tool_call_id not in seen
+            ]
             if missing or seen != expected:
                 turn_actions = await AgentActionRepository(self.db).list_for_turn(
                     group_turn_id
@@ -316,19 +328,26 @@ class AgentContextAssembler:
         return False
 
     async def _instructions(self, *, agent_session, turn, exposed_tools=None) -> str:
+        del exposed_tools
+        execution_target = execution_target_from_session(agent_session)
         system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
         project_instruction_context = await self.project_instructions.resolve(
             agent_session,
             turn=turn,
+            execution_target=execution_target,
         )
         if project_instruction_context:
             system_sections.append(project_instruction_context)
         environment_context = await self._environment_context(
-            agent_session, exposed_tools
+            agent_session,
+            execution_target=execution_target,
         )
         if environment_context:
             system_sections.append(environment_context)
-        memory_context = await self._memory_context(agent_session)
+        memory_context = await self._memory_context(
+            agent_session,
+            execution_target=execution_target,
+        )
         if memory_context:
             system_sections.append(memory_context)
         skills_context = self._skills_context(turn)
@@ -336,27 +355,29 @@ class AgentContextAssembler:
             system_sections.append(skills_context)
         return "\n\n".join(section for section in system_sections if section)
 
-    async def _environment_context(self, agent_session, exposed_tools=None) -> str:
-        """Dynamic per-turn environment, platform inventory, and tool list.
-
-        This is the single biggest fix for the "what can you do / I can't do
-        that" failure mode: the model sees its real working directory, the live
-        platform state, and the exact tools it can call every turn. Ordering is
-        deterministic so the preceding stable prefix stays cache-identical.
-        """
+    async def _environment_context(
+        self,
+        agent_session,
+        *,
+        execution_target: dict[str, str],
+    ) -> str:
+        """Render dynamic context without contradicting the current target."""
         toolset = (getattr(agent_session, "toolset_policy", None) or {}).get(
             "name"
         ) or "default"
+        remote_target = is_remote_ssh_execution_target(execution_target)
         lines: list[str] = ["## Environment"]
-        lines.append(f"- Working directory: {settings.repo_root}")
-        allowed_roots = ", ".join(
-            str(root) for root in FilesystemPolicy().allowed_roots
-        )
-        lines.append(f"- Allowed filesystem roots: {allowed_roots}")
+        if not remote_target:
+            lines.append(f"- Working directory: {settings.repo_root}")
+            allowed_roots = ", ".join(
+                str(root) for root in FilesystemPolicy().allowed_roots
+            )
+            lines.append(f"- Allowed filesystem roots: {allowed_roots}")
         lines.append(f"- Workspace: {agent_session.workspace_id}")
-        lines.append(
-            f"- Active project: {agent_session.project_id or 'none (workspace scope)'}"
-        )
+        if not remote_target:
+            lines.append(
+                f"- Active project: {agent_session.project_id or 'none (workspace scope)'}"
+            )
         lines.append(
             "- Permission mode: "
             f"{getattr(agent_session, 'permission_mode', 'guarded_auto')} "
@@ -369,28 +390,30 @@ class AgentContextAssembler:
             f"- Role profile: {getattr(agent_session, 'role_profile', 'bioinformatician')}"
         )
         lines.append(f"- Toolset policy: {toolset}")
+        lines.append(f"- Execution target: {execution_target.get('type', 'local')}")
         if toolset == "plan":
             lines.append(
                 "- PLAN MODE: read and search tools only. Investigate, then call "
                 "exit_plan_mode with a concrete plan to request approval to act."
             )
 
-        remote_context = await render_remote_connection_context(self.db, agent_session)
-        if remote_context:
+        if remote_target:
+            remote_context = await render_remote_connection_context(
+                self.db,
+                agent_session,
+                execution_target=execution_target,
+            )
+            if remote_context:
+                lines.append("")
+                lines.append(remote_context)
+        else:
+            inventory = await self._platform_inventory(agent_session)
+            if inventory:
+                lines.append("")
+                lines.append("## Platform inventory")
+                lines.extend(inventory)
             lines.append("")
-            lines.append(remote_context)
-
-        inventory = await self._platform_inventory(agent_session)
-        if inventory:
-            lines.append("")
-            lines.append("## Platform inventory")
-            lines.extend(inventory)
-
-        tool_lines = _exposed_tool_lines(exposed_tools)
-        if tool_lines:
-            lines.append("")
-            lines.append("## Tools available this turn")
-            lines.extend(tool_lines)
+            lines.append(_local_platform_context())
 
         return "\n".join(lines)
 
@@ -422,13 +445,21 @@ class AgentContextAssembler:
                 lines.append(f"- {label}: {value}")
         return lines
 
-    async def _memory_context(self, agent_session) -> str | None:
+    async def _memory_context(
+        self,
+        agent_session,
+        *,
+        execution_target: dict[str, str],
+    ) -> str | None:
+        project_id = await self._memory_project_id(
+            agent_session,
+            execution_target=execution_target,
+        )
         memories = await self.memories.list_for_workspace(
             workspace_id=str(agent_session.workspace_id),
-            project_id=str(agent_session.project_id)
-            if agent_session.project_id
-            else None,
+            project_id=project_id,
             status=AgentMemoryStatus.ACCEPTED,
+            scope="workspace" if project_id is None else None,
         )
         if not memories:
             return None
@@ -436,6 +467,26 @@ class AgentContextAssembler:
         for memory in memories[:20]:
             lines.append(f"- {memory.scope}/{memory.type}: {memory.content}")
         return "\n".join(lines)
+
+    async def _memory_project_id(
+        self,
+        agent_session,
+        *,
+        execution_target: dict[str, str],
+    ) -> str | None:
+        project_id = getattr(agent_session, "project_id", None)
+        if not project_id:
+            return None
+        if not is_remote_ssh_execution_target(execution_target):
+            return str(project_id)
+        remote_project = await selected_remote_project(self.db, agent_session)
+        if remote_project is None:
+            return None
+        if str(remote_project.remote_connection_id) != execution_target.get(
+            "connection_id"
+        ):
+            return None
+        return str(project_id)
 
     def _skills_context(self, turn) -> str | None:
         skills = AgentSkillRegistry.from_default_roots()
@@ -501,7 +552,9 @@ def _complete_provider_groups(messages: list[dict]) -> list[dict]:
     index = 0
     while index < len(messages):
         message = messages[index]
-        tool_calls = message.get("tool_calls") if message.get("role") == "assistant" else None
+        tool_calls = (
+            message.get("tool_calls") if message.get("role") == "assistant" else None
+        )
         if tool_calls:
             expected = [str(call.get("id")) for call in tool_calls if call.get("id")]
             group = [message]
@@ -561,14 +614,20 @@ def model_context_from_messages(messages: list[dict[str, Any]]) -> AgentModelCon
     )
 
 
-def _exposed_tool_lines(exposed_tools) -> list[str]:
-    if not exposed_tools:
-        return []
-    lines: list[str] = []
-    for spec in sorted(exposed_tools, key=lambda spec: spec.name):
-        summary = str(getattr(spec, "description", "") or "").strip()
-        first_sentence = summary.split(". ")[0].rstrip(".")
-        lines.append(
-            f"- {spec.name}: {first_sentence}" if first_sentence else f"- {spec.name}"
-        )
-    return lines
+def _local_platform_context() -> str:
+    return """\
+## Bioinfoflow local platform
+- Prefer dedicated Bioinfoflow tools for platform state. Use shell for repository
+  work, tests, and operations with no dedicated platform tool.
+- Before `runs.submit`, identify the exact project and workflow, confirm the
+  project binding when relevant, and inspect `workflows.form_spec`. Copy its
+  field keys exactly into the `runs.submit.values` object; do not infer keys
+  from prose or filenames.
+- Use lifecycle mutations only for the requested action: create or update the
+  selected resource, submit/cancel/retry/resume the selected run, or perform the
+  explicit cleanup/delete. Do not add registration or binding work unless the
+  task requires it.
+- After any mutation, use the matching get/list/status tool for read-back
+  verification. For run diagnosis, gather the narrowest useful logs, outputs,
+  DAG, audit, scheduler, or resource evidence before explaining the result.
+"""

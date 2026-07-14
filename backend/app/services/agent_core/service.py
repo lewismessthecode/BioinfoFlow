@@ -4,6 +4,7 @@ import json
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -246,6 +247,13 @@ class AgentCoreService:
             ),
         )
         policy_changed = previous_authorization != next_authorization
+        target_changed = (
+            "session_metadata" in update_data
+            and normalize_execution_target(
+                None, metadata=update_data["session_metadata"]
+            )
+            != execution_target_from_session(session)
+        )
         wakeups: list[tuple[str, str, str]] = []
         reconciliation = {
             "affected_count": 0,
@@ -257,9 +265,14 @@ class AgentCoreService:
                 updated = await self.session_repo.update_with_policy_version(
                     session,
                     increment_policy_version=policy_changed,
+                    require_target_mutable=target_changed,
                     commit=False,
                     **update_data,
                 )
+                if updated is None:
+                    raise ConflictError(
+                        "Execution target cannot change while an agent turn is active"
+                    )
             else:
                 updated = await self.session_repo.get_fresh(str(session.id))
                 if updated is None:
@@ -345,6 +358,8 @@ class AgentCoreService:
                 )
 
             await self.db.commit()
+        except ConflictError:
+            raise
         except Exception:
             await self.db.rollback()
             raise
@@ -388,19 +403,18 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        session_updates: dict[str, object] = {}
+        increment_policy_version = False
         if execution_target is not None:
             previous_target = execution_target_from_session(session)
             next_metadata = session_metadata_with_execution_target(
                 getattr(session, "session_metadata", None),
                 execution_target,
             )
-            session = await self.session_repo.update_with_policy_version(
-                session,
-                increment_policy_version=(
-                    previous_target
-                    != normalize_execution_target(None, metadata=next_metadata)
-                ),
-                session_metadata=next_metadata,
+            session_updates["session_metadata"] = next_metadata
+            increment_policy_version = previous_target != normalize_execution_target(
+                None,
+                metadata=next_metadata,
             )
         normalized_active_skill_names = _validated_active_skill_names(
             active_skill_names
@@ -421,13 +435,18 @@ class AgentCoreService:
         if not session.title and not await self.turn_repo.list_for_session(
             str(session.id)
         ):
-            session = await self.session_repo.update_all(
-                session,
-                title=_generated_session_title(input_text),
-            )
+            session_updates["title"] = _generated_session_title(input_text)
         normalized_model_selection = normalize_model_selection(model_selection)
-        turn = await self.turn_repo.create(
+        turn_id = str(uuid4())
+        turn = await self.turn_repo.create_with_session_claim(
             session_id=str(session.id),
+            turn_id=turn_id,
+            session_updates=session_updates,
+            increment_policy_version=increment_policy_version,
+            user_parts=transcript_parts,
+            user_metadata={"turn_id": turn_id},
+            created_event_type=AgentEventType.TURN_CREATED,
+            created_event_payload={"input_text": input_text},
             project_id=str(session.project_id) if session.project_id else None,
             workspace_id=str(session.workspace_id),
             user_id=user_id,
@@ -442,19 +461,11 @@ class AgentCoreService:
             budget_snapshot={"max_iterations": 0, "used_iterations": 0},
             loop_state={"state": "queued"},
         )
-        await AgentTranscriptStore(self.db).append_parts(
-            session_id=str(session.id),
-            turn_id=str(turn.id),
-            role="user",
-            parts=transcript_parts,
-            metadata={"turn_id": str(turn.id)},
-        )
-        await self.ledger.append(
-            session_id=str(session.id),
-            turn_id=str(turn.id),
-            type=AgentEventType.TURN_CREATED,
-            payload={"input_text": input_text},
-        )
+        if turn is None:
+            raise ConflictError(
+                "Cannot create a new turn while another turn is active in this session"
+            )
+        await self.db.refresh(session)
         return turn
 
     async def create_turn(
@@ -589,10 +600,41 @@ class AgentCoreService:
             and (message.message_metadata or {}).get("action_id")
         }
         now = datetime.now(timezone.utc)
+        processed_action_ids: set[str] = set()
+
+        async def append_cancelled_action_result(
+            action, *, batch_id: str | None
+        ) -> None:
+            if str(action.id) in existing_action_results:
+                return
+            await self.transcript.append_text(
+                session_id=session_id,
+                turn_id=turn_id,
+                role="tool",
+                text=json.dumps(
+                    {
+                        "tool": action.name,
+                        "status": action.status,
+                        "result": action.result,
+                        "error": action.error,
+                    },
+                    separators=(",", ":"),
+                    default=str,
+                ),
+                metadata={
+                    "tool_call_id": action.tool_call_id,
+                    "tool": action.name,
+                    "action_id": str(action.id),
+                    "tool_batch_id": batch_id,
+                },
+                commit=False,
+            )
+
         batches = await self.tool_batch_repo.list_nonterminal_for_turn(turn_id)
         for batch in batches:
             await self.tool_batch_repo.cancel_nonterminal_pending(str(batch.id))
             for action in await self.action_repo.list_for_batch(str(batch.id)):
+                processed_action_ids.add(str(action.id))
                 if action.status in {
                     AgentActionStatus.WAITING_DECISION,
                     AgentActionStatus.REQUESTED,
@@ -608,30 +650,35 @@ class AgentCoreService:
                         },
                         completed_at=now,
                     )
-                if str(action.id) in existing_action_results:
-                    continue
-                await self.transcript.append_text(
-                    session_id=session_id,
-                    turn_id=turn_id,
-                    role="tool",
-                    text=json.dumps(
-                        {
-                            "tool": action.name,
-                            "status": action.status,
-                            "result": action.result,
-                            "error": action.error,
-                        },
-                        separators=(",", ":"),
-                        default=str,
-                    ),
-                    metadata={
-                        "tool_call_id": action.tool_call_id,
-                        "tool": action.name,
-                        "action_id": str(action.id),
-                        "tool_batch_id": str(batch.id),
-                    },
-                    commit=False,
-                )
+                await append_cancelled_action_result(action, batch_id=str(batch.id))
+        for action in await self.action_repo.list_open_for_turn(turn_id):
+            if str(action.id) in processed_action_ids:
+                continue
+            action = await self.action_repo.update_all_pending(
+                action,
+                status=AgentActionStatus.CANCELLED,
+                requires_resume=False,
+                error={
+                    "type": "CancelledError",
+                    "message": f"Tool action cancelled because the turn was {termination_reason}.",
+                },
+                completed_at=now,
+            )
+            await append_cancelled_action_result(
+                action,
+                batch_id=str(action.tool_batch_id) if action.tool_batch_id else None,
+            )
+            await self.ledger.append(
+                session_id=str(action.session_id),
+                turn_id=str(action.turn_id),
+                type=AgentEventType.ACTION_CANCELLED,
+                payload={
+                    "action_id": str(action.id),
+                    "tool": action.name,
+                    "reason": termination_reason,
+                },
+                commit=False,
+            )
         await self.ledger.append(
             session_id=session_id,
             turn_id=turn_id,
@@ -640,7 +687,9 @@ class AgentCoreService:
             commit=False,
         )
         await self.db.commit()
-        return await self.turn_repo.get_fresh(turn_id)
+        updated = await self.turn_repo.get_fresh(turn_id)
+        await self._release_active_if_terminal(updated)
+        return updated
 
     async def list_events_for_turn(
         self,
@@ -811,10 +860,7 @@ class AgentCoreService:
             raise NotFoundError("Agent action not found") from exc
         if action.kind != "tool":
             raise ConflictError("Only tool actions can be resumed")
-        if (
-            action.status != AgentActionStatus.REQUESTED
-            or not action.requires_resume
-        ):
+        if action.status != AgentActionStatus.REQUESTED or not action.requires_resume:
             raise ConflictError("Tool action is not awaiting resume")
         await self.turn_repo.queue_waiting_for_resume(
             str(turn.id),
@@ -868,11 +914,13 @@ class AgentCoreService:
                 **values,
             )
             return updated if owned else None
+
         if turn.status in {
             AgentTurnStatus.COMPLETED,
             AgentTurnStatus.FAILED,
             AgentTurnStatus.CANCELLED,
         }:
+            await self._release_active_if_terminal(turn)
             return "skipped"
 
         now = datetime.now(timezone.utc)
@@ -904,6 +952,7 @@ class AgentCoreService:
             )
             if turn is None:
                 return "skipped"
+            await self._release_active_if_terminal(turn)
             return "failed"
         latest_batch = batches[0] if batches else None
         if latest_batch is not None:
@@ -953,6 +1002,7 @@ class AgentCoreService:
                 )
                 if turn is None:
                     return "skipped"
+                await self._release_active_if_terminal(turn)
                 await self.ledger.append(
                     session_id=str(turn.session_id),
                     turn_id=str(turn.id),
@@ -1095,6 +1145,7 @@ class AgentCoreService:
             )
             if turn is None:
                 return "skipped"
+            await self._release_active_if_terminal(turn)
             await self.ledger.append(
                 session_id=str(turn.session_id),
                 turn_id=str(turn.id),
@@ -1210,6 +1261,15 @@ class AgentCoreService:
                 type=AgentEventType.ACTION_CANCELLED,
                 payload={"action_id": str(action.id), "tool": action.name},
             )
+
+    async def _release_active_if_terminal(self, turn) -> None:
+        if turn is None or turn.status not in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            return
+        await self.session_repo.release_active_turn(str(turn.session_id), str(turn.id))
 
     async def list_artifacts_for_session(
         self,

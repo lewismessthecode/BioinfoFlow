@@ -9,7 +9,9 @@ from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.context.instructions import (
+    _is_remote_target,
     _remote_read_first_existing_command,
+    _target_metadata,
 )
 import app.services.agent_core.context as context_module
 from app.workspace import DEFAULT_WORKSPACE_ID
@@ -68,9 +70,9 @@ async def test_project_instruction_resolver_walks_local_root_to_current_with_pri
     assert context.index(str(repo_root / "AGENTS.md")) < context.index(
         str(repo_root / "pipelines" / "AGENTS.override.md")
     )
-    assert context.index(str(repo_root / "pipelines" / "AGENTS.override.md")) < context.index(
-        str(current / "GEMINI.md")
-    )
+    assert context.index(
+        str(repo_root / "pipelines" / "AGENTS.override.md")
+    ) < context.index(str(current / "GEMINI.md"))
     assert "root agents" in context
     assert "pipeline override" in context
     assert "leaf gemini" in context
@@ -117,6 +119,84 @@ async def test_project_instruction_resolver_skips_local_symlink_escape(
 
 
 @pytest.mark.asyncio
+async def test_current_local_session_target_overrides_stale_remote_turn_target(
+    tmp_path,
+    monkeypatch,
+):
+    resolver_cls, _instruction_file_cls = _instruction_classes()
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.setattr(settings, "repo_root", str(repo_root))
+    (repo_root / "AGENTS.md").write_text(
+        "current local instructions",
+        encoding="utf-8",
+    )
+    session = SimpleNamespace(
+        toolset_policy={"name": "execution"},
+        context_policy={"memory": "accepted_project_scope"},
+        session_metadata={"execution_target": {"type": "local"}},
+    )
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "trace_label": "retain this non-target field",
+                "remote_project_root": "/srv/stale",
+                "project_instruction_snapshot": "stale remote instructions",
+                "execution_target": {
+                    "type": "remote_ssh",
+                    "connection_id": "stale-conn",
+                    "cwd": "/srv/stale",
+                },
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+    context = await resolver_cls(max_bytes=32768).resolve(session, turn=turn)
+
+    assert target["trace_label"] == "retain this non-target field"
+    assert target["type"] == "local"
+    assert context is not None
+    assert "current local instructions" in context
+    assert "stale remote instructions" not in context
+
+
+@pytest.mark.parametrize(
+    ("stale_alias", "current_target", "expected_remote"),
+    [
+        ("remote_ssh", {"type": "local"}, False),
+        (
+            "local",
+            {"type": "remote_ssh", "connection_id": "conn-current"},
+            True,
+        ),
+    ],
+)
+def test_current_target_removes_conflicting_stale_aliases(
+    stale_alias,
+    current_target,
+    expected_remote,
+):
+    session = SimpleNamespace(session_metadata={"execution_target": current_target})
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "kind": stale_alias,
+                "target_type": stale_alias,
+                "mode": stale_alias,
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+
+    assert "kind" not in target
+    assert "target_type" not in target
+    assert "mode" not in target
+    assert _is_remote_target(target) is expected_remote
+
+
+@pytest.mark.asyncio
 async def test_context_assembler_injects_project_instructions_before_environment(
     db_session,
     tmp_path,
@@ -147,11 +227,14 @@ async def test_context_assembler_injects_project_instructions_before_environment
     )
     system_content = messages[0]["content"]
 
-    assert "## Project instructions" in system_content
-    assert "assembler root instruction" in system_content
+    assert [message["role"] for message in messages] == ["system", "user"]
     assert system_content.index("## Project instructions") < system_content.index(
         "## Environment"
     )
+    assert "## Environment" in system_content
+    assert "## Project instructions" in system_content
+    assert "assembler root instruction" in system_content
+    assert messages[-1]["content"] == "Use the repo rules."
 
 
 @pytest.mark.asyncio
@@ -252,7 +335,10 @@ def test_remote_instruction_read_command_skips_symlink_escapes():
     )
 
     assert 'file_real=$(realpath -- "$path") || continue' in command
-    assert 'case "$file_real" in "$root_real"|"$root_real"/*) ;; *) continue;; esac' in command
+    assert (
+        'case "$file_real" in "$root_real"|"$root_real"/*) ;; *) continue;; esac'
+        in command
+    )
     assert 'head -c 1025 -- "$path"' in command
 
 
@@ -285,6 +371,8 @@ async def test_remote_project_instruction_resolver_accepts_canonical_connection_
         workspace_id="workspace-1",
         user_id="user-1",
         session_metadata={
+            "remote_connection_id": "canonical-conn",
+            "remote_project_id": "project-1",
             "remote_project_root": "/srv/project",
             "execution_target": {
                 "type": "remote_ssh",
@@ -302,6 +390,251 @@ async def test_remote_project_instruction_resolver_accepts_canonical_connection_
     assert context is not None
     assert "canonical target" in context
     assert "Project instructions unavailable" not in context
+
+
+@pytest.mark.asyncio
+async def test_remote_project_instructions_drop_root_when_current_target_changes():
+    resolver_cls, instruction_file_cls = _instruction_classes()
+
+    class CapturingRemoteReader:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def read_first_existing(
+            self,
+            *,
+            agent_session,
+            connection_id: str,
+            directory: str,
+            filenames,
+            max_bytes: int,
+            remote_root: str,
+        ):
+            del agent_session, filenames, max_bytes
+            self.calls.append(
+                {
+                    "connection_id": connection_id,
+                    "directory": directory,
+                    "remote_root": remote_root,
+                }
+            )
+            return instruction_file_cls(
+                source=f"ssh://{connection_id}{directory}/AGENTS.md",
+                content="leaked project A instructions",
+                truncated=False,
+            )
+
+    reader = CapturingRemoteReader()
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "remote_connection_id": "conn-a",
+            "remote_project_id": "project-a",
+            "remote_project_root": "/srv/project-a",
+            "remote_root_path": "/srv/project-a",
+            "project_instruction_snapshot": "project A singular snapshot",
+            "project_instructions_snapshot": "project A plural snapshot",
+            "project_instructions": "project A derived instructions",
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-b",
+            },
+        },
+    )
+
+    target = _target_metadata(session)
+    context = await resolver_cls(max_bytes=32768, remote_reader=reader).resolve(session)
+
+    assert target["connection_id"] == "conn-b"
+    assert "remote_project_id" not in target
+    assert "remote_project_root" not in target
+    assert "remote_root_path" not in target
+    assert "project_instruction_snapshot" not in target
+    assert "project_instructions_snapshot" not in target
+    assert "project_instructions" not in target
+    assert reader.calls == []
+    assert context is not None
+    assert "/srv/project-a" not in context
+    assert "leaked project A instructions" not in context
+    assert "project A singular snapshot" not in context
+    assert "project A plural snapshot" not in context
+    assert "project A derived instructions" not in context
+
+
+@pytest.mark.asyncio
+async def test_stale_turn_instruction_snapshot_is_bound_to_its_nested_target():
+    resolver_cls, _instruction_file_cls = _instruction_classes()
+
+    class CapturingRemoteReader:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def read_first_existing(self, **kwargs):
+            self.calls.append(kwargs)
+            return None
+
+    reader = CapturingRemoteReader()
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-b",
+            }
+        },
+    )
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "trace_label": "keep generic turn metadata",
+                "project_instruction_snapshot": "A-only",
+                "execution_target": {
+                    "type": "remote_ssh",
+                    "connection_id": "conn-a",
+                },
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+    context = await resolver_cls(max_bytes=32768, remote_reader=reader).resolve(
+        session,
+        turn=turn,
+    )
+
+    assert target["connection_id"] == "conn-b"
+    assert target["trace_label"] == "keep generic turn metadata"
+    assert "project_instruction_snapshot" not in target
+    assert reader.calls == []
+    assert context is not None
+    assert "A-only" not in context
+
+
+@pytest.mark.asyncio
+async def test_current_session_instruction_snapshot_for_target_is_preserved():
+    resolver_cls, _instruction_file_cls = _instruction_classes()
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "project_instruction_snapshot": "B-current",
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "conn-b",
+            },
+        },
+    )
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "project_instruction_snapshot": "A-only",
+                "execution_target": {
+                    "type": "remote_ssh",
+                    "connection_id": "conn-a",
+                },
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+    context = await resolver_cls(max_bytes=32768).resolve(session, turn=turn)
+
+    assert target["project_instruction_snapshot"] == "B-current"
+    assert context is not None
+    assert "B-current" in context
+    assert "A-only" not in context
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("current_cwd", "expected_directories"),
+    [
+        (None, ["/srv/project"]),
+        ("/srv/project/current-b", ["/srv/project", "/srv/project/current-b"]),
+    ],
+    ids=("current-root", "current-cwd"),
+)
+async def test_stale_cross_connection_working_directories_are_discarded(
+    current_cwd,
+    expected_directories,
+):
+    resolver_cls, _instruction_file_cls = _instruction_classes()
+
+    class CapturingRemoteReader:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def read_first_existing(
+            self,
+            *,
+            agent_session,
+            connection_id: str,
+            directory: str,
+            filenames,
+            max_bytes: int,
+            remote_root: str,
+        ):
+            del agent_session, filenames, max_bytes
+            self.calls.append(
+                {
+                    "connection_id": connection_id,
+                    "directory": directory,
+                    "remote_root": remote_root,
+                }
+            )
+            return None
+
+    current_execution_target = {
+        "type": "remote_ssh",
+        "connection_id": "conn-b",
+    }
+    if current_cwd:
+        current_execution_target["cwd"] = current_cwd
+    reader = CapturingRemoteReader()
+    session = SimpleNamespace(
+        id="session-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_metadata={
+            "remote_connection_id": "conn-b",
+            "remote_project_id": "project-b",
+            "remote_project_root": "/srv/project",
+            "execution_target": current_execution_target,
+        },
+    )
+    turn = SimpleNamespace(
+        model_profile_snapshot={
+            "metadata": {
+                "working_directory": "/srv/project/stale-working-a",
+                "remote_cwd": "/srv/project/stale-remote-a",
+                "execution_target": {
+                    "type": "remote_ssh",
+                    "connection_id": "conn-a",
+                    "cwd": "/srv/project/stale-a",
+                },
+            }
+        }
+    )
+
+    target = _target_metadata(session, turn)
+    await resolver_cls(max_bytes=32768, remote_reader=reader).resolve(
+        session,
+        turn=turn,
+    )
+
+    assert target.get("cwd") == current_cwd
+    assert "working_directory" not in target
+    assert "remote_cwd" not in target
+    assert [call["connection_id"] for call in reader.calls] == ["conn-b"] * len(
+        expected_directories
+    )
+    assert [call["directory"] for call in reader.calls] == expected_directories
+    assert all(call["remote_root"] == "/srv/project" for call in reader.calls)
 
 
 @pytest.mark.asyncio

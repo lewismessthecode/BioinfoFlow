@@ -9,6 +9,7 @@ from typing import Any, Protocol, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.services.agent_core.execution_target import execution_target_from_session
 from app.services.agent_core.tools.remote import SessionMetadataRemoteConnectionResolver
 from app.services.remote_execution import RemoteExecutor, SshRemoteExecutor
 
@@ -111,11 +112,21 @@ class ProjectInstructionResolver:
             SshProjectInstructionReader(db) if db is not None else None
         )
 
-    async def resolve(self, agent_session, *, turn=None) -> str | None:
+    async def resolve(
+        self,
+        agent_session,
+        *,
+        turn=None,
+        execution_target: dict[str, str] | None = None,
+    ) -> str | None:
         if self.max_bytes <= 0:
             return None
         try:
-            target = _target_metadata(agent_session, turn)
+            target = _target_metadata(
+                agent_session,
+                turn,
+                execution_target=execution_target,
+            )
             if _is_remote_target(target):
                 return await self._resolve_remote(agent_session, target)
             return self._resolve_local(target)
@@ -211,18 +222,70 @@ _CWD_KEYS = (
     "remote_cwd",
 )
 
+_PROJECT_TARGET_KEYS = (
+    "remote_project_id",
+    "remote_project_root",
+    "remote_root_path",
+    "project_instruction_snapshot",
+    "project_instructions_snapshot",
+    "project_instructions",
+)
 
-def _target_metadata(agent_session, turn=None) -> dict[str, Any]:
+
+def _target_metadata(
+    agent_session,
+    turn=None,
+    *,
+    execution_target: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    current_target = execution_target or execution_target_from_session(agent_session)
+    target_connection_id = _first_string(current_target, ("connection_id",))
     merged: dict[str, Any] = {}
-    for policy in _policy_sources(agent_session, turn):
+    for source in _policy_sources(agent_session, turn):
+        policy = dict(source)
+        policy_target = policy.get("execution_target")
+        if isinstance(policy_target, dict):
+            policy_target = dict(policy_target)
+            policy["execution_target"] = policy_target
+        bound_connection_id = _policy_bound_connection_id(policy)
+        if (
+            current_target.get("type") == "remote_ssh"
+            and bound_connection_id
+            and target_connection_id
+            and bound_connection_id != target_connection_id
+        ):
+            for key in (*_PROJECT_TARGET_KEYS, *_CWD_KEYS):
+                policy.pop(key, None)
+                if isinstance(policy_target, dict):
+                    policy_target.pop(key, None)
         merged.update(policy)
-        execution_target = policy.get("execution_target")
-        if isinstance(execution_target, dict):
-            merged.update(execution_target)
+        if isinstance(policy_target, dict):
+            merged.update(policy_target)
+    for key in ("kind", "target_type", "mode"):
+        merged.pop(key, None)
+    merged["execution_target"] = dict(current_target)
+    merged.update(current_target)
     return merged
 
 
+def _policy_bound_connection_id(policy: dict[str, Any]) -> str:
+    if any(key in policy for key in _PROJECT_TARGET_KEYS):
+        project_connection_id = _first_string(policy, ("remote_connection_id",))
+        if project_connection_id:
+            return project_connection_id
+    policy_target = policy.get("execution_target")
+    if isinstance(policy_target, dict):
+        target_connection_id = _remote_connection_id(policy_target)
+        if target_connection_id:
+            return target_connection_id
+    return _remote_connection_id(policy)
+
+
 def _policy_sources(agent_session, turn=None):
+    snapshot = getattr(turn, "model_profile_snapshot", None) if turn is not None else None
+    metadata = snapshot.get("metadata") if isinstance(snapshot, dict) else None
+    if isinstance(metadata, dict):
+        yield metadata
     for policy in (
         getattr(agent_session, "toolset_policy", None),
         getattr(agent_session, "context_policy", None),
@@ -230,17 +293,11 @@ def _policy_sources(agent_session, turn=None):
     ):
         if isinstance(policy, dict):
             yield policy
-    snapshot = getattr(turn, "model_profile_snapshot", None) if turn is not None else None
-    metadata = snapshot.get("metadata") if isinstance(snapshot, dict) else None
-    if isinstance(metadata, dict):
-        yield metadata
 
 
 def _is_remote_target(target: dict[str, Any]) -> bool:
     kind = _first_string(target, ("kind", "type", "target_type", "mode")).casefold()
-    return kind in {"remote", "remote_ssh", "ssh"} or bool(
-        _first_string(target, ("remote_project_root", "remote_root_path"))
-    )
+    return kind in {"remote", "remote_ssh", "ssh"}
 
 
 def _first_string(source: dict[str, Any], keys: Sequence[str]) -> str:

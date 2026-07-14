@@ -107,6 +107,8 @@ class ToolsetExposure:
                 for spec in specs
                 if _is_remote_ssh_compatible_tool(spec)
             }
+        elif execution_target is not None:
+            names = {name for name in names if not name.startswith("remote.")}
         return names
 
     def decide(

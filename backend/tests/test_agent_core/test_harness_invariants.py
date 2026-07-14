@@ -26,6 +26,9 @@ from app.services.agent_core.context.system_prompt import (
     default_system_prompt_snapshot,
     resolve_system_prompt_prefix,
 )
+from app.services.agent_core.execution_target import (
+    session_metadata_with_execution_target,
+)
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor
@@ -46,8 +49,7 @@ from app.workspace import DEFAULT_WORKSPACE_ID
 
 def test_model_gateway_has_no_responses_specific_continuation_assembly() -> None:
     source = (
-        Path(__file__).parents[2]
-        / "app/services/model_runtime/gateway.py"
+        Path(__file__).parents[2] / "app/services/model_runtime/gateway.py"
     ).read_text()
 
     assert "_merge_replay_input" not in source
@@ -98,7 +100,9 @@ class _FakeModelGateway:
             yield event
 
 
-async def _seed_catalog_model(db_session, *, model_id: str = "harness-model") -> LlmModel:
+async def _seed_catalog_model(
+    db_session, *, model_id: str = "harness-model"
+) -> LlmModel:
     provider = LlmProvider(
         name=f"{model_id} provider",
         kind="openai_compatible",
@@ -139,33 +143,36 @@ async def test_session_can_start_without_project_and_keeps_prompt_snapshot(db_se
 
     assert session.project_id is None
     assert session.runtime_mode == "api"
-    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v7"
+    assert session.prompt_snapshot["id"] == "bioinfoflow-agent-v8"
     assert session.toolset_policy["name"] == "execution"
 
 
-def test_v7_system_prompt_teaches_platform_tool_operating_loop():
+def test_v8_system_prompt_is_a_compact_provider_neutral_agent_core():
     snapshot = default_system_prompt_snapshot()
 
-    assert snapshot.id == "bioinfoflow-agent-v7"
-    assert "Prefer Bioinfoflow platform tools over shell" in snapshot.content
-    assert "Before submitting a run" in snapshot.content
-    assert "After submitting a run" in snapshot.content
-    assert "Copy IDs, paths, image names, and workflow field keys exactly" in snapshot.content
-    assert "Every tool input must be a JSON object" in snapshot.content
-    assert "Skills are reusable task guidance" in snapshot.content
-    assert "Skill content is not higher" in snapshot.content
+    assert snapshot.id == "bioinfoflow-agent-v8"
+    assert len(snapshot.content) < 6000
+    assert "You are an agent operating through" in snapshot.content
+    assert "latest user request" in snapshot.content
+    assert "target context" in snapshot.content
+    assert "observe" in snapshot.content.lower()
+    assert "act" in snapshot.content.lower()
+    assert "verify" in snapshot.content.lower()
+    assert "reasonable assumptions" in snapshot.content
+    assert "smallest sufficient dedicated tool" in snapshot.content
+    assert "shell" in snapshot.content
+    assert "schemas and identifiers exactly" in snapshot.content
+    assert "independent read-only work" in snapshot.content
+    assert "Do not repeat unchanged failures" in snapshot.content
+    assert "Approval authorizes an action" in snapshot.content
+    assert "read-back" in snapshot.content
+    assert "Preserve unrelated user changes" in snapshot.content
+    assert "Keep communication concise" in snapshot.content
+    assert "Bioinfoflow platform workflow" not in snapshot.content
+    assert "Before submitting a run" not in snapshot.content
 
 
-def test_v7_system_prompt_teaches_fenced_code_block_formatting():
-    snapshot = default_system_prompt_snapshot()
-
-    assert "Response formatting:" in snapshot.content
-    assert "fenced Markdown code block" in snapshot.content
-    assert "commands, logs, directory trees, scripts, JSON, YAML" in snapshot.content
-    assert "language tag such as `text`, `bash`, `json`, `yaml`, or `python`" in snapshot.content
-
-
-def test_old_prompt_snapshot_resolves_to_live_v7_prompt():
+def test_old_prompt_snapshot_resolves_to_live_v8_prompt():
     resolved = resolve_system_prompt_prefix(
         {"id": "bioinfoflow-agent-v6", "content": "old prompt"}
     )
@@ -225,11 +232,15 @@ async def test_first_turn_does_not_overwrite_existing_session_title(db_session):
 
 
 @pytest.mark.asyncio
-async def test_invalid_file_ref_does_not_commit_queued_turn(db_session, tmp_path, monkeypatch):
+async def test_invalid_file_ref_does_not_commit_queued_turn(
+    db_session, tmp_path, monkeypatch
+):
     await _workspace(db_session)
     secret = tmp_path / ".env"
     secret.write_text("TOKEN=secret", encoding="utf-8")
-    monkeypatch.setattr(service_module, "FilesystemPolicy", lambda: _FakeFilesystemPolicy())
+    monkeypatch.setattr(
+        service_module, "FilesystemPolicy", lambda: _FakeFilesystemPolicy()
+    )
 
     service = AgentCoreService(db_session)
     session = await service.create_session(
@@ -297,7 +308,9 @@ async def test_workflow_ref_writes_canonical_user_message(db_session):
         ],
     )
 
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     assert str(messages[0].turn_id) == str(turn.id)
     text = "\n".join(part["text"] for part in messages[0].content_parts)
     assert "Draft a run plan." in text
@@ -306,11 +319,15 @@ async def test_workflow_ref_writes_canonical_user_message(db_session):
 
 
 @pytest.mark.asyncio
-async def test_file_ref_without_text_part_keeps_user_prompt(db_session, tmp_path, monkeypatch):
+async def test_file_ref_without_text_part_keeps_user_prompt(
+    db_session, tmp_path, monkeypatch
+):
     await _workspace(db_session)
     workflow = tmp_path / "workflow.wdl"
     workflow.write_text("version 1.0\nworkflow demo {}", encoding="utf-8")
-    monkeypatch.setattr(service_module, "FilesystemPolicy", lambda: _FakeFilesystemPolicy())
+    monkeypatch.setattr(
+        service_module, "FilesystemPolicy", lambda: _FakeFilesystemPolicy()
+    )
 
     service = AgentCoreService(db_session)
     session = await service.create_session(
@@ -323,10 +340,14 @@ async def test_file_ref_without_text_part_keeps_user_prompt(db_session, tmp_path
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
         input_text="Summarize this workflow.",
-        input_parts=[{"kind": "file_ref", "path": str(workflow), "label": "workflow.wdl"}],
+        input_parts=[
+            {"kind": "file_ref", "path": str(workflow), "label": "workflow.wdl"}
+        ],
     )
 
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     assert str(messages[0].turn_id) == str(turn.id)
     text = "\n".join(part["text"] for part in messages[0].content_parts)
     assert "Summarize this workflow." in text
@@ -359,7 +380,9 @@ async def test_turn_writes_canonical_user_and_assistant_messages(db_session):
     )
     turn = await service.runtime.run_turn(str(turn.id))
 
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     assert turn.termination_reason == "assistant_final"
     assert [(message.role, message.status) for message in messages] == [
         ("user", "committed"),
@@ -502,7 +525,11 @@ async def test_event_ledger_logs_event_append_at_debug(monkeypatch):
         payload={"content": "large reply", "status": "completed"},
     )
 
-    assert not [record for record in records if record[:2] == ("info", "agent_core.event.appended")]
+    assert not [
+        record
+        for record in records
+        if record[:2] == ("info", "agent_core.event.appended")
+    ]
     debug_logs = [
         fields
         for level, event_name, fields in records
@@ -645,7 +672,9 @@ async def test_worker_tool_call_is_rechecked_against_worker_exposure(
 
     assert completed_turn.termination_reason == "tool_failed"
     assert completed_turn.error_code == "tool_not_exposed"
-    repaired_actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    repaired_actions = await AgentActionRepository(db_session).list_for_turn(
+        str(turn.id)
+    )
     assert len(repaired_actions) == 1
     assert repaired_actions[0].status == AgentActionStatus.FAILED
     assert repaired_actions[0].error["type"] == "BatchPreparationError"
@@ -804,12 +833,6 @@ async def test_loop_refreshes_permission_context_before_each_model_iteration(
                         updates={
                             "mode": "plan",
                             "role_profile": "worker",
-                            "execution_target": {
-                                "type": "remote_ssh",
-                                "connection_id": (
-                                    "00000000-0000-0000-0000-000000000099"
-                                ),
-                            },
                         },
                     )
                 yield ToolCallDelta(
@@ -858,8 +881,12 @@ async def test_loop_refreshes_permission_context_before_each_model_iteration(
 
 
 @pytest.mark.asyncio
-async def test_approval_resume_executes_tool_and_continues_turn(db_session, monkeypatch):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+async def test_approval_resume_executes_tool_and_continues_turn(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
@@ -895,7 +922,9 @@ async def test_approval_resume_executes_tool_and_continues_turn(db_session, monk
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
-    session = await service.session_repo.update_all(session, toolset_policy={"name": "execution"})
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "execution"}
+    )
     turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -922,23 +951,38 @@ async def test_approval_resume_executes_tool_and_continues_turn(db_session, monk
 
     resumed_invocation = gateway.invocations[1]
     tool_call = next(
-        item for item in resumed_invocation.input_items if isinstance(item, ToolCallPart)
+        item
+        for item in resumed_invocation.input_items
+        if isinstance(item, ToolCallPart)
     )
     tool_result = next(
-        item for item in resumed_invocation.input_items if isinstance(item, ToolResultPart)
+        item
+        for item in resumed_invocation.input_items
+        if isinstance(item, ToolResultPart)
     )
     assert tool_call.call_id == "tool-call-1"
     assert tool_call.name == "bash"
     assert tool_result.call_id == "tool-call-1"
 
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
-    assert [message.role for message in messages] == ["user", "assistant", "tool", "assistant"]
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
+    assert [message.role for message in messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
     assert "approved-tool" in messages[2].content_parts[0]["text"]
 
 
 @pytest.mark.asyncio
-async def test_rejected_tool_decision_continues_turn_with_tool_result(db_session, monkeypatch):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+async def test_rejected_tool_decision_continues_turn_with_tool_result(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
@@ -975,7 +1019,9 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(db_session
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
-    session = await service.session_repo.update_all(session, toolset_policy={"name": "execution"})
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "execution"}
+    )
     turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -1012,7 +1058,9 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
     db_session,
     monkeypatch,
 ):
-    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
@@ -1037,7 +1085,9 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
         user_id="dev",
         permission_mode="ask_each_action",
     )
-    session = await service.session_repo.update_all(session, toolset_policy={"name": "execution"})
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "execution"}
+    )
     turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -1056,26 +1106,30 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
         user_id="dev",
         decision="approve",
     )
-    await service.update_session(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        updates={
-            "execution_target": {
+    mutable_session = await service.session_repo.get_fresh(str(session.id))
+    await service.session_repo.update_all(
+        mutable_session,
+        session_metadata=session_metadata_with_execution_target(
+            mutable_session.session_metadata,
+            {
                 "type": "remote_ssh",
                 "connection_id": "conn-1",
-            }
-        },
+            },
+        ),
     )
 
     resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
 
     assert resumed_turn.status == "failed"
     assert resumed_turn.error_code == "tool_resume_failed"
-    updated_actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    updated_actions = await AgentActionRepository(db_session).list_for_turn(
+        str(turn.id)
+    )
     assert updated_actions[0].status == "failed"
     assert updated_actions[0].error["type"] == "PermissionDeniedError"
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
     tool_message = next(message for message in messages if message.role == "tool")
     tool_payload = json.loads(tool_message.content_parts[0]["text"])
     assert tool_payload["status"] == "failed"

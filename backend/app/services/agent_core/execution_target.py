@@ -10,6 +10,10 @@ ExecutionTargetType = Literal["local", "remote_ssh"]
 LOCAL_EXECUTION_TARGET: dict[str, str] = {"type": "local"}
 
 
+class ExecutionTargetChangedError(RuntimeError):
+    pass
+
+
 def normalize_execution_target(
     execution_target: Any,
     *,

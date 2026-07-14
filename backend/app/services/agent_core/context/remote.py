@@ -20,16 +20,23 @@ async def render_remote_connection_context(
     db: AsyncSession,
     agent_session,
     *,
+    execution_target: dict[str, str] | None = None,
     resolver_factory: ResolverFactory | None = None,
 ) -> str | None:
     remote_project = await selected_remote_project(db, agent_session)
-    connection_id = (
-        str(remote_project.remote_connection_id)
-        if remote_project
-        else selected_remote_connection_id(agent_session)
+    connection_id = _selected_id_from_policy(
+        {"execution_target": execution_target}
+        if execution_target is not None
+        else getattr(agent_session, "session_metadata", None)
     )
     if not connection_id:
+        connection_id = selected_remote_connection_id(agent_session)
+    if not connection_id and remote_project:
+        connection_id = str(remote_project.remote_connection_id)
+    if not connection_id:
         return None
+    if remote_project and str(remote_project.remote_connection_id) != connection_id:
+        remote_project = None
     resolver = (resolver_factory or SessionMetadataRemoteConnectionResolver)(db)
     try:
         connection = await resolver.get(
@@ -39,7 +46,14 @@ async def render_remote_connection_context(
             session_id=str(getattr(agent_session, "id", "")) or None,
         )
     except Exception:  # noqa: BLE001 - dynamic context must never break a turn
-        return None
+        return "\n".join(
+            [
+                "## Remote connection",
+                f"- Target connection ID: {connection_id}",
+                "- Status: unavailable",
+                "- Connection details could not be resolved for the current target.",
+            ]
+        )
 
     lines = [
         "## Remote connection",
@@ -47,7 +61,10 @@ async def render_remote_connection_context(
         f"- SSH target: {connection.display_target}",
         f"- Status: {connection.status}",
         "- Prefer remote.read_file and remote.list_dir for read-only inspection.",
-        "- remote.exec can run short diagnostics and is approval-gated as an elevated action.",
+        (
+            "- remote.exec runs approval-gated bounded remote commands for diagnostics "
+            "and operational CLIs; each call retains timeout and output limits."
+        ),
     ]
     if remote_project:
         lines.extend(

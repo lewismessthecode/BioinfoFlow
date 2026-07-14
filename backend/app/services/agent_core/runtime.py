@@ -107,6 +107,7 @@ class AgentCoreRuntime:
             AgentTurnStatus.FAILED,
             AgentTurnStatus.CANCELLED,
         }:
+            await self._release_active_if_terminal(turn)
             return turn
 
         session = await self.session_repo.get(str(turn.session_id))
@@ -115,6 +116,15 @@ class AgentCoreRuntime:
                 turn,
                 error_message="Agent session could not be loaded for this turn.",
                 error_code="session_not_found",
+            )
+        if not await self.session_repo.claim_active_turn(
+            str(turn.session_id),
+            str(turn.id),
+        ):
+            return await self._fail_turn(
+                turn,
+                error_message="Another turn is already active in this session.",
+                error_code="session_turn_in_progress",
             )
 
         now = datetime.now(timezone.utc)
@@ -191,6 +201,7 @@ class AgentCoreRuntime:
             turn=fresh_turn,
             result=result,
         )
+        await self._release_active_if_terminal(completed)
         await self._enqueue_persisted_resume_intent(completed)
         return completed
 
@@ -207,6 +218,7 @@ class AgentCoreRuntime:
             AgentTurnStatus.FAILED,
             AgentTurnStatus.CANCELLED,
         }:
+            await self._release_active_if_terminal(turn)
             return turn
 
         transcript = AgentTranscriptStore(self.turn_repo.session)
@@ -227,6 +239,15 @@ class AgentCoreRuntime:
             AgentActionStatus.REJECTED,
         }:
             return turn
+        if not await self.session_repo.claim_active_turn(
+            str(turn.session_id),
+            str(turn.id),
+        ):
+            return await self._fail_turn(
+                turn,
+                error_message="Another turn is already active in this session.",
+                error_code="session_turn_in_progress",
+            )
 
         now = datetime.now(timezone.utc)
         owner_token = new_turn_owner_token()
@@ -336,6 +357,7 @@ class AgentCoreRuntime:
             turn=fresh_turn,
             result=result,
         )
+        await self._release_active_if_terminal(completed)
         await self._enqueue_persisted_resume_intent(completed)
         return completed
 
@@ -1002,6 +1024,7 @@ class AgentCoreRuntime:
             )
             if not updated or turn is None:
                 raise TurnOwnershipLostError("Agent turn ownership was replaced")
+        await self._release_active_if_terminal(turn)
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -1018,6 +1041,15 @@ class AgentCoreRuntime:
         )
         agent_metrics.increment("turns.failed")
         return turn
+
+    async def _release_active_if_terminal(self, turn) -> None:
+        if turn is None or turn.status not in {
+            AgentTurnStatus.COMPLETED,
+            AgentTurnStatus.FAILED,
+            AgentTurnStatus.CANCELLED,
+        }:
+            return
+        await self.session_repo.release_active_turn(str(turn.session_id), str(turn.id))
 
     def _ownership(self, turn_id: str, owner_token: str) -> TurnOwnership:
         bind = self.turn_repo.session.bind

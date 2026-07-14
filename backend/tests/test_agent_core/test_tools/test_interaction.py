@@ -262,10 +262,13 @@ async def test_concurrent_restart_workers_execute_approved_action_once(
 
     assert tool.execution_count == 1
     assert sum(result.status == AgentActionStatus.COMPLETED for result in worker_results) == 1
-    assert all(
-        result.status in {AgentActionStatus.RUNNING, AgentActionStatus.COMPLETED}
+    loser = next(
+        result
         for result in worker_results
+        if result.status != AgentActionStatus.COMPLETED
     )
+    assert loser.status == AgentActionStatus.FAILED
+    assert loser.error["type"] == "ActionAlreadyClaimed"
     async with session_factory() as verification_session:
         action = await AgentActionRepository(verification_session).get(pending.action_id)
         assert action is not None

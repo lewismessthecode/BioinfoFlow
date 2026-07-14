@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
 from pathlib import Path
 from typing import Any
 
@@ -131,15 +133,18 @@ class ExecuteShellTool:
             cwd=str(cwd),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         try:
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError as exc:
-            process.kill()
-            await process.wait()
+            await _kill_process_group(process)
             raise TimeoutError(f"command timed out after {timeout}s") from exc
+        except asyncio.CancelledError:
+            await _kill_process_group(process)
+            raise
 
         return {
             "exit_code": int(process.returncode or 0),
@@ -154,3 +159,16 @@ def _limit(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + "\n[truncated]"
+
+
+async def _kill_process_group(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is not None:
+        return
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        pass
+    await process.wait()

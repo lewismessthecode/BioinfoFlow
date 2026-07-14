@@ -236,7 +236,13 @@ class BuildImageTool:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await process.communicate()
+        except asyncio.CancelledError:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            raise
         exit_code = int(process.returncode or 0)
         result: dict[str, Any] = {
             "tag": tag,

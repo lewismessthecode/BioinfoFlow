@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import and_, case, desc, exists, func, insert, literal, or_, select, update
 
@@ -156,6 +156,23 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    def _active_nonterminal_turn_exists(self):
+        return (
+            select(AgentTurn.id)
+            .where(
+                AgentTurn.id == self.model.active_turn_id,
+                AgentTurn.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_USER,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                ),
+            )
+            .exists()
+        )
+
     async def lock_policy(self, session_id: str) -> AgentSession | None:
         """Serialize policy updates and atomic tool-batch authorization.
 
@@ -189,28 +206,66 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
         session: AgentSession,
         *,
         increment_policy_version: bool,
+        require_target_mutable: bool = False,
         commit: bool = True,
         **data: object,
-    ) -> AgentSession:
+    ) -> AgentSession | None:
         values = dict(data)
         if increment_policy_version:
             values["permission_policy_version"] = (
                 self.model.permission_policy_version + 1
             )
+        conditions = [self.model.id == session.id]
+        if require_target_mutable:
+            conditions.append(~self._active_nonterminal_turn_exists())
+            values["active_turn_id"] = None
         stmt = (
             update(self.model)
-            .where(self.model.id == session.id)
+            .where(*conditions)
             .values(**values)
             .returning(self.model)
             .execution_options(populate_existing=True)
         )
         result = await self.session.execute(stmt)
-        updated = result.scalar_one()
+        updated = result.scalar_one_or_none()
+        if updated is None:
+            if commit:
+                await self.session.rollback()
+            return None
         if commit:
             await self.session.commit()
         else:
             await self.session.flush()
         return updated
+
+    async def claim_active_turn(self, session_id: str, turn_id: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == session_id,
+                or_(
+                    self.model.active_turn_id.is_(None),
+                    self.model.active_turn_id == turn_id,
+                ),
+            )
+            .values(active_turn_id=turn_id)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        return result.rowcount == 1
+
+    async def release_active_turn(self, session_id: str, turn_id: str) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == session_id,
+                self.model.active_turn_id == turn_id,
+            )
+            .values(active_turn_id=None)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        return result.rowcount == 1
 
     async def list_for_user(
         self,
@@ -299,6 +354,103 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def create_with_session_claim(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        session_updates: dict[str, object] | None = None,
+        increment_policy_version: bool = False,
+        user_parts: list[dict],
+        user_metadata: dict,
+        created_event_type: str,
+        created_event_payload: dict,
+        **data,
+    ) -> AgentTurn | None:
+        values = {"active_turn_id": turn_id, **(session_updates or {})}
+        if increment_policy_version:
+            values["permission_policy_version"] = (
+                AgentSession.permission_policy_version + 1
+            )
+        active_turn_exists = (
+            select(self.model.id)
+            .where(
+                self.model.id == AgentSession.active_turn_id,
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_USER,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                ),
+            )
+            .exists()
+        )
+        result = await self.session.execute(
+            update(AgentSession)
+            .where(
+                AgentSession.id == session_id,
+                or_(
+                    AgentSession.active_turn_id.is_(None),
+                    ~active_turn_exists,
+                ),
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            await self.session.rollback()
+            return None
+
+        turn = self.model(id=UUID(turn_id), session_id=session_id, **data)
+        ordering_index = int(
+            await self.session.scalar(
+                select(func.max(AgentMessage.ordering_index)).where(
+                    AgentMessage.session_id == session_id
+                )
+            )
+            or 0
+        ) + 1
+        event_seq = int(
+            await self.session.scalar(
+                select(func.max(AgentEvent.seq)).where(
+                    AgentEvent.session_id == session_id
+                )
+            )
+            or 0
+        ) + 1
+        self.session.add_all(
+            [
+                turn,
+                AgentMessage(
+                    session_id=session_id,
+                    turn_id=UUID(turn_id),
+                    role="user",
+                    content_parts=user_parts,
+                    message_metadata=user_metadata,
+                    status=AgentMessageStatus.COMMITTED,
+                    ordering_index=ordering_index,
+                ),
+                AgentEvent(
+                    session_id=session_id,
+                    turn_id=UUID(turn_id),
+                    seq=event_seq,
+                    type=created_event_type,
+                    payload=created_event_payload,
+                    visibility="user",
+                    schema_version=1,
+                ),
+            ]
+        )
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        await self.session.refresh(turn)
+        return turn
 
     async def claim_action_resume(
         self,
@@ -624,6 +776,22 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             .returning(self.model.id)
         )
         return result.scalar_one_or_none() is not None
+
+    async def find_with_pending_observation(
+        self,
+        session_id: str,
+        *,
+        exclude_turn_id: str | None = None,
+    ) -> AgentTurn | None:
+        for turn in await self.list_for_session(session_id):
+            if exclude_turn_id is not None and str(turn.id) == exclude_turn_id:
+                continue
+            progress = (turn.loop_state or {}).get("progress")
+            if isinstance(progress, dict) and isinstance(
+                progress.get("pending_observation"), dict
+            ):
+                return turn
+        return None
 
 
 class AgentMessageRepository(BaseRepository[AgentMessage]):

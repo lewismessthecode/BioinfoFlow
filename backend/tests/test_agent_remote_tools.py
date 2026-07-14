@@ -9,9 +9,16 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services.agent_core.context.remote import render_remote_connection_context
+from app.services.agent_core.execution_target import (
+    session_metadata_with_execution_target,
+)
 from app.services.agent_core.permissions.command_risk import CommandTargetProfile
 from app.services.agent_core.permissions.policy import PermissionPolicy
-from app.services.agent_core.tools import AgentToolDispatcher, build_default_tool_registry
+from app.repositories.agent_core_repo import AgentSessionRepository
+from app.services.agent_core.tools import (
+    AgentToolDispatcher,
+    build_default_tool_registry,
+)
 from app.services.agent_core.tools.executor import _artifact_descriptor
 from app.services.agent_core.tools.remote import (
     DatabaseRemoteConnectionResolver,
@@ -224,16 +231,17 @@ async def _dispatch_remote_exec_while_target_drifts(db_session, drift: str):
         )
         await asyncio.wait_for(entered.wait(), timeout=1)
         if drift == "selected_target":
-            await AgentCoreService(mutator).update_session(
-                session_id=str(agent_session.id),
-                workspace_id="workspace-1",
-                user_id="user-1",
-                updates={
-                    "execution_target": {
+            session_repo = AgentSessionRepository(mutator)
+            mutable_session = await session_repo.get_fresh(str(agent_session.id))
+            await session_repo.update_all(
+                mutable_session,
+                session_metadata=session_metadata_with_execution_target(
+                    mutable_session.session_metadata,
+                    {
                         "type": "remote_ssh",
                         "connection_id": str(second.id),
-                    }
-                },
+                    },
+                ),
             )
         elif drift == "host":
             current = await RemoteConnectionService(mutator).get_connection(
@@ -256,12 +264,8 @@ async def _dispatch_remote_exec_while_target_drifts(db_session, drift: str):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("drift", ["selected_target", "host", "project_root"])
-async def test_remote_exec_fails_closed_when_claimed_target_drifts(
-    db_session, drift
-):
-    result, calls = await _dispatch_remote_exec_while_target_drifts(
-        db_session, drift
-    )
+async def test_remote_exec_fails_closed_when_claimed_target_drifts(db_session, drift):
+    result, calls = await _dispatch_remote_exec_while_target_drifts(db_session, drift)
 
     assert result.status == "failed"
     assert result.error["type"] == "PermissionDeniedError"

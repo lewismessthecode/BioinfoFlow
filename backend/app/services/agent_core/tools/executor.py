@@ -720,6 +720,15 @@ class AgentToolExecutor:
                     ),
                     expected_turn_owner_token=context.expected_owner_token,
                 )
+            if current is not None and current.status == AgentActionStatus.RUNNING:
+                return ToolExecutionResult(
+                    action_id=action_id,
+                    status=AgentActionStatus.FAILED,
+                    error={
+                        "type": "ActionAlreadyClaimed",
+                        "message": "Tool action is already running.",
+                    },
+                )
             return await self._current_result(action_id, fallback=requested_action)
         try:
             await self.ledger.append(

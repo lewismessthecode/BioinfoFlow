@@ -2824,6 +2824,7 @@ async def test_completed_responses_turn_continues_into_next_turn_with_one_sessio
         target=target,
     )
     assert first_result.termination_reason == "assistant_final"
+    await controller.complete_turn_from_result(turn=first_turn, result=first_result)
 
     second_turn = await AgentCoreService(db_session).create_turn_record(
         session_id=str(session.id),
@@ -2907,7 +2908,8 @@ async def test_cross_turn_responses_continuation_is_invalidated_when_context_com
         ),
     )
     controller = AgentLoopController(db_session, model_gateway=gateway)
-    await controller.run_turn(turn_id=str(first_turn.id), target=target)
+    first_result = await controller.run_turn(turn_id=str(first_turn.id), target=target)
+    await controller.complete_turn_from_result(turn=first_turn, result=first_result)
     before_compaction = await AgentMessageRepository(db_session).list_for_session(
         str(session.id)
     )

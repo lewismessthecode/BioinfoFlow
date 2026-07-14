@@ -832,18 +832,24 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
         user_id=session["user_id"],
         input_text="first request",
     )
+    await service.turn_repo.update_all(first_turn, status="completed")
+    await service.session_repo.release_active_turn(session["id"], str(first_turn.id))
     second_turn = await service.create_turn_record(
         session_id=session["id"],
         workspace_id=session["workspace_id"],
         user_id=session["user_id"],
         input_text="second request",
     )
+    await service.turn_repo.update_all(second_turn, status="completed")
+    await service.session_repo.release_active_turn(session["id"], str(second_turn.id))
     empty_turn = await service.create_turn_record(
         session_id=session["id"],
         workspace_id=session["workspace_id"],
         user_id=session["user_id"],
         input_text="provider omitted usage",
     )
+    await service.turn_repo.update_all(empty_turn, status="completed")
+    await service.session_repo.release_active_turn(session["id"], str(empty_turn.id))
     first_turn_row = await db_session.get(AgentTurn, str(first_turn.id))
     second_turn_row = await db_session.get(AgentTurn, str(second_turn.id))
     empty_turn_row = await db_session.get(AgentTurn, str(empty_turn.id))
