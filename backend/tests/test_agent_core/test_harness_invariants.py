@@ -7,10 +7,12 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.agent_core.ledger as ledger_module
 from app.config import settings
 from app.models.llm import LlmModel, LlmProvider
+from app.models.agent_core import AgentActionStatus
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import (
@@ -439,6 +441,8 @@ async def test_event_ledger_serializes_concurrent_sequence_allocation():
 
     ledger = AgentEventLedger.__new__(AgentEventLedger)
     ledger.event_repo = RacingEventRepository()
+    ledger.owned_turn_id = None
+    ledger.expected_owner_token = None
 
     first, second = await asyncio.gather(
         ledger.append(
@@ -488,6 +492,8 @@ async def test_event_ledger_logs_event_append_at_debug(monkeypatch):
     monkeypatch.setattr(ledger_module, "logger", SpyLogger())
     ledger = AgentEventLedger.__new__(AgentEventLedger)
     ledger.event_repo = FakeEventRepository()
+    ledger.owned_turn_id = None
+    ledger.expected_owner_token = None
 
     await ledger.append(
         session_id="session-1",
@@ -639,7 +645,10 @@ async def test_worker_tool_call_is_rechecked_against_worker_exposure(
 
     assert completed_turn.termination_reason == "tool_failed"
     assert completed_turn.error_code == "tool_not_exposed"
-    assert await AgentActionRepository(db_session).list_for_turn(str(turn.id)) == []
+    repaired_actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
+    assert len(repaired_actions) == 1
+    assert repaired_actions[0].status == AgentActionStatus.FAILED
+    assert repaired_actions[0].error["type"] == "BatchPreparationError"
 
 
 @pytest.mark.asyncio
@@ -650,6 +659,12 @@ async def test_unexposed_tool_is_denied_before_argument_validation(db_session):
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
+    )
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "plan"},
     )
     turn = await service.create_turn_record(
         session_id=str(session.id),
@@ -754,6 +769,92 @@ async def test_executor_prefers_persisted_session_target_over_explicit_argument(
             toolset_policy={"name": "execution"},
             execution_target={"type": "local"},
         )
+
+
+@pytest.mark.asyncio
+async def test_loop_refreshes_permission_context_before_each_model_iteration(
+    db_session,
+    db_engine,
+):
+    calls = 0
+    session_id = ""
+
+    class RefreshingGateway:
+        async def invoke(
+            self,
+            invocation: ModelInvocation,
+        ) -> AsyncIterator[ModelEvent]:
+            nonlocal calls
+            calls += 1
+            tool_names = {tool.name for tool in invocation.tools}
+            system_text = invocation.instructions
+            if calls == 1:
+                assert "bash" in tool_names
+                assert "Role profile: bioinformatician" in system_text
+                sessions = async_sessionmaker(
+                    db_engine,
+                    expire_on_commit=False,
+                    class_=AsyncSession,
+                )
+                async with sessions() as update_db:
+                    await AgentCoreService(update_db).update_session(
+                        session_id=session_id,
+                        workspace_id=DEFAULT_WORKSPACE_ID,
+                        user_id="dev",
+                        updates={
+                            "mode": "plan",
+                            "role_profile": "worker",
+                            "execution_target": {
+                                "type": "remote_ssh",
+                                "connection_id": (
+                                    "00000000-0000-0000-0000-000000000099"
+                                ),
+                            },
+                        },
+                    )
+                yield ToolCallDelta(
+                    index=0,
+                    call_id="tool-call-refresh",
+                    name="memory.list",
+                    arguments_delta="{}",
+                )
+                yield CompletionMetadata(
+                    response_id="chatcmpl-refresh-tool",
+                    finish_reason="tool_calls",
+                )
+            else:
+                assert "bash" not in tool_names
+                assert "Role profile: worker" in system_text
+                assert "Toolset policy: plan" in system_text
+                yield TextDelta(text="Refreshed policy observed.")
+                yield CompletionMetadata(
+                    response_id="chatcmpl-refresh-final",
+                    finish_reason="stop",
+                )
+
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session)
+    service = AgentCoreService(db_session)
+    service.runtime.model_gateway = RefreshingGateway()
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    session_id = str(session.id)
+    turn = await service.create_turn_record(
+        session_id=session_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Refresh permissions between iterations.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    assert completed.final_text == "Refreshed policy observed."
+    assert calls == 2
 
 
 @pytest.mark.asyncio

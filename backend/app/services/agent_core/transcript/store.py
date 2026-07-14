@@ -34,7 +34,9 @@ class AgentTranscriptStore:
         text: str,
         metadata: dict[str, Any] | None = None,
         ordering_index: int | None = None,
+        commit: bool = True,
         expected_owner_token: str | None = None,
+        owner_fence_held: bool = False,
     ):
         return await self.append_parts(
             session_id=session_id,
@@ -43,7 +45,9 @@ class AgentTranscriptStore:
             parts=[text_part(text)],
             metadata=metadata,
             ordering_index=ordering_index,
+            commit=commit,
             expected_owner_token=expected_owner_token,
+            owner_fence_held=owner_fence_held,
         )
 
     async def append_parts(
@@ -56,9 +60,11 @@ class AgentTranscriptStore:
         metadata: dict[str, Any] | None = None,
         status: str = "committed",
         ordering_index: int | None = None,
+        commit: bool = True,
         replace_turn_metadata_key: str | None = None,
         replace_session_metadata_key: str | None = None,
         expected_owner_token: str | None = None,
+        owner_fence_held: bool = False,
     ):
         if (
             replace_turn_metadata_key is not None
@@ -71,10 +77,14 @@ class AgentTranscriptStore:
             turn_id,
             expected_owner_token,
         )
-        if expected_owner_token is not None:
+        if expected_owner_token is not None and not owner_fence_held:
             if turn_id is None:
                 raise ValueError("turn_id is required for owner-conditioned messages")
             ensure_clean_owned_publication_session(self.messages.session)
+        if owner_fence_held and (expected_owner_token is None or commit):
+            raise ValueError(
+                "owner_fence_held requires an owner token and commit=False"
+            )
         if ordering_index is None:
             ordering_index = await self.messages.next_ordering_index(session_id)
         data = {
@@ -87,6 +97,8 @@ class AgentTranscriptStore:
             "ordering_index": ordering_index,
         }
         if replace_turn_metadata_key is not None:
+            if not commit:
+                raise ValueError("metadata replacement requires commit=True")
             if turn_id is None:
                 raise ValueError(
                     "turn_id is required when replacing turn-scoped metadata"
@@ -100,6 +112,8 @@ class AgentTranscriptStore:
                 raise TurnOwnershipLostError("Agent turn ownership was replaced")
             return message
         if replace_session_metadata_key is not None:
+            if not commit:
+                raise ValueError("metadata replacement requires commit=True")
             message = await self.messages.create_replacing_session_metadata(
                 metadata_key=replace_session_metadata_key,
                 expected_owner_token=expected_owner_token,
@@ -108,7 +122,7 @@ class AgentTranscriptStore:
             if expected_owner_token is not None and message is None:
                 raise TurnOwnershipLostError("Agent turn ownership was replaced")
             return message
-        if expected_owner_token is not None:
+        if expected_owner_token is not None and not owner_fence_held:
             message, owned = await self.messages.create_for_owned_turn(
                 turn_id=turn_id,
                 expected_owner_token=expected_owner_token,
@@ -117,9 +131,8 @@ class AgentTranscriptStore:
             if not owned or message is None:
                 raise TurnOwnershipLostError("Agent turn ownership was replaced")
             return message
-        return await self.messages.create(
-            **data,
-        )
+        create = self.messages.create if commit else self.messages.add
+        return await create(**data)
 
     async def list_messages(self, session_id: str):
         return await self.messages.list_for_session(session_id)
@@ -261,7 +274,10 @@ class AgentTranscriptStore:
         if transcript_chars <= threshold_chars:
             return None
 
-        summary_candidates = committed[:-preserve_recent_messages]
+        preserve_start = len(committed) - preserve_recent_messages
+        while preserve_start > 0 and committed[preserve_start].role == "tool":
+            preserve_start -= 1
+        summary_candidates = committed[:preserve_start]
         if not summary_candidates:
             return None
         if len(summary_candidates) == 1 and self._is_compaction_summary(
@@ -269,7 +285,7 @@ class AgentTranscriptStore:
         ):
             return None
 
-        insert_before = committed[-preserve_recent_messages].ordering_index
+        insert_before = committed[preserve_start].ordering_index
         summary_text = self._build_summary(summary_candidates)
         superseded_message_ids = [str(message.id) for message in summary_candidates]
         if expected_owner_token is None:

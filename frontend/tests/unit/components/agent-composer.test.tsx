@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs"
 import { fireEvent, render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { useState } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentComposer } from "@/components/bioinfoflow/agent-runtime/agent-composer"
@@ -33,6 +35,14 @@ vi.mock("next-intl", () => ({
       "permission.options.guarded_auto.description": "Run low-risk actions automatically.",
       "permission.options.bypass.label": "Full access",
       "permission.options.bypass.description": "Run non-critical actions automatically.",
+      "permission.boundary.local": "Local actions remain inside the active Bioinfoflow sandbox.",
+      "permission.boundary.remote": "SSH actions use the remote account and server policy; the working folder is not a sandbox.",
+      "permission.safetyFloor": "Critical actions remain blocked in every mode.",
+      "permission.status.updating": "Updating permission mode...",
+      "permission.status.updated": "Permission mode updated for future operations.",
+      "permission.status.reconciled": `${values?.affected ?? "0"} waiting operations approved; ${values?.excluded ?? "0"} excluded.`,
+      "permission.status.failed": "Could not update permission mode: Network unavailable",
+      "permission.retry": "Retry permission update",
       "files.removeAttachment": "Remove workflow.wdl",
       auto: "Auto",
       configure: "Configure providers",
@@ -362,6 +372,185 @@ describe("AgentComposer", () => {
     expect(onPermissionModeChange).toHaveBeenCalledWith("bypass")
   })
 
+  it("exposes permission choices as an accessible radio group", async () => {
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        permissionMode="guarded_auto"
+        onPermissionModeChange={vi.fn()}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Permission mode" }))
+
+    const choices = await screen.findAllByRole("menuitemradio")
+    expect(choices).toHaveLength(3)
+    expect(screen.getByRole("menuitemradio", { name: /Approve for me/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    )
+    expect(screen.getByRole("menuitemradio", { name: /Full access/ })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    )
+  })
+
+  it("disables the permission transaction while busy and announces its status", async () => {
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        permissionMode="bypass"
+        onPermissionModeChange={vi.fn()}
+        permissionUpdate={{
+          status: "pending",
+          mode: "bypass",
+          pendingStrategy: "future_only",
+          reconciliation: null,
+          error: null,
+        }}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    const trigger = screen.getByRole("button", { name: "Permission mode" })
+    expect(trigger).not.toBeDisabled()
+    expect(trigger).toHaveAttribute("aria-disabled", "true")
+    expect(trigger).toHaveClass("cursor-wait", "opacity-60")
+    expect(trigger).toHaveAttribute("aria-busy", "true")
+    expect(screen.getByRole("status")).toHaveTextContent("Updating permission mode...")
+  })
+
+  it("keeps focus on the permission trigger while an async update is pending", async () => {
+    const user = userEvent.setup()
+
+    function PermissionHarness() {
+      const [mode, setMode] = useState<"guarded_auto" | "bypass">("guarded_auto")
+      const [pending, setPending] = useState(false)
+      return (
+        <AgentComposer
+          value=""
+          onChange={vi.fn()}
+          onSubmit={vi.fn()}
+          onStop={vi.fn()}
+          isRunning={false}
+          permissionMode={mode}
+          onPermissionModeChange={(nextMode) => {
+            setMode(nextMode as "guarded_auto" | "bypass")
+            setPending(true)
+          }}
+          permissionUpdate={{
+            status: pending ? "pending" : "idle",
+            mode: pending ? mode : null,
+            pendingStrategy: pending ? "future_only" : null,
+            reconciliation: null,
+            error: null,
+          }}
+          models={[]}
+          selectedModel={null}
+          onSelectModel={vi.fn()}
+        />
+      )
+    }
+
+    render(<PermissionHarness />)
+    const trigger = screen.getByRole("button", { name: "Permission mode" })
+    await user.click(trigger)
+    await user.click(screen.getByRole("menuitemradio", { name: /Full access/ }))
+
+    expect(trigger).toHaveFocus()
+    expect(trigger).not.toBeDisabled()
+    expect(trigger).toHaveAttribute("aria-disabled", "true")
+    await user.keyboard("{Enter}")
+    expect(screen.queryByRole("menuitemradio")).not.toBeInTheDocument()
+    await user.keyboard("{ArrowDown}")
+    expect(screen.queryByRole("menuitemradio")).not.toBeInTheDocument()
+  })
+
+  it("keeps permission failures local and exposes a retry action", () => {
+    const onRetry = vi.fn()
+    render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        permissionMode="guarded_auto"
+        onPermissionModeChange={vi.fn()}
+        permissionUpdate={{
+          status: "error",
+          mode: "bypass",
+          pendingStrategy: "future_only",
+          reconciliation: null,
+          error: "Network unavailable",
+        }}
+        onRetryPermissionModeChange={onRetry}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not update permission mode: Network unavailable",
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Retry permission update" }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it("describes local and remote authority boundaries without weakening the safety floor", async () => {
+    const { rerender } = render(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        permissionMode="bypass"
+        onPermissionModeChange={vi.fn()}
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Permission mode" }))
+    expect(await screen.findByText(/Local actions remain inside/)).toBeInTheDocument()
+    expect(screen.getByText("Critical actions remain blocked in every mode.")).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: "Escape" })
+
+    rerender(
+      <AgentComposer
+        value=""
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        isRunning={false}
+        permissionMode="bypass"
+        onPermissionModeChange={vi.fn()}
+        selectedRemoteConnectionId="connection-1"
+        models={[]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Permission mode" }))
+    expect(await screen.findByText(/SSH actions use the remote account/)).toBeInTheDocument()
+  })
+
   it("keeps composer controls accessible in constrained side-panel layouts", () => {
     render(
       <div style={{ width: 420 }}>
@@ -382,7 +571,9 @@ describe("AgentComposer", () => {
       </div>,
     )
 
-    expect(screen.getByRole("button", { name: "Permission mode" })).toBeVisible()
+    const permissionButton = screen.getByRole("button", { name: "Permission mode" })
+    expect(permissionButton).toBeVisible()
+    expect(permissionButton).not.toHaveClass("hidden")
     expect(screen.getByRole("button", { name: "Agent mode" })).toBeVisible()
     expect(screen.getByRole("link", { name: "Configure providers" })).toBeVisible()
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled()

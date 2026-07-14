@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.agent_core import AgentMemoryStatus
+from app.models.agent_core import AgentActionStatus, AgentMemoryStatus
 from app.path_layout import state_root
-from app.repositories.agent_core_repo import AgentMemoryRepository
+from app.repositories.agent_core_repo import AgentActionRepository, AgentMemoryRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.run_repo import RunRepository
@@ -25,6 +26,8 @@ from app.services.agent_core.skills import (
     resolve_active_skills,
 )
 from app.services.agent_core.metrics import agent_metrics
+from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.transcript import (
     AgentTranscriptStore,
     provider_message_from_parts,
@@ -65,6 +68,10 @@ class AgentContextAssembler:
         exposed_tools=None,
         skip_compaction: bool = False,
     ) -> list[dict]:
+        await self._repair_incomplete_tool_groups(
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        )
         if not skip_compaction:
             await self._compact_if_needed(agent_session=agent_session, turn=turn)
         # Stable, cache-friendly identity prefix comes first; everything that
@@ -79,23 +86,176 @@ class AgentContextAssembler:
                 ),
             }
         ]
+        transcript_messages = []
         for message in await self.transcript.list_messages(str(agent_session.id)):
             if message.status != "committed":
                 continue
             if message.role not in {"user", "assistant", "tool"}:
                 continue
-            messages.append(
+            transcript_messages.append(
                 provider_message_from_parts(
                     message.role,
                     message.content_parts or [],
                     getattr(message, "message_metadata", None),
                 )
             )
+        messages.extend(_complete_provider_groups(transcript_messages))
         return [
             message
             for message in messages
             if message.get("content") or message.get("tool_calls")
         ]
+
+    async def _repair_incomplete_tool_groups(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        messages = await self.transcript.list_messages(session_id)
+        index = 0
+        while index < len(messages):
+            message = messages[index]
+            if message.status != "committed" or message.role != "assistant":
+                index += 1
+                continue
+            provider_message = provider_message_from_parts(
+                message.role,
+                message.content_parts or [],
+                message.message_metadata,
+            )
+            tool_calls = provider_message.get("tool_calls") or []
+            if not tool_calls:
+                index += 1
+                continue
+            expected = [str(call["id"]) for call in tool_calls if call.get("id")]
+            batch_id = (message.message_metadata or {}).get("tool_batch_id")
+            group_turn_id = str(message.turn_id or turn_id)
+            cursor = index + 1
+            group_messages = []
+            seen: list[str] = []
+            while cursor < len(messages) and messages[cursor].role == "tool":
+                if messages[cursor].status == "committed":
+                    group_messages.append(messages[cursor])
+                    metadata = messages[cursor].message_metadata or {}
+                    if metadata.get("tool_call_id"):
+                        seen.append(str(metadata["tool_call_id"]))
+                cursor += 1
+            missing = [tool_call_id for tool_call_id in expected if tool_call_id not in seen]
+            if missing or seen != expected:
+                turn_actions = await AgentActionRepository(self.db).list_for_turn(
+                    group_turn_id
+                )
+                if batch_id:
+                    turn_actions = [
+                        action
+                        for action in turn_actions
+                        if str(action.tool_batch_id) == str(batch_id)
+                    ]
+                actions_by_call_id = {}
+                for action in turn_actions:
+                    if not action.tool_call_id:
+                        continue
+                    call_id = str(action.tool_call_id)
+                    if call_id in actions_by_call_id:
+                        actions_by_call_id[call_id] = None
+                    else:
+                        actions_by_call_id[call_id] = action
+                unresolved_ids = {
+                    str(action.tool_call_id)
+                    for action in turn_actions
+                    if action.tool_call_id
+                    and action.status
+                    in {
+                        AgentActionStatus.WAITING_DECISION,
+                        AgentActionStatus.REQUESTED,
+                        AgentActionStatus.RUNNING,
+                    }
+                }
+                if any(tool_call_id in unresolved_ids for tool_call_id in missing):
+                    index = cursor
+                    continue
+                existing_by_id = {
+                    str((item.message_metadata or {}).get("tool_call_id")): item
+                    for item in group_messages
+                }
+                insert_at = message.ordering_index + 1
+                await self.transcript.messages.shift_ordering_indices(
+                    session_id,
+                    starting_at=insert_at,
+                    delta=len(expected),
+                )
+                for offset, tool_call_id in enumerate(expected):
+                    existing = existing_by_id.get(tool_call_id)
+                    if existing is not None:
+                        parts = existing.content_parts or []
+                        metadata = {
+                            **(existing.message_metadata or {}),
+                            "tool_batch_id": batch_id,
+                            "action_id": (
+                                str(actions_by_call_id[tool_call_id].id)
+                                if actions_by_call_id.get(tool_call_id) is not None
+                                else (existing.message_metadata or {}).get("action_id")
+                            ),
+                            "transcript_repair": True,
+                            "provider_message_id": str(message.id),
+                            "original_message_id": str(existing.id),
+                        }
+                    else:
+                        parts = [
+                            {
+                                "type": "text",
+                                "text": json.dumps(
+                                    {
+                                        "status": "failed",
+                                        "error": {
+                                            "type": "TranscriptRepair",
+                                            "message": (
+                                                "Missing durable tool result was repaired."
+                                            ),
+                                        },
+                                    },
+                                    separators=(",", ":"),
+                                ),
+                            }
+                        ]
+                        metadata = {
+                            "tool_call_id": tool_call_id,
+                            "tool_batch_id": batch_id,
+                            "action_id": (
+                                str(actions_by_call_id[tool_call_id].id)
+                                if actions_by_call_id.get(tool_call_id) is not None
+                                else None
+                            ),
+                            "transcript_repair": True,
+                            "provider_message_id": str(message.id),
+                        }
+                    await self.transcript.append_parts(
+                        session_id=session_id,
+                        turn_id=group_turn_id,
+                        role="tool",
+                        parts=parts,
+                        metadata=metadata,
+                        ordering_index=insert_at + offset,
+                    )
+                await self.transcript.messages.mark_superseded(
+                    [str(item.id) for item in group_messages]
+                )
+                await AgentEventLedger(self.db).append(
+                    session_id=session_id,
+                    turn_id=group_turn_id,
+                    type=AgentEventType.TRANSCRIPT_TOOL_GROUP_REPAIRED,
+                    payload={
+                        "provider_message_id": str(message.id),
+                        "missing_tool_call_ids": missing,
+                        "tool_batch_id": batch_id,
+                    },
+                    visibility="audit",
+                )
+                messages = await self.transcript.list_messages(session_id)
+                index = 0
+                continue
+            index = cursor
 
     async def model_context(
         self,
@@ -105,6 +265,10 @@ class AgentContextAssembler:
         exposed_tools=None,
         skip_compaction: bool = False,
     ) -> AgentModelContext:
+        await self._repair_incomplete_tool_groups(
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        )
         compacted = False
         if not skip_compaction:
             compacted = await self._compact_if_needed(
@@ -329,6 +493,36 @@ def _active_skill_names_for_turn(turn) -> list[str]:
     if not isinstance(names, list):
         return []
     return [name for name in names if isinstance(name, str) and name.strip()]
+
+
+def _complete_provider_groups(messages: list[dict]) -> list[dict]:
+    """Exclude incomplete assistant/tool groups and orphan tool messages."""
+    complete: list[dict] = []
+    index = 0
+    while index < len(messages):
+        message = messages[index]
+        tool_calls = message.get("tool_calls") if message.get("role") == "assistant" else None
+        if tool_calls:
+            expected = [str(call.get("id")) for call in tool_calls if call.get("id")]
+            group = [message]
+            seen: list[str] = []
+            cursor = index + 1
+            while cursor < len(messages) and messages[cursor].get("role") == "tool":
+                tool_message = messages[cursor]
+                group.append(tool_message)
+                if tool_message.get("tool_call_id"):
+                    seen.append(str(tool_message["tool_call_id"]))
+                cursor += 1
+            if expected and len(seen) == len(expected) and set(seen) == set(expected):
+                by_id = {str(item["tool_call_id"]): item for item in group[1:]}
+                complete.append(message)
+                complete.extend(by_id[tool_call_id] for tool_call_id in expected)
+            index = cursor
+            continue
+        if message.get("role") != "tool":
+            complete.append(message)
+        index += 1
+    return complete
 
 
 def model_context_from_messages(messages: list[dict[str, Any]]) -> AgentModelContext:

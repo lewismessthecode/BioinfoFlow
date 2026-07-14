@@ -39,7 +39,9 @@ class AgentEventLedger:
         payload: dict | None = None,
         visibility: str = "user",
         schema_version: int = 1,
+        commit: bool = True,
         expected_owner_token: str | None = None,
+        owner_fenced: bool = False,
         after_owner_fenced_transition: bool = False,
     ):
         if (
@@ -49,7 +51,7 @@ class AgentEventLedger:
             and turn_id == getattr(self, "owned_turn_id", None)
         ):
             expected_owner_token = self.expected_owner_token
-        if expected_owner_token is not None:
+        if expected_owner_token is not None and not owner_fenced:
             if turn_id is None:
                 raise ValueError("turn_id is required for owner-conditioned events")
             ensure_clean_owned_publication_session(self.event_repo.session)
@@ -66,21 +68,41 @@ class AgentEventLedger:
                         "visibility": visibility,
                         "schema_version": schema_version,
                     }
-                    if expected_owner_token is None:
-                        event = await self.event_repo.create(
-                            turn_id=turn_id,
-                            **data,
-                        )
-                    else:
-                        event, owned = await self.event_repo.create_for_owned_turn(
-                            turn_id=turn_id,
-                            expected_owner_token=expected_owner_token,
-                            **data,
-                        )
+                    if expected_owner_token is not None:
+                        if turn_id is None:
+                            raise ValueError(
+                                "turn_id is required for owner-conditioned events"
+                            )
+                        if commit:
+                            event, owned = await self.event_repo.create_for_owned_turn(
+                                turn_id=turn_id,
+                                expected_owner_token=expected_owner_token,
+                                owner_fenced=owner_fenced,
+                                **data,
+                            )
+                        else:
+                            async with self.event_repo.session.begin_nested():
+                                event, owned = (
+                                    await self.event_repo.create_for_owned_turn(
+                                        turn_id=turn_id,
+                                        expected_owner_token=expected_owner_token,
+                                        commit=False,
+                                        owner_fenced=owner_fenced,
+                                        **data,
+                                    )
+                                )
                         if not owned or event is None:
                             raise TurnOwnershipLostError(
                                 "Agent turn ownership was replaced"
                             )
+                    elif commit:
+                        event = await self.event_repo.create(turn_id=turn_id, **data)
+                    else:
+                        # A savepoint lets a cross-process sequence collision
+                        # retry without rolling back the caller's surrounding
+                        # CAS/update transaction.
+                        async with self.event_repo.session.begin_nested():
+                            event = await self.event_repo.add(turn_id=turn_id, **data)
                     logger.debug(
                         "agent_core.event.appended",
                         **agent_event_log_fields(
@@ -93,7 +115,8 @@ class AgentEventLedger:
                     )
                     return event
                 except IntegrityError:
-                    await self.event_repo.session.rollback()
+                    if commit:
+                        await self.event_repo.session.rollback()
                     if attempt == 2:
                         raise
                     continue

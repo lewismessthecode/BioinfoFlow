@@ -8,6 +8,6 @@ export type AgentDecisionHandler = (
   actionId: string,
   decision: AgentActionDecision,
   options?: { answer?: AgentAnswer; note?: string },
-) => void
+) => Promise<void>
 
 export type AgentRetryHandler = (turn: AgentRuntimeTurn) => void

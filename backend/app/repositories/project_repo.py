@@ -10,6 +10,15 @@ from app.schemas.common import Pagination
 class ProjectRepository(BaseRepository[Project]):
     model = Project
 
+    async def get_fresh(self, project_id: str) -> Project | None:
+        stmt = (
+            select(self.model)
+            .where(self.model.id == project_id)
+            .execution_options(populate_existing=True)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_default_for_workspace(self, workspace_id: str) -> Project | None:
         """Get the workspace default (uncategorized) project."""
         stmt = (

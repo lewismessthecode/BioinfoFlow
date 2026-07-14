@@ -5,12 +5,19 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import uuid4
 
 import app.database as app_database
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
-from app.models.agent_core import AgentActionStatus, AgentTurnStatus
+from app.models.agent_core import (
+    AgentActionStatus,
+    AgentToolCallBatchStatus,
+    AgentTurn,
+    AgentTurnStatus,
+)
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentSessionRepository,
@@ -18,12 +25,15 @@ from app.repositories.agent_core_repo import (
 )
 from app.services.agent_core.approval_batches import (
     TERMINAL_ACTION_STATUSES,
-    ordered_tool_call_batch,
 )
 from app.services.agent_core.context import AgentContextAssembler
 from app.services.agent_core.core.budget import IterationBudget
 from app.services.agent_core.core.guardrails import no_progress_detected
 from app.services.agent_core.core.interrupt import is_interrupt_requested
+from app.services.agent_core.core.lease import (
+    LEASE_LOSS_CANCELLATION,
+    is_lease_loss_cancellation,
+)
 from app.services.agent_core.core.retry import RetryPolicy, run_with_retry
 from app.services.agent_core.core.runtime_strategy import (
     RuntimeCapabilities,
@@ -40,7 +50,9 @@ from app.services.agent_core.ownership import (
     new_turn_owner_token,
 )
 from app.services.agent_core.observability import truncate_log_value
+from app.services.agent_core.permissions.context import PermissionContextResolver
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
+from app.services.agent_core.tools.batches import ToolCallBatchCoordinator
 from app.services.agent_core.tools.executor import (
     AgentToolExecutor,
     ToolExecutionResult,
@@ -85,6 +97,7 @@ logger = get_logger(__name__)
 class _PendingToolCall:
     call_id: str
     name: str
+    provider_call_id: str | None = None
     arguments_text: str = ""
     index: int = 0
 
@@ -138,8 +151,11 @@ class AgentLoopController:
         )
         self.registry = build_default_tool_registry()
         self.executor = AgentToolExecutor(session, self.registry)
+        self.tool_batches = ToolCallBatchCoordinator(session)
+        self._current_prepared_batch_id: str | None = None
         self.model_gateway = model_gateway or ModelGateway()
         self.ownership = ownership
+        self._execution_owner_token = owner_token
 
     async def run_turn(
         self,
@@ -149,7 +165,12 @@ class AgentLoopController:
         capabilities: RuntimeCapabilities = RuntimeCapabilities(),
         strategy: RuntimeStrategy = RuntimeStrategy(),
         max_tokens: int | None = None,
+        continuation_batch_id: str | None = None,
+        continuation_failure_mode: str = "failed",
+        execution_owner_token: str | None = None,
     ) -> LoopResult:
+        if execution_owner_token is not None:
+            self._execution_owner_token = execution_owner_token
         turn = await self.turns.get(turn_id)
         if turn is None:
             return LoopResult(
@@ -171,31 +192,30 @@ class AgentLoopController:
 
         budget = IterationBudget(max_iterations=_max_iterations())
         tools_enabled = capabilities.supports_tools and strategy.allow_tools
-        role = (
-            "worker"
-            if str(getattr(agent_session, "role_profile", "orchestrator")) == "worker"
-            else "orchestrator"
-        )
-        execution_target = execution_target_from_session(agent_session)
-        visible_tools = (
-            self.executor.exposure.exposed_specs(
-                policy=agent_session.toolset_policy,
-                role=role,
-                execution_target=execution_target,
-            )
-            if tools_enabled
-            else []
-        )
         token_usage: dict[str, Any] | None = None
         previous_tool_call_signatures: list[str] = []
         previous_tool_result_signatures: list[str] = []
         repeated_tool_call_count = 0
         empty_response_retries_remaining = 1
+        active_continuation_batch_id = continuation_batch_id
+        if active_continuation_batch_id is not None:
+            batch = await self.tool_batches.batches.get_fresh(
+                active_continuation_batch_id
+            )
+            if batch is not None and batch.status == "ready":
+                if not await self.tool_batches.claim_continuation(
+                    active_continuation_batch_id
+                ):
+                    active_continuation_batch_id = None
 
         while budget.consume():
             await self._ensure_owned()
             turn = await self.turns.get(turn_id)
             if turn is None:
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.fail_continuation(
+                        active_continuation_batch_id
+                    )
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -204,6 +224,10 @@ class AgentLoopController:
                     error_message="Agent turn could not be loaded.",
                 )
             if turn.status == AgentTurnStatus.CANCELLED or is_interrupt_requested(turn):
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.cancel_continuation(
+                        active_continuation_batch_id
+                    )
                 return LoopResult(
                     termination_reason=_cancellation_reason(turn),
                     final_text=None,
@@ -211,7 +235,31 @@ class AgentLoopController:
                     token_usage=token_usage,
                 )
             turn = await self._renew_turn_lease(turn)
-
+            if turn is None:
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=budget.used_iterations,
+                    error_code="execution_claim_lost",
+                    error_message="Agent turn execution lease ownership was lost.",
+                    token_usage=token_usage,
+                )
+            permission_context, agent_session = await PermissionContextResolver(
+                self.db
+            ).resolve_with_session(
+                session_id=str(turn.session_id),
+                workspace_id=str(turn.workspace_id),
+                user_id=turn.user_id,
+            )
+            visible_tools = (
+                self.executor.exposure.exposed_specs(
+                    policy=permission_context.snapshot()["toolset_policy"],
+                    role=permission_context.role,
+                    execution_target=permission_context.snapshot()["execution_target"],
+                )
+                if tools_enabled
+                else []
+            )
             continuation_anchor = await self._responses_continuation_anchor(
                 turn,
                 target=target,
@@ -257,6 +305,10 @@ class AgentLoopController:
                 )
                 await self._ensure_owned()
             except asyncio.CancelledError:
+                if active_continuation_batch_id is not None:
+                    await self.tool_batches.cancel_continuation(
+                        active_continuation_batch_id
+                    )
                 return LoopResult(
                     termination_reason=_cancellation_reason(turn),
                     final_text=None,
@@ -264,6 +316,16 @@ class AgentLoopController:
                     token_usage=token_usage,
                 )
             except Exception as exc:
+                released_batch_id = active_continuation_batch_id
+                if active_continuation_batch_id is not None:
+                    if continuation_failure_mode == "ready":
+                        await self.tool_batches.release_continuation(
+                            active_continuation_batch_id
+                        )
+                    else:
+                        await self.tool_batches.fail_continuation(
+                            active_continuation_batch_id
+                        )
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -271,37 +333,56 @@ class AgentLoopController:
                     error_code="model_request_failed",
                     error_message=str(exc),
                     token_usage=token_usage,
+                    continuation_batch_id=released_batch_id,
                     model_replay_safe=(
                         exc.replay_safe if isinstance(exc, ModelError) else True
                     ),
                 )
 
             token_usage = _merge_usage(token_usage, streamed.token_usage)
-            tool_calls = [_tool_call_dict(item) for item in streamed.tool_calls]
+            tool_calls = _normalize_tool_calls(
+                streamed.tool_calls,
+                turn_id=str(turn.id),
+                iteration_count=budget.used_iterations,
+            )
             if tool_calls:
                 tool_call_signatures = [
                     _tool_call_signature(tool_call) for tool_call in tool_calls
                 ]
-                await self._append_assistant_tool_calls(
-                    agent_session=agent_session,
-                    turn=turn,
-                    provider=target.provider_kind,
-                    model=target.model_name,
-                    tool_calls=tool_calls,
-                    commentary=streamed.commentary or None,
-                    final_text=streamed.text or None,
-                    continuation=streamed.continuation,
-                    wire_protocol=target.wire_protocol,
-                )
                 try:
-                    waiting, tool_result_signatures = await self._execute_tool_calls(
+                    (
+                        waiting,
+                        tool_result_signatures,
+                        claimed_batch_id,
+                    ) = await self._execute_tool_calls(
                         agent_session=agent_session,
                         turn=turn,
                         tool_calls=tool_calls,
+                        provider=target.provider_kind,
+                        model=target.model_name,
+                        commentary=streamed.commentary or None,
+                        final_text=streamed.text or None,
+                        continuation=streamed.continuation,
+                        wire_protocol=target.wire_protocol,
+                        prior_continuation_batch_id=active_continuation_batch_id,
                     )
+                    if active_continuation_batch_id is not None:
+                        active_continuation_batch_id = None
                 except asyncio.CancelledError:
+                    if self._current_prepared_batch_id is not None:
+                        await self._cancel_committed_batch(
+                            self._current_prepared_batch_id,
+                            agent_session=agent_session,
+                            turn_id=turn_id,
+                        )
+                        self._current_prepared_batch_id = None
+                    if active_continuation_batch_id is not None:
+                        await self.tool_batches.cancel_continuation(
+                            active_continuation_batch_id
+                        )
+                    cancelled_turn = await self.turns.get_fresh(turn_id)
                     return LoopResult(
-                        termination_reason=_cancellation_reason(turn),
+                        termination_reason=_cancellation_reason(cancelled_turn or turn),
                         final_text=None,
                         iteration_count=budget.used_iterations,
                         token_usage=token_usage,
@@ -322,6 +403,7 @@ class AgentLoopController:
                         iteration_count=budget.used_iterations,
                         token_usage=token_usage,
                     )
+                active_continuation_batch_id = claimed_batch_id
                 repeated_tool_call_count = (
                     repeated_tool_call_count + 1
                     if previous_tool_call_signatures == tool_call_signatures
@@ -344,6 +426,10 @@ class AgentLoopController:
                             "iteration_count": budget.used_iterations,
                         },
                     )
+                    if active_continuation_batch_id is not None:
+                        await self.tool_batches.fail_continuation(
+                            active_continuation_batch_id
+                        )
                     return LoopResult(
                         termination_reason="no_progress",
                         final_text=None,
@@ -422,6 +508,16 @@ class AgentLoopController:
                         },
                     )
                     continue
+                released_batch_id = active_continuation_batch_id
+                if active_continuation_batch_id is not None:
+                    if continuation_failure_mode == "ready":
+                        await self.tool_batches.release_continuation(
+                            active_continuation_batch_id
+                        )
+                    else:
+                        await self.tool_batches.fail_continuation(
+                            active_continuation_batch_id
+                        )
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -429,6 +525,7 @@ class AgentLoopController:
                     token_usage=token_usage,
                     error_code="empty_model_response",
                     error_message="The selected model completed without returning visible text.",
+                    continuation_batch_id=released_batch_id,
                 )
             parts: list[dict[str, Any]] = []
             if streamed.commentary:
@@ -464,6 +561,9 @@ class AgentLoopController:
                     else None
                 ),
             )
+            if active_continuation_batch_id is not None:
+                await self.tool_batches.mark_terminal(active_continuation_batch_id)
+                active_continuation_batch_id = None
             return LoopResult(
                 termination_reason="assistant_final",
                 final_text=final_text,
@@ -471,6 +571,8 @@ class AgentLoopController:
                 token_usage=token_usage,
             )
 
+        if active_continuation_batch_id is not None:
+            await self.tool_batches.fail_continuation(active_continuation_batch_id)
         return LoopResult(
             termination_reason="budget_exhausted",
             final_text=None,
@@ -486,85 +588,419 @@ class AgentLoopController:
         agent_session,
         turn,
         tool_calls: list[dict],
-    ) -> tuple[bool, list[str]]:
-        waiting = False
-        result_signatures: list[str] = []
-        index = 0
-        while index < len(tool_calls):
-            turn = await self._renew_turn_lease(turn)
-            tool_call = tool_calls[index]
-            tool_name = decode_provider_tool_name(tool_call["name"])
-            if self._is_concurrent_read_only_tool(tool_name):
-                batch: list[tuple[dict[str, Any], str]] = []
-                while index < len(tool_calls):
-                    candidate = tool_calls[index]
-                    candidate_name = decode_provider_tool_name(candidate["name"])
-                    if not self._is_concurrent_read_only_tool(candidate_name):
-                        break
-                    batch.append((candidate, candidate_name))
-                    index += 1
-                results = await asyncio.gather(
-                    *[
-                        self._execute_tool_call_isolated(
-                            agent_session=agent_session,
-                            turn=turn,
-                            tool_call=item,
-                            tool_name=name,
-                        )
-                        for item, name in batch
-                    ]
+        provider: str,
+        model: str,
+        text: str | None = None,
+        commentary: str | None = None,
+        final_text: str | None = None,
+        continuation: ResponsesContinuation | None = None,
+        wire_protocol: str = "chat_completions",
+        prior_continuation_batch_id: str | None = None,
+    ) -> tuple[bool, list[str], str | None]:
+        session_id = str(agent_session.id)
+        turn_id = str(turn.id)
+        final_text = final_text if final_text is not None else text
+        batch_id = str(uuid4())
+        context = AgentToolContext(
+            db=self.db,
+            workspace_id=str(turn.workspace_id),
+            user_id=turn.user_id,
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+            ownership_guard=self._ensure_owned,
+            expected_owner_token=self._execution_owner_token,
+        )
+        prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]] = []
+        try:
+            locked_session = await self.sessions.lock_policy(session_id)
+            if locked_session is None:
+                raise PermissionDeniedError("Agent session is not accessible")
+            if (
+                self._execution_owner_token is not None
+                and not await self.turns.lock_execution_owner(
+                    turn_id,
+                    owner_token=self._execution_owner_token,
                 )
-                for (item, name), result in zip(batch, results, strict=False):
-                    if result.requires_resume:
-                        waiting = True
-                        continue
-                    result_signatures.append(_tool_result_signature(name, result))
-                    await self._append_tool_result(
-                        agent_session=agent_session,
-                        turn=turn,
-                        tool_name=name,
-                        tool_call_id=item.get("id"),
-                        result=result,
-                    )
-                continue
-
-            result = await self.executor.execute(
-                tool_name=tool_name,
-                input=tool_call["arguments"],
-                context=AgentToolContext(
-                    db=self.db,
-                    workspace_id=str(turn.workspace_id),
-                    user_id=turn.user_id,
-                    session_id=str(agent_session.id),
-                    turn_id=str(turn.id),
-                    ownership_guard=self._ensure_owned,
-                    expected_owner_token=(
-                        self.ownership.owner_token
-                        if self.ownership is not None
-                        else None
-                    ),
-                ),
-                toolset_policy=agent_session.toolset_policy,
-                permission_mode=agent_session.permission_mode,
-                automation_mode=agent_session.automation_mode,
-                tool_call_id=tool_call.get("id"),
-                role=_tool_role(agent_session),
-                execution_target=execution_target_from_session(agent_session),
+            ):
+                await self.db.rollback()
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            agent_session = locked_session
+            locked_policy_version = int(agent_session.permission_policy_version)
+            await self.tool_batches.create(
+                session_id=session_id,
+                turn_id=turn_id,
+                tool_call_count=len(tool_calls),
+                batch_id=batch_id,
+                commit=False,
             )
-            if result.requires_resume:
-                waiting = True
-                index += 1
-                continue
-            result_signatures.append(_tool_result_signature(tool_name, result))
-            await self._append_tool_result(
+            await self._append_assistant_tool_calls(
                 agent_session=agent_session,
                 turn=turn,
-                tool_name=tool_name,
-                tool_call_id=tool_call.get("id"),
-                result=result,
+                provider=provider,
+                model=model,
+                tool_calls=tool_calls,
+                commentary=commentary,
+                final_text=final_text,
+                continuation=continuation,
+                wire_protocol=wire_protocol,
+                batch_id=batch_id,
+                commit=False,
+                owner_fence_held=self._execution_owner_token is not None,
             )
-            index += 1
-        return waiting, result_signatures
+            for ordinal, tool_call in enumerate(tool_calls):
+                tool_name = decode_provider_tool_name(tool_call["name"])
+                result = await self.executor.execute(
+                    tool_name=tool_name,
+                    input=tool_call["arguments"],
+                    context=context,
+                    toolset_policy=agent_session.toolset_policy,
+                    permission_mode=agent_session.permission_mode,
+                    automation_mode=agent_session.automation_mode,
+                    tool_call_id=tool_call["id"],
+                    tool_batch_id=batch_id,
+                    tool_call_ordinal=ordinal,
+                    defer_execution=True,
+                    commit_action=False,
+                    role=_tool_role(agent_session),
+                    execution_target=execution_target_from_session(agent_session),
+                )
+                prepared.append((tool_call, tool_name, result))
+            if not await self.sessions.policy_version_matches(
+                session_id, locked_policy_version
+            ):
+                raise RuntimeError(
+                    "Permission policy changed during atomic tool-batch preparation"
+                )
+            prepared_actions = await self.actions.list_for_batch(batch_id)
+            if any(
+                action.evaluated_policy_version != locked_policy_version
+                for action in prepared_actions
+            ):
+                raise RuntimeError(
+                    "Tool action was evaluated outside the locked permission policy"
+                )
+            if prior_continuation_batch_id is not None:
+                await self.tool_batches.batches.terminalize_continuing_pending(
+                    prior_continuation_batch_id
+                )
+            await self.db.commit()
+            self._current_prepared_batch_id = batch_id
+        except TurnOwnershipLostError:
+            await self.db.rollback()
+            raise
+        except asyncio.CancelledError as exc:
+            if is_lease_loss_cancellation(exc):
+                await self.db.rollback()
+                raise
+            await self._persist_failed_preparation_batch(
+                batch_id=batch_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                tool_calls=tool_calls,
+                provider=provider,
+                model=model,
+                commentary=commentary,
+                final_text=final_text,
+                continuation=continuation,
+                wire_protocol=wire_protocol,
+                action_status=AgentActionStatus.CANCELLED,
+                batch_status=AgentToolCallBatchStatus.CANCELLED,
+                error_type="BatchPreparationCancelled",
+                error_message="Tool batch preparation was cancelled.",
+                prior_continuation_batch_id=prior_continuation_batch_id,
+            )
+            raise exc
+        except Exception as exc:  # noqa: BLE001 - replace with a complete terminal batch
+            await self._persist_failed_preparation_batch(
+                batch_id=batch_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                tool_calls=tool_calls,
+                provider=provider,
+                model=model,
+                commentary=commentary,
+                final_text=final_text,
+                continuation=continuation,
+                wire_protocol=wire_protocol,
+                action_status=AgentActionStatus.FAILED,
+                batch_status=AgentToolCallBatchStatus.FAILED,
+                error_type="BatchPreparationError",
+                error_message=str(exc),
+                prior_continuation_batch_id=prior_continuation_batch_id,
+            )
+            if isinstance(exc, PermissionDeniedError):
+                raise
+            self._current_prepared_batch_id = None
+            return False, [], None
+
+        fresh_turn = await self._ensure_turn_allows_tool_execution(turn_id)
+        if fresh_turn is None:
+            await self._cancel_committed_batch(
+                batch_id,
+                agent_session=agent_session,
+                turn_id=turn_id,
+            )
+            self._current_prepared_batch_id = None
+            raise asyncio.CancelledError
+        turn = fresh_turn
+        interaction_ordinals = [
+            ordinal
+            for ordinal, call in enumerate(tool_calls)
+            if self.registry.get(
+                decode_provider_tool_name(call["name"])
+            ).spec.interaction
+        ]
+        if interaction_ordinals:
+            waiting, signatures = await self._execute_interaction_batch(
+                agent_session=agent_session,
+                turn=turn,
+                prepared=prepared,
+                batch_id=batch_id,
+                interaction_ordinal=interaction_ordinals[0],
+            )
+            self._current_prepared_batch_id = None
+            return waiting, signatures, None
+        waiting = False
+        result_signatures: list[str] = []
+        read_candidates = [
+            item
+            for item in prepared
+            if item[2].status == AgentActionStatus.REQUESTED
+            and self._is_concurrent_read_only_tool(item[1])
+        ]
+        read_results = await asyncio.gather(
+            *[
+                self._execute_tool_call_isolated(
+                    agent_session=agent_session,
+                    turn=turn,
+                    action_id=prepared_result.action_id,
+                )
+                for _tool_call, _tool_name, prepared_result in read_candidates
+            ]
+        )
+        read_results_by_action = {
+            prepared_result.action_id: result
+            for (_call, _name, prepared_result), result in zip(
+                read_candidates, read_results, strict=True
+            )
+        }
+        for tool_call, tool_name, prepared_result in prepared:
+            turn = await self._renew_turn_lease(turn)
+            if turn is None:
+                current_turn = await self.turns.get_fresh(turn_id)
+                if current_turn is not None and (
+                    current_turn.status == AgentTurnStatus.CANCELLED
+                    or is_interrupt_requested(current_turn)
+                ):
+                    raise asyncio.CancelledError
+                raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
+            read_result = read_results_by_action.get(prepared_result.action_id)
+            if read_result is not None:
+                result_signatures.append(_tool_result_signature(tool_name, read_result))
+                await self._append_tool_result(
+                    agent_session=agent_session,
+                    turn=turn,
+                    tool_name=tool_name,
+                    tool_call_id=tool_call.get("id"),
+                    action_id=prepared_result.action_id,
+                    batch_id=batch_id,
+                    result=read_result,
+                )
+                continue
+            if prepared_result.requires_resume:
+                waiting = True
+                continue
+            result = prepared_result
+            if prepared_result.status == AgentActionStatus.REQUESTED:
+                result = await self.executor.resume_action(
+                    action_id=prepared_result.action_id,
+                    context=context,
+                    require_resume_marker=False,
+                )
+            result_signatures.append(_tool_result_signature(tool_name, result))
+            if result.status in TERMINAL_ACTION_STATUSES:
+                await self._append_tool_result(
+                    agent_session=agent_session,
+                    turn=turn,
+                    tool_name=tool_name,
+                    tool_call_id=tool_call.get("id"),
+                    action_id=prepared_result.action_id,
+                    batch_id=batch_id,
+                    result=result,
+                )
+        state = await self.tool_batches.settle(batch_id)
+        claimed_batch_id: str | None = None
+        if state == "ready":
+            await self._append_missing_batch_results(
+                agent_session=agent_session,
+                turn=turn,
+                batch_id=batch_id,
+            )
+            if await self.tool_batches.claim_continuation(batch_id):
+                claimed_batch_id = batch_id
+        self._current_prepared_batch_id = None
+        return waiting, result_signatures, claimed_batch_id
+
+    async def _fresh_running_turn(self, turn_id: str):
+        turn = await self.turns.get_fresh(turn_id)
+        if (
+            turn is None
+            or turn.status == AgentTurnStatus.CANCELLED
+            or is_interrupt_requested(turn)
+        ):
+            return None
+        if (
+            self._execution_owner_token is not None
+            and (
+                turn.status != AgentTurnStatus.RUNNING
+                or turn.owner_token != self._execution_owner_token
+            )
+        ):
+            raise TurnOwnershipLostError("Agent turn ownership was replaced")
+        return turn
+
+    async def _ensure_turn_allows_tool_execution(self, turn_id: str):
+        return await self._fresh_running_turn(turn_id)
+
+    async def _persist_failed_preparation_batch(
+        self,
+        *,
+        batch_id: str,
+        session_id: str,
+        turn_id: str,
+        tool_calls: list[dict],
+        provider: str,
+        model: str,
+        commentary: str | None,
+        final_text: str | None,
+        continuation: ResponsesContinuation | None,
+        wire_protocol: str,
+        action_status: str,
+        batch_status: str,
+        error_type: str,
+        error_message: str,
+        prior_continuation_batch_id: str | None = None,
+    ) -> None:
+        await self.db.rollback()
+        if self._execution_owner_token is not None and not await self.turns.lock_execution_owner(
+            turn_id,
+            owner_token=self._execution_owner_token,
+        ):
+            raise TurnOwnershipLostError("Agent turn ownership was replaced")
+        agent_session = await self.sessions.get(session_id)
+        turn = await self.turns.get(turn_id)
+        if agent_session is None or turn is None:
+            raise RuntimeError("Cannot rebuild tool batch without its session and turn")
+        batch = await self.tool_batches.create(
+            session_id=session_id,
+            turn_id=turn_id,
+            tool_call_count=len(tool_calls),
+            batch_id=batch_id,
+            commit=False,
+        )
+        await self._append_assistant_tool_calls(
+            agent_session=agent_session,
+            turn=turn,
+            provider=provider,
+            model=model,
+            tool_calls=tool_calls,
+            commentary=commentary,
+            final_text=final_text,
+            continuation=continuation,
+            wire_protocol=wire_protocol,
+            batch_id=batch_id,
+            commit=False,
+            owner_fence_held=self._execution_owner_token is not None,
+        )
+        await self.tool_batches.repair_preparation_failure(
+            batch_id=batch_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            tool_calls=tool_calls,
+            error_message=error_message,
+            action_status=action_status,
+            error_type=error_type,
+            commit=False,
+        )
+        await self.tool_batches.batches.update_all_pending(
+            batch,
+            status=batch_status,
+            completed_at=datetime.now(timezone.utc),
+        )
+        if prior_continuation_batch_id is not None:
+            await self.tool_batches.batches.terminalize_continuing_pending(
+                prior_continuation_batch_id
+            )
+        await self._append_missing_batch_results(
+            agent_session=agent_session,
+            turn=turn,
+            batch_id=batch_id,
+            commit=False,
+        )
+        await self.db.commit()
+
+    async def _cancel_committed_batch(
+        self, batch_id: str, *, agent_session, turn_id: str
+    ) -> None:
+        if self._execution_owner_token is not None and not await self.turns.lock_execution_owner(
+            turn_id,
+            owner_token=self._execution_owner_token,
+        ):
+            await self.db.rollback()
+            return
+        turn = await self.turns.get_fresh(turn_id)
+        if turn is None:
+            await self.db.rollback()
+            return
+        now = datetime.now(timezone.utc)
+        for action in await self.actions.list_for_batch(batch_id):
+            if action.status in {
+                AgentActionStatus.WAITING_DECISION,
+                AgentActionStatus.REQUESTED,
+                AgentActionStatus.RUNNING,
+            }:
+                await self.actions.cancel_open(
+                    str(action.id),
+                    error={
+                        "type": "CancelledError",
+                        "message": "Tool batch execution was cancelled.",
+                    },
+                    completed_at=now,
+                    expected_turn_owner_token=self._execution_owner_token,
+                )
+        await self.tool_batches.batches.cancel_nonterminal(batch_id)
+        await self._append_missing_batch_results(
+            agent_session=agent_session,
+            turn=turn,
+            batch_id=batch_id,
+        )
+
+    async def _execute_interaction_batch(
+        self,
+        *,
+        agent_session,
+        turn,
+        prepared: list[tuple[dict[str, Any], str, ToolExecutionResult]],
+        batch_id: str,
+        interaction_ordinal: int,
+    ) -> tuple[bool, list[str]]:
+        result_signatures: list[str] = []
+        for ordinal, (tool_call, tool_name, prepared_result) in enumerate(prepared):
+            if ordinal == interaction_ordinal:
+                continue
+            result = prepared_result
+            if prepared_result.status in {
+                AgentActionStatus.REQUESTED,
+                AgentActionStatus.WAITING_DECISION,
+            }:
+                result = await self.executor.cancel_action(
+                    action_id=prepared_result.action_id,
+                    reason="A user interaction in this tool-call batch is exclusive.",
+                    expected_turn_owner_token=self._execution_owner_token,
+                )
+            result_signatures.append(_tool_result_signature(tool_name, result))
+        await self.tool_batches.settle(batch_id)
+        return True, result_signatures
 
     async def resume_turn_from_action(
         self,
@@ -574,6 +1010,7 @@ class AgentLoopController:
         capabilities: RuntimeCapabilities = RuntimeCapabilities(),
         strategy: RuntimeStrategy = RuntimeStrategy(),
         max_tokens: int | None = None,
+        continuation_failure_mode: str = "failed",
     ) -> LoopResult:
         await self._ensure_owned()
         action = await self.actions.get(action_id)
@@ -604,11 +1041,6 @@ class AgentLoopController:
                 error_message="Agent session could not be loaded for resume.",
             )
 
-        batch = await ordered_tool_call_batch(
-            action_repo=self.actions,
-            transcript=self.transcript,
-            action=action,
-        )
         context = AgentToolContext(
             db=self.db,
             workspace_id=str(turn.workspace_id),
@@ -616,86 +1048,143 @@ class AgentLoopController:
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
             ownership_guard=self._ensure_owned,
-            expected_owner_token=(
-                self.ownership.owner_token if self.ownership is not None else None
-            ),
+            expected_owner_token=self._execution_owner_token,
         )
-        for sibling in batch:
-            await self._ensure_owned()
-            matching_tool_result = await self.transcript.find_committed_tool_result(
-                session_id=str(agent_session.id),
-                turn_id=str(turn.id),
-                tool_call_id=sibling.tool_call_id,
-            )
-            if matching_tool_result is not None:
-                await self._clear_terminal_action_resume_state(sibling)
-                continue
-            if sibling.status == AgentActionStatus.REQUESTED:
+        if action.tool_batch_id:
+            failed_resume_status: str | None = None
+            for batch_action in await self.actions.list_for_batch(
+                str(action.tool_batch_id)
+            ):
+                if batch_action.status in TERMINAL_ACTION_STATUSES:
+                    await self._clear_terminal_action_resume_state(batch_action)
+                    continue
+                if batch_action.status != AgentActionStatus.REQUESTED:
+                    continue
                 result = await self.executor.resume_action(
-                    action_id=str(sibling.id),
+                    action_id=str(batch_action.id),
                     context=context,
+                    require_resume_marker=False,
                 )
-                await self._ensure_owned()
-            elif sibling.status in TERMINAL_ACTION_STATUSES:
-                result = _tool_result_for_terminal_action(sibling)
-            else:
-                continue
-            if result.status not in TERMINAL_ACTION_STATUSES:
-                continue
-            await self._append_tool_result(
+                if (
+                    result.status in TERMINAL_ACTION_STATUSES
+                    and not await self._has_tool_result(
+                        str(agent_session.id),
+                        tool_call_id=batch_action.tool_call_id,
+                        action_id=str(batch_action.id),
+                        batch_id=str(action.tool_batch_id),
+                    )
+                ):
+                    await self._append_tool_result(
+                        agent_session=agent_session,
+                        turn=turn,
+                        tool_name=batch_action.name,
+                        tool_call_id=batch_action.tool_call_id,
+                        action_id=str(batch_action.id),
+                        batch_id=str(action.tool_batch_id),
+                        result=result,
+                    )
+                if result.status == AgentActionStatus.WAITING_DECISION:
+                    return LoopResult(
+                        termination_reason="waiting_approval",
+                        final_text=None,
+                        iteration_count=0,
+                    )
+                if result.status not in {
+                    AgentActionStatus.COMPLETED,
+                    AgentActionStatus.REJECTED,
+                }:
+                    failed_resume_status = result.status
+            if failed_resume_status is not None:
+                await self._append_missing_batch_results(
+                    agent_session=agent_session,
+                    turn=turn,
+                    batch_id=str(action.tool_batch_id),
+                )
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=0,
+                    error_code="tool_resume_failed",
+                    error_message=(
+                        "Approved tool action finished with status: "
+                        f"{failed_resume_status}"
+                    ),
+                )
+            state = await self.tool_batches.settle(str(action.tool_batch_id))
+            if state != "ready":
+                return LoopResult(
+                    termination_reason="waiting_approval",
+                    final_text=None,
+                    iteration_count=0,
+                )
+            if not await self.tool_batches.claim_continuation(
+                str(action.tool_batch_id)
+            ):
+                return LoopResult(
+                    termination_reason="waiting_approval",
+                    final_text=None,
+                    iteration_count=0,
+                )
+            await self._append_missing_batch_results(
                 agent_session=agent_session,
                 turn=turn,
-                tool_name=sibling.name,
-                tool_call_id=sibling.tool_call_id,
-                result=result,
+                batch_id=str(action.tool_batch_id),
             )
-            refreshed = await self.actions.get(str(sibling.id))
-            if refreshed is not None:
-                await self._clear_terminal_action_resume_state(refreshed)
-
-        refreshed_batch = await ordered_tool_call_batch(
-            action_repo=self.actions,
-            transcript=self.transcript,
-            action=action,
-        )
-        batch_is_resolved = True
-        failed_status: str | None = None
-        for sibling in refreshed_batch:
-            matching_tool_result = await self.transcript.find_committed_tool_result(
-                session_id=str(agent_session.id),
-                turn_id=str(turn.id),
-                tool_call_id=sibling.tool_call_id,
-            )
-            if (
-                sibling.status not in TERMINAL_ACTION_STATUSES
-                or matching_tool_result is None
+        else:
+            if action.status == AgentActionStatus.REJECTED:
+                result = ToolExecutionResult(
+                    action_id=str(action.id),
+                    status=action.status,
+                    error={
+                        "type": "UserRejected",
+                        "message": "The user rejected this tool call.",
+                    },
+                )
+            else:
+                result = await self.executor.resume_action(
+                    action_id=action_id,
+                    context=context,
+                    require_resume_marker=False,
+                )
+            if result.status == AgentActionStatus.WAITING_DECISION:
+                return LoopResult(
+                    termination_reason="waiting_approval",
+                    final_text=None,
+                    iteration_count=0,
+                )
+            if not await self._has_tool_result(
+                str(agent_session.id),
+                tool_call_id=action.tool_call_id,
+                action_id=str(action.id),
+                batch_id=None,
             ):
-                batch_is_resolved = False
-            elif sibling.status not in {
-                AgentActionStatus.COMPLETED,
-                AgentActionStatus.REJECTED,
-            }:
-                failed_status = failed_status or sibling.status
-        if not batch_is_resolved:
-            return LoopResult(
-                termination_reason="waiting_approval",
-                final_text=None,
-                iteration_count=0,
-            )
-        if failed_status is not None:
-            return LoopResult(
-                termination_reason="model_failed",
-                final_text=None,
-                iteration_count=0,
-                error_code="tool_resume_failed",
-                error_message=f"Approved tool action finished with status: {failed_status}",
-            )
+                await self._append_tool_result(
+                    agent_session=agent_session,
+                    turn=turn,
+                    tool_name=action.name,
+                    tool_call_id=action.tool_call_id,
+                    action_id=str(action.id),
+                    batch_id=None,
+                    result=result,
+                )
+            if result.status not in {"completed", AgentActionStatus.REJECTED}:
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=0,
+                    error_code="tool_resume_failed",
+                    error_message=f"Approved tool action finished with status: {result.status}",
+                )
         return await self.run_turn(
             turn_id=str(turn.id),
             target=target,
             capabilities=capabilities,
             strategy=strategy,
             max_tokens=max_tokens,
+            continuation_batch_id=(
+                str(action.tool_batch_id) if action.tool_batch_id else None
+            ),
+            continuation_failure_mode=continuation_failure_mode,
         )
 
     async def _clear_terminal_action_resume_state(self, action) -> None:
@@ -729,6 +1218,9 @@ class AgentLoopController:
         final_text: str | None = None,
         continuation: ResponsesContinuation | None = None,
         wire_protocol: str = "chat_completions",
+        batch_id: str | None = None,
+        commit: bool = True,
+        owner_fence_held: bool = False,
     ) -> None:
         await self._ensure_owned()
         parts: list[dict[str, Any]] = []
@@ -745,23 +1237,46 @@ class AgentLoopController:
             tool_calls_part([_provider_tool_call(call) for call in tool_calls])
         )
         if continuation is not None:
-            continuation = continuation.advance_canonical_input(
-                model_input_parts_from_message("assistant", parts)
-            )
+            if any(
+                call.get("provider_tool_call_id") != call.get("id")
+                for call in tool_calls
+            ):
+                continuation = None
+            else:
+                continuation = continuation.advance_canonical_input(
+                    model_input_parts_from_message("assistant", parts)
+                )
+        metadata = metadata_with_responses_continuation(
+            {
+                "provider": provider,
+                "model": model,
+                "kind": "tool_calls",
+                "tool_batch_id": batch_id,
+                "turn_id": str(turn.id),
+                "provider_tool_call_ids": [
+                    {
+                        "ordinal": ordinal,
+                        "provider_id": call.get("provider_tool_call_id"),
+                        "internal_id": call["id"],
+                    }
+                    for ordinal, call in enumerate(tool_calls)
+                ],
+            },
+            continuation,
+        )
         await self.transcript.append_parts(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
             role="assistant",
             parts=parts,
-            metadata=metadata_with_responses_continuation(
-                {"provider": provider, "model": model, "kind": "tool_calls"},
-                continuation,
-            ),
+            metadata=metadata,
+            commit=commit,
             replace_session_metadata_key=(
                 RESPONSES_CONTINUATION_METADATA_KEY
-                if wire_protocol == "responses"
+                if wire_protocol == "responses" and commit
                 else None
             ),
+            owner_fence_held=owner_fence_held,
         )
 
     async def _append_tool_result(
@@ -771,7 +1286,10 @@ class AgentLoopController:
         turn,
         tool_name: str,
         tool_call_id: str | None,
+        action_id: str | None,
+        batch_id: str | None,
         result,
+        commit: bool = True,
     ) -> None:
         await self._ensure_owned()
         await self.transcript.append_parts(
@@ -795,8 +1313,12 @@ class AgentLoopController:
             metadata={
                 "tool_call_id": tool_call_id,
                 "tool": tool_name,
+                "action_id": action_id,
+                "tool_batch_id": batch_id,
                 "is_error": bool(result.error) or result.status != "completed",
             },
+            commit=commit,
+            owner_fence_held=not commit and self._execution_owner_token is not None,
         )
 
     async def _responses_continuation_anchor(
@@ -825,7 +1347,11 @@ class AgentLoopController:
         return None
 
     async def _execute_tool_call_isolated(
-        self, *, agent_session, turn, tool_call: dict[str, Any], tool_name: str
+        self,
+        *,
+        agent_session,
+        turn,
+        action_id: str,
     ):
         bind = self.db.bind
         session_factory = (
@@ -835,9 +1361,8 @@ class AgentLoopController:
         )
         async with session_factory() as session:
             executor = AgentToolExecutor(session, build_default_tool_registry())
-            return await executor.execute(
-                tool_name=tool_name,
-                input=tool_call["arguments"],
+            return await executor.resume_action(
+                action_id=action_id,
                 context=AgentToolContext(
                     db=session,
                     workspace_id=str(turn.workspace_id),
@@ -845,18 +1370,77 @@ class AgentLoopController:
                     session_id=str(agent_session.id),
                     turn_id=str(turn.id),
                     ownership_guard=self._ensure_owned,
-                    expected_owner_token=(
-                        self.ownership.owner_token
-                        if self.ownership is not None
-                        else None
-                    ),
+                    expected_owner_token=self._execution_owner_token,
                 ),
-                toolset_policy=agent_session.toolset_policy,
-                permission_mode=agent_session.permission_mode,
-                automation_mode=agent_session.automation_mode,
-                tool_call_id=tool_call.get("id"),
-                role=_tool_role(agent_session),
-                execution_target=execution_target_from_session(agent_session),
+                require_resume_marker=False,
+            )
+
+    async def _has_tool_result(
+        self,
+        session_id: str,
+        *,
+        tool_call_id: str | None,
+        action_id: str | None,
+        batch_id: str | None,
+    ) -> bool:
+        if not tool_call_id:
+            return False
+        messages = await self.transcript.list_messages(session_id)
+        for message in messages:
+            if message.role != "tool":
+                continue
+            metadata = message.message_metadata or {}
+            if action_id and metadata.get("action_id") == action_id:
+                return True
+            if batch_id and metadata.get("tool_batch_id") == batch_id:
+                if metadata.get("tool_call_id") == tool_call_id:
+                    return True
+            if not batch_id and not metadata.get("tool_batch_id"):
+                if metadata.get("tool_call_id") == tool_call_id:
+                    return True
+        return False
+
+    async def _append_missing_batch_results(
+        self,
+        *,
+        agent_session,
+        turn,
+        batch_id: str,
+        commit: bool = True,
+    ) -> None:
+        for batch_action in await self.actions.list_for_batch(batch_id):
+            if await self._has_tool_result(
+                str(agent_session.id),
+                tool_call_id=batch_action.tool_call_id,
+                action_id=str(batch_action.id),
+                batch_id=batch_id,
+            ):
+                continue
+            if batch_action.status == AgentActionStatus.REJECTED:
+                result = ToolExecutionResult(
+                    action_id=str(batch_action.id),
+                    status=batch_action.status,
+                    error={
+                        "type": "UserRejected",
+                        "message": "The user rejected this tool call.",
+                    },
+                )
+            else:
+                result = ToolExecutionResult(
+                    action_id=str(batch_action.id),
+                    status=batch_action.status,
+                    result=batch_action.result,
+                    error=batch_action.error,
+                )
+            await self._append_tool_result(
+                agent_session=agent_session,
+                turn=turn,
+                tool_name=batch_action.name,
+                tool_call_id=batch_action.tool_call_id,
+                action_id=str(batch_action.id),
+                batch_id=batch_id,
+                result=result,
+                commit=commit,
             )
 
     def _is_concurrent_read_only_tool(self, tool_name: str) -> bool:
@@ -871,6 +1455,12 @@ class AgentLoopController:
                 raise TurnOwnershipLostError("Agent turn ownership was replaced")
             return refreshed
         now = datetime.now(timezone.utc)
+        if self._execution_owner_token is not None:
+            return await self.turns.renew_execution_lease(
+                str(turn.id),
+                owner_token=self._execution_owner_token,
+                lease_until=now + _turn_lease_duration(),
+            )
         return await self.turns.update_all(
             turn,
             claimed_at=turn.claimed_at or now,
@@ -965,6 +1555,7 @@ class AgentLoopController:
                     _PendingToolCall(
                         call_id=event.call_id or f"tool_call_{event.index + 1}",
                         name=event.name or "",
+                        provider_call_id=event.call_id,
                         index=event.index,
                     ),
                 )
@@ -973,6 +1564,7 @@ class AgentLoopController:
                 )
                 if event.call_id:
                     state.call_id = event.call_id
+                    state.provider_call_id = event.call_id
                 if event.name:
                     state.name = event.name
                 if not started_before and state.call_id and state.name:
@@ -1134,8 +1726,13 @@ class AgentLoopController:
             },
         )
 
-    async def complete_turn_from_result(self, *, turn, result: LoopResult):
-        current_turn = await self.turns.get(str(turn.id))
+    async def complete_turn_from_result(
+        self,
+        *,
+        turn,
+        result: LoopResult,
+    ):
+        current_turn = await self.turns.get_fresh(str(turn.id))
         if current_turn is None:
             return None
         if (
@@ -1197,7 +1794,10 @@ class AgentLoopController:
             claimed_at=None,
             lease_until=None,
             owner_token=None,
-            resume_batch_token=resume_batch_token,
+            resume_batch_token=func.coalesce(
+                AgentTurn.resume_batch_token,
+                resume_batch_token,
+            ),
             completed_at=datetime.now(timezone.utc)
             if status
             in {
@@ -1287,11 +1887,36 @@ def _provider_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
 def _tool_call_dict(tool_call: _PendingToolCall) -> dict[str, Any]:
     return {
         "id": tool_call.call_id,
+        "provider_tool_call_id": tool_call.provider_call_id or None,
         "name": tool_call.name,
         "arguments": tool_call.arguments(),
     }
 
 
+def _normalize_tool_calls(
+    tool_calls: list[_PendingToolCall],
+    *,
+    turn_id: str,
+    iteration_count: int,
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(tool_calls):
+        call = _tool_call_dict(item)
+        provider_id = call.get("provider_tool_call_id")
+        internal_id = str(provider_id).strip() if provider_id else ""
+        if not internal_id or internal_id in seen_ids:
+            internal_id = f"bioinfoflow-{turn_id}-{iteration_count}-{index}"
+            suffix = 1
+            while internal_id in seen_ids:
+                internal_id = (
+                    f"bioinfoflow-{turn_id}-{iteration_count}-{index}-{suffix}"
+                )
+                suffix += 1
+        seen_ids.add(internal_id)
+        call["id"] = internal_id
+        normalized.append(call)
+    return normalized
 def _merge_usage(
     current: dict[str, Any] | None,
     next_usage: dict[str, Any] | None,

@@ -620,6 +620,236 @@ describe("useAgentRuntime", () => {
     expect(result.current.sessions[0]?.title).toBeNull()
   })
 
+  it("ignores an older session-list success after a newer controlled selection", async () => {
+    const session2: AgentRuntimeSession = { ...session, id: "session-2" }
+    const older = deferred<AgentRuntimeSession[]>()
+    const newer = deferred<AgentRuntimeSession[]>()
+    const onActiveSessionIdChange = vi.fn()
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, { activeSessionId, onActiveSessionIdChange }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    mocks.listAgentRuntimeSessions.mockReturnValueOnce(older.promise)
+    let olderRefresh!: Promise<void>
+    act(() => {
+      olderRefresh = result.current.refreshSessions()
+    })
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: session2, turns: [], events: [] })
+    mocks.listAgentRuntimeSessions.mockReturnValue(newer.promise)
+    rerender({ activeSessionId: "session-2" })
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalledTimes(3))
+    await act(async () => {
+      newer.resolve([session, session2])
+      await newer.promise
+    })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
+    onActiveSessionIdChange.mockClear()
+
+    await act(async () => {
+      older.resolve([session])
+      await olderRefresh
+    })
+
+    expect(onActiveSessionIdChange).not.toHaveBeenCalledWith("session-1")
+    expect(result.current.session?.id).toBe("session-2")
+  })
+
+  it("ignores an older session-list error after a newer refresh succeeds", async () => {
+    const older = deferred<AgentRuntimeSession[]>()
+    const newer = deferred<AgentRuntimeSession[]>()
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(result.current.state.status).toBe("idle"))
+
+    mocks.listAgentRuntimeSessions
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+    let olderRefresh!: Promise<void>
+    let newerRefresh!: Promise<void>
+    act(() => {
+      olderRefresh = result.current.refreshSessions()
+      newerRefresh = result.current.refreshSessions()
+    })
+    await act(async () => {
+      newer.resolve([session])
+      await newerRefresh
+    })
+    await act(async () => {
+      older.reject(new Error("stale session list failed"))
+      await olderRefresh
+    })
+
+    expect(result.current.state.status).toBe("idle")
+    expect(result.current.state.error).toBeNull()
+  })
+
+  it("surfaces session-list loading and errors when no session is active", async () => {
+    const sessionList = deferred<AgentRuntimeSession[]>()
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(result.current.state.status).toBe("idle"))
+
+    mocks.listAgentRuntimeSessions.mockReturnValueOnce(sessionList.promise)
+    let refresh!: Promise<void>
+    act(() => {
+      refresh = result.current.refreshSessions()
+    })
+
+    expect(result.current.state.status).toBe("loading")
+
+    await act(async () => {
+      sessionList.reject(new Error("Session list unavailable"))
+      await refresh
+    })
+
+    expect(result.current.state.status).toBe("error")
+    expect(result.current.state.error).toBe("Session list unavailable")
+  })
+
+  it("keeps loaded runtime state stable during an active session-list refresh", async () => {
+    const initialState = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    const sessionList = deferred<AgentRuntimeSession[]>()
+    mocks.getAgentRuntimeState.mockReturnValueOnce(initialState.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    await act(async () => {
+      initialState.resolve({
+        session,
+        turns: [{ ...turn, status: "running" }],
+        events: [],
+      })
+      await initialState.promise
+    })
+    await waitFor(() => expect(result.current.state.status).toBe("running"))
+
+    mocks.listAgentRuntimeSessions.mockReturnValueOnce(sessionList.promise)
+    let refresh!: Promise<void>
+    act(() => {
+      refresh = result.current.refreshSessions()
+    })
+
+    expect(result.current.state.status).toBe("running")
+
+    await act(async () => {
+      sessionList.resolve([session])
+      await refresh
+    })
+
+    expect(result.current.state.status).toBe("running")
+  })
+
+  it("keeps loaded runtime state stable when an active session-list refresh recovers", async () => {
+    const initialState = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    mocks.getAgentRuntimeState.mockReturnValueOnce(initialState.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    await act(async () => {
+      initialState.resolve({ session, turns: [], events: [] })
+      await initialState.promise
+    })
+    await waitFor(() => expect(result.current.state.status).toBe("idle"))
+
+    mocks.listAgentRuntimeSessions.mockRejectedValueOnce(
+      new Error("Session list unavailable"),
+    )
+    await act(async () => {
+      await result.current.refreshSessions()
+    })
+
+    expect(result.current.state.status).toBe("idle")
+    expect(result.current.state.error).toBeNull()
+
+    mocks.listAgentRuntimeSessions.mockResolvedValueOnce([session])
+    await act(async () => {
+      await result.current.refreshSessions()
+    })
+
+    expect(result.current.state.status).toBe("idle")
+    expect(result.current.state.error).toBeNull()
+  })
+
+  it("preserves an active runtime error across session-list failure and retry", async () => {
+    const initialState = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    mocks.getAgentRuntimeState.mockReturnValueOnce(initialState.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(mocks.listAgentRuntimeSessions).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    await act(async () => {
+      initialState.resolve({ session, turns: [], events: [] })
+      await initialState.promise
+    })
+    await waitFor(() => expect(result.current.state.status).toBe("idle"))
+
+    mocks.getAgentRuntimeState.mockRejectedValueOnce(
+      new Error("Runtime state unavailable"),
+    )
+    await act(async () => {
+      await result.current.refreshState("session-1")
+    })
+    expect(result.current.state.status).toBe("error")
+    expect(result.current.state.error).toBe("Runtime state unavailable")
+
+    mocks.listAgentRuntimeSessions.mockRejectedValueOnce(
+      new Error("Session list unavailable"),
+    )
+    await act(async () => {
+      await result.current.refreshSessions()
+    })
+    expect(result.current.state.status).toBe("error")
+    expect(result.current.state.error).toBe("Runtime state unavailable")
+
+    mocks.listAgentRuntimeSessions.mockResolvedValueOnce([session])
+    await act(async () => {
+      await result.current.refreshSessions()
+    })
+    expect(result.current.state.status).toBe("error")
+    expect(result.current.state.error).toBe("Runtime state unavailable")
+  })
+
   it("ignores stale state refreshes for inactive sessions", async () => {
     const session2: AgentRuntimeSession = { ...session, id: "session-2" }
     mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
@@ -706,9 +936,20 @@ describe("useAgentRuntime", () => {
     expect(result.current.state.status).toBe("loading")
   })
 
-  it("patches permission mode for existing sessions", async () => {
-    const updated = { ...session, permission_mode: "bypass" as const }
-    mocks.updateAgentRuntimeSessionPermissionMode.mockResolvedValue(updated)
+  it("optimistically patches permission mode and exposes authoritative reconciliation", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    const updated = {
+      ...session,
+      permission_mode: "bypass" as const,
+      permission_policy_version: 2,
+      pending_strategy: "approve_pending_tools" as const,
+      pending_reconciliation: {
+        affected_count: 2,
+        excluded_count: 1,
+        already_resolved_count: 1,
+      },
+    }
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(request.promise)
     const { result } = renderHook(() =>
       useAgentRuntime(null, {
         activeSessionId: "session-1",
@@ -717,17 +958,692 @@ describe("useAgentRuntime", () => {
     )
 
     await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    let updatePromise!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      updatePromise = result.current.setPermissionMode(
+        "bypass",
+        "approve_pending_tools",
+      )
+    })
+
+    expect(result.current.permissionMode).toBe("bypass")
+    expect(result.current.session?.permission_mode).toBe("bypass")
+    expect(result.current.permissionUpdate.status).toBe("pending")
+    expect(
+      window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2"),
+    ).toBe("bypass")
+
     await act(async () => {
-      await result.current.setPermissionMode("bypass")
+      request.resolve(updated)
+      await updatePromise
     })
 
     expect(mocks.updateAgentRuntimeSessionPermissionMode).toHaveBeenCalledWith(
       "session-1",
       "bypass",
+      "approve_pending_tools",
     )
-    expect(window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode")).toBe(
-      "bypass",
+    expect(result.current.permissionUpdate).toMatchObject({
+      status: "success",
+      mode: "bypass",
+      reconciliation: updated.pending_reconciliation,
+    })
+  })
+
+  it("restores the exact session, draft, and storage snapshot after a failed update", async () => {
+    window.localStorage.setItem(
+      "bioinfoflow.agentRuntime.permissionMode:v2",
+      "guarded_auto",
     )
+    mocks.updateAgentRuntimeSessionPermissionMode.mockRejectedValue(
+      new Error("Permission service unavailable"),
+    )
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    await act(async () => {
+      await result.current.setPermissionMode("bypass")
+    })
+
+    expect(result.current.permissionMode).toBe("guarded_auto")
+    expect(result.current.session).toMatchObject(session)
+    expect(
+      window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2"),
+    ).toBe("guarded_auto")
+    expect(result.current.permissionUpdate).toMatchObject({
+      status: "error",
+      mode: "bypass",
+      error: "Permission service unavailable",
+    })
+  })
+
+  it("captures an authoritative rollback snapshot before the initial loading effects settle", async () => {
+    const sessionList = deferred<AgentRuntimeSession[]>()
+    const stateRequest = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    const permissionRequest = deferred<AgentRuntimeSession>()
+    window.localStorage.setItem(
+      "bioinfoflow.agentRuntime.permissionMode:v2",
+      "guarded_auto",
+    )
+    mocks.listAgentRuntimeSessions.mockReturnValue(sessionList.promise)
+    mocks.getAgentRuntimeState.mockReturnValue(stateRequest.promise)
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(
+      permissionRequest.promise,
+    )
+
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    expect(result.current.session).toBeNull()
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+
+    expect(result.current.permissionMode).toBe("bypass")
+    expect(result.current.permissionUpdate.status).toBe("pending")
+
+    await waitFor(() => expect(mocks.getAgentRuntimeState).toHaveBeenCalled())
+    await act(async () => {
+      stateRequest.resolve({
+        session: { ...session, permission_policy_version: 1 },
+        turns: [],
+        events: [],
+      })
+      await stateRequest.promise
+    })
+
+    expect(result.current.session).toMatchObject({
+      id: "session-1",
+      permission_mode: "bypass",
+    })
+
+    await act(async () => {
+      permissionRequest.reject(new Error("Permission service unavailable"))
+      await update
+    })
+
+    expect(result.current.permissionUpdate.status).toBe("error")
+
+    expect(result.current.permissionMode).toBe("guarded_auto")
+    expect(result.current.session).toMatchObject({
+      id: "session-1",
+      permission_mode: "guarded_auto",
+    })
+    expect(result.current.state.session).toMatchObject({
+      id: "session-1",
+      permission_mode: "guarded_auto",
+    })
+    expect(
+      window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2"),
+    ).toBe("guarded_auto")
+  })
+
+  it("ignores an older refresh rejection after a newer refresh succeeds", async () => {
+    const older = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    const newer = deferred<{
+      session: AgentRuntimeSession
+      turns: AgentRuntimeTurn[]
+      events: AgentRuntimeEvent[]
+    }>()
+    mocks.getAgentRuntimeState
+      .mockResolvedValueOnce({ session, turns: [], events: [] })
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    let olderRefresh!: Promise<void>
+    let newerRefresh!: Promise<void>
+    act(() => {
+      olderRefresh = result.current.refreshState("session-1")
+      newerRefresh = result.current.refreshState("session-1")
+    })
+    await act(async () => {
+      newer.resolve({
+        session: { ...session, title: "Newest state" },
+        turns: [],
+        events: [],
+      })
+      await newerRefresh
+    })
+    await act(async () => {
+      older.reject(new Error("stale refresh failed"))
+      await olderRefresh
+    })
+
+    expect(result.current.state.session?.title).toBe("Newest state")
+    expect(result.current.state.status).toBe("idle")
+    expect(result.current.state.error).toBeNull()
+  })
+
+  it("rolls back only policy fields when same-version state refreshes add a newer title", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(request.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: {
+        ...session,
+        title: "New server title",
+        updated_at: "2026-06-08T00:00:05Z",
+      },
+      turns: [],
+      events: [],
+    })
+    await act(async () => {
+      await result.current.refreshState("session-1")
+      request.reject(new Error("Permission service unavailable"))
+      await update
+    })
+
+    expect(result.current.session).toMatchObject({
+      title: "New server title",
+      updated_at: "2026-06-08T00:00:05Z",
+      permission_mode: "guarded_auto",
+    })
+    expect(result.current.state.session).toMatchObject({
+      title: "New server title",
+      permission_mode: "guarded_auto",
+    })
+  })
+
+  it("suppresses duplicate permission requests and retries the failed transaction", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    mocks.updateAgentRuntimeSessionPermissionMode
+      .mockReturnValueOnce(request.promise)
+      .mockResolvedValueOnce({
+        ...session,
+        permission_mode: "bypass",
+        permission_policy_version: 2,
+      })
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let first!: Promise<AgentRuntimeSession | null>
+    let duplicate!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      first = result.current.setPermissionMode("bypass")
+      duplicate = result.current.setPermissionMode("bypass")
+    })
+
+    expect(duplicate).toBe(first)
+    await waitFor(() =>
+      expect(mocks.updateAgentRuntimeSessionPermissionMode).toHaveBeenCalledTimes(1),
+    )
+
+    await act(async () => {
+      request.reject(new Error("Try again"))
+      await first
+    })
+    await act(async () => {
+      await result.current.retryPermissionModeUpdate()
+    })
+
+    expect(mocks.updateAgentRuntimeSessionPermissionMode).toHaveBeenCalledTimes(2)
+    expect(result.current.permissionUpdate.status).toBe("success")
+  })
+
+  it("serializes overlapping permission changes and keeps the latest intent", async () => {
+    const firstRequest = deferred<AgentRuntimeSession>()
+    const secondRequest = deferred<AgentRuntimeSession>()
+    mocks.updateAgentRuntimeSessionPermissionMode
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let first!: Promise<AgentRuntimeSession | null>
+    let second!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      first = result.current.setPermissionMode("bypass")
+      second = result.current.setPermissionMode("ask_each_action")
+    })
+
+    expect(result.current.permissionMode).toBe("ask_each_action")
+    await waitFor(() =>
+      expect(mocks.updateAgentRuntimeSessionPermissionMode).toHaveBeenCalledTimes(1),
+    )
+
+    await act(async () => {
+      firstRequest.resolve({
+        ...session,
+        permission_mode: "bypass",
+        permission_policy_version: 2,
+      })
+      await first
+    })
+    await waitFor(() =>
+      expect(mocks.updateAgentRuntimeSessionPermissionMode).toHaveBeenCalledTimes(2),
+    )
+    expect(result.current.permissionMode).toBe("ask_each_action")
+
+    await act(async () => {
+      secondRequest.resolve({
+        ...session,
+        permission_mode: "ask_each_action",
+        permission_policy_version: 3,
+      })
+      await second
+    })
+
+    expect(result.current.permissionMode).toBe("ask_each_action")
+    expect(result.current.permissionUpdate.status).toBe("success")
+  })
+
+  it("rolls back draft storage to the first confirmed serialized update", async () => {
+    const firstRequest = deferred<AgentRuntimeSession>()
+    const secondRequest = deferred<AgentRuntimeSession>()
+    window.localStorage.setItem(
+      "bioinfoflow.agentRuntime.permissionMode:v2",
+      "guarded_auto",
+    )
+    mocks.updateAgentRuntimeSessionPermissionMode
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    let first!: Promise<AgentRuntimeSession | null>
+    let second!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      first = result.current.setPermissionMode("ask_each_action")
+      second = result.current.setPermissionMode("bypass")
+    })
+    await waitFor(() =>
+      expect(mocks.updateAgentRuntimeSessionPermissionMode).toHaveBeenCalledTimes(1),
+    )
+    await act(async () => {
+      firstRequest.resolve({
+        ...session,
+        permission_mode: "ask_each_action",
+        permission_policy_version: 2,
+      })
+      await first
+    })
+    await waitFor(() =>
+      expect(mocks.updateAgentRuntimeSessionPermissionMode).toHaveBeenCalledTimes(2),
+    )
+    await act(async () => {
+      secondRequest.reject(new Error("Relaxed update failed"))
+      await second
+    })
+
+    expect(result.current.permissionMode).toBe("ask_each_action")
+    expect(
+      window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2"),
+    ).toBe("ask_each_action")
+  })
+
+  it("does not let an older session success replace a newer confirmed draft", async () => {
+    const firstRequest = deferred<AgentRuntimeSession>()
+    const session2 = { ...session, id: "session-2" }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.updateAgentRuntimeSessionPermissionMode
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockRejectedValueOnce(new Error("Session two failed"))
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let first!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      first = result.current.setPermissionMode("bypass")
+    })
+
+    rerender({ activeSessionId: "" })
+    await waitFor(() => expect(result.current.session).toBeNull())
+    await act(async () => {
+      await result.current.setPermissionMode("ask_each_action")
+    })
+
+    await act(async () => {
+      firstRequest.resolve({
+        ...session,
+        permission_mode: "bypass",
+        permission_policy_version: 2,
+      })
+      await first
+    })
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: session2, turns: [], events: [] })
+    rerender({ activeSessionId: "session-2" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
+    await act(async () => {
+      await result.current.setPermissionMode("guarded_auto")
+    })
+
+    expect(window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2")).toBe(
+      "ask_each_action",
+    )
+  })
+
+  it("does not apply a completed permission transaction to a newly selected session", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    const session2 = { ...session, id: "session-2", permission_policy_version: 7 }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(request.promise)
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+    mocks.getAgentRuntimeState.mockResolvedValue({
+      session: session2,
+      turns: [],
+      events: [],
+    })
+    rerender({ activeSessionId: "session-2" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
+
+    await act(async () => {
+      request.resolve({
+        ...session,
+        permission_mode: "bypass",
+        permission_policy_version: 2,
+      })
+      await update
+    })
+
+    expect(result.current.session?.id).toBe("session-2")
+    expect(result.current.permissionMode).toBe("guarded_auto")
+    expect(result.current.permissionUpdate.status).toBe("idle")
+  })
+
+  it("merges an authoritative permission response after switching away and back", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    const session2 = { ...session, id: "session-2" }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(request.promise)
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: session2, turns: [], events: [] })
+    rerender({ activeSessionId: "session-2" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session, turns: [], events: [] })
+    rerender({ activeSessionId: "session-1" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    await act(async () => {
+      await result.current.refreshState("session-1")
+    })
+    expect(result.current.session?.permission_policy_version ?? 0).toBeLessThan(2)
+
+    await act(async () => {
+      request.resolve({
+        ...session,
+        permission_mode: "bypass",
+        permission_policy_version: 2,
+      })
+      await update
+    })
+
+    expect(result.current.session).toMatchObject({
+      id: "session-1",
+      permission_mode: "bypass",
+      permission_policy_version: 2,
+    })
+    expect(result.current.permissionUpdate.status).toBe("idle")
+  })
+
+  it("does not surface a failed permission transaction on a newly selected session", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    const session2 = { ...session, id: "session-2", permission_policy_version: 7 }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(request.promise)
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: session2, turns: [], events: [] })
+    rerender({ activeSessionId: "session-2" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
+
+    await act(async () => {
+      request.reject(new Error("Session one failed"))
+      await update
+    })
+
+    expect(result.current.permissionUpdate.status).toBe("idle")
+    expect(result.current.permissionUpdate.error).toBeNull()
+  })
+
+  it("does not retry a failed permission transaction after its session becomes inactive", async () => {
+    const session2 = { ...session, id: "session-2", permission_policy_version: 7 }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.updateAgentRuntimeSessionPermissionMode.mockRejectedValue(
+      new Error("Session one failed"),
+    )
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, {
+          activeSessionId,
+          onActiveSessionIdChange: vi.fn(),
+        }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    await act(async () => {
+      await result.current.setPermissionMode("bypass")
+    })
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: session2, turns: [], events: [] })
+    rerender({ activeSessionId: "session-2" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-2"))
+
+    await act(async () => {
+      await result.current.retryPermissionModeUpdate()
+    })
+
+    expect(mocks.updateAgentRuntimeSessionPermissionMode).toHaveBeenCalledTimes(1)
+    expect(mocks.updateAgentRuntimeSessionPermissionMode).not.toHaveBeenCalledWith(
+      "session-2",
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
+  it("does not replace a newer permission policy with a stale session list response", async () => {
+    const sessionList = deferred<AgentRuntimeSession[]>()
+    const newest = {
+      ...session,
+      permission_mode: "bypass" as const,
+      permission_policy_version: 5,
+    }
+    mocks.listAgentRuntimeSessions.mockReturnValue(sessionList.promise)
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: newest, turns: [], events: [] })
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.session?.permission_policy_version).toBe(5))
+    await act(async () => {
+      sessionList.resolve([{ ...session, permission_policy_version: 4 }])
+      await sessionList.promise
+    })
+
+    expect(result.current.session?.permission_policy_version).toBe(5)
+    expect(result.current.permissionMode).toBe("bypass")
+  })
+
+  it("does not replace a newer policy version with a stale patch response", async () => {
+    const newest = { ...session, permission_policy_version: 5 }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([newest])
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: newest, turns: [], events: [] })
+    mocks.updateAgentRuntimeSessionPermissionMode.mockResolvedValue({
+      ...session,
+      permission_mode: "bypass",
+      permission_policy_version: 4,
+    })
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => expect(result.current.session?.permission_policy_version).toBe(5))
+    await act(async () => {
+      await result.current.setPermissionMode("bypass")
+    })
+
+    expect(result.current.session?.permission_policy_version).toBe(5)
+    expect(result.current.permissionMode).toBe("guarded_auto")
+  })
+
+  it("rejects a patch response superseded by state loaded while the patch is pending", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(request.promise)
+    const { result } = renderHook(() =>
+      useAgentRuntime(null, {
+        activeSessionId: "session-1",
+        onActiveSessionIdChange: vi.fn(),
+      }),
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+    const newest = {
+      ...session,
+      permission_mode: "ask_each_action" as const,
+      permission_policy_version: 3,
+    }
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: newest, turns: [], events: [] })
+    await act(async () => {
+      await result.current.refreshState("session-1")
+      request.resolve({ ...session, permission_mode: "bypass", permission_policy_version: 2 })
+      await update
+    })
+
+    expect(result.current.permissionMode).toBe("ask_each_action")
+    expect(result.current.permissionUpdate.status).toBe("error")
+  })
+
+  it("rolls back draft storage when an inactive session permission update fails", async () => {
+    const request = deferred<AgentRuntimeSession>()
+    const session2 = { ...session, id: "session-2" }
+    mocks.listAgentRuntimeSessions.mockResolvedValue([session, session2])
+    mocks.updateAgentRuntimeSessionPermissionMode.mockReturnValue(request.promise)
+    const { result, rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string }) =>
+        useAgentRuntime(null, { activeSessionId, onActiveSessionIdChange: vi.fn() }),
+      { initialProps: { activeSessionId: "session-1" } },
+    )
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    let update!: Promise<AgentRuntimeSession | null>
+    act(() => {
+      update = result.current.setPermissionMode("bypass")
+    })
+    mocks.getAgentRuntimeState.mockResolvedValue({ session: session2, turns: [], events: [] })
+    rerender({ activeSessionId: "session-2" })
+    await act(async () => {
+      request.reject(new Error("failed"))
+      await update
+    })
+
+    expect(
+      window.localStorage.getItem("bioinfoflow.agentRuntime.permissionMode:v2"),
+    ).toBeNull()
+
+    mocks.getAgentRuntimeState.mockResolvedValue({ session, turns: [], events: [] })
+    rerender({ activeSessionId: "session-1" })
+    await waitFor(() => expect(result.current.session?.id).toBe("session-1"))
+    expect(result.current.permissionMode).toBe("guarded_auto")
+    expect(result.current.sessions.find((item) => item.id === "session-1")).toMatchObject({
+      permission_mode: "guarded_auto",
+    })
   })
 
   it("interrupts paused turns waiting for approval", async () => {
@@ -752,3 +1668,13 @@ describe("useAgentRuntime", () => {
     expect(mocks.interruptAgentRuntimeTurn).toHaveBeenCalledWith("turn-1")
   })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, resolve, reject }
+}

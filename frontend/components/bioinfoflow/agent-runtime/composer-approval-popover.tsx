@@ -5,6 +5,7 @@ import { AlertTriangle } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
 import type { AgentRuntimeEvent } from "@/lib/agent-runtime"
+import { jumpToDecisionTarget } from "./decision-focus"
 import { getActionDecisionCards } from "./pending-actions"
 
 export function ComposerApprovalPopover({
@@ -19,10 +20,7 @@ export function ComposerApprovalPopover({
   if (!pending) return null
 
   const jumpToDecision = () => {
-    document.getElementById(pending.scrollTargetId)?.scrollIntoView({
-      block: "center",
-      behavior: "smooth",
-    })
+    jumpToDecisionTarget(pending.scrollTargetId)
   }
 
   return (
@@ -33,7 +31,7 @@ export function ComposerApprovalPopover({
         data-testid="composer-decision-jump"
         onClick={jumpToDecision}
       >
-        <AlertTriangle className="h-3.5 w-3.5" />
+        <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
         {t("approval.jumpToDecision")}
       </button>
     </div>

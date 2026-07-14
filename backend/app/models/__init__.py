@@ -11,6 +11,8 @@ from app.models.agent_core import (
     AgentMemoryStatus,
     AgentSession,
     AgentSessionStatus,
+    AgentToolCallBatch,
+    AgentToolCallBatchStatus,
     AgentTurn,
     AgentTurnStatus,
 )
@@ -62,6 +64,8 @@ __all__ = [
     "AgentMessageStatus",
     "AgentAction",
     "AgentActionStatus",
+    "AgentToolCallBatch",
+    "AgentToolCallBatchStatus",
     "AgentArtifact",
     "AgentMemory",
     "AgentMemoryStatus",

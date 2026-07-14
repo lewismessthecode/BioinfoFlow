@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +37,7 @@ class AgentToolContext:
     user_id: str
     session_id: str
     turn_id: str
+    permission_context_snapshot: dict[str, Any] | None = None
     ownership_guard: Callable[[], Awaitable[None]] | None = None
     expected_owner_token: str | None = None
 
@@ -48,7 +49,5 @@ class AgentToolContext:
 class AgentTool(Protocol):
     spec: AgentToolSpec
 
-    async def run(
-        self, input: dict[str, Any], context: AgentToolContext
-    ) -> dict[str, Any]:
+    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
         """Run the tool through typed platform/domain service boundaries."""

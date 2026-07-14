@@ -123,8 +123,9 @@ backend/app/services/agent_core/
 
 Durable agent sessions record role profile, permission mode, automation mode,
 model selection, prompt snapshot, toolset policy, context policy, and session
-metadata. Turns are queued as background tasks; each turn publishes persisted
-events that the frontend consumes through SSE.
+metadata. Authorization-relevant changes also advance a monotonic
+`permission_policy_version`. Turns are queued as background tasks; each turn
+publishes persisted events that the frontend consumes through SSE.
 
 The runtime flow is:
 
@@ -132,7 +133,9 @@ The runtime flow is:
 user input
   -> AgentCore service
   -> async runtime loop
-  -> tool dispatcher
+  -> fresh permission-context resolver
+  -> durable tool-call batch barrier
+  -> tool dispatcher and conditional action claim
   -> persisted actions, events, and artifacts
   -> frontend SSE stream
 ```
@@ -148,8 +151,73 @@ Toolsets are:
 - `bio`: read-only bioinformatics and platform inspection tools
 - `execution`: all registered tools, still subject to permission policy
 
-Tool execution can pause for approvals, interaction requests, or plan approval.
-Completed tools persist actions, events, and artifacts.
+Permission modes control approval behavior:
+
+- `ask_each_action`: ask before every non-read side effect
+- `guarded_auto`: allow reads and low-risk actions, ask for elevated risk
+- `bypass` (shown as **Full access**): allow ordinary non-critical actions
+  without a prompt
+
+Automation policy, hard blocks, protected resources, interaction requirements,
+and the execution boundary remain independent. Full access does not grant new OS
+or SSH privileges. High-confidence catastrophic command matches remain hard
+denied, while statically uncertain or indirect forms can require explicit
+approval. This classifier is defense in depth rather than confinement: the true
+boundary is the active local OS sandbox or the remote account and server policy.
+Mandatory user and plan interactions remain independent.
+
+`PermissionContextResolver` forces a fresh session read immediately before tool
+exposure and risk evaluation. It resolves a coherent snapshot of policy version,
+permission and automation modes, role/toolset, execution target, effective roots,
+local sandbox state, or selected SSH identity. Each action records
+`evaluated_policy_version` and a bounded `permission_context_snapshot`, including
+structured command-risk data when applicable. A policy update that commits
+before a later evaluation is therefore visible during the same active turn.
+
+Each assistant message containing tool calls creates an
+`agent_tool_call_batches` row. Actions keep the batch id, provider call id, and
+stable ordinal. The batch is the continuation barrier: every provider tool call
+receives exactly one terminal result before the model can continue. Interaction
+tools are exclusive; siblings are explicitly cancelled or deferred rather than
+executed behind a user prompt. The database, not an in-process queue, is the
+correctness source.
+
+Approval, execution, and continuation transitions use compare-and-set updates:
+
+```text
+waiting_decision -> requested or rejected
+requested -> running
+ready batch -> continuing -> terminal
+```
+
+Duplicate decisions and workers therefore cannot intentionally claim the same
+side effect or continuation twice. Recovery is batch-first: waiting approvals
+stay waiting, requested actions are re-enqueued, all-terminal batches can claim
+one continuation, and an action found running after process loss fails the turn
+for manual reconciliation instead of being replayed. Legacy actions without
+batch or audit metadata remain readable and use the compatibility recovery path.
+
+Session updates accept `pending_strategy`. Omitting it uses `future_only`, which
+changes later evaluations only. `approve_pending_tools` atomically updates the
+policy and approves eligible waiting tool actions, while excluding user-input
+and plan-approval interactions; the response includes affected, excluded, and
+already-resolved counts.
+
+Local shell and remote SSH execution use the same structured command assessor.
+It records semantic effects, confidence, referenced paths, protected resources,
+target identity, and whether a boundary is actually enforced. Local sandboxed
+commands can rely on the active OS adapter. Unsandboxed local and SSH commands
+cannot: SSH is authorized by the selected remote Unix account and server policy,
+and a remote working root is not confinement. Unknown, outside-root, or
+symlink-sensitive remote paths require approval when safety cannot be proven.
+Protected command destinations are detected lexically, including common link,
+archive-extraction, and synchronization forms. This analysis does not resolve
+pre-existing filesystem symlinks or inspect archive members, so it is defense in
+depth rather than an OS boundary. Opaque archive extraction, process
+substitution, executable heredocs, compound shell grammar, and wrapper options
+that cannot be parsed confidently require explicit approval even in bypass
+mode. Actual confinement comes from the active local sandbox or the remote Unix
+account and server controls.
 
 ## Remote Connections
 
@@ -181,5 +249,9 @@ terminal WebSocket can also bind to a remote project root through the saved
 connection profile.
 
 AgentCore remote tools only resolve connections explicitly selected in the
-current agent session. `remote.read_file` and `remote.list_dir` are read tools;
-`remote.exec` is an elevated tool for short diagnostic commands.
+current agent session. `remote.read_file` and `remote.list_dir` are preferred
+for bounded inspection. `remote.exec` is assessed per command and target rather
+than assigned one static risk: safe reads can remain low risk, while writes,
+network access, destructive operations, protected resources, uncertain paths,
+or a connection mismatch are escalated or blocked. The configured remote root
+is a working directory and policy signal, not an OS confinement boundary.

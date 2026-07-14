@@ -4,6 +4,7 @@ import type {
   AgentPermissionMode,
   AgentAutomationMode,
   AgentModelSelection,
+  AgentPendingStrategy,
 } from "@/lib/agent-core/types"
 
 type UpdateAgentSessionInput = {
@@ -15,6 +16,7 @@ type UpdateAgentSessionInput = {
   modelSelection?: AgentModelSelection | null
   status?: AgentCoreSession["status"]
   metadata?: Record<string, unknown> | null
+  pendingStrategy?: AgentPendingStrategy
 }
 
 export const listAgentSessions = async (
@@ -46,6 +48,7 @@ export const updateAgentSession = async (
       model_selection: updates.modelSelection,
       status: updates.status,
       metadata: updates.metadata,
+      pending_strategy: updates.pendingStrategy,
     }),
   })
   return response.data

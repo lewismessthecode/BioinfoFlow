@@ -6,6 +6,7 @@ import type {
   AgentRuntimeTurn,
 } from "./types"
 import { buildAgentRuntimeTimeline } from "./timeline"
+import { mergeSessionByPolicyVersion, restorePermissionPolicy } from "./session-policy"
 
 export type AgentRuntimeViewState = {
   session: AgentRuntimeSession | null
@@ -21,6 +22,7 @@ export type AgentRuntimeAction =
   | { type: "state.loaded"; payload: AgentRuntimeStatePayload }
   | { type: "session.loading"; session: AgentRuntimeSession | null }
   | { type: "session.selected"; session: AgentRuntimeSession | null }
+  | { type: "session.permission_restored"; session: AgentRuntimeSession }
   | { type: "turn.upsert"; turn: AgentRuntimeTurn }
   | { type: "event.append"; event: AgentRuntimeEvent }
   | { type: "error"; message: string }
@@ -70,6 +72,12 @@ export function agentRuntimeReducer(
         ...initialAgentRuntimeState,
         session: action.session,
         status: action.session ? "loading" : "idle",
+      }
+    case "session.permission_restored":
+      if (!state.session || state.session.id !== action.session.id) return state
+      return {
+        ...state,
+        session: restorePermissionPolicy(state.session, action.session),
       }
     case "turn.upsert": {
       const turns = upsertTurn(state.turns, action.turn)
@@ -133,7 +141,10 @@ function fresherSession(
   incoming: AgentRuntimeSession,
 ) {
   if (!existing || existing.id !== incoming.id) return incoming
-  return timestamp(incoming.updated_at) >= timestamp(existing.updated_at) ? incoming : existing
+  const fresher =
+    timestamp(incoming.updated_at) >= timestamp(existing.updated_at) ? incoming : existing
+  const older = fresher === incoming ? existing : incoming
+  return mergeSessionByPolicyVersion(older, fresher)
 }
 
 function isTerminalTurn(status: AgentRuntimeTurn["status"]) {

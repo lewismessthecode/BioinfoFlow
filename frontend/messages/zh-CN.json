@@ -2633,6 +2633,7 @@
     "reject": "拒绝",
     "approval": {
       "jumpToDecision": "需要确认 · 跳转",
+      "remoteTarget": "远程目标：{target}",
       "state": {
         "approved": "已批准，继续执行",
         "answered": "已提交回答，继续执行",
@@ -2641,6 +2642,13 @@
         "failed": "失败",
         "cancelled": "已取消"
       }
+    },
+    "decision": {
+      "submitting": "正在提交决定…",
+      "failed": "无法提交决定：{error}",
+      "retry": "重试决定",
+      "focusedNext": "决定已提交，焦点已移至下一项请求。",
+      "focusedComposer": "决定已提交，焦点已返回消息输入框。"
     },
     "attachMenu": {
       "attachFiles": "添加文件",
@@ -2866,6 +2874,27 @@
           "label": "完全访问权限",
           "description": "自动执行非关键操作，后端安全策略仍会阻止关键操作。"
         }
+      },
+      "boundary": {
+        "local": "本地操作仍受本会话当前配置的沙箱或主机边界约束；权限模式不会扩大该边界。",
+        "remote": "SSH 操作使用远程账户权限和服务器策略；远程工作目录并不是沙箱。"
+      },
+      "safetyFloor": "关键操作、受保护资源和必须由用户完成的交互，在所有模式下仍会被阻止或要求确认。",
+      "status": {
+        "updating": "正在更新权限模式…",
+        "updated": "权限模式已更新，将用于后续操作。",
+        "reconciled": "已批准 {affected} 个等待操作；排除 {excluded} 个；另有 {resolved} 个已处理。",
+        "failed": "无法更新权限模式：{error}"
+      },
+      "retry": "重试权限更新",
+      "confirm": {
+        "title": "更新权限模式？",
+        "description": "可批准 {eligible} 个等待中的工具操作；{excluded} 个交互仍保持等待。",
+        "futureOnly": "仅更新后续操作",
+        "futureOnlyDescription": "当前等待中的操作仍需要你逐项决定。",
+        "approvePending": "更新并批准 {count} 个等待工具",
+        "approvePendingDescription": "问题和计划审阅绝不会被自动批准。",
+        "cancel": "取消"
       }
     },
     "plan": {

@@ -67,7 +67,7 @@ async def selected_remote_project(db: AsyncSession, agent_session):
     if not project_id:
         return None
     try:
-        project = await ProjectRepository(db).get(str(project_id))
+        project = await ProjectRepository(db).get_fresh(str(project_id))
     except Exception:  # noqa: BLE001 - dynamic context must never break a turn
         return None
     if not project or getattr(project, "storage_mode", None) != "remote":

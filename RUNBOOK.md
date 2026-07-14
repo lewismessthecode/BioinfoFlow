@@ -368,6 +368,46 @@ uv run bif --output json project list  # machine-readable envelope on stdout
 
 `bif` follows POSIX conventions: `-h/--help`, `-V/--version`, `-p/--project`, `-q/--quiet`. Settings resolve as CLI flag → env (`BIOFLOW_*`) → `~/.config/bioinfoflow/cli.toml` → default. Destructive commands (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) confirm interactively unless you pass `--force/-f`. Exit codes: `0` ok, `1` general, `2` usage, `3` backend, `4` connection.
 
+### Agent permissions and approvals
+
+The Agent composer permission control changes approval policy for the selected
+local or remote target. It does not grant operating-system privileges.
+
+- **Request approval** asks before each non-read side effect.
+- **Approve for me** allows reads and low-risk actions, and asks for elevated
+  risk.
+- **Full access** skips ordinary risk prompts, but catastrophic commands remain
+  blocked, protected-resource writes still ask, and user questions or plan
+  approval remain interactive.
+
+Permission changes are live for the next tool authorization, even when a turn is
+already active. If tools are already waiting, the confirmation offers:
+
+- **Future operations only**: update the policy and leave existing approvals
+  waiting. This is the default and the behavior for API clients that omit
+  `pending_strategy`.
+- **Approve waiting tools too**: atomically update the policy and approve
+  eligible waiting tools. User questions and plan approval are excluded, and
+  the response reports affected, excluded, and already-resolved counts.
+
+Local and remote targets have different authority boundaries. An enabled local
+OS sandbox can enforce filesystem and network limits independently of the
+permission mode. SSH commands have the configured remote account's privileges;
+the remote root is only a working directory and risk-analysis hint, not
+confinement.
+
+For API automation, session updates accept:
+
+```json
+{
+  "permission_mode": "bypass",
+  "pending_strategy": "future_only"
+}
+```
+
+Use `approve_pending_tools` only when the caller intentionally wants to approve
+the currently waiting eligible tool actions as part of the same update.
+
 ## 4. Minimal Local Setup Checklist
 
 For the smallest working local setup:
@@ -477,6 +517,19 @@ Check:
 - `NEXTFLOW_BIN` exists if you are running Nextflow workflows
 - `MINIWDL_BIN` exists if you are running WDL workflows
 - Docker daemon is available when the workflow path requires it
+
+### Permission changed but approval cards remain
+
+This is expected when the update used the default `future_only` strategy. The
+new policy applies to tool authorizations that begin after the update; existing
+waiting actions remain explicit audit decisions. Change the mode again and
+choose **Approve waiting tools too**, or approve/reject each card independently.
+
+If a newly proposed action still uses an older policy, inspect the session's
+`permission_policy_version` and the action's `evaluated_policy_version` and
+`permission_context_snapshot`. The action should record the version that was
+current when it was evaluated. For SSH actions, also confirm that the selected
+connection and remote identity in the snapshot match the intended host.
 
 ### Docker deployment works locally but not on a server
 

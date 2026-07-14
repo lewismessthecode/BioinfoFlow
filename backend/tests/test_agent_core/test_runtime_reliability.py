@@ -821,6 +821,55 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_startup_recovery_preserves_turn_waiting_for_user_decision(
+    db_session,
+    monkeypatch,
+) -> None:
+    enqueued: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep waiting for a decision.",
+    )
+    await service.turn_repo.update_all(
+        turn,
+        status=AgentTurnStatus.WAITING_APPROVAL,
+    )
+    await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf waiting"},
+        risk_level="act_high",
+        status=AgentActionStatus.WAITING_DECISION,
+    )
+
+    summary = await service.recover_orphaned_turns()
+
+    recovered = await service.turn_repo.get(str(turn.id))
+    assert summary["waiting"] == 1
+    assert enqueued == []
+    assert recovered.status == AgentTurnStatus.WAITING_APPROVAL
+
+
+@pytest.mark.asyncio
 async def test_startup_recovery_skips_running_turn_with_active_durable_lease(
     db_engine,
     db_session,

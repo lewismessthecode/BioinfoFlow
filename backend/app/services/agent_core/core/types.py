@@ -24,4 +24,5 @@ class LoopResult:
     token_usage: dict | None = None
     error_code: str | None = None
     error_message: str | None = None
+    continuation_batch_id: str | None = None
     model_replay_safe: bool = True

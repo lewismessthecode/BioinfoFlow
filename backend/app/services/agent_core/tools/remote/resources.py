@@ -12,7 +12,16 @@ from app.repositories.agent_core_repo import AgentSessionRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.authorization_service import AuthorizationService
-from app.services.agent_core.execution_target import selected_remote_connection_ids_from_policy
+from app.services.agent_core.execution_target import (
+    selected_remote_connection_ids_from_policy,
+)
+from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
+from app.services.agent_core.permissions.command_risk import (
+    CommandRiskAssessment,
+    CommandTargetProfile,
+    assess_command_risk,
+)
+from app.services.agent_core.permissions.risk import RiskAssessment
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.services.remote_connection_service import remote_connection_config_from_model
 from app.services.remote_execution import (
@@ -21,7 +30,7 @@ from app.services.remote_execution import (
     RemoteExecutor,
     SshRemoteExecutor,
 )
-from app.utils.exceptions import BadRequestError, NotFoundError
+from app.utils.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 
 
 ResolverFactory = Callable[[AsyncSession], "RemoteConnectionResolver"]
@@ -158,9 +167,13 @@ class RemoteConnectionsListTool:
     )
 
     def __init__(self, resolver_factory: ResolverFactory | None = None) -> None:
-        self.resolver_factory = resolver_factory or SessionMetadataRemoteConnectionResolver
+        self.resolver_factory = (
+            resolver_factory or SessionMetadataRemoteConnectionResolver
+        )
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         resolver = self.resolver_factory(context.db)
         connections = await resolver.list(
             workspace_id=context.workspace_id,
@@ -170,7 +183,9 @@ class RemoteConnectionsListTool:
         search = str(input.get("search") or "").casefold()
         if search:
             connections = [
-                connection for connection in connections if _connection_matches(connection, search)
+                connection
+                for connection in connections
+                if _connection_matches(connection, search)
             ]
         limit = int(input.get("limit") or 50)
         return {
@@ -221,15 +236,42 @@ class RemoteExecTool:
         resolver_factory: ResolverFactory | None = None,
         executor: RemoteExecutor | None = None,
     ) -> None:
-        self.resolver_factory = resolver_factory or SessionMetadataRemoteConnectionResolver
+        self.resolver_factory = (
+            resolver_factory or SessionMetadataRemoteConnectionResolver
+        )
         self.executor = executor or SshRemoteExecutor()
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    def assess_risk(
+        self,
+        input: dict[str, Any],
+        *,
+        target: CommandTargetProfile | None = None,
+    ) -> CommandRiskAssessment | None:
+        command = input.get("command")
+        if not isinstance(command, str) or not command.strip() or target is None:
+            return None
+        connection_id = input.get("connection_id")
+        return assess_command_risk(
+            command,
+            target=target,
+            requested_connection_id=(
+                connection_id.strip()
+                if isinstance(connection_id, str) and connection_id.strip()
+                else None
+            ),
+        )
+
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         await _require_remote_operation_access(context)
-        connection = await _resolve_connection(input, context, self.resolver_factory)
+        connection, working_directory = await _resolve_claimed_remote_target(
+            input, context, self.resolver_factory
+        )
         command = _required_string(input, "command")
-        working_directory = await _remote_working_directory(context, connection.id)
-        remote_command = _command_in_remote_working_directory(command, working_directory)
+        remote_command = _command_in_remote_working_directory(
+            command, working_directory
+        )
         result = await self.executor.run(
             connection,
             remote_command,
@@ -285,14 +327,29 @@ class RemoteReadFileTool:
         resolver_factory: ResolverFactory | None = None,
         executor: RemoteExecutor | None = None,
     ) -> None:
-        self.resolver_factory = resolver_factory or SessionMetadataRemoteConnectionResolver
+        self.resolver_factory = (
+            resolver_factory or SessionMetadataRemoteConnectionResolver
+        )
         self.executor = executor or SshRemoteExecutor()
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    def assess_risk(
+        self,
+        input: dict[str, Any],
+        *,
+        target: CommandTargetProfile | None = None,
+    ) -> RiskAssessment | None:
+        return _assess_structured_remote_path(input, target=target)
+
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         await _require_remote_operation_access(context)
-        connection = await _resolve_connection(input, context, self.resolver_factory)
-        working_directory = await _remote_working_directory(context, connection.id)
-        path = _remote_path_for_context(_required_string(input, "path"), working_directory)
+        connection, working_directory = await _resolve_claimed_remote_target(
+            input, context, self.resolver_factory
+        )
+        path = _remote_path_for_context(
+            _required_string(input, "path"), working_directory
+        )
         max_bytes = int(input.get("max_bytes") or 16000)
         result = await self.executor.run(
             connection,
@@ -358,14 +415,29 @@ class RemoteListDirTool:
         resolver_factory: ResolverFactory | None = None,
         executor: RemoteExecutor | None = None,
     ) -> None:
-        self.resolver_factory = resolver_factory or SessionMetadataRemoteConnectionResolver
+        self.resolver_factory = (
+            resolver_factory or SessionMetadataRemoteConnectionResolver
+        )
         self.executor = executor or SshRemoteExecutor()
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    def assess_risk(
+        self,
+        input: dict[str, Any],
+        *,
+        target: CommandTargetProfile | None = None,
+    ) -> RiskAssessment | None:
+        return _assess_structured_remote_path(input, target=target)
+
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         await _require_remote_operation_access(context)
-        connection = await _resolve_connection(input, context, self.resolver_factory)
-        working_directory = await _remote_working_directory(context, connection.id)
-        path = _remote_path_for_context(_required_string(input, "path"), working_directory)
+        connection, working_directory = await _resolve_claimed_remote_target(
+            input, context, self.resolver_factory
+        )
+        path = _remote_path_for_context(
+            _required_string(input, "path"), working_directory
+        )
         limit = int(input.get("limit") or 50)
         result = await self.executor.run(
             connection,
@@ -410,6 +482,78 @@ async def _resolve_connection(
     raise BadRequestError(
         "connection_id is required when multiple remote connections are selected"
     )
+
+
+async def _resolve_claimed_remote_target(
+    input: dict[str, Any],
+    context: AgentToolContext,
+    resolver_factory: ResolverFactory,
+) -> tuple[RemoteConnectionConfig, str | None]:
+    snapshot = context.permission_context_snapshot
+    if not isinstance(snapshot, dict):
+        connection = await _resolve_connection(input, context, resolver_factory)
+        return connection, await _remote_working_directory(context, connection.id)
+
+    execution_target = snapshot.get("execution_target")
+    if not isinstance(execution_target, dict) or execution_target.get("type") != "remote_ssh":
+        raise PermissionDeniedError("Authorized remote execution target is unavailable")
+    claimed_connection_id = str(execution_target.get("connection_id") or "")
+    if not claimed_connection_id:
+        raise PermissionDeniedError("Authorized remote connection is unavailable")
+    requested_connection_id = input.get("connection_id")
+    if (
+        isinstance(requested_connection_id, str)
+        and requested_connection_id.strip()
+        and requested_connection_id.strip() != claimed_connection_id
+    ):
+        raise PermissionDeniedError("Remote connection differs from the authorized target")
+
+    resolver = resolver_factory(context.db)
+    try:
+        connection = await resolver.get(
+            claimed_connection_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+            session_id=context.session_id,
+        )
+    except NotFoundError as exc:
+        raise PermissionDeniedError(
+            "Remote connection changed after the action was authorized"
+        ) from exc
+
+    agent_session = await AgentSessionRepository(context.db).get_fresh(
+        context.session_id
+    )
+    if agent_session is None:
+        raise PermissionDeniedError("Agent session is not accessible")
+    if (
+        str(agent_session.workspace_id) != context.workspace_id
+        or str(agent_session.user_id) != context.user_id
+    ):
+        raise PermissionDeniedError("Agent session is not accessible")
+    boundary = await RemoteBoundaryResolver(context.db).resolve(
+        agent_session=agent_session,
+        connection_id=claimed_connection_id,
+    )
+    claimed_roots = snapshot.get("effective_roots")
+    claimed_root = (
+        str(claimed_roots[0])
+        if isinstance(claimed_roots, list) and claimed_roots
+        else None
+    )
+    current_identity = boundary.remote_identity
+    current_revisions = boundary.resource_revisions
+    if (
+        int(agent_session.permission_policy_version)
+        != int(snapshot.get("policy_version") or 0)
+        or snapshot.get("remote_identity") != current_identity
+        or snapshot.get("resource_revisions") != current_revisions
+        or claimed_root != boundary.effective_root
+    ):
+        raise PermissionDeniedError(
+            "Remote target changed after the action was authorized"
+        )
+    return connection, claimed_root
 
 
 async def _require_remote_operation_access(context: AgentToolContext) -> None:
@@ -458,7 +602,9 @@ async def _selected_remote_connection_ids(
     return selected
 
 
-async def _session_remote_project_connection_id(db: AsyncSession, session) -> str | None:
+async def _session_remote_project_connection_id(
+    db: AsyncSession, session
+) -> str | None:
     project = await _session_remote_project(db, session)
     if not project:
         return None
@@ -470,7 +616,7 @@ async def _session_remote_project(db: AsyncSession, session):
     project_id = getattr(session, "project_id", None)
     if not project_id:
         return None
-    project = await ProjectRepository(db).get(str(project_id))
+    project = await ProjectRepository(db).get_fresh(str(project_id))
     if not project or getattr(project, "storage_mode", None) != "remote":
         return None
     return project
@@ -483,18 +629,24 @@ async def _remote_working_directory(
     session_id = context.session_id
     if not session_id or not _is_uuid_string(str(session_id)):
         return None
-    session = await AgentSessionRepository(context.db).get(str(session_id))
+    session = await AgentSessionRepository(context.db).get_fresh(str(session_id))
     if session is None:
         return None
-    if str(session.workspace_id) != context.workspace_id or str(session.user_id) != context.user_id:
+    if (
+        str(session.workspace_id) != context.workspace_id
+        or str(session.user_id) != context.user_id
+    ):
         return None
-    project = await _session_remote_project(context.db, session)
-    if not project or str(project.remote_connection_id) != str(connection_id):
-        return None
-    return str(project.remote_root_path) if project.remote_root_path else None
+    boundary = await RemoteBoundaryResolver(context.db).resolve(
+        agent_session=session,
+        connection_id=connection_id,
+    )
+    return boundary.effective_root
 
 
-def _command_in_remote_working_directory(command: str, working_directory: str | None) -> str:
+def _command_in_remote_working_directory(
+    command: str, working_directory: str | None
+) -> str:
     if not working_directory:
         return command
     return f"cd {shlex.quote(working_directory)} && {command}"
@@ -521,6 +673,53 @@ def _remote_path_for_context(path: str, working_directory: str | None) -> str:
     if relative == ".":
         return root
     return f"{root.rstrip('/')}/{relative}"
+
+
+def _assess_structured_remote_path(
+    input: dict[str, Any],
+    *,
+    target: CommandTargetProfile | None,
+) -> RiskAssessment | None:
+    path = input.get("path")
+    if (
+        target is None
+        or target.kind != "remote_ssh"
+        or not isinstance(path, str)
+        or not path.strip()
+    ):
+        return None
+    normalized = path.strip().replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part not in {"", "."}]
+    dynamic_or_traversal = (
+        normalized.startswith(("~", "$"))
+        or "$" in normalized
+        or any(part == ".." for part in parts)
+    )
+    outside_root = False
+    if target.read_roots and normalized.startswith("/"):
+        absolute = posixpath.normpath(normalized)
+        outside_root = not any(
+            absolute == posixpath.normpath(root)
+            or absolute.startswith(f"{posixpath.normpath(root).rstrip('/')}/")
+            for root in target.read_roots
+        )
+    unbounded_target = not target.read_roots or not target.working_directory
+    unsafe = unbounded_target or outside_root or dynamic_or_traversal
+    if unsafe:
+        return RiskAssessment(
+            level="act_high",
+            reasons=[
+                "structured remote path is not bounded by an effective project root",
+                "explicit approval is required for absolute, home, variable, or traversal paths",
+            ],
+            affected_resources=[{"type": "path", "id": normalized[:1000]}],
+            requires_explicit_approval=True,
+        )
+    return RiskAssessment(
+        level="read",
+        reasons=["structured remote path is a bounded relative read"],
+        affected_resources=[{"type": "path", "id": normalized[:1000]}],
+    )
 
 
 def _selected_ids_from_policy(policy: Any) -> list[str]:
@@ -582,9 +781,7 @@ def _read_file_command(
     quoted_path = shlex.quote(path)
     read_bytes = max_bytes + 1
     return (
-        scope_guard
-        +
-        f"if [ -d {quoted_path} ]; then "
+        scope_guard + f"if [ -d {quoted_path} ]; then "
         "printf '%s\\n' 'remote path is a directory' >&2; exit 21; "
         f"fi; head -c {read_bytes} -- {quoted_path}"
     )
@@ -599,13 +796,11 @@ def _list_dir_command(
     quoted_path = shlex.quote(path)
     line_limit = limit + 1
     return (
-        scope_guard
-        +
-        f"dir={quoted_path}; "
+        scope_guard + f"dir={quoted_path}; "
         'if [ ! -d "$dir" ]; then '
         "printf '%s\\n' 'remote path is not a directory' >&2; exit 22; "
         "fi; "
-        "for child in \"$dir\"/* \"$dir\"/.[!.]* \"$dir\"/..?*; do "
+        'for child in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do '
         '[ -e "$child" ] || [ -L "$child" ] || continue; '
         "name=${child##*/}; "
         'if [ "$name" = . ] || [ "$name" = .. ]; then continue; fi; '

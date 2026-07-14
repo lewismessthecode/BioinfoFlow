@@ -15,7 +15,8 @@ from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.permissions import PermissionPolicy, RiskEngine
 from app.services.agent_core.permissions.policy import PermissionDecision
-from app.services.agent_core.permissions.risk import RiskLevel
+from app.services.agent_core.permissions.risk import RiskAssessment, RiskLevel
+from app.services.agent_core.permissions.command_risk import CommandRiskAssessment
 from app.utils.exceptions import NotFoundError
 
 
@@ -35,7 +36,7 @@ class AgentActionService:
         name: str,
         input: dict | None = None,
         normalized_input: dict | None = None,
-        requested_risk: RiskLevel | None = None,
+        requested_risk: RiskLevel | RiskAssessment | None = None,
         permission_mode: str = "guarded_auto",
         automation_mode: str = "assisted",
         input_preview: str | None = None,
@@ -44,23 +45,32 @@ class AgentActionService:
         rollback_hint: str | None = None,
         artifact_policy: dict | None = None,
         tool_call_id: str | None = None,
+        tool_batch_id: str | None = None,
+        tool_call_ordinal: int | None = None,
         exposure_policy: dict | None = None,
         force_ask: bool = False,
         interaction: str | None = None,
+        evaluated_policy_version: int | None = None,
+        permission_context_snapshot: dict | None = None,
+        commit: bool = True,
         expected_owner_token: str | None = None,
     ):
-        if expected_owner_token is not None:
+        if expected_owner_token is not None and commit:
             ensure_clean_owned_publication_session(self.action_repo.session)
         turn = await self.turn_repo.get(turn_id)
         if turn is None:
             raise NotFoundError(f"Agent turn not found: {turn_id}")
 
         action_input = input or {}
-        risk = self.risk_engine.assess(
-            kind=kind,
-            name=name,
-            requested_level=requested_risk,
-            input=action_input,
+        risk = (
+            requested_risk
+            if isinstance(requested_risk, RiskAssessment)
+            else self.risk_engine.assess(
+                kind=kind,
+                name=name,
+                requested_level=requested_risk,
+                input=action_input,
+            )
         )
         if force_ask:
             # Interaction tools (ask_user, exit_plan_mode) pause for the user
@@ -79,35 +89,44 @@ class AgentActionService:
         status = _status_for_decision(decision.decision)
         if input_preview is None:
             input_preview = _input_preview(name=name, action_input=action_input)
-        action_data = {
-            "session_id": str(turn.session_id),
-            "kind": kind,
-            "name": name,
-            "tool_call_id": tool_call_id,
-            "input": action_input,
-            "normalized_input": normalized_input,
-            "input_preview": input_preview,
-            "redacted_input": action_input,
-            "exposure_policy": exposure_policy,
-            "risk_level": risk.level,
-            "risk_reasons": risk.reasons,
-            "read_scope": read_scope,
-            "write_scope": write_scope,
-            "affected_resources": risk.affected_resources,
-            "permission_decision": decision.as_dict(),
-            "status": status,
-            "rollback_hint": rollback_hint,
-            "artifact_policy": artifact_policy,
+        decision_payload = {
+            **decision.as_dict(),
+            "source": "policy",
+            "requires_explicit_approval": risk.requires_explicit_approval,
         }
+        action_data = dict(
+            session_id=str(turn.session_id),
+            kind=kind,
+            name=name,
+            tool_call_id=tool_call_id,
+            tool_batch_id=tool_batch_id,
+            tool_call_ordinal=tool_call_ordinal,
+            input=action_input,
+            normalized_input=normalized_input,
+            input_preview=input_preview,
+            redacted_input=action_input,
+            exposure_policy=exposure_policy,
+            risk_level=risk.level,
+            risk_reasons=risk.reasons,
+            read_scope=read_scope,
+            write_scope=write_scope,
+            affected_resources=risk.affected_resources,
+            permission_decision=decision_payload,
+            evaluated_policy_version=evaluated_policy_version,
+            permission_context_snapshot=permission_context_snapshot,
+            status=status,
+            rollback_hint=rollback_hint,
+            artifact_policy=artifact_policy,
+        )
         if expected_owner_token is None:
-            action = await self.action_repo.create(
-                turn_id=str(turn.id),
-                **action_data,
-            )
+            create = self.action_repo.create if commit else self.action_repo.add
+            action = await create(turn_id=str(turn.id), **action_data)
         else:
             action, owned = await self.action_repo.create_for_owned_turn(
                 turn_id=str(turn.id),
                 expected_owner_token=expected_owner_token,
+                commit=commit,
+                owner_fenced=not commit,
                 **action_data,
             )
             if not owned or action is None:
@@ -116,19 +135,41 @@ class AgentActionService:
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             type=AgentEventType.ACTION_REQUESTED,
-            payload={"action_id": str(action.id), "kind": kind, "name": name},
+            payload={
+                "action_id": str(action.id),
+                "kind": kind,
+                "name": name,
+                "evaluated_policy_version": evaluated_policy_version,
+            },
+            commit=commit,
             expected_owner_token=expected_owner_token,
+            owner_fenced=not commit,
         )
+        risk_event_payload: dict = {
+            "action_id": str(action.id),
+            "risk_level": risk.level,
+            "reasons": risk.reasons,
+            "evaluated_policy_version": evaluated_policy_version,
+        }
+        if isinstance(risk, CommandRiskAssessment):
+            risk_event_payload.update(
+                {
+                    "target": risk.target,
+                    "effects": risk.effects,
+                    "confidence": risk.confidence,
+                    "protected_resources": risk.protected_resources,
+                    "hard_blocked": risk.hard_blocked,
+                    "assessment_fingerprint": risk.assessment_fingerprint(),
+                }
+            )
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
             type=AgentEventType.ACTION_RISK_ASSESSED,
-            payload={
-                "action_id": str(action.id),
-                "risk_level": risk.level,
-                "reasons": risk.reasons,
-            },
+            payload=risk_event_payload,
+            commit=commit,
             expected_owner_token=expected_owner_token,
+            owner_fenced=not commit,
         )
         if decision.decision == "ask":
             # Enrich the waiting-decision event so the frontend renders the
@@ -140,6 +181,7 @@ class AgentActionService:
                 "risk_level": risk.level,
                 "tool_call_id": tool_call_id,
                 "input_preview": input_preview,
+                "evaluated_policy_version": evaluated_policy_version,
             }
             block = _interaction_block(interaction, action_input)
             if block is not None:
@@ -149,7 +191,9 @@ class AgentActionService:
                 turn_id=str(turn.id),
                 type=AgentEventType.ACTION_WAITING_DECISION,
                 payload=payload,
+                commit=commit,
                 expected_owner_token=expected_owner_token,
+                owner_fenced=not commit,
             )
         return action
 

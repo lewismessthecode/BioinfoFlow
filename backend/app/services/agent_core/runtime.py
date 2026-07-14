@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import json
 from typing import Any
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -100,7 +99,7 @@ class AgentCoreRuntime:
         return await self.run_turn(turn_id)
 
     async def run_turn(self, turn_id: str):
-        turn = await self.turn_repo.get(turn_id)
+        turn = await self.turn_repo.get_fresh(turn_id)
         if turn is None:
             return None
         if turn.status in {
@@ -174,10 +173,17 @@ class AgentCoreRuntime:
             resolved=resolved,
             ownership=ownership,
         )
+        result = await self._drain_durable_resume_intents(
+            turn_id=str(turn.id),
+            session=session,
+            resolved=resolved,
+            result=result,
+            ownership=ownership,
+        )
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
             return None
-        return await AgentLoopController(
+        completed = await AgentLoopController(
             self.turn_repo.session,
             model_gateway=self.model_gateway,
             ownership=ownership,
@@ -185,6 +191,8 @@ class AgentCoreRuntime:
             turn=fresh_turn,
             result=result,
         )
+        await self._enqueue_persisted_resume_intent(completed)
+        return completed
 
     async def resume_turn_after_action(self, action_id: str):
         action_repo = AgentActionRepository(self.turn_repo.session)
@@ -310,10 +318,17 @@ class AgentCoreRuntime:
             resume_action_id=action_id,
             ownership=ownership,
         )
+        result = await self._drain_durable_resume_intents(
+            turn_id=str(turn.id),
+            session=session,
+            resolved=resolved,
+            result=result,
+            ownership=ownership,
+        )
         fresh_turn = await self.turn_repo.get(str(turn.id))
         if fresh_turn is None:
             return None
-        return await AgentLoopController(
+        completed = await AgentLoopController(
             self.turn_repo.session,
             model_gateway=self.model_gateway,
             ownership=ownership,
@@ -321,6 +336,68 @@ class AgentCoreRuntime:
             turn=fresh_turn,
             result=result,
         )
+        await self._enqueue_persisted_resume_intent(completed)
+        return completed
+
+    async def _drain_durable_resume_intents(
+        self,
+        *,
+        turn_id: str,
+        session,
+        resolved: dict[str, Any],
+        result,
+        ownership: TurnOwnership,
+    ):
+        for _ in range(128):
+            if result.termination_reason != "waiting_approval":
+                return result
+            await ownership.ensure_current()
+            turn = await self.turn_repo.get_fresh(turn_id)
+            if turn is None:
+                return result
+            action = await self._next_persisted_resume_action(turn)
+            if action is None:
+                return result
+            result = await self._run_model_attempts(
+                turn=turn,
+                session=session,
+                resolved=resolved,
+                resume_action_id=str(action.id),
+                ownership=ownership,
+            )
+        raise RuntimeError("Agent turn exceeded the durable resume drain limit")
+
+    async def _next_persisted_resume_action(self, turn):
+        token = str(turn.resume_batch_token or "")
+        actions = await AgentActionRepository(self.turn_repo.session).list_open_for_turn(
+            str(turn.id)
+        )
+        candidates = [
+            action
+            for action in actions
+            if action.requires_resume
+            and action.status
+            in {AgentActionStatus.REQUESTED, AgentActionStatus.REJECTED}
+        ]
+        if token:
+            matching = [
+                action
+                for action in candidates
+                if str(action.tool_batch_id or "") == token
+            ]
+            if matching:
+                candidates = matching
+        return candidates[0] if candidates else None
+
+    async def _enqueue_persisted_resume_intent(self, turn) -> None:
+        if turn is None or turn.status != AgentTurnStatus.WAITING_APPROVAL:
+            return
+        action = await self._next_persisted_resume_action(turn)
+        if action is None:
+            return
+        from app.services.agent_core.runner import enqueue_turn_resume
+
+        enqueue_turn_resume(str(action.id), str(turn.id), str(turn.session_id))
 
     async def _close_failed_resume_action(
         self,
@@ -730,6 +807,15 @@ class AgentCoreRuntime:
             ),
         ]
         next_resume_action_id = resume_action_id
+        continuation_batch_id: str | None = None
+        if resume_action_id is not None:
+            from app.repositories.agent_core_repo import AgentActionRepository
+
+            resume_action = await AgentActionRepository(self.turn_repo.session).get(
+                resume_action_id
+            )
+            if resume_action is not None and resume_action.tool_batch_id:
+                continuation_batch_id = str(resume_action.tool_batch_id)
         for attempt_index, candidate in enumerate(attempts):
             await ownership.ensure_current()
             fresh_turn = await self.turn_repo.get(str(turn.id))
@@ -741,6 +827,16 @@ class AgentCoreRuntime:
                 attempt_index=attempt_index,
                 ownership=ownership,
             )
+            if turn is None:
+                from app.services.agent_core.core.types import LoopResult
+
+                return LoopResult(
+                    termination_reason="model_failed",
+                    final_text=None,
+                    iteration_count=0,
+                    error_code="execution_claim_lost",
+                    error_message="Agent turn execution lease ownership was lost.",
+                )
             runtime_strategy = _resolved_runtime_strategy(candidate)
             if attempt_index == 0:
                 await self.ledger.append(
@@ -776,6 +872,9 @@ class AgentCoreRuntime:
                     capabilities=_resolved_capabilities(candidate),
                     strategy=runtime_strategy,
                     max_tokens=runtime_strategy.max_tokens,
+                    continuation_failure_mode=(
+                        "ready" if attempt_index < len(attempts) - 1 else "failed"
+                    ),
                 )
                 next_resume_action_id = None
             else:
@@ -785,9 +884,15 @@ class AgentCoreRuntime:
                     capabilities=_resolved_capabilities(candidate),
                     strategy=runtime_strategy,
                     max_tokens=runtime_strategy.max_tokens,
+                    continuation_batch_id=continuation_batch_id,
+                    continuation_failure_mode=(
+                        "ready" if attempt_index < len(attempts) - 1 else "failed"
+                    ),
                 )
             if not should_try_fallback(result) or attempt_index == len(attempts) - 1:
                 return result
+            if result.continuation_batch_id is not None:
+                continuation_batch_id = result.continuation_batch_id
         raise RuntimeError(
             "Agent runtime exhausted model attempts without returning a result."
         )

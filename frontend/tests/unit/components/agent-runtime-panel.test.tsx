@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { useState } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AgentSideDrawer } from "@/components/bioinfoflow/agent-runtime/agent-side-drawer"
@@ -527,10 +528,14 @@ describe("AgentSideDrawer", () => {
     expect(screen.queryByRole("button", { name: "tabs.environment" })).not.toBeInTheDocument()
   })
 
-  it("renders pending decision jump as an interactive button", () => {
+  it("scrolls and focuses the first pending decision control", () => {
     const target = document.createElement("div")
     target.id = "agent-decision-a1"
+    target.tabIndex = -1
     target.scrollIntoView = vi.fn()
+    const approve = document.createElement("button")
+    approve.textContent = "Approve"
+    target.appendChild(approve)
     document.body.appendChild(target)
 
     render(
@@ -545,7 +550,36 @@ describe("AgentSideDrawer", () => {
       block: "center",
       behavior: "smooth",
     })
+    expect(approve).toHaveFocus()
     target.remove()
+  })
+
+  it("uses instant scrolling and focuses the card for reduced motion", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({ matches: true }),
+    )
+    const target = document.createElement("div")
+    target.id = "agent-decision-a1"
+    target.tabIndex = -1
+    target.scrollIntoView = vi.fn()
+    document.body.appendChild(target)
+
+    render(
+      <AgentSideDrawer
+        events={[waitingEvent({ action_id: "a1", name: "bash" })]}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "approval.jumpToDecision" }))
+    expect(target.scrollIntoView).toHaveBeenCalledWith({
+      block: "center",
+      behavior: "auto",
+    })
+    expect(target).toHaveFocus()
+    target.remove()
+    vi.unstubAllGlobals()
   })
 })
 
@@ -606,8 +640,66 @@ describe("resolveBrowserUrl", () => {
 })
 
 describe("PendingDecisionCards", () => {
+  it("moves focus to the next pending sidecar card and announces the handoff", async () => {
+    function Fixture() {
+      const [events, setEvents] = useState([
+        waitingEvent({ action_id: "a1", name: "bash" }),
+        waitingEvent({ action_id: "a2", name: "remote.exec" }),
+      ])
+      return (
+        <PendingDecisionCards
+          events={events}
+          onDecision={async (actionId) => {
+            setEvents((current) =>
+              current.filter((event) => event.payload.action_id !== actionId),
+            )
+          }}
+        />
+      )
+    }
+
+    render(<Fixture />)
+    fireEvent.click(within(screen.getAllByTestId("pending-approval-card")[0]).getByText("approve"))
+
+    await waitFor(() =>
+      expect(screen.getByTestId("pending-approval-card")).toHaveFocus(),
+    )
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "decision.focusedNext",
+    )
+  })
+
+  it("returns focus to the composer control when the last sidecar decision resolves", async () => {
+    function Fixture() {
+      const [events, setEvents] = useState([
+        waitingEvent({ action_id: "a1", name: "bash" }),
+      ])
+      return (
+        <>
+          <PendingDecisionCards
+            events={events}
+            onDecision={async () => setEvents([])}
+          />
+          <button type="button" data-testid="agent-composer-control">
+            Composer control
+          </button>
+        </>
+      )
+    }
+
+    render(<Fixture />)
+    fireEvent.click(screen.getByText("approve"))
+
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-composer-control")).toHaveFocus(),
+    )
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "decision.focusedComposer",
+    )
+  })
+
   it("submits an ask_user answer", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     render(
       <PendingDecisionCards
         events={[
@@ -641,7 +733,7 @@ describe("PendingDecisionCards", () => {
   })
 
   it("submits a custom ask_user answer", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     render(
       <PendingDecisionCards
         events={[
@@ -676,7 +768,7 @@ describe("PendingDecisionCards", () => {
   })
 
   it("keeps custom text when adding a multi-select ask_user option", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     render(
       <PendingDecisionCards
         events={[
@@ -740,7 +832,7 @@ describe("PendingDecisionCards", () => {
   })
 
   it("approves a plan", () => {
-    const onDecision = vi.fn()
+    const onDecision = vi.fn(() => new Promise<void>(() => {}))
     render(
       <PendingDecisionCards
         events={[
@@ -759,8 +851,13 @@ describe("PendingDecisionCards", () => {
     expect(onDecision).toHaveBeenCalledWith("a2", "approve")
   })
 
-  it("renders a generic approval card with name and preview", () => {
-    const onDecision = vi.fn()
+  it("renders a generic approval card with name and preview", async () => {
+    let resolveDecision!: () => void
+    const onDecision = vi.fn(
+      () => new Promise<void>((resolve) => {
+        resolveDecision = resolve
+      }),
+    )
     render(
       <PendingDecisionCards
         events={[
@@ -778,6 +875,11 @@ describe("PendingDecisionCards", () => {
     expect(screen.getByText("rm build/")).toBeInTheDocument()
     fireEvent.click(screen.getByText("approve"))
     expect(onDecision).toHaveBeenCalledWith("a3", "approve")
+    await act(async () => {
+      resolveDecision()
+      await Promise.resolve()
+    })
+    expect(screen.getByText("reject")).toBeEnabled()
     fireEvent.click(screen.getByText("reject"))
     expect(onDecision).toHaveBeenCalledWith("a3", "reject")
   })

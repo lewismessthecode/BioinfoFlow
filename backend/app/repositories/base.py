@@ -28,6 +28,13 @@ class BaseRepository(Generic[ModelT]):
         await self.session.refresh(obj)
         return obj
 
+    async def add(self, **data: Any) -> ModelT:
+        """Add and flush an object without committing the surrounding transaction."""
+        obj = self.model(**data)
+        self.session.add(obj)
+        await self.session.flush()
+        return obj
+
     async def bulk_create(self, items: list[dict[str, Any]]) -> list[ModelT]:
         if not items:
             return []
@@ -60,6 +67,12 @@ class BaseRepository(Generic[ModelT]):
             setattr(obj, key, value)
         await self.session.commit()
         await self.session.refresh(obj)
+        return obj
+
+    async def update_all_pending(self, obj: ModelT, **data: Any) -> ModelT:
+        for key, value in data.items():
+            setattr(obj, key, value)
+        await self.session.flush()
         return obj
 
     async def delete(self, obj: ModelT) -> None:

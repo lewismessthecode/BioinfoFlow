@@ -1,6 +1,7 @@
 "use client"
 
 import type {
+  AgentDecisionTarget,
   AgentRuntimeDecisionState,
   AgentRuntimeDecisionView,
   AgentRuntimeEvent,
@@ -37,6 +38,7 @@ type AgentDecisionCard = AgentRuntimeDecisionView
 export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
   const decisions = new Map<string, AgentRuntimeEvent>()
   const resolvedWithoutDecision = new Map<string, AgentRuntimeEvent>()
+  const persistedTargets = buildPersistedTargetMap(events)
   for (const event of events) {
     const actionId = String(event.payload.action_id || "")
     if (!actionId) continue
@@ -52,7 +54,7 @@ export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
   return events
     .filter((event) => event.type === "action.waiting_decision")
     .map((event): AgentDecisionCard | null => {
-      const decision = parseWaitingDecision(event)
+      const decision = parseWaitingDecision(event, persistedTargets)
       if (!decision.actionId) return null
       const resolver = resolvedWithoutDecision.get(decision.actionId)
       if (resolver && !decisions.has(decision.actionId)) return null
@@ -70,8 +72,26 @@ export function getActionDecisionCards(events: AgentRuntimeEvent[]) {
     .reverse()
 }
 
-export function parseWaitingDecision(event: AgentRuntimeEvent): AgentWaitingDecision {
-  return parseRuntimeWaitingDecision(event)
+export function parseWaitingDecision(
+  event: AgentRuntimeEvent,
+  persistedTargets: ReadonlyMap<string, AgentDecisionTarget | null> = new Map(),
+): AgentWaitingDecision {
+  const decision = parseRuntimeWaitingDecision(event)
+  return {
+    ...decision,
+    target: persistedTargets.get(decision.actionId) ?? null,
+  }
+}
+
+export function buildPersistedTargetMap(events: AgentRuntimeEvent[]) {
+  const targets = new Map<string, AgentDecisionTarget | null>()
+  for (const event of events) {
+    if (event.type !== "action.risk_assessed") continue
+    const actionId = String(event.payload.action_id || "")
+    const target = parsePersistedTarget(event.payload.target)
+    if (actionId) targets.set(actionId, target)
+  }
+  return targets
 }
 
 function decisionCardFromEvent(
@@ -119,4 +139,21 @@ function decisionState(event: AgentRuntimeEvent): AgentRuntimeDecisionState {
   if (decision === "reject") return "rejected"
   if (decision === "answer") return "answered"
   return "approved"
+}
+
+function parsePersistedTarget(target: unknown): AgentDecisionTarget | null {
+  if (!target || typeof target !== "object" || Array.isArray(target)) return null
+  const record = target as Record<string, unknown>
+  const kind = String(record.kind || "")
+  if (kind !== "local" && kind !== "remote_ssh" && kind !== "container") return null
+  return {
+    kind,
+    trustDomain: stringOrNull(record.trust_domain),
+    identity: stringOrNull(record.identity),
+    connectionId: stringOrNull(record.connection_id),
+  }
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value ? value : null
 }

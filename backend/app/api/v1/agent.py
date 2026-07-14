@@ -118,6 +118,10 @@ def _action_read(action) -> AgentActionRead:
     return AgentActionRead.model_validate(action)
 
 
+def _dump_action(action) -> dict:
+    return _action_read(action).model_dump(mode="json", exclude_none=False)
+
+
 def _artifact_read(artifact) -> AgentArtifactRead:
     return AgentArtifactRead.model_validate(artifact)
 
@@ -908,6 +912,21 @@ async def stream_session_events(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@router.get("/actions/{action_id}")
+async def get_action(
+    action_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    action = await AgentCoreService(db).get_action(
+        action_id=action_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return success_response(_dump_action(action), request=request)
+
+
 @router.post("/actions/{action_id}/decision")
 async def decide_action(
     action_id: str,
@@ -926,7 +945,7 @@ async def decide_action(
         modified_input=payload.modified_input,
         answer=payload.answer,
     )
-    return success_response(_dump(_action_read(action)), request=request)
+    return success_response(_dump_action(action), request=request)
 
 
 @router.post("/actions/{action_id}/resume")
@@ -942,7 +961,7 @@ async def resume_action(
         workspace_id=user.workspace_id,
         user_id=user.id,
     )
-    return success_response(_dump(_action_read(action)), request=request)
+    return success_response(_dump_action(action), request=request)
 
 
 @router.get("/memories")

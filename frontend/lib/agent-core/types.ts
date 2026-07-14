@@ -1,5 +1,11 @@
 export type AgentPermissionMode = "ask_each_action" | "guarded_auto" | "bypass"
 export type AgentAutomationMode = "advise_only" | "assisted" | "autonomous"
+export type AgentPendingStrategy = "future_only" | "approve_pending_tools"
+export type AgentPendingReconciliation = {
+  affected_count: number
+  excluded_count: number
+  already_resolved_count: number
+}
 export type AgentSessionStatus = "active" | "archived" | "deleted"
 export type AgentTurnStatus =
   | "queued"
@@ -43,9 +49,12 @@ export type AgentCoreSession = {
   role_profile: string
   permission_mode: AgentPermissionMode
   automation_mode: AgentAutomationMode
+  permission_policy_version?: number
   default_model_profile_id?: string | null
   model_selection?: AgentModelSelection | null
   status: AgentSessionStatus
+  pending_strategy?: AgentPendingStrategy | null
+  pending_reconciliation?: AgentPendingReconciliation | null
   lineage?: Record<string, unknown> | null
   metadata?: Record<string, unknown> | null
   created_at: string
