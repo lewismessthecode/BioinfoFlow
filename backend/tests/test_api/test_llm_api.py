@@ -387,6 +387,42 @@ async def test_llm_provider_setup_update_preserves_omitted_wire_protocol(
 
 
 @pytest.mark.asyncio
+async def test_llm_provider_setup_updates_legacy_null_metadata(
+    async_client,
+    db_session,
+):
+    provider = await _create_provider(
+        db_session,
+        name="Legacy OpenAI-compatible relay",
+        user_id="dev",
+    )
+    assert provider.provider_metadata is None
+
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "provider_id": str(provider.id),
+            "name": "Responses relay",
+            "base_url": "http://8.129.13.231:8079/v1",
+            "wire_protocol": "responses",
+            "api_key": "relay-key",
+            "model_ids": ["gpt-5.4-mini"],
+            "allow_insecure_http": True,
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    configured = response.json()["data"]
+    assert configured["provider"]["base_url"] == "http://8.129.13.231:8079/v1"
+    await db_session.refresh(provider)
+    assert provider.provider_metadata == {"providerTemplate": "openai-compatible"}
+    assert configured["provider"]["wire_protocol"] == "responses"
+    assert configured["models"][0]["model_id"] == "gpt-5.4-mini"
+
+
+@pytest.mark.asyncio
 async def test_llm_provider_setup_allows_explicit_public_insecure_http(
     async_client,
 ):
