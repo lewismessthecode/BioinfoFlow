@@ -138,8 +138,8 @@ const composerConnections = [
 
 const composerModels = [
   {
-    provider: "openai",
-    provider_id: "provider-openai",
+    provider: "provider-openai",
+    provider_kind: "openai",
     label: "OpenAI",
     base_url: "https://api.openai.com/v1",
     models: [
@@ -592,7 +592,7 @@ describe("AgentComposer", () => {
         mode="plan"
         onModeChange={vi.fn()}
         models={composerModels}
-        selectedModel={{ provider: "openai", model: "gpt-4o-mini" }}
+        selectedModel={{ provider: "provider-openai", model: "gpt-4o-mini" }}
         onSelectModel={vi.fn()}
       />,
     )
@@ -601,21 +601,21 @@ describe("AgentComposer", () => {
       name: "Current execution target: local",
     })
     expect(locationChip).toHaveAttribute("data-composer-chip", "true")
-    expect(locationChip).toHaveClass("h-[26px]", "rounded-[8px]", "bg-transparent")
+    expect(locationChip).toHaveClass("min-h-7", "rounded-[8px]", "bg-transparent")
 
     const permissionChip = screen.getByRole("button", { name: "Permission mode" })
     expect(permissionChip).toHaveAttribute("data-composer-chip", "true")
-    expect(permissionChip).toHaveClass("h-[26px]", "rounded-[8px]", "bg-transparent")
+    expect(permissionChip).toHaveClass("min-h-7", "rounded-[8px]", "bg-transparent")
 
     const modeChip = screen.getByTestId("agent-mode-chip")
     expect(modeChip).toHaveAttribute("data-composer-chip", "true")
     expect(modeChip).toHaveAttribute("data-mode", "plan")
-    expect(modeChip).toHaveClass("h-[26px]", "rounded-[8px]", "bg-[#f7ead3]")
+    expect(modeChip).toHaveClass("min-h-7", "rounded-[8px]", "bg-[#f7ead3]")
     expect(screen.getByTestId("agent-mode-chip-marker")).toHaveClass("bg-[#b87924]")
 
     const modelChip = screen.getByRole("combobox", { name: "GPT-4o mini" })
     expect(modelChip).toHaveAttribute("data-composer-chip", "true")
-    expect(modelChip).toHaveClass("h-[26px]", "rounded-[8px]", "bg-transparent")
+    expect(modelChip).toHaveClass("min-h-7", "rounded-[8px]", "bg-transparent")
 
     const sendButton = screen.getByRole("button", { name: "Send message" })
     expect(sendButton).toHaveClass("bg-primary")
