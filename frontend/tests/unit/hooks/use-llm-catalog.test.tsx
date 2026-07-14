@@ -297,6 +297,55 @@ describe("useLlmCatalog", () => {
     expect(configurationCalls).toBe(2)
   })
 
+  it("keeps discovered models when the follow-up catalog refresh fails", async () => {
+    let configurationCalls = 0
+    const discoveredModel = {
+      id: "model-relay",
+      provider_id: "provider-relay",
+      model_id: "gpt-5.4-mini",
+      display_name: "GPT-5.4 Mini",
+      context_length: null,
+      max_output_tokens: null,
+      supports_tools: true,
+      supports_streaming: true,
+      supports_vision: false,
+      supports_json_schema: true,
+      supports_reasoning: true,
+      default_temperature: null,
+      default_top_p: null,
+      cost_metadata: null,
+      metadata: null,
+      created_at: "2026-07-14T00:00:00Z",
+      updated_at: "2026-07-14T00:00:00Z",
+    }
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        configurationCalls += 1
+        return configurationCalls === 1
+          ? Promise.resolve({ data: emptyConfiguration })
+          : Promise.reject(new Error("catalog refresh failed"))
+      }
+      if (path === "/llm/provider-templates") {
+        return Promise.resolve({ data: [] })
+      }
+      if (path === "/llm/providers/provider-relay/discover-models") {
+        return Promise.resolve({ data: [discoveredModel] })
+      }
+      return Promise.resolve({ data: null })
+    })
+    const { result } = renderHook(() => useLlmCatalog())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    let discovered: Awaited<ReturnType<typeof result.current.discoverModels>>
+    await act(async () => {
+      discovered = await result.current.discoverModels("provider-relay")
+    })
+
+    expect(discovered!).toEqual([discoveredModel])
+    expect(result.current.models).toEqual([discoveredModel])
+    expect(result.current.error?.message).toBe("catalog refresh failed")
+  })
+
   it("returns the concrete setup error for row-level rendering", async () => {
     const failure = new Error(
       "Plain HTTP endpoints require explicit insecure HTTP approval",

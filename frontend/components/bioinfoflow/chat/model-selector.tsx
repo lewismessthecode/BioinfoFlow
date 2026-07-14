@@ -182,6 +182,11 @@ export function ModelSelector({
                     <CommandItem
                       key={model.id}
                       value={`${providerGroup.provider} ${model.name}`}
+                      keywords={[
+                        providerGroup.label,
+                        providerGroup.provider_kind,
+                        model.id,
+                      ]}
                       onSelect={() => {
                         onSelectModel({
                           provider: providerGroup.provider,
