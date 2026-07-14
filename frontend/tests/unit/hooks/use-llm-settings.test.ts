@@ -21,15 +21,15 @@ import type { LlmRuntimeSettings, ProviderModels } from "@/hooks/use-llm-setting
 import { ApiError } from "@/lib/api"
 
 const MOCK_SETTINGS: LlmRuntimeSettings = {
-  selected_provider: "anthropic",
+  selected_provider: "provider-anthropic",
   selected_model: "claude-sonnet-4-20250514",
   configured_providers: ["anthropic"],
 }
 
 const MOCK_MODELS: ProviderModels[] = [
   {
-    provider: "anthropic",
-    provider_id: "provider-anthropic",
+    provider: "provider-anthropic",
+    provider_kind: "anthropic",
     label: "Anthropic",
     base_url: null,
     models: [
@@ -115,7 +115,7 @@ describe("useLlmSettings", () => {
     expect(result.current.settings).toEqual(MOCK_SETTINGS)
     expect(result.current.models).toEqual(MOCK_MODELS)
     expect(result.current.selectedModel).toEqual({
-      provider: "anthropic",
+      provider: "provider-anthropic",
       model: "claude-sonnet-4-20250514",
       model_id: "model-sonnet",
     })
@@ -135,14 +135,14 @@ describe("useLlmSettings", () => {
         name: "Claude Sonnet 4",
         context_window: 200000,
         model_id: "model-sonnet",
-        provider: "anthropic",
+        provider: "provider-anthropic",
       },
       {
         id: "claude-haiku-3",
         name: "Claude Haiku 3",
         context_window: 200000,
         model_id: "model-haiku",
-        provider: "anthropic",
+        provider: "provider-anthropic",
       },
     ])
   })
@@ -325,9 +325,10 @@ describe("useLlmSettings", () => {
 
     // vLLM ranks ahead of the legacy global Ollama even though Ollama is listed
     // first in the API response.
-    expect(result.current.models[0]?.provider).toBe("vllm")
+    expect(result.current.models[0]?.provider).toBe("provider-vllm")
+    expect(result.current.models[0]?.provider_kind).toBe("vllm")
     expect(result.current.selectedModel).toEqual({
-      provider: "vllm",
+      provider: "provider-vllm",
       model: "deepseek_v4",
       model_id: "model-vllm",
     })
@@ -335,18 +336,20 @@ describe("useLlmSettings", () => {
     // A deliberate manual switch to Ollama still persists.
     await act(async () => {
       await result.current.setSelectedModel({
-        provider: "ollama",
+        provider: "provider-ollama",
         model: "llama3.3",
         model_id: "model-ollama",
       })
     })
 
     expect(result.current.selectedModel).toEqual({
-      provider: "ollama",
+      provider: "provider-ollama",
       model: "llama3.3",
       model_id: "model-ollama",
     })
-    expect(localStorage.getItem("bioinfoflow:selected-provider")).toBe("ollama")
+    expect(localStorage.getItem("bioinfoflow:selected-provider")).toBe(
+      "provider-ollama",
+    )
     expect(localStorage.getItem("bioinfoflow:selected-model")).toBe("llama3.3")
   })
 
@@ -405,15 +408,254 @@ describe("useLlmSettings", () => {
     })
 
     expect(result.current.selectedModel).toEqual({
-      provider: "vllm",
+      provider: "provider-vllm",
       model: "deepseek_v4",
       model_id: "model-vllm",
     })
     // The stale Ollama selection is overwritten with the available model.
-    expect(localStorage.getItem("bioinfoflow:selected-provider")).toBe("vllm")
+    expect(localStorage.getItem("bioinfoflow:selected-provider")).toBe(
+      "provider-vllm",
+    )
     expect(localStorage.getItem("bioinfoflow:selected-model")).toBe("deepseek_v4")
     expect(localStorage.getItem("bioinfoflow:selected-catalog-model-id")).toBe(
       "model-vllm",
+    )
+  })
+
+  it("keeps same-kind endpoints with identical model slugs distinct", async () => {
+    localStorage.setItem("bioinfoflow:selected-provider", "provider-relay-b")
+    localStorage.setItem("bioinfoflow:selected-model", "shared-model")
+    localStorage.setItem("bioinfoflow:selected-catalog-model-id", "model-relay-b")
+
+    mockApiRequest.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({
+          data: {
+            summary: {
+              provider_count: 2,
+              configured_provider_count: 2,
+              available_provider_count: 2,
+              model_count: 2,
+              profile_count: 0,
+            },
+            providers: [
+              {
+                id: "provider-relay-a",
+                name: "Relay A",
+                kind: "openai_compatible",
+                scope: "global",
+                enabled: true,
+                credential: { configured: true, available: true },
+              },
+              {
+                id: "provider-relay-b",
+                name: "Relay B",
+                kind: "openai_compatible",
+                scope: "global",
+                enabled: true,
+                credential: { configured: true, available: true },
+              },
+            ],
+            models: [
+              {
+                id: "model-relay-a",
+                provider_id: "provider-relay-a",
+                model_id: "shared-model",
+                display_name: "Shared Model on A",
+                context_length: 128000,
+              },
+              {
+                id: "model-relay-b",
+                provider_id: "provider-relay-b",
+                model_id: "shared-model",
+                display_name: "Shared Model on B",
+                context_length: 128000,
+              },
+            ],
+            profiles: [],
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+
+    const { result } = renderHook(() => useLlmSettings())
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    expect(result.current.models.map(({ provider, provider_kind }) => ({
+      provider,
+      provider_kind,
+    }))).toEqual([
+      {
+        provider: "provider-relay-a",
+        provider_kind: "openai_compatible",
+      },
+      {
+        provider: "provider-relay-b",
+        provider_kind: "openai_compatible",
+      },
+    ])
+    expect(result.current.selectedModel).toEqual({
+      provider: "provider-relay-b",
+      model: "shared-model",
+      model_id: "model-relay-b",
+    })
+    expect(localStorage.getItem("bioinfoflow:selected-provider")).toBe(
+      "provider-relay-b",
+    )
+    expect(localStorage.getItem("bioinfoflow:selected-catalog-model-id")).toBe(
+      "model-relay-b",
+    )
+  })
+
+  it("migrates an unambiguous legacy provider-kind selection", async () => {
+    localStorage.setItem("bioinfoflow:selected-provider", "openai_compatible")
+    localStorage.setItem("bioinfoflow:selected-model", "relay-b-only")
+
+    mockApiRequest.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({
+          data: {
+            summary: {
+              provider_count: 2,
+              configured_provider_count: 2,
+              available_provider_count: 2,
+              model_count: 2,
+              profile_count: 0,
+            },
+            providers: [
+              {
+                id: "provider-relay-a",
+                name: "Relay A",
+                kind: "openai_compatible",
+                scope: "global",
+                enabled: true,
+                credential: { configured: true, available: true },
+              },
+              {
+                id: "provider-relay-b",
+                name: "Relay B",
+                kind: "openai_compatible",
+                scope: "global",
+                enabled: true,
+                credential: { configured: true, available: true },
+              },
+            ],
+            models: [
+              {
+                id: "model-relay-a",
+                provider_id: "provider-relay-a",
+                model_id: "relay-a-only",
+                display_name: "Relay A Model",
+                context_length: 128000,
+              },
+              {
+                id: "model-relay-b",
+                provider_id: "provider-relay-b",
+                model_id: "relay-b-only",
+                display_name: "Relay B Model",
+                context_length: 128000,
+              },
+            ],
+            profiles: [],
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+
+    const { result } = renderHook(() => useLlmSettings())
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    expect(result.current.selectedModel).toEqual({
+      provider: "provider-relay-b",
+      model: "relay-b-only",
+      model_id: "model-relay-b",
+    })
+    expect(localStorage.getItem("bioinfoflow:selected-provider")).toBe(
+      "provider-relay-b",
+    )
+  })
+
+  it("falls back deterministically when a legacy kind and model are ambiguous", async () => {
+    localStorage.setItem("bioinfoflow:selected-provider", "openai_compatible")
+    localStorage.setItem("bioinfoflow:selected-model", "shared-model")
+    localStorage.setItem("bioinfoflow:selected-catalog-model-id", "stale-model")
+
+    mockApiRequest.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({
+          data: {
+            summary: {
+              provider_count: 2,
+              configured_provider_count: 2,
+              available_provider_count: 2,
+              model_count: 2,
+              profile_count: 0,
+            },
+            providers: [
+              {
+                id: "provider-relay-a",
+                name: "Relay A",
+                kind: "openai_compatible",
+                scope: "global",
+                enabled: true,
+                credential: { configured: true, available: true },
+              },
+              {
+                id: "provider-relay-b",
+                name: "Relay B",
+                kind: "openai_compatible",
+                scope: "global",
+                enabled: true,
+                credential: { configured: true, available: true },
+              },
+            ],
+            models: [
+              {
+                id: "model-relay-a",
+                provider_id: "provider-relay-a",
+                model_id: "shared-model",
+                display_name: "Shared Model on A",
+                context_length: 128000,
+              },
+              {
+                id: "model-relay-b",
+                provider_id: "provider-relay-b",
+                model_id: "shared-model",
+                display_name: "Shared Model on B",
+                context_length: 128000,
+              },
+            ],
+            profiles: [],
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+
+    const { result } = renderHook(() => useLlmSettings())
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    expect(result.current.selectedModel).toEqual({
+      provider: "provider-relay-a",
+      model: "shared-model",
+      model_id: "model-relay-a",
+    })
+    expect(localStorage.getItem("bioinfoflow:selected-provider")).toBe(
+      "provider-relay-a",
+    )
+    expect(localStorage.getItem("bioinfoflow:selected-catalog-model-id")).toBe(
+      "model-relay-a",
     )
   })
 

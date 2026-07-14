@@ -17,7 +17,7 @@ export type ProviderModelInfo = {
 
 export type ProviderModels = {
   provider: string
-  provider_id: string
+  provider_kind: string
   label: string
   base_url?: string | null
   models: ProviderModelInfo[]
@@ -80,7 +80,17 @@ function selectionInModels(
   models: ProviderModels[],
 ): ModelSelection | null {
   if (!selection?.provider || !selection.model) return null
-  const provider = models.find((group) => group.provider === selection.provider)
+  const directProvider = models.find(
+    (group) => group.provider === selection.provider,
+  )
+  const legacyProviders = models.filter(
+    (group) =>
+      group.provider_kind === selection.provider &&
+      group.models.some((item) => item.id === selection.model),
+  )
+  const provider = directProvider ?? (
+    legacyProviders.length === 1 ? legacyProviders[0] : undefined
+  )
   const model = provider?.models.find((item) => item.id === selection.model)
   if (!provider || !model) return null
   return {
@@ -99,17 +109,14 @@ function resolveSelection(
     settings.selected_provider !== "auto" &&
     settings.selected_model
   ) {
-    const matchedProvider = models.find((providerGroup) =>
-      providerGroup.models.some((model) => model.id === settings.selected_model),
+    const matchedSelection = selectionInModels(
+      {
+        provider: settings.selected_provider,
+        model: settings.selected_model,
+      },
+      models,
     )
-    const matchedModel = matchedProvider?.models.find(
-      (model) => model.id === settings.selected_model,
-    )
-    return {
-      provider: settings.selected_provider,
-      model: settings.selected_model,
-      model_id: matchedModel?.model_id,
-    }
+    if (matchedSelection) return matchedSelection
   }
 
   if (settings?.selected_model) {
@@ -171,8 +178,8 @@ function modelsFromConfiguration(data: LlmConfiguration): ProviderModels[] {
     .filter(providerAvailable)
     .sort(compareProvidersForDefault)
     .map((provider) => ({
-      provider: provider.kind,
-      provider_id: provider.id,
+      provider: provider.id,
+      provider_kind: provider.kind,
       label: provider.name,
       base_url: provider.base_url ?? null,
       models: data.models
@@ -303,8 +310,9 @@ export function useLlmSettings() {
   const selectedModel = resolveSelection(settings, models)
 
   useEffect(() => {
+    if (isLoading) return
     persistSelection(selectedModel)
-  }, [selectedModel])
+  }, [isLoading, selectedModel])
 
   const allModels = models.flatMap((providerModels) =>
     providerModels.models.map((model) => ({

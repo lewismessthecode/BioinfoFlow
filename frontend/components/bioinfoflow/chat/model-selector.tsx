@@ -60,6 +60,7 @@ export function ModelSelector({
         pm.models.map((m) => ({
           ...m,
           provider: pm.provider,
+          providerKind: pm.provider_kind,
           label: pm.label,
           baseUrl: pm.base_url,
         })),
@@ -110,7 +111,7 @@ export function ModelSelector({
         >
           {currentModel && (
             <ProviderIcon
-              provider={currentModel.provider}
+              provider={currentModel.providerKind}
               providerLabel={currentModel.label}
               baseUrl={currentModel.baseUrl}
               modelId={currentModel.id}
@@ -196,7 +197,7 @@ export function ModelSelector({
                     >
                       <div className={cn("flex items-center", isComposer ? "gap-2" : "gap-2.5")}>
                         <ProviderIcon
-                          provider={providerGroup.provider}
+                          provider={providerGroup.provider_kind}
                           providerLabel={providerGroup.label}
                           baseUrl={providerGroup.base_url}
                           modelId={model.id}
