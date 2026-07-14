@@ -1,0 +1,123 @@
+[
+  {
+    "type": "response.created",
+    "response": {"id": "resp-stream", "status": "in_progress", "output": []}
+  },
+  {
+    "type": "response.output_item.added",
+    "output_index": 0,
+    "item": {
+      "id": "message-commentary",
+      "type": "message",
+      "role": "assistant",
+      "phase": "commentary",
+      "content": []
+    }
+  },
+  {
+    "type": "response.output_text.delta",
+    "item_id": "message-commentary",
+    "output_index": 0,
+    "delta": "Checking "
+  },
+  {
+    "type": "response.output_text.delta",
+    "item_id": "message-commentary",
+    "output_index": 0,
+    "delta": "inputs."
+  },
+  {
+    "type": "response.reasoning_summary_text.delta",
+    "item_id": "reasoning-stream",
+    "output_index": 1,
+    "delta": "Reasoning chunk."
+  },
+  {
+    "type": "response.output_item.added",
+    "output_index": 2,
+    "item": {
+      "id": "function-stream",
+      "type": "function_call",
+      "call_id": "call-stream",
+      "name": "projects__list",
+      "arguments": ""
+    }
+  },
+  {
+    "type": "response.function_call_arguments.delta",
+    "item_id": "function-stream",
+    "output_index": 2,
+    "delta": "{\"limit\":"
+  },
+  {
+    "type": "response.function_call_arguments.delta",
+    "item_id": "function-stream",
+    "output_index": 2,
+    "delta": "5}"
+  },
+  {
+    "type": "response.output_item.added",
+    "output_index": 3,
+    "item": {
+      "id": "message-final",
+      "type": "message",
+      "role": "assistant",
+      "phase": "final_answer",
+      "content": []
+    }
+  },
+  {
+    "type": "response.output_text.delta",
+    "item_id": "message-final",
+    "output_index": 3,
+    "delta": "Done."
+  },
+  {
+    "type": "response.future_event",
+    "sequence_number": 10,
+    "data": {"future": true}
+  },
+  {
+    "type": "response.completed",
+    "response": {
+      "id": "resp-stream",
+      "status": "completed",
+      "output": [
+        {
+          "id": "reasoning-stream",
+          "type": "reasoning",
+          "encrypted_content": "opaque-stream-reasoning",
+          "summary": []
+        },
+        {
+          "id": "message-commentary",
+          "type": "message",
+          "role": "assistant",
+          "phase": "commentary",
+          "content": [{"type": "output_text", "text": "Checking inputs."}]
+        },
+        {
+          "id": "function-stream",
+          "type": "function_call",
+          "call_id": "call-stream",
+          "name": "projects__list",
+          "arguments": "{\"limit\":5}"
+        },
+        {
+          "id": "message-final",
+          "type": "message",
+          "role": "assistant",
+          "phase": "final_answer",
+          "content": [{"type": "output_text", "text": "Done."}]
+        }
+      ],
+      "usage": {
+        "input_tokens": 30,
+        "output_tokens": 12,
+        "total_tokens": 42,
+        "input_tokens_details": {"cached_tokens": 8},
+        "output_tokens_details": {"reasoning_tokens": 7}
+      }
+    }
+  }
+]

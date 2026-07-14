@@ -1,7 +1,7 @@
 """persist agent tool call batches
 
-Revision ID: 0045_agent_tool_call_batches
-Revises: 0044_agent_permission_policy
+Revision ID: 0047_agent_tool_call_batches
+Revises: 0046_agent_permission_policy
 Create Date: 2026-07-13
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0045_agent_tool_call_batches"
-down_revision = "0044_agent_permission_policy"
+revision = "0047_agent_tool_call_batches"
+down_revision = "0046_agent_permission_policy"
 branch_labels = None
 depends_on = None
 

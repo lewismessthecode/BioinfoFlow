@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -11,8 +13,8 @@ from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
 from app.models.agent_core import AgentEvent, AgentTurn
-from app.models.remote_connection import RemoteConnection
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
+from app.models.remote_connection import RemoteConnection
 from app.path_layout import project_home, skills_root
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.actions import AgentActionService
@@ -20,14 +22,38 @@ from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
+from app.services.model_runtime.gateway import ModelGateway
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+class _FakeBackend:
+    def __init__(self, completion: Callable[..., Awaitable[Any]]) -> None:
+        self.completion = completion
+
+    async def invoke(
+        self,
+        wire_protocol: str,
+        request: dict[str, Any],
+        *,
+        network_access: str = "unrestricted",
+    ) -> Any:
+        assert wire_protocol == "chat_completions"
+        return await self.completion(**request)
+
+
+def _install_fake_completion(monkeypatch, completion) -> None:
+    gateway = ModelGateway(backend=_FakeBackend(completion))
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.ModelGateway",
+        lambda: gateway,
+    )
 
 
 @pytest.mark.asyncio
 async def test_permission_policy_version_and_action_audit_api_contract(
     async_client,
     db_session,
-):
+) -> None:
     created_response = await async_client.post(
         "/api/v1/agent/sessions",
         json={"title": "Permission audit"},
@@ -93,7 +119,7 @@ async def test_permission_policy_version_and_action_audit_api_contract(
 async def test_get_remote_action_exposes_safe_executor_snapshot(
     async_client,
     db_session,
-):
+) -> None:
     connection = RemoteConnection(
         workspace_id=DEFAULT_WORKSPACE_ID,
         name="Sensitive remote",
@@ -150,7 +176,9 @@ async def test_get_remote_action_exposes_safe_executor_snapshot(
     assert response.status_code == 200
     action = response.json()["data"]
     assert action["permission_context_snapshot"]["command_risk"]["level"] == "act_low"
-    assert action["permission_context_snapshot"]["command_risk"]["effects"] == ["read"]
+    assert action["permission_context_snapshot"]["command_risk"]["effects"] == [
+        "read"
+    ]
     assert action["permission_context_snapshot"]["remote_identity"]["host"] == (
         "safe-host.internal"
     )
@@ -165,7 +193,7 @@ async def test_get_action_does_not_reveal_cross_scope_existence(
     async_client,
     app,
     db_session,
-):
+) -> None:
     create_response = await async_client.post(
         "/api/v1/agent/sessions",
         json={"title": "Private action"},
@@ -401,10 +429,7 @@ async def test_agent_skills_api_lists_and_loads_local_manifests(
 
     loaded = await async_client.get("/api/v1/agent/skills/nextflow-debugging")
     assert loaded.status_code == 200
-    assert (
-        loaded.json()["data"]["body"]
-        == "Use logs and audit events before explaining failures."
-    )
+    assert loaded.json()["data"]["body"] == "Use logs and audit events before explaining failures."
 
     missing = await async_client.get("/api/v1/agent/skills/missing-skill")
     assert missing.status_code == 404
@@ -520,9 +545,7 @@ async def test_agent_turn_create_accepts_repo_scoped_active_skills(
 
 
 @pytest.mark.asyncio
-async def test_agent_core_session_turn_event_and_artifact_contract(
-    async_client, monkeypatch
-):
+async def test_agent_core_session_turn_event_and_artifact_contract(async_client, monkeypatch):
     stream_log_records: list[tuple[str, str, dict]] = []
 
     class SpyLogger:
@@ -551,7 +574,7 @@ async def test_agent_core_session_turn_event_and_artifact_contract(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     model = await _create_llm_model(async_client)
     project_id = await _create_project(async_client)
@@ -609,7 +632,9 @@ async def test_agent_core_session_turn_event_and_artifact_contract(
     assert turn["model_profile_snapshot"]["resolved_model_id"] == model["id"]
     assert turn["model_profile_snapshot"]["resolved_model_source"] == "session"
 
-    list_turns = await async_client.get(f"/api/v1/agent/sessions/{session['id']}/turns")
+    list_turns = await async_client.get(
+        f"/api/v1/agent/sessions/{session['id']}/turns"
+    )
     assert list_turns.status_code == 200
     assert [item["id"] for item in list_turns.json()["data"]] == [turn["id"]]
 
@@ -665,9 +690,7 @@ async def test_agent_core_session_turn_event_and_artifact_contract(
 
 
 @pytest.mark.asyncio
-async def test_agent_session_state_can_limit_large_event_payload(
-    async_client, db_session
-):
+async def test_agent_session_state_can_limit_large_event_payload(async_client, db_session):
     project_id = await _create_project(async_client)
     create_session = await async_client.post(
         "/api/v1/agent/sessions",
@@ -773,7 +796,8 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
     second_turn_row.token_usage = {
         "input_tokens": 800,
         "output_tokens": 200,
-        "completion_tokens_details": {"reasoning_tokens": 45},
+        "cached_input_tokens": 25,
+        "reasoning_tokens": 45,
     }
     second_turn_row.model_profile_snapshot = {
         **(second_turn_row.model_profile_snapshot or {}),
@@ -791,16 +815,18 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
         "input_tokens": 2000,
         "output_tokens": 500,
         "total_tokens": 2500,
-        "cached_input_tokens": 125,
+        "cached_input_tokens": 150,
         "reasoning_tokens": 45,
         "context_window": 128000,
         "max_output_tokens": 8192,
         "turns_with_usage": 2,
         "raw_totals": {
+            "cached_input_tokens": 25,
             "completion_tokens": 300,
             "input_tokens": 800,
             "output_tokens": 200,
             "prompt_tokens": 1200,
+            "reasoning_tokens": 45,
             "total_tokens": 1500,
         },
     }
@@ -821,7 +847,7 @@ async def test_agent_core_accepts_catalog_model_selection(async_client, monkeypa
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     model = await _create_llm_model(async_client)
@@ -1031,7 +1057,7 @@ async def test_agent_core_streams_text_and_reasoning_events(async_client, monkey
 
         return stream()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1150,7 +1176,7 @@ async def test_agent_core_emits_tool_call_lifecycle_events(async_client, monkeyp
             return tool_call_stream()
         return final_text_stream()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     model = await _create_llm_model(async_client)
@@ -1216,7 +1242,7 @@ async def test_agent_core_ollama_catalog_selection_uses_root_api_base(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1294,7 +1320,7 @@ async def test_agent_core_anthropic_catalog_selection_preserves_native_api_base(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1372,7 +1398,7 @@ async def test_agent_core_profile_strategy_can_disable_streaming_thinking_and_to
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1464,7 +1490,7 @@ async def test_agent_core_tool_capable_catalog_model_receives_tools(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     model = await _create_llm_model(async_client)
@@ -1594,7 +1620,7 @@ async def test_agent_core_prefers_user_catalog_model_over_environment_global_def
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     global_provider = LlmProvider(
         name="Env vLLM",
@@ -1693,7 +1719,7 @@ async def test_agent_core_rejects_invisible_catalog_model_selection(
         completion = True
         raise AssertionError("invisible catalog model should not be called")
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
     invisible_model = await _create_scoped_llm_model(
         db_session,
         provider_user_id="other-user",
@@ -1756,7 +1782,9 @@ async def test_agent_fs_tree_defaults_to_project_home(async_client):
     marker = project_root / "project-note.txt"
     marker.write_text("project scoped", encoding="utf-8")
 
-    response = await async_client.get(f"/api/v1/agent/fs/tree?project_id={project_id}")
+    response = await async_client.get(
+        f"/api/v1/agent/fs/tree?project_id={project_id}"
+    )
 
     assert response.status_code == 200
     data = response.json()["data"]
@@ -1765,9 +1793,7 @@ async def test_agent_fs_tree_defaults_to_project_home(async_client):
 
 
 @pytest.mark.asyncio
-async def test_agent_fs_file_rejects_sensitive_files(
-    async_client, tmp_path, monkeypatch
-):
+async def test_agent_fs_file_rejects_sensitive_files(async_client, tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     data_root = tmp_path / "data"
     repo_root.mkdir()
@@ -1783,10 +1809,14 @@ async def test_agent_fs_file_rejects_sensitive_files(
     monkeypatch.setattr(settings, "repo_root", str(repo_root))
     monkeypatch.setattr(settings, "bioinfoflow_home", str(data_root))
 
-    public_resp = await async_client.get(f"/api/v1/agent/fs/file?path={public_file}")
+    public_resp = await async_client.get(
+        f"/api/v1/agent/fs/file?path={public_file}"
+    )
     assert public_resp.status_code == 200
 
-    secret_resp = await async_client.get(f"/api/v1/agent/fs/file?path={secret_file}")
+    secret_resp = await async_client.get(
+        f"/api/v1/agent/fs/file?path={secret_file}"
+    )
     assert secret_resp.status_code == 403
     data_secret_resp = await async_client.get(
         f"/api/v1/agent/fs/file?path={nested_secret}"
@@ -1795,9 +1825,7 @@ async def test_agent_fs_file_rejects_sensitive_files(
 
 
 @pytest.mark.asyncio
-async def test_agent_fs_file_supports_binary_preview_download(
-    async_client, tmp_path, monkeypatch
-):
+async def test_agent_fs_file_supports_binary_preview_download(async_client, tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     data_root = tmp_path / "data"
     repo_root.mkdir()
@@ -1811,9 +1839,7 @@ async def test_agent_fs_file_supports_binary_preview_download(
     png_file = repo_root / "plot.png"
     png_file.write_bytes(b"\x89PNG\r\n\x1a\nbinary-\xff\n")
     svg_file = repo_root / "plot.svg"
-    svg_file.write_text(
-        "<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8"
-    )
+    svg_file.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
     html_file = repo_root / 'report "qc"; v1.html'
     html_file.write_text("<h1>QC</h1>", encoding="utf-8")
 
@@ -1892,9 +1918,7 @@ async def test_agent_toolsets_include_plan_mode(async_client):
     response = await async_client.get("/api/v1/agent/toolsets")
 
     assert response.status_code == 200
-    toolsets = {
-        item["name"]: item["tools"] for item in response.json()["data"]["toolsets"]
-    }
+    toolsets = {item["name"]: item["tools"] for item in response.json()["data"]["toolsets"]}
     assert "plan" in toolsets
     assert "exit_plan_mode" in toolsets["plan"]
     assert "bash" not in toolsets["plan"]

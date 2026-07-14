@@ -24,7 +24,7 @@ def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(tmp_path: Path) -> None:
     db_path = tmp_path / "tool-call-batches.db"
-    previous = _run_alembic(db_path, "upgrade", "0044_agent_permission_policy")
+    previous = _run_alembic(db_path, "upgrade", "0046_agent_permission_policy")
     assert previous.returncode == 0, previous.stderr
 
     with sqlite3.connect(db_path) as connection:

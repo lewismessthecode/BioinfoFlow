@@ -1,7 +1,7 @@
 """serialize per-turn tool batch ordinals
 
-Revision ID: 0047_agent_turn_tool_batch_sequence
-Revises: 0046_agent_tool_batch_order
+Revision ID: 0049_agent_turn_tool_batch_sequence
+Revises: 0048_agent_tool_batch_order
 Create Date: 2026-07-13
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0047_agent_turn_tool_batch_sequence"
-down_revision = "0046_agent_tool_batch_order"
+revision = "0049_agent_turn_tool_batch_sequence"
+down_revision = "0048_agent_tool_batch_order"
 branch_labels = None
 depends_on = None
 

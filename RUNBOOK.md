@@ -438,6 +438,42 @@ cd backend && uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 cd frontend && bun run dev
 ```
 
+### Validate an OpenAI-compatible Responses relay
+
+In **Settings -> AI Providers**, configure **OpenAI Compatible** with the API
+root URL (normally ending in `/v1`, not `/responses`), select **Responses**, add
+the model ID, and save. Plain HTTP endpoints require the explicit **Allow
+insecure HTTP** switch because API keys and prompts otherwise travel without
+TLS. Save, model discovery, and the model-specific connection test are separate
+actions.
+
+In `AUTH_MODE=team`, server environment credentials and localhost/private or
+internal provider endpoints are restricted to owner/admin roles because they
+cross the backend host trust boundary. Team members can use stored credentials
+with public provider endpoints. Personal and development modes keep local relay,
+Ollama, and vLLM workflows available.
+
+For a backend end-to-end smoke test, export the relay configuration without
+placing the key value on the command line:
+
+```bash
+export BIOINFOFLOW_RELAY_BASE_URL=http://relay.example:8079/v1
+export BIOINFOFLOW_RELAY_MODEL=gpt-5.4-mini
+export BIOINFOFLOW_RELAY_ALLOW_INSECURE_HTTP=1  # omit for HTTPS
+read -rsp "Relay API key: " BIOINFOFLOW_RELAY_API_KEY && echo
+export BIOINFOFLOW_RELAY_API_KEY
+
+cd backend
+BIOINFOFLOW_LIVE_RELAY=1 uv run pytest \
+  tests/integration/test_live_responses_relay.py -m live_relay -q \
+  --show-capture=no
+```
+
+The smoke test uses the same encrypted credential, catalog selection,
+AgentCore, LiteLLM Responses, transcript, and event-ledger path as a normal
+agent turn. Some relays expose Responses while returning no capacity for Chat
+Completions; choose the protocol the relay actually supports.
+
 ## 5. Common Friction Points
 
 ### Frontend cannot reach backend

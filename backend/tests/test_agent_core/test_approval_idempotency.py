@@ -193,6 +193,7 @@ async def test_two_workers_claim_requested_action_before_side_effect(
         risk_level="act_high",
         permission_decision={"decision": "approve"},
         status=AgentActionStatus.REQUESTED,
+        requires_resume=True,
     )
     side_effects = 0
     entered = asyncio.Event()
@@ -262,6 +263,7 @@ async def test_cross_session_cancel_wins_over_running_tool_completion(
         risk_level="act_high",
         permission_decision={"decision": "approve", "source": "user"},
         status=AgentActionStatus.REQUESTED,
+        requires_resume=True,
     )
     entered = asyncio.Event()
     release = asyncio.Event()
@@ -327,7 +329,7 @@ async def test_lease_loss_leaves_running_action_for_recovery(
     await AgentTurnRepository(db_session).update_all(
         turn,
         status=AgentTurnStatus.RUNNING,
-        lease_owner_token=owner_token,
+        owner_token=owner_token,
         lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
     )
     action = await AgentActionRepository(db_session).create(
@@ -340,6 +342,7 @@ async def test_lease_loss_leaves_running_action_for_recovery(
         risk_level="act_high",
         permission_decision={"decision": "approve", "source": "user"},
         status=AgentActionStatus.REQUESTED,
+        requires_resume=True,
     )
     entered = asyncio.Event()
 
@@ -362,7 +365,7 @@ async def test_lease_loss_leaves_running_action_for_recovery(
                     user_id="dev",
                     session_id=str(session.id),
                     turn_id=str(turn.id),
-                    execution_owner_token=owner_token,
+                    expected_owner_token=owner_token,
                 ),
             )
         )
@@ -370,7 +373,7 @@ async def test_lease_loss_leaves_running_action_for_recovery(
         replacement = await AgentTurnRepository(takeover).get_fresh(str(turn.id))
         await AgentTurnRepository(takeover).update_all(
             replacement,
-            lease_owner_token="replacement-owner",
+            owner_token="replacement-owner",
             lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
         )
         worker_task.cancel(LEASE_LOSS_CANCELLATION)
@@ -398,7 +401,7 @@ async def test_stale_owner_cannot_complete_tool_that_swallows_lease_loss(
     await AgentTurnRepository(db_session).update_all(
         turn,
         status=AgentTurnStatus.RUNNING,
-        lease_owner_token=owner_token,
+        owner_token=owner_token,
         lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
     )
     action = await AgentActionRepository(db_session).create(
@@ -411,6 +414,7 @@ async def test_stale_owner_cannot_complete_tool_that_swallows_lease_loss(
         risk_level="act_high",
         permission_decision={"decision": "approve", "source": "user"},
         status=AgentActionStatus.REQUESTED,
+        requires_resume=True,
     )
     entered = asyncio.Event()
 
@@ -443,7 +447,7 @@ async def test_stale_owner_cannot_complete_tool_that_swallows_lease_loss(
                     user_id="dev",
                     session_id=str(session.id),
                     turn_id=str(turn.id),
-                    execution_owner_token=owner_token,
+                    expected_owner_token=owner_token,
                 ),
             )
         )
@@ -451,7 +455,7 @@ async def test_stale_owner_cannot_complete_tool_that_swallows_lease_loss(
         replacement = await AgentTurnRepository(takeover).get_fresh(str(turn.id))
         await AgentTurnRepository(takeover).update_all(
             replacement,
-            lease_owner_token="replacement-owner",
+            owner_token="replacement-owner",
             lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
         )
         worker_task.cancel(LEASE_LOSS_CANCELLATION)
@@ -477,7 +481,7 @@ async def test_owner_fenced_action_transition_locks_turn_before_action_update(
     await AgentTurnRepository(db_session).update_all(
         turn,
         status=AgentTurnStatus.RUNNING,
-        lease_owner_token=owner_token,
+        owner_token=owner_token,
         lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
     )
     action = await AgentActionRepository(db_session).create(
@@ -519,7 +523,7 @@ async def test_owner_fenced_action_transition_locks_turn_before_action_update(
         index
         for index, statement in enumerate(statements)
         if statement.startswith("update agent_turns")
-        and "lease_owner_token" in statement
+            and "owner_token" in statement
         and "status" in statement
     )
     action_update_index = next(
@@ -540,7 +544,7 @@ async def test_owner_fenced_action_transaction_serializes_replacement_claim(
     await AgentTurnRepository(db_session).update_all(
         turn,
         status=AgentTurnStatus.RUNNING,
-        lease_owner_token=owner_token,
+        owner_token=owner_token,
         lease_until=datetime.now(timezone.utc) - timedelta(seconds=1),
     )
     action = await AgentActionRepository(db_session).create(
@@ -578,7 +582,7 @@ async def test_owner_fenced_action_transaction_serializes_replacement_claim(
 
     assert completed is not None
     assert replacement is not None
-    assert replacement.lease_owner_token == "replacement-owner"
+    assert replacement.owner_token == "replacement-owner"
 
 
 @pytest.mark.asyncio
@@ -587,7 +591,7 @@ async def test_stale_owner_cannot_fail_or_cancel_open_actions(db_session):
     await AgentTurnRepository(db_session).update_all(
         turn,
         status=AgentTurnStatus.RUNNING,
-        lease_owner_token="replacement-owner",
+        owner_token="replacement-owner",
         lease_until=datetime.now(timezone.utc) + timedelta(minutes=1),
     )
     failed_candidate = await AgentActionRepository(db_session).create(
@@ -652,6 +656,7 @@ async def test_requested_action_rechecks_fresh_catastrophic_hard_block(
         risk_level="act_high",
         permission_decision={"decision": "approve"},
         status=AgentActionStatus.REQUESTED,
+        requires_resume=True,
     )
     side_effects = 0
 
@@ -697,6 +702,7 @@ async def test_requested_action_rechecks_fresh_policy_before_side_effect_claim(
         permission_decision={"decision": "allow", "source": "policy"},
         evaluated_policy_version=session.permission_policy_version,
         status=AgentActionStatus.REQUESTED,
+        requires_resume=True,
     )
     await AgentCoreService(db_session).update_session(
         session_id=str(session.id),
@@ -750,6 +756,7 @@ async def test_requested_action_requires_real_user_approval_when_risk_demands_it
         permission_decision={"decision": "allow", "source": "policy"},
         evaluated_policy_version=session.permission_policy_version,
         status=AgentActionStatus.REQUESTED,
+        requires_resume=True,
     )
     side_effects = 0
 

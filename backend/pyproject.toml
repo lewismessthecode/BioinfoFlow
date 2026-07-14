@@ -29,6 +29,8 @@ dependencies = [
   "structlog",
   "miniwdl>=1.13.1",
   "httpx",
+  "aiohttp>=3.12",
+  "yarl>=1.18",
   "cryptography>=46",
   "typer>=0.15",
   "rich>=13.0",
@@ -60,6 +62,7 @@ quote-style = "double"
 [tool.pytest.ini_options]
 markers = [
   "unit: fast unit tests for helper-level behavior",
+  "live_relay: opt-in end-to-end tests against a configured LLM relay",
 ]
 filterwarnings = [
   "ignore:pythonjsonlogger\\.jsonlogger has been moved to pythonjsonlogger\\.json:DeprecationWarning",

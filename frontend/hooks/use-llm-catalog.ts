@@ -150,12 +150,15 @@ export function useLlmCatalog() {
   )
 
   const testProvider = useCallback(
-    async (providerId: string): Promise<LlmProviderTestResult | null> => {
+    async (
+      providerId: string,
+      modelId?: string,
+    ): Promise<LlmProviderTestResult | null> => {
       setPendingMutationCount((count) => count + 1)
       setError(null)
       try {
-        const result = await testLlmProvider(providerId)
-        await refresh()
+        const result = await testLlmProvider(providerId, modelId)
+        await refresh({ background: true })
         return result
       } catch (caught) {
         setError(caught instanceof Error ? caught : new Error("Failed to test LLM provider"))

@@ -80,6 +80,7 @@ describe("useLlmCatalog", () => {
         baseUrl: "http://8.129.13.231:8079/v1",
         apiKey: "relay-key",
         modelIds: ["gpt-5.6-sol"],
+        wireProtocol: "responses",
         allowInsecureHttp: true,
       })
     })
@@ -91,6 +92,209 @@ describe("useLlmCatalog", () => {
         body: expect.stringContaining('"allow_insecure_http":true'),
       }),
     )
+    const setupCall = apiRequestMock.mock.calls.find(
+      ([path]) => path === "/llm/provider-setups",
+    )
+    expect(JSON.parse(setupCall?.[1]?.body ?? "{}")).toMatchObject({
+      wire_protocol: "responses",
+    })
+  })
+
+  it("preserves provider and template wire protocol capabilities from the API", async () => {
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({
+          data: {
+            ...emptyConfiguration,
+            providers: [
+              {
+                id: "provider-relay",
+                wire_protocol: "responses",
+                credential: {
+                  source: "stored",
+                  configured: true,
+                  available: true,
+                },
+              },
+            ],
+          },
+        })
+      }
+      if (path === "/llm/provider-templates") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "openai-compatible",
+              supported_wire_protocols: ["chat_completions", "responses"],
+              default_wire_protocol: "chat_completions",
+            },
+          ],
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+
+    const { result } = renderHook(() => useLlmCatalog())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.configuredProviders[0]?.wire_protocol).toBe("responses")
+    expect(result.current.providerTemplates[0]?.supported_wire_protocols).toEqual([
+      "chat_completions",
+      "responses",
+    ])
+    expect(result.current.providerTemplates[0]?.default_wire_protocol).toBe(
+      "chat_completions",
+    )
+  })
+
+  it("serializes wire protocol when creating and updating providers", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { body?: string }) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({ data: emptyConfiguration })
+      }
+      if (path === "/llm/provider-templates") {
+        return Promise.resolve({ data: [] })
+      }
+      if (path === "/llm/providers") {
+        return Promise.resolve({
+          data: {
+            id: "provider-relay",
+            wire_protocol: JSON.parse(options?.body ?? "{}").wire_protocol,
+          },
+        })
+      }
+      if (path === "/llm/providers/provider-relay") {
+        return Promise.resolve({
+          data: {
+            id: "provider-relay",
+            wire_protocol: JSON.parse(options?.body ?? "{}").wire_protocol,
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+    const { result } = renderHook(() => useLlmCatalog())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    await act(async () => {
+      await result.current.createProvider({
+        name: "Relay",
+        kind: "openai_compatible",
+        wireProtocol: "responses",
+      })
+      await result.current.updateProvider("provider-relay", {
+        wireProtocol: "chat_completions",
+      })
+    })
+
+    const createCall = apiRequestMock.mock.calls.find(
+      ([path]) => path === "/llm/providers",
+    )
+    const updateCall = apiRequestMock.mock.calls.find(
+      ([path]) => path === "/llm/providers/provider-relay",
+    )
+    expect(JSON.parse(createCall?.[1]?.body ?? "{}").wire_protocol).toBe("responses")
+    expect(JSON.parse(updateCall?.[1]?.body ?? "{}").wire_protocol).toBe(
+      "chat_completions",
+    )
+  })
+
+  it("omits an unspecified wire protocol from provider setup requests", async () => {
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        return Promise.resolve({ data: emptyConfiguration })
+      }
+      if (path === "/llm/provider-templates") {
+        return Promise.resolve({ data: [] })
+      }
+      if (path === "/llm/provider-setups") {
+        return Promise.resolve({
+          data: {
+            provider: { id: "provider-relay" },
+            models: [],
+            discovered: false,
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+    const { result } = renderHook(() => useLlmCatalog())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    await act(async () => {
+      await result.current.setupProvider({
+        templateId: "openai-compatible",
+        providerId: "provider-relay",
+      })
+    })
+
+    const setupCall = apiRequestMock.mock.calls.find(
+      ([path]) => path === "/llm/provider-setups",
+    )
+    expect(JSON.parse(setupCall?.[1]?.body ?? "{}")).not.toHaveProperty(
+      "wire_protocol",
+    )
+  })
+
+  it("tests an optional selected model and returns the full safe probe result", async () => {
+    let configurationCalls = 0
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/llm/configuration") {
+        configurationCalls += 1
+        return Promise.resolve({ data: emptyConfiguration })
+      }
+      if (path === "/llm/provider-templates") {
+        return Promise.resolve({ data: [] })
+      }
+      if (path === "/llm/providers/provider-relay/test") {
+        return Promise.resolve({
+          data: {
+            provider_id: "provider-relay",
+            success: false,
+            model: "gpt-5.4-mini",
+            wire_protocol: "responses",
+            error_code: "service_unavailable",
+            error: "The model provider is temporarily unavailable.",
+            latency_ms: 125,
+            retryable: true,
+            http_status: 503,
+            provider_code: "server_error",
+          },
+        })
+      }
+      return Promise.resolve({ data: null })
+    })
+    const { result } = renderHook(() => useLlmCatalog())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    let probeResult: Awaited<ReturnType<typeof result.current.testProvider>>
+    await act(async () => {
+      probeResult = await result.current.testProvider(
+        "provider-relay",
+        "model-record-id",
+      )
+    })
+
+    expect(probeResult!).toEqual({
+      provider_id: "provider-relay",
+      success: false,
+      model: "gpt-5.4-mini",
+      wire_protocol: "responses",
+      error_code: "service_unavailable",
+      error: "The model provider is temporarily unavailable.",
+      latency_ms: 125,
+      retryable: true,
+      http_status: 503,
+      provider_code: "server_error",
+    })
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "/llm/providers/provider-relay/test",
+      {
+        method: "POST",
+        body: JSON.stringify({ model_id: "model-record-id" }),
+      },
+    )
+    expect(configurationCalls).toBe(2)
   })
 
   it("returns the concrete setup error for row-level rendering", async () => {

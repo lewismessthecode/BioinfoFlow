@@ -5,9 +5,14 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_core import AgentActionStatus
-from app.repositories.agent_core_repo import AgentActionRepository, AgentTurnRepository
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentTurnRepository,
+    ensure_clean_owned_publication_session,
+)
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.permissions import PermissionPolicy, RiskEngine
 from app.services.agent_core.permissions.policy import PermissionDecision
 from app.services.agent_core.permissions.risk import RiskAssessment, RiskLevel
@@ -48,7 +53,10 @@ class AgentActionService:
         evaluated_policy_version: int | None = None,
         permission_context_snapshot: dict | None = None,
         commit: bool = True,
+        expected_owner_token: str | None = None,
     ):
+        if expected_owner_token is not None and commit:
+            ensure_clean_owned_publication_session(self.action_repo.session)
         turn = await self.turn_repo.get(turn_id)
         if turn is None:
             raise NotFoundError(f"Agent turn not found: {turn_id}")
@@ -81,15 +89,13 @@ class AgentActionService:
         status = _status_for_decision(decision.decision)
         if input_preview is None:
             input_preview = _input_preview(name=name, action_input=action_input)
-        create = self.action_repo.create if commit else self.action_repo.add
         decision_payload = {
             **decision.as_dict(),
             "source": "policy",
             "requires_explicit_approval": risk.requires_explicit_approval,
         }
-        action = await create(
+        action_data = dict(
             session_id=str(turn.session_id),
-            turn_id=str(turn.id),
             kind=kind,
             name=name,
             tool_call_id=tool_call_id,
@@ -112,6 +118,19 @@ class AgentActionService:
             rollback_hint=rollback_hint,
             artifact_policy=artifact_policy,
         )
+        if expected_owner_token is None:
+            create = self.action_repo.create if commit else self.action_repo.add
+            action = await create(turn_id=str(turn.id), **action_data)
+        else:
+            action, owned = await self.action_repo.create_for_owned_turn(
+                turn_id=str(turn.id),
+                expected_owner_token=expected_owner_token,
+                commit=commit,
+                owner_fenced=not commit,
+                **action_data,
+            )
+            if not owned or action is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
         await self.ledger.append(
             session_id=str(turn.session_id),
             turn_id=str(turn.id),
@@ -123,6 +142,8 @@ class AgentActionService:
                 "evaluated_policy_version": evaluated_policy_version,
             },
             commit=commit,
+            expected_owner_token=expected_owner_token,
+            owner_fenced=not commit,
         )
         risk_event_payload: dict = {
             "action_id": str(action.id),
@@ -147,6 +168,8 @@ class AgentActionService:
             type=AgentEventType.ACTION_RISK_ASSESSED,
             payload=risk_event_payload,
             commit=commit,
+            expected_owner_token=expected_owner_token,
+            owner_fenced=not commit,
         )
         if decision.decision == "ask":
             # Enrich the waiting-decision event so the frontend renders the
@@ -169,6 +192,8 @@ class AgentActionService:
                 type=AgentEventType.ACTION_WAITING_DECISION,
                 payload=payload,
                 commit=commit,
+                expected_owner_token=expected_owner_token,
+                owner_fenced=not commit,
             )
         return action
 

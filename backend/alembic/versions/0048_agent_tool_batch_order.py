@@ -1,7 +1,7 @@
 """order durable agent tool call batches
 
-Revision ID: 0046_agent_tool_batch_order
-Revises: 0045_agent_tool_call_batches
+Revision ID: 0048_agent_tool_batch_order
+Revises: 0047_agent_tool_call_batches
 Create Date: 2026-07-13
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0046_agent_tool_batch_order"
-down_revision = "0045_agent_tool_call_batches"
+revision = "0048_agent_tool_batch_order"
+down_revision = "0047_agent_tool_call_batches"
 branch_labels = None
 depends_on = None
 

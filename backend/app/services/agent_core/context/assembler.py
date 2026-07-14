@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,12 +32,31 @@ from app.services.agent_core.transcript import (
     AgentTranscriptStore,
     provider_message_from_parts,
 )
+from app.services.agent_core.transcript.messages import model_input_parts_from_message
+from app.services.model_runtime.contracts import InputPart
+
+
+@dataclass(frozen=True)
+class AgentModelContext:
+    instructions: str
+    input_items: tuple[InputPart, ...]
+    compacted: bool = False
 
 
 class AgentContextAssembler:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        owned_turn_id: str | None = None,
+        expected_owner_token: str | None = None,
+    ):
         self.db = session
-        self.transcript = AgentTranscriptStore(session)
+        self.transcript = AgentTranscriptStore(
+            session,
+            owned_turn_id=owned_turn_id,
+            expected_owner_token=expected_owner_token,
+        )
         self.memories = AgentMemoryRepository(session)
         self.project_instructions = ProjectInstructionResolver(session)
 
@@ -45,34 +66,25 @@ class AgentContextAssembler:
         agent_session,
         turn,
         exposed_tools=None,
+        skip_compaction: bool = False,
     ) -> list[dict]:
         await self._repair_incomplete_tool_groups(
             session_id=str(agent_session.id),
             turn_id=str(turn.id),
         )
-        await self._compact_if_needed(agent_session=agent_session, turn=turn)
+        if not skip_compaction:
+            await self._compact_if_needed(agent_session=agent_session, turn=turn)
         # Stable, cache-friendly identity prefix comes first; everything that
         # changes per session/turn is appended after it.
-        system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
-        project_instruction_context = await self.project_instructions.resolve(
-            agent_session,
-            turn=turn,
-        )
-        if project_instruction_context:
-            system_sections.append(project_instruction_context)
-        environment_context = await self._environment_context(
-            agent_session, exposed_tools
-        )
-        if environment_context:
-            system_sections.append(environment_context)
-        memory_context = await self._memory_context(agent_session)
-        if memory_context:
-            system_sections.append(memory_context)
-        skills_context = self._skills_context(turn)
-        if skills_context:
-            system_sections.append(skills_context)
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": "\n\n".join(section for section in system_sections if section)}
+            {
+                "role": "system",
+                "content": await self._instructions(
+                    agent_session=agent_session,
+                    turn=turn,
+                    exposed_tools=exposed_tools,
+                ),
+            }
         ]
         transcript_messages = []
         for message in await self.transcript.list_messages(str(agent_session.id)):
@@ -244,10 +256,52 @@ class AgentContextAssembler:
                 index = 0
                 continue
             index = cursor
-    async def _compact_if_needed(self, *, agent_session, turn) -> None:
+
+    async def model_context(
+        self,
+        *,
+        agent_session,
+        turn,
+        exposed_tools=None,
+        skip_compaction: bool = False,
+    ) -> AgentModelContext:
+        await self._repair_incomplete_tool_groups(
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        )
+        compacted = False
+        if not skip_compaction:
+            compacted = await self._compact_if_needed(
+                agent_session=agent_session,
+                turn=turn,
+            )
+        input_items: list[InputPart] = []
+        for message in await self.transcript.list_messages(str(agent_session.id)):
+            if message.status != "committed":
+                continue
+            if message.role not in {"user", "assistant", "tool"}:
+                continue
+            input_items.extend(
+                model_input_parts_from_message(
+                    message.role,
+                    message.content_parts or [],
+                    getattr(message, "message_metadata", None),
+                )
+            )
+        return AgentModelContext(
+            instructions=await self._instructions(
+                agent_session=agent_session,
+                turn=turn,
+                exposed_tools=exposed_tools,
+            ),
+            input_items=tuple(input_items),
+            compacted=compacted,
+        )
+
+    async def _compact_if_needed(self, *, agent_session, turn) -> bool:
         policy = getattr(agent_session, "compression_state", None) or {}
         if not bool(policy.get("enabled", False)):
-            return
+            return False
         threshold_chars = int(policy.get("threshold_chars") or 12000)
         preserve_recent_messages = int(policy.get("preserve_recent_messages") or 12)
         compacted = await self.transcript.compact_session(
@@ -258,6 +312,29 @@ class AgentContextAssembler:
         )
         if compacted is not None:
             agent_metrics.increment("transcript.compactions")
+            return True
+        return False
+
+    async def _instructions(self, *, agent_session, turn, exposed_tools=None) -> str:
+        system_sections = [resolve_system_prompt_prefix(agent_session.prompt_snapshot)]
+        project_instruction_context = await self.project_instructions.resolve(
+            agent_session,
+            turn=turn,
+        )
+        if project_instruction_context:
+            system_sections.append(project_instruction_context)
+        environment_context = await self._environment_context(
+            agent_session, exposed_tools
+        )
+        if environment_context:
+            system_sections.append(environment_context)
+        memory_context = await self._memory_context(agent_session)
+        if memory_context:
+            system_sections.append(memory_context)
+        skills_context = self._skills_context(turn)
+        if skills_context:
+            system_sections.append(skills_context)
+        return "\n\n".join(section for section in system_sections if section)
 
     async def _environment_context(self, agent_session, exposed_tools=None) -> str:
         """Dynamic per-turn environment, platform inventory, and tool list.
@@ -267,10 +344,14 @@ class AgentContextAssembler:
         platform state, and the exact tools it can call every turn. Ordering is
         deterministic so the preceding stable prefix stays cache-identical.
         """
-        toolset = (getattr(agent_session, "toolset_policy", None) or {}).get("name") or "default"
+        toolset = (getattr(agent_session, "toolset_policy", None) or {}).get(
+            "name"
+        ) or "default"
         lines: list[str] = ["## Environment"]
         lines.append(f"- Working directory: {settings.repo_root}")
-        allowed_roots = ", ".join(str(root) for root in FilesystemPolicy().allowed_roots)
+        allowed_roots = ", ".join(
+            str(root) for root in FilesystemPolicy().allowed_roots
+        )
         lines.append(f"- Allowed filesystem roots: {allowed_roots}")
         lines.append(f"- Workspace: {agent_session.workspace_id}")
         lines.append(
@@ -284,7 +365,9 @@ class AgentContextAssembler:
             "for the user's approval."
         )
         lines.append(f"- Runtime mode: {getattr(agent_session, 'runtime_mode', 'api')}")
-        lines.append(f"- Role profile: {getattr(agent_session, 'role_profile', 'bioinformatician')}")
+        lines.append(
+            f"- Role profile: {getattr(agent_session, 'role_profile', 'bioinformatician')}"
+        )
         lines.append(f"- Toolset policy: {toolset}")
         if toolset == "plan":
             lines.append(
@@ -342,7 +425,9 @@ class AgentContextAssembler:
     async def _memory_context(self, agent_session) -> str | None:
         memories = await self.memories.list_for_workspace(
             workspace_id=str(agent_session.workspace_id),
-            project_id=str(agent_session.project_id) if agent_session.project_id else None,
+            project_id=str(agent_session.project_id)
+            if agent_session.project_id
+            else None,
             status=AgentMemoryStatus.ACCEPTED,
         )
         if not memories:
@@ -354,7 +439,9 @@ class AgentContextAssembler:
 
     def _skills_context(self, turn) -> str | None:
         skills = AgentSkillRegistry.from_default_roots()
-        plugins = AgentPluginRegistry.from_directory(state_root() / "agent_core" / "plugins")
+        plugins = AgentPluginRegistry.from_directory(
+            state_root() / "agent_core" / "plugins"
+        )
         lines: list[str] = []
         if skills.list():
             lines.append("## Agent skills")
@@ -438,6 +525,42 @@ def _complete_provider_groups(messages: list[dict]) -> list[dict]:
     return complete
 
 
+def model_context_from_messages(messages: list[dict[str, Any]]) -> AgentModelContext:
+    instruction_parts: list[str] = []
+    input_items: list[InputPart] = []
+    for message in messages:
+        role = str(message.get("role") or "")
+        text = message.get("content") if isinstance(message.get("content"), str) else ""
+        if role == "system":
+            if text:
+                instruction_parts.append(text)
+            continue
+        parts: list[dict[str, Any]] = []
+        if text:
+            text_part: dict[str, Any] = {"type": "text", "text": text}
+            phase = message.get("phase")
+            if phase in {"commentary", "final_answer"}:
+                text_part["phase"] = phase
+            parts.append(text_part)
+        raw_calls = message.get("tool_calls")
+        if isinstance(raw_calls, list):
+            parts.append({"type": "tool_calls", "tool_calls": raw_calls})
+        input_items.extend(
+            model_input_parts_from_message(
+                role,
+                parts,
+                {
+                    "tool_call_id": message.get("tool_call_id"),
+                    "is_error": message.get("is_error", False),
+                },
+            )
+        )
+    return AgentModelContext(
+        instructions="\n\n".join(instruction_parts),
+        input_items=tuple(input_items),
+    )
+
+
 def _exposed_tool_lines(exposed_tools) -> list[str]:
     if not exposed_tools:
         return []
@@ -445,5 +568,7 @@ def _exposed_tool_lines(exposed_tools) -> list[str]:
     for spec in sorted(exposed_tools, key=lambda spec: spec.name):
         summary = str(getattr(spec, "description", "") or "").strip()
         first_sentence = summary.split(". ")[0].rstrip(".")
-        lines.append(f"- {spec.name}: {first_sentence}" if first_sentence else f"- {spec.name}")
+        lines.append(
+            f"- {spec.name}: {first_sentence}" if first_sentence else f"- {spec.name}"
+        )
     return lines

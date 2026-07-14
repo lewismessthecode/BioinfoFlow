@@ -50,6 +50,7 @@ import type {
   LlmProviderSetupResult,
   LlmProviderTemplate,
   LlmProviderTestResult,
+  LlmWireProtocol,
 } from "@/lib/llm"
 
 const DEMO_AGENT_SKILLS: AgentCoreSkill[] = [
@@ -176,13 +177,21 @@ function createInitialState(): DemoRuntimeState {
         id: "llm-provider-demo-001",
         name: "Demo OpenAI Compatible",
         kind: "openai_compatible",
+        wire_protocol: "chat_completions",
         base_url: "http://localhost:11434/v1",
         api_key_ref: "env:DEMO_MODEL_KEY",
         scope: "workspace",
         workspace_id: "workspace-demo",
         user_id: null,
         enabled: true,
-        test_status: { success: true, latency_ms: 24 },
+        allow_insecure_http: false,
+        test_status: {
+          success: true,
+          model: "demo-bio-coder",
+          wire_protocol: "chat_completions",
+          latency_ms: 24,
+          retryable: false,
+        },
         metadata: { demo: true, providerTemplate: "openai-compatible" },
         created_at: nowStamp(),
         updated_at: nowStamp(),
@@ -285,7 +294,7 @@ const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
   ], "https://api.openai.com/v1", [
     providerModelTemplate("gpt-5.4-mini", "GPT-5.4 Mini"),
     providerModelTemplate("gpt-5.4", "GPT-5.4"),
-  ]),
+  ], ["chat_completions", "responses"]),
   providerTemplate("anthropic", "Anthropic", "anthropic", "static", [
     providerField("api_key", "API key", true, true),
   ], null, [
@@ -322,7 +331,7 @@ const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     providerField("base_url", "Endpoint", false, true, "https://api.example.com/v1"),
     providerField("api_key", "API key", true, false),
     providerField("model_id", "Model ID", false, false),
-  ], "https://api.example.com/v1"),
+  ], "https://api.example.com/v1", [], ["chat_completions", "responses"]),
 ]
 
 function providerTemplate(
@@ -333,6 +342,7 @@ function providerTemplate(
   fields: LlmProviderTemplate["fields"],
   defaultBaseUrl: string | null = null,
   models: LlmProviderTemplate["models"] = [],
+  supportedWireProtocols: LlmWireProtocol[] = ["chat_completions"],
 ): LlmProviderTemplate {
   return {
     id,
@@ -341,6 +351,8 @@ function providerTemplate(
     docs_url: `https://docs.example.com/${id}`,
     discovery,
     default_base_url: defaultBaseUrl,
+    supported_wire_protocols: supportedWireProtocols,
+    default_wire_protocol: "chat_completions",
     fields,
     models,
   }
@@ -553,6 +565,14 @@ function setupDemoProvider(
     typeof bodyJson?.base_url === "string" && bodyJson.base_url.trim()
       ? bodyJson.base_url.trim()
       : template.default_base_url ?? null
+  const wireProtocol = readDemoWireProtocol(
+    bodyJson?.wire_protocol,
+    existing?.wire_protocol ?? template.default_wire_protocol,
+  )
+  const allowInsecureHttp =
+    typeof bodyJson?.allow_insecure_http === "boolean"
+      ? bodyJson.allow_insecure_http
+      : existing?.allow_insecure_http ?? false
   const provider: LlmProvider = existing
     ? {
         ...existing,
@@ -561,8 +581,10 @@ function setupDemoProvider(
             ? bodyJson.name.trim()
             : existing.name || template.name,
         kind: template.kind,
+        wire_protocol: wireProtocol,
         base_url: baseUrl,
         enabled: bodyJson?.enabled !== false,
+        allow_insecure_http: allowInsecureHttp,
         metadata: {
           ...(existing.metadata ?? {}),
           providerTemplate: template.id,
@@ -576,12 +598,14 @@ function setupDemoProvider(
             ? bodyJson.name.trim()
             : template.name,
         kind: template.kind,
+        wire_protocol: wireProtocol,
         base_url: baseUrl,
         api_key_ref: null,
         scope,
         workspace_id: "workspace-demo",
         user_id: scope === "user" ? "demo-user" : null,
         enabled: bodyJson?.enabled !== false,
+        allow_insecure_http: allowInsecureHttp,
         test_status: null,
         metadata: { demo: true, providerTemplate: template.id },
         created_at: nowStamp(),
@@ -635,6 +659,15 @@ function cleanDemoModelIds(value: unknown) {
         .map((item) => String(item ?? "").trim())
         .filter(Boolean)
     : []
+}
+
+function readDemoWireProtocol(
+  value: unknown,
+  fallback: LlmWireProtocol = "chat_completions",
+): LlmWireProtocol {
+  return value === "responses" || value === "chat_completions"
+    ? value
+    : fallback
 }
 
 function discoveryFallbackModelId(template: LlmProviderTemplate) {
@@ -2384,6 +2417,7 @@ function createDemoRuntimeInternal(): AppRuntime {
           typeof bodyJson?.kind === "string"
             ? (bodyJson.kind as LlmProviderKind)
             : "openai_compatible",
+        wire_protocol: readDemoWireProtocol(bodyJson?.wire_protocol),
         base_url:
           typeof bodyJson?.base_url === "string" && bodyJson.base_url.trim()
             ? bodyJson.base_url.trim()
@@ -2399,6 +2433,7 @@ function createDemoRuntimeInternal(): AppRuntime {
         workspace_id: "workspace-demo",
         user_id: null,
         enabled: bodyJson?.enabled !== false,
+        allow_insecure_http: bodyJson?.allow_insecure_http === true,
         test_status: null,
         metadata:
           bodyJson?.metadata && typeof bodyJson.metadata === "object"
@@ -2466,6 +2501,10 @@ function createDemoRuntimeInternal(): AppRuntime {
           typeof bodyJson?.kind === "string"
             ? (bodyJson.kind as LlmProviderKind)
             : existing.kind,
+        wire_protocol: readDemoWireProtocol(
+          bodyJson?.wire_protocol,
+          existing.wire_protocol,
+        ),
         base_url:
           bodyJson && Object.hasOwn(bodyJson, "base_url")
             ? (bodyJson.base_url as string | null)
@@ -2478,6 +2517,10 @@ function createDemoRuntimeInternal(): AppRuntime {
           typeof bodyJson?.enabled === "boolean"
             ? bodyJson.enabled
             : existing.enabled,
+        allow_insecure_http:
+          typeof bodyJson?.allow_insecure_http === "boolean"
+            ? bodyJson.allow_insecure_http
+            : existing.allow_insecure_http,
         updated_at: nowStamp(),
       }
       state.llmProviders = state.llmProviders.map((provider) =>
@@ -2494,14 +2537,27 @@ function createDemoRuntimeInternal(): AppRuntime {
       const [providerId] = llmProviderTestMatch
       const existing = state.llmProviders.find((provider) => provider.id === providerId)
       if (!existing) throw new ApiError("LLM provider not found", { status: 404 })
+      const requestedModelId =
+        typeof bodyJson?.model_id === "string" ? bodyJson.model_id : null
+      const testedModel =
+        (requestedModelId
+          ? state.llmModels.find(
+              (model) =>
+                model.id === requestedModelId && model.provider_id === providerId,
+            )
+          : undefined) ??
+        state.llmModels.find((model) => model.provider_id === providerId)
       const result: LlmProviderTestResult = {
         provider_id: providerId,
         success: true,
-        model:
-          state.llmModels.find((model) => model.provider_id === providerId)
-            ?.model_id ?? null,
+        model: testedModel?.model_id ?? null,
+        wire_protocol: existing.wire_protocol,
+        error_code: null,
         error: null,
         latency_ms: 29,
+        retryable: false,
+        http_status: null,
+        provider_code: null,
       }
       state.llmProviders = state.llmProviders.map((provider) =>
         provider.id === providerId
@@ -2510,7 +2566,13 @@ function createDemoRuntimeInternal(): AppRuntime {
               test_status: {
                 success: result.success,
                 model: result.model,
+                wire_protocol: result.wire_protocol,
+                error_code: result.error_code,
+                error: result.error,
                 latency_ms: result.latency_ms,
+                retryable: result.retryable,
+                http_status: result.http_status,
+                provider_code: result.provider_code,
               },
               updated_at: nowStamp(),
             }

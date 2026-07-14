@@ -1826,21 +1826,6 @@
             "type": "boolean"
           },
           "kind": {
-            "enum": [
-              "openai",
-              "anthropic",
-              "gemini",
-              "grok",
-              "groq",
-              "openrouter",
-              "deepseek",
-              "ollama",
-              "vllm",
-              "openai_compatible",
-              "qwen",
-              "kimi",
-              "minimax"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -1868,6 +1853,15 @@
               "user"
             ],
             "title": "Scope",
+            "type": "string"
+          },
+          "wire_protocol": {
+            "default": "chat_completions",
+            "enum": [
+              "chat_completions",
+              "responses"
+            ],
+            "title": "Wire Protocol",
             "type": "string"
           }
         },
@@ -2007,12 +2001,39 @@
           "template_id": {
             "title": "Template Id",
             "type": "string"
+          },
+          "wire_protocol": {
+            "default": "chat_completions",
+            "enum": [
+              "chat_completions",
+              "responses"
+            ],
+            "title": "Wire Protocol",
+            "type": "string"
           }
         },
         "required": [
           "template_id"
         ],
         "title": "LlmProviderSetupRequest",
+        "type": "object"
+      },
+      "LlmProviderTestRequest": {
+        "properties": {
+          "model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          }
+        },
+        "title": "LlmProviderTestRequest",
         "type": "object"
       },
       "LlmProviderUpdate": {
@@ -2064,21 +2085,6 @@
           "kind": {
             "anyOf": [
               {
-                "enum": [
-                  "openai",
-                  "anthropic",
-                  "gemini",
-                  "grok",
-                  "groq",
-                  "openrouter",
-                  "deepseek",
-                  "ollama",
-                  "vllm",
-                  "openai_compatible",
-                  "qwen",
-                  "kimi",
-                  "minimax"
-                ],
                 "type": "string"
               },
               {
@@ -2125,6 +2131,21 @@
               }
             ],
             "title": "Scope"
+          },
+          "wire_protocol": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat_completions",
+                  "responses"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wire Protocol"
           }
         },
         "title": "LlmProviderUpdate",
@@ -6224,6 +6245,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/LlmProviderTestRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

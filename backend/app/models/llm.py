@@ -1,31 +1,37 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
-
-
-class LlmProviderKind:
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    GEMINI = "gemini"
-    GROK = "grok"
-    GROQ = "groq"
-    OPENROUTER = "openrouter"
-    DEEPSEEK = "deepseek"
-    OLLAMA = "ollama"
-    VLLM = "vllm"
-    OPENAI_COMPATIBLE = "openai_compatible"
-    QWEN = "qwen"
-    KIMI = "kimi"
-    MINIMAX = "minimax"
 
 
 class LlmProviderScope:
     GLOBAL = "global"
     WORKSPACE = "workspace"
     USER = "user"
+
+
+class LlmWireProtocol:
+    CHAT_COMPLETIONS = "chat_completions"
+    RESPONSES = "responses"
+
+    ALL = (CHAT_COMPLETIONS, RESPONSES)
+
+    @classmethod
+    def validate(cls, wire_protocol: str) -> str:
+        if wire_protocol not in cls.ALL:
+            raise ValueError(f"Unknown LLM wire protocol: {wire_protocol}")
+        return wire_protocol
 
 
 class LlmCredentialSource:
@@ -38,10 +44,20 @@ class LlmProvider(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "llm_providers"
     __table_args__ = (
         UniqueConstraint("scope", "workspace_id", "user_id", "name", name="uq_llm_providers_scope_name"),
+        CheckConstraint(
+            "wire_protocol IN ('chat_completions', 'responses')",
+            name="ck_llm_providers_wire_protocol",
+        ),
     )
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     kind: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    wire_protocol: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=LlmWireProtocol.CHAT_COMPLETIONS,
+        server_default=LlmWireProtocol.CHAT_COMPLETIONS,
+    )
     base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     api_key_ref: Mapped[str | None] = mapped_column(String(300), nullable=True)
     scope: Mapped[str] = mapped_column(

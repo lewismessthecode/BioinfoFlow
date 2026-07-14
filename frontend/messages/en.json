@@ -2281,7 +2281,21 @@
       "retry": "Retry",
       "endpointLabel": "Endpoint",
       "apiKeyLabel": "API key",
-      "modelIdLabel": "Model ID"
+      "modelIdLabel": "Model ID",
+      "protocolLabel": "Protocol",
+      "protocolAriaLabel": "{provider} protocol",
+      "protocolChat": "Chat Completions",
+      "protocolResponses": "Responses",
+      "test": "Test",
+      "testing": "Testing...",
+      "testModelLabel": "Test model",
+      "testModelAriaLabel": "{provider} test model",
+      "noTestModels": "No model available",
+      "testSucceeded": "Connection verified",
+      "testFailed": "Connection failed",
+      "settingsChanged": "Settings changed. Save and test again.",
+      "testRequestFailed": "Provider test could not be completed.",
+      "retryable": "Retryable"
     },
     "registries": {
       "title": "Container Registries",

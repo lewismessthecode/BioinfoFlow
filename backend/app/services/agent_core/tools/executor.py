@@ -13,13 +13,10 @@ from app.repositories.agent_core_repo import (
     AgentArtifactRepository,
 )
 from app.services.agent_core.actions import AgentActionService
-from app.services.agent_core.core.lease import (
-    LEASE_LOSS_CANCELLATION,
-    is_lease_loss_cancellation,
-)
 from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
+from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.permissions.context import (
     PermissionContext,
     PermissionContextResolver,
@@ -302,14 +299,24 @@ class AgentToolExecutor:
             evaluated_policy_version=permission_context.policy_version,
             permission_context_snapshot=permission_snapshot,
             commit=commit_action,
+            expected_owner_token=context.expected_owner_token,
         )
         if action_requires_resume(action.status):
-            update = (
-                self.action_repo.update_all
-                if commit_action
-                else self.action_repo.update_all_pending
-            )
-            action = await update(action, requires_resume=True)
+            if context.expected_owner_token is not None and commit_action:
+                action, owned = await self.action_repo.update_all_owned(
+                    action,
+                    expected_owner_token=context.expected_owner_token,
+                    requires_resume=True,
+                )
+                if not owned or action is None:
+                    raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            else:
+                update = (
+                    self.action_repo.update_all
+                    if commit_action
+                    else self.action_repo.update_all_pending
+                )
+                action = await update(action, requires_resume=True)
             return ToolExecutionResult(
                 action_id=str(action.id),
                 status=action.status,
@@ -373,17 +380,18 @@ class AgentToolExecutor:
             evaluated_policy_version=permission_context.policy_version,
             permission_context_snapshot=permission_context.snapshot(),
             commit=commit,
+            expected_owner_token=context.expected_owner_token,
         )
         failed = await self.action_repo.fail_requested(
             str(action.id),
             error=error,
             completed_at=datetime.now(timezone.utc),
-            expected_turn_owner_token=context.execution_owner_token,
+            expected_turn_owner_token=context.expected_owner_token,
         )
         if failed is None:
             await self.session.rollback()
-            if context.execution_owner_token is not None:
-                raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
+            if context.expected_owner_token is not None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
             return await self._current_result(str(action.id), fallback=action)
         action = failed
         await self.ledger.append(
@@ -392,6 +400,8 @@ class AgentToolExecutor:
             type=AgentEventType.ACTION_FAILED,
             payload={"action_id": str(action.id), "error": error},
             commit=commit,
+            expected_owner_token=context.expected_owner_token,
+            owner_fenced=not commit,
         )
         agent_metrics.increment("tools.failed")
         return ToolExecutionResult(
@@ -403,6 +413,7 @@ class AgentToolExecutor:
         *,
         action_id: str,
         context: AgentToolContext,
+        require_resume_marker: bool = True,
     ) -> ToolExecutionResult:
         action = await self.action_repo.get(action_id)
         if action is None:
@@ -424,6 +435,8 @@ class AgentToolExecutor:
                 permission_decision=action.permission_decision,
                 error=action.error,
             )
+        if require_resume_marker and not action.requires_resume:
+            raise ConflictError("Tool action is not awaiting resume")
 
         decision = action.permission_decision or {}
         if decision.get("decision") not in {"allow", "approve", "modify", "answer"}:
@@ -461,6 +474,8 @@ class AgentToolExecutor:
                 "tool": action.name,
                 "reason": reason,
             },
+            expected_owner_token=expected_turn_owner_token,
+            owner_fenced=expected_turn_owner_token is not None,
         )
         return ToolExecutionResult(
             action_id=str(action.id), status=action.status, error=error
@@ -493,7 +508,7 @@ class AgentToolExecutor:
         if failed is None:
             await self.session.rollback()
             if expected_turn_owner_token is not None:
-                raise asyncio.CancelledError(LEASE_LOSS_CANCELLATION)
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
             return await self._current_result(str(action.id), fallback=action)
         await self.ledger.append(
             session_id=str(failed.session_id),
@@ -501,6 +516,8 @@ class AgentToolExecutor:
             type=AgentEventType.ACTION_FAILED,
             payload={"action_id": str(failed.id), "error": error},
             commit=False,
+            expected_owner_token=expected_turn_owner_token,
+            owner_fenced=expected_turn_owner_token is not None,
         )
         await self.session.commit()
         agent_metrics.increment("tools.failed")
@@ -561,7 +578,7 @@ class AgentToolExecutor:
             return await self._fail_requested_permission(
                 action=action,
                 error_message="; ".join(exposure.reasons),
-                expected_turn_owner_token=context.execution_owner_token,
+                expected_turn_owner_token=context.expected_owner_token,
             )
 
         current_risk = _produce_risk_assessment(
@@ -600,7 +617,7 @@ class AgentToolExecutor:
                 permission_decision=denied_decision,
                 evaluated_policy_version=permission_context.policy_version,
                 permission_context_snapshot=snapshot,
-                expected_turn_owner_token=context.execution_owner_token,
+                expected_turn_owner_token=context.expected_owner_token,
             )
 
         requires_approval = (
@@ -621,7 +638,7 @@ class AgentToolExecutor:
                 permission_decision=permission_decision,
                 evaluated_policy_version=permission_context.policy_version,
                 permission_context_snapshot=snapshot,
-                expected_turn_owner_token=context.execution_owner_token,
+                expected_turn_owner_token=context.expected_owner_token,
             )
             if waiting is None:
                 await self.session.rollback()
@@ -641,6 +658,8 @@ class AgentToolExecutor:
                     "recheck": True,
                 },
                 commit=False,
+                expected_owner_token=context.expected_owner_token,
+                owner_fenced=context.expected_owner_token is not None,
             )
             await self.session.commit()
             return ToolExecutionResult(
@@ -676,7 +695,7 @@ class AgentToolExecutor:
             evaluated_policy_version=permission_context.policy_version,
             permission_context_snapshot=snapshot,
             expected_policy_version=permission_context.policy_version,
-            expected_turn_owner_token=context.execution_owner_token,
+            expected_turn_owner_token=context.expected_owner_token,
         )
         if action is None:
             await self.session.rollback()
@@ -699,7 +718,7 @@ class AgentToolExecutor:
                         "Permission policy changed repeatedly before the action "
                         "could be claimed."
                     ),
-                    expected_turn_owner_token=context.execution_owner_token,
+                    expected_turn_owner_token=context.expected_owner_token,
                 )
             return await self._current_result(action_id, fallback=requested_action)
         try:
@@ -728,12 +747,17 @@ class AgentToolExecutor:
             permission_context_snapshot=snapshot,
         )
         try:
+            await execution_context.ensure_turn_ownership()
             raw_result = await asyncio.wait_for(
                 tool.run(action.normalized_input or action.input, execution_context),
                 timeout=tool.spec.timeout_seconds,
             )
+            await execution_context.ensure_turn_ownership()
             validated_result = validate_tool_output(raw_result, tool.spec.output_schema)
             result, summary = normalize_tool_result(validated_result)
+        except TurnOwnershipLostError:
+            await self.session.rollback()
+            raise
         except asyncio.TimeoutError:
             error = {
                 "type": "TimeoutError",
@@ -744,7 +768,7 @@ class AgentToolExecutor:
                 status=AgentActionStatus.FAILED,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
-                expected_turn_owner_token=execution_context.execution_owner_token,
+                expected_turn_owner_token=execution_context.expected_owner_token,
             )
             if failed is None:
                 await self.session.rollback()
@@ -756,16 +780,15 @@ class AgentToolExecutor:
                 type=AgentEventType.ACTION_FAILED,
                 payload={"action_id": str(action.id), "error": error},
                 commit=False,
+                expected_owner_token=execution_context.expected_owner_token,
+                owner_fenced=execution_context.expected_owner_token is not None,
             )
             await self.session.commit()
             agent_metrics.increment("tools.failed")
             return ToolExecutionResult(
                 action_id=str(action.id), status=action.status, error=error
             )
-        except asyncio.CancelledError as exc:
-            if is_lease_loss_cancellation(exc):
-                await self.session.rollback()
-                raise
+        except asyncio.CancelledError:
             cancelled = await self.action_repo.transition_running(
                 str(action.id),
                 status=AgentActionStatus.CANCELLED,
@@ -774,7 +797,7 @@ class AgentToolExecutor:
                     "message": "Tool execution was cancelled.",
                 },
                 completed_at=datetime.now(timezone.utc),
-                expected_turn_owner_token=execution_context.execution_owner_token,
+                expected_turn_owner_token=execution_context.expected_owner_token,
             )
             if cancelled is None:
                 await self.session.rollback()
@@ -786,6 +809,8 @@ class AgentToolExecutor:
                 type=AgentEventType.ACTION_CANCELLED,
                 payload={"action_id": str(action.id), "tool": tool.spec.name},
                 commit=False,
+                expected_owner_token=execution_context.expected_owner_token,
+                owner_fenced=execution_context.expected_owner_token is not None,
             )
             await self.session.commit()
             agent_metrics.increment("tools.cancelled")
@@ -797,7 +822,7 @@ class AgentToolExecutor:
                 status=AgentActionStatus.FAILED,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
-                expected_turn_owner_token=execution_context.execution_owner_token,
+                expected_turn_owner_token=execution_context.expected_owner_token,
             )
             if failed is None:
                 await self.session.rollback()
@@ -809,6 +834,8 @@ class AgentToolExecutor:
                 type=AgentEventType.ACTION_FAILED,
                 payload={"action_id": str(action.id), "error": error},
                 commit=False,
+                expected_owner_token=execution_context.expected_owner_token,
+                owner_fenced=execution_context.expected_owner_token is not None,
             )
             await self.session.commit()
             agent_metrics.increment("tools.failed")
@@ -822,14 +849,17 @@ class AgentToolExecutor:
             result=result,
             output_summary=summary,
             completed_at=datetime.now(timezone.utc),
-            expected_turn_owner_token=execution_context.execution_owner_token,
+            expected_turn_owner_token=execution_context.expected_owner_token,
         )
         if completed is None:
             await self.session.rollback()
             return await self._current_result(action_id, fallback=action)
         action = completed
         artifact_ids = await self._register_artifacts(
-            action=action, tool=tool, result=result
+            action=action,
+            tool=tool,
+            result=result,
+            context=execution_context,
         )
         await self.ledger.append(
             session_id=str(action.session_id),
@@ -846,6 +876,8 @@ class AgentToolExecutor:
                 "artifact_ids": artifact_ids,
             },
             commit=False,
+            expected_owner_token=execution_context.expected_owner_token,
+            owner_fenced=execution_context.expected_owner_token is not None,
         )
         await self.session.commit()
         agent_metrics.increment("tools.completed")
@@ -857,7 +889,12 @@ class AgentToolExecutor:
         )
 
     async def _register_artifacts(
-        self, *, action, tool: AgentTool, result: dict[str, Any]
+        self,
+        *,
+        action,
+        tool: AgentTool,
+        result: dict[str, Any],
+        context: AgentToolContext,
     ) -> list[str]:
         policy = action.artifact_policy or tool.spec.artifact_policy or {}
         descriptor = _artifact_descriptor(
@@ -868,15 +905,29 @@ class AgentToolExecutor:
         )
         if descriptor is None:
             return []
-        artifact = await self.artifact_repo.create(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
-            action_id=str(action.id),
-            type=descriptor["type"],
-            title=descriptor["title"],
-            summary=descriptor["summary"],
-            payload=descriptor["payload"],
-        )
+        artifact_data = {
+            "session_id": str(action.session_id),
+            "action_id": str(action.id),
+            "type": descriptor["type"],
+            "title": descriptor["title"],
+            "summary": descriptor["summary"],
+            "payload": descriptor["payload"],
+        }
+        if context.expected_owner_token is None:
+            artifact = await self.artifact_repo.add(
+                turn_id=str(action.turn_id),
+                **artifact_data,
+            )
+        else:
+            artifact, owned = await self.artifact_repo.create_for_owned_turn(
+                turn_id=str(action.turn_id),
+                expected_owner_token=context.expected_owner_token,
+                commit=False,
+                owner_fenced=True,
+                **artifact_data,
+            )
+            if not owned or artifact is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
@@ -887,5 +938,8 @@ class AgentToolExecutor:
                 "type": artifact.type,
                 "title": artifact.title,
             },
+            commit=False,
+            expected_owner_token=context.expected_owner_token,
+            owner_fenced=context.expected_owner_token is not None,
         )
         return [str(artifact.id)]

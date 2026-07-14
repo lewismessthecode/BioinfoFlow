@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -37,7 +38,12 @@ class AgentToolContext:
     session_id: str
     turn_id: str
     permission_context_snapshot: dict[str, Any] | None = None
-    execution_owner_token: str | None = None
+    ownership_guard: Callable[[], Awaitable[None]] | None = None
+    expected_owner_token: str | None = None
+
+    async def ensure_turn_ownership(self) -> None:
+        if self.ownership_guard is not None:
+            await self.ownership_guard()
 
 
 class AgentTool(Protocol):

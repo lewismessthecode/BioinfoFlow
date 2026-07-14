@@ -1,0 +1,55 @@
+{
+  "id": "resp-non-stream",
+  "status": "completed",
+  "output": [
+    {
+      "id": "reasoning-1",
+      "type": "reasoning",
+      "encrypted_content": "opaque-encrypted-reasoning",
+      "summary": []
+    },
+    {
+      "id": "message-1",
+      "type": "message",
+      "role": "assistant",
+      "phase": "final_answer",
+      "content": [
+        {"type": "output_text", "text": "Analysis complete."}
+      ]
+    },
+    {
+      "id": "function-1",
+      "type": "function_call",
+      "call_id": "call-1",
+      "name": "projects__list",
+      "arguments": "{\"limit\":5}"
+    },
+    {
+      "id": "function-2",
+      "type": "function_call",
+      "call_id": "call-2",
+      "name": "runs__list",
+      "arguments": "{\"status\":\"running\"}"
+    },
+    {
+      "id": "message-refusal",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {"type": "refusal", "refusal": "I cannot perform that request."}
+      ]
+    },
+    {
+      "id": "future-1",
+      "type": "future_output_item",
+      "payload": {"version": 2}
+    }
+  ],
+  "usage": {
+    "input_tokens": 21,
+    "output_tokens": 13,
+    "total_tokens": 34,
+    "input_tokens_details": {"cached_tokens": 4},
+    "output_tokens_details": {"reasoning_tokens": 6}
+  }
+}

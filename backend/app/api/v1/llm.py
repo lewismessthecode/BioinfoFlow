@@ -22,6 +22,7 @@ from app.schemas.llm import (
     LlmProviderCreate,
     LlmProviderRead,
     LlmProviderTemplateRead,
+    LlmProviderTestRequest,
     LlmProviderTestResult,
     LlmProviderUpdate,
 )
@@ -215,23 +216,29 @@ async def update_provider(
 async def test_provider(
     provider_id: str,
     request: Request,
+    payload: LlmProviderTestRequest | None = None,
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = LlmCatalogService(db)
-    provider = await service.test_provider(
+    status = await service.test_provider(
         provider_id,
+        model_id=str(payload.model_id) if payload and payload.model_id else None,
         workspace_id=user.workspace_id,
         user_id=user.id,
         role=user.role,
     )
-    status = provider.test_status or {}
     result = LlmProviderTestResult(
-        provider_id=provider.id,
+        provider_id=provider_id,
         success=bool(status.get("success")),
-        model=status.get("model"),
-        error=status.get("error"),
+        model=status.get("model") or status.get("model_id"),
+        wire_protocol=status.get("wire_protocol") or "chat_completions",
+        error_code=status.get("error_code"),
+        error=status.get("error") or status.get("error_message"),
         latency_ms=status.get("latency_ms"),
+        retryable=bool(status.get("retryable")),
+        http_status=status.get("http_status"),
+        provider_code=status.get("provider_code"),
     )
     return success_response(_dump(result), request=request)
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import and_, desc, exists, func, or_, select, update
 from datetime import datetime, timezone
+from typing import Any
+from uuid import uuid4
+
+from sqlalchemy import and_, case, desc, exists, func, insert, literal, or_, select, update
 
 from app.models.agent_core import (
     AgentAction,
@@ -9,6 +12,7 @@ from app.models.agent_core import (
     AgentArtifact,
     AgentEvent,
     AgentMessage,
+    AgentMessageStatus,
     AgentMemory,
     AgentSession,
     AgentSessionStatus,
@@ -19,6 +23,125 @@ from app.models.agent_core import (
 )
 from app.repositories.base import BaseRepository
 from app.schemas.common import Pagination
+
+
+def _owned_running_turn(turn_id, owner_token: str):
+    return exists(
+        select(1).where(
+            AgentTurn.id == turn_id,
+            AgentTurn.status == AgentTurnStatus.RUNNING,
+            AgentTurn.owner_token == owner_token,
+        )
+    )
+
+
+def _model_column(model: type, attribute_name: str):
+    return getattr(model, attribute_name).property.columns[0]
+
+
+def ensure_clean_owned_publication_session(session) -> None:
+    """Reject unrelated ORM mutations before starting an owned publication."""
+    if session.new or session.dirty or session.deleted:
+        raise RuntimeError(
+            "Owner-conditioned publication requires a clean database session"
+        )
+
+
+async def _fence_owned_turn(
+    session,
+    *,
+    turn_id: str,
+    expected_owner_token: str,
+) -> bool:
+    result = await session.execute(
+        update(AgentTurn)
+        .where(
+            AgentTurn.id == turn_id,
+            AgentTurn.status == AgentTurnStatus.RUNNING,
+            AgentTurn.owner_token == expected_owner_token,
+        )
+        .values(owner_token=expected_owner_token)
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount == 1
+
+
+async def _create_for_owned_turn(
+    session,
+    model: type,
+    *,
+    turn_id: str,
+    expected_owner_token: str,
+    data: dict[str, Any],
+    commit: bool = True,
+    owner_fenced: bool = False,
+):
+    """Insert a publication only while the durable turn owner still matches.
+
+    ``owner_fenced`` is reserved for a larger atomic unit that has already
+    acquired the turn row's owner fence in the same transaction.  It lets the
+    durable tool-batch coordinator stage several related rows before one
+    commit without weakening the clean-session guard at the transaction edge.
+    """
+    if owner_fenced:
+        if not await _fence_owned_turn(
+            session,
+            turn_id=turn_id,
+            expected_owner_token=expected_owner_token,
+        ):
+            await session.rollback()
+            return None, False
+        obj = model(turn_id=turn_id, **data)
+        session.add(obj)
+        await session.flush()
+        if commit:
+            await session.commit()
+            await session.refresh(obj)
+        return obj, True
+
+    ensure_clean_owned_publication_session(session)
+    values = dict(data)
+    values.setdefault("turn_id", turn_id)
+    values.setdefault("id", uuid4())
+    columns = [_model_column(model, key) for key in values]
+    selected_values = [
+        literal(value, type_=column.type)
+        for column, value in zip(columns, values.values())
+    ]
+    statement = (
+        insert(model.__table__)
+        .from_select(
+            columns,
+            select(*selected_values).where(
+                _owned_running_turn(turn_id, expected_owner_token)
+            ),
+        )
+        .returning(model.__table__.c.id)
+    )
+    try:
+        result = await session.execute(statement)
+        inserted_id = result.scalar_one_or_none()
+        if inserted_id is None:
+            await session.rollback()
+            return None, False
+        if not await _fence_owned_turn(
+            session,
+            turn_id=turn_id,
+            expected_owner_token=expected_owner_token,
+        ):
+            await session.rollback()
+            return None, False
+        if commit:
+            await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    obj = await session.scalar(
+        select(model)
+        .where(model.id == inserted_id)
+        .execution_options(populate_existing=True)
+    )
+    return obj, obj is not None
 
 
 class AgentSessionRepository(BaseRepository[AgentSession]):
@@ -133,6 +256,10 @@ class AgentSessionRepository(BaseRepository[AgentSession]):
 class AgentTurnRepository(BaseRepository[AgentTurn]):
     model = AgentTurn
 
+    def ensure_clean_resume_claim_session(self) -> None:
+        if self.session.new or self.session.dirty or self.session.deleted:
+            raise RuntimeError("Atomic turn resume claim requires a clean session")
+
     async def get_fresh(self, turn_id: str) -> AgentTurn | None:
         result = await self.session.execute(
             select(self.model)
@@ -151,24 +278,148 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         return list(result.scalars().all())
 
     async def list_recoverable(self) -> list[AgentTurn]:
+        """List recovery candidates, including actively leased running turns.
+
+        Active leases are deliberately returned so startup recovery can report
+        them as ``skipped``.  The claim CAS remains the authority that prevents
+        any mutation or ownership takeover before the lease expires.
+        """
         stmt = (
             select(self.model)
             .where(
-                or_(
-                    self.model.status == AgentTurnStatus.QUEUED,
-                    and_(
-                        self.model.status == AgentTurnStatus.RUNNING,
-                        or_(
-                            self.model.lease_until.is_(None),
-                            self.model.lease_until <= func.now(),
-                        ),
-                    ),
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
                 )
             )
             .order_by(self.model.created_at, self.model.id)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def claim_action_resume(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        expected_resume_batch_token: str | None,
+        claimed_at: datetime,
+        lease_until: datetime,
+    ) -> tuple[AgentTurn | None, bool]:
+        self.ensure_clean_resume_claim_session()
+        await self.session.commit()
+        batch_token_matches = (
+            self.model.resume_batch_token.is_(None)
+            if expected_resume_batch_token is None
+            else self.model.resume_batch_token == expected_resume_batch_token
+        )
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_(
+                    [AgentTurnStatus.WAITING_APPROVAL, AgentTurnStatus.RUNNING]
+                ),
+                or_(
+                    self.model.lease_until.is_(None),
+                    self.model.lease_until <= claimed_at,
+                ),
+                batch_token_matches,
+            )
+            .values(
+                status=AgentTurnStatus.RUNNING,
+                started_at=func.coalesce(self.model.started_at, claimed_at),
+                completed_at=None,
+                error_code=None,
+                error_message=None,
+                claimed_at=claimed_at,
+                lease_until=lease_until,
+                owner_token=owner_token,
+                resume_batch_token=None,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        claimed = result.rowcount == 1
+        await self.session.commit()
+        return await self.get_fresh(turn_id), claimed
+
+    async def claim_run(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        claimed_at: datetime,
+        lease_until: datetime,
+    ) -> tuple[AgentTurn | None, bool]:
+        self.ensure_clean_resume_claim_session()
+        await self.session.commit()
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_([AgentTurnStatus.QUEUED, AgentTurnStatus.RUNNING]),
+                or_(
+                    self.model.lease_until.is_(None),
+                    self.model.lease_until <= claimed_at,
+                ),
+            )
+            .values(
+                status=AgentTurnStatus.RUNNING,
+                started_at=func.coalesce(self.model.started_at, claimed_at),
+                completed_at=None,
+                error_code=None,
+                error_message=None,
+                claimed_at=claimed_at,
+                lease_until=lease_until,
+                owner_token=owner_token,
+                resume_batch_token=None,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        claimed = result.rowcount == 1
+        await self.session.commit()
+        return await self.get_fresh(turn_id), claimed
+
+    async def claim_recovery(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        claimed_at: datetime,
+        lease_until: datetime,
+    ) -> tuple[AgentTurn | None, bool]:
+        self.ensure_clean_resume_claim_session()
+        await self.session.commit()
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_(
+                    [
+                        AgentTurnStatus.QUEUED,
+                        AgentTurnStatus.RUNNING,
+                        AgentTurnStatus.WAITING_APPROVAL,
+                    ]
+                ),
+                or_(
+                    self.model.lease_until.is_(None),
+                    self.model.lease_until <= claimed_at,
+                ),
+            )
+            .values(
+                status=AgentTurnStatus.RUNNING,
+                owner_token=owner_token,
+                claimed_at=claimed_at,
+                lease_until=lease_until,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        claimed = result.rowcount == 1
+        await self.session.commit()
+        return await self.get_fresh(turn_id), claimed
 
     async def claim_execution(
         self,
@@ -178,33 +429,34 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
         claimed_at: datetime,
         lease_until: datetime,
     ) -> AgentTurn | None:
+        turn, claimed = await self.claim_run(
+            turn_id,
+            owner_token=owner_token,
+            claimed_at=claimed_at,
+            lease_until=lease_until,
+        )
+        return turn if claimed else None
+
+    async def renew_owned_lease(
+        self,
+        turn_id: str,
+        *,
+        owner_token: str,
+        lease_until: datetime,
+    ) -> bool:
         result = await self.session.execute(
             update(self.model)
             .where(
                 self.model.id == turn_id,
-                or_(
-                    self.model.status == AgentTurnStatus.QUEUED,
-                    and_(
-                        self.model.status == AgentTurnStatus.RUNNING,
-                        or_(
-                            self.model.lease_until.is_(None),
-                            self.model.lease_until <= claimed_at,
-                        ),
-                    ),
-                ),
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.owner_token == owner_token,
             )
-            .values(
-                status=AgentTurnStatus.RUNNING,
-                claimed_at=claimed_at,
-                lease_until=lease_until,
-                lease_owner_token=owner_token,
-            )
-            .returning(self.model)
-            .execution_options(populate_existing=True)
+            .values(lease_until=lease_until)
+            .execution_options(synchronize_session=False)
         )
-        claimed = result.scalar_one_or_none()
+        renewed = result.rowcount == 1
         await self.session.commit()
-        return claimed
+        return renewed
 
     async def renew_execution_lease(
         self,
@@ -218,7 +470,7 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             .where(
                 self.model.id == turn_id,
                 self.model.status == AgentTurnStatus.RUNNING,
-                self.model.lease_owner_token == owner_token,
+                self.model.owner_token == owner_token,
             )
             .values(lease_until=lease_until)
             .returning(self.model)
@@ -234,9 +486,9 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             .where(
                 self.model.id == turn_id,
                 self.model.status == AgentTurnStatus.RUNNING,
-                self.model.lease_owner_token == owner_token,
+                self.model.owner_token == owner_token,
             )
-            .values(updated_at=self.model.updated_at)
+            .values(owner_token=owner_token)
             .returning(self.model.id)
         )
         return result.scalar_one_or_none() is not None
@@ -254,7 +506,7 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             .where(
                 self.model.id == turn_id,
                 self.model.status == AgentTurnStatus.RUNNING,
-                self.model.lease_owner_token == owner_token,
+                self.model.owner_token == owner_token,
             )
             .values(**values)
             .returning(self.model)
@@ -267,18 +519,71 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             await self.session.flush()
         return updated
 
-    async def queue_waiting_for_resume(self, turn_id: str) -> bool:
+    async def is_owned(self, turn_id: str, *, owner_token: str) -> bool:
+        return bool(
+            await self.session.scalar(
+                select(func.count())
+                .select_from(self.model)
+                .where(
+                    self.model.id == turn_id,
+                    self.model.status == AgentTurnStatus.RUNNING,
+                    self.model.owner_token == owner_token,
+                )
+            )
+        )
+
+    async def update_owned(
+        self,
+        turn_id: str,
+        *,
+        expected_owner_token: str,
+        **data: object,
+    ) -> tuple[AgentTurn | None, bool]:
         result = await self.session.execute(
             update(self.model)
             .where(
                 self.model.id == turn_id,
-                self.model.status == AgentTurnStatus.WAITING_APPROVAL,
+                self.model.status == AgentTurnStatus.RUNNING,
+                self.model.owner_token == expected_owner_token,
+            )
+            .values(**data)
+            .execution_options(synchronize_session=False)
+        )
+        updated = result.rowcount == 1
+        await self.session.commit()
+        return await self.get_fresh(turn_id), updated
+
+    async def queue_waiting_for_resume(
+        self,
+        turn_id: str,
+        *,
+        resume_batch_token: str | None = None,
+    ) -> bool:
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == turn_id,
+                self.model.status.in_(
+                    [AgentTurnStatus.WAITING_APPROVAL, AgentTurnStatus.RUNNING]
+                ),
             )
             .values(
-                status=AgentTurnStatus.QUEUED,
-                claimed_at=None,
-                lease_until=None,
-                lease_owner_token=None,
+                claimed_at=case(
+                    (self.model.status == AgentTurnStatus.WAITING_APPROVAL, None),
+                    else_=self.model.claimed_at,
+                ),
+                lease_until=case(
+                    (self.model.status == AgentTurnStatus.WAITING_APPROVAL, None),
+                    else_=self.model.lease_until,
+                ),
+                owner_token=case(
+                    (self.model.status == AgentTurnStatus.WAITING_APPROVAL, None),
+                    else_=self.model.owner_token,
+                ),
+                resume_batch_token=func.coalesce(
+                    self.model.resume_batch_token,
+                    resume_batch_token,
+                ),
             )
             .returning(self.model.id)
         )
@@ -298,7 +603,8 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
             "loop_state": {"termination_reason": termination_reason},
             "claimed_at": None,
             "lease_until": None,
-            "lease_owner_token": None,
+            "owner_token": None,
+            "resume_batch_token": None,
         }
         if interrupted_at is not None:
             values["interrupt_requested_at"] = interrupted_at
@@ -322,6 +628,90 @@ class AgentTurnRepository(BaseRepository[AgentTurn]):
 
 class AgentMessageRepository(BaseRepository[AgentMessage]):
     model = AgentMessage
+
+    async def create_for_owned_turn(
+        self,
+        *,
+        turn_id: str,
+        expected_owner_token: str,
+        commit: bool = True,
+        owner_fenced: bool = False,
+        **data: Any,
+    ) -> tuple[AgentMessage | None, bool]:
+        return await _create_for_owned_turn(
+            self.session,
+            self.model,
+            turn_id=turn_id,
+            expected_owner_token=expected_owner_token,
+            data=data,
+            commit=commit,
+            owner_fenced=owner_fenced,
+        )
+
+    async def compact_for_owned_turn(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        expected_owner_token: str,
+        insert_before: int,
+        summary_data: dict[str, Any],
+        superseded_message_ids: list[str],
+    ) -> tuple[AgentMessage | None, bool]:
+        ensure_clean_owned_publication_session(self.session)
+        try:
+            await self.session.execute(
+                update(self.model)
+                .where(
+                    self.model.session_id == session_id,
+                    self.model.ordering_index >= insert_before,
+                    _owned_running_turn(turn_id, expected_owner_token),
+                )
+                .values(ordering_index=self.model.ordering_index + 1)
+                .execution_options(synchronize_session=False)
+            )
+            if not await _fence_owned_turn(
+                self.session,
+                turn_id=turn_id,
+                expected_owner_token=expected_owner_token,
+            ):
+                await self.session.rollback()
+                return None, False
+            summary, owned = await _create_for_owned_turn(
+                self.session,
+                self.model,
+                turn_id=turn_id,
+                expected_owner_token=expected_owner_token,
+                data=summary_data,
+                commit=False,
+                owner_fenced=True,
+            )
+            if not owned or summary is None:
+                await self.session.rollback()
+                return None, False
+            if superseded_message_ids:
+                await self.session.execute(
+                    update(self.model)
+                    .where(
+                        self.model.id.in_(superseded_message_ids),
+                        _owned_running_turn(turn_id, expected_owner_token),
+                    )
+                    .values(status=AgentMessageStatus.SUPERSEDED)
+                    .execution_options(synchronize_session=False)
+                )
+            if not await _fence_owned_turn(
+                self.session,
+                turn_id=turn_id,
+                expected_owner_token=expected_owner_token,
+            ):
+                await self.session.rollback()
+                return None, False
+            await self.session.commit()
+            await self.session.refresh(summary)
+            return summary, True
+        except Exception:
+            await self.session.rollback()
+            raise
 
     async def next_ordering_index(self, session_id: str) -> int:
         stmt = select(func.max(self.model.ordering_index)).where(
@@ -350,6 +740,160 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def find_committed_tool_result(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        tool_call_id: str | None,
+    ) -> AgentMessage | None:
+        if not tool_call_id:
+            return None
+        result = await self.session.execute(
+            select(self.model)
+            .where(
+                self.model.session_id == session_id,
+                self.model.turn_id == turn_id,
+                self.model.role == "tool",
+                self.model.status == AgentMessageStatus.COMMITTED,
+            )
+            .order_by(desc(self.model.ordering_index), desc(self.model.id))
+        )
+        for message in result.scalars().all():
+            if (message.message_metadata or {}).get("tool_call_id") == tool_call_id:
+                return message
+        return None
+
+    async def create_replacing_turn_metadata(
+        self,
+        *,
+        metadata_key: str,
+        expected_owner_token: str | None = None,
+        **data: object,
+    ) -> AgentMessage | None:
+        return await self._create_replacing_metadata(
+            scope_field="turn_id",
+            scope_id=str(data["turn_id"]),
+            metadata_key=metadata_key,
+            expected_owner_token=expected_owner_token,
+            data=data,
+        )
+
+    async def create_replacing_session_metadata(
+        self,
+        *,
+        metadata_key: str,
+        expected_owner_token: str | None = None,
+        **data: object,
+    ) -> AgentMessage | None:
+        return await self._create_replacing_metadata(
+            scope_field="session_id",
+            scope_id=str(data["session_id"]),
+            metadata_key=metadata_key,
+            expected_owner_token=expected_owner_token,
+            data=data,
+        )
+
+    async def _create_replacing_metadata(
+        self,
+        *,
+        scope_field: str,
+        scope_id: str,
+        metadata_key: str,
+        expected_owner_token: str | None,
+        data: dict[str, object],
+    ) -> AgentMessage | None:
+        turn_id = str(data["turn_id"])
+        if expected_owner_token is not None:
+            ensure_clean_owned_publication_session(self.session)
+            if not await _fence_owned_turn(
+                self.session,
+                turn_id=turn_id,
+                expected_owner_token=expected_owner_token,
+            ):
+                await self.session.rollback()
+                return None
+        scope_column = getattr(self.model, scope_field)
+        result = await self.session.execute(
+            select(self.model).where(scope_column == scope_id)
+        )
+        for existing in result.scalars().all():
+            metadata = dict(existing.message_metadata or {})
+            if metadata_key in metadata:
+                metadata.pop(metadata_key)
+                existing.message_metadata = metadata or None
+        message = self.model(**data)
+        self.session.add(message)
+        await self.session.commit()
+        await self.session.refresh(message)
+        return message
+
+    async def clear_turn_metadata(
+        self,
+        *,
+        turn_id: str,
+        metadata_key: str,
+        expected_owner_token: str | None = None,
+    ) -> bool:
+        return await self._clear_metadata(
+            scope_field="turn_id",
+            scope_id=turn_id,
+            turn_id=turn_id,
+            metadata_key=metadata_key,
+            expected_owner_token=expected_owner_token,
+        )
+
+    async def clear_session_metadata(
+        self,
+        *,
+        session_id: str,
+        metadata_key: str,
+        turn_id: str | None = None,
+        expected_owner_token: str | None = None,
+    ) -> bool:
+        if expected_owner_token is not None and turn_id is None:
+            raise ValueError("turn_id is required for owner-conditioned metadata clear")
+        return await self._clear_metadata(
+            scope_field="session_id",
+            scope_id=session_id,
+            turn_id=turn_id,
+            metadata_key=metadata_key,
+            expected_owner_token=expected_owner_token,
+        )
+
+    async def _clear_metadata(
+        self,
+        *,
+        scope_field: str,
+        scope_id: str,
+        turn_id: str | None,
+        metadata_key: str,
+        expected_owner_token: str | None,
+    ) -> bool:
+        if expected_owner_token is not None:
+            ensure_clean_owned_publication_session(self.session)
+            if not await _fence_owned_turn(
+                self.session,
+                turn_id=str(turn_id),
+                expected_owner_token=expected_owner_token,
+            ):
+                await self.session.rollback()
+                return False
+        result = await self.session.execute(
+            select(self.model).where(getattr(self.model, scope_field) == scope_id)
+        )
+        changed = False
+        for message in result.scalars().all():
+            metadata = dict(message.message_metadata or {})
+            if metadata_key not in metadata:
+                continue
+            metadata.pop(metadata_key)
+            message.message_metadata = metadata or None
+            changed = True
+        if changed:
+            await self.session.commit()
+        return True
 
     async def shift_ordering_indices(
         self, session_id: str, *, starting_at: int, delta: int = 1
@@ -387,6 +931,25 @@ class AgentMessageRepository(BaseRepository[AgentMessage]):
 
 class AgentEventRepository(BaseRepository[AgentEvent]):
     model = AgentEvent
+
+    async def create_for_owned_turn(
+        self,
+        *,
+        turn_id: str,
+        expected_owner_token: str,
+        commit: bool = True,
+        owner_fenced: bool = False,
+        **data: Any,
+    ) -> tuple[AgentEvent | None, bool]:
+        return await _create_for_owned_turn(
+            self.session,
+            self.model,
+            turn_id=turn_id,
+            expected_owner_token=expected_owner_token,
+            data=data,
+            commit=commit,
+            owner_fenced=owner_fenced,
+        )
 
     async def next_seq(self, session_id: str) -> int:
         stmt = select(func.max(self.model.seq)).where(
@@ -433,6 +996,102 @@ class AgentEventRepository(BaseRepository[AgentEvent]):
 
 class AgentActionRepository(BaseRepository[AgentAction]):
     model = AgentAction
+
+    async def create_for_owned_turn(
+        self,
+        *,
+        turn_id: str,
+        expected_owner_token: str,
+        commit: bool = True,
+        owner_fenced: bool = False,
+        **data: Any,
+    ) -> tuple[AgentAction | None, bool]:
+        return await _create_for_owned_turn(
+            self.session,
+            self.model,
+            turn_id=turn_id,
+            expected_owner_token=expected_owner_token,
+            data=data,
+            commit=commit,
+            owner_fenced=owner_fenced,
+        )
+
+    async def update_all_owned(
+        self,
+        action: AgentAction,
+        *,
+        expected_owner_token: str,
+        **data: Any,
+    ) -> tuple[AgentAction | None, bool]:
+        ensure_clean_owned_publication_session(self.session)
+        result = await self.session.execute(
+            update(self.model)
+            .where(
+                self.model.id == str(action.id),
+                self.model.turn_id == str(action.turn_id),
+                _owned_running_turn(str(action.turn_id), expected_owner_token),
+            )
+            .values(**data)
+            .returning(self.model.id)
+            .execution_options(synchronize_session=False)
+        )
+        updated_id = result.scalar_one_or_none()
+        if updated_id is None or not await _fence_owned_turn(
+            self.session,
+            turn_id=str(action.turn_id),
+            expected_owner_token=expected_owner_token,
+        ):
+            await self.session.rollback()
+            return None, False
+        await self.session.commit()
+        return await self.get_fresh(str(updated_id)), True
+
+    def ensure_clean_resume_claim_session(self) -> None:
+        if self.session.new or self.session.dirty or self.session.deleted:
+            raise RuntimeError("Atomic action resume claim requires a clean session")
+
+    async def claim_requested_resume(
+        self,
+        action_id: str,
+        *,
+        started_at: datetime,
+        expected_owner_token: str | None = None,
+    ) -> tuple[AgentAction | None, bool]:
+        self.ensure_clean_resume_claim_session()
+        await self.session.commit()
+        predicates = [
+            self.model.id == action_id,
+            self.model.status == AgentActionStatus.REQUESTED,
+            self.model.requires_resume.is_(True),
+        ]
+        if expected_owner_token is not None:
+            predicates.append(
+                _owned_running_turn(self.model.turn_id, expected_owner_token)
+            )
+        result = await self.session.execute(
+            update(self.model)
+            .where(*predicates)
+            .values(
+                status=AgentActionStatus.RUNNING,
+                requires_resume=False,
+                started_at=started_at,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        claimed = result.rowcount == 1
+        if claimed and expected_owner_token is not None:
+            turn_id = await self.session.scalar(
+                select(self.model.turn_id).where(self.model.id == action_id)
+            )
+            if turn_id is None or not await _fence_owned_turn(
+                self.session,
+                turn_id=str(turn_id),
+                expected_owner_token=expected_owner_token,
+            ):
+                await self.session.rollback()
+                claimed = False
+        await self.session.commit()
+        return await self.get_fresh(action_id), claimed
 
     async def get_fresh(self, action_id: str) -> AgentAction | None:
         result = await self.session.execute(
@@ -934,6 +1593,25 @@ class AgentToolCallBatchRepository(BaseRepository[AgentToolCallBatch]):
 
 class AgentArtifactRepository(BaseRepository[AgentArtifact]):
     model = AgentArtifact
+
+    async def create_for_owned_turn(
+        self,
+        *,
+        turn_id: str,
+        expected_owner_token: str,
+        commit: bool = True,
+        owner_fenced: bool = False,
+        **data: Any,
+    ) -> tuple[AgentArtifact | None, bool]:
+        return await _create_for_owned_turn(
+            self.session,
+            self.model,
+            turn_id=turn_id,
+            expected_owner_token=expected_owner_token,
+            data=data,
+            commit=commit,
+            owner_fenced=owner_fenced,
+        )
 
     async def list_for_session(self, session_id: str) -> list[AgentArtifact]:
         stmt = (

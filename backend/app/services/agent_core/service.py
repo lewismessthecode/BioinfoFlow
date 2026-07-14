@@ -4,7 +4,6 @@ import json
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +29,7 @@ from app.services.agent_core.model_selection import (
     normalize_model_selection,
     session_metadata_with_model_selection,
 )
+from app.services.agent_core.ownership import new_turn_owner_token
 from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
 from app.services.agent_core.runner import (
     cancel_turn_run,
@@ -309,7 +309,12 @@ class AgentCoreService:
                         continue
                     reconciliation["affected_count"] += 1
                     await self.turn_repo.queue_waiting_for_resume(
-                        str(decided.turn_id)
+                        str(decided.turn_id),
+                        resume_batch_token=(
+                            str(decided.tool_batch_id)
+                            if decided.tool_batch_id
+                            else None
+                        ),
                     )
                     await self.ledger.append(
                         session_id=str(decided.session_id),
@@ -742,7 +747,12 @@ class AgentCoreService:
                 await self._activate_execution_toolset(
                     str(updated.session_id), commit=False
                 )
-            await self.turn_repo.queue_waiting_for_resume(str(updated.turn_id))
+            await self.turn_repo.queue_waiting_for_resume(
+                str(updated.turn_id),
+                resume_batch_token=(
+                    str(updated.tool_batch_id) if updated.tool_batch_id else None
+                ),
+            )
             await self.ledger.append(
                 session_id=str(updated.session_id),
                 turn_id=str(updated.turn_id),
@@ -796,7 +806,12 @@ class AgentCoreService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        await self.turn_repo.queue_waiting_for_resume(str(turn.id))
+        await self.turn_repo.queue_waiting_for_resume(
+            str(turn.id),
+            resume_batch_token=(
+                str(action.tool_batch_id) if action.tool_batch_id else None
+            ),
+        )
         await self.db.commit()
         enqueue_turn_resume(str(action.id), str(action.turn_id), str(turn.session_id))
         return action
@@ -837,11 +852,12 @@ class AgentCoreService:
             return "skipped"
 
         async def update_recovery_turn(**values):
-            return await self.turn_repo.update_claimed_execution(
+            updated, owned = await self.turn_repo.update_owned(
                 turn_id,
-                owner_token=owner_token,
+                expected_owner_token=owner_token,
                 **values,
             )
+            return updated if owned else None
         if turn.status in {
             AgentTurnStatus.COMPLETED,
             AgentTurnStatus.FAILED,
@@ -850,14 +866,14 @@ class AgentCoreService:
             return "skipped"
 
         now = datetime.now(timezone.utc)
-        owner_token = str(uuid4())
-        turn = await self.turn_repo.claim_execution(
+        owner_token = new_turn_owner_token()
+        turn, claimed = await self.turn_repo.claim_recovery(
             turn_id,
             owner_token=owner_token,
             claimed_at=now,
             lease_until=now + _turn_lease_duration(),
         )
-        if turn is None:
+        if turn is None or not claimed:
             return "skipped"
 
         open_actions = await self.action_repo.list_open_for_turn(turn_id)
@@ -873,7 +889,8 @@ class AgentCoreService:
                 completed_at=now,
                 claimed_at=None,
                 lease_until=None,
-                lease_owner_token=None,
+                owner_token=None,
+                resume_batch_token=None,
             )
             if turn is None:
                 return "skipped"
@@ -917,7 +934,8 @@ class AgentCoreService:
                     completed_at=now,
                     claimed_at=None,
                     lease_until=None,
-                    lease_owner_token=None,
+                    owner_token=None,
+                    resume_batch_token=None,
                     loop_state={
                         "termination_reason": "model_failed",
                         "recovered": True,
@@ -940,7 +958,8 @@ class AgentCoreService:
                     status=AgentTurnStatus.WAITING_APPROVAL,
                     claimed_at=None,
                     lease_until=None,
-                    lease_owner_token=None,
+                    owner_token=None,
+                    resume_batch_token=str(latest_batch.id),
                     completed_at=None,
                     loop_state={
                         "state": "waiting_approval",
@@ -958,15 +977,16 @@ class AgentCoreService:
                     if action.status == AgentActionStatus.REQUESTED
                 )
                 turn = await update_recovery_turn(
-                    status=AgentTurnStatus.QUEUED,
+                    status=AgentTurnStatus.WAITING_APPROVAL,
                     completed_at=None,
                     error_code=None,
                     error_message=None,
                     claimed_at=None,
                     lease_until=None,
-                    lease_owner_token=None,
+                    owner_token=None,
+                    resume_batch_token=str(latest_batch.id),
                     loop_state={
-                        "state": "queued",
+                        "state": "waiting_approval",
                         "recovered": True,
                         "tool_batch_id": str(latest_batch.id),
                     },
@@ -995,15 +1015,16 @@ class AgentCoreService:
                         continuation_claimed_at=None,
                     )
                 turn = await update_recovery_turn(
-                    status=AgentTurnStatus.QUEUED,
+                    status=AgentTurnStatus.WAITING_APPROVAL,
                     completed_at=None,
                     error_code=None,
                     error_message=None,
                     claimed_at=None,
                     lease_until=None,
-                    lease_owner_token=None,
+                    owner_token=None,
+                    resume_batch_token=str(latest_batch.id),
                     loop_state={
-                        "state": "queued",
+                        "state": "waiting_approval",
                         "recovered": True,
                         "tool_batch_id": str(latest_batch.id),
                     },
@@ -1034,7 +1055,8 @@ class AgentCoreService:
                 status=AgentTurnStatus.WAITING_APPROVAL,
                 claimed_at=None,
                 lease_until=None,
-                lease_owner_token=None,
+                owner_token=None,
+                resume_batch_token=turn.resume_batch_token,
                 completed_at=None,
                 loop_state={"state": "waiting_approval", "recovered": True},
             )
@@ -1047,15 +1069,16 @@ class AgentCoreService:
             and latest_action.status == AgentActionStatus.REQUESTED
         ):
             turn = await update_recovery_turn(
-                status=AgentTurnStatus.QUEUED,
+                status=AgentTurnStatus.WAITING_APPROVAL,
                 completed_at=None,
                 error_code=None,
                 error_message=None,
                 claimed_at=None,
                 lease_until=None,
-                lease_owner_token=None,
+                owner_token=None,
+                resume_batch_token=(turn.resume_batch_token or new_turn_owner_token()),
                 loop_state={
-                    "state": "queued",
+                    "state": "waiting_approval",
                     "recovered": True,
                     "resume_action_id": str(latest_action.id),
                 },
@@ -1086,7 +1109,8 @@ class AgentCoreService:
                 completed_at=now,
                 claimed_at=None,
                 lease_until=None,
-                lease_owner_token=None,
+                owner_token=None,
+                resume_batch_token=None,
                 loop_state={"termination_reason": "model_failed", "recovered": True},
             )
             if turn is None:
@@ -1107,7 +1131,8 @@ class AgentCoreService:
             error_message=None,
             claimed_at=None,
             lease_until=None,
-            lease_owner_token=None,
+            owner_token=None,
+            resume_batch_token=None,
             loop_state={"state": "queued", "recovered": True},
         )
         if turn is None:

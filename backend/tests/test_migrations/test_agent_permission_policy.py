@@ -9,7 +9,7 @@ from app.database import get_alembic_head_revision
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-PREVIOUS_REVISION = "0043_llm_provider_insecure_http_opt_in"
+PREVIOUS_REVISION = "0045_agent_turn_owner_token"
 
 
 def _run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:

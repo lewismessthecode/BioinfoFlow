@@ -1,7 +1,7 @@
 """add versioned agent permission policy audit fields
 
-Revision ID: 0044_agent_permission_policy
-Revises: 0043_llm_provider_insecure_http_opt_in
+Revision ID: 0046_agent_permission_policy
+Revises: 0045_agent_turn_owner_token
 Create Date: 2026-07-13
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0044_agent_permission_policy"
-down_revision = "0043_llm_provider_insecure_http_opt_in"
+revision = "0046_agent_permission_policy"
+down_revision = "0045_agent_turn_owner_token"
 branch_labels = None
 depends_on = None
 
