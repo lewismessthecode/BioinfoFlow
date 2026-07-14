@@ -310,7 +310,17 @@ async def test_runtime_retries_transient_model_failure_and_records_event(
     assert attempts == 2
     assert completed_turn.status == "completed"
     assert completed_turn.final_text == "Succeeded after retry."
-    assert any(event.type == "model.retrying" for event in events)
+    retry_event = next(event for event in events if event.type == "model.retrying")
+    assert retry_event.payload["model_error"] == {
+        "category": "timeout",
+        "message": "The provider timed out.",
+        "http_status": None,
+        "provider_code": None,
+        "retryable": True,
+        "replay_safe": True,
+        "retry_after_seconds": None,
+        "request_id": None,
+    }
     assert secret not in repr([event.payload for event in events])
     assert secret not in caplog.text
 
@@ -406,7 +416,9 @@ async def test_model_failure_and_fallback_surfaces_never_persist_credentials(
 
     failed_turn = await runtime.run_turn(str(turn.id))
     events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
 
     assert failed_turn.status == "failed"
     assert any(event.type == "model.retrying" for event in events)
@@ -429,7 +441,9 @@ async def test_model_failure_and_fallback_surfaces_never_persist_credentials(
             for message in messages
         ]
     )
-    assert secret not in repr([asdict(invocation) for invocation in gateway.invocations])
+    assert secret not in repr(
+        [asdict(invocation) for invocation in gateway.invocations]
+    )
     assert secret not in repr(serialized_errors)
 
 
@@ -481,8 +495,12 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
     db_session.add(provider)
     await db_session.commit()
     await db_session.refresh(provider)
-    primary = await _seed_catalog_model(db_session, model_id="primary-model", provider=provider)
-    fallback = await _seed_catalog_model(db_session, model_id="fallback-model", provider=provider)
+    primary = await _seed_catalog_model(
+        db_session, model_id="primary-model", provider=provider
+    )
+    fallback = await _seed_catalog_model(
+        db_session, model_id="fallback-model", provider=provider
+    )
     profile = LlmModelProfile(
         name="Fallback profile",
         task_type="agent",
@@ -515,14 +533,18 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
 
     assert completed_turn.status == "completed"
     assert completed_turn.final_text == "Answered from fallback."
-    assert completed_turn.model_profile_snapshot["resolved_model_id"] == str(fallback.id)
+    assert completed_turn.model_profile_snapshot["resolved_model_id"] == str(
+        fallback.id
+    )
     assert any(event.type == "model.fallback" for event in events)
     assert sum("primary-model" in model for model in model_attempts) == 2
     assert sum("fallback-model" in model for model in model_attempts) == 1
 
 
 @pytest.mark.asyncio
-async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session, monkeypatch):
+async def test_runtime_stops_on_repeated_tool_calls_without_progress(
+    db_session, monkeypatch
+):
     calls = 0
 
     async def looping_completion(*args, **kwargs):
@@ -585,7 +607,9 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(db_session,
 
 
 @pytest.mark.asyncio
-async def test_runtime_allows_repeated_tool_polling_when_results_change(db_session, monkeypatch):
+async def test_runtime_allows_repeated_tool_polling_when_results_change(
+    db_session, monkeypatch
+):
     calls = 0
     tool_executions = 0
 
@@ -600,6 +624,7 @@ async def test_runtime_allows_repeated_tool_polling_when_results_change(db_sessi
             pass
 
         if calls <= 3:
+
             class FakeMessage:
                 pass
 
@@ -615,6 +640,7 @@ async def test_runtime_allows_repeated_tool_polling_when_results_change(db_sessi
             message.content = ""
             message.tool_calls = [FakeToolCall()]
         else:
+
             class FakeMessage:
                 content = "The repeated status check completed."
                 tool_calls = None
@@ -670,7 +696,9 @@ async def test_runtime_allows_repeated_tool_polling_when_results_change(db_sessi
 
 
 @pytest.mark.asyncio
-async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(db_session, monkeypatch):
+async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(
+    db_session, monkeypatch
+):
     async def fake_completion(*args, **kwargs):
         class FakeResponse:
             usage = None
@@ -711,7 +739,9 @@ async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(db_session,
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
-    session = await service.session_repo.update_all(session, toolset_policy={"name": "plan"})
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "plan"}
+    )
     turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -750,6 +780,7 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
 
         message = FakeMessage()
         if calls == 1:
+
             class FakeFunction:
                 name = "bash"
                 arguments = json.dumps(
@@ -794,7 +825,9 @@ async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatc
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
     )
-    session = await service.session_repo.update_all(session, toolset_policy={"name": "execution"})
+    session = await service.session_repo.update_all(
+        session, toolset_policy={"name": "execution"}
+    )
     turn = await service.create_turn_record(
         session_id=str(session.id),
         workspace_id=DEFAULT_WORKSPACE_ID,

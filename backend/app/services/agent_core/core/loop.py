@@ -326,6 +326,9 @@ class AgentLoopController:
                         await self.tool_batches.fail_continuation(
                             active_continuation_batch_id
                         )
+                model_error = (
+                    exc.to_public_dict() if isinstance(exc, ModelError) else None
+                )
                 return LoopResult(
                     termination_reason="model_failed",
                     final_text=None,
@@ -337,6 +340,7 @@ class AgentLoopController:
                     model_replay_safe=(
                         exc.replay_safe if isinstance(exc, ModelError) else True
                     ),
+                    model_error=model_error,
                 )
 
             token_usage = _merge_usage(token_usage, streamed.token_usage)
@@ -1489,127 +1493,143 @@ class AgentLoopController:
         response_streaming = invocation.stream
         continuation: ResponsesContinuation | None = None
         warnings: list[ModelWarning] = []
+        semantic_output_emitted = False
 
-        async for event in self.model_gateway.invoke(invocation):
-            await self._ensure_owned()
-            if isinstance(event, ResponseStarted):
-                response_streaming = event.streaming
-            elif isinstance(event, ReasoningDelta):
-                if not allow_thinking or not event.text:
-                    continue
-                thinking_parts.append(event.text)
-                if response_streaming:
-                    await self.ledger.append(
-                        session_id=str(agent_session.id),
-                        turn_id=str(turn.id),
-                        type=AgentEventType.ASSISTANT_THINKING_DELTA,
-                        payload={
-                            "message_id": message_id,
-                            "delta": event.text,
-                            "content": "".join(thinking_parts),
-                            "index": thinking_index,
-                        },
-                    )
-                thinking_index += 1
-            elif isinstance(event, TextDelta):
-                if allow_thinking and thinking_parts and not thinking_completed:
-                    await self._complete_thinking(
-                        agent_session=agent_session,
-                        turn=turn,
-                        message_id=message_id,
-                        thinking_parts=thinking_parts,
-                        thinking_index=thinking_index,
-                    )
-                    thinking_completed = True
-                if event.text:
-                    phase = event.phase
-                    phase_parts = text_parts[phase]
-                    phase_parts.append(event.text)
-                    if response_streaming:
+        try:
+            async with asyncio.timeout(_model_attempt_timeout_seconds()):
+                async for event in self.model_gateway.invoke(invocation):
+                    await self._ensure_owned()
+                    if isinstance(
+                        event,
+                        (ReasoningDelta, TextDelta, ToolCallDelta),
+                    ):
+                        semantic_output_emitted = True
+                    if isinstance(event, ResponseStarted):
+                        response_streaming = event.streaming
+                    elif isinstance(event, ReasoningDelta):
+                        if not allow_thinking or not event.text:
+                            continue
+                        thinking_parts.append(event.text)
+                        if response_streaming:
+                            await self.ledger.append(
+                                session_id=str(agent_session.id),
+                                turn_id=str(turn.id),
+                                type=AgentEventType.ASSISTANT_THINKING_DELTA,
+                                payload={
+                                    "message_id": message_id,
+                                    "delta": event.text,
+                                    "content": "".join(thinking_parts),
+                                    "index": thinking_index,
+                                },
+                            )
+                        thinking_index += 1
+                    elif isinstance(event, TextDelta):
+                        if allow_thinking and thinking_parts and not thinking_completed:
+                            await self._complete_thinking(
+                                agent_session=agent_session,
+                                turn=turn,
+                                message_id=message_id,
+                                thinking_parts=thinking_parts,
+                                thinking_index=thinking_index,
+                            )
+                            thinking_completed = True
+                        if event.text:
+                            phase = event.phase
+                            phase_parts = text_parts[phase]
+                            phase_parts.append(event.text)
+                            if response_streaming:
+                                await self.ledger.append(
+                                    session_id=str(agent_session.id),
+                                    turn_id=str(turn.id),
+                                    type=AgentEventType.ASSISTANT_TEXT_DELTA,
+                                    payload={
+                                        "message_id": message_id,
+                                        "delta": event.text,
+                                        "content": "".join(phase_parts),
+                                        "phase": phase,
+                                        "index": text_index,
+                                    },
+                                )
+                            text_index += 1
+                    elif isinstance(event, ToolCallDelta):
+                        if allow_thinking and thinking_parts and not thinking_completed:
+                            await self._complete_thinking(
+                                agent_session=agent_session,
+                                turn=turn,
+                                message_id=message_id,
+                                thinking_parts=thinking_parts,
+                                thinking_index=thinking_index,
+                            )
+                            thinking_completed = True
+                        seen_before = event.index in tool_calls
+                        state = tool_calls.setdefault(
+                            event.index,
+                            _PendingToolCall(
+                                call_id=event.call_id or f"tool_call_{event.index + 1}",
+                                name=event.name or "",
+                                provider_call_id=event.call_id,
+                                index=event.index,
+                            ),
+                        )
+                        started_before = (
+                            bool(state.call_id and state.name) if seen_before else False
+                        )
+                        if event.call_id:
+                            state.call_id = event.call_id
+                            state.provider_call_id = event.call_id
+                        if event.name:
+                            state.name = event.name
+                        if not started_before and state.call_id and state.name:
+                            await self.ledger.append(
+                                session_id=str(agent_session.id),
+                                turn_id=str(turn.id),
+                                type=AgentEventType.ASSISTANT_TOOL_CALL_STARTED,
+                                payload={
+                                    "message_id": message_id,
+                                    "call_id": state.call_id,
+                                    "name": state.name,
+                                    "status": "building",
+                                    "index": state.index,
+                                },
+                            )
+                        if event.arguments_delta:
+                            state.arguments_text += event.arguments_delta
+                            if response_streaming:
+                                await self.ledger.append(
+                                    session_id=str(agent_session.id),
+                                    turn_id=str(turn.id),
+                                    type=AgentEventType.ASSISTANT_TOOL_CALL_DELTA,
+                                    payload={
+                                        "message_id": message_id,
+                                        "call_id": state.call_id,
+                                        "name": state.name,
+                                        "arguments_delta": event.arguments_delta,
+                                        "arguments": state.arguments(),
+                                        "status": "building",
+                                        "index": state.index,
+                                    },
+                                )
+                    elif isinstance(event, UsageReport):
+                        usage = _merge_usage(usage, _usage_dict(event))
+                    elif isinstance(event, ModelWarning):
+                        warnings.append(event)
                         await self.ledger.append(
                             session_id=str(agent_session.id),
                             turn_id=str(turn.id),
-                            type=AgentEventType.ASSISTANT_TEXT_DELTA,
-                            payload={
-                                "message_id": message_id,
-                                "delta": event.text,
-                                "content": "".join(phase_parts),
-                                "phase": phase,
-                                "index": text_index,
-                            },
+                            type=AgentEventType.MODEL_WARNING,
+                            payload={"code": event.code, "message": event.message},
                         )
-                    text_index += 1
-            elif isinstance(event, ToolCallDelta):
-                if allow_thinking and thinking_parts and not thinking_completed:
-                    await self._complete_thinking(
-                        agent_session=agent_session,
-                        turn=turn,
-                        message_id=message_id,
-                        thinking_parts=thinking_parts,
-                        thinking_index=thinking_index,
-                    )
-                    thinking_completed = True
-                seen_before = event.index in tool_calls
-                state = tool_calls.setdefault(
-                    event.index,
-                    _PendingToolCall(
-                        call_id=event.call_id or f"tool_call_{event.index + 1}",
-                        name=event.name or "",
-                        provider_call_id=event.call_id,
-                        index=event.index,
-                    ),
-                )
-                started_before = (
-                    bool(state.call_id and state.name) if seen_before else False
-                )
-                if event.call_id:
-                    state.call_id = event.call_id
-                    state.provider_call_id = event.call_id
-                if event.name:
-                    state.name = event.name
-                if not started_before and state.call_id and state.name:
-                    await self.ledger.append(
-                        session_id=str(agent_session.id),
-                        turn_id=str(turn.id),
-                        type=AgentEventType.ASSISTANT_TOOL_CALL_STARTED,
-                        payload={
-                            "message_id": message_id,
-                            "call_id": state.call_id,
-                            "name": state.name,
-                            "status": "building",
-                            "index": state.index,
-                        },
-                    )
-                if event.arguments_delta:
-                    state.arguments_text += event.arguments_delta
-                    if response_streaming:
-                        await self.ledger.append(
-                            session_id=str(agent_session.id),
-                            turn_id=str(turn.id),
-                            type=AgentEventType.ASSISTANT_TOOL_CALL_DELTA,
-                            payload={
-                                "message_id": message_id,
-                                "call_id": state.call_id,
-                                "name": state.name,
-                                "arguments_delta": event.arguments_delta,
-                                "arguments": state.arguments(),
-                                "status": "building",
-                                "index": state.index,
-                            },
-                        )
-            elif isinstance(event, UsageReport):
-                usage = _merge_usage(usage, _usage_dict(event))
-            elif isinstance(event, ModelWarning):
-                warnings.append(event)
-                await self.ledger.append(
-                    session_id=str(agent_session.id),
-                    turn_id=str(turn.id),
-                    type=AgentEventType.MODEL_WARNING,
-                    payload={"code": event.code, "message": event.message},
-                )
-            elif isinstance(event, CompletionMetadata):
-                if event.continuation is not None:
-                    continuation = event.continuation
+                    elif isinstance(event, CompletionMetadata):
+                        if event.continuation is not None:
+                            continuation = event.continuation
+        except TimeoutError:
+            raise ModelError(
+                category="timeout",
+                message="The model provider request timed out.",
+                provider_code="model_attempt_timeout",
+                retryable=True,
+                replay_safe=not semantic_output_emitted,
+            ) from None
 
         thinking_text = "".join(thinking_parts).strip()
         if allow_thinking and thinking_text and not thinking_completed:
@@ -1681,15 +1701,18 @@ class AgentLoopController:
             exc: Exception,
             delay_seconds: float,
         ) -> None:
+            payload: dict[str, Any] = {
+                "next_attempt": next_attempt,
+                "delay_seconds": delay_seconds,
+                "error": str(exc),
+            }
+            if isinstance(exc, ModelError):
+                payload["model_error"] = exc.to_public_dict()
             await self.ledger.append(
                 session_id=str(turn.session_id),
                 turn_id=str(turn.id),
                 type=AgentEventType.MODEL_RETRYING,
-                payload={
-                    "next_attempt": next_attempt,
-                    "delay_seconds": delay_seconds,
-                    "error": str(exc),
-                },
+                payload=payload,
             )
             agent_metrics.increment("models.retries")
 
@@ -1826,6 +1849,8 @@ class AgentLoopController:
                 "error_message": result.error_message,
                 "error_code": result.error_code,
             }
+            if result.model_error is not None:
+                payload["model_error"] = result.model_error
         else:
             payload = {"termination_reason": result.termination_reason}
         if event_type is not None:
@@ -1846,6 +1871,8 @@ class AgentLoopController:
         }
         if result.error_message:
             log_fields["error_message"] = truncate_log_value(result.error_message)
+        if result.model_error is not None:
+            log_fields["model_error"] = result.model_error
         logger.info("agent_core.turn.finished", **log_fields)
         agent_metrics.increment(f"turns.{result.termination_reason}")
         agent_metrics.observe("turns.iterations", float(result.iteration_count))
@@ -1937,6 +1964,10 @@ def _merge_usage(
 def _turn_lease_duration():
     seconds = max(int(getattr(settings, "agent_turn_lease_seconds", 300) or 300), 1)
     return timedelta(seconds=seconds)
+
+
+def _model_attempt_timeout_seconds() -> float:
+    return max(float(settings.agent_model_attempt_timeout_seconds or 0.0), 0.001)
 
 
 def _retry_policy() -> RetryPolicy:
