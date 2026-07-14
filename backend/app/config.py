@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     agent_retry_max_attempts: int = 3
     agent_retry_base_delay_seconds: float = 0.25
     agent_retry_max_delay_seconds: float = 2.0
+    agent_model_attempt_timeout_seconds: float = 120.0
     agent_turn_lease_seconds: int = 300
     agent_compact_threshold: int = 50000  # Auto-compact token threshold
     agent_project_instructions_max_bytes: int = 32768

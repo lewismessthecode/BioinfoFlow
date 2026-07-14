@@ -111,6 +111,35 @@ class PartialFailureGateway:
         )
 
 
+class NeverCompletingGateway:
+    def __init__(self) -> None:
+        self.invocations: list[ModelInvocation] = []
+        self.cancelled = asyncio.Event()
+
+    async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
+        self.invocations.append(invocation)
+        try:
+            await asyncio.Event().wait()
+        finally:
+            self.cancelled.set()
+        if False:  # pragma: no cover - keeps this an async generator
+            yield CompletionMetadata(response_id=None, finish_reason=None)
+
+
+class PartialThenBlockingGateway:
+    def __init__(self) -> None:
+        self.invocations: list[ModelInvocation] = []
+        self.cancelled = asyncio.Event()
+
+    async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
+        self.invocations.append(invocation)
+        yield TextDelta(text="Partial output.", phase="final_answer")
+        try:
+            await asyncio.Event().wait()
+        finally:
+            self.cancelled.set()
+
+
 def _synchronize_two_resume_turn_reads(monkeypatch, *, turn_id: str) -> None:
     original_get = AgentTurnRepository.get
     both_workers_loaded = asyncio.Event()
@@ -565,6 +594,76 @@ async def test_partial_model_failure_is_marked_unsafe_for_fallback(db_session) -
     assert result.termination_reason == "model_failed"
     assert result.error_code == "model_request_failed"
     assert result.model_replay_safe is False
+
+
+@pytest.mark.asyncio
+async def test_model_attempt_timeout_is_bounded_and_structured(
+    db_session,
+    monkeypatch,
+) -> None:
+    _session, turn = await _turn(db_session, input_text="Never finish this request.")
+    gateway = NeverCompletingGateway()
+    monkeypatch.setitem(settings.__dict__, "agent_model_attempt_timeout_seconds", 0.01)
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 1)
+
+    result = await AgentLoopController(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(supports_tools=False),
+        strategy=RuntimeStrategy(allow_tools=False),
+    )
+
+    assert result.termination_reason == "model_failed"
+    assert result.error_code == "model_request_failed"
+    assert result.error_message == "The model provider request timed out."
+    assert result.model_replay_safe is True
+    assert result.model_error == {
+        "category": "timeout",
+        "message": "The model provider request timed out.",
+        "http_status": None,
+        "provider_code": "model_attempt_timeout",
+        "retryable": True,
+        "replay_safe": True,
+        "retry_after_seconds": None,
+        "request_id": None,
+    }
+    assert len(gateway.invocations) == 1
+    assert gateway.cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_model_attempt_timeout_after_output_is_not_replay_safe(
+    db_session,
+    monkeypatch,
+) -> None:
+    _session, turn = await _turn(db_session, input_text="Start and then stall.")
+    gateway = PartialThenBlockingGateway()
+    monkeypatch.setitem(settings.__dict__, "agent_model_attempt_timeout_seconds", 0.01)
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
+    monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
+
+    result = await AgentLoopController(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(supports_tools=False),
+        strategy=RuntimeStrategy(allow_tools=False),
+    )
+
+    assert result.termination_reason == "model_failed"
+    assert result.error_code == "model_request_failed"
+    assert result.model_replay_safe is False
+    assert result.model_error is not None
+    assert result.model_error["category"] == "timeout"
+    assert result.model_error["replay_safe"] is False
+    assert len(gateway.invocations) == 1
+    assert gateway.cancelled.is_set()
 
 
 @pytest.mark.asyncio
@@ -1788,7 +1887,9 @@ async def test_stale_resume_job_cannot_claim_after_a_new_approval_batch(
             ),
         ),
         (
-            TextDelta(text="A stale job incorrectly advanced the turn.", phase="final_answer"),
+            TextDelta(
+                text="A stale job incorrectly advanced the turn.", phase="final_answer"
+            ),
             CompletionMetadata(response_id="resp-stale-final", finish_reason="stop"),
         ),
     )

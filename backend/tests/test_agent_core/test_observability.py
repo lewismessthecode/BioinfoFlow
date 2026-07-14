@@ -18,6 +18,15 @@ def test_agent_event_log_fields_keeps_diagnostics_without_payload_contents():
         payload={
             "error_code": "model_request_failed",
             "error_message": "x" * 500,
+            "model_error": {
+                "category": "timeout",
+                "http_status": 504,
+                "provider_code": "upstream_timeout",
+                "request_id": "req-safe",
+                "retryable": True,
+                "replay_safe": True,
+                "message": "provider detail excluded from log projection",
+            },
             "final_text": "model output should not be logged",
             "input_text": "user prompt should not be logged",
         },
@@ -30,6 +39,14 @@ def test_agent_event_log_fields_keeps_diagnostics_without_payload_contents():
         "event_type": "turn.failed",
         "error_code": "model_request_failed",
         "error_message": f"{'x' * 197}...",
+        "model_error": {
+            "category": "timeout",
+            "http_status": 504,
+            "provider_code": "upstream_timeout",
+            "request_id": "req-safe",
+            "retryable": True,
+            "replay_safe": True,
+        },
     }
 
 
