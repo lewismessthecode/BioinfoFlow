@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { ModelSelector } from "@/components/bioinfoflow/chat/model-selector"
 import type { ProviderModels } from "@/hooks/use-llm-settings"
@@ -42,6 +42,16 @@ vi.mock("@/components/bioinfoflow/chat/provider-icons", () => ({
     />
   ),
 }))
+
+vi.stubGlobal(
+  "ResizeObserver",
+  class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+)
+Element.prototype.scrollIntoView = vi.fn()
 
 const models: ProviderModels[] = [
   {
@@ -177,5 +187,37 @@ describe("ModelSelector", () => {
       "data-base-url",
       "https://relay-b.example/v1",
     )
+  })
+
+  it("searches models by provider display name", () => {
+    render(
+      <ModelSelector
+        models={[
+          {
+            provider: "7a4cc090-43d2-4c47-b26a-915721caeac0",
+            provider_kind: "openai_compatible",
+            label: "Research Relay",
+            base_url: "https://relay.example/v1",
+            models: [
+              {
+                id: "gpt-5.4-mini",
+                name: "GPT-5.4 Mini",
+                context_window: 128000,
+                model_id: "model-relay",
+              },
+            ],
+          },
+        ]}
+        selectedModel={null}
+        onSelectModel={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("combobox"))
+    fireEvent.change(screen.getByPlaceholderText("Search models..."), {
+      target: { value: "Research Relay" },
+    })
+
+    expect(screen.getByText("GPT-5.4 Mini")).toBeInTheDocument()
   })
 })

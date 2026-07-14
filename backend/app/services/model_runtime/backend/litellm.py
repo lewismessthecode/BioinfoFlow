@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 import litellm
+from openai import AsyncOpenAI
 
 from app.services.model_runtime.backend.litellm_network import PublicNetworkHTTPHandler
 from app.services.model_runtime.contracts import NetworkAccessPolicy, WireProtocol
@@ -60,20 +61,24 @@ class LiteLLMBackend:
         request_kwargs = dict(request)
         request_kwargs["num_retries"] = 0
         policy_client = (
-            PublicNetworkHTTPHandler()
-            if network_access == "public_only"
-            else None
+            PublicNetworkHTTPHandler() if network_access == "public_only" else None
         )
+        provider_client = None
         if policy_client is not None:
-            request_kwargs["shared_session"] = policy_client.session
+            provider_client = _request_scoped_provider_client(
+                wire_protocol,
+                request_kwargs,
+                policy_client,
+            )
+            request_kwargs["client"] = provider_client
         sensitive_values = _sensitive_values(request_kwargs)
         try:
             response = await operation(**request_kwargs)
         except ModelError:
-            await _close_policy_client(policy_client)
+            await _close_request_clients(policy_client, provider_client)
             raise
         except Exception as exc:
-            await _close_policy_client(policy_client)
+            await _close_request_clients(policy_client, provider_client)
             raise _provider_error(
                 exc,
                 replay_safe=True,
@@ -84,8 +89,9 @@ class LiteLLMBackend:
                 response,
                 sensitive_values=sensitive_values,
                 policy_client=policy_client,
+                provider_client=provider_client,
             )
-        await _close_policy_client(policy_client)
+        await _close_request_clients(policy_client, provider_client)
         return response
 
 
@@ -94,6 +100,7 @@ def _safe_stream(
     *,
     sensitive_values: tuple[str, ...],
     policy_client: PublicNetworkHTTPHandler | None = None,
+    provider_client: Any | None = None,
 ) -> AsyncIterator[Any]:
     async def iterate() -> AsyncIterator[Any]:
         try:
@@ -108,16 +115,41 @@ def _safe_stream(
                 sensitive_values=sensitive_values,
             ) from None
         finally:
-            await _close_policy_client(policy_client)
+            await _close_request_clients(policy_client, provider_client)
 
     return iterate()
 
 
-async def _close_policy_client(
+def _request_scoped_provider_client(
+    wire_protocol: WireProtocol,
+    request: Mapping[str, Any],
+    policy_client: PublicNetworkHTTPHandler,
+) -> Any:
+    if wire_protocol == "responses":
+        return policy_client
+    model = str(request.get("model") or "")
+    if not model.startswith("openai/"):
+        return policy_client
+    api_key = str(request.get("api_key") or "not-required")
+    base_url = str(request.get("api_base") or "https://api.openai.com/v1")
+    return AsyncOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        http_client=policy_client.client,
+    )
+
+
+async def _close_request_clients(
     policy_client: PublicNetworkHTTPHandler | None,
+    provider_client: Any | None,
 ) -> None:
     if policy_client is None:
         return
+    if provider_client is not None and provider_client is not policy_client:
+        try:
+            await provider_client.close()
+        except Exception:
+            pass
     try:
         await policy_client.close()
     except Exception:
@@ -145,14 +177,20 @@ def _provider_error(
     )
 
 
-def _error_classification(exc: Exception, *, status_code: int | None) -> tuple[str, bool]:
+def _error_classification(
+    exc: Exception, *, status_code: int | None
+) -> tuple[str, bool]:
     if isinstance(exc, litellm.RateLimitError) or status_code == 429:
         return "rate_limit", True
     if isinstance(exc, (litellm.Timeout, TimeoutError)):
         return "timeout", True
     if isinstance(exc, litellm.APIConnectionError):
         return "connection", True
-    if isinstance(exc, litellm.ServiceUnavailableError) or status_code in {502, 503, 504}:
+    if isinstance(exc, litellm.ServiceUnavailableError) or status_code in {
+        502,
+        503,
+        504,
+    }:
         return "service_unavailable", True
     if status_code == 400:
         return "invalid_request", False
@@ -212,7 +250,9 @@ def _request_id(
 ) -> str | None:
     candidates = [getattr(exc, "request_id", None)]
     response = getattr(exc, "response", None)
-    candidates.extend(_header_values(getattr(response, "headers", None), "x-request-id"))
+    candidates.extend(
+        _header_values(getattr(response, "headers", None), "x-request-id")
+    )
     candidates.extend(_header_values(getattr(response, "headers", None), "request-id"))
     candidates.extend(_header_values(getattr(exc, "headers", None), "x-request-id"))
     for candidate in candidates:
@@ -260,7 +300,10 @@ def _sensitive_values(request: Mapping[str, Any]) -> tuple[str, ...]:
     values: list[str] = []
     for key, value in request.items():
         normalized_key = str(key).lower()
-        if not any(token in normalized_key for token in ("key", "token", "secret", "authorization")):
+        if not any(
+            token in normalized_key
+            for token in ("key", "token", "secret", "authorization")
+        ):
             continue
         if isinstance(value, str) and value:
             values.append(value)

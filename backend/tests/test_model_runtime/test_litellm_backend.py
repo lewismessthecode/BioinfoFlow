@@ -10,6 +10,7 @@ import aiohttp
 import httpx
 import litellm
 import pytest
+from openai import AsyncOpenAI
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 from yarl import URL
@@ -140,10 +141,14 @@ async def test_responses_backend_calls_injected_aresponses_once_with_retries_dis
     ("wire_protocol", "payload"),
     [
         ("chat_completions", {"model": "openai/gpt-test", "messages": []}),
+        (
+            "chat_completions",
+            {"model": "anthropic/claude-test", "messages": []},
+        ),
         ("responses", {"model": "openai/gpt-test", "input": []}),
     ],
 )
-async def test_public_only_backend_injects_request_scoped_policy_session(
+async def test_public_only_backend_injects_request_scoped_provider_client(
     wire_protocol,
     payload,
 ):
@@ -163,14 +168,21 @@ async def test_public_only_backend_injects_request_scoped_policy_session(
     )
 
     assert len(calls) == 1
-    assert "client" not in calls[0]
-    assert isinstance(calls[0]["shared_session"], aiohttp.ClientSession)
-    assert calls[0]["shared_session"].closed is True
+    assert "shared_session" not in calls[0]
+    if wire_protocol == "chat_completions" and str(payload["model"]).startswith(
+        "openai/"
+    ):
+        assert isinstance(calls[0]["client"], AsyncOpenAI)
+        assert calls[0]["client"].is_closed()
+    else:
+        assert isinstance(calls[0]["client"], PublicNetworkHTTPHandler)
+        assert calls[0]["client"].closed is True
 
 
 @pytest.mark.asyncio
 async def test_public_only_backend_reaches_provider_through_real_litellm(monkeypatch):
     requests = 0
+    guard_calls = 0
 
     async def handle(request: web.Request) -> web.Response:
         nonlocal requests
@@ -202,32 +214,220 @@ async def test_public_only_backend_reaches_provider_through_real_litellm(monkeyp
     server = TestServer(app, host="127.0.0.1")
     await server.start_server()
     port = server.port
+
+    def allow_loopback(host: str) -> None:
+        nonlocal guard_calls
+        assert host == "127.0.0.1"
+        guard_calls += 1
+
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm_network.ensure_public_network_host",
+        allow_loopback,
+    )
+    try:
+        request = {
+            "model": "openai/gpt-test",
+            "messages": [{"role": "user", "content": "ping"}],
+            "api_key": "test-key",
+            "api_base": f"http://127.0.0.1:{port}/v1",
+        }
+        results = [
+            await LiteLLMBackend().invoke(
+                "chat_completions",
+                request,
+                network_access="unrestricted",
+            )
+        ]
+        for _ in range(2):
+            try:
+                results.append(
+                    await LiteLLMBackend().invoke(
+                        "chat_completions",
+                        request,
+                        network_access="public_only",
+                    )
+                )
+            except ModelError as exc:
+                pytest.fail(
+                    "Unexpected LiteLLM failure:\n"
+                    + "".join(traceback.format_exception(exc.cause))
+                )
+    finally:
+        await server.close()
+
+    assert [result.choices[0].message.content for result in results] == [
+        "pong",
+        "pong",
+        "pong",
+    ]
+    assert requests == 3
+    assert guard_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_public_only_backend_ignores_proxy_environment_end_to_end(
+    monkeypatch,
+):
+    target_requests = 0
+    proxy_requests = 0
+
+    async def handle_target(request: web.Request) -> web.Response:
+        nonlocal target_requests
+        await request.read()
+        target_requests += 1
+        return web.json_response(
+            {
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-test",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "direct"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        )
+
+    async def handle_proxy(
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        nonlocal proxy_requests
+        await reader.readuntil(b"\r\n\r\n")
+        proxy_requests += 1
+        writer.write(
+            b"HTTP/1.1 502 Bad Gateway\r\n"
+            b"Content-Length: 0\r\n"
+            b"Connection: close\r\n\r\n"
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    app = web.Application()
+    app.router.add_post("/v1/chat/completions", handle_target)
+    target = TestServer(app, host="127.0.0.1")
+    await target.start_server()
+    proxy = await asyncio.start_server(handle_proxy, "127.0.0.1", 0)
+    proxy_port = proxy.sockets[0].getsockname()[1]
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
+        monkeypatch.setenv(name, f"http://127.0.0.1:{proxy_port}")
+    monkeypatch.setenv("NO_PROXY", "")
+    monkeypatch.setenv("no_proxy", "")
     monkeypatch.setattr(
         "app.services.model_runtime.backend.litellm_network.ensure_public_network_host",
         lambda host: None,
     )
     try:
-        try:
-            result = await LiteLLMBackend().invoke(
-                "chat_completions",
-                {
-                    "model": "openai/gpt-test",
-                    "messages": [{"role": "user", "content": "ping"}],
-                    "api_key": "test-key",
-                    "api_base": f"http://127.0.0.1:{port}/v1",
+        result = await LiteLLMBackend().invoke(
+            "chat_completions",
+            {
+                "model": "openai/gpt-test",
+                "messages": [{"role": "user", "content": "ping"}],
+                "api_key": "test-key",
+                "api_base": f"http://127.0.0.1:{target.port}/v1",
+            },
+            network_access="public_only",
+        )
+    finally:
+        proxy.close()
+        await proxy.wait_closed()
+        await target.close()
+
+    assert result.choices[0].message.content == "direct"
+    assert target_requests == 1
+    assert proxy_requests == 0
+
+
+@pytest.mark.asyncio
+async def test_public_only_responses_repeated_requests_preserve_guard(monkeypatch):
+    requests = 0
+    guard_calls = 0
+
+    async def handle(request: web.Request) -> web.Response:
+        nonlocal requests
+        await request.read()
+        requests += 1
+        return web.json_response(
+            {
+                "id": "resp-test",
+                "object": "response",
+                "created_at": 1,
+                "status": "completed",
+                "model": "gpt-test",
+                "output": [
+                    {
+                        "id": "message-test",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "pong",
+                                "annotations": [],
+                                "logprobs": [],
+                            }
+                        ],
+                    }
+                ],
+                "parallel_tool_calls": True,
+                "tools": [],
+                "tool_choice": "auto",
+                "usage": {
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "total_tokens": 2,
                 },
-                network_access="public_only",
-            )
-        except ModelError as exc:
-            pytest.fail(
-                "Unexpected LiteLLM failure:\n"
-                + "".join(traceback.format_exception(exc.cause))
+            }
+        )
+
+    app = web.Application()
+    app.router.add_post("/v1/responses", handle)
+    server = TestServer(app, host="127.0.0.1")
+    await server.start_server()
+
+    def allow_loopback(host: str) -> None:
+        nonlocal guard_calls
+        assert host == "127.0.0.1"
+        guard_calls += 1
+
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm_network.ensure_public_network_host",
+        allow_loopback,
+    )
+    try:
+        results = []
+        for _ in range(2):
+            results.append(
+                await LiteLLMBackend().invoke(
+                    "responses",
+                    {
+                        "model": "openai/gpt-test",
+                        "input": "ping",
+                        "api_key": "test-key",
+                        "api_base": f"http://127.0.0.1:{server.port}/v1",
+                        "store": False,
+                    },
+                    network_access="public_only",
+                )
             )
     finally:
         await server.close()
 
-    assert result.choices[0].message.content == "pong"
-    assert requests == 1
+    assert [result.output_text for result in results] == ["pong", "pong"]
+    assert requests == 2
+    assert guard_calls == 2
 
 
 @pytest.mark.asyncio
@@ -255,9 +455,7 @@ async def test_public_network_resolver_returns_the_exact_validated_connect_addre
         del args, kwargs
         calls += 1
         if calls > 1:
-            return [
-                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))
-            ]
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443))]
 
     monkeypatch.setattr("socket.getaddrinfo", resolve_once)
@@ -320,14 +518,14 @@ async def test_public_network_http_handler_ignores_proxy_environment(monkeypatch
 
 @pytest.mark.asyncio
 async def test_public_only_stream_keeps_policy_client_until_stream_closes():
-    captured: list[aiohttp.ClientSession] = []
+    captured: list[AsyncOpenAI] = []
 
     async def provider_stream() -> AsyncIterator[object]:
         yield object()
 
     async def fake_acompletion(**kwargs: Any) -> object:
-        assert "client" not in kwargs
-        captured.append(kwargs["shared_session"])
+        assert "shared_session" not in kwargs
+        captured.append(kwargs["client"])
         return provider_stream()
 
     response = await LiteLLMBackend(acompletion_fn=fake_acompletion).invoke(
@@ -336,11 +534,11 @@ async def test_public_only_stream_keeps_policy_client_until_stream_closes():
         network_access="public_only",
     )
 
-    assert captured[0].closed is False
+    assert captured[0].is_closed() is False
     await anext(response)
     with pytest.raises(StopAsyncIteration):
         await anext(response)
-    assert captured[0].closed is True
+    assert captured[0].is_closed() is True
 
 
 @pytest.mark.asyncio
@@ -402,7 +600,9 @@ async def test_public_network_middleware_rechecks_redirect_destination():
 
 
 def test_default_gateway_registers_chat_and_responses_codecs() -> None:
-    assert repr(ModelGateway()) == "ModelGateway(protocols=[chat_completions, responses])"
+    assert (
+        repr(ModelGateway()) == "ModelGateway(protocols=[chat_completions, responses])"
+    )
 
 
 @pytest.mark.asyncio
@@ -676,13 +876,21 @@ async def test_rate_limit_error_preserves_retry_after_and_safe_metadata() -> Non
             "connection",
             500,
         ),
-        (litellm.APIError(502, "raw 502", "openai", "gpt-test"), "service_unavailable", 502),
+        (
+            litellm.APIError(502, "raw 502", "openai", "gpt-test"),
+            "service_unavailable",
+            502,
+        ),
         (
             litellm.ServiceUnavailableError("raw 503", "openai", "gpt-test"),
             "service_unavailable",
             503,
         ),
-        (litellm.APIError(504, "raw 504", "openai", "gpt-test"), "service_unavailable", 504),
+        (
+            litellm.APIError(504, "raw 504", "openai", "gpt-test"),
+            "service_unavailable",
+            504,
+        ),
     ],
 )
 async def test_transient_typed_provider_errors_are_retryable(
@@ -819,7 +1027,9 @@ async def test_stream_failure_after_event_is_safe_and_not_replayable(caplog):
 
 
 @pytest.mark.asyncio
-async def test_backend_preserves_model_error_replay_safety_before_codec_boundary() -> None:
+async def test_backend_preserves_model_error_replay_safety_before_codec_boundary() -> (
+    None
+):
     first_event = object()
 
     async def provider_stream() -> AsyncIterator[object]:
