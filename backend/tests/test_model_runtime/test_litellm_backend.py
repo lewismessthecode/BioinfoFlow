@@ -10,6 +10,8 @@ import aiohttp
 import httpx
 import litellm
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 from yarl import URL
 
 from app.services.model_runtime.backend.litellm import LiteLLMBackend
@@ -134,22 +136,98 @@ async def test_responses_backend_calls_injected_aresponses_once_with_retries_dis
 
 
 @pytest.mark.asyncio
-async def test_public_only_backend_injects_request_scoped_policy_client():
+@pytest.mark.parametrize(
+    ("wire_protocol", "payload"),
+    [
+        ("chat_completions", {"model": "openai/gpt-test", "messages": []}),
+        ("responses", {"model": "openai/gpt-test", "input": []}),
+    ],
+)
+async def test_public_only_backend_injects_request_scoped_policy_session(
+    wire_protocol,
+    payload,
+):
     calls: list[dict[str, Any]] = []
 
-    async def fake_acompletion(**kwargs: Any) -> object:
+    async def fake_operation(**kwargs: Any) -> object:
         calls.append(kwargs)
         return object()
 
-    await LiteLLMBackend(acompletion_fn=fake_acompletion).invoke(
-        "chat_completions",
-        {"model": "openai/gpt-test", "messages": []},
+    await LiteLLMBackend(
+        acompletion_fn=fake_operation,
+        aresponses_fn=fake_operation,
+    ).invoke(
+        wire_protocol,
+        payload,
         network_access="public_only",
     )
 
     assert len(calls) == 1
-    assert calls[0]["client"].network_access == "public_only"
-    assert calls[0]["client"].closed is True
+    assert "client" not in calls[0]
+    assert isinstance(calls[0]["shared_session"], aiohttp.ClientSession)
+    assert calls[0]["shared_session"].closed is True
+
+
+@pytest.mark.asyncio
+async def test_public_only_backend_reaches_provider_through_real_litellm(monkeypatch):
+    requests = 0
+
+    async def handle(request: web.Request) -> web.Response:
+        nonlocal requests
+        await request.read()
+        requests += 1
+        return web.json_response(
+            {
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-test",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "pong"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+        )
+
+    app = web.Application()
+    app.router.add_post("/v1/chat/completions", handle)
+    server = TestServer(app, host="127.0.0.1")
+    await server.start_server()
+    port = server.port
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm_network.ensure_public_network_host",
+        lambda host: None,
+    )
+    try:
+        try:
+            result = await LiteLLMBackend().invoke(
+                "chat_completions",
+                {
+                    "model": "openai/gpt-test",
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "api_key": "test-key",
+                    "api_base": f"http://127.0.0.1:{port}/v1",
+                },
+                network_access="public_only",
+            )
+        except ModelError as exc:
+            pytest.fail(
+                "Unexpected LiteLLM failure:\n"
+                + "".join(traceback.format_exception(exc.cause))
+            )
+    finally:
+        await server.close()
+
+    assert result.choices[0].message.content == "pong"
+    assert requests == 1
 
 
 @pytest.mark.asyncio
@@ -242,13 +320,14 @@ async def test_public_network_http_handler_ignores_proxy_environment(monkeypatch
 
 @pytest.mark.asyncio
 async def test_public_only_stream_keeps_policy_client_until_stream_closes():
-    captured: list[PublicNetworkHTTPHandler] = []
+    captured: list[aiohttp.ClientSession] = []
 
     async def provider_stream() -> AsyncIterator[object]:
         yield object()
 
     async def fake_acompletion(**kwargs: Any) -> object:
-        captured.append(kwargs["client"])
+        assert "client" not in kwargs
+        captured.append(kwargs["shared_session"])
         return provider_stream()
 
     response = await LiteLLMBackend(acompletion_fn=fake_acompletion).invoke(

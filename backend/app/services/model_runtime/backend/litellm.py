@@ -65,7 +65,7 @@ class LiteLLMBackend:
             else None
         )
         if policy_client is not None:
-            request_kwargs["client"] = policy_client
+            request_kwargs["shared_session"] = policy_client.session
         sensitive_values = _sensitive_values(request_kwargs)
         try:
             response = await operation(**request_kwargs)
