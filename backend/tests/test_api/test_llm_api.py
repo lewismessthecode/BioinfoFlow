@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import httpx
 import pytest
 
 from app.api.deps import get_current_user
 from app.auth.session import AuthUser
 from app.config import settings
-from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
+from app.models.llm import (
+    LlmModel,
+    LlmModelProfile,
+    LlmProvider,
+    LlmProviderCredential,
+)
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
@@ -14,6 +21,16 @@ OTHER_WORKSPACE_ID = "00000000-0000-0000-0000-000000000002"
 OTHER_PROVIDER_ID = "00000000-0000-0000-0000-00000000aa01"
 OTHER_MODEL_ID = "00000000-0000-0000-0000-00000000bb01"
 OTHER_PROFILE_ID = "00000000-0000-0000-0000-00000000cc01"
+
+
+def _network_client_factory(client_type):
+    @asynccontextmanager
+    async def factory(**kwargs):
+        client = client_type(timeout=kwargs.get("timeout"))
+        async with client:
+            yield client
+
+    return factory
 
 
 def _auth_user(
@@ -169,6 +186,243 @@ async def test_llm_provider_setup_creates_vllm_provider_key_and_manual_model(
 
 
 @pytest.mark.asyncio
+async def test_llm_provider_setup_persists_explicit_responses_protocol(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Responses relay",
+            "base_url": "https://relay.example.com/v1",
+            "wire_protocol": "responses",
+            "api_key": "relay-key",
+            "model_ids": ["gpt-5.4-mini"],
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 200
+    provider = response.json()["data"]["provider"]
+    assert provider["wire_protocol"] == "responses"
+
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    assert configuration.status_code == 200
+    persisted = next(
+        item
+        for item in configuration.json()["data"]["providers"]
+        if item["id"] == provider["id"]
+    )
+    assert persisted["wire_protocol"] == "responses"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_setup_can_switch_wire_protocol_in_both_directions(
+    async_client,
+):
+    created = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Switchable relay",
+            "base_url": "https://relay.example.com/v1",
+            "api_key": "relay-key",
+            "model_ids": ["gpt-5.4-mini"],
+            "scope": "user",
+        },
+    )
+    assert created.status_code == 200
+    provider = created.json()["data"]["provider"]
+    assert provider["wire_protocol"] == "chat_completions"
+
+    switched_to_responses = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "provider_id": provider["id"],
+            "wire_protocol": "responses",
+            "scope": "user",
+        },
+    )
+    assert switched_to_responses.status_code == 200
+    assert (
+        switched_to_responses.json()["data"]["provider"]["wire_protocol"]
+        == "responses"
+    )
+
+    switched_to_chat = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "provider_id": provider["id"],
+            "wire_protocol": "chat_completions",
+            "scope": "user",
+        },
+    )
+    assert switched_to_chat.status_code == 200
+    assert (
+        switched_to_chat.json()["data"]["provider"]["wire_protocol"]
+        == "chat_completions"
+    )
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_update_rejects_protocol_unsupported_by_current_kind(
+    async_client,
+):
+    created = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Anthropic endpoint",
+            "kind": "anthropic",
+        },
+    )
+    assert created.status_code == 201
+    provider = created.json()["data"]
+    assert provider["wire_protocol"] == "chat_completions"
+
+    response = await async_client.patch(
+        f"/api/v1/llm/providers/{provider['id']}",
+        json={"wire_protocol": "responses"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_update_rejects_kind_unsupported_by_current_protocol(
+    async_client,
+):
+    created = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "OpenAI Responses endpoint",
+            "kind": "openai",
+            "wire_protocol": "responses",
+        },
+    )
+    assert created.status_code == 201
+    provider = created.json()["data"]
+    assert provider["wire_protocol"] == "responses"
+
+    response = await async_client.patch(
+        f"/api/v1/llm/providers/{provider['id']}",
+        json={"kind": "anthropic"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_create_defaults_to_chat_completions_for_compatibility(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Compatibility endpoint",
+            "kind": "openai_compatible",
+            "base_url": "https://relay.example.com/v1",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["wire_protocol"] == "chat_completions"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_create_accepts_registered_headless_litellm_kind(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Azure OpenAI",
+            "kind": "azure",
+            "base_url": "https://example.openai.azure.com",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["kind"] == "azure"
+    assert response.json()["data"]["wire_protocol"] == "chat_completions"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_setup_update_preserves_omitted_wire_protocol(
+    async_client,
+):
+    created = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Persistent Responses relay",
+            "base_url": "https://relay.example.com/v1",
+            "wire_protocol": "responses",
+            "api_key": "relay-key",
+            "model_ids": ["gpt-5.4-mini"],
+            "scope": "user",
+        },
+    )
+    assert created.status_code == 200
+    provider = created.json()["data"]["provider"]
+    assert provider["wire_protocol"] == "responses"
+
+    updated = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "provider_id": provider["id"],
+            "name": "Renamed Responses relay",
+            "scope": "user",
+        },
+    )
+
+    assert updated.status_code == 200
+    updated_provider = updated.json()["data"]["provider"]
+    assert updated_provider["name"] == "Renamed Responses relay"
+    assert updated_provider["wire_protocol"] == "responses"
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_setup_updates_legacy_null_metadata(
+    async_client,
+    db_session,
+):
+    provider = await _create_provider(
+        db_session,
+        name="Legacy OpenAI-compatible relay",
+        user_id="dev",
+    )
+    assert provider.provider_metadata is None
+
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "provider_id": str(provider.id),
+            "name": "Responses relay",
+            "base_url": "http://8.129.13.231:8079/v1",
+            "wire_protocol": "responses",
+            "api_key": "relay-key",
+            "model_ids": ["gpt-5.4-mini"],
+            "allow_insecure_http": True,
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    configured = response.json()["data"]
+    assert configured["provider"]["base_url"] == "http://8.129.13.231:8079/v1"
+    await db_session.refresh(provider)
+    assert provider.provider_metadata == {"providerTemplate": "openai-compatible"}
+    assert configured["provider"]["wire_protocol"] == "responses"
+    assert configured["models"][0]["model_id"] == "gpt-5.4-mini"
+
+
+@pytest.mark.asyncio
 async def test_llm_provider_setup_allows_explicit_public_insecure_http(
     async_client,
 ):
@@ -264,7 +518,10 @@ async def test_openai_compatible_provider_discovers_models_from_v1_models(
                 request=httpx.Request("GET", url),
             )
 
-    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
 
     setup = await async_client.post(
         "/api/v1/llm/provider-setups",
@@ -320,7 +577,10 @@ async def test_anthropic_provider_discovers_models_from_v1_models(
                 request=httpx.Request("GET", url),
             )
 
-    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
 
     setup = await async_client.post(
         "/api/v1/llm/provider-setups",
@@ -355,7 +615,8 @@ async def test_gemini_provider_discovers_models_and_skips_non_generative(
 
         async def get(self, url: str, headers=None, params=None):
             assert url == "https://generativelanguage.googleapis.com/v1beta/models"
-            assert params == {"key": "gemini-key", "pageSize": 1000}
+            assert headers == {"x-goog-api-key": "gemini-key"}
+            assert params == {"pageSize": 1000}
             return httpx.Response(
                 200,
                 json={
@@ -376,7 +637,10 @@ async def test_gemini_provider_discovers_models_and_skips_non_generative(
                 request=httpx.Request("GET", url),
             )
 
-    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
 
     setup = await async_client.post(
         "/api/v1/llm/provider-setups",
@@ -395,6 +659,54 @@ async def test_gemini_provider_discovers_models_and_skips_non_generative(
     assert model_ids == {"gemini-3-pro"}
     gemini_model = next(model for model in models if model["model_id"] == "gemini-3-pro")
     assert gemini_model["context_length"] == 1000000
+
+
+@pytest.mark.asyncio
+async def test_gemini_discovery_error_logs_do_not_expose_api_key(
+    async_client,
+    monkeypatch,
+    caplog,
+):
+    secret = "sentinel-gemini-log-secret"
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None, params=None):
+            assert headers == {"x-goog-api-key": secret}
+            assert params == {"pageSize": 1000}
+            return httpx.Response(
+                403,
+                json={"error": {"message": "invalid credential"}},
+                request=httpx.Request("GET", url, params=params, headers=headers),
+            )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
+
+    setup = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={"template_id": "gemini", "api_key": secret, "scope": "user"},
+    )
+    assert setup.status_code == 200
+    provider = setup.json()["data"]["provider"]
+
+    response = await async_client.post(
+        f"/api/v1/llm/providers/{provider['id']}/discover-models",
+    )
+
+    assert response.status_code == 500
+    assert secret not in response.text
+    assert secret not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -422,7 +734,11 @@ async def test_llm_provider_model_and_profile_contract(async_client):
         f"/api/v1/llm/providers/{provider['id']}/test"
     )
     assert test_provider.status_code == 200
-    assert test_provider.json()["data"]["success"] is True
+    assert test_provider.json()["data"]["success"] is False
+    assert test_provider.json()["data"]["error_code"] == "model_not_configured"
+    assert test_provider.json()["data"]["error"] == (
+        "No model is configured for this provider."
+    )
 
     create_model = await async_client.post(
         "/api/v1/llm/models",
@@ -639,7 +955,10 @@ async def test_ollama_provider_discovers_local_models(async_client, monkeypatch)
                 request=httpx.Request("GET", url),
             )
 
-    monkeypatch.setattr("app.services.llm.catalog.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
 
     provider_response = await async_client.post(
         "/api/v1/llm/providers",
@@ -714,6 +1033,347 @@ async def test_llm_mutations_require_authenticated_user(
     response = await getattr(async_client, method)(path, json=json_body)
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_test_selects_model_and_rejects_foreign_model(
+    async_client,
+    monkeypatch,
+) -> None:
+    first_provider = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Probe provider",
+            "kind": "openai_compatible",
+            "base_url": "https://probe.example/v1",
+        },
+    )
+    second_provider = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Other provider",
+            "kind": "openai_compatible",
+            "base_url": "https://other.example/v1",
+        },
+    )
+    assert first_provider.status_code == 201
+    assert second_provider.status_code == 201
+    first_provider_id = first_provider.json()["data"]["id"]
+    second_provider_id = second_provider.json()["data"]["id"]
+
+    model_b = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": first_provider_id,
+            "model_id": "model-b",
+            "display_name": "Zulu model",
+        },
+    )
+    model_a = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": first_provider_id,
+            "model_id": "model-a",
+            "display_name": "Alpha model",
+        },
+    )
+    foreign_model = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": second_provider_id,
+            "model_id": "foreign-model",
+            "display_name": "Foreign model",
+        },
+    )
+    assert model_b.status_code == 201
+    assert model_a.status_code == 201
+    assert foreign_model.status_code == 201
+
+    selected_models: list[str] = []
+
+    class FakeProbeResult:
+        success = True
+        latency_ms = 7
+        wire_protocol = "chat_completions"
+        model_id = "model-a"
+        error_code = None
+        error_message = None
+        retryable = False
+        http_status = None
+        provider_code = None
+
+        def to_public_dict(self) -> dict:
+            return {
+                "success": self.success,
+                "latency_ms": self.latency_ms,
+                "wire_protocol": self.wire_protocol,
+                "model_id": self.model_id,
+                "error_code": self.error_code,
+                "error_message": self.error_message,
+                "retryable": self.retryable,
+                "http_status": self.http_status,
+                "provider_code": self.provider_code,
+            }
+
+    async def fake_probe(self, **kwargs):
+        del self
+        selected_models.append(kwargs["model_id"])
+        return FakeProbeResult()
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
+
+    default_result = await async_client.post(
+        f"/api/v1/llm/providers/{first_provider_id}/test",
+        json={},
+    )
+    assert default_result.status_code == 200
+    assert default_result.json()["data"]["model"] == "model-a"
+    assert selected_models == ["model-a"]
+
+    explicit_result = await async_client.post(
+        f"/api/v1/llm/providers/{first_provider_id}/test",
+        json={"model_id": model_b.json()["data"]["id"]},
+    )
+    assert explicit_result.status_code == 200
+    assert selected_models == ["model-a", "model-b"]
+
+    rejected = await async_client.post(
+        f"/api/v1/llm/providers/{first_provider_id}/test",
+        json={"model_id": foreign_model.json()["data"]["id"]},
+    )
+    assert rejected.status_code == 422
+    assert "foreign-model" not in rejected.text
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_test_without_models_returns_safe_failure(
+    async_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Empty provider",
+            "kind": "openai_compatible",
+            "base_url": "https://empty.example/v1",
+        },
+    )
+    provider_id = provider_response.json()["data"]["id"]
+
+    async def forbidden_probe(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("probe must not run without a configured model")
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", forbidden_probe)
+
+    response = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "provider_id": provider_id,
+        "success": False,
+        "model": None,
+        "wire_protocol": "chat_completions",
+        "error_code": "model_not_configured",
+        "error": "No model is configured for this provider.",
+        "latency_ms": None,
+        "retryable": False,
+        "http_status": None,
+        "provider_code": None,
+    }
+    provider_row = await db_session.get(LlmProvider, provider_id)
+    assert provider_row is not None
+    await db_session.refresh(provider_row)
+    assert "_invocation_fingerprint" in (provider_row.test_status or {})
+    assert "_invocation_fingerprint" not in response.text
+
+    renamed = await async_client.patch(
+        f"/api/v1/llm/providers/{provider_id}",
+        json={"name": "Renamed empty provider"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["data"]["test_status"]["error_code"] == (
+        "model_not_configured"
+    )
+
+    changed = await async_client.patch(
+        f"/api/v1/llm/providers/{provider_id}",
+        json={"base_url": "https://changed-empty.example/v1"},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["data"]["test_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_provider_test_status_preserves_equivalent_and_unrelated_edits(
+    async_client,
+    monkeypatch,
+) -> None:
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Stable probe provider",
+            "kind": "openai_compatible",
+            "base_url": "https://stable.example",
+        },
+    )
+    provider_id = provider_response.json()["data"]["id"]
+    model_response = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": provider_id,
+            "model_id": "stable-model",
+            "display_name": "Stable model",
+        },
+    )
+    assert model_response.status_code == 201
+
+    class FakeProbeResult:
+        def to_public_dict(self) -> dict:
+            return {
+                "success": True,
+                "latency_ms": 4,
+                "wire_protocol": "chat_completions",
+                "model_id": "stable-model",
+                "error_code": None,
+                "error_message": None,
+                "retryable": False,
+                "http_status": None,
+                "provider_code": None,
+            }
+
+    probe_base_urls: list[str | None] = []
+
+    async def fake_probe(*args, **kwargs):
+        del args
+        probe_base_urls.append(kwargs.get("base_url"))
+        return FakeProbeResult()
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
+    tested = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
+    assert tested.status_code == 200
+    assert tested.json()["data"]["success"] is True
+    assert probe_base_urls == ["https://stable.example/v1"]
+    assert "_invocation_fingerprint" not in tested.text
+
+    for update in (
+        {"name": "Renamed stable provider"},
+        {"allow_insecure_http": True},
+        {"metadata": {"note": "unrelated"}},
+        {"base_url": "https://stable.example/v1/"},
+    ):
+        response = await async_client.patch(
+            f"/api/v1/llm/providers/{provider_id}",
+            json=update,
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["test_status"]["success"] is True
+        assert "_invocation_fingerprint" not in response.text
+
+    changed = await async_client.patch(
+        f"/api/v1/llm/providers/{provider_id}",
+        json={"base_url": "https://different.example/v1"},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["data"]["test_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_provider_list_invalidates_test_status_after_env_rotation(
+    async_client,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ROTATING_PROVIDER_KEY", "first-secret-value")
+    provider_response = await async_client.post(
+        "/api/v1/llm/providers",
+        json={
+            "name": "Rotating env provider",
+            "kind": "openai_compatible",
+            "base_url": "https://rotation.example/v1",
+        },
+    )
+    provider_id = provider_response.json()["data"]["id"]
+    model_response = await async_client.post(
+        "/api/v1/llm/models",
+        json={
+            "provider_id": provider_id,
+            "model_id": "rotation-model",
+            "display_name": "Rotation model",
+        },
+    )
+    assert model_response.status_code == 201
+    credential = await async_client.put(
+        f"/api/v1/llm/providers/{provider_id}/credential",
+        json={"source": "env", "env_var_name": "ROTATING_PROVIDER_KEY"},
+    )
+    assert credential.status_code == 200
+
+    class FakeProbeResult:
+        def to_public_dict(self) -> dict:
+            return {
+                "success": True,
+                "latency_ms": 5,
+                "wire_protocol": "chat_completions",
+                "model_id": "rotation-model",
+                "error_code": None,
+                "error_message": None,
+                "retryable": False,
+                "http_status": None,
+                "provider_code": None,
+            }
+
+    async def fake_probe(*args, **kwargs):
+        del args, kwargs
+        return FakeProbeResult()
+
+    monkeypatch.setattr("app.services.llm.catalog.LlmProviderProbe.probe", fake_probe)
+    tested = await async_client.post(f"/api/v1/llm/providers/{provider_id}/test")
+    assert tested.status_code == 200
+    assert tested.json()["data"]["success"] is True
+
+    monkeypatch.setenv("ROTATING_PROVIDER_KEY", "second-secret-value")
+    providers = await async_client.get("/api/v1/llm/providers")
+
+    assert providers.status_code == 200
+    provider = next(item for item in providers.json()["data"] if item["id"] == provider_id)
+    assert provider["test_status"] is None
+    assert "first-secret-value" not in providers.text
+    assert "second-secret-value" not in providers.text
+    assert "_invocation_fingerprint" not in providers.text
+
+
+@pytest.mark.asyncio
+async def test_provider_setup_with_manual_model_and_discover_false_never_discovers(
+    async_client,
+    monkeypatch,
+) -> None:
+    async def forbidden_discovery(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("save must not trigger discovery")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmCatalogService.discover_models",
+        forbidden_discovery,
+    )
+
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "openai-compatible",
+            "name": "Manual relay",
+            "base_url": "https://manual.example/v1",
+            "api_key": "manual-secret",
+            "model_ids": ["manual-model"],
+            "discover": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["discovered"] is False
+    assert [model["model_id"] for model in response.json()["data"]["models"]] == [
+        "manual-model"
+    ]
 
 
 @pytest.mark.asyncio
@@ -830,6 +1490,447 @@ async def test_team_member_cannot_write_workspace_or_global_llm_scope(
 
     assert workspace_response.status_code == 403
     assert global_response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_team_member_cannot_bind_provider_to_server_environment(
+    async_client,
+    app,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setenv("DATABASE_URL", "server-secret-value")
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        created = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Member provider",
+                "kind": "openai_compatible",
+                "base_url": "https://1.1.1.1/v1",
+            },
+        )
+        assert created.status_code == 201
+
+        response = await async_client.put(
+            f"/api/v1/llm/providers/{created.json()['data']['id']}/credential",
+            json={"source": "env", "env_var_name": "DATABASE_URL"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+    assert "DATABASE_URL" not in response.text
+    assert "server-secret-value" not in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://127.0.0.1:8000/v1",
+        "https://10.49.35.231:8000/v1",
+        "https://metadata.internal/v1",
+    ],
+)
+async def test_team_member_cannot_configure_internal_provider_endpoint(
+    async_client,
+    app,
+    monkeypatch,
+    base_url,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        response = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Internal target",
+                "kind": "openai_compatible",
+                "base_url": base_url,
+                "allow_insecure_http": True,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_team_member_can_save_public_hostname_when_dns_is_unavailable(
+    async_client,
+    app,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+
+    def dns_unavailable(*args, **kwargs):
+        del args, kwargs
+        raise OSError("DNS unavailable")
+
+    monkeypatch.setattr("socket.getaddrinfo", dns_unavailable)
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        response = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Offline-configured relay",
+                "kind": "openai_compatible",
+                "base_url": "https://relay.example.com/v1",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_team_member_cannot_update_provider_to_internal_endpoint(
+    async_client,
+    app,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        created = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Member public relay",
+                "kind": "openai_compatible",
+                "base_url": "https://1.1.1.1/v1",
+            },
+        )
+        assert created.status_code == 201
+
+        response = await async_client.patch(
+            f"/api/v1/llm/providers/{created.json()['data']['id']}",
+            json={"base_url": "https://127.0.0.1:8443/v1"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_team_admin_can_configure_internal_provider_and_env_credential(
+    async_client,
+    app,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setenv("INTERNAL_RELAY_API_KEY", "admin-managed-secret")
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="admin-1",
+        role="admin",
+    )
+    try:
+        created = await async_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Admin internal relay",
+                "kind": "openai_compatible",
+                "base_url": "http://relay.internal:8000/v1",
+            },
+        )
+        assert created.status_code == 201
+
+        credential = await async_client.put(
+            f"/api/v1/llm/providers/{created.json()['data']['id']}/credential",
+            json={
+                "source": "env",
+                "env_var_name": "INTERNAL_RELAY_API_KEY",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert credential.status_code == 200
+    assert credential.json()["data"]["configured"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["test", "discover-models"])
+async def test_team_member_provider_network_operation_rechecks_resolved_target(
+    async_client,
+    app,
+    db_session,
+    monkeypatch,
+    operation,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    provider = LlmProvider(
+        name="Legacy rebinding provider",
+        kind="openai_compatible",
+        base_url="https://relay.example.com/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="member-1",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="relay-model",
+        display_name="Relay Model",
+    )
+
+    network_called = False
+
+    async def forbidden_probe(*args, **kwargs):
+        nonlocal network_called
+        del args, kwargs
+        network_called = True
+        raise AssertionError("provider probe must not reach an internal address")
+
+    class ForbiddenAsyncClient:
+        def __init__(self, *args, **kwargs):
+            nonlocal network_called
+            del args, kwargs
+            network_called = True
+            raise AssertionError("model discovery must not reach an internal address")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        forbidden_probe,
+    )
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(ForbiddenAsyncClient),
+    )
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [
+            (2, 1, 6, "", ("127.0.0.1", 0)),
+        ],
+    )
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        response = await async_client.post(
+            f"/api/v1/llm/providers/{provider.id}/{operation}",
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+    assert network_called is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user_id", "role", "scope"),
+    [
+        ("member-1", "member", "user"),
+        ("admin-1", "admin", "workspace"),
+    ],
+)
+async def test_public_provider_probe_and_discovery_receive_public_only_network_policy(
+    async_client,
+    app,
+    db_session,
+    monkeypatch,
+    user_id,
+    role,
+    scope,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "bioinfoflow_credential_key",
+        "toeJrhzrLxTdxucwNbNOwVZJZL-EBwrBByLlWJXzTEw=",
+    )
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("1.1.1.1", 443))],
+    )
+    provider = LlmProvider(
+        name=f"{scope} public network provider",
+        kind="openai_compatible",
+        base_url="https://relay.example.com/v1",
+        scope=scope,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id=(user_id if scope == "user" else None),
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    model = await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="relay-model",
+        display_name="Relay Model",
+    )
+    probe_policies: list[str] = []
+    discovery_policies: list[str] = []
+
+    class FakeProbeResult:
+        def to_public_dict(self):
+            return {
+                "success": True,
+                "latency_ms": 1,
+                "wire_protocol": "chat_completions",
+                "model_id": "relay-model",
+                "error_code": None,
+                "error_message": None,
+                "retryable": False,
+                "http_status": None,
+                "provider_code": None,
+            }
+
+    async def fake_probe(*args, **kwargs):
+        del args
+        probe_policies.append(kwargs["network_access"])
+        return FakeProbeResult()
+
+    async def fake_discovery(self, selected_provider, *, timeout=10.0, network_access):
+        del self, selected_provider, timeout
+        discovery_policies.append(network_access)
+        return []
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        fake_probe,
+    )
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmCatalogService.discover_models_unchecked",
+        fake_discovery,
+    )
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id=user_id,
+        role=role,
+    )
+    try:
+        tested = await async_client.post(
+            f"/api/v1/llm/providers/{provider.id}/test",
+            json={"model_id": str(model.id)},
+        )
+        discovered = await async_client.post(
+            f"/api/v1/llm/providers/{provider.id}/discover-models",
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert tested.status_code == 200, tested.text
+    assert discovered.status_code == 200, discovered.text
+    assert probe_policies == ["public_only"]
+    assert discovery_policies == ["public_only"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["test", "discover-models"])
+async def test_team_member_cannot_use_legacy_server_environment_credential(
+    async_client,
+    app,
+    db_session,
+    monkeypatch,
+    operation,
+):
+    monkeypatch.setattr(settings, "auth_mode", "team")
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setenv("DATABASE_URL", "legacy-server-secret")
+    provider = LlmProvider(
+        name="Legacy env provider",
+        kind="openai_compatible",
+        base_url="https://1.1.1.1/v1",
+        scope="user",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="member-1",
+        enabled=True,
+        provider_metadata={"providerTemplate": "openai-compatible"},
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    db_session.add(
+        LlmProviderCredential(
+            provider_id=str(provider.id),
+            source="env",
+            env_var_name="DATABASE_URL",
+            masked_hint="env:DATABASE_URL",
+            updated_by="member-1",
+        )
+    )
+    await db_session.commit()
+    await db_session.refresh(provider)
+    await _create_model(
+        db_session,
+        provider_id=str(provider.id),
+        model_id="legacy-model",
+        display_name="Legacy Model",
+    )
+
+    network_called = False
+
+    async def forbidden_probe(*args, **kwargs):
+        nonlocal network_called
+        del args, kwargs
+        network_called = True
+        raise AssertionError("provider probe must not use a server env credential")
+
+    class ForbiddenAsyncClient:
+        def __init__(self, *args, **kwargs):
+            nonlocal network_called
+            del args, kwargs
+            network_called = True
+            raise AssertionError("model discovery must not use a server env credential")
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.LlmProviderProbe.probe",
+        forbidden_probe,
+    )
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(ForbiddenAsyncClient),
+    )
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("1.1.1.1", 0))],
+    )
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="member-1",
+        role="member",
+    )
+    try:
+        response = await async_client.post(
+            f"/api/v1/llm/providers/{provider.id}/{operation}",
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert response.status_code == 403
+    assert network_called is False
+    assert "DATABASE_URL" not in response.text
+    assert "legacy-server-secret" not in response.text
 
 
 @pytest.mark.asyncio

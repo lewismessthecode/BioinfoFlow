@@ -368,6 +368,46 @@ uv run bif --output json project list  # machine-readable envelope on stdout
 
 `bif` follows POSIX conventions: `-h/--help`, `-V/--version`, `-p/--project`, `-q/--quiet`. Settings resolve as CLI flag → env (`BIOFLOW_*`) → `~/.config/bioinfoflow/cli.toml` → default. Destructive commands (`run cancel`, `run cleanup`, `run batch cancel`, `project delete`, `file rm`) confirm interactively unless you pass `--force/-f`. Exit codes: `0` ok, `1` general, `2` usage, `3` backend, `4` connection.
 
+### Agent permissions and approvals
+
+The Agent composer permission control changes approval policy for the selected
+local or remote target. It does not grant operating-system privileges.
+
+- **Request approval** asks before each non-read side effect.
+- **Approve for me** allows reads and low-risk actions, and asks for elevated
+  risk.
+- **Full access** skips ordinary risk prompts, but catastrophic commands remain
+  blocked, protected-resource writes still ask, and user questions or plan
+  approval remain interactive.
+
+Permission changes are live for the next tool authorization, even when a turn is
+already active. If tools are already waiting, the confirmation offers:
+
+- **Future operations only**: update the policy and leave existing approvals
+  waiting. This is the default and the behavior for API clients that omit
+  `pending_strategy`.
+- **Approve waiting tools too**: atomically update the policy and approve
+  eligible waiting tools. User questions and plan approval are excluded, and
+  the response reports affected, excluded, and already-resolved counts.
+
+Local and remote targets have different authority boundaries. An enabled local
+OS sandbox can enforce filesystem and network limits independently of the
+permission mode. SSH commands have the configured remote account's privileges;
+the remote root is only a working directory and risk-analysis hint, not
+confinement.
+
+For API automation, session updates accept:
+
+```json
+{
+  "permission_mode": "bypass",
+  "pending_strategy": "future_only"
+}
+```
+
+Use `approve_pending_tools` only when the caller intentionally wants to approve
+the currently waiting eligible tool actions as part of the same update.
+
 ## 4. Minimal Local Setup Checklist
 
 For the smallest working local setup:
@@ -397,6 +437,42 @@ Then in two terminals:
 cd backend && uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 cd frontend && bun run dev
 ```
+
+### Validate an OpenAI-compatible Responses relay
+
+In **Settings -> AI Providers**, configure **OpenAI Compatible** with the API
+root URL (normally ending in `/v1`, not `/responses`), select **Responses**, add
+the model ID, and save. Plain HTTP endpoints require the explicit **Allow
+insecure HTTP** switch because API keys and prompts otherwise travel without
+TLS. Save, model discovery, and the model-specific connection test are separate
+actions.
+
+In `AUTH_MODE=team`, server environment credentials and localhost/private or
+internal provider endpoints are restricted to owner/admin roles because they
+cross the backend host trust boundary. Team members can use stored credentials
+with public provider endpoints. Personal and development modes keep local relay,
+Ollama, and vLLM workflows available.
+
+For a backend end-to-end smoke test, export the relay configuration without
+placing the key value on the command line:
+
+```bash
+export BIOINFOFLOW_RELAY_BASE_URL=http://relay.example:8079/v1
+export BIOINFOFLOW_RELAY_MODEL=gpt-5.4-mini
+export BIOINFOFLOW_RELAY_ALLOW_INSECURE_HTTP=1  # omit for HTTPS
+read -rsp "Relay API key: " BIOINFOFLOW_RELAY_API_KEY && echo
+export BIOINFOFLOW_RELAY_API_KEY
+
+cd backend
+BIOINFOFLOW_LIVE_RELAY=1 uv run pytest \
+  tests/integration/test_live_responses_relay.py -m live_relay -q \
+  --show-capture=no
+```
+
+The smoke test uses the same encrypted credential, catalog selection,
+AgentCore, LiteLLM Responses, transcript, and event-ledger path as a normal
+agent turn. Some relays expose Responses while returning no capacity for Chat
+Completions; choose the protocol the relay actually supports.
 
 ## 5. Common Friction Points
 
@@ -441,6 +517,19 @@ Check:
 - `NEXTFLOW_BIN` exists if you are running Nextflow workflows
 - `MINIWDL_BIN` exists if you are running WDL workflows
 - Docker daemon is available when the workflow path requires it
+
+### Permission changed but approval cards remain
+
+This is expected when the update used the default `future_only` strategy. The
+new policy applies to tool authorizations that begin after the update; existing
+waiting actions remain explicit audit decisions. Change the mode again and
+choose **Approve waiting tools too**, or approve/reject each card independently.
+
+If a newly proposed action still uses an older policy, inspect the session's
+`permission_policy_version` and the action's `evaluated_policy_version` and
+`permission_context_snapshot`. The action should record the version that was
+current when it was evaluated. For SSH actions, also confirm that the selected
+connection and remote identity in the snapshot match the intended host.
 
 ### Docker deployment works locally but not on a server
 

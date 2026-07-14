@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { Check } from "@/lib/icons"
 import { useTranslations } from "next-intl"
 
@@ -11,7 +11,14 @@ import type {
   AgentWaitingDecision,
 } from "@/lib/agent-runtime"
 import { AskUserDecisionCard } from "./ask-user-card"
-import { getPendingActions, parseWaitingDecision } from "./pending-actions"
+import { DecisionSubmissionFeedback, useDecisionSubmission } from "./decision-submission"
+import { scheduleDecisionFocusHandoff } from "./decision-focus"
+import { DecisionTargetBadge } from "./decision-target-badge"
+import {
+  buildPersistedTargetMap,
+  getPendingActions,
+  parseWaitingDecision,
+} from "./pending-actions"
 import type { AgentDecisionHandler } from "./types"
 
 export function PendingDecisionCards({
@@ -21,17 +28,57 @@ export function PendingDecisionCards({
   events: AgentRuntimeEvent[]
   onDecision: AgentDecisionHandler
 }) {
+  const t = useTranslations("agentRuntime")
+  const [focusAnnouncement, setFocusAnnouncement] = useState({
+    message: "",
+    sequence: 0,
+  })
   const decisions = useMemo(
-    () => getPendingActions(events).map(parseWaitingDecision),
+    () => {
+      const persistedTargets = buildPersistedTargetMap(events)
+      return getPendingActions(events).map((event) =>
+        parseWaitingDecision(event, persistedTargets),
+      )
+    },
     [events],
   )
-  if (!decisions.length) return null
+  const handleDecision = useCallback<AgentDecisionHandler>(
+    async (actionId, decision, options) => {
+      if (options) {
+        await onDecision(actionId, decision, options)
+      } else {
+        await onDecision(actionId, decision)
+      }
+      scheduleDecisionFocusHandoff(actionId, (destination) => {
+        setFocusAnnouncement((current) => ({
+          message: t(
+            destination === "next"
+              ? "decision.focusedNext"
+              : "decision.focusedComposer",
+          ),
+          sequence: current.sequence + 1,
+        }))
+      })
+    },
+    [onDecision, t],
+  )
   return (
-    <div className="grid gap-3" data-testid="pending-decisions">
-      {decisions.map((decision) => (
-        <DecisionCard key={decision.actionId} decision={decision} onDecision={onDecision} />
-      ))}
-    </div>
+    <>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        <span key={focusAnnouncement.sequence}>{focusAnnouncement.message}</span>
+      </div>
+      {decisions.length ? (
+        <div className="grid gap-3" data-testid="pending-decisions">
+          {decisions.map((decision) => (
+            <DecisionCard
+              key={decision.actionId}
+              decision={decision}
+              onDecision={handleDecision}
+            />
+          ))}
+        </div>
+      ) : null}
+    </>
   )
 }
 
@@ -44,20 +91,32 @@ function DecisionCard({
 }) {
   if (decision.interaction?.kind === "user_input") {
     return (
-      <AskUserCard
-        actionId={decision.actionId}
-        questions={decision.interaction.questions}
-        onDecision={onDecision}
-      />
+      <div
+        data-agent-decision-card="pending"
+        data-action-id={decision.actionId}
+        tabIndex={-1}
+      >
+        <AskUserCard
+          actionId={decision.actionId}
+          questions={decision.interaction.questions}
+          onDecision={onDecision}
+        />
+      </div>
     )
   }
   if (decision.interaction?.kind === "plan_approval") {
     return (
-      <PlanApprovalCard
-        actionId={decision.actionId}
-        plan={decision.interaction.plan}
-        onDecision={onDecision}
-      />
+      <div
+        data-agent-decision-card="pending"
+        data-action-id={decision.actionId}
+        tabIndex={-1}
+      >
+        <PlanApprovalCard
+          actionId={decision.actionId}
+          plan={decision.interaction.plan}
+          onDecision={onDecision}
+        />
+      </div>
     )
   }
   return <ApprovalCard decision={decision} onDecision={onDecision} />
@@ -71,8 +130,15 @@ function ApprovalCard({
   onDecision: AgentDecisionHandler
 }) {
   const t = useTranslations("agentRuntime")
+  const submission = useDecisionSubmission(decision.actionId, onDecision)
   return (
-    <div className="rounded-[14px] border border-foreground/12 bg-foreground/[0.045] px-3 py-3 text-sm">
+    <div
+      className="rounded-[14px] border border-foreground/12 bg-foreground/[0.045] px-3 py-3 text-sm"
+      data-testid="pending-approval-card"
+      data-agent-decision-card="pending"
+      data-action-id={decision.actionId}
+      tabIndex={-1}
+    >
       <div className="mb-1 font-medium text-foreground/82">
         {t("sidecar.needsDecision")}
       </div>
@@ -83,6 +149,7 @@ function ApprovalCard({
             {decision.riskLevel}
           </span>
         ) : null}
+        <DecisionTargetBadge target={decision.target} />
       </div>
       {decision.inputPreview ? (
         <div className="mb-3 truncate font-mono text-xs text-muted-foreground/82">
@@ -94,9 +161,10 @@ function ApprovalCard({
           type="button"
           size="sm"
           className="h-8 rounded-md"
-          onClick={() => onDecision(decision.actionId, "approve")}
+          onClick={() => void submission.submit("approve")}
+          disabled={submission.busy}
         >
-          <Check className="h-3.5 w-3.5" />
+          <Check className="h-3.5 w-3.5" aria-hidden="true" />
           {t("approve")}
         </Button>
         <Button
@@ -104,11 +172,17 @@ function ApprovalCard({
           size="sm"
           variant="outline"
           className="h-8 rounded-md bg-card"
-          onClick={() => onDecision(decision.actionId, "reject")}
+          onClick={() => void submission.submit("reject")}
+          disabled={submission.busy}
         >
           {t("reject")}
         </Button>
       </div>
+      <DecisionSubmissionFeedback
+        busy={submission.busy}
+        error={submission.error}
+        onRetry={() => void submission.retry()}
+      />
     </div>
   )
 }
@@ -123,6 +197,7 @@ function PlanApprovalCard({
   onDecision: AgentDecisionHandler
 }) {
   const t = useTranslations("agentRuntime")
+  const submission = useDecisionSubmission(actionId, onDecision)
   return (
     <div className="rounded-[18px] border border-primary/30 bg-primary/5 px-3 py-3 text-sm" data-testid="plan-approval-card">
       <div className="mb-2 font-medium text-foreground">{t("plan.reviewTitle")}</div>
@@ -134,9 +209,10 @@ function PlanApprovalCard({
           type="button"
           size="sm"
           className="h-8 rounded-full"
-          onClick={() => onDecision(actionId, "approve")}
+          onClick={() => void submission.submit("approve")}
+          disabled={submission.busy}
         >
-          <Check className="h-3.5 w-3.5" />
+          <Check className="h-3.5 w-3.5" aria-hidden="true" />
           {t("plan.approveAndAct")}
         </Button>
         <Button
@@ -144,11 +220,17 @@ function PlanApprovalCard({
           size="sm"
           variant="outline"
           className="h-8 rounded-full bg-card"
-          onClick={() => onDecision(actionId, "reject")}
+          onClick={() => void submission.submit("reject")}
+          disabled={submission.busy}
         >
           {t("plan.keepPlanning")}
         </Button>
       </div>
+      <DecisionSubmissionFeedback
+        busy={submission.busy}
+        error={submission.error}
+        onRetry={() => void submission.retry()}
+      />
     </div>
   )
 }

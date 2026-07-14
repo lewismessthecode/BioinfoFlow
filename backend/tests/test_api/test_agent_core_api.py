@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -12,11 +14,286 @@ from app.auth.session import AuthUser
 from app.config import settings
 from app.models.agent_core import AgentEvent, AgentTurn
 from app.models.llm import LlmModel, LlmProvider, LlmProviderCredential
+from app.models.remote_connection import RemoteConnection
 from app.path_layout import project_home, skills_root
 from app.services.agent_core import AgentCoreService
+from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.runtime import AgentCoreRuntime
+from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
+from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.llm.credentials import encrypt_secret, generate_credential_fingerprint
+from app.services.model_runtime.gateway import ModelGateway
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+class _FakeBackend:
+    def __init__(self, completion: Callable[..., Awaitable[Any]]) -> None:
+        self.completion = completion
+
+    async def invoke(
+        self,
+        wire_protocol: str,
+        request: dict[str, Any],
+        *,
+        network_access: str = "unrestricted",
+    ) -> Any:
+        assert wire_protocol == "chat_completions"
+        return await self.completion(**request)
+
+
+def _install_fake_completion(monkeypatch, completion) -> None:
+    gateway = ModelGateway(backend=_FakeBackend(completion))
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.ModelGateway",
+        lambda: gateway,
+    )
+
+
+@pytest.mark.asyncio
+async def test_permission_policy_version_and_action_audit_api_contract(
+    async_client,
+    db_session,
+) -> None:
+    created_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"title": "Permission audit"},
+    )
+    assert created_response.status_code == 201
+    created = created_response.json()["data"]
+    assert created["permission_policy_version"] == 1
+
+    updated_response = await async_client.patch(
+        f"/api/v1/agent/sessions/{created['id']}",
+        json={"permission_mode": "ask_each_action"},
+    )
+    assert updated_response.status_code == 200
+    updated = updated_response.json()["data"]
+    assert updated["permission_policy_version"] == 2
+
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=created["id"],
+        workspace_id=created["workspace_id"],
+        user_id=created["user_id"],
+        input_text="Create an auditable action.",
+    )
+    audited = await AgentActionService(db_session).request_action(
+        turn_id=str(turn.id),
+        kind="tool",
+        name="test.high",
+        requested_risk="act_high",
+        permission_mode="ask_each_action",
+        evaluated_policy_version=2,
+        permission_context_snapshot={"policy_version": 2},
+    )
+    audited_response = await async_client.post(
+        f"/api/v1/agent/actions/{audited.id}/decision",
+        json={"decision": "reject"},
+    )
+    assert audited_response.status_code == 200
+    audited_payload = audited_response.json()["data"]
+    assert audited_payload["evaluated_policy_version"] == 2
+    assert audited_payload["permission_context_snapshot"] == {"policy_version": 2}
+
+    legacy = await service.action_repo.create(
+        session_id=created["id"],
+        turn_id=str(turn.id),
+        kind="tool",
+        name="legacy.action",
+        input={},
+        risk_level="act_high",
+        permission_decision={"decision": "ask"},
+        status="waiting_decision",
+    )
+    legacy_response = await async_client.post(
+        f"/api/v1/agent/actions/{legacy.id}/decision",
+        json={"decision": "reject"},
+    )
+    assert legacy_response.status_code == 200
+    legacy_payload = legacy_response.json()["data"]
+    assert legacy_payload["evaluated_policy_version"] is None
+    assert legacy_payload["permission_context_snapshot"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_remote_action_exposes_safe_executor_snapshot(
+    async_client,
+    db_session,
+) -> None:
+    connection = RemoteConnection(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        name="Sensitive remote",
+        host="safe-host.internal",
+        port=22,
+        username="analyst",
+        auth_method="password",
+        encrypted_password="encrypted-password-must-not-leak",
+        encrypted_private_key="encrypted-key-must-not-leak",
+        key_path="/sensitive/id_ed25519",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+    await db_session.refresh(connection)
+    create_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "title": "Remote action audit",
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            },
+            "permission_mode": "ask_each_action",
+        },
+    )
+    assert create_response.status_code == 201
+    session = create_response.json()["data"]
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="Run a remote diagnostic.",
+    )
+    result = await AgentToolExecutor(
+        db_session,
+        build_default_tool_registry(),
+    ).execute(
+        tool_name="remote.exec",
+        input={"command": "hostname"},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id=session["workspace_id"],
+            user_id=session["user_id"],
+            session_id=session["id"],
+            turn_id=str(turn.id),
+        ),
+        toolset_policy={"name": "execution"},
+    )
+    assert result.status == "waiting_decision"
+
+    response = await async_client.get(f"/api/v1/agent/actions/{result.action_id}")
+
+    assert response.status_code == 200
+    action = response.json()["data"]
+    assert action["permission_context_snapshot"]["command_risk"]["level"] == "act_low"
+    assert action["permission_context_snapshot"]["command_risk"]["effects"] == [
+        "read"
+    ]
+    assert action["permission_context_snapshot"]["remote_identity"]["host"] == (
+        "safe-host.internal"
+    )
+    serialized = str(action)
+    assert "encrypted-password-must-not-leak" not in serialized
+    assert "encrypted-key-must-not-leak" not in serialized
+    assert "/sensitive/id_ed25519" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_get_action_does_not_reveal_cross_scope_existence(
+    async_client,
+    app,
+    db_session,
+) -> None:
+    create_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"title": "Private action"},
+    )
+    session = create_response.json()["data"]
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="Private action.",
+    )
+    action = await service.action_repo.create(
+        session_id=session["id"],
+        turn_id=str(turn.id),
+        kind="tool",
+        name="private.action",
+        input={},
+        risk_level="read",
+        status="completed",
+    )
+
+    app.dependency_overrides[get_current_user] = lambda: _auth_user(
+        user_id="other-user",
+        workspace_id="other-workspace",
+    )
+    try:
+        hidden = await async_client.get(f"/api/v1/agent/actions/{action.id}")
+        missing = await async_client.get(
+            "/api/v1/agent/actions/00000000-0000-0000-0000-000000000099"
+        )
+        hidden_resume = await async_client.post(
+            f"/api/v1/agent/actions/{action.id}/resume"
+        )
+        missing_resume = await async_client.post(
+            "/api/v1/agent/actions/00000000-0000-0000-0000-000000000099/resume"
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert hidden.status_code == missing.status_code == 404
+    assert hidden.json()["error"]["code"] == missing.json()["error"]["code"]
+    assert hidden.json()["error"]["message"] == missing.json()["error"]["message"]
+    assert hidden_resume.status_code == missing_resume.status_code == 404
+    assert hidden_resume.json()["error"]["code"] == missing_resume.json()["error"][
+        "code"
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "status", "requires_resume", "message"),
+    [
+        ("platform", "requested", True, "Only tool actions can be resumed"),
+        ("tool", "completed", True, "Tool action is not awaiting resume"),
+        ("tool", "requested", False, "Tool action is not awaiting resume"),
+    ],
+)
+async def test_resume_action_rejects_actions_outside_external_resume_boundary(
+    async_client,
+    db_session,
+    kind: str,
+    status: str,
+    requires_resume: bool,
+    message: str,
+) -> None:
+    create_response = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={"title": "Non-resumable action"},
+    )
+    assert create_response.status_code == 201
+    session = create_response.json()["data"]
+    service = AgentCoreService(db_session)
+    turn = await service.create_turn_record(
+        session_id=session["id"],
+        workspace_id=session["workspace_id"],
+        user_id=session["user_id"],
+        input_text="Run an automatically allowed tool.",
+    )
+    action = await service.action_repo.create(
+        session_id=session["id"],
+        turn_id=str(turn.id),
+        kind=kind,
+        name="auto.allowed",
+        input={},
+        risk_level="read",
+        permission_decision={"decision": "allow"},
+        status=status,
+        requires_resume=requires_resume,
+        tool_call_id="call-auto-allowed",
+    )
+
+    response = await async_client.post(
+        f"/api/v1/agent/actions/{action.id}/resume"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["message"] == message
+    await db_session.refresh(turn)
+    assert turn.resume_batch_token is None
 
 
 def _auth_user(
@@ -360,7 +637,7 @@ async def test_agent_core_session_turn_event_and_artifact_contract(async_client,
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     model = await _create_llm_model(async_client)
     project_id = await _create_project(async_client)
@@ -588,7 +865,8 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
     second_turn_row.token_usage = {
         "input_tokens": 800,
         "output_tokens": 200,
-        "completion_tokens_details": {"reasoning_tokens": 45},
+        "cached_input_tokens": 25,
+        "reasoning_tokens": 45,
     }
     second_turn_row.model_profile_snapshot = {
         **(second_turn_row.model_profile_snapshot or {}),
@@ -606,16 +884,18 @@ async def test_agent_session_state_includes_cumulative_token_usage_summary(
         "input_tokens": 2000,
         "output_tokens": 500,
         "total_tokens": 2500,
-        "cached_input_tokens": 125,
+        "cached_input_tokens": 150,
         "reasoning_tokens": 45,
         "context_window": 128000,
         "max_output_tokens": 8192,
         "turns_with_usage": 2,
         "raw_totals": {
+            "cached_input_tokens": 25,
             "completion_tokens": 300,
             "input_tokens": 800,
             "output_tokens": 200,
             "prompt_tokens": 1200,
+            "reasoning_tokens": 45,
             "total_tokens": 1500,
         },
     }
@@ -636,7 +916,7 @@ async def test_agent_core_accepts_catalog_model_selection(async_client, monkeypa
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     model = await _create_llm_model(async_client)
@@ -846,7 +1126,7 @@ async def test_agent_core_streams_text_and_reasoning_events(async_client, monkey
 
         return stream()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -965,7 +1245,7 @@ async def test_agent_core_emits_tool_call_lifecycle_events(async_client, monkeyp
             return tool_call_stream()
         return final_text_stream()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     model = await _create_llm_model(async_client)
@@ -1004,7 +1284,7 @@ async def test_agent_core_emits_tool_call_lifecycle_events(async_client, monkeyp
     tool_completed = next(
         item for item in events if item["type"] == "assistant.tool_call.completed"
     )
-    assert tool_completed["payload"]["call_id"].startswith("tc_")
+    assert tool_completed["payload"]["call_id"] == "call_projects"
     assert tool_completed["payload"]["name"] == "projects__list"
     assert tool_completed["payload"]["arguments"] == {"limit": 1}
 
@@ -1031,7 +1311,7 @@ async def test_agent_core_ollama_catalog_selection_uses_root_api_base(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1109,7 +1389,7 @@ async def test_agent_core_anthropic_catalog_selection_preserves_native_api_base(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1187,7 +1467,7 @@ async def test_agent_core_profile_strategy_can_disable_streaming_thinking_and_to
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     provider_response = await async_client.post(
@@ -1279,7 +1559,7 @@ async def test_agent_core_tool_capable_catalog_model_receives_tools(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     project_id = await _create_project(async_client)
     model = await _create_llm_model(async_client)
@@ -1409,7 +1689,7 @@ async def test_agent_core_prefers_user_catalog_model_over_environment_global_def
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
 
     global_provider = LlmProvider(
         name="Env vLLM",
@@ -1508,7 +1788,7 @@ async def test_agent_core_rejects_invisible_catalog_model_selection(
         completion = True
         raise AssertionError("invisible catalog model should not be called")
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
     invisible_model = await _create_scoped_llm_model(
         db_session,
         provider_user_id="other-user",

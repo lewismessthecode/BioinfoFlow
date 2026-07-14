@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 import pytest
 
 from app.models.llm import LlmModel, LlmProvider
@@ -7,7 +10,32 @@ from app.models.workspace import Workspace
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.tools.specs import AgentToolContext
 from app.services.agent_core.tools.subagents import TaskTool
+from app.services.model_runtime.gateway import ModelGateway
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+class _FakeBackend:
+    def __init__(self, completion: Callable[..., Awaitable[Any]]) -> None:
+        self.completion = completion
+
+    async def invoke(
+        self,
+        wire_protocol: str,
+        request: dict[str, Any],
+        *,
+        network_access: str = "unrestricted",
+    ) -> Any:
+        assert wire_protocol == "chat_completions"
+        assert network_access == "public_only"
+        return await self.completion(**request)
+
+
+def _install_fake_completion(monkeypatch, completion) -> None:
+    gateway = ModelGateway(backend=_FakeBackend(completion))
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.ModelGateway",
+        lambda: gateway,
+    )
 
 
 async def _seed_catalog_model(db_session) -> None:
@@ -51,7 +79,7 @@ async def test_task_tool_runs_read_only_worker_subrun(db_session, monkeypatch):
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     db_session.add(workspace)
     await db_session.commit()

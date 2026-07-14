@@ -118,6 +118,10 @@ def _action_read(action) -> AgentActionRead:
     return AgentActionRead.model_validate(action)
 
 
+def _dump_action(action) -> dict:
+    return _action_read(action).model_dump(mode="json", exclude_none=False)
+
+
 def _artifact_read(artifact) -> AgentArtifactRead:
     return AgentArtifactRead.model_validate(artifact)
 
@@ -441,6 +445,8 @@ async def _token_usage_summary_for_turns(
     total_tokens = 0
     cached_input_tokens = 0
     reasoning_tokens = 0
+    cached_input_tokens_reported = False
+    reasoning_tokens_reported = False
     raw_totals: dict[str, int] = {}
     turns_with_usage = 0
 
@@ -468,16 +474,26 @@ async def _token_usage_summary_for_turns(
         elif input_count is not None or output_count is not None:
             total_tokens += (input_count or 0) + (output_count or 0)
 
-        prompt_details = usage.get("prompt_tokens_details")
-        if isinstance(prompt_details, dict):
-            cached_input_tokens += _first_int_token_value(
-                prompt_details, "cached_tokens"
-            ) or 0
-        completion_details = usage.get("completion_tokens_details")
-        if isinstance(completion_details, dict):
-            reasoning_tokens += _first_int_token_value(
-                completion_details, "reasoning_tokens"
-            ) or 0
+        cached_count = _first_int_token_value(usage, "cached_input_tokens")
+        if cached_count is None:
+            prompt_details = usage.get("prompt_tokens_details")
+            if isinstance(prompt_details, dict):
+                cached_count = _first_int_token_value(prompt_details, "cached_tokens")
+        if cached_count is not None:
+            cached_input_tokens += cached_count
+            cached_input_tokens_reported = True
+
+        reasoning_count = _first_int_token_value(usage, "reasoning_tokens")
+        if reasoning_count is None:
+            completion_details = usage.get("completion_tokens_details")
+            if isinstance(completion_details, dict):
+                reasoning_count = _first_int_token_value(
+                    completion_details,
+                    "reasoning_tokens",
+                )
+        if reasoning_count is not None:
+            reasoning_tokens += reasoning_count
+            reasoning_tokens_reported = True
 
     context_window = None
     max_output_tokens = None
@@ -497,8 +513,10 @@ async def _token_usage_summary_for_turns(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
-        cached_input_tokens=cached_input_tokens or None,
-        reasoning_tokens=reasoning_tokens or None,
+        cached_input_tokens=(
+            cached_input_tokens if cached_input_tokens_reported else None
+        ),
+        reasoning_tokens=reasoning_tokens if reasoning_tokens_reported else None,
         context_window=context_window,
         max_output_tokens=max_output_tokens,
         turns_with_usage=turns_with_usage,
@@ -894,6 +912,21 @@ async def stream_session_events(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@router.get("/actions/{action_id}")
+async def get_action(
+    action_id: str,
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    action = await AgentCoreService(db).get_action(
+        action_id=action_id,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+    )
+    return success_response(_dump_action(action), request=request)
+
+
 @router.post("/actions/{action_id}/decision")
 async def decide_action(
     action_id: str,
@@ -912,7 +945,7 @@ async def decide_action(
         modified_input=payload.modified_input,
         answer=payload.answer,
     )
-    return success_response(_dump(_action_read(action)), request=request)
+    return success_response(_dump_action(action), request=request)
 
 
 @router.post("/actions/{action_id}/resume")
@@ -928,7 +961,7 @@ async def resume_action(
         workspace_id=user.workspace_id,
         user_id=user.id,
     )
-    return success_response(_dump(_action_read(action)), request=request)
+    return success_response(_dump_action(action), request=request)
 
 
 @router.get("/memories")

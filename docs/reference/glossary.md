@@ -97,8 +97,50 @@ toolsets are `default`, `plan`, the read-only `bio` policy, and `execution`.
 
 ### Approval
 
-The review gate for high-impact agent actions. `act_high` tools route through
-the approval service before side effects are executed.
+The review gate produced by permission policy and risk assessment. Approval
+decisions are conditional database transitions, so duplicate submissions do not
+intentionally enqueue the same action twice.
+
+### Permission Mode
+
+The policy that decides when AgentCore asks before a tool action. The modes are
+`ask_each_action`, `guarded_auto`, and `bypass`. Permission mode is separate from
+the local OS sandbox and from SSH account authority.
+
+### Full Access
+
+The UI name for `bypass` permission mode. It skips ordinary risk approvals on
+the selected target. High-confidence catastrophic matches remain hard denied,
+while protected-resource writes, indirect command forms, and sandbox opt-out can
+still require explicit approval. Classification is not complete confinement;
+the true execution boundary is an enabled local OS sandbox or the remote account
+and server controls. Explicit user or plan interactions and workspace policy
+remain independent.
+
+### Permission Policy Version
+
+A monotonic session counter advanced when authorization-relevant state changes.
+AgentCore resolves it freshly before authorizing a tool and records the evaluated
+version and bounded context snapshot on each new action.
+
+### Pending Strategy
+
+The effect of a permission update on already waiting tools. `future_only` is the
+backward-compatible default. `approve_pending_tools` also approves eligible
+waiting tool actions atomically, but excludes user-input and plan interactions.
+
+### Tool-call Batch
+
+The durable continuation barrier for one assistant response containing tool
+calls. The model continues only after every call has one terminal result and one
+worker conditionally claims the batch continuation.
+
+### Execution Boundary
+
+The authority and confinement that actually apply to a tool process. A local
+command may have an enforced OS sandbox; an SSH command instead has the selected
+remote Unix account's privileges and server controls. A working directory is not
+an execution boundary.
 
 ### Remote Connection
 

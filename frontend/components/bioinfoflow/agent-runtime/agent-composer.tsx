@@ -9,11 +9,8 @@ import {
   Paperclip,
   Plus,
   Send,
-  ShieldCheck,
-  ShieldQuestion,
   Square,
   Stethoscope,
-  Unlock,
   X,
 } from "@/lib/icons"
 import { useLocale, useTranslations } from "next-intl"
@@ -24,7 +21,6 @@ import {
   composerModeMarkerClassName,
   composerModeToneClassName,
   composerSelectorChipClassName,
-  composerSelectorIconClassName,
   composerSelectorMenuClassName,
 } from "@/components/bioinfoflow/composer-selector-chip"
 import { Button } from "@/components/ui/button"
@@ -40,6 +36,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import type { ModelSelection, ProviderModels } from "@/hooks/use-llm-settings"
+import type { AgentPermissionUpdateState } from "@/hooks/use-agent-runtime"
 import type {
   AgentMode,
   AgentPermissionMode,
@@ -51,6 +48,7 @@ import { tokenUsageViewFromSummary } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 import { ContextAttachments } from "./context-attachments"
 import { ConnectedNodeSelector } from "./connected-node-selector"
+import { PermissionControl } from "./permission-control"
 
 type AgentComposerProps = {
   value: string
@@ -63,6 +61,8 @@ type AgentComposerProps = {
   onModeChange?: (mode: AgentMode) => void
   permissionMode?: AgentPermissionMode
   onPermissionModeChange?: (mode: AgentPermissionMode) => void
+  permissionUpdate?: AgentPermissionUpdateState
+  onRetryPermissionModeChange?: () => void
   models: ProviderModels[]
   selectedModel: ModelSelection | null
   modelsLoading?: boolean
@@ -92,15 +92,6 @@ const attachMenuItems = [
   { key: "diagnoseRun", Icon: Stethoscope },
 ] as const
 
-const permissionOptions: Array<{
-  mode: AgentPermissionMode
-  Icon: typeof ShieldQuestion
-}> = [
-  { mode: "ask_each_action", Icon: ShieldQuestion },
-  { mode: "guarded_auto", Icon: ShieldCheck },
-  { mode: "bypass", Icon: Unlock },
-]
-
 const agentModeOptions: AgentMode[] = ["execution", "plan"]
 
 export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>(
@@ -116,6 +107,8 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       onModeChange,
       permissionMode = "guarded_auto",
       onPermissionModeChange,
+      permissionUpdate,
+      onRetryPermissionModeChange,
       models,
       selectedModel,
       modelsLoading = false,
@@ -139,8 +132,6 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
     ref,
   ) {
     const t = useTranslations("agentRuntime")
-    const PermissionIcon =
-      permissionOptions.find((option) => option.mode === permissionMode)?.Icon ?? ShieldCheck
     const canSubmit = !disabled && value.trim().length > 0
     const textareaRef = useRef<HTMLTextAreaElement | null>(null)
     const [skillMenuOpen, setSkillMenuOpen] = useState(false)
@@ -469,54 +460,15 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
               onSelectedConnectionChange={onRemoteConnectionChange}
             />
             {onPermissionModeChange ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className={cn(
-                      composerSelectorChipClassName,
-                      "hidden min-w-9 shrink items-center sm:inline-flex",
-                      compactControls
-                        ? "max-w-9 px-2"
-                        : "max-w-[10rem] px-2",
-                    )}
-                    data-composer-chip="true"
-                    disabled={disabled}
-                    aria-label={t("permission.label")}
-                  >
-                    <PermissionIcon className={composerSelectorIconClassName} />
-                    <span className={cn("min-w-0 truncate", compactControls && "sr-only")}>
-                      {t(`permission.options.${permissionMode}.label`)}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  side="top"
-                  sideOffset={10}
-                  className={cn("w-64", composerSelectorMenuClassName)}
-                >
-                  {permissionOptions.map(({ mode, Icon }) => (
-                    <DropdownMenuItem
-                      key={mode}
-                      className="items-start gap-2 rounded-[7px] px-2 py-1.5 text-xs"
-                      onSelect={() => onPermissionModeChange(mode)}
-                    >
-                      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="grid gap-0.5">
-                        <span className="font-medium text-foreground">
-                          {t(`permission.options.${mode}.label`)}
-                        </span>
-                        <span className="text-[11px] leading-4 text-muted-foreground">
-                          {t(`permission.options.${mode}.description`)}
-                        </span>
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <PermissionControl
+                mode={permissionMode}
+                onModeChange={onPermissionModeChange}
+                update={permissionUpdate}
+                onRetry={onRetryPermissionModeChange}
+                remote={Boolean(selectedRemoteConnectionId)}
+                disabled={disabled}
+                compact={compactControls}
+              />
             ) : null}
             <AgentTokenUsageBadge
               summary={tokenUsageSummary}

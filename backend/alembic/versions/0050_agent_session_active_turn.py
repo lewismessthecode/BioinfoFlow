@@ -1,7 +1,7 @@
 """serialize active turns per agent session
 
-Revision ID: 0044_agent_session_active_turn
-Revises: 0043_llm_provider_insecure_http_opt_in
+Revision ID: 0050_agent_session_active_turn
+Revises: 0049_agent_turn_tool_batch_sequence
 Create Date: 2026-07-13
 """
 
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0044_agent_session_active_turn"
-down_revision = "0043_llm_provider_insecure_http_opt_in"
+revision = "0050_agent_session_active_turn"
+down_revision = "0049_agent_turn_tool_batch_sequence"
 branch_labels = None
 depends_on = None
 

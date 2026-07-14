@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
+import json
 import os
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
 
@@ -17,7 +19,7 @@ from app.utils.exceptions import ConfigurationError
 
 @dataclass(frozen=True)
 class CredentialMaterial:
-    api_key: str | None
+    api_key: str | None = field(repr=False)
     source: str
 
 
@@ -63,6 +65,55 @@ def mask_secret(secret: str) -> str:
 
 def generate_credential_fingerprint() -> str:
     return secrets.token_hex(8)
+
+
+def credential_hmac_digest(payload: bytes, *, domain: str) -> str:
+    domain_bytes = domain.strip().encode("utf-8")
+    if not domain_bytes:
+        raise ValueError("HMAC domain must not be empty")
+    derived_key = hmac.new(
+        _credential_key(),
+        b"bioinfoflow-domain-key.v1\x00" + domain_bytes,
+        hashlib.sha256,
+    ).digest()
+    return hmac.new(derived_key, payload, hashlib.sha256).hexdigest()
+
+
+def derive_model_target_revision(
+    *,
+    endpoint_id: str,
+    provider_kind: str,
+    model_name: str,
+    wire_protocol: str,
+    routed_model_name: str,
+    base_url: str | None,
+    credential_material: CredentialMaterial,
+) -> str:
+    """Return an opaque revision for one fully resolved model target.
+
+    The keyed digest changes when either routing identity or the credential
+    material resolved for this request changes. The raw credential is never
+    returned or stored in a model-runtime contract.
+    """
+    payload = {
+        "endpoint_id": endpoint_id,
+        "provider_kind": provider_kind,
+        "model_name": model_name,
+        "wire_protocol": wire_protocol,
+        "routed_model_name": routed_model_name,
+        "base_url": base_url,
+        "credential": {
+            "source": credential_material.source,
+            "resolved_value": credential_material.api_key,
+        },
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return credential_hmac_digest(encoded, domain="llm-model-target-revision.v1")
 
 
 def encrypt_secret(secret: str) -> str:

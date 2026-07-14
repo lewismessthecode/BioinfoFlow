@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 TurnTerminationReason = Literal[
@@ -24,3 +24,6 @@ class LoopResult:
     token_usage: dict | None = None
     error_code: str | None = None
     error_message: str | None = None
+    continuation_batch_id: str | None = None
+    model_replay_safe: bool = True
+    model_error: dict[str, Any] | None = None

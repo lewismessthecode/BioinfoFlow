@@ -70,9 +70,9 @@ async def test_project_instruction_resolver_walks_local_root_to_current_with_pri
     assert context.index(str(repo_root / "AGENTS.md")) < context.index(
         str(repo_root / "pipelines" / "AGENTS.override.md")
     )
-    assert context.index(str(repo_root / "pipelines" / "AGENTS.override.md")) < context.index(
-        str(current / "GEMINI.md")
-    )
+    assert context.index(
+        str(repo_root / "pipelines" / "AGENTS.override.md")
+    ) < context.index(str(current / "GEMINI.md"))
     assert "root agents" in context
     assert "pipeline override" in context
     assert "leaf gemini" in context
@@ -226,14 +226,14 @@ async def test_context_assembler_injects_project_instructions_before_environment
         turn=turn,
     )
     system_content = messages[0]["content"]
-    task_context = messages[1]["content"]
 
-    assert [message["role"] for message in messages] == ["system", "user", "user"]
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert system_content.index("## Project instructions") < system_content.index(
+        "## Environment"
+    )
     assert "## Environment" in system_content
-    assert "## Project instructions" not in system_content
-    assert "## Task context" in task_context
-    assert "## Project instructions" in task_context
-    assert "assembler root instruction" in task_context
+    assert "## Project instructions" in system_content
+    assert "assembler root instruction" in system_content
     assert messages[-1]["content"] == "Use the repo rules."
 
 
@@ -335,7 +335,10 @@ def test_remote_instruction_read_command_skips_symlink_escapes():
     )
 
     assert 'file_real=$(realpath -- "$path") || continue' in command
-    assert 'case "$file_real" in "$root_real"|"$root_real"/*) ;; *) continue;; esac' in command
+    assert (
+        'case "$file_real" in "$root_real"|"$root_real"/*) ;; *) continue;; esac'
+        in command
+    )
     assert 'head -c 1025 -- "$path"' in command
 
 
@@ -627,9 +630,9 @@ async def test_stale_cross_connection_working_directories_are_discarded(
     assert target.get("cwd") == current_cwd
     assert "working_directory" not in target
     assert "remote_cwd" not in target
-    assert [call["connection_id"] for call in reader.calls] == [
-        "conn-b"
-    ] * len(expected_directories)
+    assert [call["connection_id"] for call in reader.calls] == ["conn-b"] * len(
+        expected_directories
+    )
     assert [call["directory"] for call in reader.calls] == expected_directories
     assert all(call["remote_root"] == "/srv/project" for call in reader.calls)
 

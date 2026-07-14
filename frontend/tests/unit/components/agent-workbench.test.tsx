@@ -47,6 +47,8 @@ vi.mock("next-intl", () => ({
       reject: "Reject",
       "approval.state.approved": "Approved, resuming",
       "approval.jumpToDecision": "Needs confirmation · Jump",
+      "decision.focusedNext": "Decision submitted. Moved to the next request.",
+      "decision.focusedComposer": "Decision submitted. Focus returned to the composer.",
       "turnStatus.running": "Working",
       "turnStatus.queued": "Queued",
       "turnStatus.completed": "Done",
@@ -100,6 +102,28 @@ vi.mock("next-intl", () => ({
       "attachMenu.runPreflight": "Run preflight",
       "attachMenu.diagnoseRun": "Diagnose run",
       "attachMenu.comingSoon": "Coming soon",
+      "permission.label": "Permission mode",
+      "permission.options.ask_each_action.label": "Request approval",
+      "permission.options.ask_each_action.description": "Ask before side-effecting actions.",
+      "permission.options.guarded_auto.label": "Approve for me",
+      "permission.options.guarded_auto.description": "Run low-risk actions automatically.",
+      "permission.options.bypass.label": "Full access",
+      "permission.options.bypass.description": "Run non-critical actions automatically.",
+      "permission.boundary.local": "Local actions remain inside the active Bioinfoflow sandbox.",
+      "permission.boundary.remote": "SSH actions use the remote account and server policy; the working folder is not a sandbox.",
+      "permission.safetyFloor": "Critical actions remain blocked in every mode.",
+      "permission.status.updating": "Updating permission mode...",
+      "permission.status.updated": "Permission mode updated for future operations.",
+      "permission.status.reconciled": `${values?.affected ?? 0} waiting operations approved; ${values?.excluded ?? 0} excluded.`,
+      "permission.status.failed": `Could not update permission mode: ${values?.error ?? ""}`,
+      "permission.retry": "Retry permission update",
+      "permission.confirm.title": "Update permission mode?",
+      "permission.confirm.description": `${values?.eligible ?? 0} waiting tool operations can be approved; ${values?.excluded ?? 0} interactions stay pending.`,
+      "permission.confirm.futureOnly": "Only update future operations",
+      "permission.confirm.futureOnlyDescription": "Current waiting operations still need your decision.",
+      "permission.confirm.approvePending": `Update and approve ${values?.count ?? 0} waiting tools`,
+      "permission.confirm.approvePendingDescription": "Questions and plan reviews are never auto-approved.",
+      "permission.confirm.cancel": "Cancel",
       menuTitle: "Local / Remote",
       manage: "Manage SSH hosts",
       "local.label": "Local",
@@ -262,12 +286,34 @@ function setupRuntime({
   events = [],
   status = "idle",
   send = vi.fn(),
+  permissionMode = "guarded_auto",
+  setPermissionMode = vi.fn(),
+  permissionUpdate = {
+    status: "idle" as const,
+    mode: null,
+    pendingStrategy: null,
+    reconciliation: null,
+    error: null,
+  },
 }: {
   session?: AgentRuntimeSession | null
   turns?: AgentRuntimeTurn[]
   events?: AgentRuntimeEvent[]
   status?: "idle" | "loading" | "running" | "error"
   send?: ReturnType<typeof vi.fn>
+  permissionMode?: "ask_each_action" | "guarded_auto" | "bypass"
+  setPermissionMode?: ReturnType<typeof vi.fn>
+  permissionUpdate?: {
+    status: "idle" | "pending" | "success" | "error"
+    mode: "ask_each_action" | "guarded_auto" | "bypass" | null
+    pendingStrategy: "future_only" | "approve_pending_tools" | null
+    reconciliation: {
+      affected_count: number
+      excluded_count: number
+      already_resolved_count: number
+    } | null
+    error: string | null
+  }
 } = {}) {
   useAgentRuntimeMock.mockReturnValue({
     state: {
@@ -282,6 +328,10 @@ function setupRuntime({
     send,
     interrupt: vi.fn(),
     decideAction: vi.fn(),
+    permissionMode,
+    setPermissionMode,
+    permissionUpdate,
+    retryPermissionModeUpdate: vi.fn(),
   })
 }
 
@@ -985,6 +1035,37 @@ describe("AgentWorkbench", () => {
       key: "Escape",
     })
     expect(screen.queryByTestId("agent-mobile-sidecar-overlay")).not.toBeInTheDocument()
+  })
+
+  it("closes the mobile workspace dialog before jumping to a pending decision", async () => {
+    useIsMobileMock.mockReturnValue(true)
+    setupRuntime({
+      session: baseSession,
+      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
+      events: [waitingDecisionEvent],
+      status: "running",
+    })
+    render(<AgentWorkbench projectId="project-1" />)
+    const navbarActions = setNavbarActionsMock.mock.calls.at(-1)?.[0] as React.ReactElement
+    render(<>{navbarActions}</>)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+
+    const approvalCard = screen.getByTestId("inline-approval-card")
+    approvalCard.scrollIntoView = vi.fn()
+    const approveButton = within(approvalCard).getByRole("button", { name: "Approve" })
+
+    fireEvent.click(
+      within(screen.getByTestId("artifact-panel")).getByRole("button", {
+        name: "Needs confirmation · Jump",
+      }),
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("agent-mobile-sidecar-overlay")).not.toBeInTheDocument()
+      expect(approvalCard.scrollIntoView).toHaveBeenCalled()
+      expect(approveButton).toHaveFocus()
+    })
   })
 
   it("moves the composer to the bottom after a turn exists", () => {
@@ -1959,6 +2040,240 @@ describe("AgentWorkbench", () => {
     expect(screen.getByText("Needs your decision")).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1)
     expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(1)
+  })
+
+  it("hands inline approval focus to the next request and announces it", async () => {
+    const waitingTurn: AgentRuntimeTurn = {
+      ...baseTurn,
+      status: "waiting_approval",
+      final_text: null,
+    }
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [waitingTurn],
+        events: [
+          waitingDecisionEvent,
+          {
+            ...waitingDecisionEvent,
+            id: "event-2",
+            seq: 2,
+            payload: { action_id: "action-2", name: "remote.exec" },
+          },
+        ],
+        timeline: buildAgentRuntimeTimeline(
+          [waitingTurn],
+          [
+            waitingDecisionEvent,
+            {
+              ...waitingDecisionEvent,
+              id: "event-2",
+              seq: 2,
+              payload: { action_id: "action-2", name: "remote.exec" },
+            },
+          ],
+        ),
+        status: "running" as const,
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send: vi.fn(),
+      interrupt: vi.fn(),
+      decideAction: vi.fn(async (actionId: string) => {
+        runtime.state.events = runtime.state.events.filter(
+          (event) => event.payload.action_id !== actionId,
+        )
+        runtime.state.timeline = buildAgentRuntimeTimeline(
+          runtime.state.turns,
+          runtime.state.events,
+        )
+        view.rerender(<AgentWorkbench />)
+      }),
+      permissionMode: "guarded_auto" as const,
+      setPermissionMode: vi.fn(),
+      permissionUpdate: {
+        status: "idle" as const,
+        mode: null,
+        pendingStrategy: null,
+        reconciliation: null,
+        error: null,
+      },
+      retryPermissionModeUpdate: vi.fn(),
+    }
+    useAgentRuntimeMock.mockImplementation(() => runtime)
+    const view = render(<AgentWorkbench />)
+
+    const cards = screen.getAllByTestId("inline-approval-card")
+    fireEvent.click(within(cards[0]).getByRole("button", { name: "Approve" }))
+
+    await waitFor(() =>
+      expect(screen.getByTestId("inline-approval-card")).toHaveFocus(),
+    )
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Decision submitted. Moved to the next request.",
+    )
+  })
+
+  it("returns inline approval focus to the composer after the last request", async () => {
+    const waitingTurn: AgentRuntimeTurn = {
+      ...baseTurn,
+      status: "waiting_approval",
+      final_text: null,
+    }
+    const runtime = {
+      state: {
+        session: baseSession,
+        turns: [waitingTurn],
+        events: [waitingDecisionEvent],
+        timeline: buildAgentRuntimeTimeline(
+          [waitingTurn],
+          [waitingDecisionEvent],
+        ),
+        status: "running" as const,
+        error: null,
+      },
+      setActiveSessionId: vi.fn(),
+      send: vi.fn(),
+      interrupt: vi.fn(),
+      decideAction: vi.fn(async () => {
+        runtime.state.events = []
+        runtime.state.timeline = buildAgentRuntimeTimeline(
+          runtime.state.turns,
+          runtime.state.events,
+        )
+        view.rerender(<AgentWorkbench />)
+      }),
+      permissionMode: "guarded_auto" as const,
+      setPermissionMode: vi.fn(),
+      permissionUpdate: {
+        status: "idle" as const,
+        mode: null,
+        pendingStrategy: null,
+        reconciliation: null,
+        error: null,
+      },
+      retryPermissionModeUpdate: vi.fn(),
+    }
+    useAgentRuntimeMock.mockImplementation(() => runtime)
+    const view = render(<AgentWorkbench />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Message Bioinfoflow...")).toHaveFocus(),
+    )
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Decision submitted. Focus returned to the composer.",
+    )
+  })
+
+  it("defaults widening permission changes to future operations and excludes interactions", async () => {
+    const setPermissionMode = vi.fn().mockResolvedValue(null)
+    const questionEvent: AgentRuntimeEvent = {
+      ...waitingDecisionEvent,
+      id: "event-question",
+      seq: 3,
+      payload: {
+        action_id: "action-question",
+        name: "ask_user",
+        interaction: {
+          kind: "user_input",
+          questions: [
+            {
+              header: "Scope",
+              question: "Which scope?",
+              options: [{ label: "Current" }],
+            },
+          ],
+        },
+      },
+    }
+    setupRuntime({
+      session: baseSession,
+      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
+      events: [
+        waitingDecisionEvent,
+        {
+          ...waitingDecisionEvent,
+          id: "event-2",
+          seq: 2,
+          payload: { action_id: "action-2", name: "remote.exec" },
+        },
+        questionEvent,
+      ],
+      status: "running",
+      permissionMode: "guarded_auto",
+      setPermissionMode,
+    })
+
+    render(<AgentWorkbench />)
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Permission mode" }))
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Full access/ }))
+
+    const dialog = await screen.findByRole("dialog", { name: "Update permission mode?" })
+    expect(within(dialog).getByText(/2 waiting tool operations can be approved/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/1 interactions stay pending/)).toBeInTheDocument()
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Only update future operations" }),
+    )
+
+    expect(setPermissionMode).toHaveBeenCalledWith("bypass", "future_only")
+  })
+
+  it("can widen permissions and approve only the current waiting tools", async () => {
+    const setPermissionMode = vi.fn().mockResolvedValue(null)
+    setupRuntime({
+      session: baseSession,
+      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
+      events: [
+        waitingDecisionEvent,
+        {
+          ...waitingDecisionEvent,
+          id: "event-2",
+          seq: 2,
+          payload: { action_id: "action-2", name: "remote.exec" },
+        },
+      ],
+      status: "running",
+      permissionMode: "guarded_auto",
+      setPermissionMode,
+    })
+
+    render(<AgentWorkbench />)
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Permission mode" }))
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Full access/ }))
+    const dialog = await screen.findByRole("dialog", { name: "Update permission mode?" })
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Update and approve 2 waiting tools",
+      }),
+    )
+
+    expect(setPermissionMode).toHaveBeenCalledWith(
+      "bypass",
+      "approve_pending_tools",
+    )
+  })
+
+  it("applies permission tightening directly even when tools are waiting", async () => {
+    const setPermissionMode = vi.fn().mockResolvedValue(null)
+    setupRuntime({
+      session: { ...baseSession, permission_mode: "bypass" },
+      turns: [{ ...baseTurn, status: "waiting_approval", final_text: null }],
+      events: [waitingDecisionEvent],
+      status: "running",
+      permissionMode: "bypass",
+      setPermissionMode,
+    })
+
+    render(<AgentWorkbench />)
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Permission mode" }))
+    fireEvent.click(
+      await screen.findByRole("menuitemradio", { name: /Approve for me/ }),
+    )
+
+    expect(screen.queryByRole("dialog", { name: "Update permission mode?" })).not.toBeInTheDocument()
+    expect(setPermissionMode).toHaveBeenCalledWith("guarded_auto", "future_only")
   })
 
   it("keeps the default workspace panel stable while the agent is streaming", () => {

@@ -1,24 +1,13 @@
-export type LlmProviderKind =
-  | "openai"
-  | "anthropic"
-  | "gemini"
-  | "grok"
-  | "groq"
-  | "openrouter"
-  | "deepseek"
-  | "ollama"
-  | "vllm"
-  | "openai_compatible"
-  | "qwen"
-  | "kimi"
-  | "minimax"
+export type LlmProviderKind = string
 
 export type LlmProviderScope = "global" | "workspace" | "user"
+export type LlmWireProtocol = "chat_completions" | "responses"
 
 export type LlmProvider = {
   id: string
   name: string
   kind: LlmProviderKind
+  wire_protocol: LlmWireProtocol
   base_url?: string | null
   api_key_ref?: string | null
   scope: LlmProviderScope
@@ -93,8 +82,13 @@ export type LlmProviderTestResult = {
   provider_id: string
   success: boolean
   model?: string | null
+  wire_protocol: LlmWireProtocol
+  error_code?: string | null
   error?: string | null
   latency_ms?: number | null
+  retryable: boolean
+  http_status?: number | null
+  provider_code?: string | null
 }
 
 export type LlmProviderDiscovery =
@@ -132,6 +126,8 @@ export type LlmProviderTemplate = {
   docs_url: string
   discovery: LlmProviderDiscovery
   default_base_url?: string | null
+  supported_wire_protocols?: LlmWireProtocol[]
+  default_wire_protocol?: LlmWireProtocol
   fields: LlmProviderTemplateField[]
   models: LlmProviderTemplateModel[]
 }
@@ -155,6 +151,7 @@ export type LlmProviderSetupInput = {
   name?: string | null
   baseUrl?: string | null
   apiKey?: string | null
+  wireProtocol?: LlmWireProtocol
   modelIds?: string[] | null
   discover?: boolean
   scope?: LlmProviderScope

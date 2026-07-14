@@ -42,7 +42,9 @@ ActionStatus = Literal[
     "cancelled",
     "rejected",
 ]
-RiskLevel = Literal["read", "act_low", "act_high", "destructive", "external", "critical"]
+RiskLevel = Literal[
+    "read", "act_low", "act_high", "destructive", "external", "critical"
+]
 ActionDecision = Literal["approve", "reject", "modify", "answer"]
 MemoryStatus = Literal["proposed", "accepted", "rejected", "disabled"]
 
@@ -115,6 +117,13 @@ class AgentSessionUpdate(BaseModel):
     execution_target: AgentExecutionTarget | None = None
     status: SessionStatus | None = None
     metadata: dict | None = None
+    pending_strategy: Literal["future_only", "approve_pending_tools"] = "future_only"
+
+
+class AgentPendingReconciliation(BaseModel):
+    affected_count: int = 0
+    excluded_count: int = 0
+    already_resolved_count: int = 0
 
 
 class AgentSessionRead(BaseModel):
@@ -128,6 +137,7 @@ class AgentSessionRead(BaseModel):
     role_profile: str
     permission_mode: PermissionMode
     automation_mode: AutomationMode
+    permission_policy_version: int = 1
     default_model_profile_id: UUID | None = None
     runtime_mode: str = "api"
     prompt_snapshot: dict | None = None
@@ -142,6 +152,8 @@ class AgentSessionRead(BaseModel):
     token_usage_summary: AgentTokenUsageSummary | None = None
     status: SessionStatus
     metadata: dict | None = Field(default=None, validation_alias="session_metadata")
+    pending_strategy: Literal["future_only", "approve_pending_tools"] | None = None
+    pending_reconciliation: AgentPendingReconciliation | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -210,6 +222,8 @@ class AgentActionRead(BaseModel):
     kind: ActionKind
     name: str
     tool_call_id: str | None = None
+    tool_batch_id: UUID | None = None
+    tool_call_ordinal: int | None = None
     input: dict
     normalized_input: dict | None = None
     input_preview: str | None = None
@@ -221,6 +235,8 @@ class AgentActionRead(BaseModel):
     write_scope: list | None = None
     affected_resources: list | None = None
     permission_decision: dict | None = None
+    evaluated_policy_version: int | None = None
+    permission_context_snapshot: dict | None = None
     status: ActionStatus
     result: dict | None = None
     output_ref: dict | None = None

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +37,13 @@ class AgentToolContext:
     user_id: str
     session_id: str
     turn_id: str
-    turn_claimed_at: datetime | None = None
+    permission_context_snapshot: dict[str, Any] | None = None
+    ownership_guard: Callable[[], Awaitable[None]] | None = None
+    expected_owner_token: str | None = None
+
+    async def ensure_turn_ownership(self) -> None:
+        if self.ownership_guard is not None:
+            await self.ownership_guard()
 
 
 class AgentTool(Protocol):

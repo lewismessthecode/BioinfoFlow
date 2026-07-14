@@ -102,11 +102,52 @@ engine, scheduler, migration, and model-invariant tests under `backend/tests/`.
 - `AgentLoopController.run_turn`, resume behavior, tool approvals, interaction
   waits, event ordering, token usage, prompt/model snapshots, and lease renewal
   remain stable.
-- Tool names, schemas, risk levels, permission behavior, and artifact policies
-  remain stable.
+- Existing tool names, input/output schemas, and artifact policies remain
+  supported. Command risk retains the public risk vocabulary while adding
+  target-aware reasons, effects, confidence, and boundary audit data.
 - Frontend `AgentWorkbench` remains the canonical production interface.
 - Shared AgentCore types and session APIs used outside the obsolete chat shell
   remain supported.
+
+The permission and approval wire contract is:
+
+- authorization-relevant session changes advance
+  `permission_policy_version`; a new session, including one migrated from the
+  pre-version schema, starts at version `1`
+- each newly evaluated action may expose `evaluated_policy_version`,
+  `permission_context_snapshot`, `tool_batch_id`, and `tool_call_ordinal`; old
+  actions without those fields remain readable with nullable values
+- clients may omit `pending_strategy` from a session PATCH; omission means
+  `future_only`
+- `approve_pending_tools` approves eligible waiting tool actions in the same
+  transaction as the policy update, excludes user-input and plan-approval
+  interactions, and reports affected, excluded, and already-resolved counts
+- a general permission update never silently rewrites running or terminal
+  actions
+
+The durable execution contract is:
+
+- a committed policy update is visible to every later authorization evaluation,
+  including evaluations in an already active turn
+- every assistant tool-call batch produces one terminal result per provider
+  tool-call id before the model may continue
+- decisions, execution claims, and batch continuation are conditional database
+  transitions; duplicate requests or workers do not intentionally enqueue,
+  execute, or continue twice
+- recovery keeps waiting batches waiting, re-enqueues requested work, resumes an
+  all-terminal batch through one continuation claim, and fails rather than
+  replays an action found running after process loss
+- legacy waiting actions without a batch id remain supported by the compatibility
+  decision and recovery path
+
+Permission mode is an approval policy, not a capability grant. `bypass` (shown
+as **Full access**) skips ordinary risk approvals only. It does not bypass
+high-confidence critical hard blocks; protected-resource writes, indirect
+commands, and sandbox opt-out can still require explicit approval. Command
+classification is not complete confinement. The enforceable boundary is an
+active local OS sandbox or the SSH account and remote server controls. Explicit
+user/plan interactions and workspace policy remain independent, and a remote
+working root is not confinement.
 
 Authoritative coverage includes `backend/tests/test_agent_core/`,
 `backend/tests/test_api/test_agent_core_api.py`, and the frontend AgentWorkbench,

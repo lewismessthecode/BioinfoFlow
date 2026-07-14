@@ -7,8 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from app.config import settings
-from app.services.agent_core.permissions.risk import RiskLevel
-from app.services.agent_core.permissions.shell_risk import classify_shell_command
+from app.services.agent_core.permissions.command_risk import (
+    CommandRiskAssessment,
+    CommandTargetProfile,
+    assess_command_risk,
+)
 from app.services.agent_core.sandbox import FilesystemPolicy, SandboxRunner
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
 from app.utils.exceptions import PermissionDeniedError
@@ -66,19 +69,38 @@ class ExecuteShellTool:
         artifact_policy={"stdout": True, "stderr": True, "type": "command"},
     )
 
-    def assess_risk(self, input: dict[str, Any]) -> RiskLevel | None:
+    def assess_risk(
+        self,
+        input: dict[str, Any],
+        *,
+        target: CommandTargetProfile | None = None,
+    ) -> CommandRiskAssessment | None:
         command = input.get("command")
         if not isinstance(command, str) or not command.strip():
             return None
-        level = classify_shell_command(command)
-        # A command the classifier would auto-run, but which reaches an absolute
-        # path outside the allowed roots (e.g. `cat /etc/passwd`, `find /`),
-        # must still ask: the cwd check alone does not constrain path arguments.
-        if level in {"read", "act_low"} and _references_out_of_root_path(command):
-            return "act_high"
-        return level
+        if target is None:
+            roots = tuple(str(root) for root in FilesystemPolicy().allowed_roots)
+            runner = SandboxRunner.from_settings()
+            target = CommandTargetProfile(
+                kind="local",
+                trust_domain="local-machine",
+                identity="local-user",
+                sandbox_strength="enforced"
+                if runner.enabled and runner.available_adapter()
+                else "none",
+                read_roots=roots,
+                write_roots=roots,
+                working_directory=str(input.get("cwd") or settings.repo_root),
+                network_allowed=runner.allow_network,
+                sandbox_bypass_requested=bool(
+                    input.get("dangerously_disable_sandbox", False)
+                ),
+            )
+        return assess_command_risk(command, target=target)
 
-    async def run(self, input: dict[str, Any], context: AgentToolContext) -> dict[str, Any]:
+    async def run(
+        self, input: dict[str, Any], context: AgentToolContext
+    ) -> dict[str, Any]:
         del context
         command = input.get("command")
         if not isinstance(command, str) or not command.strip():
@@ -114,7 +136,9 @@ class ExecuteShellTool:
             start_new_session=True,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
         except asyncio.TimeoutError as exc:
             await _kill_process_group(process)
             raise TimeoutError(f"command timed out after {timeout}s") from exc
@@ -129,40 +153,6 @@ class ExecuteShellTool:
             "cwd": str(cwd),
             "command": command,
         }
-
-
-def _references_out_of_root_path(command: str) -> bool:
-    """True if the command names an absolute/home path outside allowed roots.
-
-    Heuristic and conservative: any token that looks like an absolute path
-    (`/…`) or a home path (`~…`) and does not resolve under an allowed root
-    means the command can read or write outside the sandbox, so it should ask
-    for approval rather than auto-run.
-    """
-    roots = FilesystemPolicy().allowed_roots
-    for raw in command.split():
-        token = raw.strip("\"'")
-        # An env-var path (e.g. `$HOME/.ssh`) can't be resolved statically, so
-        # it can't be vouched for as in-root — ask.
-        if token.startswith("$") and "/" in token:
-            return True
-        if not (token.startswith("/") or token.startswith("~")):
-            continue
-        try:
-            candidate = Path(token).expanduser().resolve()
-        except (OSError, RuntimeError, ValueError):
-            return True
-        if not any(_is_relative_to(candidate, root) for root in roots):
-            return True
-    return False
-
-
-def _is_relative_to(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
 
 
 def _limit(text: str, limit: int) -> str:

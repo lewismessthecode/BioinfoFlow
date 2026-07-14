@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 import pytest
 
 from app.models.llm import LlmModel, LlmProvider
@@ -8,8 +11,33 @@ from app.services.agent_core import AgentCoreService
 from app.services.agent_core.subagents import ReadOnlySubagentRunner
 from app.services.agent_core.tools import build_default_tool_registry
 from app.services.agent_core.tools.toolsets import ToolsetExposure
+from app.services.model_runtime.gateway import ModelGateway
 from app.utils.exceptions import PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+class _FakeBackend:
+    def __init__(self, completion: Callable[..., Awaitable[Any]]) -> None:
+        self.completion = completion
+
+    async def invoke(
+        self,
+        wire_protocol: str,
+        request: dict[str, Any],
+        *,
+        network_access: str = "unrestricted",
+    ) -> Any:
+        assert wire_protocol == "chat_completions"
+        assert network_access == "public_only"
+        return await self.completion(**request)
+
+
+def _install_fake_completion(monkeypatch, completion) -> None:
+    gateway = ModelGateway(backend=_FakeBackend(completion))
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.ModelGateway",
+        lambda: gateway,
+    )
 
 
 async def _workspace(db_session) -> Workspace:
@@ -86,7 +114,7 @@ async def test_read_only_subagent_can_run_delegated_child_turn(db_session, monke
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 

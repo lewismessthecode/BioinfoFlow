@@ -2,31 +2,28 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from uuid import NAMESPACE_URL, uuid5
 
-from sqlalchemy import insert
-from sqlalchemy.dialects.postgresql import insert as postgresql_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.agent_core import AgentMessage
 from app.repositories.agent_core_repo import (
     AgentMessageRepository,
-    AgentSessionRepository,
+    ensure_clean_owned_publication_session,
 )
-from app.services.agent_core.execution_target import (
-    ExecutionTargetChangedError,
-    execution_target_from_session,
-    normalize_execution_target,
-)
+from app.services.agent_core.ownership import TurnOwnershipLostError
 from app.services.agent_core.transcript.messages import parts_to_text, text_part
 
 
 class AgentTranscriptStore:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        owned_turn_id: str | None = None,
+        expected_owner_token: str | None = None,
+    ):
         self.messages = AgentMessageRepository(session)
+        self.owned_turn_id = owned_turn_id
+        self.expected_owner_token = expected_owner_token
 
     async def append_text(
         self,
@@ -37,6 +34,9 @@ class AgentTranscriptStore:
         text: str,
         metadata: dict[str, Any] | None = None,
         ordering_index: int | None = None,
+        commit: bool = True,
+        expected_owner_token: str | None = None,
+        owner_fence_held: bool = False,
     ):
         return await self.append_parts(
             session_id=session_id,
@@ -45,6 +45,9 @@ class AgentTranscriptStore:
             parts=[text_part(text)],
             metadata=metadata,
             ordering_index=ordering_index,
+            commit=commit,
+            expected_owner_token=expected_owner_token,
+            owner_fence_held=owner_fence_held,
         )
 
     async def append_parts(
@@ -57,138 +60,195 @@ class AgentTranscriptStore:
         metadata: dict[str, Any] | None = None,
         status: str = "committed",
         ordering_index: int | None = None,
-        expected_execution_target=None,
+        commit: bool = True,
+        replace_turn_metadata_key: str | None = None,
+        replace_session_metadata_key: str | None = None,
+        expected_owner_token: str | None = None,
+        owner_fence_held: bool = False,
     ):
-        if expected_execution_target is not None:
-            session = await AgentSessionRepository(self.session).lock_for_update(
-                session_id
+        if (
+            replace_turn_metadata_key is not None
+            and replace_session_metadata_key is not None
+        ):
+            raise ValueError(
+                "turn- and session-scoped metadata replacement are exclusive"
             )
-            if session is None:
-                raise RuntimeError("Agent session disappeared before transcript append")
-            if (
-                execution_target_from_session(session)
-                != normalize_execution_target(expected_execution_target)
-            ):
-                await self.session.rollback()
-                raise ExecutionTargetChangedError
+        expected_owner_token = self._default_owner_token(
+            turn_id,
+            expected_owner_token,
+        )
+        if expected_owner_token is not None and not owner_fence_held:
+            if turn_id is None:
+                raise ValueError("turn_id is required for owner-conditioned messages")
+            ensure_clean_owned_publication_session(self.messages.session)
+        if owner_fence_held and (expected_owner_token is None or commit):
+            raise ValueError(
+                "owner_fence_held requires an owner token and commit=False"
+            )
         if ordering_index is None:
             ordering_index = await self.messages.next_ordering_index(session_id)
-        return await self.messages.create(
-            session_id=session_id,
-            turn_id=turn_id,
-            role=role,
-            content_parts=parts,
-            message_metadata=metadata,
-            status=status,
-            ordering_index=ordering_index,
-        )
+        data = {
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "role": role,
+            "content_parts": parts,
+            "message_metadata": metadata,
+            "status": status,
+            "ordering_index": ordering_index,
+        }
+        if replace_turn_metadata_key is not None:
+            if not commit:
+                raise ValueError("metadata replacement requires commit=True")
+            if turn_id is None:
+                raise ValueError(
+                    "turn_id is required when replacing turn-scoped metadata"
+                )
+            message = await self.messages.create_replacing_turn_metadata(
+                metadata_key=replace_turn_metadata_key,
+                expected_owner_token=expected_owner_token,
+                **data,
+            )
+            if expected_owner_token is not None and message is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            return message
+        if replace_session_metadata_key is not None:
+            if not commit:
+                raise ValueError("metadata replacement requires commit=True")
+            message = await self.messages.create_replacing_session_metadata(
+                metadata_key=replace_session_metadata_key,
+                expected_owner_token=expected_owner_token,
+                **data,
+            )
+            if expected_owner_token is not None and message is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            return message
+        if expected_owner_token is not None and not owner_fence_held:
+            message, owned = await self.messages.create_for_owned_turn(
+                turn_id=turn_id,
+                expected_owner_token=expected_owner_token,
+                **{key: value for key, value in data.items() if key != "turn_id"},
+            )
+            if not owned or message is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            return message
+        create = self.messages.create if commit else self.messages.add
+        return await create(**data)
 
     async def list_messages(self, session_id: str):
         return await self.messages.list_for_session(session_id)
 
-    async def append_tool_result_once(
+    async def find_committed_tool_result(
         self,
         *,
         session_id: str,
         turn_id: str,
         tool_call_id: str | None,
-        tool_name: str,
-        status: str,
-        result: dict[str, Any] | None = None,
-        error: dict[str, Any] | None = None,
-    ) -> bool:
-        call_id = str(tool_call_id or "")
-        for message in await self.messages.list_for_session(session_id):
-            metadata = message.message_metadata or {}
-            if (
-                message.role == "tool"
-                and str(message.turn_id or "") == turn_id
-                and str(metadata.get("tool_call_id") or "") == call_id
-            ):
-                return False
-        message_id = str(
-            uuid5(
-                NAMESPACE_URL,
-                f"bioinfoflow:agent-tool-result:{turn_id}:{call_id}",
-            )
+    ):
+        return await self.messages.find_committed_tool_result(
+            session_id=session_id,
+            turn_id=turn_id,
+            tool_call_id=tool_call_id,
         )
-        values = {
-            "id": message_id,
-            "session_id": session_id,
-            "turn_id": turn_id,
-            "role": "tool",
-            "content_parts": [
-                text_part(
-                    json.dumps(
-                        {
-                            "tool": tool_name,
-                            "status": status,
-                            "result": result,
-                            "error": error,
-                        },
-                        separators=(",", ":"),
-                        default=str,
-                    )
-                )
-            ],
-            "message_metadata": {"tool_call_id": tool_call_id, "tool": tool_name},
-            "status": "committed",
-            "ordering_index": await self.messages.next_ordering_index(session_id),
-        }
-        dialect_name = self.session.bind.dialect.name if self.session.bind else ""
-        if dialect_name == "sqlite":
-            statement = sqlite_insert(AgentMessage).values(**values).on_conflict_do_nothing(
-                index_elements=["id"]
-            )
-        elif dialect_name == "postgresql":
-            statement = (
-                postgresql_insert(AgentMessage)
-                .values(**values)
-                .on_conflict_do_nothing(index_elements=["id"])
-            )
-        else:
-            statement = insert(AgentMessage).values(**values)
-            try:
-                async with self.session.begin_nested():
-                    inserted = await self.session.execute(statement)
-            except IntegrityError:
-                return False
-            await self.session.commit()
-            return inserted.rowcount == 1
-        inserted = await self.session.execute(statement)
-        await self.session.commit()
-        return inserted.rowcount == 1
 
-    async def unresolved_tool_calls(
+    async def tool_call_batch_ids(
         self,
-        session_id: str,
         *,
+        session_id: str,
+        turn_id: str,
+        tool_call_id: str | None,
+    ) -> list[str]:
+        if not tool_call_id:
+            return []
+        messages = await self.messages.list_for_session(session_id)
+        for message in reversed(messages):
+            if (
+                message.role != "assistant"
+                or str(message.turn_id or "") != turn_id
+                or message.status != "committed"
+            ):
+                continue
+            call_ids: list[str] = []
+            for part in message.content_parts or []:
+                if part.get("type") != "tool_calls":
+                    continue
+                for call in part.get("tool_calls") or []:
+                    if isinstance(call, dict) and call.get("id"):
+                        call_ids.append(str(call["id"]))
+            if tool_call_id in call_ids:
+                return call_ids
+        return [tool_call_id]
+
+    async def latest_unresolved_tool_call_batch_ids(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> list[str]:
+        messages = await self.messages.list_for_session(session_id)
+        for message in reversed(messages):
+            if (
+                message.role != "assistant"
+                or str(message.turn_id or "") != turn_id
+                or message.status != "committed"
+            ):
+                continue
+            call_ids: list[str] = []
+            for part in message.content_parts or []:
+                if part.get("type") != "tool_calls":
+                    continue
+                call_ids.extend(
+                    str(call["id"])
+                    for call in part.get("tool_calls") or []
+                    if isinstance(call, dict) and call.get("id")
+                )
+            if call_ids:
+                return call_ids
+        return []
+
+    async def clear_turn_metadata(
+        self,
+        *,
+        turn_id: str,
+        metadata_key: str,
+        expected_owner_token: str | None = None,
+    ) -> None:
+        expected_owner_token = self._default_owner_token(
+            turn_id,
+            expected_owner_token,
+        )
+        if expected_owner_token is not None:
+            ensure_clean_owned_publication_session(self.messages.session)
+        owned = await self.messages.clear_turn_metadata(
+            turn_id=turn_id,
+            metadata_key=metadata_key,
+            expected_owner_token=expected_owner_token,
+        )
+        if not owned:
+            raise TurnOwnershipLostError("Agent turn ownership was replaced")
+
+    async def clear_session_metadata(
+        self,
+        *,
+        session_id: str,
+        metadata_key: str,
         turn_id: str | None = None,
-    ) -> list[dict[str, str]]:
-        unresolved: dict[str, dict[str, str]] = {}
-        for message in await self.messages.list_for_session(session_id):
-            if message.status != "committed":
-                continue
-            if turn_id is not None and str(message.turn_id or "") != turn_id:
-                continue
-            if message.role == "assistant":
-                for part in message.content_parts or []:
-                    if part.get("type") != "tool_calls":
-                        continue
-                    for call in part.get("tool_calls") or []:
-                        if not isinstance(call, dict) or not call.get("id"):
-                            continue
-                        function = call.get("function") or {}
-                        call_id = str(call["id"])
-                        unresolved[call_id] = {
-                            "tool_call_id": call_id,
-                            "tool_name": str(function.get("name") or "unknown"),
-                            "turn_id": str(message.turn_id or ""),
-                        }
-            elif message.role == "tool":
-                call_id = str((message.message_metadata or {}).get("tool_call_id") or "")
-                unresolved.pop(call_id, None)
-        return list(unresolved.values())
+        expected_owner_token: str | None = None,
+    ) -> None:
+        effective_turn_id = turn_id or self.owned_turn_id
+        expected_owner_token = self._default_owner_token(
+            effective_turn_id,
+            expected_owner_token,
+        )
+        if expected_owner_token is not None:
+            ensure_clean_owned_publication_session(self.messages.session)
+        owned = await self.messages.clear_session_metadata(
+            session_id=session_id,
+            metadata_key=metadata_key,
+            turn_id=effective_turn_id,
+            expected_owner_token=expected_owner_token,
+        )
+        if not owned:
+            raise TurnOwnershipLostError("Agent turn ownership was replaced")
 
     async def compact_session(
         self,
@@ -197,7 +257,16 @@ class AgentTranscriptStore:
         turn_id: str | None,
         threshold_chars: int,
         preserve_recent_messages: int = 12,
+        expected_owner_token: str | None = None,
     ) -> dict[str, Any] | None:
+        expected_owner_token = self._default_owner_token(
+            turn_id,
+            expected_owner_token,
+        )
+        if expected_owner_token is not None:
+            if turn_id is None:
+                raise ValueError("turn_id is required for owner-conditioned compaction")
+            ensure_clean_owned_publication_session(self.messages.session)
         committed = await self.messages.list_committed_for_session(session_id)
         if len(committed) <= preserve_recent_messages:
             return None
@@ -205,34 +274,61 @@ class AgentTranscriptStore:
         if transcript_chars <= threshold_chars:
             return None
 
-        cut = self._safe_compaction_cut(
-            committed,
-            len(committed) - preserve_recent_messages,
-        )
-        summary_candidates = committed[:cut]
+        preserve_start = len(committed) - preserve_recent_messages
+        while preserve_start > 0 and committed[preserve_start].role == "tool":
+            preserve_start -= 1
+        summary_candidates = committed[:preserve_start]
         if not summary_candidates:
             return None
-        if len(summary_candidates) == 1 and self._is_compaction_summary(summary_candidates[0]):
+        if len(summary_candidates) == 1 and self._is_compaction_summary(
+            summary_candidates[0]
+        ):
             return None
 
-        insert_before = committed[cut].ordering_index
-        await self.messages.shift_ordering_indices(session_id, starting_at=insert_before)
+        insert_before = committed[preserve_start].ordering_index
         summary_text = self._build_summary(summary_candidates)
-        summary_message = await self.append_text(
-            session_id=session_id,
-            turn_id=turn_id,
-            role="assistant",
-            text=summary_text,
-            metadata={
-                "kind": "compaction_summary",
-                "supersedes": [str(message.id) for message in summary_candidates],
-            },
-            ordering_index=insert_before,
-        )
-        await self.messages.mark_superseded([str(message.id) for message in summary_candidates])
+        superseded_message_ids = [str(message.id) for message in summary_candidates]
+        if expected_owner_token is None:
+            await self.messages.shift_ordering_indices(
+                session_id,
+                starting_at=insert_before,
+            )
+            summary_message = await self.append_text(
+                session_id=session_id,
+                turn_id=turn_id,
+                role="assistant",
+                text=summary_text,
+                metadata={
+                    "kind": "compaction_summary",
+                    "supersedes": superseded_message_ids,
+                },
+                ordering_index=insert_before,
+            )
+            await self.messages.mark_superseded(superseded_message_ids)
+        else:
+            summary_message, owned = await self.messages.compact_for_owned_turn(
+                session_id=session_id,
+                turn_id=turn_id,
+                expected_owner_token=expected_owner_token,
+                insert_before=insert_before,
+                summary_data={
+                    "session_id": session_id,
+                    "role": "assistant",
+                    "content_parts": [text_part(summary_text)],
+                    "message_metadata": {
+                        "kind": "compaction_summary",
+                        "supersedes": superseded_message_ids,
+                    },
+                    "status": "committed",
+                    "ordering_index": insert_before,
+                },
+                superseded_message_ids=superseded_message_ids,
+            )
+            if not owned or summary_message is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
         return {
             "summary_message_id": str(summary_message.id),
-            "superseded_message_ids": [str(message.id) for message in summary_candidates],
+            "superseded_message_ids": superseded_message_ids,
             "transcript_chars": transcript_chars,
         }
 
@@ -253,40 +349,20 @@ class AgentTranscriptStore:
         metadata = getattr(message, "message_metadata", None) or {}
         return metadata.get("kind") == "compaction_summary"
 
-    def _safe_compaction_cut(self, messages: list[Any], cut: int) -> int:
-        """Keep an assistant tool-call message contiguous with all tool results."""
-        if cut <= 0 or cut >= len(messages) or messages[cut].role != "tool":
-            return cut
-        first_tool = cut
-        while first_tool > 0 and messages[first_tool - 1].role == "tool":
-            first_tool -= 1
-        assistant_index = first_tool - 1
-        if assistant_index < 0 or messages[assistant_index].role != "assistant":
-            return cut
-        call_ids = self._assistant_tool_call_ids(messages[assistant_index])
-        if not call_ids:
-            return cut
-        tool_index = first_tool
-        while tool_index < len(messages) and messages[tool_index].role == "tool":
-            result_id = str(
-                (messages[tool_index].message_metadata or {}).get("tool_call_id") or ""
-            )
-            if result_id not in call_ids:
-                return cut
-            tool_index += 1
-        return assistant_index
-
-    def _assistant_tool_call_ids(self, message: Any) -> set[str]:
-        call_ids: set[str] = set()
-        for part in message.content_parts or []:
-            if part.get("type") != "tool_calls":
-                continue
-            for call in part.get("tool_calls") or []:
-                if isinstance(call, dict) and call.get("id"):
-                    call_ids.add(str(call["id"]))
-        return call_ids
-
     def _truncate_text(self, text: str, limit: int) -> str:
         if len(text) <= limit:
             return text
         return text[:limit] + "…"
+
+    def _default_owner_token(
+        self,
+        turn_id: str | None,
+        expected_owner_token: str | None,
+    ) -> str | None:
+        if (
+            expected_owner_token is None
+            and self.expected_owner_token is not None
+            and turn_id == self.owned_turn_id
+        ):
+            return self.expected_owner_token
+        return expected_owner_token

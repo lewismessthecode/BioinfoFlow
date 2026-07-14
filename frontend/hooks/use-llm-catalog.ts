@@ -30,6 +30,12 @@ export type SetupProviderOutcome =
   | { ok: true; result: LlmProviderSetupResult }
   | { ok: false; error: Error }
 
+function mergeModels(current: LlmModel[], incoming: LlmModel[]) {
+  const merged = new Map(current.map((model) => [model.id, model]))
+  for (const model of incoming) merged.set(model.id, model)
+  return Array.from(merged.values())
+}
+
 export function useLlmCatalog() {
   const [providers, setProviders] = useState<LlmProvider[]>([])
   const [configuredProviders, setConfiguredProviders] = useState<LlmConfiguredProvider[]>([])
@@ -150,12 +156,15 @@ export function useLlmCatalog() {
   )
 
   const testProvider = useCallback(
-    async (providerId: string): Promise<LlmProviderTestResult | null> => {
+    async (
+      providerId: string,
+      modelId?: string,
+    ): Promise<LlmProviderTestResult | null> => {
       setPendingMutationCount((count) => count + 1)
       setError(null)
       try {
-        const result = await testLlmProvider(providerId)
-        await refresh()
+        const result = await testLlmProvider(providerId, modelId)
+        await refresh({ background: true })
         return result
       } catch (caught) {
         setError(caught instanceof Error ? caught : new Error("Failed to test LLM provider"))
@@ -173,7 +182,13 @@ export function useLlmCatalog() {
       setError(null)
       try {
         const discovered = await discoverLlmProviderModels(providerId)
-        await refresh()
+        setModels((current) => mergeModels(current, discovered))
+        setConfiguration((current) =>
+          current
+            ? { ...current, models: mergeModels(current.models, discovered) }
+            : current,
+        )
+        await refresh({ background: true })
         return discovered
       } catch (caught) {
         setError(caught instanceof Error ? caught : new Error("Failed to discover LLM models"))

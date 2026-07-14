@@ -11,6 +11,8 @@ from app.models.agent_core import (
     AgentMemoryStatus,
     AgentSession,
     AgentSessionStatus,
+    AgentToolCallBatch,
+    AgentToolCallBatchStatus,
     AgentTurn,
     AgentTurnStatus,
 )
@@ -24,8 +26,8 @@ from app.models.llm import (
     LlmModelProfile,
     LlmProvider,
     LlmProviderCredential,
-    LlmProviderKind,
     LlmProviderScope,
+    LlmWireProtocol,
 )
 from app.models.notification import NotificationConfig
 from app.models.project import Project
@@ -62,14 +64,16 @@ __all__ = [
     "AgentMessageStatus",
     "AgentAction",
     "AgentActionStatus",
+    "AgentToolCallBatch",
+    "AgentToolCallBatchStatus",
     "AgentArtifact",
     "AgentMemory",
     "AgentMemoryStatus",
     "LlmProvider",
     "LlmProviderCredential",
     "LlmCredentialSource",
-    "LlmProviderKind",
     "LlmProviderScope",
+    "LlmWireProtocol",
     "LlmModel",
     "LlmModelProfile",
     "Project",

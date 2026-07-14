@@ -4,7 +4,9 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 
-RiskLevel = Literal["read", "act_low", "act_high", "destructive", "external", "critical"]
+RiskLevel = Literal[
+    "read", "act_low", "act_high", "destructive", "external", "critical"
+]
 
 
 @dataclass(frozen=True)
@@ -12,6 +14,7 @@ class RiskAssessment:
     level: RiskLevel
     reasons: list[str] = field(default_factory=list)
     affected_resources: list[dict] = field(default_factory=list)
+    requires_explicit_approval: bool = False
 
 
 class RiskEngine:
@@ -35,7 +38,9 @@ class RiskEngine:
             level: RiskLevel = "read"
         elif any(term in normalized for term in ("delete", "remove", "purge", "wipe")):
             level = "destructive"
-        elif any(term in normalized for term in ("submit", "cancel", "register", "update")):
+        elif any(
+            term in normalized for term in ("submit", "cancel", "register", "update")
+        ):
             level = "act_high"
         elif kind in {"shell", "code", "config"}:
             level = "act_high"

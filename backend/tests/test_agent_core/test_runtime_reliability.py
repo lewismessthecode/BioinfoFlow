@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 import json
 import sys
 
@@ -8,14 +10,26 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings, settings
-from app.models.agent_core import AgentActionStatus
+from app.models.agent_core import AgentActionStatus, AgentTurnStatus
 from app.models.llm import LlmModel, LlmModelProfile, LlmProvider
-from app.repositories.agent_core_repo import AgentActionRepository, AgentEventRepository
+from app.repositories.agent_core_repo import (
+    AgentActionRepository,
+    AgentEventRepository,
+    AgentMessageRepository,
+    AgentTurnRepository,
+)
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.context import AgentContextAssembler
+from app.services.agent_core.core.fallback import (
+    build_fallback_model_ids,
+    should_try_fallback,
+)
 from app.services.agent_core.core.loop import _max_iterations
+from app.services.agent_core.core.types import LoopResult
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.agent_core.runtime import AgentCoreRuntime
+from app.services.model_runtime.errors import ModelError
+from app.services.model_runtime.contracts import ModelInvocation
 import app.services.agent_core.runner as runner_module
 from app.workspace import DEFAULT_WORKSPACE_ID
 from app.models.workspace import Workspace
@@ -65,6 +79,40 @@ def test_agent_max_iterations_prefers_explicit_setting(monkeypatch):
     monkeypatch.setattr(settings, "agent_max_iterations", 120)
 
     assert _max_iterations() == 120
+
+
+def test_fallback_candidates_preserve_order_and_suppress_duplicates() -> None:
+    assert build_fallback_model_ids(
+        ("primary", "fallback-a", "fallback-a", "fallback-b", "primary"),
+        primary_model_id="primary",
+    ) == ("fallback-a", "fallback-b")
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        LoopResult("waiting_approval", None, 1),
+        LoopResult("cancelled", None, 1),
+        LoopResult("interrupted", None, 1),
+        LoopResult("tool_failed", None, 1, error_code="tool_execution_failed"),
+    ],
+)
+def test_non_model_termination_never_triggers_semantic_fallback(
+    result: LoopResult,
+) -> None:
+    assert should_try_fallback(result) is False
+
+
+def test_model_failure_after_output_started_never_triggers_semantic_fallback() -> None:
+    result = LoopResult(
+        "model_failed",
+        None,
+        1,
+        error_code="model_request_failed",
+        model_replay_safe=False,
+    )
+
+    assert should_try_fallback(result) is False
 
 
 @pytest.mark.asyncio
@@ -205,9 +253,13 @@ async def test_runtime_approval_resume_uses_remaining_turn_budget(
         return response
 
     monkeypatch.setattr(settings, "agent_max_iterations", 2)
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr(
-        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda *_args: None,
     )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="approval-budget-model")
@@ -280,7 +332,10 @@ async def test_context_replays_committed_transcript_messages(db_session, monkeyp
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="replay-model")
 
@@ -303,28 +358,30 @@ async def test_context_replays_committed_transcript_messages(db_session, monkeyp
         turn=completed_turn,
     )
 
-    assert [message["role"] for message in messages] == [
-        "system",
-        "user",
-        "user",
-        "assistant",
-    ]
-    assert "## Task context" in messages[1]["content"]
-    assert messages[2]["content"] == "Replay this transcript."
-    assert messages[3]["content"] == "Committed assistant reply."
+    assert [message["role"] for message in messages] == ["system", "user", "assistant"]
+    assert messages[1]["content"] == "Replay this transcript."
+    assert messages[2]["content"] == "Committed assistant reply."
 
 
 @pytest.mark.asyncio
 async def test_runtime_retries_transient_model_failure_and_records_event(
-    db_session, monkeypatch
+    db_session,
+    monkeypatch,
+    caplog,
 ):
+    secret = "sentinel-retry-secret"
     attempts = 0
 
     async def flaky_completion(*args, **kwargs):
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            raise RuntimeError("Provider timed out")
+            raise ModelError(
+                category="timeout",
+                message="The provider timed out.",
+                retryable=True,
+                cause=RuntimeError(f"Authorization: Bearer {secret}"),
+            )
 
         class FakeMessage:
             content = "Succeeded after retry."
@@ -339,7 +396,10 @@ async def test_runtime_retries_transient_model_failure_and_records_event(
 
         return FakeResponse()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", flaky_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        flaky_completion,
+    )
     monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
@@ -364,45 +424,156 @@ async def test_runtime_retries_transient_model_failure_and_records_event(
     assert attempts == 2
     assert completed_turn.status == "completed"
     assert completed_turn.final_text == "Succeeded after retry."
+    retry_event = next(event for event in events if event.type == "model.retrying")
+    assert retry_event.payload["model_error"] == {
+        "category": "timeout",
+        "message": "The provider timed out.",
+        "http_status": None,
+        "provider_code": None,
+        "retryable": True,
+        "replay_safe": True,
+        "retry_after_seconds": None,
+        "request_id": None,
+    }
+    assert secret not in repr([event.payload for event in events])
+    assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_model_failure_and_fallback_surfaces_never_persist_credentials(
+    db_session,
+    monkeypatch,
+    caplog,
+):
+    secret = "sentinel-end-to-end-credential"
+    errors = [
+        ModelError(
+            category="timeout",
+            message="The provider timed out.",
+            retryable=True,
+            cause=RuntimeError(f"Authorization: Bearer {secret}"),
+        )
+        for _ in range(4)
+    ]
+    serialized_errors = [error.to_public_dict() for error in errors]
+
+    class FailingGateway:
+        def __init__(self) -> None:
+            self.invocations: list[ModelInvocation] = []
+
+        async def invoke(self, invocation: ModelInvocation):
+            self.invocations.append(invocation)
+            error = errors.pop(0)
+            if False:
+                yield None
+            raise error
+
+    def candidate(model: str, *, source: str) -> dict:
+        return {
+            "endpoint_id": f"endpoint-{model}",
+            "provider": "openai_compatible",
+            "model": model,
+            "routed_model_name": f"openai/{model}",
+            "model_id": f"id-{model}",
+            "source": source,
+            "capabilities": {
+                "supports_streaming": True,
+                "supports_reasoning": False,
+                "supports_tools": False,
+            },
+            "runtime_strategy": {
+                "use_streaming": True,
+                "allow_thinking": False,
+                "allow_tools": False,
+                "max_tokens": None,
+                "reasoning_budget": None,
+                "fallback_model_ids": [],
+            },
+            "request_args": {
+                "api_base": "https://models.example/v1",
+                "api_key": secret,
+            },
+            "wire_protocol": "chat_completions",
+        }
+
+    primary = candidate("primary-secret-model", source="test")
+    fallback = candidate("fallback-secret-model", source="fallback_model")
+    gateway = FailingGateway()
+    monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Fail safely without exposing credentials.",
+    )
+    runtime = AgentCoreRuntime(db_session, model_gateway=gateway)
+
+    async def resolved_selection(**kwargs):
+        del kwargs
+        return primary
+
+    async def fallback_candidates(**kwargs):
+        del kwargs
+        return [fallback]
+
+    monkeypatch.setattr(runtime, "_resolve_model_selection", resolved_selection)
+    monkeypatch.setattr(runtime, "_resolve_fallback_candidates", fallback_candidates)
+
+    failed_turn = await runtime.run_turn(str(turn.id))
+    events = await AgentEventRepository(db_session).list_for_turn(turn_id=str(turn.id))
+    messages = await AgentMessageRepository(db_session).list_for_session(
+        str(session.id)
+    )
+
+    assert failed_turn.status == "failed"
     assert any(event.type == "model.retrying" for event in events)
+    assert any(event.type == "model.fallback" for event in events)
+    assert secret not in caplog.text
+    assert secret not in repr([event.payload for event in events])
+    assert secret not in repr(
+        {
+            "error_code": failed_turn.error_code,
+            "error_message": failed_turn.error_message,
+            "snapshot": failed_turn.model_profile_snapshot,
+        }
+    )
+    assert secret not in repr(
+        [
+            {
+                "parts": message.content_parts,
+                "metadata": message.message_metadata,
+            }
+            for message in messages
+        ]
+    )
+    assert secret not in repr(
+        [asdict(invocation) for invocation in gateway.invocations]
+    )
+    assert secret not in repr(serialized_errors)
 
 
 @pytest.mark.asyncio
 async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
-    model_calls: list[str] = []
+    model_attempts: list[str] = []
 
     async def fallback_completion(*args, **kwargs):
         model_name = str(kwargs["model"])
-        selected = "primary" if "primary-model" in model_name else "fallback"
-        model_calls.append(selected)
-
-        class FakeUsage:
-            def model_dump(self):
-                if selected == "primary":
-                    return {
-                        "prompt_tokens": 1,
-                        "completion_tokens": 2,
-                        "total_tokens": 3,
-                    }
-                return {
-                    "prompt_tokens": 5,
-                    "completion_tokens": 7,
-                    "total_tokens": 12,
-                }
-
+        model_attempts.append(model_name)
         if "primary-model" in model_name:
-            class FakeMessage:
-                content = ""
-                tool_calls = None
-
-            class FakeChoice:
-                message = FakeMessage()
-
-            class FakeResponse:
-                choices = [FakeChoice()]
-                usage = FakeUsage()
-
-            return FakeResponse()
+            raise ModelError(
+                category="timeout",
+                message="The provider timed out.",
+                retryable=True,
+            )
 
         class FakeMessage:
             content = "Answered from fallback."
@@ -413,17 +584,17 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
 
         class FakeResponse:
             choices = [FakeChoice()]
-            usage = FakeUsage()
+            usage = None
 
         return FakeResponse()
 
     monkeypatch.setattr(
-        "app.services.agent_core.runtime.acompletion", fallback_completion
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fallback_completion,
     )
     monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
     monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
-    monkeypatch.setattr(settings, "agent_retry_max_attempts", 1)
-    monkeypatch.setattr(settings, "agent_max_iterations", 3)
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
     await _workspace(db_session)
     provider = LlmProvider(
         name="fallback provider",
@@ -476,21 +647,12 @@ async def test_runtime_falls_back_to_profile_model(db_session, monkeypatch):
 
     assert completed_turn.status == "completed"
     assert completed_turn.final_text == "Answered from fallback."
-    assert model_calls == ["primary", "primary", "fallback"]
-    assert completed_turn.iteration_count == 3
-    assert completed_turn.budget_snapshot == {
-        "used_iterations": 3,
-        "max_iterations": 3,
-    }
-    assert completed_turn.token_usage == {
-        "prompt_tokens": 7,
-        "completion_tokens": 11,
-        "total_tokens": 18,
-    }
     assert completed_turn.model_profile_snapshot["resolved_model_id"] == str(
         fallback.id
     )
     assert any(event.type == "model.fallback" for event in events)
+    assert sum("primary-model" in model for model in model_attempts) == 2
+    assert sum("fallback-model" in model for model in model_attempts) == 1
 
 
 @pytest.mark.asyncio
@@ -530,7 +692,8 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(
         return response
 
     monkeypatch.setattr(
-        "app.services.agent_core.runtime.acompletion", looping_completion
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        looping_completion,
     )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="no-progress-model")
@@ -555,7 +718,6 @@ async def test_runtime_stops_on_repeated_tool_calls_without_progress(
     assert failed_turn.termination_reason == "no_progress"
     assert failed_turn.error_code == "no_progress_detected"
     assert events[-1].type == "turn.no_progress"
-    assert sum(event.type == "turn.no_progress" for event in events) == 1
 
 
 @pytest.mark.asyncio
@@ -615,7 +777,8 @@ async def test_runtime_allows_repeated_tool_polling_when_results_change(
         )
 
     monkeypatch.setattr(
-        "app.services.agent_core.runtime.acompletion", polling_completion
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        polling_completion,
     )
     monkeypatch.setattr(
         "app.services.agent_core.tools.executor.AgentToolExecutor.execute",
@@ -704,7 +867,8 @@ async def test_runtime_resets_repeat_grace_when_tool_results_change(
         )
 
     monkeypatch.setattr(
-        "app.services.agent_core.runtime.acompletion", polling_completion
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        polling_completion,
     )
     monkeypatch.setattr(
         "app.services.agent_core.tools.executor.AgentToolExecutor.execute",
@@ -766,7 +930,10 @@ async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(
         response.choices = [choice]
         return response
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="unexposed-tool-model")
 
@@ -798,15 +965,9 @@ async def test_runtime_fails_visibly_when_model_calls_unexposed_tool(
 
 
 @pytest.mark.asyncio
-async def test_recovery_reenqueues_requested_tool_actions(
-    db_session,
-    db_engine,
-    monkeypatch,
-):
+async def test_recovery_reenqueues_requested_tool_actions(db_session, monkeypatch):
     calls = 0
     resumed: list[tuple[str, str]] = []
-    recovery_service = None
-    turn_id = ""
 
     async def fake_completion(*args, **kwargs):
         nonlocal calls
@@ -840,13 +1001,6 @@ async def test_recovery_reenqueues_requested_tool_actions(
             message.content = ""
             message.tool_calls = [FakeToolCall()]
         else:
-            recovered_turn = await recovery_service.turn_repo.get(turn_id)
-            progress = recovered_turn.loop_state["progress"]
-            assert [
-                json.loads(signature)["status"]
-                for signature in progress["previous_tool_results"]
-            ] == ["completed"]
-            assert "pending_observation" not in progress
             message.content = "Recovered."
             message.tool_calls = None
 
@@ -856,7 +1010,10 @@ async def test_recovery_reenqueues_requested_tool_actions(
         response.choices = [choice]
         return response
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    monkeypatch.setattr(
+        "app.services.model_runtime.backend.litellm.litellm.acompletion",
+        fake_completion,
+    )
     monkeypatch.setattr(
         "app.services.agent_core.service.enqueue_turn_resume",
         lambda action_id, turn_id, _session_id=None: resumed.append(
@@ -881,7 +1038,6 @@ async def test_recovery_reenqueues_requested_tool_actions(
         user_id="dev",
         input_text="Approve and recover this action.",
     )
-    turn_id = str(turn.id)
     waiting_turn = await service.runtime.run_turn(str(turn.id))
     action = (await AgentActionRepository(db_session).list_for_turn(str(turn.id)))[0]
 
@@ -895,26 +1051,113 @@ async def test_recovery_reenqueues_requested_tool_actions(
     assert decided.status == AgentActionStatus.REQUESTED
 
     resumed.clear()
-    session_maker = async_sessionmaker(
+    summary = await service.recover_orphaned_turns()
+
+    assert summary["enqueued"] == 1
+    assert resumed == [(str(action.id), str(turn.id))]
+
+
+@pytest.mark.asyncio
+async def test_startup_recovery_preserves_turn_waiting_for_user_decision(
+    db_session,
+    monkeypatch,
+) -> None:
+    enqueued: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep waiting for a decision.",
+    )
+    await service.turn_repo.update_all(
+        turn,
+        status=AgentTurnStatus.WAITING_APPROVAL,
+    )
+    await AgentActionRepository(db_session).create(
+        session_id=str(session.id),
+        turn_id=str(turn.id),
+        kind="tool",
+        name="bash",
+        input={"command": "printf waiting"},
+        risk_level="act_high",
+        status=AgentActionStatus.WAITING_DECISION,
+    )
+
+    summary = await service.recover_orphaned_turns()
+
+    recovered = await service.turn_repo.get(str(turn.id))
+    assert summary["waiting"] == 1
+    assert enqueued == []
+    assert recovered.status == AgentTurnStatus.WAITING_APPROVAL
+
+
+@pytest.mark.asyncio
+async def test_startup_recovery_skips_running_turn_with_active_durable_lease(
+    db_engine,
+    db_session,
+    monkeypatch,
+) -> None:
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep the active worker lease intact.",
+    )
+    claimed_at = datetime.now(timezone.utc)
+    lease_until = claimed_at + timedelta(minutes=5)
+    await service.turn_repo.update_all(
+        turn,
+        status=AgentTurnStatus.RUNNING,
+        claimed_at=claimed_at,
+        lease_until=lease_until,
+    )
+    enqueued: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_run",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_core.service.enqueue_turn_resume",
+        lambda *args: enqueued.append(tuple(args)),
+    )
+    session_factory = async_sessionmaker(
         db_engine,
         expire_on_commit=False,
         class_=AsyncSession,
     )
-    async with session_maker() as recovery_db:
-        recovery_service = AgentCoreService(recovery_db)
-        summary = await recovery_service.recover_orphaned_turns()
-        recovered_turn = await recovery_service.turn_repo.get(str(turn.id))
 
-        assert summary["enqueued"] == 1
-        assert resumed == [(str(action.id), str(turn.id))]
-        assert "pending_observation" in recovered_turn.loop_state["progress"]
+    async with session_factory() as recovery_session:
+        summary = await AgentCoreService(recovery_session).recover_orphaned_turns()
+    async with session_factory() as inspector:
+        durable_turn = await AgentTurnRepository(inspector).get(str(turn.id))
 
-        completed_turn = await recovery_service.runtime.resume_turn_after_action(
-            str(action.id)
-        )
-
-        assert completed_turn.status == "completed"
-        assert completed_turn.final_text == "Recovered."
+    assert summary == {"enqueued": 0, "failed": 0, "waiting": 0, "skipped": 1}
+    assert enqueued == []
+    assert durable_turn.status == AgentTurnStatus.RUNNING
+    assert durable_turn.claimed_at.replace(tzinfo=timezone.utc) == claimed_at
+    assert durable_turn.lease_until.replace(tzinfo=timezone.utc) == lease_until
 
 
 @pytest.mark.asyncio

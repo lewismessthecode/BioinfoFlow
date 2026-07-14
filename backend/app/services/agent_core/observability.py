@@ -28,6 +28,20 @@ def agent_event_log_fields(
     error_message = payload.get("error_message")
     if isinstance(error_message, str) and error_message:
         fields["error_message"] = truncate_log_value(error_message)
+    model_error = payload.get("model_error")
+    if isinstance(model_error, dict):
+        fields["model_error"] = {
+            key: model_error.get(key)
+            for key in (
+                "category",
+                "http_status",
+                "provider_code",
+                "request_id",
+                "retryable",
+                "replay_safe",
+            )
+            if model_error.get(key) is not None
+        }
     return fields
 
 

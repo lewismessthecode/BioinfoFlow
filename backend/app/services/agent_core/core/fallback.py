@@ -30,4 +30,5 @@ def should_try_fallback(result: LoopResult) -> bool:
     return (
         result.termination_reason == "model_failed"
         and result.error_code in FALLBACK_ELIGIBLE_ERROR_CODES
+        and result.model_replay_safe
     )

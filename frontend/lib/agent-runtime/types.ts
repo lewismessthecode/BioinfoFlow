@@ -1,5 +1,11 @@
 export type AgentPermissionMode = "ask_each_action" | "guarded_auto" | "bypass"
 export type AgentAutomationMode = "advise_only" | "assisted" | "autonomous"
+export type AgentPendingStrategy = "future_only" | "approve_pending_tools"
+export type AgentPendingReconciliation = {
+  affected_count: number
+  excluded_count: number
+  already_resolved_count: number
+}
 export type AgentMode = "plan" | "execution"
 export type AgentActionDecision = "approve" | "reject" | "answer"
 export type AgentSessionStatus = "active" | "archived" | "deleted"
@@ -62,6 +68,7 @@ export type AgentRuntimeSession = {
   role_profile: string
   permission_mode: AgentPermissionMode
   automation_mode: AgentAutomationMode
+  permission_policy_version?: number
   default_model_profile_id?: string | null
   runtime_mode: string
   prompt_snapshot?: Record<string, unknown> | null
@@ -73,6 +80,8 @@ export type AgentRuntimeSession = {
   execution_target?: AgentExecutionTarget | null
   token_usage_summary?: AgentTokenUsageSummary | null
   status: AgentSessionStatus
+  pending_strategy?: AgentPendingStrategy | null
+  pending_reconciliation?: AgentPendingReconciliation | null
   metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
@@ -414,10 +423,18 @@ export type AgentWaitingDecision = {
   toolCallId?: string | null
   inputPreview?: string | null
   answer?: AgentAnswer | null
+  target?: AgentDecisionTarget | null
   interaction?:
     | { kind: "user_input"; questions: AgentAskUserQuestion[] }
     | { kind: "plan_approval"; plan: string }
     | null
+}
+
+export type AgentDecisionTarget = {
+  kind: AgentExecutionTargetKind | "container"
+  trustDomain?: string | null
+  identity?: string | null
+  connectionId?: string | null
 }
 
 export type AgentAnswer = Record<string, string | string[]>

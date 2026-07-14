@@ -84,8 +84,9 @@ class TaskTool:
             },
             lineage={"parent_session_id": context.session_id, "parent_turn_id": context.turn_id},
         )
-        child_session = await service.session_repo.update_all(
+        child_session = await service.session_repo.update_with_policy_version(
             child_session,
+            increment_policy_version=True,
             toolset_policy={"name": "default"},
         )
         child_turn = await service.create_turn_record(

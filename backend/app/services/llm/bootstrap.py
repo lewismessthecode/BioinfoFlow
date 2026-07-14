@@ -12,6 +12,7 @@ from app.repositories.llm_repo import (
     LlmProviderCredentialRepository,
     LlmProviderRepository,
 )
+from app.services.llm.access_policy import resolve_provider_network_access
 from app.services.llm.catalog import LlmCatalogService
 from app.services.llm.provider_templates import (
     ModelTemplate,
@@ -45,11 +46,20 @@ async def sync_environment_llm_catalog(
         env_api_key_var = _first_present_env_var(template.env_api_key_vars)
         env_base_url_var = _first_present_env_var(template.env_base_url_vars)
         env_model = _first_present_env_value(template.env_model_vars)
-        should_sync = bool(env_api_key_var or env_base_url_var or env_model)
+        env_wire_protocol = _first_present_env_value(
+            template.env_wire_protocol_vars
+        )
+        should_sync = bool(
+            env_api_key_var or env_base_url_var or env_model or env_wire_protocol
+        )
         if template.id in {"vllm", "openai-compatible"}:
             should_sync = bool(env_base_url_var or env_model)
         if not should_sync:
             continue
+
+        wire_protocol = template.validate_wire_protocol(
+            env_wire_protocol or template.default_wire_protocol
+        )
 
         base_url = None
         if env_base_url_var:
@@ -71,6 +81,7 @@ async def sync_environment_llm_catalog(
             provider = await provider_repo.create(
                 name=name,
                 kind=template.kind,
+                wire_protocol=wire_protocol,
                 base_url=base_url,
                 api_key_ref=None,
                 scope="global",
@@ -85,6 +96,7 @@ async def sync_environment_llm_catalog(
                 provider,
                 name=name,
                 kind=template.kind,
+                wire_protocol=wire_protocol,
                 base_url=base_url,
                 enabled=True,
                 provider_metadata=metadata,
@@ -166,8 +178,14 @@ async def sync_environment_llm_catalog(
         # on demand from the settings UI ("Refresh models"). A short timeout
         # keeps an unreachable endpoint from stalling startup.
         try:
+            network_access = await resolve_provider_network_access(
+                provider.base_url,
+                private_endpoint_authorized=True,
+            )
             await catalog_service.discover_models_unchecked(
-                provider, timeout=_BOOTSTRAP_DISCOVERY_TIMEOUT
+                provider,
+                timeout=_BOOTSTRAP_DISCOVERY_TIMEOUT,
+                network_access=network_access,
             )
         except Exception as exc:  # noqa: BLE001 - resilience over precision
             logger.warning(

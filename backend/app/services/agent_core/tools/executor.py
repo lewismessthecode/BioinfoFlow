@@ -1,26 +1,31 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
 
-import app.database as app_database
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.models.agent_core import AgentActionStatus, AgentTurnStatus
+from app.models.agent_core import AgentActionStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
-    AgentSessionRepository,
-    AgentTurnRepository,
+    AgentArtifactRepository,
 )
 from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.events import AgentEventType
-from app.services.agent_core.execution_target import execution_target_from_session
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
+from app.services.agent_core.ownership import TurnOwnershipLostError
+from app.services.agent_core.permissions.context import (
+    PermissionContext,
+    PermissionContextResolver,
+)
+from app.services.agent_core.permissions.risk import RiskAssessment
+from app.services.agent_core.permissions.command_risk import (
+    CommandRiskAssessment,
+    command_target_profile_from_context,
+)
 from app.services.agent_core.tools.approval import action_requires_resume
 from app.services.agent_core.tools.middleware import (
     normalize_tool_input,
@@ -31,10 +36,6 @@ from app.services.agent_core.tools.result_budget import normalize_tool_result
 from app.services.agent_core.tools.specs import AgentTool, AgentToolContext
 from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.utils.exceptions import BadRequestError, ConflictError, PermissionDeniedError
-
-
-class _DurableActionCancelled(Exception):
-    pass
 
 
 def _artifact_descriptor(
@@ -54,7 +55,11 @@ def _artifact_descriptor(
 
     if artifact_type == "todo_list":
         todos = result.get("todos") if isinstance(result.get("todos"), list) else []
-        completed = sum(1 for todo in todos if isinstance(todo, dict) and todo.get("status") == "completed")
+        completed = sum(
+            1
+            for todo in todos
+            if isinstance(todo, dict) and todo.get("status") == "completed"
+        )
         return {
             "type": "todo_list",
             "title": "Tasks",
@@ -83,7 +88,11 @@ def _artifact_descriptor(
         }
 
     if artifact_type in {"project", "workflow", "run", "image"}:
-        inner = result.get(artifact_type) if isinstance(result.get(artifact_type), dict) else result
+        inner = (
+            result.get(artifact_type)
+            if isinstance(result.get(artifact_type), dict)
+            else result
+        )
         title = (
             inner.get("name")
             or inner.get("full_name")
@@ -104,7 +113,8 @@ def _artifact_descriptor(
     if isinstance(result.get("result"), dict):
         command_result = result["result"]
     if (
-        artifact_type in {"command", "remote_command", "remote_file", "remote_directory"}
+        artifact_type
+        in {"command", "remote_command", "remote_file", "remote_directory"}
         or policy.get("stdout")
         or policy.get("stderr")
     ) and any(key in command_result for key in ("stdout", "stderr", "exit_code")):
@@ -112,7 +122,11 @@ def _artifact_descriptor(
     return None
 
 
-def _resolve_requested_risk(tool: AgentTool, normalized_input: dict[str, Any]):
+def _resolve_requested_risk(
+    tool: AgentTool,
+    normalized_input: dict[str, Any],
+    permission_context: PermissionContext,
+):
     """Let a tool dynamically raise its requested risk from its input.
 
     Most tools declare a static ``risk_level``. The ``bash`` tool overrides
@@ -122,16 +136,55 @@ def _resolve_requested_risk(tool: AgentTool, normalized_input: dict[str, Any]):
     """
     assess = getattr(tool, "assess_risk", None)
     if assess is not None:
-        dynamic = assess(normalized_input or {})
+        dynamic = assess(
+            normalized_input or {},
+            target=command_target_profile_from_context(
+                permission_context,
+                action_input=normalized_input,
+            ),
+        )
         if dynamic is not None:
             return dynamic
     return tool.spec.risk_level
 
 
-def _tool_role(session) -> str:
-    if session is not None and str(getattr(session, "role_profile", "")) == "worker":
-        return "worker"
-    return "orchestrator"
+def _produce_risk_assessment(
+    *,
+    tool: AgentTool,
+    action_input: dict[str, Any],
+    action_service: AgentActionService,
+    permission_context: PermissionContext,
+) -> RiskAssessment:
+    requested = _resolve_requested_risk(tool, action_input, permission_context)
+    if isinstance(requested, RiskAssessment):
+        return requested
+    return action_service.risk_engine.assess(
+        kind="tool",
+        name=tool.spec.name,
+        requested_level=requested,
+        input=action_input,
+    )
+
+
+def _snapshot_with_command_risk(
+    snapshot: dict[str, Any], risk: RiskAssessment
+) -> dict[str, Any]:
+    if not isinstance(risk, CommandRiskAssessment):
+        return snapshot
+    return {**snapshot, "command_risk": risk.audit_snapshot()}
+
+
+def _has_explicit_user_approval(permission_decision: dict[str, Any]) -> bool:
+    if permission_decision.get("decision") not in {"approve", "modify", "answer"}:
+        return False
+    # Historical user decisions predate the source field. Policy-produced
+    # decisions use ``allow``/``ask``/``deny``, so a legacy approve remains a
+    # safe, unambiguous compatibility case.
+    return permission_decision.get("source") in {
+        None,
+        "user",
+        "user_pending_strategy",
+    }
 
 
 @dataclass(frozen=True)
@@ -151,6 +204,7 @@ class AgentToolExecutor:
         self.exposure = ToolsetExposure(registry)
         self.action_service = AgentActionService(session)
         self.action_repo = AgentActionRepository(session)
+        self.artifact_repo = AgentArtifactRepository(session)
         self.ledger = AgentEventLedger(session)
 
     async def execute(
@@ -163,22 +217,25 @@ class AgentToolExecutor:
         permission_mode: str = "guarded_auto",
         automation_mode: str = "assisted",
         tool_call_id: str | None = None,
+        tool_batch_id: str | None = None,
+        tool_call_ordinal: int | None = None,
+        defer_execution: bool = False,
+        commit_action: bool = True,
         role: str = "orchestrator",
         execution_target: dict | str | None = None,
-        expected_execution_target: dict | str | None = None,
     ) -> ToolExecutionResult:
         tool = self.registry.get(tool_name)
-        session = await self._session_for_context(context)
-        if session is not None:
-            current_execution_target = execution_target_from_session(session)
-            if (
-                expected_execution_target is not None
-                and current_execution_target != expected_execution_target
-            ):
-                raise PermissionDeniedError(
-                    "Session execution target changed before tool execution"
-                )
-            execution_target = current_execution_target
+        permission_context = await PermissionContextResolver(self.session).resolve(
+            session_id=context.session_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
+        permission_snapshot = permission_context.snapshot()
+        toolset_policy = permission_snapshot["toolset_policy"]
+        permission_mode = permission_context.permission_mode
+        automation_mode = permission_context.automation_mode
+        role = permission_context.role
+        execution_target = permission_snapshot["execution_target"]
         exposure = self.exposure.decide(
             tool_name=tool_name,
             policy=toolset_policy,
@@ -197,9 +254,28 @@ class AgentToolExecutor:
                 exposure_policy=exposure.policy,
                 automation_mode=automation_mode,
                 tool_call_id=tool_call_id,
+                tool_batch_id=tool_batch_id,
+                tool_call_ordinal=tool_call_ordinal,
+                permission_context=permission_context,
                 exc=exc,
+                commit=commit_action,
             )
-        requested_risk = _resolve_requested_risk(tool, normalized_input)
+        requested_risk = _resolve_requested_risk(
+            tool,
+            normalized_input,
+            permission_context,
+        )
+        permission_snapshot = _snapshot_with_command_risk(
+            permission_snapshot,
+            requested_risk
+            if isinstance(requested_risk, RiskAssessment)
+            else self.action_service.risk_engine.assess(
+                kind="tool",
+                name=tool.spec.name,
+                requested_level=requested_risk,
+                input=normalized_input,
+            ),
+        )
 
         action = await self.action_service.request_action(
             turn_id=context.turn_id,
@@ -215,16 +291,32 @@ class AgentToolExecutor:
             rollback_hint=tool.spec.rollback_hint,
             artifact_policy=tool.spec.artifact_policy,
             tool_call_id=tool_call_id,
-            exposure_policy={
-                **exposure.policy,
-                "execution_target": execution_target,
-            },
+            tool_batch_id=tool_batch_id,
+            tool_call_ordinal=tool_call_ordinal,
+            exposure_policy=exposure.policy,
             force_ask=tool.spec.interaction is not None,
             interaction=tool.spec.interaction,
-            expected_turn_claimed_at=context.turn_claimed_at,
+            evaluated_policy_version=permission_context.policy_version,
+            permission_context_snapshot=permission_snapshot,
+            commit=commit_action,
+            expected_owner_token=context.expected_owner_token,
         )
         if action_requires_resume(action.status):
-            action = await self.action_repo.update_all(action, requires_resume=True)
+            if context.expected_owner_token is not None and commit_action:
+                action, owned = await self.action_repo.update_all_owned(
+                    action,
+                    expected_owner_token=context.expected_owner_token,
+                    requires_resume=True,
+                )
+                if not owned or action is None:
+                    raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            else:
+                update = (
+                    self.action_repo.update_all
+                    if commit_action
+                    else self.action_repo.update_all_pending
+                )
+                action = await update(action, requires_resume=True)
             return ToolExecutionResult(
                 action_id=str(action.id),
                 status=action.status,
@@ -232,6 +324,14 @@ class AgentToolExecutor:
                 requires_resume=True,
             )
         if action.status != AgentActionStatus.REQUESTED:
+            return ToolExecutionResult(
+                action_id=str(action.id),
+                status=action.status,
+                permission_decision=action.permission_decision,
+                requires_resume=False,
+            )
+
+        if defer_execution:
             return ToolExecutionResult(
                 action_id=str(action.id),
                 status=action.status,
@@ -250,7 +350,11 @@ class AgentToolExecutor:
         exposure_policy: dict | None,
         automation_mode: str,
         tool_call_id: str | None,
+        tool_batch_id: str | None,
+        tool_call_ordinal: int | None,
+        permission_context: PermissionContext,
         exc: BadRequestError,
+        commit: bool,
     ) -> ToolExecutionResult:
         action_input = input if isinstance(input, dict) else {"_raw_input": input}
         error = {"type": exc.__class__.__name__, "message": str(exc)}
@@ -268,151 +372,178 @@ class AgentToolExecutor:
             rollback_hint=tool.spec.rollback_hint,
             artifact_policy=tool.spec.artifact_policy,
             tool_call_id=tool_call_id,
+            tool_batch_id=tool_batch_id,
+            tool_call_ordinal=tool_call_ordinal,
             exposure_policy=exposure_policy,
             force_ask=False,
             interaction=None,
-            expected_turn_claimed_at=context.turn_claimed_at,
+            evaluated_policy_version=permission_context.policy_version,
+            permission_context_snapshot=permission_context.snapshot(),
+            commit=commit,
+            expected_owner_token=context.expected_owner_token,
         )
-        updated = await self.action_repo.transition_if_status(
+        failed = await self.action_repo.fail_requested(
             str(action.id),
-            expected_statuses=[AgentActionStatus.REQUESTED],
-            status=AgentActionStatus.FAILED,
             error=error,
             completed_at=datetime.now(timezone.utc),
+            expected_turn_owner_token=context.expected_owner_token,
         )
-        if updated is None:
-            return await self._current_action_result(str(action.id))
-        action = updated
+        if failed is None:
+            await self.session.rollback()
+            if context.expected_owner_token is not None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            return await self._current_result(str(action.id), fallback=action)
+        action = failed
         await self.ledger.append(
             session_id=str(action.session_id),
             turn_id=str(action.turn_id),
             type=AgentEventType.ACTION_FAILED,
             payload={"action_id": str(action.id), "error": error},
+            commit=commit,
+            expected_owner_token=context.expected_owner_token,
+            owner_fenced=not commit,
         )
         agent_metrics.increment("tools.failed")
-        return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
+        return ToolExecutionResult(
+            action_id=str(action.id), status=action.status, error=error
+        )
 
     async def resume_action(
         self,
         *,
         action_id: str,
         context: AgentToolContext,
+        require_resume_marker: bool = True,
     ) -> ToolExecutionResult:
         action = await self.action_repo.get(action_id)
         if action is None:
             raise PermissionDeniedError("Agent action is not accessible")
-        if str(action.session_id) != context.session_id or str(action.turn_id) != context.turn_id:
-            raise PermissionDeniedError("Agent action is outside the current agent context")
+        if (
+            str(action.session_id) != context.session_id
+            or str(action.turn_id) != context.turn_id
+        ):
+            raise PermissionDeniedError(
+                "Agent action is outside the current agent context"
+            )
         if action.kind != "tool":
             raise ConflictError("Only tool actions can be resumed")
         if action.status != AgentActionStatus.REQUESTED:
-            raise ConflictError(f"Agent action cannot be resumed from status: {action.status}")
+            return ToolExecutionResult(
+                action_id=str(action.id),
+                status=action.status,
+                result=action.result,
+                permission_decision=action.permission_decision,
+                error=action.error,
+            )
+        if require_resume_marker and not action.requires_resume:
+            raise ConflictError("Tool action is not awaiting resume")
 
         decision = action.permission_decision or {}
         if decision.get("decision") not in {"allow", "approve", "modify", "answer"}:
             raise PermissionDeniedError("Agent action has not been approved")
         tool = self.registry.get(action.name)
-        session = await self._session_for_context(context)
-        current_execution_target = (
-            execution_target_from_session(session) if session is not None else None
-        )
-        approved_execution_target = (action.exposure_policy or {}).get(
-            "execution_target"
-        )
-        if (
-            approved_execution_target is None
-            or current_execution_target != approved_execution_target
-        ):
-            return await self._record_permission_failure(
-                action=action,
-                error_type="ExecutionTargetMismatch",
-                error_message=(
-                    "Approved action execution target no longer matches the current "
-                    f"session target: approved={approved_execution_target!r}, "
-                    f"current={current_execution_target!r}"
-                ),
-            )
-        exposure = self.exposure.decide(
-            tool_name=tool.spec.name,
-            policy=(
-                getattr(session, "toolset_policy", None)
-                if session is not None
-                else action.exposure_policy
-            ),
-            role=_tool_role(session),
-            execution_target=(
-                execution_target_from_session(session) if session is not None else None
-            ),
-        )
-        if not exposure.allowed:
-            return await self._record_permission_failure(
-                action=action,
-                error_message="; ".join(exposure.reasons),
-            )
         return await self._run_action(action=action, tool=tool, context=context)
 
-    async def _session_for_context(self, context: AgentToolContext):
-        session_id = getattr(context, "session_id", None)
-        if not session_id:
-            return None
-        try:
-            UUID(str(session_id))
-        except (TypeError, ValueError):
-            return None
-        session = await AgentSessionRepository(self.session).get_fresh(str(session_id))
-        if session is None:
-            return None
-        if (
-            str(session.workspace_id) != str(context.workspace_id)
-            or str(session.user_id) != str(context.user_id)
-        ):
-            return None
-        return session
+    async def cancel_action(
+        self,
+        *,
+        action_id: str,
+        reason: str,
+        expected_turn_owner_token: str | None = None,
+    ) -> ToolExecutionResult:
+        action = await self.action_repo.get(action_id)
+        if action is None:
+            raise ConflictError("Tool action does not exist")
+        error = {"type": "InteractionExclusive", "message": reason}
+        cancelled = await self.action_repo.cancel_open(
+            action_id,
+            error=error,
+            completed_at=datetime.now(timezone.utc),
+            expected_turn_owner_token=expected_turn_owner_token,
+        )
+        if cancelled is None:
+            await self.session.rollback()
+            return await self._current_result(action_id, fallback=action)
+        action = cancelled
+        await self.ledger.append(
+            session_id=str(action.session_id),
+            turn_id=str(action.turn_id),
+            type=AgentEventType.ACTION_CANCELLED,
+            payload={
+                "action_id": str(action.id),
+                "tool": action.name,
+                "reason": reason,
+            },
+            expected_owner_token=expected_turn_owner_token,
+            owner_fenced=expected_turn_owner_token is not None,
+        )
+        return ToolExecutionResult(
+            action_id=str(action.id), status=action.status, error=error
+        )
 
-    async def _record_permission_failure(
+    async def _fail_requested_permission(
         self,
         *,
         action,
         error_message: str,
-        error_type: str = "PermissionDeniedError",
+        risk: RiskAssessment | None = None,
+        permission_decision: dict[str, Any] | None = None,
+        evaluated_policy_version: int | None = None,
+        permission_context_snapshot: dict[str, Any] | None = None,
+        expected_turn_owner_token: str | None = None,
     ) -> ToolExecutionResult:
-        error = {"type": error_type, "message": error_message}
-        updated = await self.action_repo.transition_if_status(
+        error = {"type": "PermissionDeniedError", "message": error_message}
+        failed = await self.action_repo.fail_requested(
             str(action.id),
-            expected_statuses=[AgentActionStatus.REQUESTED],
-            status=AgentActionStatus.FAILED,
             error=error,
             completed_at=datetime.now(timezone.utc),
-            requires_resume=False,
+            risk_level=risk.level if risk is not None else None,
+            risk_reasons=risk.reasons if risk is not None else None,
+            affected_resources=risk.affected_resources if risk is not None else None,
+            permission_decision=permission_decision,
+            evaluated_policy_version=evaluated_policy_version,
+            permission_context_snapshot=permission_context_snapshot,
+            expected_turn_owner_token=expected_turn_owner_token,
         )
-        if updated is None:
-            return await self._current_action_result(str(action.id))
-        action = updated
+        if failed is None:
+            await self.session.rollback()
+            if expected_turn_owner_token is not None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+            return await self._current_result(str(action.id), fallback=action)
         await self.ledger.append(
-            session_id=str(action.session_id),
-            turn_id=str(action.turn_id),
+            session_id=str(failed.session_id),
+            turn_id=str(failed.turn_id),
             type=AgentEventType.ACTION_FAILED,
-            payload={"action_id": str(action.id), "error": error},
+            payload={"action_id": str(failed.id), "error": error},
+            commit=False,
+            expected_owner_token=expected_turn_owner_token,
+            owner_fenced=expected_turn_owner_token is not None,
         )
+        await self.session.commit()
         agent_metrics.increment("tools.failed")
         return ToolExecutionResult(
-            action_id=str(action.id),
-            status=action.status,
+            action_id=str(failed.id),
+            status=failed.status,
             error=error,
         )
 
-    async def _current_action_result(self, action_id: str) -> ToolExecutionResult:
-        current = await self.action_repo.get(action_id)
-        if current is None:
-            raise ConflictError("Agent action disappeared during execution")
-        await self.session.refresh(current)
+    async def _current_result(self, action_id: str, *, fallback) -> ToolExecutionResult:
+        current = await self.action_repo.get_fresh(action_id)
         return ToolExecutionResult(
-            action_id=str(current.id),
-            status=current.status,
-            result=current.result,
-            permission_decision=current.permission_decision,
-            error=current.error,
-            requires_resume=bool(current.requires_resume),
+            action_id=str(current.id) if current is not None else action_id,
+            status=current.status if current is not None else fallback.status,
+            result=current.result if current is not None else fallback.result,
+            permission_decision=(
+                current.permission_decision
+                if current is not None
+                else fallback.permission_decision
+            ),
+            error=current.error if current is not None else fallback.error,
+            requires_resume=(
+                bool(current.requires_resume)
+                if current is not None
+                else bool(fallback.requires_resume)
+            ),
         )
 
     async def _run_action(
@@ -421,172 +552,343 @@ class AgentToolExecutor:
         action,
         tool: AgentTool,
         context: AgentToolContext,
+        policy_recheck_attempt: int = 0,
     ) -> ToolExecutionResult:
-        claimed = await self.action_repo.claim_requested(
-            str(action.id),
-            started_at=datetime.now(timezone.utc),
-            turn_id=context.turn_id,
-            expected_turn_claimed_at=context.turn_claimed_at,
-        )
-        if claimed is None:
-            current = await self.action_repo.get(str(action.id))
-            if current is None:
-                raise ConflictError("Agent action disappeared before execution")
-            await self.session.refresh(current)
-            if (
-                current.status == AgentActionStatus.REQUESTED
-                and context.turn_claimed_at is not None
-            ):
-                cancelled = await self.action_repo.transition_if_status(
-                    str(current.id),
-                    expected_statuses=[AgentActionStatus.REQUESTED],
-                    status=AgentActionStatus.CANCELLED,
-                    error={
-                        "type": "TurnOwnershipLost",
-                        "message": "The parent turn stopped before tool execution.",
-                    },
-                    completed_at=datetime.now(timezone.utc),
-                )
-                if cancelled is not None:
-                    current = cancelled
-            return ToolExecutionResult(
-                action_id=str(current.id),
-                status=current.status,
-                result=current.result,
-                permission_decision=current.permission_decision,
-                error={
-                    "type": "ActionAlreadyClaimed",
-                    "message": "Another worker already claimed this approved action.",
-                },
-                requires_resume=bool(current.requires_resume),
-            )
-        action = claimed
         action_id = str(action.id)
-        if context.turn_claimed_at is not None:
-            current_turn = await AgentTurnRepository(self.session).get_fresh(
-                context.turn_id
-            )
-            if current_turn is None or (
-                current_turn.status != AgentTurnStatus.RUNNING
-                or current_turn.claimed_at != context.turn_claimed_at
-            ):
-                cancelled = await self.action_repo.transition_if_status(
-                    str(action.id),
-                    expected_statuses=[AgentActionStatus.RUNNING],
-                    status=AgentActionStatus.CANCELLED,
-                    turn_id=context.turn_id,
-                    expected_turn_claimed_at=context.turn_claimed_at,
-                    error={
-                        "type": "TurnOwnershipLost",
-                        "message": "The parent turn stopped before tool execution.",
-                    },
-                    completed_at=datetime.now(timezone.utc),
-                )
-                if cancelled is not None:
-                    action = cancelled
-                return ToolExecutionResult(
-                    action_id=str(action.id),
-                    status=action.status,
-                    error=action.error,
-                )
-        try:
-            raw_result = await self._run_tool_with_cancellation(
+        action = await self.action_repo.get_fresh(action_id)
+        if action is None:
+            raise PermissionDeniedError("Agent action is not accessible")
+        if action.status != AgentActionStatus.REQUESTED:
+            await self.session.rollback()
+            return await self._current_result(action_id, fallback=action)
+
+        permission_context = await PermissionContextResolver(self.session).resolve(
+            session_id=context.session_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
+        snapshot = permission_context.snapshot()
+        exposure = self.exposure.decide(
+            tool_name=tool.spec.name,
+            policy=snapshot["toolset_policy"],
+            role=permission_context.role,
+            execution_target=snapshot["execution_target"],
+        )
+        if not exposure.allowed:
+            return await self._fail_requested_permission(
                 action=action,
-                tool=tool,
-                context=context,
+                error_message="; ".join(exposure.reasons),
+                expected_turn_owner_token=context.expected_owner_token,
             )
+
+        current_risk = _produce_risk_assessment(
+            tool=tool,
+            action_input=action.normalized_input or action.input or {},
+            action_service=self.action_service,
+            permission_context=permission_context,
+        )
+        snapshot = _snapshot_with_command_risk(snapshot, current_risk)
+        fresh_decision = self.action_service.permission_policy.decide(
+            risk=current_risk,
+            permission_mode=permission_context.permission_mode,
+            automation_mode=permission_context.automation_mode,
+        )
+        previous_decision = action.permission_decision or {}
+        explicitly_approved = _has_explicit_user_approval(previous_decision)
+        hard_denied = (
+            fresh_decision.decision == "deny"
+            or current_risk.level == "critical"
+            or getattr(current_risk, "hard_blocked", False)
+            or previous_decision.get("hard_blocked") is True
+            or previous_decision.get("protected_resource_recheck") == "deny"
+        )
+        if hard_denied:
+            denied_decision = {
+                **fresh_decision.as_dict(),
+                "source": "policy_recheck",
+                "evaluated_policy_version": permission_context.policy_version,
+                "requires_explicit_approval": current_risk.requires_explicit_approval,
+                "hard_blocked": True,
+            }
+            return await self._fail_requested_permission(
+                action=action,
+                error_message="Action is hard-blocked by the current safety floor.",
+                risk=current_risk,
+                permission_decision=denied_decision,
+                evaluated_policy_version=permission_context.policy_version,
+                permission_context_snapshot=snapshot,
+                expected_turn_owner_token=context.expected_owner_token,
+            )
+
+        requires_approval = (
+            fresh_decision.decision == "ask" or current_risk.requires_explicit_approval
+        )
+        if requires_approval and not explicitly_approved:
+            permission_decision = {
+                **fresh_decision.as_dict(),
+                "source": "policy_recheck",
+                "evaluated_policy_version": permission_context.policy_version,
+                "requires_explicit_approval": (current_risk.requires_explicit_approval),
+            }
+            waiting = await self.action_repo.defer_requested_for_approval(
+                action_id,
+                risk_level=current_risk.level,
+                risk_reasons=current_risk.reasons,
+                affected_resources=current_risk.affected_resources,
+                permission_decision=permission_decision,
+                evaluated_policy_version=permission_context.policy_version,
+                permission_context_snapshot=snapshot,
+                expected_turn_owner_token=context.expected_owner_token,
+            )
+            if waiting is None:
+                await self.session.rollback()
+                return await self._current_result(action_id, fallback=action)
+            await self.ledger.append(
+                session_id=str(waiting.session_id),
+                turn_id=str(waiting.turn_id),
+                type=AgentEventType.ACTION_WAITING_DECISION,
+                payload={
+                    "action_id": str(waiting.id),
+                    "name": waiting.name,
+                    "kind": waiting.kind,
+                    "risk_level": current_risk.level,
+                    "tool_call_id": waiting.tool_call_id,
+                    "input_preview": waiting.input_preview,
+                    "evaluated_policy_version": permission_context.policy_version,
+                    "recheck": True,
+                },
+                commit=False,
+                expected_owner_token=context.expected_owner_token,
+                owner_fenced=context.expected_owner_token is not None,
+            )
+            await self.session.commit()
+            return ToolExecutionResult(
+                action_id=str(waiting.id),
+                status=waiting.status,
+                permission_decision=permission_decision,
+                requires_resume=True,
+            )
+
+        permission_decision = (
+            {
+                **previous_decision,
+                "rechecked_policy_version": permission_context.policy_version,
+                "recheck_decision": fresh_decision.as_dict(),
+                "requires_explicit_approval": (current_risk.requires_explicit_approval),
+            }
+            if explicitly_approved
+            else {
+                **fresh_decision.as_dict(),
+                "source": "policy_recheck",
+                "evaluated_policy_version": permission_context.policy_version,
+                "requires_explicit_approval": (current_risk.requires_explicit_approval),
+            }
+        )
+        requested_action = action
+        action = await self.action_repo.claim_requested(
+            action_id,
+            started_at=datetime.now(timezone.utc),
+            risk_level=current_risk.level,
+            risk_reasons=current_risk.reasons,
+            affected_resources=current_risk.affected_resources,
+            permission_decision=permission_decision,
+            evaluated_policy_version=permission_context.policy_version,
+            permission_context_snapshot=snapshot,
+            expected_policy_version=permission_context.policy_version,
+            expected_turn_owner_token=context.expected_owner_token,
+        )
+        if action is None:
+            await self.session.rollback()
+            current = await self.action_repo.get_fresh(action_id)
+            if (
+                current is not None
+                and current.status == AgentActionStatus.REQUESTED
+                and policy_recheck_attempt < 3
+            ):
+                return await self._run_action(
+                    action=current,
+                    tool=tool,
+                    context=context,
+                    policy_recheck_attempt=policy_recheck_attempt + 1,
+                )
+            if current is not None and current.status == AgentActionStatus.REQUESTED:
+                return await self._fail_requested_permission(
+                    action=current,
+                    error_message=(
+                        "Permission policy changed repeatedly before the action "
+                        "could be claimed."
+                    ),
+                    expected_turn_owner_token=context.expected_owner_token,
+                )
+            if current is not None and current.status == AgentActionStatus.RUNNING:
+                return ToolExecutionResult(
+                    action_id=action_id,
+                    status=AgentActionStatus.FAILED,
+                    error={
+                        "type": "ActionAlreadyClaimed",
+                        "message": "Tool action is already running.",
+                    },
+                )
+            return await self._current_result(action_id, fallback=requested_action)
+        try:
+            await self.ledger.append(
+                session_id=str(action.session_id),
+                turn_id=str(action.turn_id),
+                type=AgentEventType.ACTION_STARTED,
+                payload={
+                    "action_id": str(action.id),
+                    "tool": tool.spec.name,
+                    "name": action.name,
+                    "tool_call_id": str(action.tool_call_id)
+                    if action.tool_call_id
+                    else None,
+                    "input_preview": action.input_preview,
+                },
+                commit=False,
+            )
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        agent_metrics.increment("tools.started")
+        execution_context = replace(
+            context,
+            permission_context_snapshot=snapshot,
+        )
+        try:
+            await execution_context.ensure_turn_ownership()
+            raw_result = await asyncio.wait_for(
+                tool.run(action.normalized_input or action.input, execution_context),
+                timeout=tool.spec.timeout_seconds,
+            )
+            await execution_context.ensure_turn_ownership()
             validated_result = validate_tool_output(raw_result, tool.spec.output_schema)
             result, summary = normalize_tool_result(validated_result)
-        except _DurableActionCancelled:
-            return await self._current_action_result(action_id)
+        except TurnOwnershipLostError:
+            await self.session.rollback()
+            raise
         except asyncio.TimeoutError:
             error = {
                 "type": "TimeoutError",
                 "message": f"Tool timed out after {tool.spec.timeout_seconds}s",
             }
-            updated = await self.action_repo.transition_if_status(
+            failed = await self.action_repo.transition_running(
                 str(action.id),
-                expected_statuses=[AgentActionStatus.RUNNING],
                 status=AgentActionStatus.FAILED,
-                turn_id=context.turn_id,
-                expected_turn_claimed_at=context.turn_claimed_at,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
+                expected_turn_owner_token=execution_context.expected_owner_token,
             )
-            if updated is None:
-                return await self._current_action_result(action_id)
-            action = updated
+            if failed is None:
+                await self.session.rollback()
+                return await self._current_result(action_id, fallback=action)
+            action = failed
             await self.ledger.append(
                 session_id=str(action.session_id),
                 turn_id=str(action.turn_id),
                 type=AgentEventType.ACTION_FAILED,
                 payload={"action_id": str(action.id), "error": error},
+                commit=False,
+                expected_owner_token=execution_context.expected_owner_token,
+                owner_fenced=execution_context.expected_owner_token is not None,
             )
+            await self.session.commit()
             agent_metrics.increment("tools.failed")
-            return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
-        except asyncio.CancelledError:
-            updated = await self.action_repo.transition_if_status(
-                str(action.id),
-                expected_statuses=[AgentActionStatus.RUNNING],
-                status=AgentActionStatus.CANCELLED,
-                turn_id=context.turn_id,
-                expected_turn_claimed_at=context.turn_claimed_at,
-                error={"type": "CancelledError", "message": "Tool execution was cancelled."},
-                completed_at=datetime.now(timezone.utc),
+            return ToolExecutionResult(
+                action_id=str(action.id), status=action.status, error=error
             )
-            if updated is not None:
-                action = updated
-                await self.ledger.append(
-                    session_id=str(action.session_id),
-                    turn_id=str(action.turn_id),
-                    type=AgentEventType.ACTION_CANCELLED,
-                    payload={"action_id": str(action.id), "tool": tool.spec.name},
-                )
-                agent_metrics.increment("tools.cancelled")
+        except asyncio.CancelledError:
+            cancelled = await self.action_repo.transition_running(
+                str(action.id),
+                status=AgentActionStatus.CANCELLED,
+                error={
+                    "type": "CancelledError",
+                    "message": "Tool execution was cancelled.",
+                },
+                completed_at=datetime.now(timezone.utc),
+                expected_turn_owner_token=execution_context.expected_owner_token,
+            )
+            if cancelled is None:
+                await self.session.rollback()
+                raise
+            action = cancelled
+            await self.ledger.append(
+                session_id=str(action.session_id),
+                turn_id=str(action.turn_id),
+                type=AgentEventType.ACTION_CANCELLED,
+                payload={"action_id": str(action.id), "tool": tool.spec.name},
+                commit=False,
+                expected_owner_token=execution_context.expected_owner_token,
+                owner_fenced=execution_context.expected_owner_token is not None,
+            )
+            await self.session.commit()
+            agent_metrics.increment("tools.cancelled")
             raise
         except Exception as exc:
             error = {"type": exc.__class__.__name__, "message": str(exc)}
-            updated = await self.action_repo.transition_if_status(
+            failed = await self.action_repo.transition_running(
                 str(action.id),
-                expected_statuses=[AgentActionStatus.RUNNING],
                 status=AgentActionStatus.FAILED,
-                turn_id=context.turn_id,
-                expected_turn_claimed_at=context.turn_claimed_at,
                 error=error,
                 completed_at=datetime.now(timezone.utc),
+                expected_turn_owner_token=execution_context.expected_owner_token,
             )
-            if updated is None:
-                return await self._current_action_result(action_id)
-            action = updated
+            if failed is None:
+                await self.session.rollback()
+                return await self._current_result(action_id, fallback=action)
+            action = failed
             await self.ledger.append(
                 session_id=str(action.session_id),
                 turn_id=str(action.turn_id),
                 type=AgentEventType.ACTION_FAILED,
                 payload={"action_id": str(action.id), "error": error},
+                commit=False,
+                expected_owner_token=execution_context.expected_owner_token,
+                owner_fenced=execution_context.expected_owner_token is not None,
             )
+            await self.session.commit()
             agent_metrics.increment("tools.failed")
-            return ToolExecutionResult(action_id=str(action.id), status=action.status, error=error)
+            return ToolExecutionResult(
+                action_id=str(action.id), status=action.status, error=error
+            )
 
-        policy = action.artifact_policy or tool.spec.artifact_policy or {}
-        artifact_descriptor = _artifact_descriptor(
-            policy=policy,
-            tool_name=tool.spec.name,
-            result=result,
-            action_input=action.normalized_input or action.input or {},
-        )
-        completed = await self.action_repo.complete_running(
-            action_id,
+        completed = await self.action_repo.transition_running(
+            str(action.id),
+            status=AgentActionStatus.COMPLETED,
             result=result,
             output_summary=summary,
             completed_at=datetime.now(timezone.utc),
-            artifact_descriptor=artifact_descriptor,
-            artifact_event_type=AgentEventType.ARTIFACT_CREATED,
-            action_event_type=AgentEventType.ACTION_COMPLETED,
-            expected_turn_claimed_at=context.turn_claimed_at,
+            expected_turn_owner_token=execution_context.expected_owner_token,
         )
         if completed is None:
-            return await self._current_action_result(action_id)
-        action, _artifact_ids = completed
+            await self.session.rollback()
+            return await self._current_result(action_id, fallback=action)
+        action = completed
+        artifact_ids = await self._register_artifacts(
+            action=action,
+            tool=tool,
+            result=result,
+            context=execution_context,
+        )
+        await self.ledger.append(
+            session_id=str(action.session_id),
+            turn_id=str(action.turn_id),
+            type=AgentEventType.ACTION_COMPLETED,
+            payload={
+                "action_id": str(action.id),
+                "name": action.name,
+                "tool_call_id": str(action.tool_call_id)
+                if action.tool_call_id
+                else None,
+                "input_preview": action.input_preview,
+                "result": result,
+                "artifact_ids": artifact_ids,
+            },
+            commit=False,
+            expected_owner_token=execution_context.expected_owner_token,
+            owner_fenced=execution_context.expected_owner_token is not None,
+        )
+        await self.session.commit()
         agent_metrics.increment("tools.completed")
         return ToolExecutionResult(
             action_id=str(action.id),
@@ -595,121 +897,58 @@ class AgentToolExecutor:
             permission_decision=action.permission_decision,
         )
 
-    async def _run_tool_with_cancellation(
+    async def _register_artifacts(
         self,
         *,
         action,
         tool: AgentTool,
+        result: dict[str, Any],
         context: AgentToolContext,
-    ) -> dict[str, Any]:
-        started_action = await self.action_repo.begin_execution(
-            str(action.id),
-            started_at=datetime.now(timezone.utc),
-            event_type=AgentEventType.ACTION_STARTED,
-            event_payload={
-                "action_id": str(action.id),
-                "tool": tool.spec.name,
-                "name": action.name,
-                "tool_call_id": (
-                    str(action.tool_call_id) if action.tool_call_id else None
-                ),
-                "input_preview": action.input_preview,
-            },
-            turn_id=context.turn_id,
-            expected_turn_claimed_at=context.turn_claimed_at,
+    ) -> list[str]:
+        policy = action.artifact_policy or tool.spec.artifact_policy or {}
+        descriptor = _artifact_descriptor(
+            policy=policy,
+            tool_name=tool.spec.name,
+            result=result,
+            action_input=action.normalized_input or action.input or {},
         )
-        if started_action is None:
-            raise _DurableActionCancelled
-        action = started_action
-        tool_task = asyncio.create_task(
-            tool.run(action.normalized_input or action.input, context)
-        )
-        cancellation_task = asyncio.create_task(
-            self._wait_for_durable_action_cancellation(str(action.id))
-        )
-        heartbeat_task = (
-            asyncio.create_task(self._heartbeat_turn_lease(context))
-            if context.turn_claimed_at is not None
-            else None
-        )
-        try:
-            agent_metrics.increment("tools.started")
-            waiters = {tool_task, cancellation_task}
-            if heartbeat_task is not None:
-                waiters.add(heartbeat_task)
-            done, _pending = await asyncio.wait(
-                waiters,
-                timeout=tool.spec.timeout_seconds,
-                return_when=asyncio.FIRST_COMPLETED,
+        if descriptor is None:
+            return []
+        artifact_data = {
+            "session_id": str(action.session_id),
+            "action_id": str(action.id),
+            "type": descriptor["type"],
+            "title": descriptor["title"],
+            "summary": descriptor["summary"],
+            "payload": descriptor["payload"],
+        }
+        if context.expected_owner_token is None:
+            artifact = await self.artifact_repo.add(
+                turn_id=str(action.turn_id),
+                **artifact_data,
             )
-            if not done:
-                tool_task.cancel()
-                await asyncio.gather(tool_task, return_exceptions=True)
-                raise asyncio.TimeoutError
-            if cancellation_task in done and cancellation_task.result():
-                tool_task.cancel()
-                await asyncio.gather(tool_task, return_exceptions=True)
-                raise _DurableActionCancelled
-            if heartbeat_task is not None and heartbeat_task in done:
-                if not heartbeat_task.result():
-                    tool_task.cancel()
-                    await asyncio.gather(tool_task, return_exceptions=True)
-                    raise _DurableActionCancelled
-            return await tool_task
-        except BaseException:
-            tool_task.cancel()
-            await asyncio.gather(tool_task, return_exceptions=True)
-            raise
-        finally:
-            cancellation_task.cancel()
-            await asyncio.gather(cancellation_task, return_exceptions=True)
-            if heartbeat_task is not None:
-                heartbeat_task.cancel()
-                await asyncio.gather(heartbeat_task, return_exceptions=True)
-
-    async def _heartbeat_turn_lease(self, context: AgentToolContext) -> bool:
-        claim_token = context.turn_claimed_at
-        if claim_token is None:
-            return True
-        lease_seconds = max(
-            int(getattr(settings, "agent_turn_lease_seconds", 300) or 300),
-            1,
+        else:
+            artifact, owned = await self.artifact_repo.create_for_owned_turn(
+                turn_id=str(action.turn_id),
+                expected_owner_token=context.expected_owner_token,
+                commit=False,
+                owner_fenced=True,
+                **artifact_data,
+            )
+            if not owned or artifact is None:
+                raise TurnOwnershipLostError("Agent turn ownership was replaced")
+        await self.ledger.append(
+            session_id=str(action.session_id),
+            turn_id=str(action.turn_id),
+            type=AgentEventType.ARTIFACT_CREATED,
+            payload={
+                "artifact_id": str(artifact.id),
+                "action_id": str(action.id),
+                "type": artifact.type,
+                "title": artifact.title,
+            },
+            commit=False,
+            expected_owner_token=context.expected_owner_token,
+            owner_fenced=context.expected_owner_token is not None,
         )
-        interval = max(min(lease_seconds / 3, 30.0), 0.05)
-        bind = self.session.bind
-        session_factory = (
-            async_sessionmaker(bind=bind, expire_on_commit=False, class_=AsyncSession)
-            if bind is not None
-            else app_database.async_session_maker
-        )
-        async with session_factory() as heartbeat_db:
-            turns = AgentTurnRepository(heartbeat_db)
-            while True:
-                await asyncio.sleep(interval)
-                now = datetime.now(timezone.utc)
-                updated = await turns.update_if_claimed(
-                    context.turn_id,
-                    expected_claimed_at=claim_token,
-                    lease_until=now + timedelta(seconds=lease_seconds),
-                )
-                if updated is None:
-                    return False
-
-    async def _wait_for_durable_action_cancellation(self, action_id: str) -> bool:
-        bind = self.session.bind
-        session_factory = (
-            async_sessionmaker(bind=bind, expire_on_commit=False, class_=AsyncSession)
-            if bind is not None
-            else app_database.async_session_maker
-        )
-        while True:
-            await asyncio.sleep(0.05)
-            async with session_factory() as watcher_db:
-                watcher_repo = AgentActionRepository(watcher_db)
-                current = await watcher_repo.get(action_id)
-                if current is None:
-                    return True
-                await watcher_db.refresh(current)
-                is_running = current.status == AgentActionStatus.RUNNING
-            if not is_running:
-                return True
+        return [str(artifact.id)]

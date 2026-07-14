@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   CheckCircle2,
@@ -24,14 +24,19 @@ import {
 import { celebrateMilestone } from "@/lib/celebrations"
 import type {
   LlmConfiguredProvider,
+  LlmModel,
   LlmProviderTemplate,
   LlmProviderTemplateField,
+  LlmProviderTestResult,
+  LlmWireProtocol,
 } from "@/lib/llm"
 import { cn } from "@/lib/utils"
 
 type FieldValues = Record<string, Record<string, string>>
 type ToggleValues = Record<string, boolean>
 type RowErrors = Record<string, string>
+type ProtocolValues = Record<string, LlmWireProtocol>
+type ProbeResults = Record<string, LlmProviderTestResult>
 type SettingsTranslations = ReturnType<typeof useTranslations>
 
 const SKELETON_ROWS = [0, 1, 2, 3]
@@ -52,20 +57,32 @@ export function LlmCatalogPanel() {
   const {
     providerTemplates = [],
     configuredProviders,
+    models = [],
     isLoading,
     isMutating,
     error,
     refresh,
     discoverModels,
     setupProvider,
+    testProvider,
   } = useLlmCatalog()
   const [fieldValues, setFieldValues] = useState<FieldValues>({})
   const [insecureHttpValues, setInsecureHttpValues] = useState<ToggleValues>({})
+  const [protocolValues, setProtocolValues] = useState<ProtocolValues>({})
+  const [selectedTestModelIds, setSelectedTestModelIds] = useState<FieldValues>({})
+  const [probeResults, setProbeResults] = useState<ProbeResults>({})
   const [rowErrors, setRowErrors] = useState<RowErrors>({})
   const [savingTemplateIds, setSavingTemplateIds] = useState<Set<string>>(
     () => new Set(),
   )
   const [refreshingModels, setRefreshingModels] = useState(false)
+  const [testingTemplateIds, setTestingTemplateIds] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [dirtyTemplateIds, setDirtyTemplateIds] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const probeRevisionByTemplate = useRef<Record<string, number>>({})
 
   const providersByTemplate = useMemo(() => {
     const byTemplate = new Map<string, LlmConfiguredProvider>()
@@ -117,6 +134,20 @@ export function LlmCatalogPanel() {
       }
       return changed ? next : current
     })
+
+    setProtocolValues((current) => {
+      let changed = false
+      const next = { ...current }
+      for (const template of providerTemplates) {
+        if (next[template.id] !== undefined) continue
+        next[template.id] =
+          providersByTemplate.get(template.id)?.wire_protocol ??
+          template.default_wire_protocol ??
+          "chat_completions"
+        changed = true
+      }
+      return changed ? next : current
+    })
   }, [providerTemplates, providersByTemplate])
 
   const clearRowError = (templateId: string) => {
@@ -128,10 +159,27 @@ export function LlmCatalogPanel() {
     })
   }
 
+  const invalidateProbeResult = (templateId: string) => {
+    probeRevisionByTemplate.current[templateId] =
+      (probeRevisionByTemplate.current[templateId] ?? 0) + 1
+    setProbeResults((current) => {
+      if (!current[templateId]) return current
+      const next = { ...current }
+      delete next[templateId]
+      return next
+    })
+  }
+
+  const markTemplateDirty = (templateId: string) => {
+    invalidateProbeResult(templateId)
+    setDirtyTemplateIds((current) => new Set(current).add(templateId))
+  }
+
   const setFieldValue = (
     templateId: string,
     fieldName: string,
     value: string,
+    markDirty = true,
   ) => {
     clearRowError(templateId)
     setFieldValues((current) => ({
@@ -141,6 +189,7 @@ export function LlmCatalogPanel() {
         [fieldName]: value,
       },
     }))
+    if (markDirty) markTemplateDirty(templateId)
   }
 
   const setAllowInsecureHttp = (templateId: string, allowed: boolean) => {
@@ -149,6 +198,19 @@ export function LlmCatalogPanel() {
       ...current,
       [templateId]: allowed,
     }))
+    markTemplateDirty(templateId)
+  }
+
+  const setWireProtocol = (
+    templateId: string,
+    wireProtocol: LlmWireProtocol,
+  ) => {
+    clearRowError(templateId)
+    setProtocolValues((current) => ({
+      ...current,
+      [templateId]: wireProtocol,
+    }))
+    markTemplateDirty(templateId)
   }
 
   const buildSetupInput = (
@@ -163,6 +225,11 @@ export function LlmCatalogPanel() {
       name: provider?.name || template.name,
       baseUrl: readBaseUrl(template, provider, values),
       apiKey: (values.api_key ?? "").trim(),
+      wireProtocol:
+        protocolValues[template.id] ??
+        provider?.wire_protocol ??
+        template.default_wire_protocol ??
+        "chat_completions",
       modelIds: cleanModelIds(values.model_id),
       discover,
       scope: "user" as const,
@@ -178,9 +245,10 @@ export function LlmCatalogPanel() {
       return next
     })
     clearRowError(template.id)
+    invalidateProbeResult(template.id)
     try {
       const hadConfiguredProvider = configuredProviders.some(providerIsUsable)
-      const setupInput = buildSetupInput(template, true)
+      const setupInput = buildSetupInput(template, false)
       const outcome: SetupProviderOutcome = await setupProvider(setupInput)
       if (!outcome.ok) {
         setRowErrors((current) => ({
@@ -192,8 +260,26 @@ export function LlmCatalogPanel() {
       }
 
       const result = outcome.result
-      setFieldValue(template.id, "api_key", "")
-      if (result.discovered && result.models.length > 0) {
+      setDirtyTemplateIds((current) => {
+        const next = new Set(current)
+        next.delete(template.id)
+        return next
+      })
+      setFieldValue(template.id, "api_key", "", false)
+      const shouldDiscoverModels =
+        setupInput.modelIds.length === 0 && template.discovery !== "static"
+      const discoveredModels = shouldDiscoverModels
+        ? await discoverModels(result.provider.id)
+        : null
+      if (shouldDiscoverModels && discoveredModels === null) {
+        toast.warning(t("providerCards.savedDiscoveryFailed"))
+      } else if (shouldDiscoverModels && discoveredModels?.length === 0) {
+        toast.warning(t("providerCards.savedNoModels"))
+      } else if (discoveredModels && discoveredModels.length > 0) {
+        toast.success(
+          t("providerCards.modelsDiscovered", { count: discoveredModels.length }),
+        )
+      } else if (result.discovered && result.models.length > 0) {
         toast.success(
           t("providerCards.modelsDiscovered", { count: result.models.length }),
         )
@@ -256,6 +342,41 @@ export function LlmCatalogPanel() {
     }
   }
 
+  const testConfiguredProvider = async (
+    template: LlmProviderTemplate,
+    provider: LlmConfiguredProvider,
+    providerModels: LlmModel[],
+  ) => {
+    const selectedModelId =
+      selectedTestModelIds[template.id]?.model_id ?? providerModels[0]?.id
+    if (!selectedModelId) return
+    setTestingTemplateIds((current) => new Set(current).add(template.id))
+    clearRowError(template.id)
+    const probeRevision = probeRevisionByTemplate.current[template.id] ?? 0
+    try {
+      const result = await testProvider(provider.id, selectedModelId)
+      if ((probeRevisionByTemplate.current[template.id] ?? 0) !== probeRevision) {
+        return
+      }
+      if (result) {
+        setProbeResults((current) => ({
+          ...current,
+          [template.id]: result,
+        }))
+      } else {
+        const message = t("providerCards.testRequestFailed")
+        setRowErrors((current) => ({ ...current, [template.id]: message }))
+        toast.error(message)
+      }
+    } finally {
+      setTestingTemplateIds((current) => {
+        const next = new Set(current)
+        next.delete(template.id)
+        return next
+      })
+    }
+  }
+
   const refreshableProviderCount = providerTemplates.reduce((count, template) => {
     const provider = providersByTemplate.get(template.id)
     return template.discovery !== "static" && providerConfigured(template, provider)
@@ -307,6 +428,16 @@ export function LlmCatalogPanel() {
           {providerTemplates.map((template) => {
             const provider = providersByTemplate.get(template.id)
             const values = fieldValues[template.id] ?? {}
+            const providerModels = provider
+              ? models.filter((model) => model.provider_id === provider.id)
+              : []
+            const selectedTestModelId =
+              selectedTestModelIds[template.id]?.model_id ??
+              providerModels[0]?.id ??
+              ""
+            const candidateProbeResult = dirtyTemplateIds.has(template.id)
+              ? undefined
+              : probeResults[template.id] ?? providerProbeResult(provider)
             return (
               <ProviderCard
                 key={template.id}
@@ -317,12 +448,42 @@ export function LlmCatalogPanel() {
                 insecureHttpAllowed={Boolean(insecureHttpValues[template.id])}
                 error={rowErrors[template.id]}
                 saving={savingTemplateIds.has(template.id)}
+                testing={testingTemplateIds.has(template.id)}
+                wireProtocol={
+                  protocolValues[template.id] ??
+                  provider?.wire_protocol ??
+                  template.default_wire_protocol ??
+                  "chat_completions"
+                }
+                providerModels={providerModels}
+                selectedTestModelId={selectedTestModelId}
+                probeResult={probeResultForSelectedModel(
+                  candidateProbeResult,
+                  providerModels,
+                  selectedTestModelId,
+                )}
+                settingsDirty={dirtyTemplateIds.has(template.id)}
                 onFieldChange={(fieldName, value) =>
                   setFieldValue(template.id, fieldName, value)
                 }
                 onInsecureHttpChange={(allowed) =>
                   setAllowInsecureHttp(template.id, allowed)
                 }
+                onWireProtocolChange={(wireProtocol) =>
+                  setWireProtocol(template.id, wireProtocol)
+                }
+                onTestModelChange={(modelId) => {
+                  invalidateProbeResult(template.id)
+                  setSelectedTestModelIds((current) => ({
+                    ...current,
+                    [template.id]: { model_id: modelId },
+                  }))
+                }}
+                onTest={() => {
+                  if (provider) {
+                    void testConfiguredProvider(template, provider, providerModels)
+                  }
+                }}
                 onSave={() => void saveProvider(template)}
               />
             )
@@ -341,8 +502,17 @@ type ProviderCardProps = {
   insecureHttpAllowed: boolean
   error?: string
   saving: boolean
+  testing: boolean
+  wireProtocol: LlmWireProtocol
+  providerModels: LlmModel[]
+  selectedTestModelId: string
+  probeResult?: LlmProviderTestResult
+  settingsDirty: boolean
   onFieldChange: (fieldName: string, value: string) => void
   onInsecureHttpChange: (allowed: boolean) => void
+  onWireProtocolChange: (wireProtocol: LlmWireProtocol) => void
+  onTestModelChange: (modelId: string) => void
+  onTest: () => void
   onSave: () => void
 }
 
@@ -354,8 +524,17 @@ function ProviderCard({
   insecureHttpAllowed,
   error,
   saving,
+  testing,
+  wireProtocol,
+  providerModels,
+  selectedTestModelId,
+  probeResult,
+  settingsDirty,
   onFieldChange,
   onInsecureHttpChange,
+  onWireProtocolChange,
+  onTestModelChange,
+  onTest,
   onSave,
 }: ProviderCardProps) {
   const configured = providerConfigured(template, provider)
@@ -366,7 +545,9 @@ function ProviderCard({
     provider?.allow_insecure_http && isPublicPlainHttpEndpoint(provider.base_url ?? ""),
   )
   const canSave = !saving && requiredFieldsReady(template, values, configured)
-  const fieldCount = template.fields.length
+  const supportedProtocols = templateWireProtocols(template)
+  const multipleProtocols = supportedProtocols.length > 1
+  const fieldCount = template.fields.length + (multipleProtocols ? 1 : 0)
 
   return (
     <article
@@ -422,6 +603,15 @@ function ProviderCard({
               onChange={(value) => onFieldChange(field.name, value)}
             />
           ))}
+          {multipleProtocols ? (
+            <ProtocolField
+              t={t}
+              template={template}
+              protocols={supportedProtocols}
+              value={wireProtocol}
+              onChange={onWireProtocolChange}
+            />
+          ) : null}
         </div>
         <Button
           type="button"
@@ -433,6 +623,20 @@ function ProviderCard({
           {saving ? t("providerCards.saving") : t("providerCards.save")}
         </Button>
       </div>
+
+      {provider && configured ? (
+        <ProviderProbeControls
+          t={t}
+          template={template}
+          models={providerModels}
+          selectedModelId={selectedTestModelId}
+          result={probeResult}
+          settingsDirty={settingsDirty}
+          testing={testing}
+          onModelChange={onTestModelChange}
+          onTest={onTest}
+        />
+      ) : null}
 
       {publicPlainHttp ? (
         <div className="mt-3">
@@ -454,6 +658,162 @@ function ProviderCard({
         </div>
       ) : null}
     </article>
+  )
+}
+
+function ProtocolField({
+  t,
+  template,
+  protocols,
+  value,
+  onChange,
+}: {
+  t: SettingsTranslations
+  template: LlmProviderTemplate
+  protocols: LlmWireProtocol[]
+  value: LlmWireProtocol
+  onChange: (value: LlmWireProtocol) => void
+}) {
+  const inputId = `provider-${template.id}-wire-protocol`
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <Label
+        htmlFor={inputId}
+        className="text-[11px] font-medium tracking-[0.02em] text-muted-foreground"
+      >
+        {t("providerCards.protocolLabel")}
+      </Label>
+      <select
+        id={inputId}
+        aria-label={t("providerCards.protocolAriaLabel", {
+          provider: template.name,
+        })}
+        value={value}
+        onChange={(event) => onChange(event.target.value as LlmWireProtocol)}
+        className="h-9 w-full rounded-md border border-border/80 bg-background px-3 text-sm text-foreground shadow-none outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        {protocols.map((protocol) => (
+          <option key={protocol} value={protocol}>
+            {protocolLabel(t, protocol)}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function ProviderProbeControls({
+  t,
+  template,
+  models,
+  selectedModelId,
+  result,
+  settingsDirty,
+  testing,
+  onModelChange,
+  onTest,
+}: {
+  t: SettingsTranslations
+  template: LlmProviderTemplate
+  models: LlmModel[]
+  selectedModelId: string
+  result?: LlmProviderTestResult
+  settingsDirty: boolean
+  testing: boolean
+  onModelChange: (modelId: string) => void
+  onTest: () => void
+}) {
+  const selectId = `provider-${template.id}-test-model`
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex min-w-0 flex-1 items-end gap-2">
+        <div className="min-w-0 flex-1 sm:max-w-72">
+          <Label
+            htmlFor={selectId}
+            className="mb-1.5 block text-[11px] font-medium tracking-[0.02em] text-muted-foreground"
+          >
+            {t("providerCards.testModelLabel")}
+          </Label>
+          <select
+            id={selectId}
+            aria-label={t("providerCards.testModelAriaLabel", {
+              provider: template.name,
+            })}
+            value={selectedModelId}
+            disabled={models.length === 0 || testing}
+            onChange={(event) => onModelChange(event.target.value)}
+            className="h-8 w-full rounded-md border border-border/80 bg-background px-2.5 text-xs text-foreground shadow-none outline-none disabled:opacity-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {models.length === 0 ? (
+              <option value="">{t("providerCards.noTestModels")}</option>
+            ) : null}
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.display_name || model.model_id}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 shrink-0 rounded-md border-border/80 bg-background px-3 shadow-none"
+          disabled={models.length === 0 || testing || settingsDirty}
+          onClick={onTest}
+        >
+          {testing ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          {testing ? t("providerCards.testing") : t("providerCards.test")}
+        </Button>
+      </div>
+      {settingsDirty ? (
+        <div
+          role="status"
+          className="rounded-md border border-[#E8D9A7] bg-[#FBF3DB] px-2.5 py-1.5 text-[11px] font-medium leading-4 text-[#7A5A10]"
+        >
+          {t("providerCards.settingsChanged")}
+        </div>
+      ) : result ? (
+        <ProviderProbeStatus t={t} result={result} />
+      ) : null}
+    </div>
+  )
+}
+
+function ProviderProbeStatus({
+  t,
+  result,
+}: {
+  t: SettingsTranslations
+  result: LlmProviderTestResult
+}) {
+  return (
+    <div
+      role={result.success ? "status" : "alert"}
+      className={cn(
+        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-2.5 py-1.5 text-[11px] leading-4",
+        result.success
+          ? "border-[#DDE8DB] bg-[#EDF3EC] text-[#346538]"
+          : "border-[#F4D6D7] bg-[#FDEBEC] text-[#9F2F2D]",
+      )}
+    >
+      <span className="font-semibold">
+        {result.success
+          ? t("providerCards.testSucceeded")
+          : t("providerCards.testFailed")}
+      </span>
+      <span>{protocolLabel(t, result.wire_protocol)}</span>
+      {result.model ? <span>{result.model}</span> : null}
+      {result.latency_ms !== null && result.latency_ms !== undefined ? (
+        <span className="tabular-nums">{result.latency_ms} ms</span>
+      ) : null}
+      {!result.success && result.error ? (
+        <span className="text-pretty">{result.error}</span>
+      ) : null}
+      {!result.success && result.retryable ? (
+        <span className="font-semibold">{t("providerCards.retryable")}</span>
+      ) : null}
+    </div>
   )
 }
 
@@ -686,6 +1046,66 @@ function credentialNote(
   if (credential.source === "env") return t("providerCards.fromEnv")
   if (credential.source === "stored") return t("providerCards.keySavedShort")
   return credential.masked_hint ?? credential.fingerprint ?? ""
+}
+
+function providerProbeResult(
+  provider?: LlmConfiguredProvider,
+): LlmProviderTestResult | undefined {
+  const status = provider?.test_status
+  if (!provider || !status || typeof status.success !== "boolean") return undefined
+  const wireProtocol = status.wire_protocol
+  if (wireProtocol !== "chat_completions" && wireProtocol !== "responses") {
+    return undefined
+  }
+  return {
+    provider_id: provider.id,
+    success: status.success,
+    model: typeof status.model === "string" ? status.model : null,
+    wire_protocol: wireProtocol,
+    error_code:
+      typeof status.error_code === "string" ? status.error_code : null,
+    error:
+      typeof status.error === "string"
+        ? status.error
+        : typeof status.error_message === "string"
+          ? status.error_message
+          : null,
+    latency_ms:
+      typeof status.latency_ms === "number" ? status.latency_ms : null,
+    retryable: status.retryable === true,
+    http_status:
+      typeof status.http_status === "number" ? status.http_status : null,
+    provider_code:
+      typeof status.provider_code === "string" ? status.provider_code : null,
+  }
+}
+
+function probeResultForSelectedModel(
+  result: LlmProviderTestResult | undefined,
+  models: LlmModel[],
+  selectedModelId: string,
+): LlmProviderTestResult | undefined {
+  if (!result) return undefined
+  const selectedModel = models.find((model) => model.id === selectedModelId)
+  if (!selectedModel) return result.model ? undefined : result
+  return result.model === selectedModel.model_id ? result : undefined
+}
+
+function protocolLabel(
+  t: SettingsTranslations,
+  protocol: LlmWireProtocol,
+) {
+  return protocol === "responses"
+    ? t("providerCards.protocolResponses")
+    : t("providerCards.protocolChat")
+}
+
+function templateWireProtocols(
+  template: LlmProviderTemplate,
+): LlmWireProtocol[] {
+  return template.supported_wire_protocols?.length
+    ? template.supported_wire_protocols
+    : [template.default_wire_protocol ?? "chat_completions"]
 }
 
 function readBaseUrl(

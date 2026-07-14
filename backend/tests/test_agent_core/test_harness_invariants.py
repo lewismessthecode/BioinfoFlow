@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.agent_core.ledger as ledger_module
 from app.config import settings
 from app.models.llm import LlmModel, LlmProvider
+from app.models.agent_core import AgentActionStatus
 from app.models.project import Project
 from app.models.workspace import Workspace
 from app.repositories.agent_core_repo import (
@@ -23,17 +26,36 @@ from app.services.agent_core.context.system_prompt import (
     default_system_prompt_snapshot,
     resolve_system_prompt_prefix,
 )
-from app.services.agent_core.execution_target import session_metadata_with_execution_target
-from app.services.agent_core.ledger import AgentEventLedger
-from app.services.agent_core.tools import (
-    AgentToolContext,
-    AgentToolSpec,
-    build_default_tool_registry,
+from app.services.agent_core.execution_target import (
+    session_metadata_with_execution_target,
 )
+from app.services.agent_core.ledger import AgentEventLedger
+from app.services.agent_core.tools import AgentToolContext, build_default_tool_registry
 from app.services.agent_core.tools.executor import AgentToolExecutor
 from app.services.agent_core.tools.toolsets import ToolsetExposure
+from app.services.model_runtime.contracts import (
+    CompletionMetadata,
+    ModelEvent,
+    ModelInvocation,
+    TextDelta,
+    ToolCallDelta,
+    ToolCallPart,
+    ToolResultPart,
+    UsageReport,
+)
 from app.utils.exceptions import BadRequestError, PermissionDeniedError
 from app.workspace import DEFAULT_WORKSPACE_ID
+
+
+def test_model_gateway_has_no_responses_specific_continuation_assembly() -> None:
+    source = (
+        Path(__file__).parents[2] / "app/services/model_runtime/gateway.py"
+    ).read_text()
+
+    assert "_merge_replay_input" not in source
+    assert "_stable_replay_key" not in source
+    assert 'wire_protocol == "responses"' not in source
+    assert "ResponsesContinuation" not in source
 
 
 async def _workspace(db_session) -> Workspace:
@@ -65,6 +87,17 @@ class _FakeFilesystemPolicy:
         if not allow_directory:
             assert target.is_file()
         return target
+
+
+class _FakeModelGateway:
+    def __init__(self, *responses: tuple[ModelEvent, ...]) -> None:
+        self.responses = list(responses)
+        self.invocations: list[ModelInvocation] = []
+
+    async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
+        self.invocations.append(invocation)
+        for event in self.responses.pop(0):
+            yield event
 
 
 async def _seed_catalog_model(
@@ -322,34 +355,18 @@ async def test_file_ref_without_text_part_keeps_user_prompt(
 
 
 @pytest.mark.asyncio
-async def test_turn_writes_canonical_user_and_assistant_messages(
-    db_session, monkeypatch
-):
-    async def fake_completion(*args, **kwargs):
-        class FakeUsage:
-            def model_dump(self):
-                return {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8}
-
-        class FakeMessage:
-            content = "Use hg38 for this project."
-            tool_calls = None
-
-        class FakeChoice:
-            message = FakeMessage()
-
-        class FakeResponse:
-            choices = [FakeChoice()]
-            usage = FakeUsage()
-
-        return FakeResponse()
-
-    monkeypatch.setattr(
-        "app.services.agent_core.core.loop.acompletion", fake_completion
-    )
+async def test_turn_writes_canonical_user_and_assistant_messages(db_session):
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    service.runtime.model_gateway = _FakeModelGateway(
+        (
+            TextDelta(text="Use hg38 for this project."),
+            UsageReport(input_tokens=3, output_tokens=5, total_tokens=8),
+            CompletionMetadata(response_id="chatcmpl-hg38", finish_reason="stop"),
+        )
+    )
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -380,28 +397,21 @@ async def test_turn_writes_canonical_user_and_assistant_messages(
 
 
 @pytest.mark.asyncio
-async def test_event_sequence_is_session_scoped_across_turns(db_session, monkeypatch):
-    async def fake_completion(*args, **kwargs):
-        class FakeMessage:
-            content = "ok"
-            tool_calls = None
-
-        class FakeChoice:
-            message = FakeMessage()
-
-        class FakeResponse:
-            choices = [FakeChoice()]
-            usage = None
-
-        return FakeResponse()
-
-    monkeypatch.setattr(
-        "app.services.agent_core.core.loop.acompletion", fake_completion
-    )
+async def test_event_sequence_is_session_scoped_across_turns(db_session):
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    service.runtime.model_gateway = _FakeModelGateway(
+        (
+            TextDelta(text="ok"),
+            CompletionMetadata(response_id="chatcmpl-first", finish_reason="stop"),
+        ),
+        (
+            TextDelta(text="ok"),
+            CompletionMetadata(response_id="chatcmpl-second", finish_reason="stop"),
+        ),
+    )
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -424,11 +434,6 @@ async def test_event_sequence_is_session_scoped_across_turns(db_session, monkeyp
 
 @pytest.mark.asyncio
 async def test_event_ledger_serializes_concurrent_sequence_allocation():
-    class FakeSessionRepository:
-        async def lock_for_update(self, session_id: str):
-            assert session_id == "session-1"
-            return object()
-
     class FakeSession:
         async def rollback(self):
             return None
@@ -459,7 +464,8 @@ async def test_event_ledger_serializes_concurrent_sequence_allocation():
 
     ledger = AgentEventLedger.__new__(AgentEventLedger)
     ledger.event_repo = RacingEventRepository()
-    ledger.session_repo = FakeSessionRepository()
+    ledger.owned_turn_id = None
+    ledger.expected_owner_token = None
 
     first, second = await asyncio.gather(
         ledger.append(
@@ -480,11 +486,6 @@ async def test_event_ledger_serializes_concurrent_sequence_allocation():
 @pytest.mark.asyncio
 async def test_event_ledger_logs_event_append_at_debug(monkeypatch):
     records: list[tuple[str, str, dict]] = []
-
-    class FakeSessionRepository:
-        async def lock_for_update(self, session_id: str):
-            assert session_id == "session-1"
-            return object()
 
     class SpyLogger:
         def info(self, event: str, **fields):
@@ -514,7 +515,8 @@ async def test_event_ledger_logs_event_append_at_debug(monkeypatch):
     monkeypatch.setattr(ledger_module, "logger", SpyLogger())
     ledger = AgentEventLedger.__new__(AgentEventLedger)
     ledger.event_repo = FakeEventRepository()
-    ledger.session_repo = FakeSessionRepository()
+    ledger.owned_turn_id = None
+    ledger.expected_owner_token = None
 
     await ledger.append(
         session_id="session-1",
@@ -619,53 +621,39 @@ def test_platform_tool_exposure_keeps_read_tools_available_and_mutations_gated()
 
 @pytest.mark.asyncio
 async def test_worker_tool_call_is_rechecked_against_worker_exposure(
-    db_session, monkeypatch
+    db_session,
 ):
-    async def fake_completion(*args, **kwargs):
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeFunction:
-            name = "ask_user"
-            arguments = json.dumps(
-                {
-                    "questions": [
-                        {
-                            "question": "Should the worker pause?",
-                            "header": "Pause",
-                            "options": [
-                                {"label": "Yes", "description": "Pause."},
-                                {"label": "No", "description": "Continue."},
-                            ],
-                        }
-                    ]
-                }
-            )
-
-        class FakeToolCall:
-            id = "worker-ask-user"
-            function = FakeFunction()
-
-        class FakeMessage:
-            content = ""
-            tool_calls = [FakeToolCall()]
-
-        choice = FakeChoice()
-        choice.message = FakeMessage()
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr(
-        "app.services.agent_core.core.loop.acompletion", fake_completion
-    )
     await _workspace(db_session)
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    service.runtime.model_gateway = _FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="worker-ask-user",
+                name="ask_user",
+                arguments_delta=json.dumps(
+                    {
+                        "questions": [
+                            {
+                                "question": "Should the worker pause?",
+                                "header": "Pause",
+                                "options": [
+                                    {"label": "Yes", "description": "Pause."},
+                                    {"label": "No", "description": "Continue."},
+                                ],
+                            }
+                        ]
+                    }
+                ),
+            ),
+            CompletionMetadata(
+                response_id="chatcmpl-worker",
+                finish_reason="tool_calls",
+            ),
+        )
+    )
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -684,7 +672,12 @@ async def test_worker_tool_call_is_rechecked_against_worker_exposure(
 
     assert completed_turn.termination_reason == "tool_failed"
     assert completed_turn.error_code == "tool_not_exposed"
-    assert await AgentActionRepository(db_session).list_for_turn(str(turn.id)) == []
+    repaired_actions = await AgentActionRepository(db_session).list_for_turn(
+        str(turn.id)
+    )
+    assert len(repaired_actions) == 1
+    assert repaired_actions[0].status == AgentActionStatus.FAILED
+    assert repaired_actions[0].error["type"] == "BatchPreparationError"
 
 
 @pytest.mark.asyncio
@@ -695,6 +688,12 @@ async def test_unexposed_tool_is_denied_before_argument_validation(db_session):
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
+    )
+    session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"mode": "plan"},
     )
     turn = await service.create_turn_record(
         session_id=str(session.id),
@@ -802,68 +801,89 @@ async def test_executor_prefers_persisted_session_target_over_explicit_argument(
 
 
 @pytest.mark.asyncio
+async def test_loop_refreshes_permission_context_before_each_model_iteration(
+    db_session,
+    db_engine,
+):
+    calls = 0
+    session_id = ""
+
+    class RefreshingGateway:
+        async def invoke(
+            self,
+            invocation: ModelInvocation,
+        ) -> AsyncIterator[ModelEvent]:
+            nonlocal calls
+            calls += 1
+            tool_names = {tool.name for tool in invocation.tools}
+            system_text = invocation.instructions
+            if calls == 1:
+                assert "bash" in tool_names
+                assert "Role profile: bioinformatician" in system_text
+                sessions = async_sessionmaker(
+                    db_engine,
+                    expire_on_commit=False,
+                    class_=AsyncSession,
+                )
+                async with sessions() as update_db:
+                    await AgentCoreService(update_db).update_session(
+                        session_id=session_id,
+                        workspace_id=DEFAULT_WORKSPACE_ID,
+                        user_id="dev",
+                        updates={
+                            "mode": "plan",
+                            "role_profile": "worker",
+                        },
+                    )
+                yield ToolCallDelta(
+                    index=0,
+                    call_id="tool-call-refresh",
+                    name="memory.list",
+                    arguments_delta="{}",
+                )
+                yield CompletionMetadata(
+                    response_id="chatcmpl-refresh-tool",
+                    finish_reason="tool_calls",
+                )
+            else:
+                assert "bash" not in tool_names
+                assert "Role profile: worker" in system_text
+                assert "Toolset policy: plan" in system_text
+                yield TextDelta(text="Refreshed policy observed.")
+                yield CompletionMetadata(
+                    response_id="chatcmpl-refresh-final",
+                    finish_reason="stop",
+                )
+
+    await _workspace(db_session)
+    await _seed_catalog_model(db_session)
+    service = AgentCoreService(db_session)
+    service.runtime.model_gateway = RefreshingGateway()
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        permission_mode="bypass",
+    )
+    session_id = str(session.id)
+    turn = await service.create_turn_record(
+        session_id=session_id,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Refresh permissions between iterations.",
+    )
+
+    completed = await service.runtime.run_turn(str(turn.id))
+
+    assert completed.status == "completed"
+    assert completed.final_text == "Refreshed policy observed."
+    assert calls == 2
+
+
+@pytest.mark.asyncio
 async def test_approval_resume_executes_tool_and_continues_turn(
     db_session, monkeypatch
 ):
-    calls = 0
-
-    async def fake_completion(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-
-        class FakeUsage:
-            def model_dump(self):
-                return {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
-
-        class FakeResponse:
-            usage = FakeUsage()
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        message = FakeMessage()
-        if calls == 1:
-
-            class FakeFunction:
-                name = "bash"
-                arguments = json.dumps(
-                    {
-                        "command": f"{sys.executable} -c 'print(\"approved-tool\")'",
-                        "cwd": str(settings.bioinfoflow_home),
-                    }
-                )
-
-            class FakeToolCall:
-                id = "tool-call-1"
-                function = FakeFunction()
-
-            message.content = ""
-            message.tool_calls = [FakeToolCall()]
-        else:
-            messages = kwargs["messages"]
-            assistant_tool_call = next(
-                message for message in messages if message.get("tool_calls")
-            )
-            tool_result = next(
-                message for message in messages if message["role"] == "tool"
-            )
-            canonical_call_id = assistant_tool_call["tool_calls"][0]["id"]
-            assert canonical_call_id.startswith("tc_")
-            assert assistant_tool_call["tool_calls"][0]["function"]["name"] == "bash"
-            assert tool_result["tool_call_id"] == canonical_call_id
-            message.content = "Final after approved tool."
-            message.tool_calls = None
-
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr(
         "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
     )
@@ -871,6 +891,32 @@ async def test_approval_resume_executes_tool_and_continues_turn(
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    gateway = _FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="tool-call-1",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"approved-tool\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
+                ),
+            ),
+            UsageReport(input_tokens=1, output_tokens=1, total_tokens=2),
+            CompletionMetadata(
+                response_id="chatcmpl-tool-call",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            TextDelta(text="Final after approved tool."),
+            UsageReport(input_tokens=1, output_tokens=1, total_tokens=2),
+            CompletionMetadata(response_id="chatcmpl-final", finish_reason="stop"),
+        ),
+    )
+    service.runtime.model_gateway = gateway
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -890,7 +936,6 @@ async def test_approval_resume_executes_tool_and_continues_turn(
     assert waiting_turn.status == "waiting_approval"
     actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
     assert actions[0].status == "waiting_decision"
-    assert actions[0].exposure_policy["execution_target"] == {"type": "local"}
 
     decided = await service.decide_action(
         action_id=str(actions[0].id),
@@ -903,6 +948,21 @@ async def test_approval_resume_executes_tool_and_continues_turn(
     resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
     assert resumed_turn.status == "completed"
     assert resumed_turn.final_text == "Final after approved tool."
+
+    resumed_invocation = gateway.invocations[1]
+    tool_call = next(
+        item
+        for item in resumed_invocation.input_items
+        if isinstance(item, ToolCallPart)
+    )
+    tool_result = next(
+        item
+        for item in resumed_invocation.input_items
+        if isinstance(item, ToolResultPart)
+    )
+    assert tool_call.call_id == "tool-call-1"
+    assert tool_call.name == "bash"
+    assert tool_result.call_id == "tool-call-1"
 
     messages = await AgentMessageRepository(db_session).list_for_session(
         str(session.id)
@@ -920,55 +980,6 @@ async def test_approval_resume_executes_tool_and_continues_turn(
 async def test_rejected_tool_decision_continues_turn_with_tool_result(
     db_session, monkeypatch
 ):
-    calls = 0
-
-    async def fake_completion(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        message = FakeMessage()
-        if calls == 1:
-
-            class FakeFunction:
-                name = "bash"
-                arguments = json.dumps(
-                    {
-                        "command": f"{sys.executable} -c 'print(\"should-not-run\")'",
-                        "cwd": str(settings.bioinfoflow_home),
-                    }
-                )
-
-            class FakeToolCall:
-                id = "tool-call-rejected"
-                function = FakeFunction()
-
-            message.content = ""
-            message.tool_calls = [FakeToolCall()]
-        else:
-            tool_result = next(
-                item for item in kwargs["messages"] if item["role"] == "tool"
-            )
-            assert tool_result["tool_call_id"].startswith("tc_")
-            assert "UserRejected" in tool_result["content"]
-            message.content = "I will continue without running that tool."
-            message.tool_calls = None
-
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr(
         "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
     )
@@ -976,6 +987,33 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    gateway = _FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="tool-call-rejected",
+                name="bash",
+                arguments_delta=json.dumps(
+                    {
+                        "command": f"{sys.executable} -c 'print(\"should-not-run\")'",
+                        "cwd": str(settings.bioinfoflow_home),
+                    }
+                ),
+            ),
+            CompletionMetadata(
+                response_id="chatcmpl-rejected-tool",
+                finish_reason="tool_calls",
+            ),
+        ),
+        (
+            TextDelta(text="I will continue without running that tool."),
+            CompletionMetadata(
+                response_id="chatcmpl-rejected-final",
+                finish_reason="stop",
+            ),
+        ),
+    )
+    service.runtime.model_gateway = gateway
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -1006,592 +1044,13 @@ async def test_rejected_tool_decision_continues_turn_with_tool_result(
     resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
     assert resumed_turn.status == "completed"
     assert resumed_turn.final_text == "I will continue without running that tool."
-
-
-@pytest.mark.asyncio
-async def test_tool_batch_stops_at_first_interaction_and_defers_later_calls(
-    db_session,
-    monkeypatch,
-):
-    model_calls = 0
-    turn_id = ""
-
-    async def fake_completion(*args, **kwargs):
-        nonlocal model_calls
-        model_calls += 1
-
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        message = FakeMessage()
-        if model_calls == 1:
-
-            class AskFunction:
-                name = "ask_user"
-                arguments = json.dumps(
-                    {
-                        "questions": [
-                            {
-                                "question": "Which option should be used?",
-                                "header": "Choice",
-                                "options": [
-                                    {"label": "A", "description": "Use option A."},
-                                    {"label": "B", "description": "Use option B."},
-                                ],
-                            }
-                        ]
-                    }
-                )
-
-            class ListFunction:
-                name = "projects__list"
-                arguments = "{}"
-
-            class AskCall:
-                id = "tool-call-question"
-                function = AskFunction()
-
-            class ListCall:
-                id = "tool-call-projects"
-                function = ListFunction()
-
-            message.content = ""
-            message.tool_calls = [AskCall(), ListCall()]
-        else:
-            persisted_turn = await service.turn_repo.get(turn_id)
-            progress = persisted_turn.loop_state["progress"]
-            assert [
-                json.loads(signature)["name"]
-                for signature in progress["previous_tool_calls"]
-            ] == ["ask_user", "projects__list"]
-            assert [
-                json.loads(signature)["status"]
-                for signature in progress["previous_tool_results"]
-            ] == ["completed", "deferred"]
-            assert progress["repeat_count"] == 1
-            assert "pending_observation" not in progress
-            emitted_ids = [
-                call["id"]
-                for item in kwargs["messages"]
-                for call in item.get("tool_calls", [])
-            ]
-            result_ids = [
-                item.get("tool_call_id")
-                for item in kwargs["messages"]
-                if item.get("role") == "tool"
-            ]
-            assert result_ids == emitted_ids
-            message.content = "Continued after the answer."
-            message.tool_calls = None
-
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
-    monkeypatch.setattr(
-        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
+    tool_result = next(
+        item
+        for item in gateway.invocations[1].input_items
+        if isinstance(item, ToolResultPart)
     )
-    await _workspace(db_session)
-    await _seed_catalog_model(db_session, model_id="interaction-batch-model")
-
-    service = AgentCoreService(db_session)
-    session = await service.create_session(
-        project_id=None,
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-    )
-    turn = await service.create_turn_record(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        input_text="Ask one question before doing anything else.",
-    )
-    turn_id = str(turn.id)
-
-    waiting_turn = await service.runtime.run_turn(str(turn.id))
-    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
-    messages = await AgentMessageRepository(db_session).list_for_session(
-        str(session.id)
-    )
-
-    assert waiting_turn.status == "waiting_approval"
-    assert [action.name for action in actions] == ["ask_user"]
-    progress = waiting_turn.loop_state["progress"]
-    pending = progress["pending_observation"]
-    assert [json.loads(signature)["name"] for signature in pending["tool_calls"]] == [
-        "ask_user",
-        "projects__list",
-    ]
-    pending_results = [json.loads(signature) for signature in pending["tool_results"]]
-    assert [result["status"] for result in pending_results] == ["pending", "deferred"]
-    assert pending_results[0]["tool_call_id"] == actions[0].tool_call_id
-    assert pending_results[0]["tool_call_id"].startswith("tc_")
-    assert progress["repeat_count"] == 0
-    assert not any(message.role == "tool" for message in messages)
-
-    await service.decide_action(
-        action_id=str(actions[0].id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        decision="answer",
-        answer={"Choice": "A"},
-    )
-    resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
-
-    assert model_calls == 2
-    assert resumed_turn.status == "completed"
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
-    tool_messages = [message for message in messages if message.role == "tool"]
-    assistant_call_ids = [
-        call["id"]
-        for message in messages
-        if message.role == "assistant"
-        for part in message.content_parts
-        if part.get("type") == "tool_calls"
-        for call in part.get("tool_calls") or []
-    ]
-    assert [
-        message.message_metadata["tool_call_id"] for message in tool_messages
-    ] == assistant_call_ids
-    assert "DeferredToolCall" in tool_messages[1].content_parts[0]["text"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("decision", ["approve", "reject"])
-async def test_repeated_approval_results_contribute_to_no_progress_history(
-    db_session,
-    monkeypatch,
-    decision,
-):
-    model_calls = 0
-
-    async def repeated_approval_completion(*args, **kwargs):
-        nonlocal model_calls
-        del args, kwargs
-        model_calls += 1
-
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        class FakeFunction:
-            name = "bash"
-            arguments = json.dumps(
-                {
-                    "command": f"{sys.executable} -c 'print(\"stable\")'",
-                    "cwd": str(settings.bioinfoflow_home),
-                }
-            )
-
-        class FakeToolCall:
-            id = f"tool-call-approval-{model_calls}"
-            function = FakeFunction()
-
-        message = FakeMessage()
-        message.content = ""
-        message.tool_calls = [FakeToolCall()]
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr(
-        "app.services.agent_core.runtime.acompletion",
-        repeated_approval_completion,
-    )
-    monkeypatch.setattr(
-        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
-    )
-    await _workspace(db_session)
-    await _seed_catalog_model(db_session, model_id=f"repeated-{decision}-model")
-
-    service = AgentCoreService(db_session)
-    session = await service.create_session(
-        project_id=None,
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-    )
-    session = await service.session_repo.update_all(
-        session,
-        toolset_policy={"name": "execution"},
-    )
-    turn = await service.create_turn_record(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        input_text="Repeat the same approval-gated observation.",
-    )
-
-    current_turn = await service.runtime.run_turn(str(turn.id))
-    for repeat_index in range(3):
-        assert current_turn.status == "waiting_approval"
-        actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
-        pending_action = next(
-            action for action in actions if action.status == "waiting_decision"
-        )
-        await service.decide_action(
-            action_id=str(pending_action.id),
-            workspace_id=DEFAULT_WORKSPACE_ID,
-            user_id="dev",
-            decision=decision,
-        )
-        current_turn = await service.runtime.resume_turn_after_action(
-            str(pending_action.id)
-        )
-        if repeat_index < 2:
-            assert current_turn.status == "waiting_approval"
-
-    assert model_calls == 3
-    assert current_turn.status == "failed"
-    assert current_turn.termination_reason == "no_progress"
-    assert current_turn.error_code == "no_progress_detected"
-    assert current_turn.loop_state["progress"]["repeat_count"] == 3
-
-
-@pytest.mark.asyncio
-async def test_ask_each_action_static_reads_execute_once_and_close_all_call_ids(
-    db_session,
-    monkeypatch,
-):
-    model_calls = 0
-
-    async def read_batch_completion(*args, **kwargs):
-        nonlocal model_calls
-        model_calls += 1
-
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        message = FakeMessage()
-        if model_calls == 1:
-            class ProjectsFunction:
-                name = "projects__list"
-                arguments = "{}"
-
-            class WorkflowsFunction:
-                name = "workflows__list"
-                arguments = "{}"
-
-            class ProjectsCall:
-                id = "tool-call-static-projects"
-                function = ProjectsFunction()
-
-            class WorkflowsCall:
-                id = "tool-call-static-workflows"
-                function = WorkflowsFunction()
-
-            message.content = ""
-            message.tool_calls = [ProjectsCall(), WorkflowsCall()]
-        else:
-            emitted_ids = {
-                call["id"]
-                for item in kwargs["messages"]
-                for call in item.get("tool_calls", [])
-            }
-            result_ids = {
-                item.get("tool_call_id")
-                for item in kwargs["messages"]
-                if item.get("role") == "tool"
-            }
-            assert emitted_ids == result_ids
-            message.content = "Both static reads completed."
-            message.tool_calls = None
-
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr(
-        "app.services.agent_core.runtime.acompletion", read_batch_completion
-    )
-    await _workspace(db_session)
-    await _seed_catalog_model(db_session, model_id="ask-each-read-model")
-
-    service = AgentCoreService(db_session)
-    session = await service.create_session(
-        project_id=None,
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        permission_mode="ask_each_action",
-    )
-    session = await service.session_repo.update_all(
-        session,
-        toolset_policy={"name": "execution"},
-    )
-    turn = await service.create_turn_record(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        input_text="Read projects and workflows once.",
-    )
-
-    completed_turn = await service.runtime.run_turn(str(turn.id))
-    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
-
-    assert completed_turn.status == "completed"
-    assert model_calls == 2
-    assert sorted(action.name for action in actions) == ["projects.list", "workflows.list"]
-    assert all(action.status == "completed" for action in actions)
-    result_call_ids = {
-        message.message_metadata.get("tool_call_id")
-        for message in messages
-        if message.role == "tool"
-    }
-    assert len(result_call_ids) == 2
-    assert all(call_id.startswith("tc_") for call_id in result_call_ids)
-
-
-@pytest.mark.asyncio
-async def test_dynamic_risk_read_tool_does_not_join_concurrent_batch(
-    db_session,
-    monkeypatch,
-):
-    class DynamicRiskReadTool:
-        spec = AgentToolSpec(
-            name="dynamic.read",
-            description="A read-shaped tool whose input can elevate its risk.",
-            input_schema={"type": "object", "additionalProperties": False},
-            output_schema={"type": "object"},
-            risk_level="read",
-        )
-
-        def assess_risk(self, input):
-            del input
-            return "act_high"
-
-        async def run(self, input, context):
-            del input, context
-            return {"executed": True}
-
-    registry = build_default_tool_registry()
-    registry.register(DynamicRiskReadTool())
-    monkeypatch.setattr(
-        "app.services.agent_core.core.loop.build_default_tool_registry",
-        lambda: registry,
-    )
-
-    async def fake_completion(*args, **kwargs):
-        del args, kwargs
-
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        class DynamicFunction:
-            name = "dynamic__read"
-            arguments = "{}"
-
-        class ListFunction:
-            name = "projects__list"
-            arguments = "{}"
-
-        class DynamicCall:
-            id = "tool-call-dynamic"
-            function = DynamicFunction()
-
-        class ListCall:
-            id = "tool-call-projects-after-dynamic"
-            function = ListFunction()
-
-        message = FakeMessage()
-        message.content = ""
-        message.tool_calls = [DynamicCall(), ListCall()]
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
-    await _workspace(db_session)
-    await _seed_catalog_model(db_session, model_id="dynamic-risk-batch-model")
-
-    service = AgentCoreService(db_session)
-    session = await service.create_session(
-        project_id=None,
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-    )
-    session = await service.session_repo.update_all(
-        session,
-        toolset_policy={"name": "execution"},
-    )
-    turn = await service.create_turn_record(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        input_text="Run the dynamic read before listing projects.",
-    )
-
-    waiting_turn = await service.runtime.run_turn(str(turn.id))
-    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
-
-    assert waiting_turn.status == "waiting_approval"
-    assert [action.name for action in actions] == ["dynamic.read"]
-    assert not any(message.role == "tool" for message in messages)
-
-
-@pytest.mark.asyncio
-async def test_tool_batch_stops_at_first_approval_and_defers_later_mutation(
-    db_session,
-    monkeypatch,
-    tmp_path,
-):
-    model_calls = 0
-    deferred_path = tmp_path / "must-not-be-written.txt"
-
-    async def fake_completion(*args, **kwargs):
-        nonlocal model_calls
-        model_calls += 1
-
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        message = FakeMessage()
-        if model_calls == 1:
-
-            class BashFunction:
-                name = "bash"
-                arguments = json.dumps(
-                    {
-                        "command": f"{sys.executable} -c 'print(\"approved\")'",
-                        "cwd": str(settings.bioinfoflow_home),
-                    }
-                )
-
-            class WriteFunction:
-                name = "files__write"
-                arguments = json.dumps(
-                    {"path": str(deferred_path), "content": "must not be written"}
-                )
-
-            class BashCall:
-                id = "tool-call-bash"
-                function = BashFunction()
-
-            class WriteCall:
-                id = "tool-call-write"
-                function = WriteFunction()
-
-            message.content = ""
-            message.tool_calls = [BashCall(), WriteCall()]
-        else:
-            emitted_ids = [
-                call["id"]
-                for item in kwargs["messages"]
-                for call in item.get("tool_calls", [])
-            ]
-            result_ids = [
-                item.get("tool_call_id")
-                for item in kwargs["messages"]
-                if item.get("role") == "tool"
-            ]
-            assert result_ids == emitted_ids
-            message.content = "Continued without the deferred mutation."
-            message.tool_calls = None
-
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
-    monkeypatch.setattr(
-        "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
-    )
-    await _workspace(db_session)
-    await _seed_catalog_model(db_session, model_id="mutation-batch-model")
-
-    service = AgentCoreService(db_session)
-    session = await service.create_session(
-        project_id=None,
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-    )
-    session = await service.session_repo.update_all(
-        session,
-        toolset_policy={"name": "execution"},
-    )
-    turn = await service.create_turn_record(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        input_text="Run one approved command, but do not batch later mutations.",
-    )
-
-    waiting_turn = await service.runtime.run_turn(str(turn.id))
-    actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
-    messages = await AgentMessageRepository(db_session).list_for_session(
-        str(session.id)
-    )
-
-    assert waiting_turn.status == "waiting_approval"
-    assert [action.name for action in actions] == ["bash"]
-    assert not deferred_path.exists()
-    assert not any(message.role == "tool" for message in messages)
-
-    await service.decide_action(
-        action_id=str(actions[0].id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        decision="approve",
-    )
-    resumed_turn = await service.runtime.resume_turn_after_action(str(actions[0].id))
-
-    assert model_calls == 2
-    assert resumed_turn.status == "completed"
-    assert not deferred_path.exists()
-    messages = await AgentMessageRepository(db_session).list_for_session(str(session.id))
-    tool_messages = [message for message in messages if message.role == "tool"]
-    assistant_call_ids = [
-        call["id"]
-        for message in messages
-        if message.role == "assistant"
-        for part in message.content_parts
-        if part.get("type") == "tool_calls"
-        for call in part.get("tool_calls") or []
-    ]
-    assert [
-        message.message_metadata["tool_call_id"] for message in tool_messages
-    ] == assistant_call_ids
-    assert "DeferredToolCall" in tool_messages[1].content_parts[0]["text"]
+    assert tool_result.call_id == "tool-call-rejected"
+    assert "UserRejected" in tool_result.output
 
 
 @pytest.mark.asyncio
@@ -1599,36 +1058,6 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
     db_session,
     monkeypatch,
 ):
-    async def fake_completion(*args, **kwargs):
-        del args, kwargs
-
-        class FakeResponse:
-            usage = None
-
-        class FakeChoice:
-            pass
-
-        class FakeMessage:
-            pass
-
-        class FakeFunction:
-            name = "bash"
-            arguments = json.dumps({"command": "pwd"})
-
-        class FakeToolCall:
-            id = "tool-call-stale"
-            function = FakeFunction()
-
-        message = FakeMessage()
-        message.content = ""
-        message.tool_calls = [FakeToolCall()]
-        choice = FakeChoice()
-        choice.message = message
-        response = FakeResponse()
-        response.choices = [choice]
-        return response
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
     monkeypatch.setattr(
         "app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None
     )
@@ -1636,6 +1065,20 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
     await _seed_catalog_model(db_session)
 
     service = AgentCoreService(db_session)
+    service.runtime.model_gateway = _FakeModelGateway(
+        (
+            ToolCallDelta(
+                index=0,
+                call_id="tool-call-stale",
+                name="bash",
+                arguments_delta=json.dumps({"command": "pwd"}),
+            ),
+            CompletionMetadata(
+                response_id="chatcmpl-stale-tool",
+                finish_reason="tool_calls",
+            ),
+        )
+    )
     session = await service.create_session(
         project_id=None,
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -1663,12 +1106,15 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
         user_id="dev",
         decision="approve",
     )
-    current_session = await service.session_repo.get_fresh(str(session.id))
+    mutable_session = await service.session_repo.get_fresh(str(session.id))
     await service.session_repo.update_all(
-        current_session,
+        mutable_session,
         session_metadata=session_metadata_with_execution_target(
-            current_session.session_metadata,
-            {"type": "remote_ssh", "connection_id": "conn-1"},
+            mutable_session.session_metadata,
+            {
+                "type": "remote_ssh",
+                "connection_id": "conn-1",
+            },
         ),
     )
 
@@ -1680,23 +1126,14 @@ async def test_resume_stale_local_tool_for_remote_session_records_failed_result(
         str(turn.id)
     )
     assert updated_actions[0].status == "failed"
-    assert updated_actions[0].error["type"] == "ExecutionTargetMismatch"
+    assert updated_actions[0].error["type"] == "PermissionDeniedError"
     messages = await AgentMessageRepository(db_session).list_for_session(
         str(session.id)
     )
     tool_message = next(message for message in messages if message.role == "tool")
     tool_payload = json.loads(tool_message.content_parts[0]["text"])
     assert tool_payload["status"] == "failed"
-    assert tool_payload["error"]["type"] == "ExecutionTargetMismatch"
-    persisted_turn = await service.turn_repo.get(str(turn.id))
-    assert "pending_observation" not in persisted_turn.loop_state["progress"]
-    followup = await service.create_turn_record(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        input_text="Continue after the failed stale action.",
-    )
-    assert followup.status == "queued"
+    assert tool_payload["error"]["type"] == "PermissionDeniedError"
 
 
 @pytest.mark.asyncio

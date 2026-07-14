@@ -203,6 +203,6 @@ async def test_projectless_context_reads_only_workspace_scoped_memory(db_session
     system_content = messages[0]["content"]
     task_context = messages[1]["content"]
 
-    assert "WORKSPACE-MEMORY-VISIBLE" in task_context
-    assert "OTHER-PROJECT-MEMORY-HIDDEN" not in task_context
-    assert "WORKSPACE-MEMORY-VISIBLE" not in system_content
+    assert "WORKSPACE-MEMORY-VISIBLE" in system_content
+    assert "OTHER-PROJECT-MEMORY-HIDDEN" not in system_content
+    assert "WORKSPACE-MEMORY-VISIBLE" not in task_context

@@ -6,6 +6,8 @@ import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import type { AgentAnswer, AgentAskUserQuestion, AgentRuntimeDecisionView } from "@/lib/agent-runtime"
 import { AskUserDecisionCard } from "./ask-user-card"
+import { DecisionSubmissionFeedback, useDecisionSubmission } from "./decision-submission"
+import { DecisionTargetBadge } from "./decision-target-badge"
 import type { AgentDecisionHandler } from "./types"
 
 export function InlineApprovalCard({
@@ -17,6 +19,7 @@ export function InlineApprovalCard({
 }) {
   const t = useTranslations("agentRuntime")
   const isPending = decision.state === "pending"
+  const submission = useDecisionSubmission(decision.actionId, onDecision)
 
   if (decision.interaction?.kind === "user_input") {
     return (
@@ -38,6 +41,8 @@ export function InlineApprovalCard({
         id={decision.scrollTargetId}
         className="grid gap-1.5 text-xs text-muted-foreground"
         data-testid="inline-approval-summary"
+        data-agent-decision-card="resolved"
+        data-action-id={decision.actionId}
       >
         <div className="flex min-h-6 items-center gap-2">
           <DecisionStateIcon state={decision.state} className="h-3.5 w-3.5" />
@@ -51,8 +56,9 @@ export function InlineApprovalCard({
           ) : null}
         </div>
         <div className="grid gap-1 pl-5">
-          <div className="font-mono text-foreground/65">
-            {decision.name ?? decision.actionId}
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-foreground/65">
+            <span className="min-w-0 break-all">{decision.name ?? decision.actionId}</span>
+            <DecisionTargetBadge target={decision.target} />
           </div>
           {decision.inputPreview ? (
             <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-foreground/60">
@@ -69,9 +75,16 @@ export function InlineApprovalCard({
       id={decision.scrollTargetId}
       className="mb-3 rounded-lg border border-border/55 bg-muted/[0.18] px-3 py-2.5 text-sm text-muted-foreground"
       data-testid={isPlanApproval ? "inline-plan-card" : "inline-approval-card"}
+      data-agent-decision-card={isPending ? "pending" : "resolved"}
+      data-action-id={decision.actionId}
+      tabIndex={isPending ? -1 : undefined}
     >
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-        {isPending ? <Check className="h-4 w-4" /> : <DecisionStateIcon state={decision.state} />}
+        {isPending ? (
+          <Check className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          <DecisionStateIcon state={decision.state} />
+        )}
         <span className="min-w-0 flex-1 font-medium text-foreground/65">
           {isPending
             ? isPlanApproval
@@ -84,6 +97,7 @@ export function InlineApprovalCard({
             {decision.riskLevel}
           </span>
         ) : null}
+        <DecisionTargetBadge target={decision.target} />
       </div>
 
       <div className="grid gap-1.5 text-xs text-muted-foreground">
@@ -106,9 +120,10 @@ export function InlineApprovalCard({
             size="sm"
             variant="secondary"
             className="h-8 rounded-full"
-            onClick={() => onDecision(decision.actionId, "approve")}
+            onClick={() => void submission.submit("approve")}
+            disabled={submission.busy}
           >
-            <Check className="h-3.5 w-3.5" />
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
             {isPlanApproval ? t("plan.approveAndAct") : t("approve")}
           </Button>
           <Button
@@ -116,11 +131,19 @@ export function InlineApprovalCard({
             size="sm"
             variant="outline"
             className="h-8 rounded-full bg-card"
-            onClick={() => onDecision(decision.actionId, "reject")}
+            onClick={() => void submission.submit("reject")}
+            disabled={submission.busy}
           >
             {isPlanApproval ? t("plan.keepPlanning") : t("reject")}
           </Button>
         </div>
+      ) : null}
+      {isPending && onDecision ? (
+        <DecisionSubmissionFeedback
+          busy={submission.busy}
+          error={submission.error}
+          onRetry={() => void submission.retry()}
+        />
       ) : null}
     </div>
   )
@@ -164,9 +187,11 @@ function DecisionStateIcon({
   className?: string
 }) {
   const iconClassName = `${className} text-muted-foreground`
-  if (state === "rejected") return <XCircle className={iconClassName} />
-  if (state === "failed" || state === "cancelled") {
-    return <AlertTriangle className={iconClassName} />
+  if (state === "rejected") {
+    return <XCircle className={iconClassName} aria-hidden="true" />
   }
-  return <CheckCircle2 className={iconClassName} />
+  if (state === "failed" || state === "cancelled") {
+    return <AlertTriangle className={iconClassName} aria-hidden="true" />
+  }
+  return <CheckCircle2 className={iconClassName} aria-hidden="true" />
 }

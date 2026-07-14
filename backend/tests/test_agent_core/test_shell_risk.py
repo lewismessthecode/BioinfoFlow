@@ -58,6 +58,46 @@ def test_highest_risk_segment_wins_across_pipes_and_chains():
 @pytest.mark.parametrize(
     "command",
     [
+        "git branch feature/security",
+        "git tag v1.2.3",
+        "git remote add origin https://example.com/repo.git",
+        "git config user.email agent@example.com",
+        "git config --show-origin user.email agent@example.com",
+        "git status --definitely-unknown",
+        "git diff --output=changes.patch HEAD~1 HEAD",
+        "docker image rm bioinfoflow:test",
+        "docker context use production",
+        "docker ps --definitely-unknown",
+        "sort -o output.txt input.txt",
+        "sort --output=output.txt input.txt",
+        "diff --output=changes.patch before.txt after.txt",
+    ],
+)
+def test_mutating_or_unproven_read_family_forms_are_not_auto_run(command):
+    assert classify_shell_command(command) not in {"read", "act_low"}
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git status --short",
+        "git branch --show-current",
+        "git tag --list 'v*'",
+        "git config --get user.email",
+        "docker ps --all",
+        "docker image ls --quiet",
+        "docker context show",
+        "sort --reverse input.txt",
+        "diff --unified before.txt after.txt",
+    ],
+)
+def test_precisely_known_read_family_forms_remain_low_risk(command):
+    assert classify_shell_command(command) == "act_low"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "echo $(rm -rf x)",  # command substitution hides the inner command
         "echo `whoami`",  # backtick substitution
         "echo malicious > /etc/cron.d/x",  # write redirection from a read tool
@@ -77,3 +117,198 @@ def test_env_wrapper_is_unwrapped_to_inner_command():
     assert classify_shell_command("env FOO=bar curl http://x") == "external"
     assert classify_shell_command("env -i ls") == "act_low"
     assert classify_shell_command("env") == "act_low"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo reboot",
+        "printf '%s\\n' shutdown",
+        'echo "safe data; reboot"',
+        "cat <<'EOF'\nreboot\nEOF",
+    ],
+)
+def test_hardline_words_in_data_are_not_treated_as_commands(command):
+    assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sudo reboot",
+        "env SAFE=1 /sbin/poweroff",
+        "sh -c 'shutdown -h now'",
+        "bash -lc 'rm --recursive --force /./'",
+        "command rm -rf -- //",
+        "timeout 5 sudo reboot",
+        "nice -n 5 rm -rf /",
+        "setsid /sbin/halt",
+        "eval 'rm -rf /'",
+        'echo "$(reboot)"',
+    ],
+)
+def test_hardline_commands_survive_common_wrappers(command):
+    assert classify_shell_command(command) == "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "systemctl reboot",
+        "systemctl poweroff",
+        "busybox reboot",
+        "busybox rm -rf /",
+        "python -c \"import os; os.system('reboot')\"",
+        "python3 -c \"import subprocess; subprocess.run(['rm', '-rf', '/'])\"",
+        "perl -e 'system(\"poweroff\")'",
+    ],
+)
+def test_high_confidence_direct_or_interpreter_hardlines_are_critical(command):
+    assert classify_shell_command(command) == "critical"
+
+
+def test_quoted_command_substitution_literal_is_not_executed():
+    assert classify_shell_command("echo '$(reboot)'") != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "xargs rm -rf /",
+        "find / -delete",
+        "find / -exec rm -rf {} +",
+        "find / -exec sh -c 'rm -rf -- \"$1\"' sh {} \\;",
+        "printf image | tee /dev/sda",
+        "cp disk.img /dev/nvme0n1",
+        "install disk.img /dev/mmcblk0",
+        "mv disk.img /dev/vda",
+        "dd if=disk.img of=/dev/mmcblk0 bs=1M",
+    ],
+)
+def test_recursive_and_block_device_sinks_are_hard_blocked(command):
+    assert classify_shell_command(command) == "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "xargs rm -rf",
+        "printf '/\\n' | xargs rm -rf",
+        "xargs sh -c '$COMMAND'",
+    ],
+)
+def test_xargs_with_unknown_runtime_target_is_not_blanket_critical(command):
+    assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo 'xargs rm -rf /'",
+        "printf '%s\\n' 'find / -delete'",
+        "echo 'cp disk.img /dev/nvme0n1'",
+    ],
+)
+def test_recursive_and_device_sink_text_is_not_executable(command):
+    assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf image | tee /dev/md0",
+        "cp disk.img /dev/dm-0",
+        "cp disk.img /dev/root --suffix .bak",
+        "dd if=disk.img of=/dev/loop0 bs=1M",
+        "install disk.img /dev/zram0",
+        "mv disk.img /dev/rdisk0",
+        "mv disk.img /dev/root --suffix .bak",
+        "tee /dev/mapper/vg-root < disk.img",
+        "cp disk.img /dev/disk/by-id/nvme-array",
+    ],
+)
+def test_extended_linux_and_macos_block_device_sinks_are_critical(command):
+    assert classify_shell_command(command) == "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf ok | tee /dev/null",
+        "cp /dev/null output.txt",
+        "dd if=/dev/zero of=/dev/null bs=1 count=1",
+        "printf data > /dev/stdout",
+        "mkfs.ext4 /dev/null",
+        "mkfs.ext4 disk.img",
+    ],
+)
+def test_non_block_dev_nodes_are_not_hard_blocked(command):
+    assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf image | tee /dev/root",
+        "cp disk.img /dev/block/8:0",
+        "dd if=disk.img of=/dev/disk/by-uuid/volume-alias",
+        "install disk.img /dev/custom-disk-alias",
+        "mv disk.img /dev/storage/primary",
+        "printf image > /dev/root",
+        "mkfs.ext4 /dev/root",
+    ],
+)
+def test_unknown_device_write_targets_are_conservatively_critical(command):
+    assert classify_shell_command(command) == "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf ok | tee /dev/null",
+        "dd if=input.bin of=/dev/zero",
+        "printf ok > /dev/stdout",
+        "printf warning > /dev/stderr",
+        "printf ok | tee /dev/fd/1",
+        "printf ok | tee /dev/tty",
+    ],
+)
+def test_safe_pseudo_device_write_targets_are_allowlisted(command):
+    assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat /dev/root",
+        "cp /dev/block/8:0 output.img",
+        "dd if=/dev/disk/by-uuid/volume-alias of=output.img",
+    ],
+)
+def test_device_paths_used_only_as_read_sources_are_not_hard_blocked(command):
+    assert classify_shell_command(command) != "critical"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf data | tee $TARGET",
+        "cp disk.img ${DESTINATION}",
+        "dd if=disk.img of=$(resolve_device)",
+        "printf data > /dev/$DEVICE_NAME",
+        "mv disk.img /dev/disk/by-id/*",
+        "tee /dev/shm/cache.bin < data.bin",
+        "tee /dev/pts/4 < data.bin",
+    ],
+)
+def test_indirect_or_non_block_device_targets_are_not_hard_blocked(command):
+    assert classify_shell_command(command) != "critical"
+
+
+def test_compound_symlink_to_unsafe_device_is_critical():
+    assert (
+        classify_shell_command(
+            "ln -s /dev/root /tmp/device-alias && dd if=disk.img of=/tmp/device-alias"
+        )
+        == "critical"
+    )

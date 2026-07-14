@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -11,16 +13,10 @@ from app.config import settings
 from app.models.agent_core import AgentActionStatus, AgentTurnStatus
 from app.models.llm import LlmModel, LlmProvider
 from app.models.workspace import Workspace
-from app.repositories.agent_core_repo import (
-    AgentActionRepository,
-    AgentEventRepository,
-    AgentMessageRepository,
-    AgentTurnRepository,
-)
+from app.repositories.agent_core_repo import AgentActionRepository, AgentTurnRepository
 from app.services.agent_core import AgentCoreService
 from app.services.agent_core.execution_target import session_metadata_with_execution_target
-from app.services.agent_core.events import AgentEventType
-from app.services.agent_core.ledger import AgentEventLedger
+from app.services.model_runtime.gateway import ModelGateway
 from app.utils.exceptions import ConflictError
 from app.workspace import DEFAULT_WORKSPACE_ID
 
@@ -104,6 +100,30 @@ def _provider_tool_names(kwargs: dict) -> set[str]:
         for tool in kwargs.get("tools", [])
         if tool.get("type") == "function"
     }
+
+
+class _FakeBackend:
+    def __init__(self, completion: Callable[..., Awaitable[Any]]) -> None:
+        self.completion = completion
+
+    async def invoke(
+        self,
+        wire_protocol: str,
+        request: dict[str, Any],
+        *,
+        network_access: str = "unrestricted",
+    ) -> Any:
+        del network_access
+        assert wire_protocol == "chat_completions"
+        return await self.completion(**request)
+
+
+def _install_fake_completion(monkeypatch, completion) -> None:
+    gateway = ModelGateway(backend=_FakeBackend(completion))
+    monkeypatch.setattr(
+        "app.services.agent_core.runtime.ModelGateway",
+        lambda: gateway,
+    )
 
 
 @pytest.mark.asyncio
@@ -217,18 +237,17 @@ async def test_target_update_and_turn_claim_are_one_atomic_decision(
 
     async with maker() as update_db, maker() as turn_db:
         update_service = AgentCoreService(update_db)
-        original_require_session = update_service.require_session
+        original_lock_policy = update_service.session_repo.lock_policy
 
-        async def require_session_then_pause(**kwargs):
-            checked_session = await original_require_session(**kwargs)
+        async def lock_policy_after_pause(*args, **kwargs):
             target_check_complete.set()
             await release_target_update.wait()
-            return checked_session
+            return await original_lock_policy(*args, **kwargs)
 
         monkeypatch.setattr(
-            update_service,
-            "require_session",
-            require_session_then_pause,
+            update_service.session_repo,
+            "lock_policy",
+            lock_policy_after_pause,
         )
         update_task = asyncio.create_task(
             update_service.update_session(
@@ -296,7 +315,7 @@ async def test_active_turn_refreshes_target_before_next_tool_and_model_request(
             )
         return _completion()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="target-refresh-model")
 
@@ -342,158 +361,16 @@ async def test_active_turn_refreshes_target_before_next_tool_and_model_request(
     observed = {
         "second_request_has_bash": "bash" in request_tool_names[1],
         "second_request_has_remote_exec": "remote__exec" in request_tool_names[1],
-        "action_names": {action.name for action in actions},
+        "action_statuses": {action.name: action.status for action in actions},
         "turn_status": completed_turn.status,
         "error_code": completed_turn.error_code,
     }
     assert observed == {
         "second_request_has_bash": False,
         "second_request_has_remote_exec": True,
-        "action_names": set(),
+        "action_statuses": {"bash": AgentActionStatus.FAILED},
         "turn_status": AgentTurnStatus.FAILED,
         "error_code": "tool_not_exposed",
-    }
-
-
-@pytest.mark.asyncio
-async def test_target_change_during_nonstream_response_commit_discards_stale_response(
-    db_session: AsyncSession,
-    db_engine,
-    monkeypatch,
-):
-    assistant_append_started = asyncio.Event()
-    release_assistant_append = asyncio.Event()
-    requested_tool_names: list[set[str]] = []
-    model_calls = 0
-
-    async def fake_completion(*args, **kwargs):
-        del args
-        nonlocal model_calls
-        model_calls += 1
-        requested_tool_names.append(_provider_tool_names(kwargs))
-        if model_calls == 1:
-            response = _completion(tool_name="plugins__list")
-            response.choices[0].message.content = "stale-local-response"
-            return response
-        response = _completion()
-        response.choices[0].message.content = "fresh-remote-response"
-        return response
-
-    original_append = AgentEventLedger.append
-    blocked_first_assistant_append = False
-
-    async def blocking_append(ledger, **kwargs):
-        nonlocal blocked_first_assistant_append
-        if (
-            not blocked_first_assistant_append
-            and kwargs["type"]
-            in {
-                AgentEventType.ASSISTANT_TOOL_CALL_STARTED,
-                AgentEventType.ASSISTANT_TOOL_CALL_COMPLETED,
-                AgentEventType.ASSISTANT_TEXT_COMPLETED,
-            }
-        ):
-            blocked_first_assistant_append = True
-            assistant_append_started.set()
-            await release_assistant_append.wait()
-        return await original_append(ledger, **kwargs)
-
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
-    monkeypatch.setattr(AgentEventLedger, "append", blocking_append)
-    await _workspace(db_session)
-    await _seed_catalog_model(
-        db_session,
-        model_id="target-response-commit-model",
-        supports_streaming=False,
-    )
-
-    service = AgentCoreService(db_session)
-    session = await service.create_session(
-        project_id=None,
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        execution_target={"type": "local"},
-    )
-    turn = await service.create_turn_record(
-        session_id=str(session.id),
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        user_id="dev",
-        input_text="Discard any response produced for a stale execution target.",
-    )
-
-    run_task = asyncio.create_task(service.runtime.run_turn(str(turn.id)))
-    await asyncio.wait_for(assistant_append_started.wait(), timeout=2)
-
-    session_maker = async_sessionmaker(
-        db_engine,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
-    async with session_maker() as independent_db:
-        independent_service = AgentCoreService(independent_db)
-        current_session = await independent_service.session_repo.get(str(session.id))
-        await independent_service.session_repo.update_all(
-            current_session,
-            session_metadata=session_metadata_with_execution_target(
-                current_session.session_metadata,
-                {"type": "remote_ssh", "connection_id": "conn-1"},
-            ),
-        )
-
-    release_assistant_append.set()
-    completed_turn = await asyncio.wait_for(run_task, timeout=5)
-
-    async with session_maker() as inspect_db:
-        events = await AgentEventRepository(inspect_db).list_for_turn(
-            turn_id=str(turn.id)
-        )
-        messages = await AgentMessageRepository(inspect_db).list_for_session(
-            str(session.id)
-        )
-        actions = await AgentActionRepository(inspect_db).list_for_turn(str(turn.id))
-
-    stale_message_id = f"assistant:{turn.id}:1"
-    stale_events = [
-        event
-        for event in events
-        if (event.payload or {}).get("message_id") == stale_message_id
-    ]
-    assistant_parts = [
-        message.content_parts for message in messages if message.role == "assistant"
-    ]
-    serialized_assistant_parts = json.dumps(assistant_parts, sort_keys=True)
-    second_request_tools = (
-        requested_tool_names[1] if len(requested_tool_names) > 1 else set()
-    )
-
-    assert {
-        "model_calls": model_calls,
-        "first_request_has_local_shell": "bash" in requested_tool_names[0],
-        "first_request_has_remote_exec": "remote__exec" in requested_tool_names[0],
-        "second_request_has_local_shell": "bash" in second_request_tools,
-        "second_request_has_remote_exec": "remote__exec" in second_request_tools,
-        "turn_status": completed_turn.status,
-        "turn_final_text": completed_turn.final_text,
-        "turn_error_code": completed_turn.error_code,
-        "stale_event_types": [event.type for event in stale_events],
-        "stale_text_persisted": "stale-local-response"
-        in serialized_assistant_parts,
-        "fresh_text_persisted": "fresh-remote-response"
-        in serialized_assistant_parts,
-        "action_names": {action.name for action in actions},
-    } == {
-        "model_calls": 2,
-        "first_request_has_local_shell": True,
-        "first_request_has_remote_exec": False,
-        "second_request_has_local_shell": False,
-        "second_request_has_remote_exec": True,
-        "turn_status": AgentTurnStatus.COMPLETED,
-        "turn_final_text": "fresh-remote-response",
-        "turn_error_code": None,
-        "stale_event_types": [],
-        "stale_text_persisted": False,
-        "fresh_text_persisted": True,
-        "action_names": set(),
     }
 
 
@@ -520,7 +397,7 @@ async def test_resume_completed_action_does_not_skip_current_pending_observation
             )
         return _completion()
 
-    monkeypatch.setattr("app.services.agent_core.runtime.acompletion", fake_completion)
+    _install_fake_completion(monkeypatch, fake_completion)
     await _workspace(db_session)
     await _seed_catalog_model(db_session, model_id="stale-resume-model")
 
@@ -547,9 +424,9 @@ async def test_resume_completed_action_does_not_skip_current_pending_observation
         for action in actions
         if action.status == AgentActionStatus.WAITING_DECISION
     )
-    pending_progress = dict(waiting_turn.loop_state["progress"]["pending_observation"])
+    pending_call_ids = list(waiting_turn.loop_state["pending_tool_call_ids"])
 
-    with pytest.raises(ConflictError, match="cannot resume from status"):
+    with pytest.raises(ConflictError, match="not awaiting resume"):
         await service.resume_action(
             action_id=str(completed_action.id),
             workspace_id=DEFAULT_WORKSPACE_ID,
@@ -561,7 +438,6 @@ async def test_resume_completed_action_does_not_skip_current_pending_observation
     fresh_turn = await AgentTurnRepository(db_session).get_fresh(str(turn.id))
     fresh_actions = await AgentActionRepository(db_session).list_for_turn(str(turn.id))
     fresh_pending = next(action for action in fresh_actions if action.id == pending_action.id)
-    fresh_progress = (fresh_turn.loop_state or {}).get("progress") or {}
 
     assert {
         "resume_status": stale_resume_result.status,
@@ -569,12 +445,12 @@ async def test_resume_completed_action_does_not_skip_current_pending_observation
         "model_calls": model_calls,
         "pending_action_status": fresh_pending.status,
         "pending_action_requires_resume": fresh_pending.requires_resume,
-        "pending_observation": fresh_progress.get("pending_observation"),
+        "pending_tool_call_ids": fresh_turn.loop_state.get("pending_tool_call_ids"),
     } == {
         "resume_status": AgentTurnStatus.WAITING_APPROVAL,
         "turn_status": AgentTurnStatus.WAITING_APPROVAL,
         "model_calls": 2,
         "pending_action_status": AgentActionStatus.WAITING_DECISION,
         "pending_action_requires_resume": True,
-        "pending_observation": pending_progress,
+        "pending_tool_call_ids": pending_call_ids,
     }

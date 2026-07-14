@@ -31,7 +31,7 @@ class RemoteConnectionRepository(BaseRepository[RemoteConnection]):
         stmt = select(self.model).where(
             self.model.id == connection_id,
             self.model.workspace_id == workspace_id,
-        )
+        ).execution_options(populate_existing=True)
         result = await self.session.execute(stmt)
         return result.scalars().first()
 

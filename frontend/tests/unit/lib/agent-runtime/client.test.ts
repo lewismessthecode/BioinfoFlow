@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
   createAgentRuntimeSession,
   createAgentRuntimeTurn,
+  updateAgentRuntimeSessionPermissionMode,
   updateAgentRuntimeSessionMetadata,
 } from "@/lib/agent-runtime/client"
 
@@ -99,6 +100,50 @@ describe("agent runtime client", () => {
     expect(body).toMatchObject({
       metadata: { batch: "b001" },
       execution_target: { kind: "local", type: "local" },
+    })
+  })
+
+  it("serializes pending strategy and returns reconciliation metadata", async () => {
+    apiRequestMock.mockResolvedValueOnce({
+      data: {
+        id: "session-1",
+        project_id: null,
+        workspace_id: "workspace-1",
+        user_id: "dev",
+        role_profile: "bioinformatician",
+        permission_mode: "bypass",
+        automation_mode: "assisted",
+        permission_policy_version: 4,
+        runtime_mode: "api",
+        status: "active",
+        pending_strategy: "approve_pending_tools",
+        pending_reconciliation: {
+          affected_count: 2,
+          excluded_count: 1,
+          already_resolved_count: 3,
+        },
+        created_at: "2026-07-13T00:00:00Z",
+        updated_at: "2026-07-13T00:00:01Z",
+      },
+    })
+
+    const updated = await updateAgentRuntimeSessionPermissionMode(
+      "session-1",
+      "bypass",
+      "approve_pending_tools",
+    )
+
+    const body = JSON.parse(apiRequestMock.mock.calls[0][1].body)
+    expect(body).toEqual({
+      permission_mode: "bypass",
+      pending_strategy: "approve_pending_tools",
+    })
+    expect(updated.permission_policy_version).toBe(4)
+    expect(updated.pending_strategy).toBe("approve_pending_tools")
+    expect(updated.pending_reconciliation).toEqual({
+      affected_count: 2,
+      excluded_count: 1,
+      already_resolved_count: 3,
     })
   })
 })

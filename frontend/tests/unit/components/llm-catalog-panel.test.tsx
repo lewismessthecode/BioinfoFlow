@@ -6,6 +6,7 @@ import { LlmCatalogPanel } from "@/components/bioinfoflow/settings/llm-catalog-p
 const useLlmCatalogMock = vi.fn()
 const toastErrorMock = vi.fn()
 const toastSuccessMock = vi.fn()
+const toastWarningMock = vi.fn()
 const celebrateMilestoneMock = vi.fn()
 
 vi.mock("@/hooks/use-llm-catalog", () => ({
@@ -33,6 +34,9 @@ vi.mock("next-intl", () => ({
       "providerCards.refreshModels": "Refresh models",
       "providerCards.refreshingModels": "Refreshing...",
       "providerCards.modelsDiscovered": `${values?.count ?? 0} models found`,
+      "providerCards.savedDiscoveryFailed":
+        "Provider saved, but model discovery failed",
+      "providerCards.savedNoModels": "Provider saved, but no models were found",
       "providerCards.modelRefreshFailed": "Models could not be refreshed",
       "providerCards.modelIdPlaceholder": "Model ID",
       "providerCards.allowInsecureHttp": "Allow insecure HTTP",
@@ -46,6 +50,20 @@ vi.mock("next-intl", () => ({
       "providerCards.endpointLabel": "Endpoint",
       "providerCards.apiKeyLabel": "API key",
       "providerCards.modelIdLabel": "Model ID",
+      "providerCards.protocolLabel": "Protocol",
+      "providerCards.protocolChat": "Chat Completions",
+      "providerCards.protocolResponses": "Responses",
+      "providerCards.test": "Test",
+      "providerCards.testing": "Testing...",
+      "providerCards.testModelLabel": "Test model",
+      "providerCards.noTestModels": "No model available",
+      "providerCards.testSucceeded": "Connection verified",
+      "providerCards.testFailed": "Connection failed",
+      "providerCards.retryable": "Retryable",
+      "providerCards.settingsChanged": "Settings changed. Save and test again.",
+      "providerCards.testRequestFailed": "Provider test could not be completed.",
+      "providerCards.protocolAriaLabel": `${values?.provider ?? ""} protocol`,
+      "providerCards.testModelAriaLabel": `${values?.provider ?? ""} test model`,
     }
     return labels[key] ?? key
   },
@@ -55,6 +73,7 @@ vi.mock("sonner", () => ({
   toast: {
     error: (...args: unknown[]) => toastErrorMock(...args),
     success: (...args: unknown[]) => toastSuccessMock(...args),
+    warning: (...args: unknown[]) => toastWarningMock(...args),
   },
 }))
 
@@ -116,6 +135,7 @@ describe("LlmCatalogPanel", () => {
     useLlmCatalogMock.mockReset()
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
+    toastWarningMock.mockReset()
     celebrateMilestoneMock.mockReset()
   })
 
@@ -149,6 +169,566 @@ describe("LlmCatalogPanel", () => {
 
     expect(screen.queryByText("Model profiles")).not.toBeInTheDocument()
     expect(screen.queryByText("Models")).not.toBeInTheDocument()
+  })
+
+  it("shows a compact protocol selector only for multi-protocol providers and restores saved Responses", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          wire_protocol: "responses",
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const openaiCard = screen.getByRole("group", { name: "OpenAI" })
+    expect(within(openaiCard).getByLabelText("OpenAI protocol")).toHaveValue(
+      "responses",
+    )
+    const anthropicCard = screen.getByRole("group", { name: "Anthropic" })
+    expect(
+      within(anthropicCard).queryByLabelText("Anthropic protocol"),
+    ).not.toBeInTheDocument()
+  })
+
+  it("saves the selected protocol without coupling Save to Test", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai", wire_protocol: "responses" },
+        models: [],
+        discovered: false,
+      },
+    })
+    const testProvider = vi.fn()
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider,
+      testProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "sk-new" },
+    })
+    fireEvent.change(within(card).getByLabelText("OpenAI protocol"), {
+      target: { value: "responses" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() =>
+      expect(setupProvider).toHaveBeenCalledWith(
+        expect.objectContaining({ wireProtocol: "responses" }),
+      ),
+    )
+    expect(testProvider).not.toHaveBeenCalled()
+  })
+
+  it("tests a selected model separately and renders safe success status", async () => {
+    const testProvider = vi.fn().mockResolvedValue({
+      provider_id: "provider-relay",
+      success: true,
+      model: "gpt-5.4",
+      wire_protocol: "responses",
+      latency_ms: 42,
+      retryable: false,
+    })
+    const setupProvider = vi.fn()
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-relay",
+          name: "OpenAI Compatible",
+          kind: "openai_compatible",
+          wire_protocol: "responses",
+          metadata: { providerTemplate: "openai-compatible" },
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+        {
+          id: "model-two",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4",
+          display_name: "GPT 5.4",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider,
+      testProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible test model"), {
+      target: { value: "model-two" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Test" }))
+
+    await waitFor(() => {
+      expect(testProvider).toHaveBeenCalledWith("provider-relay", "model-two")
+    })
+    expect(setupProvider).not.toHaveBeenCalled()
+    const status = await within(card).findByRole("status")
+    expect(within(status).getByText("Connection verified")).toBeInTheDocument()
+    expect(within(status).getByText("Responses")).toBeInTheDocument()
+    expect(within(status).getByText("gpt-5.4")).toBeInTheDocument()
+    expect(within(status).getByText("42 ms")).toBeInTheDocument()
+  })
+
+  it("clears a local probe result when the selected test model changes", async () => {
+    const testProvider = vi.fn().mockResolvedValue({
+      provider_id: "provider-relay",
+      success: true,
+      model: "gpt-5.4-mini",
+      wire_protocol: "responses",
+      latency_ms: 42,
+      retryable: false,
+    })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-relay",
+          name: "OpenAI Compatible",
+          kind: "openai_compatible",
+          wire_protocol: "responses",
+          metadata: { providerTemplate: "openai-compatible" },
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+        {
+          id: "model-two",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4",
+          display_name: "GPT 5.4",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    fireEvent.click(within(card).getByRole("button", { name: "Test" }))
+    expect(await within(card).findByRole("status")).toHaveTextContent(
+      "gpt-5.4-mini",
+    )
+
+    fireEvent.change(within(card).getByLabelText("OpenAI Compatible test model"), {
+      target: { value: "model-two" },
+    })
+
+    expect(within(card).queryByRole("status")).not.toBeInTheDocument()
+  })
+
+  it("hides persisted probe status for a different selected model", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-relay",
+          name: "OpenAI Compatible",
+          kind: "openai_compatible",
+          wire_protocol: "responses",
+          metadata: { providerTemplate: "openai-compatible" },
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+          test_status: {
+            success: true,
+            model: "gpt-5.4",
+            wire_protocol: "responses",
+            latency_ms: 42,
+            retryable: false,
+          },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+        {
+          id: "model-two",
+          provider_id: "provider-relay",
+          model_id: "gpt-5.4",
+          display_name: "GPT 5.4",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI Compatible" })
+    expect(within(card).getByLabelText("OpenAI Compatible test model")).toHaveValue(
+      "model-one",
+    )
+    expect(within(card).queryByRole("status")).not.toBeInTheDocument()
+  })
+
+  it("renders safe probe failure details and disables Test without models", async () => {
+    const testProvider = vi.fn().mockResolvedValue({
+      provider_id: "provider-openai",
+      success: false,
+      model: "gpt-5.4-mini",
+      wire_protocol: "responses",
+      error_code: "service_unavailable",
+      error: "The model provider is temporarily unavailable.",
+      latency_ms: 125,
+      retryable: true,
+      http_status: 503,
+      provider_code: "server_error",
+    })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          wire_protocol: "responses",
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-openai",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider,
+    })
+
+    const { rerender } = render(<LlmCatalogPanel />)
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.click(within(card).getByRole("button", { name: "Test" }))
+
+    expect(await within(card).findByText("Connection failed")).toBeInTheDocument()
+    expect(
+      within(card).getByText("The model provider is temporarily unavailable."),
+    ).toBeInTheDocument()
+    expect(within(card).getByText("Retryable")).toBeInTheDocument()
+
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          wire_protocol: "responses",
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider,
+    })
+    rerender(<LlmCatalogPanel />)
+    expect(
+      within(screen.getByRole("group", { name: "OpenAI" })).getByRole("button", {
+        name: "Test",
+      }),
+    ).toBeDisabled()
+    expect(screen.getByText("No model available")).toBeInTheDocument()
+  })
+
+  it("renders a row error when the provider test request fails", async () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          wire_protocol: "responses",
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-openai",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn().mockResolvedValue(null),
+    })
+
+    render(<LlmCatalogPanel />)
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.click(within(card).getByRole("button", { name: "Test" }))
+
+    expect(
+      await within(card).findByText("Provider test could not be completed."),
+    ).toBeInTheDocument()
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      "Provider test could not be completed.",
+    )
+  })
+
+  it("hides a saved probe status after unsaved protocol edits", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          wire_protocol: "chat_completions",
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+          test_status: {
+            success: true,
+            model: "gpt-5.4-mini",
+            wire_protocol: "chat_completions",
+            latency_ms: 24,
+            retryable: false,
+          },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-openai",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    expect(within(card).getByText("Connection verified")).toBeInTheDocument()
+
+    fireEvent.change(within(card).getByLabelText("OpenAI protocol"), {
+      target: { value: "responses" },
+    })
+
+    expect(within(card).queryByText("Connection verified")).not.toBeInTheDocument()
+    expect(
+      within(card).getByText("Settings changed. Save and test again."),
+    ).toBeInTheDocument()
+    expect(within(card).getByRole("button", { name: "Test" })).toBeDisabled()
+  })
+
+  it("marks a saved probe status stale after credential edits", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          wire_protocol: "chat_completions",
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+          test_status: {
+            success: true,
+            model: "gpt-5.4-mini",
+            wire_protocol: "chat_completions",
+            latency_ms: 24,
+            retryable: false,
+          },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-openai",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    expect(within(card).getByText("Connection verified")).toBeInTheDocument()
+
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "replacement-key" },
+    })
+
+    expect(within(card).queryByText("Connection verified")).not.toBeInTheDocument()
+    expect(
+      within(card).getByText("Settings changed. Save and test again."),
+    ).toBeInTheDocument()
+    expect(within(card).getByRole("button", { name: "Test" })).toBeDisabled()
+  })
+
+  it("discards a late probe result after settings change and save", async () => {
+    let resolveProbe!: (value: {
+      provider_id: string
+      success: boolean
+      model: string
+      wire_protocol: "responses"
+      latency_ms: number
+      retryable: boolean
+    }) => void
+    const testProvider = vi.fn(
+      () =>
+        new Promise<Parameters<typeof resolveProbe>[0]>((resolve) => {
+          resolveProbe = resolve
+        }),
+    )
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai", wire_protocol: "responses" },
+        models: [],
+        discovered: false,
+      },
+    })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          wire_protocol: "responses",
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [
+        {
+          id: "model-one",
+          provider_id: "provider-openai",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider,
+      testProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.click(within(card).getByRole("button", { name: "Test" }))
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "replacement-key" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(setupProvider).toHaveBeenCalled())
+
+    resolveProbe({
+      provider_id: "provider-openai",
+      success: true,
+      model: "gpt-5.4-mini",
+      wire_protocol: "responses",
+      latency_ms: 42,
+      retryable: false,
+    })
+
+    await waitFor(() =>
+      expect(within(card).getByRole("button", { name: "Test" })).toBeEnabled(),
+    )
+    expect(testProvider).toHaveBeenCalledTimes(1)
+    expect(within(card).queryByText("Connection verified")).not.toBeInTheDocument()
   })
 
   it("keeps stored secrets write-only and updates an existing provider through setup", async () => {
@@ -205,14 +785,131 @@ describe("LlmCatalogPanel", () => {
         apiKey: "sk-new",
         baseUrl: "https://api.openai.com/v1",
         modelIds: [],
-        discover: true,
+        discover: false,
         scope: "user",
         enabled: true,
         allowInsecureHttp: false,
+        wireProtocol: "chat_completions",
       })
     })
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
     expect(celebrateMilestoneMock).not.toHaveBeenCalled()
+  })
+
+  it("discovers models after saving a discoverable provider without model ids", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai" },
+        models: [],
+        discovered: false,
+      },
+    })
+    const discoverModels = vi.fn().mockResolvedValue([
+      { id: "model-openai", model_id: "gpt-5.4-mini" },
+    ])
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      discoverModels,
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "sk-new" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(setupProvider).toHaveBeenCalledWith(
+        expect.objectContaining({ discover: false, modelIds: [] }),
+      )
+      expect(discoverModels).toHaveBeenCalledWith("provider-openai")
+    })
+    expect(toastSuccessMock).toHaveBeenCalledWith("1 models found")
+  })
+
+  it("keeps the provider saved when automatic model discovery fails", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai" },
+        models: [],
+        discovered: false,
+      },
+    })
+    const discoverModels = vi.fn().mockResolvedValue(null)
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      discoverModels,
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    const apiKeyInput = within(card).getByLabelText("OpenAI API key")
+    fireEvent.change(apiKeyInput, { target: { value: "sk-new" } })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() =>
+      expect(toastWarningMock).toHaveBeenCalledWith(
+        "Provider saved, but model discovery failed",
+      ),
+    )
+    expect(apiKeyInput).toHaveValue("")
+    expect(toastErrorMock).not.toHaveBeenCalled()
+    expect(toastSuccessMock).not.toHaveBeenCalled()
+  })
+
+  it("warns when automatic model discovery finds no models", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-openai" },
+        models: [],
+        discovered: false,
+      },
+    })
+    const discoverModels = vi.fn().mockResolvedValue([])
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      discoverModels,
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.change(within(card).getByLabelText("OpenAI API key"), {
+      target: { value: "sk-new" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() =>
+      expect(toastWarningMock).toHaveBeenCalledWith(
+        "Provider saved, but no models were found",
+      ),
+    )
+    expect(toastErrorMock).not.toHaveBeenCalled()
+    expect(toastSuccessMock).not.toHaveBeenCalled()
   })
 
   it("celebrates the first provider key when setup creates the first usable keyed provider", async () => {
@@ -259,10 +956,11 @@ describe("LlmCatalogPanel", () => {
         apiKey: "sk-first",
         baseUrl: "https://api.openai.com/v1",
         modelIds: [],
-        discover: true,
+        discover: false,
         scope: "user",
         enabled: true,
         allowInsecureHttp: false,
+        wireProtocol: "chat_completions",
       })
     })
     expect(celebrateMilestoneMock).toHaveBeenCalledWith("first-provider-key")
@@ -300,10 +998,11 @@ describe("LlmCatalogPanel", () => {
         baseUrl: "https://api.x.ai/v1",
         apiKey: "xai-key",
         modelIds: [],
-        discover: true,
+        discover: false,
         scope: "user",
         enabled: true,
         allowInsecureHttp: false,
+        wireProtocol: "chat_completions",
       })
     })
     expect(toastErrorMock).toHaveBeenCalledWith("Provider could not be saved")
@@ -320,6 +1019,7 @@ describe("LlmCatalogPanel", () => {
         discovered: false,
       },
     })
+    const discoverModels = vi.fn()
     useLlmCatalogMock.mockReturnValue({
       providerTemplates: templates,
       configuredProviders: [],
@@ -327,7 +1027,7 @@ describe("LlmCatalogPanel", () => {
       isLoading: false,
       isMutating: false,
       error: null,
-      discoverModels: vi.fn(),
+      discoverModels,
       setupProvider,
     })
 
@@ -350,14 +1050,57 @@ describe("LlmCatalogPanel", () => {
         baseUrl: "http://localhost:8000/v1",
         apiKey: "",
         modelIds: ["deepseek_v4"],
-        discover: true,
+        discover: false,
         scope: "user",
         enabled: true,
         allowInsecureHttp: false,
+        wireProtocol: "chat_completions",
       })
     })
+    expect(discoverModels).not.toHaveBeenCalled()
     expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
     expect(celebrateMilestoneMock).not.toHaveBeenCalled()
+  })
+
+  it("does not discover models after saving a static provider", async () => {
+    const staticTemplate = providerTemplate(
+      "static-provider",
+      "Static Provider",
+      "static_provider",
+      "static",
+      [field("api_key", "API key", true, true)],
+    )
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-static" },
+        models: [],
+        discovered: false,
+      },
+    })
+    const discoverModels = vi.fn()
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: [staticTemplate],
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      discoverModels,
+      setupProvider,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "Static Provider" })
+    fireEvent.change(within(card).getByLabelText("Static Provider API key"), {
+      target: { value: "static-key" },
+    })
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => expect(setupProvider).toHaveBeenCalled())
+    expect(discoverModels).not.toHaveBeenCalled()
+    expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
   })
 
   it("lets discoverable providers refresh models through provider setup", async () => {
@@ -460,14 +1203,16 @@ describe("LlmCatalogPanel", () => {
     await waitFor(() => {
       expect(setupProvider).toHaveBeenCalledWith({
         templateId: "openai-compatible",
+        providerId: undefined,
         name: "OpenAI Compatible",
         baseUrl: "http://8.129.13.231:8079/v1",
         apiKey: "relay-key",
         modelIds: ["gpt-5.6-sol"],
-        discover: true,
+        discover: false,
         scope: "user",
         enabled: true,
         allowInsecureHttp: true,
+        wireProtocol: "chat_completions",
       })
     })
   })
@@ -736,6 +1481,10 @@ function providerTemplate(
   defaultBaseUrl?: string,
   models: Array<Record<string, unknown>> = [],
 ) {
+  const supportedWireProtocols =
+    kind === "openai" || kind === "openai_compatible"
+      ? ["chat_completions", "responses"]
+      : ["chat_completions"]
   return {
     id,
     name,
@@ -743,6 +1492,8 @@ function providerTemplate(
     docs_url: `https://docs.example.com/${id}`,
     discovery,
     default_base_url: defaultBaseUrl,
+    supported_wire_protocols: supportedWireProtocols,
+    default_wire_protocol: "chat_completions",
     fields,
     models,
   }

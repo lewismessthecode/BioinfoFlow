@@ -2267,6 +2267,8 @@
       "fromEnv": "From .env",
       "keySavedShort": "Key saved",
       "saved": "Provider saved",
+      "savedDiscoveryFailed": "Provider saved, but model discovery failed",
+      "savedNoModels": "Provider saved, but no models were found",
       "saveFailed": "Provider could not be saved",
       "refreshModels": "Refresh models",
       "refreshingModels": "Refreshing...",
@@ -2281,7 +2283,21 @@
       "retry": "Retry",
       "endpointLabel": "Endpoint",
       "apiKeyLabel": "API key",
-      "modelIdLabel": "Model ID"
+      "modelIdLabel": "Model ID",
+      "protocolLabel": "Protocol",
+      "protocolAriaLabel": "{provider} protocol",
+      "protocolChat": "Chat Completions",
+      "protocolResponses": "Responses",
+      "test": "Test",
+      "testing": "Testing...",
+      "testModelLabel": "Test model",
+      "testModelAriaLabel": "{provider} test model",
+      "noTestModels": "No model available",
+      "testSucceeded": "Connection verified",
+      "testFailed": "Connection failed",
+      "settingsChanged": "Settings changed. Save and test again.",
+      "testRequestFailed": "Provider test could not be completed.",
+      "retryable": "Retryable"
     },
     "registries": {
       "title": "Container Registries",
@@ -2619,6 +2635,7 @@
     "reject": "Reject",
     "approval": {
       "jumpToDecision": "Needs confirmation · Jump",
+      "remoteTarget": "Remote target: {target}",
       "state": {
         "approved": "Approved, resuming",
         "answered": "Answer submitted, resuming",
@@ -2627,6 +2644,13 @@
         "failed": "Failed",
         "cancelled": "Cancelled"
       }
+    },
+    "decision": {
+      "submitting": "Submitting decision…",
+      "failed": "Could not submit decision: {error}",
+      "retry": "Retry decision",
+      "focusedNext": "Decision submitted. Moved to the next request.",
+      "focusedComposer": "Decision submitted. Focus returned to the composer."
     },
     "attachMenu": {
       "attachFiles": "Attach files",
@@ -2852,6 +2876,27 @@
           "label": "Full access",
           "description": "Run non-critical actions automatically while backend safety still blocks critical operations."
         }
+      },
+      "boundary": {
+        "local": "Local actions keep the sandbox or host boundary currently configured for this session; permission mode does not expand it.",
+        "remote": "SSH actions use the remote account and server policy; the working folder is not a sandbox."
+      },
+      "safetyFloor": "Critical actions, protected resources, and required user interactions remain blocked or gated in every mode.",
+      "status": {
+        "updating": "Updating permission mode...",
+        "updated": "Permission mode updated for future operations.",
+        "reconciled": "{affected} waiting operations approved; {excluded} excluded; {resolved} already resolved.",
+        "failed": "Could not update permission mode: {error}"
+      },
+      "retry": "Retry permission update",
+      "confirm": {
+        "title": "Update permission mode?",
+        "description": "{eligible} waiting tool operations can be approved; {excluded} interactions stay pending.",
+        "futureOnly": "Only update future operations",
+        "futureOnlyDescription": "Current waiting operations still need your decision.",
+        "approvePending": "Update and approve {count} waiting tools",
+        "approvePendingDescription": "Questions and plan reviews are never auto-approved.",
+        "cancel": "Cancel"
       }
     },
     "plan": {

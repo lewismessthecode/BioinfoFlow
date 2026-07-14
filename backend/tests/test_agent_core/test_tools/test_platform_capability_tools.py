@@ -18,7 +18,11 @@ from app.services.agent_core.tools import (
 from app.workspace import DEFAULT_WORKSPACE_ID
 
 
-async def _context(db_session) -> tuple[AgentToolDispatcher, AgentToolContext]:
+async def _context(
+    db_session,
+    *,
+    permission_mode: str = "bypass",
+) -> tuple[AgentToolDispatcher, AgentToolContext]:
     workspace = Workspace(id=DEFAULT_WORKSPACE_ID, name="Team", slug="team")
     project = Project(
         name="Platform Project",
@@ -36,6 +40,7 @@ async def _context(db_session) -> tuple[AgentToolDispatcher, AgentToolContext]:
         project_id=str(project.id),
         workspace_id=DEFAULT_WORKSPACE_ID,
         user_id="dev",
+        permission_mode=permission_mode,
     )
     turn = await core.create_turn_record(
         session_id=str(session.id),
@@ -57,7 +62,7 @@ async def _context(db_session) -> tuple[AgentToolDispatcher, AgentToolContext]:
 
 @pytest.mark.asyncio
 async def test_write_tool_asks_for_approval_in_default_session(db_session):
-    dispatcher, context = await _context(db_session)
+    dispatcher, context = await _context(db_session, permission_mode="guarded_auto")
 
     result = await dispatcher.dispatch(
         tool_name="files.write",

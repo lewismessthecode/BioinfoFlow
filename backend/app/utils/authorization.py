@@ -68,6 +68,18 @@ def can_select_container_registry(role: str | None) -> bool:
     return role in ADMIN_ROLES
 
 
+def can_manage_server_integrations(role: str | None) -> bool:
+    """Return whether a caller may bind integrations to server-owned resources.
+
+    Personal and development deployments have one trusted operator. In team
+    mode, environment variables and non-public network targets belong to the
+    server trust boundary and therefore require owner/admin authority.
+    """
+    if not settings.auth_is_team:
+        return True
+    return role in ADMIN_ROLES
+
+
 def can_perform_destructive_business_action(role: str | None) -> bool:
     if not settings.auth_is_team:
         return True

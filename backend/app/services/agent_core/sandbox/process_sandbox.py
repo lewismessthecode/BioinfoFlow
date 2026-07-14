@@ -192,7 +192,7 @@ class SandboxRunner:
                 )
             return SandboxResult(_NO_SANDBOX.build_argv(_spec(command, cwd)), "none", False)
 
-        adapter = self._select_adapter()
+        adapter = self.available_adapter()
         if adapter is None:
             if self.fail_closed:
                 raise SandboxUnavailableError(
@@ -214,6 +214,10 @@ class SandboxRunner:
             if adapter.available():
                 return adapter
         return None
+
+    def available_adapter(self) -> SandboxAdapter | None:
+        """Return the OS sandbox adapter currently available for this runner."""
+        return self._select_adapter()
 
 
 def _default_adapters() -> list[SandboxAdapter]:
