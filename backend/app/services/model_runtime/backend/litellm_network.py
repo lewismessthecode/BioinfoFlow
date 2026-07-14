@@ -112,6 +112,10 @@ class PublicNetworkHTTPHandler(AsyncHTTPHandler):
     def closed(self) -> bool:
         return self._closed
 
+    @property
+    def session(self) -> ClientSession:
+        return self._policy_session
+
     def create_client(
         self,
         timeout: float | httpx.Timeout | None,
