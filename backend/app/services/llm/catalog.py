@@ -170,8 +170,9 @@ class LlmCatalogService:
         elif template.default_base_url:
             base_url = normalize_provider_base_url(template.kind, template.default_base_url)
 
+        existing_metadata = provider.provider_metadata if provider is not None else None
         metadata = {
-            **(provider.provider_metadata if provider is not None else {}),
+            **(existing_metadata or {}),
             "providerTemplate": template.id,
         }
         if provider is None:
