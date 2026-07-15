@@ -131,7 +131,11 @@ def assess_command_risk(
     nodes = _parse_command_nodes(_strip_heredoc_bodies(command))
     effects = _command_effects(nodes)
     sink_safety = _analyze_write_sink_safety(nodes)
-    execution_safety = _analyze_indirect_execution_safety(nodes, command=command)
+    execution_safety = _analyze_indirect_execution_safety(
+        nodes,
+        command=command,
+        target=target,
+    )
     referenced_paths, path_analysis_confident = _referenced_paths(nodes, target=target)
     protected_resources = _protected_resources(
         [*referenced_paths, *sink_safety.protected_paths]
@@ -506,7 +510,7 @@ def _classify_node(node: _CommandNode) -> RiskLevel:
     if executable == "find" and _find_is_hardline(args):
         return "critical"
 
-    has_write_redirect = any(token in {">", ">>"} for token in tokens)
+    has_write_redirect = _has_file_output_redirect(tokens)
     if elevated:
         return "destructive"
     if executable in _DESTRUCTIVE_EXECUTABLES:
@@ -570,6 +574,12 @@ def _parse_command_nodes(text: str) -> list[_CommandNode]:
         if char == "\n" or char == ";":
             operator = ";"
         elif char == "|" and index > 0 and text[index - 1] == ">":
+            index += 1
+            continue
+        elif char == "&" and (
+            (index > 0 and text[index - 1] in {"<", ">"})
+            or (index + 1 < len(text) and text[index + 1] == ">")
+        ):
             index += 1
             continue
         elif char in {"|", "&"}:
@@ -1277,6 +1287,35 @@ def _has_output_option(args: list[str], options: set[str]) -> bool:
     return bool(_output_option_destinations(args, options))
 
 
+def _has_file_output_redirect(tokens: list[str]) -> bool:
+    return any(
+        _redirect_path_token(tokens, index) is not None
+        for index, token in enumerate(tokens)
+        if token in {">", ">>"}
+    )
+
+
+def _redirect_path_token(tokens: list[str], index: int) -> str | None:
+    if index + 1 >= len(tokens):
+        return "$UNRESOLVED_MISSING_OUTPUT"
+    if tokens[index + 1] == "|":
+        return tokens[index + 2] if index + 2 < len(tokens) else None
+    if tokens[index + 1] == "&":
+        if index + 2 >= len(tokens):
+            return "$UNRESOLVED_MISSING_OUTPUT"
+        candidate = tokens[index + 2]
+        if _is_fd_duplication_word(candidate, after_ampersand=True):
+            return None
+        return candidate
+    candidate = tokens[index + 1]
+    return None if _is_fd_duplication_word(candidate) else candidate
+
+
+def _is_fd_duplication_word(value: str, *, after_ampersand: bool = False) -> bool:
+    pattern = r"(?:\d+|-)" if after_ampersand else r"&(?:\d+|-)"
+    return bool(re.fullmatch(pattern, value))
+
+
 def _output_option_destinations(args: list[str], options: set[str]) -> list[str]:
     destinations: list[str] = []
     for index, arg in enumerate(args):
@@ -1389,6 +1428,7 @@ def _analyze_indirect_execution_safety(
     nodes: list[_CommandNode],
     *,
     command: str,
+    target: CommandTargetProfile,
 ) -> _IndirectExecutionSafety:
     reasons: list[str] = []
     if _process_substitutions(command):
@@ -1444,7 +1484,13 @@ def _analyze_indirect_execution_safety(
                     "shell -c function execution cannot be proven safe and requires explicit approval"
                 )
         elif (interpreter := _interpreter_family(executable)) is not None:
-            if _interpreter_inline_code(interpreter, args) is not None:
+            inline_code = _interpreter_inline_code(interpreter, args)
+            if inline_code is not None and _inline_interpreter_requires_approval(
+                inline_code,
+                interpreter=interpreter,
+                args=args,
+                target=target,
+            ):
                 reasons.append(
                     "inline interpreter source cannot be proven side-effect free"
                 )
@@ -1499,6 +1545,30 @@ def _node_has_shell_control_syntax(node: _CommandNode) -> bool:
 def _is_unresolved_inline_code(code: str) -> bool:
     stripped = code.strip()
     return not stripped or any(marker in stripped for marker in ("$", "`", "$("))
+
+
+def _inline_interpreter_requires_approval(
+    code: str,
+    *,
+    interpreter: str,
+    args: list[str],
+    target: CommandTargetProfile,
+) -> bool:
+    if (
+        _is_unresolved_inline_code(code)
+        or _contains_danger_literal(code)
+        or _inline_code_contains_known_hardline(code)
+    ):
+        return True
+    return not (
+        target.kind == "remote_ssh"
+        and interpreter == "python"
+        and _uses_separate_inline_flag(args, flag="-c")
+    )
+
+
+def _uses_separate_inline_flag(args: list[str], *, flag: str) -> bool:
+    return any(arg == flag and index + 1 < len(args) for index, arg in enumerate(args))
 
 
 def _contains_danger_literal(code: str) -> bool:
@@ -1654,13 +1724,9 @@ def _write_sink_destinations(node: _CommandNode) -> list[str]:
     for index, token in enumerate(tokens):
         if token not in {">", ">>"}:
             continue
-        destination_index = (
-            index + 2 if tokens[index + 1 : index + 2] == ["|"] else index + 1
-        )
-        if destination_index < len(tokens):
-            destinations.append(tokens[destination_index])
-        else:
-            destinations.append("$UNRESOLVED_MISSING_OUTPUT")
+        redirected = _redirect_path_token(tokens, index)
+        if redirected is not None:
+            destinations.append(redirected)
     executable = _basename(tokens[0])
     args = tokens[1:]
     before_redirect = args[:]
@@ -2691,7 +2757,7 @@ def _command_effects(nodes: list[_CommandNode]) -> list[str]:
 
 
 def _node_writes(tokens: list[str], executable: str, args: list[str]) -> bool:
-    if any(token in {">", ">>"} for token in tokens):
+    if _has_file_output_redirect(tokens):
         return True
     if executable in {
         "touch",
@@ -2748,7 +2814,9 @@ def _referenced_paths(
                 continue
         for index, token in enumerate(tokens[:-1]):
             if token in {">", ">>", "<", "<<"}:
-                paths.append(_canonical_reference(tokens[index + 1], target))
+                redirected = _redirect_path_token(tokens, index)
+                if redirected is not None:
+                    paths.append(_canonical_reference(redirected, target))
         file_args, node_confident = _file_arguments(executable, args)
         confident = confident and node_confident
         paths.extend(_canonical_reference(arg, target) for arg in file_args)
