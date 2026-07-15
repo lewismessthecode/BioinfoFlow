@@ -236,9 +236,11 @@ export function ConnectedNodeSelector({
             <span className="min-w-0 flex-1">
               <span className="block font-medium text-foreground">{t("manual")}</span>
             </span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-              {manualCountLabel(normalizedSelection, t)}
-            </span>
+            {normalizedSelection.mode === "manual" ? (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+                {manualCountLabel(normalizedSelection, t)}
+              </span>
+            ) : null}
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         {normalizedSelection.mode === "manual" ? (

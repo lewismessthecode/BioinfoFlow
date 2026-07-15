@@ -121,7 +121,7 @@ describe("ConnectedNodeSelector", () => {
         name: "Execution targets: Auto, All",
       }),
     )
-    await user.click(screen.getByRole("menuitemradio", { name: /Manual/ }))
+    await user.click(screen.getByRole("menuitemradio", { name: "Manual" }))
     expect(screen.getByRole("menuitemcheckbox", { name: "Local" }))
       .toBeInTheDocument()
     await user.click(screen.getByRole("menuitemcheckbox", { name: /Live HPC/ }))
@@ -231,7 +231,7 @@ describe("ConnectedNodeSelector", () => {
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
     await user.click(screen.getByRole("button", { name: "Execution targets: Auto, All" }))
-    await user.click(screen.getByRole("menuitemradio", { name: /Manual/ }))
+    await user.click(screen.getByRole("menuitemradio", { name: "Manual" }))
 
     expect(screen.queryByText("Simulation host sz01")).not.toBeInTheDocument()
     expect(screen.getByText("Could not load remote hosts.")).toBeInTheDocument()
@@ -262,5 +262,6 @@ describe("ConnectedNodeSelector", () => {
     await user.click(trigger)
 
     expect(screen.getByRole("menuitemradio", { name: "Auto" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitemradio", { name: "Manual" })).toBeInTheDocument()
   })
 })
