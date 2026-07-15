@@ -1668,6 +1668,31 @@ def test_unbounded_structured_relative_path_requires_explicit_approval(tool):
 
 
 @pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
+def test_runtime_selected_remote_path_requires_explicit_approval(tool):
+    target = CommandTargetProfile(
+        kind="local",
+        trust_domain="local-machine",
+        identity="local-user",
+        sandbox_strength="none",
+    )
+
+    risk = tool.assess_risk({"path": "/etc/passwd"}, target=target)
+
+    assert risk.level == "act_high"
+    assert risk.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=risk,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
 @pytest.mark.parametrize(
     "path",
     ["/etc/passwd", "~/.ssh/config", "$HOME/.ssh/config", "../outside.txt"],

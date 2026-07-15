@@ -122,6 +122,8 @@ describe("ConnectedNodeSelector", () => {
       }),
     )
     await user.click(screen.getByRole("menuitemradio", { name: /Manual/ }))
+    expect(screen.getByRole("menuitemcheckbox", { name: "Local" }))
+      .toBeInTheDocument()
     await user.click(screen.getByRole("menuitemcheckbox", { name: /Live HPC/ }))
 
     expect(onChange).toHaveBeenLastCalledWith({

@@ -212,6 +212,54 @@ async def test_update_session_rejects_metadata_only_effective_target_change(
 
 
 @pytest.mark.asyncio
+async def test_update_session_rejects_scope_change_until_active_turn_is_terminal(
+    db_session: AsyncSession,
+):
+    await _workspace(db_session)
+    service = AgentCoreService(db_session)
+    session = await service.create_session(
+        project_id=None,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        execution_scope={"mode": "auto"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        input_text="Keep this turn on its original execution scope.",
+    )
+    manual_scope = {
+        "mode": "manual",
+        "selected_targets": [
+            {"type": "local"},
+            {"type": "remote_ssh", "connection_id": "conn-1"},
+        ],
+    }
+
+    with pytest.raises(ConflictError):
+        await service.update_session(
+            session_id=str(session.id),
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            user_id="dev",
+            updates={"execution_scope": manual_scope},
+        )
+
+    stored_session = await service.session_repo.get_fresh(str(session.id))
+    assert stored_session.session_metadata["execution_scope"] == {"mode": "auto"}
+
+    await service.turn_repo.update_all(turn, status=AgentTurnStatus.COMPLETED)
+    updated_session = await service.update_session(
+        session_id=str(session.id),
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        user_id="dev",
+        updates={"execution_scope": manual_scope},
+    )
+
+    assert updated_session.session_metadata["execution_scope"] == manual_scope
+
+
+@pytest.mark.asyncio
 async def test_target_update_and_turn_claim_are_one_atomic_decision(
     db_session: AsyncSession,
     db_engine,

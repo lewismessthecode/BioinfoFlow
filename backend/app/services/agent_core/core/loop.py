@@ -47,6 +47,7 @@ from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import (
     ExecutionTargetChangedError,
     execution_target_from_session,
+    session_execution_scope_from_metadata,
 )
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
@@ -407,6 +408,7 @@ class AgentLoopController:
                         wire_protocol=target.wire_protocol,
                         prior_continuation_batch_id=active_continuation_batch_id,
                         expected_execution_target=expected_execution_target,
+                        expected_execution_scope=expected_execution_scope,
                     )
                     if active_continuation_batch_id is not None:
                         active_continuation_batch_id = None
@@ -536,6 +538,7 @@ class AgentLoopController:
                         fresh_session = await self._session_for_expected_target(
                             str(agent_session.id),
                             expected_execution_target=expected_execution_target,
+                            expected_execution_scope=expected_execution_scope,
                         )
                     except ExecutionTargetChangedError:
                         continue
@@ -629,6 +632,7 @@ class AgentLoopController:
                 fresh_session = await self._session_for_expected_target(
                     str(agent_session.id),
                     expected_execution_target=expected_execution_target,
+                    expected_execution_scope=expected_execution_scope,
                 )
             except ExecutionTargetChangedError:
                 continue
@@ -683,6 +687,7 @@ class AgentLoopController:
         session_id: str,
         *,
         expected_execution_target: dict[str, str] | None,
+        expected_execution_scope: dict[str, Any] | None,
     ):
         agent_session = await self.sessions.get_fresh(session_id)
         if agent_session is None:
@@ -691,6 +696,11 @@ class AgentLoopController:
             expected_execution_target is not None
             and execution_target_from_session(agent_session)
             != expected_execution_target
+        ):
+            raise ExecutionTargetChangedError
+        if (
+            session_execution_scope_from_metadata(agent_session.session_metadata)
+            != expected_execution_scope
         ):
             raise ExecutionTargetChangedError
         return agent_session
@@ -710,6 +720,7 @@ class AgentLoopController:
         wire_protocol: str = "chat_completions",
         prior_continuation_batch_id: str | None = None,
         expected_execution_target: dict[str, str] | None = None,
+        expected_execution_scope: dict[str, Any] | None = None,
     ) -> tuple[bool, list[str], str | None]:
         session_id = str(agent_session.id)
         turn_id = str(turn.id)
@@ -733,6 +744,12 @@ class AgentLoopController:
                 expected_execution_target is not None
                 and execution_target_from_session(locked_session)
                 != expected_execution_target
+            ):
+                await self.db.rollback()
+                raise ExecutionTargetChangedError
+            if (
+                session_execution_scope_from_metadata(locked_session.session_metadata)
+                != expected_execution_scope
             ):
                 await self.db.rollback()
                 raise ExecutionTargetChangedError

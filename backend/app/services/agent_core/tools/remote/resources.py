@@ -768,14 +768,19 @@ def _assess_structured_remote_path(
     target: CommandTargetProfile | None,
 ) -> RiskAssessment | None:
     path = input.get("path")
-    if (
-        target is None
-        or target.kind != "remote_ssh"
-        or not isinstance(path, str)
-        or not path.strip()
-    ):
+    if not isinstance(path, str) or not path.strip():
         return None
     normalized = path.strip().replace("\\", "/")
+    if target is None or target.kind != "remote_ssh":
+        return RiskAssessment(
+            level="act_high",
+            reasons=[
+                "structured remote path is not bounded by an effective project root",
+                "explicit approval is required when the remote target is selected at runtime",
+            ],
+            affected_resources=[{"type": "path", "id": normalized[:1000]}],
+            requires_explicit_approval=True,
+        )
     parts = [part for part in normalized.split("/") if part not in {"", "."}]
     dynamic_or_traversal = (
         normalized.startswith(("~", "$"))
