@@ -857,23 +857,31 @@ function ProviderField({
   onChange,
 }: ProviderFieldProps) {
   const inputId = `provider-${template.id}-${field.name}`
+  const helpText = fieldHelpText(t, template, field)
+  const helpId = helpText ? `${inputId}-help` : undefined
   return (
     <div className="min-w-0 space-y-1.5">
       <Label
         htmlFor={inputId}
         className="text-[11px] font-medium tracking-[0.02em] text-muted-foreground"
       >
-        {fieldLabel(t, field)}
+        {fieldLabel(t, template, field)}
       </Label>
       <Input
         id={inputId}
         aria-label={`${template.name} ${fieldAriaLabel(field)}`}
+        aria-describedby={helpId}
         type={field.secret ? "password" : "text"}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholderForField(t, field, configured)}
+        placeholder={placeholderForField(t, template, field, configured)}
         className="h-9 rounded-md border-border/80 bg-background px-3 text-sm shadow-none"
       />
+      {helpText ? (
+        <p id={helpId} className="text-pretty text-[11px] leading-4 text-muted-foreground">
+          {helpText}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -1142,6 +1150,7 @@ function cleanModelIds(value: string | undefined) {
 
 function placeholderForField(
   t: SettingsTranslations,
+  template: LlmProviderTemplate,
   field: LlmProviderTemplateField,
   configured: boolean,
 ) {
@@ -1150,16 +1159,39 @@ function placeholderForField(
       ? t("providerCards.savedKeyPlaceholder")
       : t("providerCards.apiKeyPlaceholder")
   }
-  if (field.name === "base_url") return t("providerCards.endpointPlaceholder")
+  if (field.name === "base_url") {
+    return template.id === "anthropic"
+      ? t("providerCards.anthropicEndpointPlaceholder")
+      : t("providerCards.endpointPlaceholder")
+  }
   if (field.name === "model_id") return t("providerCards.modelIdPlaceholder")
   return field.placeholder
 }
 
-function fieldLabel(t: SettingsTranslations, field: LlmProviderTemplateField) {
+function fieldLabel(
+  t: SettingsTranslations,
+  template: LlmProviderTemplate,
+  field: LlmProviderTemplateField,
+) {
   if (field.name === "api_key") return t("providerCards.apiKeyLabel")
-  if (field.name === "base_url") return t("providerCards.endpointLabel")
+  if (field.name === "base_url") {
+    return template.id === "anthropic"
+      ? t("providerCards.anthropicEndpointLabel")
+      : t("providerCards.endpointLabel")
+  }
   if (field.name === "model_id") return t("providerCards.modelIdLabel")
   return field.label
+}
+
+function fieldHelpText(
+  t: SettingsTranslations,
+  template: LlmProviderTemplate,
+  field: LlmProviderTemplateField,
+) {
+  if (template.id === "anthropic" && field.name === "base_url") {
+    return t("providerCards.anthropicEndpointHelp")
+  }
+  return null
 }
 
 function fieldAriaLabel(field: LlmProviderTemplateField) {

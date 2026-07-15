@@ -295,9 +295,11 @@ const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     providerModelTemplate("gpt-5.4-mini", "GPT-5.4 Mini"),
     providerModelTemplate("gpt-5.4", "GPT-5.4"),
   ], ["chat_completions", "responses"]),
-  providerTemplate("anthropic", "Anthropic", "anthropic", "static", [
+  providerTemplate("anthropic", "Anthropic", "anthropic", "anthropic_models", [
+    providerField("base_url", "Endpoint", false, false, "https://api.anthropic.com"),
     providerField("api_key", "API key", true, true),
-  ], null, [
+    providerField("model_id", "Model ID", false, false),
+  ], "https://api.anthropic.com", [
     providerModelTemplate("claude-sonnet-4-6", "Claude Sonnet 4.6"),
   ]),
   providerTemplate("gemini", "Gemini", "gemini", "static", [
