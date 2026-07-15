@@ -666,9 +666,11 @@ function providerTemplates() {
     template("openai", "OpenAI", "openai", "openai_models", [
       field("api_key", "API key", true, true),
     ], "https://api.openai.com/v1"),
-    template("anthropic", "Anthropic", "anthropic", "static", [
+    template("anthropic", "Anthropic", "anthropic", "anthropic_models", [
+      field("base_url", "Endpoint", false, false, "https://api.anthropic.com"),
       field("api_key", "API key", true, true),
-    ]),
+      field("model_id", "Model ID", false, false),
+    ], "https://api.anthropic.com"),
     template("gemini", "Gemini", "gemini", "static", [
       field("api_key", "API key", true, true),
     ]),

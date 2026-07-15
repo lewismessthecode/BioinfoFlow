@@ -23,6 +23,11 @@ vi.mock("next-intl", () => ({
       "providerCards.apiKeyPlaceholder": "Paste API key",
       "providerCards.savedKeyPlaceholder": "Key saved. Paste a new key to replace it.",
       "providerCards.endpointPlaceholder": "Endpoint URL",
+      "providerCards.anthropicEndpointLabel": "Anthropic base URL",
+      "providerCards.anthropicEndpointPlaceholder":
+        "https://api.anthropic.com or http://8.129.13.231:8079",
+      "providerCards.anthropicEndpointHelp":
+        "Use the Anthropic Messages API root. For cch, enter http://8.129.13.231:8079 without /v1.",
       "providerCards.getApiKey": "Get key",
       "providerCards.noKeyRequired": "No key required",
       "providerCards.ready": "Ready",
@@ -87,8 +92,10 @@ describe("LlmCatalogPanel", () => {
       field("api_key", "API key", true, true),
     ], "https://api.openai.com/v1"),
     providerTemplate("anthropic", "Anthropic", "anthropic", "anthropic_models", [
+      field("base_url", "Endpoint", false, false, "https://api.anthropic.com"),
       field("api_key", "API key", true, true),
-    ]),
+      field("model_id", "Model ID", false, false),
+    ], "https://api.anthropic.com"),
     providerTemplate("gemini", "Gemini", "gemini", "gemini_models", [
       field("api_key", "API key", true, true),
     ]),
@@ -203,6 +210,40 @@ describe("LlmCatalogPanel", () => {
     const anthropicCard = screen.getByRole("group", { name: "Anthropic" })
     expect(
       within(anthropicCard).queryByLabelText("Anthropic protocol"),
+    ).not.toBeInTheDocument()
+  })
+
+  it("renders Anthropic relay endpoint guidance without a protocol selector", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "Anthropic" })
+    expect(within(card).getByLabelText("Anthropic endpoint")).toHaveValue(
+      "https://api.anthropic.com",
+    )
+    expect(within(card).getByLabelText("Anthropic endpoint")).toHaveAttribute(
+      "placeholder",
+      "https://api.anthropic.com or http://8.129.13.231:8079",
+    )
+    expect(
+      within(card).getByText(
+        "Use the Anthropic Messages API root. For cch, enter http://8.129.13.231:8079 without /v1.",
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(card).queryByLabelText("Anthropic protocol"),
     ).not.toBeInTheDocument()
   })
 
@@ -1265,6 +1306,61 @@ describe("LlmCatalogPanel", () => {
     expect(
       within(card).queryByRole("switch", { name: "Allow insecure HTTP" }),
     ).not.toBeInTheDocument()
+  })
+
+  it("saves a cch Claude relay through the Anthropic template", async () => {
+    const setupProvider = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        provider: { id: "provider-anthropic", wire_protocol: "chat_completions" },
+        models: [{ id: "model-claude", model_id: "claude-sonnet-5" }],
+        discovered: false,
+      },
+    })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider,
+      testProvider: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "Anthropic" })
+    fireEvent.change(within(card).getByLabelText("Anthropic endpoint"), {
+      target: { value: "http://8.129.13.231:8079" },
+    })
+    fireEvent.change(within(card).getByLabelText("Anthropic API key"), {
+      target: { value: "sk-cch" },
+    })
+    fireEvent.change(within(card).getByLabelText("Anthropic model id"), {
+      target: { value: "claude-sonnet-5" },
+    })
+    fireEvent.click(within(card).getByRole("switch", { name: "Allow insecure HTTP" }))
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(setupProvider).toHaveBeenCalledWith({
+        templateId: "anthropic",
+        providerId: undefined,
+        name: "Anthropic",
+        apiKey: "sk-cch",
+        baseUrl: "http://8.129.13.231:8079",
+        modelIds: ["claude-sonnet-5"],
+        discover: false,
+        scope: "user",
+        enabled: true,
+        allowInsecureHttp: true,
+        wireProtocol: "chat_completions",
+      })
+    })
+    expect(toastSuccessMock).toHaveBeenCalledWith("Provider saved")
   })
 
   it("keeps other provider rows interactive while one provider is saving", async () => {
