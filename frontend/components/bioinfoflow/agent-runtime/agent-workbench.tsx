@@ -64,6 +64,7 @@ import {
   type AgentExecutionScope,
   type AgentRuntimeFileRefPart,
   type AgentRuntimeInputPart,
+  type AgentRuntimeEvent,
   type AgentRuntimeSkill,
   type AgentModelSelection,
   type AgentPendingStrategy,
@@ -295,7 +296,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         state.session,
       ],
     )
-    const currentExecutionTargetLabel = currentTargetLabelForSelection()
+    const currentExecutionTargetLabel = useMemo(
+      () => currentTargetLabelForSelection(state.events, t),
+      [state.events, t],
+    )
 
     const pendingApprovalSummary = useMemo(() => {
       let eligible = 0
@@ -1688,8 +1692,51 @@ function executionScopeFromMetadata(metadata?: Record<string, unknown> | null) {
   return scope as AgentExecutionScope
 }
 
-function currentTargetLabelForSelection() {
+function currentTargetLabelForSelection(
+  events: AgentRuntimeEvent[],
+  t: ReturnType<typeof useTranslations>,
+) {
+  const sortedEvents = [...events].sort(
+    (left, right) =>
+      right.seq - left.seq ||
+      right.created_at.localeCompare(left.created_at) ||
+      right.id.localeCompare(left.id),
+  )
+  for (const event of sortedEvents) {
+    if (event.type !== "action.risk_assessed") continue
+    const label = runtimeTargetLabel(event.payload.target, t)
+    if (label) return label
+  }
   return null
+}
+
+function runtimeTargetLabel(
+  target: unknown,
+  t: ReturnType<typeof useTranslations>,
+) {
+  if (!target || typeof target !== "object" || Array.isArray(target)) return null
+  const record = target as Record<string, unknown>
+  const kind = stringValue(record.kind) ?? stringValue(record.type)
+  if (kind === "local") return t("runtimeLocation.local.label")
+  if (kind !== "remote_ssh") return null
+
+  const authority = [
+    stringValue(record.identity),
+    stringValue(record.trust_domain) ?? stringValue(record.trustDomain),
+  ]
+    .filter(Boolean)
+    .join("@")
+  return (
+    authority ||
+    stringValue(record.connection_id) ||
+    stringValue(record.connectionId) ||
+    stringValue(record.remote_connection_id) ||
+    stringValue(record.remoteConnectionId)
+  )
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
 function maxSidecarWidthForWorkbench(width: number) {

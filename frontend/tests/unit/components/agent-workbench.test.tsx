@@ -129,6 +129,7 @@ vi.mock("next-intl", () => ({
       menuTitle: "Local / Remote",
       manage: "Manage SSH hosts",
       "local.label": "Local",
+      "runtimeLocation.local.label": "Local",
       "local.description": "Run in this Bioinfoflow workspace",
       localBadge: "Local",
       "remote.label": "Remote",
@@ -138,8 +139,8 @@ vi.mock("next-intl", () => ({
       "status.offline": "Offline",
       "status.error": "Connection error",
       "status.unknown": "Not tested",
-      selectedAutoAria: `Current execution target: Auto (${values?.target ?? ""})`,
-      selectedManualAria: `Current execution target: Manual (${values?.target ?? ""})`,
+      selectedAutoAria: `Execution targets: Auto, ${values?.target ?? ""}`,
+      selectedManualAria: `Execution targets: Manual, ${values?.target ?? ""}`,
       targetCount: `${values?.count ?? 0} selected`,
       "tokenUsage.label": "Tokens",
       "tokenUsage.display": `${values?.value ?? ""} tokens`,
@@ -1736,7 +1737,7 @@ describe("AgentWorkbench", () => {
 
     fireEvent.pointerDown(
       await screen.findByRole("button", {
-        name: "Current execution target: Auto (All targets)",
+        name: "Execution targets: Auto, All targets",
       }),
     )
     fireEvent.click(await screen.findByRole("menuitemradio", { name: /Manual/ }))
@@ -1761,6 +1762,74 @@ describe("AgentWorkbench", () => {
         expect.objectContaining({ executionScope: autoExecutionScope }),
       ),
     )
+  })
+
+  it("surfaces the latest runtime target in the selector pill", async () => {
+    const runningTurn = { ...baseTurn, id: "running-turn", status: "running" as const }
+    const remoteTargetEvent: AgentRuntimeEvent = {
+      id: "risk-remote",
+      session_id: "session-1",
+      turn_id: runningTurn.id,
+      seq: 1,
+      type: "action.risk_assessed",
+      payload: {
+        action_id: "action-remote",
+        target: {
+          kind: "remote_ssh",
+          trust_domain: "sz01.example.org",
+          identity: "bioflow",
+          connection_id: "connection-sz01",
+        },
+      },
+      visibility: "user",
+      schema_version: 1,
+      created_at: "2026-07-13T00:00:00Z",
+      updated_at: "2026-07-13T00:00:00Z",
+    }
+    const localTargetEvent: AgentRuntimeEvent = {
+      ...remoteTargetEvent,
+      id: "risk-local",
+      seq: 2,
+      payload: {
+        action_id: "action-local",
+        target: {
+          kind: "local",
+        },
+      },
+    }
+    setupRuntime({
+      session: {
+        ...baseSession,
+        execution_scope: autoExecutionScope,
+      },
+      turns: [runningTurn],
+      events: [remoteTargetEvent],
+      status: "running",
+    })
+    const view = render(<AgentWorkbench />)
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Execution targets: Auto, bioflow@sz01.example.org",
+      }),
+    ).toBeInTheDocument()
+
+    setupRuntime({
+      session: {
+        ...baseSession,
+        execution_scope: autoExecutionScope,
+      },
+      turns: [runningTurn],
+      events: [remoteTargetEvent, localTargetEvent],
+      status: "running",
+    })
+    view.rerender(<AgentWorkbench />)
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Execution targets: Auto, Local",
+      }),
+    ).toBeInTheDocument()
   })
 
   it("treats approval and user waits as active turns for queue policy", () => {
@@ -1923,7 +1992,7 @@ describe("AgentWorkbench", () => {
 
     fireEvent.pointerDown(
       await screen.findByRole("button", {
-        name: "Current execution target: Auto (All targets)",
+        name: "Execution targets: Auto, All targets",
       }),
     )
     fireEvent.click(await screen.findByRole("menuitemradio", { name: /Manual/ }))
@@ -1986,7 +2055,7 @@ describe("AgentWorkbench", () => {
 
     expect(
       await screen.findByRole("button", {
-        name: "Current execution target: Manual (Test host sz03)",
+        name: "Execution targets: Manual, Test host sz03",
       }),
     ).toBeInTheDocument()
 
@@ -2039,7 +2108,7 @@ describe("AgentWorkbench", () => {
 
     fireEvent.pointerDown(
       await screen.findByRole("button", {
-        name: "Current execution target: Manual (Test host sz03)",
+        name: "Execution targets: Manual, Test host sz03",
       }),
     )
     fireEvent.click(
