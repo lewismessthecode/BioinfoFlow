@@ -101,7 +101,10 @@ class LlmModelRepository(BaseRepository[LlmModel]):
             )
         )
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        model = result.scalar_one_or_none()
+        if model is not None and not _model_is_active(model):
+            return None
+        return model
 
     async def list_for_providers(self, provider_ids: list[str]) -> list[LlmModel]:
         if not provider_ids:
@@ -189,3 +192,8 @@ def _visible_provider_clause(resource, *, workspace_id: str, user_id: str):
             resource.user_id == user_id,
         ),
     )
+
+
+def _model_is_active(model: LlmModel) -> bool:
+    metadata = getattr(model, "model_metadata", None) or {}
+    return metadata.get("catalog_status") != "stale"

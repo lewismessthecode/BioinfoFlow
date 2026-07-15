@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from app.models.llm import LlmWireProtocol
 
@@ -517,9 +518,24 @@ def route_provider_model_name(
 def provider_template_for_provider(provider) -> ProviderTemplate | None:
     metadata = getattr(provider, "provider_metadata", None) or {}
     template_id = str(metadata.get("providerTemplate") or "").strip()
+    provider_kind = str(getattr(provider, "kind", "") or "")
+    if (
+        _provider_uses_kimi_china_endpoint(provider)
+        and (template_id == "kimi" or (not template_id and provider_kind == "kimi"))
+    ):
+        return get_provider_template("kimi-cn")
     if template_id:
         return get_provider_template(template_id)
     return provider_template_for_kind(str(getattr(provider, "kind", "") or ""))
+
+
+def _provider_uses_kimi_china_endpoint(provider) -> bool:
+    base_url = str(getattr(provider, "base_url", "") or "").strip()
+    try:
+        host = urlparse(base_url).hostname or ""
+    except ValueError:
+        host = ""
+    return host.lower() == "api.moonshot.cn"
 
 
 def normalize_openai_compatible_base_url(

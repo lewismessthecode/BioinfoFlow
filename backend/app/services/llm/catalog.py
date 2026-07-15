@@ -76,6 +76,10 @@ class LlmCatalogService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        providers = [
+            await self._reconcile_provider_catalog_state(provider)
+            for provider in providers
+        ]
         return [await self._refresh_provider_test_status(provider) for provider in providers]
 
     async def create_provider(self, data: dict[str, Any]):
@@ -119,7 +123,7 @@ class LlmCatalogService:
         status = sanitize_provider_test_status(provider.test_status)
         if status is None:
             return provider
-        models = await self.model_repo.list_for_provider(str(provider.id))
+        models = _active_models(await self.model_repo.list_for_provider(str(provider.id)))
         no_model_status = status.get("error_code") == "model_not_configured"
         tested_model_id = status.get("model") or status.get("model_id")
         tested_model = (
@@ -234,9 +238,20 @@ class LlmCatalogService:
         models: list[Any] = []
         for model_id in _clean_model_ids(data.get("model_ids")):
             models.append(await self._upsert_model_from_template_id(provider, model_id))
+        if models:
+            await self._mark_missing_provider_models_stale(
+                provider,
+                {model.model_id for model in models},
+                stale_reason="manual_model_list_changed",
+            )
         if not models and template.models:
             for model_template in template.models:
                 models.append(await self._upsert_model_from_template(provider, model_template))
+            await self._mark_missing_provider_models_stale(
+                provider,
+                {model.model_id for model in models},
+                stale_reason="not_in_template",
+            )
         discovered = False
         if data.get("discover"):
             models = await self.discover_models(
@@ -296,7 +311,13 @@ class LlmCatalogService:
         if "metadata" in updates:
             next_metadata = updates.pop("metadata")
             updates["provider_metadata"] = next_metadata
+        current_model_target = _provider_model_target_signature(provider)
         provider = await self.provider_repo.update_all(provider, **updates)
+        if _provider_model_target_signature(provider) != current_model_target:
+            await self._mark_provider_models_stale(
+                provider,
+                stale_reason="provider_target_changed",
+            )
         return await self._refresh_provider_test_status(provider)
 
     async def test_provider(
@@ -314,10 +335,14 @@ class LlmCatalogService:
             user_id=user_id,
             role=role,
         )
-        models = await self.model_repo.list_for_provider(str(provider.id))
+        models = _active_models(await self.model_repo.list_for_provider(str(provider.id)))
         if model_id is not None:
             model = await self.model_repo.get(model_id)
-            if model is None or str(model.provider_id) != str(provider.id):
+            if (
+                model is None
+                or str(model.provider_id) != str(provider.id)
+                or not _model_is_active(model)
+            ):
                 raise ValueError("The selected model does not belong to this provider")
         else:
             model = models[0] if models else None
@@ -472,8 +497,12 @@ class LlmCatalogService:
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        provider_ids = [str(provider.id) for provider in providers]
-        models = await self.model_repo.list_for_providers(provider_ids)
+        enabled_provider_ids = [
+            str(provider.id) for provider in providers if provider.enabled
+        ]
+        models = _active_models(
+            await self.model_repo.list_for_providers(enabled_provider_ids)
+        )
         profiles = await self.list_profiles(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -499,13 +528,15 @@ class LlmCatalogService:
                 "provider_count": len(providers),
                 "configured_provider_count": sum(
                     1
-                    for credential in credentials.values()
-                    if credential_configured(credential)
+                    for provider in providers
+                    if provider.enabled
+                    and credential_configured(credentials.get(str(provider.id)))
                 ),
                 "available_provider_count": sum(
                     1
                     for provider in providers
-                    if credential_available(
+                    if provider.enabled
+                    and credential_available(
                         credentials.get(str(provider.id)),
                         credential_required=_provider_requires_credential(provider),
                     )
@@ -527,14 +558,21 @@ class LlmCatalogService:
             user_id=user_id,
         )
         visible_provider_ids = {str(provider.id) for provider in visible_providers}
+        enabled_provider_ids = {
+            str(provider.id) for provider in visible_providers if provider.enabled
+        }
         if provider_id:
             provider = await self.provider_repo.get(provider_id)
             if provider is None:
                 raise NotFoundError(f"LLM provider not found: {provider_id}")
             if str(provider.id) not in visible_provider_ids:
                 raise PermissionDeniedError("LLM provider is not visible to this user")
-            return await self.model_repo.list_for_provider(provider_id)
-        return await self.model_repo.list_for_providers(sorted(visible_provider_ids))
+            if not provider.enabled:
+                return []
+            return _active_models(await self.model_repo.list_for_provider(provider_id))
+        return _active_models(
+            await self.model_repo.list_for_providers(sorted(enabled_provider_ids))
+        )
 
     async def discover_models(
         self,
@@ -590,10 +628,10 @@ class LlmCatalogService:
             ) as client:
                 response = await client.get(f"{base_url}/api/tags")
                 _raise_for_model_discovery_status(response)
-            return [
-                await self._upsert_model_from_discovered(provider, item)
-                for item in _ollama_models_from_tags(response.json())
-            ]
+            return await self._upsert_models_from_discovery(
+                provider,
+                _ollama_models_from_tags(response.json()),
+            )
         if discovery == "anthropic_models":
             base_url = (
                 provider.base_url
@@ -617,10 +655,10 @@ class LlmCatalogService:
                     params={"limit": 1000},
                 )
                 _raise_for_model_discovery_status(response)
-            return [
-                await self._upsert_model_from_discovered(provider, item)
-                for item in _anthropic_models_from_list(response.json())
-            ]
+            return await self._upsert_models_from_discovery(
+                provider,
+                _anthropic_models_from_list(response.json()),
+            )
         if discovery == "gemini_models":
             base_url = (
                 provider.base_url
@@ -640,10 +678,10 @@ class LlmCatalogService:
                     params={"pageSize": 1000},
                 )
                 _raise_for_model_discovery_status(response)
-            return [
-                await self._upsert_model_from_discovered(provider, item)
-                for item in _gemini_models_from_list(response.json())
-            ]
+            return await self._upsert_models_from_discovery(
+                provider,
+                _gemini_models_from_list(response.json()),
+            )
         if discovery == "cohere_models":
             base_url = _provider_model_discovery_base_url(provider, template)
             if not base_url:
@@ -661,10 +699,10 @@ class LlmCatalogService:
                     params={"page_size": 1000, "endpoint": "chat"},
                 )
                 _raise_for_model_discovery_status(response)
-            return [
-                await self._upsert_model_from_discovered(provider, item)
-                for item in _cohere_models_from_list(response.json())
-            ]
+            return await self._upsert_models_from_discovery(
+                provider,
+                _cohere_models_from_list(response.json()),
+            )
         if discovery == "openai_models":
             discovery_base_url = provider.base_url
             if not discovery_base_url and template:
@@ -690,15 +728,21 @@ class LlmCatalogService:
             ) as client:
                 response = await client.get(f"{base_url}/models", headers=headers)
                 _raise_for_model_discovery_status(response)
-            return [
-                await self._upsert_model_from_discovered(provider, item)
-                for item in _openai_models_from_list(response.json())
-            ]
+            return await self._upsert_models_from_discovery(
+                provider,
+                _openai_models_from_list(response.json()),
+            )
         if template and template.models:
-            return [
+            models = [
                 await self._upsert_model_from_template(provider, model)
                 for model in template.models
             ]
+            await self._mark_missing_provider_models_stale(
+                provider,
+                {model.model_id for model in models},
+                stale_reason="not_in_template",
+            )
+            return models
         return []
 
     async def _provider_credential_material(self, provider: LlmProvider):
@@ -842,6 +886,54 @@ class LlmCatalogService:
             **values,
         )
 
+    async def _upsert_models_from_discovery(
+        self,
+        provider: LlmProvider,
+        items: list[dict[str, Any]],
+    ):
+        models = [
+            await self._upsert_model_from_discovered(provider, item)
+            for item in items
+        ]
+        await self._mark_missing_provider_models_stale(
+            provider,
+            {model.model_id for model in models},
+            stale_reason="not_returned_by_discovery",
+        )
+        return models
+
+    async def _mark_missing_provider_models_stale(
+        self,
+        provider: LlmProvider,
+        active_model_ids: set[str],
+        *,
+        stale_reason: str,
+    ) -> None:
+        existing_models = await self.model_repo.list_for_provider(str(provider.id))
+        stale_at = datetime.now(timezone.utc).isoformat()
+        for model in existing_models:
+            if model.model_id in active_model_ids or not _model_is_active(model):
+                continue
+            metadata = {
+                **(model.model_metadata or {}),
+                "catalog_status": "stale",
+                "stale_reason": stale_reason,
+                "stale_at": stale_at,
+            }
+            await self.model_repo.update_all(model, model_metadata=metadata)
+
+    async def _mark_provider_models_stale(
+        self,
+        provider: LlmProvider,
+        *,
+        stale_reason: str,
+    ) -> None:
+        await self._mark_missing_provider_models_stale(
+            provider,
+            set(),
+            stale_reason=stale_reason,
+        )
+
     async def update_model(self, model_id: str, data: dict[str, Any]):
         model = await self.model_repo.get(model_id)
         if model is None:
@@ -864,10 +956,19 @@ class LlmCatalogService:
         workspace_id: str | None = None,
         user_id: str | None = None,
     ):
-        return await self.profile_repo.list_available(
+        profiles = await self.profile_repo.list_available(
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        return [
+            profile
+            for profile in profiles
+            if await self._profile_models_visible(
+                profile,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+        ]
 
     async def create_profile(self, data: dict[str, Any]):
         workspace_id, user_id = _tenant_fields_for_scope(
@@ -994,12 +1095,52 @@ class LlmCatalogService:
             provider = await self.provider_repo.get(str(model.provider_id))
             if provider is None:
                 raise NotFoundError(f"LLM provider not found: {model.provider_id}")
-            if not _is_visible_scoped_resource(
-                provider,
-                workspace_id=workspace_id,
-                user_id=user_id,
+            if (
+                not provider.enabled
+                or not _model_is_active(model)
+                or not _is_visible_scoped_resource(
+                    provider,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                )
             ):
                 raise PermissionDeniedError("LLM model is not visible to this user")
+
+    async def _profile_models_visible(
+        self,
+        profile: LlmModelProfile,
+        *,
+        workspace_id: str | None,
+        user_id: str | None,
+    ) -> bool:
+        model_ids = [
+            str(profile.primary_model_id),
+            *[str(item) for item in profile.fallback_model_ids or []],
+        ]
+        for model_id in model_ids:
+            model = await self.model_repo.get(model_id)
+            if model is None or not _model_is_active(model):
+                return False
+            provider = await self.provider_repo.get(str(model.provider_id))
+            if provider is None or not provider.enabled:
+                return False
+            if workspace_id is not None and user_id is not None:
+                if not _is_visible_scoped_resource(
+                    provider,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                ):
+                    return False
+        return True
+
+    async def _reconcile_provider_catalog_state(
+        self,
+        provider: LlmProvider,
+    ) -> LlmProvider:
+        updates = _legacy_kimi_china_provider_updates(provider)
+        if not updates:
+            return provider
+        return await self.provider_repo.update_all(provider, **updates)
 
 
 def _strip_none(data: dict[str, Any]) -> dict[str, Any]:
@@ -1014,6 +1155,52 @@ def _provider_requires_credential(provider: LlmProvider) -> bool:
     if template is not None and not template.api_key_required:
         return False
     return provider.kind != "ollama"
+
+
+def _model_is_active(model) -> bool:
+    metadata = getattr(model, "model_metadata", None) or {}
+    return metadata.get("catalog_status") != "stale"
+
+
+def _active_models(models):
+    return [model for model in models if _model_is_active(model)]
+
+
+def _provider_model_target_signature(provider: LlmProvider) -> tuple[Any, ...]:
+    metadata = provider.provider_metadata or {}
+    return (
+        provider.kind,
+        provider.wire_protocol,
+        provider.base_url,
+        metadata.get("providerTemplate"),
+    )
+
+
+def _legacy_kimi_china_provider_updates(provider: LlmProvider) -> dict[str, Any]:
+    metadata = provider.provider_metadata or {}
+    template_id = metadata.get("providerTemplate")
+    if template_id not in {None, "kimi"}:
+        return {}
+    if template_id is None and provider.kind != "kimi":
+        return {}
+    if _provider_base_url_host(provider.base_url) != "api.moonshot.cn":
+        return {}
+    updates: dict[str, Any] = {
+        "kind": "kimi_cn",
+        "provider_metadata": {**metadata, "providerTemplate": "kimi-cn"},
+    }
+    if provider.name == "Kimi":
+        updates["name"] = "Kimi China"
+    return updates
+
+
+def _provider_base_url_host(base_url: str | None) -> str:
+    if not base_url:
+        return ""
+    try:
+        return (urlparse(str(base_url).strip()).hostname or "").lower()
+    except ValueError:
+        return ""
 
 
 def _raise_for_model_discovery_status(response: httpx.Response) -> None:

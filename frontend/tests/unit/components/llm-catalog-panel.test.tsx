@@ -38,6 +38,10 @@ vi.mock("next-intl", () => ({
         "Provider saved, but model discovery failed",
       "providerCards.savedNoModels": "Provider saved, but no models were found",
       "providerCards.modelRefreshFailed": "Models could not be refreshed",
+      "providerCards.remove": "Remove",
+      "providerCards.removing": "Removing...",
+      "providerCards.removed": "Provider removed",
+      "providerCards.removeFailed": "Provider could not be removed",
       "providerCards.modelIdPlaceholder": "Model ID",
       "providerCards.allowInsecureHttp": "Allow insecure HTTP",
       "providerCards.insecureHttpDescription":
@@ -938,9 +942,169 @@ describe("LlmCatalogPanel", () => {
         "Provider saved, but model discovery failed",
       ),
     )
+    expect(
+      within(card).getByText("Provider saved, but model discovery failed"),
+    ).toBeInTheDocument()
     expect(apiKeyInput).toHaveValue("")
     expect(toastErrorMock).not.toHaveBeenCalled()
     expect(toastSuccessMock).not.toHaveBeenCalled()
+  })
+
+  it("matches a legacy Kimi cn endpoint to Kimi China instead of global Kimi", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-kimi-legacy",
+          name: "Kimi",
+          kind: "kimi",
+          base_url: "https://api.moonshot.cn/v1",
+          metadata: { providerTemplate: "kimi" },
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      setProviderEnabled: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    expect(
+      within(screen.getByRole("group", { name: "Kimi" })).getByText("Setup"),
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByRole("group", { name: "Kimi China" })).getByText("Ready"),
+    ).toBeInTheDocument()
+  })
+
+  it("matches a legacy Kimi cn endpoint without metadata to Kimi China", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-kimi-legacy",
+          name: "Kimi",
+          kind: "kimi",
+          base_url: "https://api.moonshot.cn/v1",
+          metadata: null,
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      setProviderEnabled: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    expect(
+      within(screen.getByRole("group", { name: "Kimi" })).getByText("Setup"),
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByRole("group", { name: "Kimi China" })).getByText("Ready"),
+    ).toBeInTheDocument()
+  })
+
+  it("does not show saved-key artifacts for a removed provider row", () => {
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          base_url: "https://api.openai.com/v1",
+          metadata: { providerTemplate: "openai" },
+          enabled: false,
+          credential: {
+            source: "stored",
+            configured: true,
+            available: true,
+            masked_hint: "sk-...old",
+          },
+        },
+      ],
+      models: [],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn(),
+      setProviderEnabled: vi.fn(),
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    expect(within(card).getByText("Setup")).toBeInTheDocument()
+    expect(within(card).queryByText("Key saved")).not.toBeInTheDocument()
+    expect(within(card).queryByRole("button", { name: "Remove" })).not.toBeInTheDocument()
+    expect(within(card).queryByRole("button", { name: "Test" })).not.toBeInTheDocument()
+  })
+
+  it("lets a saved provider configuration be removed from the catalog", async () => {
+    const setProviderEnabled = vi.fn().mockResolvedValue({
+      id: "provider-openai",
+      enabled: false,
+    })
+    useLlmCatalogMock.mockReturnValue({
+      providerTemplates: templates,
+      configuredProviders: [
+        {
+          id: "provider-openai",
+          name: "OpenAI",
+          kind: "openai",
+          base_url: "https://api.openai.com/v1",
+          metadata: { providerTemplate: "openai" },
+          enabled: true,
+          credential: { source: "stored", configured: true, available: true },
+        },
+      ],
+      models: [
+        {
+          id: "model-openai",
+          provider_id: "provider-openai",
+          model_id: "gpt-5.4-mini",
+          display_name: "GPT 5.4 Mini",
+        },
+      ],
+      isLoading: false,
+      isMutating: false,
+      error: null,
+      refresh: vi.fn(),
+      discoverModels: vi.fn(),
+      setupProvider: vi.fn(),
+      testProvider: vi.fn(),
+      setProviderEnabled,
+    })
+
+    render(<LlmCatalogPanel />)
+
+    const card = screen.getByRole("group", { name: "OpenAI" })
+    fireEvent.click(within(card).getByRole("button", { name: "Remove" }))
+
+    await waitFor(() => {
+      expect(setProviderEnabled).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "provider-openai" }),
+        false,
+      )
+    })
+    expect(toastSuccessMock).toHaveBeenCalledWith("Provider removed")
   })
 
   it("warns when automatic model discovery finds no models", async () => {
