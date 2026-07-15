@@ -657,6 +657,7 @@ class LlmCatalogService:
                 response = await client.get(
                     f"{base_url.rstrip('/')}/models",
                     headers={"Authorization": f"Bearer {material.api_key}"},
+                    params={"page_size": 1000, "endpoint": "chat"},
                 )
                 response.raise_for_status()
             return [
@@ -1030,11 +1031,14 @@ def _provider_model_discovery_base_url(
     provider: LlmProvider,
     template: ProviderTemplate | None,
 ) -> str | None:
+    template_base_url = template.default_base_url if template else None
+    if provider.base_url and provider.base_url != template_base_url:
+        return provider.base_url
     if template:
         base_url = template.metadata.get("modelDiscoveryBaseUrl")
         if isinstance(base_url, str) and base_url.strip():
             return base_url.strip().rstrip("/")
-    return provider.base_url or (template.default_base_url if template else None)
+    return template_base_url
 
 
 def _clean_model_ids(raw_model_ids: Any) -> list[str]:

@@ -128,11 +128,11 @@ describe("LlmCatalogPanel", () => {
     ], "https://api.cohere.ai/compatibility/v1"),
     providerTemplate("together", "Together AI", "together", "openai_models", [
       field("api_key", "API key", true, true),
-    ], "https://api.together.xyz/v1"),
+    ], "https://api.together.ai/v1"),
     providerTemplate("fireworks", "Fireworks AI", "fireworks", "openai_models", [
       field("api_key", "API key", true, true),
     ], "https://api.fireworks.ai/inference/v1"),
-    providerTemplate("perplexity", "Perplexity", "perplexity", "openai_models", [
+    providerTemplate("perplexity", "Perplexity", "perplexity", "static", [
       field("api_key", "API key", true, true),
     ], "https://api.perplexity.ai"),
     providerTemplate("ollama", "Ollama", "ollama", "ollama_tags", [
@@ -786,7 +786,7 @@ describe("LlmCatalogPanel", () => {
     expect(within(card).queryByText("Connection verified")).not.toBeInTheDocument()
   })
 
-  it("keeps stored secrets write-only and updates an existing provider through setup", async () => {
+  it("keeps stored secrets write-only and resets hidden hosted endpoints through setup", async () => {
     const setupProvider = vi.fn().mockResolvedValue({
       ok: true,
       result: {
@@ -802,7 +802,7 @@ describe("LlmCatalogPanel", () => {
           id: "provider-openai",
           name: "OpenAI",
           kind: "openai",
-          base_url: null,
+          base_url: "https://old-gateway.example/v1",
           metadata: { providerTemplate: "openai" },
           enabled: true,
           credential: {

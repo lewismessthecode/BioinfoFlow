@@ -556,7 +556,7 @@ async def test_cohere_template_discovers_models_from_native_models_api(
             return None
 
         async def get(self, url: str, headers=None, params=None):
-            del params
+            assert params == {"page_size": 1000, "endpoint": "chat"}
             requested.append((url, headers))
             return httpx.Response(
                 200,
@@ -603,12 +603,103 @@ async def test_cohere_template_discovers_models_from_native_models_api(
 
     assert requested == [
         (
-            "https://api.cohere.ai/v2/models",
+            "https://api.cohere.com/v1/models",
             {"Authorization": "Bearer cohere-key"},
         )
     ]
     assert [model.model_id for model in discovered] == ["command-a-03-2025"]
     assert discovered[0].context_length == 256000
+
+
+@pytest.mark.asyncio
+async def test_cohere_discovery_honors_custom_provider_base_url(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setenv("COHERE_API_KEY", "cohere-key")
+    requested: list[str] = []
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None, params=None):
+            del headers, params
+            requested.append(url)
+            return httpx.Response(
+                200,
+                json={"models": [{"name": "gateway-command", "endpoints": ["chat"]}]},
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
+    provider = LlmProvider(
+        name="Cohere gateway",
+        kind="cohere",
+        base_url="https://cohere-gateway.example/v1",
+        scope="user",
+        workspace_id=None,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "cohere"},
+    )
+    credential = LlmProviderCredential(
+        provider=provider,
+        source="env",
+        env_var_name="COHERE_API_KEY",
+        masked_hint="env:COHERE_API_KEY",
+    )
+    db_session.add(provider)
+    db_session.add(credential)
+    await db_session.commit()
+
+    discovered = await LlmCatalogService(db_session).discover_models_unchecked(
+        provider,
+        network_access="unrestricted",
+    )
+
+    assert requested == ["https://cohere-gateway.example/v1/models"]
+    assert [model.model_id for model in discovered] == ["gateway-command"]
+
+
+@pytest.mark.asyncio
+async def test_perplexity_template_uses_static_models(
+    db_session,
+):
+    provider = LlmProvider(
+        name="Perplexity",
+        kind="perplexity",
+        base_url="https://api.perplexity.ai",
+        scope="user",
+        workspace_id=None,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "perplexity"},
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    discovered = await LlmCatalogService(db_session).discover_models_unchecked(
+        provider,
+        network_access="unrestricted",
+    )
+
+    assert [model.model_id for model in discovered] == [
+        "sonar",
+        "sonar-pro",
+        "sonar-reasoning-pro",
+        "sonar-deep-research",
+    ]
+    assert discovered[2].supports_reasoning is True
 
 
 @pytest.mark.asyncio
