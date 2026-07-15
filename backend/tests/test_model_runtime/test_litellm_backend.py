@@ -542,6 +542,43 @@ async def test_public_only_stream_keeps_policy_client_until_stream_closes():
 
 
 @pytest.mark.asyncio
+async def test_stream_wrapper_closes_provider_stream_on_early_close():
+    class ClosingStream:
+        def __init__(self) -> None:
+            self.closed = False
+            self._emitted = False
+
+        def __aiter__(self) -> "ClosingStream":
+            return self
+
+        async def __anext__(self) -> object:
+            if not self._emitted:
+                self._emitted = True
+                return object()
+            await asyncio.Event().wait()
+            raise StopAsyncIteration
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    provider_response = ClosingStream()
+
+    async def fake_acompletion(**kwargs: Any) -> object:
+        del kwargs
+        return provider_response
+
+    response = await LiteLLMBackend(acompletion_fn=fake_acompletion).invoke(
+        "chat_completions",
+        {"model": "openai/gpt-test", "messages": []},
+    )
+
+    await anext(response)
+    await response.aclose()
+
+    assert provider_response.closed is True
+
+
+@pytest.mark.asyncio
 async def test_public_network_middleware_rechecks_redirect_destination():
     requests = 0
 
@@ -668,6 +705,71 @@ async def test_gateway_dispatches_chat_through_registered_codec_and_backend():
             "unrestricted",
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_gateway_closes_stream_when_closed_after_response_started():
+    class ClosingStream:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def __aiter__(self) -> "ClosingStream":
+            return self
+
+        async def __anext__(self) -> object:
+            await asyncio.Event().wait()
+            raise StopAsyncIteration
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    class FakeCodec:
+        wire_protocol = "chat_completions"
+
+        def encode_request(self, received: ModelInvocation) -> dict[str, Any]:
+            del received
+            return {"model": "openai/gpt-test", "messages": [], "stream": True}
+
+        async def decode_response(self, response: Any) -> AsyncIterator[object]:
+            async for item in response:
+                yield item
+
+    class FakeBackend:
+        def __init__(self, response: ClosingStream) -> None:
+            self.response = response
+
+        async def invoke(
+            self,
+            wire_protocol: str,
+            request: dict[str, Any],
+            *,
+            network_access: str = "unrestricted",
+        ) -> Any:
+            del wire_protocol, request, network_access
+            return self.response
+
+    raw_response = ClosingStream()
+    gateway = ModelGateway(backend=FakeBackend(raw_response), codecs=[FakeCodec()])
+    invocation = ModelInvocation(
+        target=ModelTarget(
+            endpoint_id="endpoint-1",
+            provider_kind="openai",
+            model_name="gpt-test",
+            routed_model_name="openai/gpt-test",
+            wire_protocol="chat_completions",
+        ),
+        instructions="",
+        input_items=(),
+        tools=(),
+        stream=True,
+        max_output_tokens=128,
+    )
+    events = gateway.invoke(invocation)
+
+    assert await anext(events) == ResponseStarted(streaming=True)
+    await events.aclose()
+
+    assert raw_response.closed is True
 
 
 @pytest.mark.asyncio

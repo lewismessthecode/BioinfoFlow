@@ -32,6 +32,7 @@ from app.services.agent_core.core.runtime_strategy import (
     RuntimeStrategy,
 )
 from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.runtime import AgentCoreRuntime
 from app.services.agent_core.tools.executor import ToolExecutionResult
 from app.services.llm.credentials import (
@@ -133,8 +134,8 @@ class PartialThenBlockingGateway:
 
     async def invoke(self, invocation: ModelInvocation) -> AsyncIterator[ModelEvent]:
         self.invocations.append(invocation)
-        yield TextDelta(text="Partial output.", phase="final_answer")
         try:
+            yield TextDelta(text="Partial output.", phase="final_answer")
             await asyncio.Event().wait()
         finally:
             self.cancelled.set()
@@ -662,6 +663,43 @@ async def test_model_attempt_timeout_after_output_is_not_replay_safe(
     assert result.model_error is not None
     assert result.model_error["category"] == "timeout"
     assert result.model_error["replay_safe"] is False
+    assert len(gateway.invocations) == 1
+    assert gateway.cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_model_attempt_timeout_closes_stream_after_processing_timeout(
+    db_session,
+    monkeypatch,
+) -> None:
+    _session, turn = await _turn(db_session, input_text="Start and then stall.")
+    gateway = PartialThenBlockingGateway()
+    original_append = AgentEventLedger.append
+
+    async def blocking_text_delta_append(self, **kwargs):
+        if kwargs.get("type") == AgentEventType.ASSISTANT_TEXT_DELTA:
+            await asyncio.Event().wait()
+        return await original_append(self, **kwargs)
+
+    monkeypatch.setattr(AgentEventLedger, "append", blocking_text_delta_append)
+    monkeypatch.setitem(settings.__dict__, "agent_model_attempt_timeout_seconds", 0.01)
+    monkeypatch.setattr(settings, "agent_retry_max_attempts", 2)
+    monkeypatch.setattr(settings, "agent_retry_base_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "agent_retry_max_delay_seconds", 0.0)
+
+    result = await AgentLoopController(
+        db_session,
+        model_gateway=gateway,
+    ).run_turn(
+        turn_id=str(turn.id),
+        target=_target(),
+        capabilities=RuntimeCapabilities(supports_tools=False),
+        strategy=RuntimeStrategy(allow_tools=False),
+    )
+
+    assert result.termination_reason == "model_failed"
+    assert result.error_code == "model_request_failed"
+    assert result.model_replay_safe is False
     assert len(gateway.invocations) == 1
     assert gateway.cancelled.is_set()
 

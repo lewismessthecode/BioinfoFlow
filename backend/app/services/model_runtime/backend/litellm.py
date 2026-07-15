@@ -10,6 +10,7 @@ from openai import AsyncOpenAI
 from app.services.model_runtime.backend.litellm_network import PublicNetworkHTTPHandler
 from app.services.model_runtime.contracts import NetworkAccessPolicy, WireProtocol
 from app.services.model_runtime.errors import ModelError
+from app.services.model_runtime.streams import aclose_async_iterator
 
 
 CompletionCallable = Callable[..., Awaitable[Any]]
@@ -115,6 +116,7 @@ def _safe_stream(
                 sensitive_values=sensitive_values,
             ) from None
         finally:
+            await aclose_async_iterator(response)
             await _close_request_clients(policy_client, provider_client)
 
     return iterate()

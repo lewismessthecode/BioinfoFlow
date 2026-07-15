@@ -17,6 +17,7 @@ from app.services.model_runtime.contracts import (
     WireProtocol,
 )
 from app.services.model_runtime.errors import ModelError
+from app.services.model_runtime.streams import aclose_async_iterator
 
 
 class ModelGateway:
@@ -62,10 +63,12 @@ class ModelGateway:
             request,
             network_access=invocation.target.network_access,
         )
-        yield ResponseStarted(streaming=hasattr(raw_response, "__aiter__"))
         semantic_output_emitted = False
+        decoded_events = None
         try:
-            async for event in codec.decode_response(raw_response):
+            yield ResponseStarted(streaming=hasattr(raw_response, "__aiter__"))
+            decoded_events = codec.decode_response(raw_response)
+            async for event in decoded_events:
                 finalize_event = getattr(codec, "finalize_event", None)
                 finalized_event = (
                     finalize_event(invocation, request, event)
@@ -82,6 +85,10 @@ class ModelGateway:
             if semantic_output_emitted and exc.replay_safe:
                 raise _copy_model_error(exc, replay_safe=False) from None
             raise
+        finally:
+            if decoded_events is not None:
+                await aclose_async_iterator(decoded_events)
+            await aclose_async_iterator(raw_response)
 
 
 def _copy_model_error(exc: ModelError, *, replay_safe: bool) -> ModelError:
