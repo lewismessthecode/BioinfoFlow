@@ -1,4 +1,4 @@
-import type { AgentExecutionTarget } from "./types"
+import type { AgentExecutionScope, AgentExecutionTarget } from "./types"
 
 export type ResolvedAgentExecutionTarget =
   | { kind: "local"; source: "normalized" | "legacy" | "default" }
@@ -52,6 +52,23 @@ export function agentExecutionTargetForRequest(
     type: "remote_ssh",
     remote_connection_id: remoteConnectionId,
     connection_id: remoteConnectionId,
+  }
+}
+
+export function agentExecutionScopeForRequest(
+  scope: AgentExecutionScope | null | undefined,
+): AgentExecutionScope | undefined {
+  if (!scope) return undefined
+  if (scope.mode === "auto") return { mode: "auto" }
+  if (scope.mode !== "manual") return undefined
+
+  const selectedTargets = (scope.selected_targets ?? [])
+    .map((target) => agentExecutionTargetForRequest(target))
+    .filter((target): target is AgentExecutionTarget => Boolean(target))
+
+  return {
+    mode: "manual",
+    selected_targets: selectedTargets,
   }
 }
 

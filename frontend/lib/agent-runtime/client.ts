@@ -1,8 +1,12 @@
 import { apiRequest, buildApiUrl } from "@/lib/api"
-import { agentExecutionTargetForRequest } from "./execution-target"
+import {
+  agentExecutionScopeForRequest,
+  agentExecutionTargetForRequest,
+} from "./execution-target"
 import type {
   AgentActionDecision,
   AgentAnswer,
+  AgentExecutionScope,
   AgentExecutionTarget,
   AgentFsFile,
   AgentFsTree,
@@ -25,6 +29,7 @@ type CreateAgentRuntimeSessionInput = {
   mode?: AgentMode
   modelSelection?: AgentModelSelection | null
   executionTarget?: AgentExecutionTarget | null
+  executionScope?: AgentExecutionScope | null
   metadata?: Record<string, unknown> | null
 }
 
@@ -60,6 +65,7 @@ export const createAgentRuntimeSession = async (
       mode: input.mode,
       model_selection: input.modelSelection,
       execution_target: agentExecutionTargetForRequest(input.executionTarget),
+      execution_scope: agentExecutionScopeForRequest(input.executionScope),
       metadata: input.metadata,
     }),
   })
@@ -106,6 +112,7 @@ export const updateAgentRuntimeSessionMetadata = async (
   sessionId: string,
   metadata: Record<string, unknown> | null,
   executionTarget?: AgentExecutionTarget | null,
+  executionScope?: AgentExecutionScope | null,
 ) => {
   const response = await apiRequest<AgentRuntimeSession>(
     `/agent/sessions/${sessionId}`,
@@ -115,6 +122,9 @@ export const updateAgentRuntimeSessionMetadata = async (
         metadata,
         ...(executionTarget !== undefined
           ? { execution_target: agentExecutionTargetForRequest(executionTarget) }
+          : {}),
+        ...(executionScope !== undefined
+          ? { execution_scope: agentExecutionScopeForRequest(executionScope) }
           : {}),
       }),
     },
@@ -129,6 +139,7 @@ export const createAgentRuntimeTurn = async (input: {
   activeSkillNames?: string[] | null
   modelSelection?: AgentModelSelection | null
   executionTarget?: AgentExecutionTarget | null
+  executionScope?: AgentExecutionScope | null
 }) => {
   const response = await apiRequest<AgentRuntimeTurn>(
     `/agent/sessions/${input.sessionId}/turns`,
@@ -142,6 +153,7 @@ export const createAgentRuntimeTurn = async (input: {
           : {}),
         model_selection: input.modelSelection,
         execution_target: agentExecutionTargetForRequest(input.executionTarget),
+        execution_scope: agentExecutionScopeForRequest(input.executionScope),
       }),
     },
   )

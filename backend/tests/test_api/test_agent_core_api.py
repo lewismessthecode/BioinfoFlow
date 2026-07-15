@@ -1098,6 +1098,61 @@ async def test_agent_core_session_execution_target_contract(async_client):
 
 
 @pytest.mark.asyncio
+async def test_agent_core_session_execution_scope_contract(async_client):
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "title": "Auto scope",
+            "execution_scope": {"mode": "auto"},
+        },
+    )
+
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+    assert session["execution_target"] == {"type": "local"}
+    assert session["execution_scope"] == {"mode": "auto"}
+    assert session["metadata"]["execution_scope"] == {"mode": "auto"}
+
+    manual_scope = {
+        "mode": "manual",
+        "selected_targets": [
+            {"kind": "local"},
+            {"kind": "remote_ssh", "remote_connection_id": "connection-1"},
+        ],
+    }
+    updated = await async_client.patch(
+        f"/api/v1/agent/sessions/{session['id']}",
+        json={"execution_scope": manual_scope},
+    )
+
+    assert updated.status_code == 200
+    updated_session = updated.json()["data"]
+    assert updated_session["execution_scope"] == {
+        "mode": "manual",
+        "selected_targets": [
+            {"type": "local"},
+            {"type": "remote_ssh", "connection_id": "connection-1"},
+        ],
+    }
+    assert updated_session["execution_target"] == {"type": "local"}
+    assert updated_session["metadata"]["execution_scope"] == updated_session[
+        "execution_scope"
+    ]
+
+    turn_response = await async_client.post(
+        f"/api/v1/agent/sessions/{session['id']}/turns",
+        json={
+            "input_text": "Use the manual scope.",
+            "execution_scope": manual_scope,
+        },
+    )
+
+    assert turn_response.status_code == 202
+    turn_metadata = turn_response.json()["data"]["model_profile_snapshot"]["metadata"]
+    assert turn_metadata["execution_scope"] == updated_session["execution_scope"]
+
+
+@pytest.mark.asyncio
 async def test_agent_core_streams_text_and_reasoning_events(async_client, monkeypatch):
     completion_kwargs: list[dict] = []
 

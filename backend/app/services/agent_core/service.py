@@ -23,6 +23,7 @@ from app.services.agent_core.events import AgentEventType
 from app.services.agent_core.execution_target import (
     execution_target_from_session,
     normalize_execution_target,
+    session_metadata_with_execution_scope,
     session_metadata_with_execution_target,
 )
 from app.services.agent_core.ledger import AgentEventLedger
@@ -85,6 +86,7 @@ class AgentCoreService:
         default_model_profile_id: str | None = None,
         model_selection: dict | None = None,
         execution_target: dict | None = None,
+        execution_scope: dict | None = None,
         metadata: dict | None = None,
         lineage: dict | None = None,
         toolset_policy: dict | None = None,
@@ -99,6 +101,7 @@ class AgentCoreService:
 
         metadata = _metadata_with_remote_project(metadata, project)
         metadata = session_metadata_with_execution_target(metadata, execution_target)
+        metadata = session_metadata_with_execution_scope(metadata, execution_scope)
 
         return await self.session_repo.create(
             project_id=str(project_id) if project_id else None,
@@ -203,6 +206,7 @@ class AgentCoreService:
             "metadata" in updates
             or "model_selection" in updates
             or "execution_target" in updates
+            or "execution_scope" in updates
         ):
             current_metadata = (
                 session.session_metadata
@@ -220,6 +224,15 @@ class AgentCoreService:
             metadata = session_metadata_with_execution_target(
                 metadata,
                 execution_target,
+            )
+            execution_scope = (
+                updates["execution_scope"]
+                if "execution_scope" in updates
+                else (current_metadata or {}).get("execution_scope")
+            )
+            metadata = session_metadata_with_execution_scope(
+                metadata,
+                execution_scope,
             )
             model_selection = (
                 updates["model_selection"]
@@ -396,6 +409,7 @@ class AgentCoreService:
         model_profile_id: str | None = None,
         model_selection: dict | None = None,
         execution_target: dict | None = None,
+        execution_scope: dict | None = None,
         metadata: dict | None = None,
     ):
         session = await self.require_session(
@@ -416,6 +430,14 @@ class AgentCoreService:
                 None,
                 metadata=next_metadata,
             )
+        if execution_scope is not None:
+            next_metadata = session_metadata_with_execution_scope(
+                session_updates.get(
+                    "session_metadata", getattr(session, "session_metadata", None)
+                ),
+                execution_scope,
+            )
+            session_updates["session_metadata"] = next_metadata
         normalized_active_skill_names = _validated_active_skill_names(
             active_skill_names
         )
@@ -427,6 +449,11 @@ class AgentCoreService:
             turn_metadata = session_metadata_with_execution_target(
                 turn_metadata,
                 execution_target,
+            )
+        if execution_scope is not None:
+            turn_metadata = session_metadata_with_execution_scope(
+                turn_metadata,
+                execution_scope,
             )
         transcript_parts = _transcript_parts_for_turn(
             input_text=input_text,
@@ -480,6 +507,7 @@ class AgentCoreService:
         model_profile_id: str | None = None,
         model_selection: dict | None = None,
         execution_target: dict | None = None,
+        execution_scope: dict | None = None,
         metadata: dict | None = None,
     ):
         turn = await self.create_turn_record(
@@ -492,6 +520,7 @@ class AgentCoreService:
             model_profile_id=model_profile_id,
             model_selection=model_selection,
             execution_target=execution_target,
+            execution_scope=execution_scope,
             metadata=metadata,
         )
         enqueue_turn_run(str(turn.id), str(turn.session_id))
