@@ -263,10 +263,512 @@ async def _dispatch_remote_exec_while_target_drifts(db_session, drift: str):
     return result, remote_executor.calls
 
 
+async def _resume_remote_exec_while_target_host_drifts(db_session):
+    from app.services.agent_core.service import AgentCoreService
+
+    connection_service = RemoteConnectionService(db_session)
+    connection = await connection_service.create_connection(
+        {
+            "name": "Approved target",
+            "host": "resume-approved.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    service = AgentCoreService(db_session)
+    agent_session = await service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="ask_each_action",
+        metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(connection.id),
+            }
+        },
+    )
+    turn = await service.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Ask before running on the approved target.",
+    )
+    remote_executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="ok\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    remote_tool = registry.get("remote.exec")
+    remote_tool.executor = remote_executor
+    context = AgentToolContext(
+        db=db_session,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+        turn_id=str(turn.id),
+    )
+    dispatcher = AgentToolDispatcher(db_session, registry)
+
+    pending = await dispatcher.dispatch(
+        tool_name="remote.exec",
+        input={"command": "hostname"},
+        context=context,
+    )
+    assert pending.status == "waiting_decision"
+    assert remote_executor.calls == []
+
+    await service.decide_action(
+        action_id=pending.action_id,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        decision="approve",
+    )
+    current = await connection_service.get_connection(
+        str(connection.id), workspace_id="workspace-1"
+    )
+    await connection_service.update_connection(
+        current, {"host": "resume-changed.example.org"}
+    )
+
+    result = await dispatcher.resume_action(
+        action_id=pending.action_id,
+        context=context,
+    )
+    return result, remote_executor.calls
+
+
+async def _dispatch_remote_exec_while_scope_target_host_drifts(db_session, mode: str):
+    from app.services.agent_core.service import AgentCoreService
+
+    connection_service = RemoteConnectionService(db_session)
+    first = await connection_service.create_connection(
+        {
+            "name": "Scope target",
+            "host": "scope-approved.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    second = await connection_service.create_connection(
+        {
+            "name": "Second scope target",
+            "host": "scope-second.example.org",
+            "port": 22,
+            "username": "bob",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    execution_scope = (
+        {"mode": "auto"}
+        if mode == "auto"
+        else {
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "remote_ssh", "connection_id": str(first.id)},
+                {"type": "remote_ssh", "connection_id": str(second.id)},
+            ],
+        }
+    )
+    service = AgentCoreService(db_session)
+    agent_session = await service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="bypass",
+        execution_scope=execution_scope,
+    )
+    turn = await service.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Run on the selected scope target only.",
+    )
+    remote_executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="ok\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    remote_tool = registry.get("remote.exec")
+    remote_tool.executor = remote_executor
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original_run = remote_tool.run
+
+    async def paused_run(input, context):
+        entered.set()
+        await release.wait()
+        return await original_run(input, context)
+
+    remote_tool.run = paused_run
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as worker, maker() as mutator:
+        task = asyncio.create_task(
+            AgentToolDispatcher(worker, registry).dispatch(
+                tool_name="remote.exec",
+                input={"connection_id": str(first.id), "command": "hostname"},
+                context=AgentToolContext(
+                    db=worker,
+                    workspace_id="workspace-1",
+                    user_id="user-1",
+                    session_id=str(agent_session.id),
+                    turn_id=str(turn.id),
+                ),
+            )
+        )
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        current = await RemoteConnectionService(mutator).get_connection(
+            str(first.id), workspace_id="workspace-1"
+        )
+        await RemoteConnectionService(mutator).update_connection(
+            current, {"host": "scope-changed.example.org"}
+        )
+        release.set()
+        result = await asyncio.wait_for(task, timeout=2)
+    return result, remote_executor.calls
+
+
+async def _dispatch_remote_exec_without_connection_id_while_scope_target_host_drifts(
+    db_session, mode: str
+):
+    from app.services.agent_core.service import AgentCoreService
+
+    connection_service = RemoteConnectionService(db_session)
+    connection = await connection_service.create_connection(
+        {
+            "name": "Implicit scope target",
+            "host": "implicit-approved.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    execution_scope = (
+        {"mode": "auto"}
+        if mode == "auto"
+        else {
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "local"},
+                {"type": "remote_ssh", "connection_id": str(connection.id)},
+            ],
+        }
+    )
+    service = AgentCoreService(db_session)
+    agent_session = await service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="bypass",
+        execution_scope=execution_scope,
+    )
+    turn = await service.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Run on the only visible remote target.",
+    )
+    remote_executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="ok\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    remote_tool = registry.get("remote.exec")
+    remote_tool.executor = remote_executor
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original_run = remote_tool.run
+
+    async def paused_run(input, context):
+        entered.set()
+        await release.wait()
+        return await original_run(input, context)
+
+    remote_tool.run = paused_run
+    maker = async_sessionmaker(
+        bind=db_session.bind, expire_on_commit=False, class_=AsyncSession
+    )
+    async with maker() as worker, maker() as mutator:
+        task = asyncio.create_task(
+            AgentToolDispatcher(worker, registry).dispatch(
+                tool_name="remote.exec",
+                input={"command": "hostname"},
+                context=AgentToolContext(
+                    db=worker,
+                    workspace_id="workspace-1",
+                    user_id="user-1",
+                    session_id=str(agent_session.id),
+                    turn_id=str(turn.id),
+                ),
+            )
+        )
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        current = await RemoteConnectionService(mutator).get_connection(
+            str(connection.id), workspace_id="workspace-1"
+        )
+        await RemoteConnectionService(mutator).update_connection(
+            current, {"host": "implicit-changed.example.org"}
+        )
+        release.set()
+        result = await asyncio.wait_for(task, timeout=2)
+    return result, remote_executor.calls
+
+
+async def _resume_remote_exec_after_scope_target_host_drifts(db_session, mode: str):
+    from app.services.agent_core.service import AgentCoreService
+
+    connection_service = RemoteConnectionService(db_session)
+    first = await connection_service.create_connection(
+        {
+            "name": "Approved scope target",
+            "host": "resume-approved.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    second = await connection_service.create_connection(
+        {
+            "name": "Second approved scope target",
+            "host": "resume-second.example.org",
+            "port": 22,
+            "username": "bob",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    execution_scope = (
+        {"mode": "auto"}
+        if mode == "auto"
+        else {
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "remote_ssh", "connection_id": str(first.id)},
+                {"type": "remote_ssh", "connection_id": str(second.id)},
+            ],
+        }
+    )
+    agent_service = AgentCoreService(db_session)
+    agent_session = await agent_service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="ask_each_action",
+        execution_scope=execution_scope,
+    )
+    turn = await agent_service.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Ask before running on the selected scope target.",
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="ok\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    remote_tool = registry.get("remote.exec")
+    remote_tool.executor = executor
+    context = AgentToolContext(
+        db=db_session,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+        turn_id=str(turn.id),
+    )
+    dispatcher = AgentToolDispatcher(db_session, registry)
+
+    pending = await dispatcher.dispatch(
+        tool_name="remote.exec",
+        input={"connection_id": str(first.id), "command": "hostname"},
+        context=context,
+    )
+    assert pending.status == "waiting_decision"
+    assert executor.calls == []
+
+    await agent_service.decide_action(
+        action_id=pending.action_id,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        decision="approve",
+    )
+    current = await connection_service.get_connection(
+        str(first.id), workspace_id="workspace-1"
+    )
+    await connection_service.update_connection(
+        current, {"host": "resume-changed.example.org"}
+    )
+
+    resumed = await dispatcher.resume_action(
+        action_id=pending.action_id,
+        context=context,
+    )
+    return resumed, executor.calls
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("drift", ["selected_target", "host", "project_root"])
 async def test_remote_exec_fails_closed_when_claimed_target_drifts(db_session, drift):
     result, calls = await _dispatch_remote_exec_while_target_drifts(db_session, drift)
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_remote_exec_resume_fails_closed_when_claimed_target_drifts(db_session):
+    result, calls = await _resume_remote_exec_while_target_host_drifts(db_session)
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["manual_multi", "auto"])
+async def test_remote_exec_fails_closed_when_scope_selected_target_drifts(
+    db_session, mode
+):
+    result, calls = await _dispatch_remote_exec_while_scope_target_host_drifts(
+        db_session, mode
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["manual_local_remote", "auto"])
+async def test_remote_exec_without_connection_id_binds_only_visible_scope_target(
+    db_session, mode
+):
+    (
+        result,
+        calls,
+    ) = await _dispatch_remote_exec_without_connection_id_while_scope_target_host_drifts(
+        db_session, mode
+    )
+
+    assert result.status == "failed"
+    assert result.error["type"] == "PermissionDeniedError"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_remote_exec_runtime_scope_uses_remote_command_risk(db_session):
+    from app.services.agent_core.service import AgentCoreService
+
+    connection = await RemoteConnectionService(db_session).create_connection(
+        {
+            "name": "Runtime risk target",
+            "host": "risk.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "agent",
+        },
+        workspace_id="workspace-1",
+    )
+    service = AgentCoreService(db_session)
+    agent_session = await service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="guarded_auto",
+        execution_scope={"mode": "auto"},
+    )
+    turn = await service.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Inspect a remote secret-like file only after approval.",
+    )
+    remote_executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="secret\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    registry.get("remote.exec").executor = remote_executor
+
+    result = await AgentToolDispatcher(db_session, registry).dispatch(
+        tool_name="remote.exec",
+        input={"command": "cat secrets.txt"},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        ),
+    )
+
+    assert result.status == "waiting_decision"
+    assert remote_executor.calls == []
+    action = await service.get_action(
+        action_id=result.action_id,
+        workspace_id="workspace-1",
+        user_id="user-1",
+    )
+    assert action.risk_level == "act_high"
+    snapshot = action.permission_context_snapshot
+    assert snapshot["scope_remote_connection_id"] == str(connection.id)
+    assert snapshot["command_risk"]["target"]["kind"] == "remote_ssh"
+    assert snapshot["command_risk"]["target"]["connection_id"] == str(connection.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["manual_multi", "auto"])
+async def test_remote_exec_resume_fails_closed_when_scope_target_drifts(
+    db_session, mode
+):
+    result, calls = await _resume_remote_exec_after_scope_target_host_drifts(
+        db_session, mode
+    )
 
     assert result.status == "failed"
     assert result.error["type"] == "PermissionDeniedError"
