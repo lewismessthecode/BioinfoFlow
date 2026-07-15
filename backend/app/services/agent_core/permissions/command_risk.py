@@ -3280,6 +3280,10 @@ def _protected_resources(paths: list[str]) -> list[dict[str, str]]:
     return unique
 
 
+def protected_resources_for_paths(paths: list[str]) -> list[dict[str, str]]:
+    return _protected_resources(paths)
+
+
 def _dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 

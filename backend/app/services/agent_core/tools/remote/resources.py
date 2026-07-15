@@ -20,6 +20,7 @@ from app.services.agent_core.permissions.command_risk import (
     CommandRiskAssessment,
     CommandTargetProfile,
     assess_command_risk,
+    protected_resources_for_paths,
 )
 from app.services.agent_core.permissions.risk import RiskAssessment
 from app.services.agent_core.tools.specs import AgentToolContext, AgentToolSpec
@@ -348,12 +349,20 @@ class RemoteReadFileTool:
             input, context, self.resolver_factory
         )
         path = _remote_path_for_context(
-            _required_string(input, "path"), working_directory
+            _required_string(input, "path"),
+            working_directory,
+            allow_outside_root=_action_allows_remote_outside_root(context),
         )
         max_bytes = int(input.get("max_bytes") or 16000)
         result = await self.executor.run(
             connection,
-            _read_file_command(path, max_bytes, working_directory),
+            _read_file_command(
+                path,
+                max_bytes,
+                working_directory
+                if _remote_path_within_root(path, working_directory)
+                else None,
+            ),
             timeout_seconds=int(input.get("timeout_seconds") or 10),
             output_limit=max_bytes + 1,
         )
@@ -436,12 +445,20 @@ class RemoteListDirTool:
             input, context, self.resolver_factory
         )
         path = _remote_path_for_context(
-            _required_string(input, "path"), working_directory
+            _required_string(input, "path"),
+            working_directory,
+            allow_outside_root=_action_allows_remote_outside_root(context),
         )
         limit = int(input.get("limit") or 50)
         result = await self.executor.run(
             connection,
-            _list_dir_command(path, limit, working_directory),
+            _list_dir_command(
+                path,
+                limit,
+                working_directory
+                if _remote_path_within_root(path, working_directory)
+                else None,
+            ),
             timeout_seconds=int(input.get("timeout_seconds") or 10),
             output_limit=int(input.get("output_limit") or 20000),
         )
@@ -652,18 +669,29 @@ def _command_in_remote_working_directory(
     return f"cd {shlex.quote(working_directory)} && {command}"
 
 
-def _remote_path_for_context(path: str, working_directory: str | None) -> str:
+def _remote_path_for_context(
+    path: str,
+    working_directory: str | None,
+    *,
+    allow_outside_root: bool = False,
+) -> str:
     if not working_directory:
         return path
     normalized = str(path or "").strip().replace("\\", "/")
     if "\x00" in normalized:
         raise BadRequestError("remote path contains an invalid character")
+    if "$" in normalized or "`" in normalized:
+        raise BadRequestError("remote path contains dynamic shell syntax")
     root = posixpath.normpath(working_directory)
     if normalized.startswith("~"):
         raise BadRequestError("home-relative paths are outside the remote project")
     if normalized.startswith("/"):
         absolute = posixpath.normpath(normalized)
         if absolute == root or absolute.startswith(f"{root.rstrip('/')}/"):
+            return absolute
+        if allow_outside_root and not _structured_remote_path_requires_explicit(
+            absolute
+        ):
             return absolute
         raise BadRequestError("absolute remote path is outside the remote project")
     parts = [part for part in normalized.split("/") if part not in {"", "."}]
@@ -673,6 +701,24 @@ def _remote_path_for_context(path: str, working_directory: str | None) -> str:
     if relative == ".":
         return root
     return f"{root.rstrip('/')}/{relative}"
+
+
+def _remote_path_within_root(path: str, working_directory: str | None) -> bool:
+    if not working_directory:
+        return False
+    normalized = posixpath.normpath(path)
+    root = posixpath.normpath(working_directory)
+    return normalized == root or normalized.startswith(f"{root.rstrip('/')}/")
+
+
+def _action_allows_remote_outside_root(context: AgentToolContext) -> bool:
+    snapshot = context.permission_context_snapshot
+    if not isinstance(snapshot, dict):
+        return False
+    decision = snapshot.get("action_permission_decision")
+    if not isinstance(decision, dict):
+        return False
+    return decision.get("decision") in {"allow", "approve", "modify"}
 
 
 def _assess_structured_remote_path(
@@ -693,8 +739,10 @@ def _assess_structured_remote_path(
     dynamic_or_traversal = (
         normalized.startswith(("~", "$"))
         or "$" in normalized
+        or "`" in normalized
         or any(part == ".." for part in parts)
     )
+    protected = _structured_remote_path_requires_explicit(normalized)
     outside_root = False
     if target.read_roots and normalized.startswith("/"):
         absolute = posixpath.normpath(normalized)
@@ -703,22 +751,53 @@ def _assess_structured_remote_path(
             or absolute.startswith(f"{posixpath.normpath(root).rstrip('/')}/")
             for root in target.read_roots
         )
-    unbounded_target = not target.read_roots or not target.working_directory
-    unsafe = unbounded_target or outside_root or dynamic_or_traversal
-    if unsafe:
+    absolute_path = normalized.startswith("/")
+    unbounded_relative = (
+        not absolute_path and (not target.read_roots or not target.working_directory)
+    )
+    requires_explicit = unbounded_relative or dynamic_or_traversal or protected
+    if requires_explicit:
         return RiskAssessment(
             level="act_high",
             reasons=[
                 "structured remote path is not bounded by an effective project root",
-                "explicit approval is required for absolute, home, variable, or traversal paths",
+                "explicit approval is required for sensitive, home, variable, or traversal paths",
             ],
             affected_resources=[{"type": "path", "id": normalized[:1000]}],
             requires_explicit_approval=True,
+        )
+    if outside_root or (absolute_path and not target.read_roots):
+        return RiskAssessment(
+            level="act_high",
+            reasons=[
+                "structured remote path is outside the effective project root",
+                "full access may read non-sensitive absolute remote data paths",
+            ],
+            affected_resources=[{"type": "path", "id": normalized[:1000]}],
         )
     return RiskAssessment(
         level="read",
         reasons=["structured remote path is a bounded relative read"],
         affected_resources=[{"type": "path", "id": normalized[:1000]}],
+    )
+
+
+def _structured_remote_path_requires_explicit(path: str) -> bool:
+    if protected_resources_for_paths([path]):
+        return True
+    if path.startswith(("~", "$")) or "$" in path or "`" in path:
+        return True
+    normalized = posixpath.normpath(path)
+    lowered = normalized.casefold()
+    return lowered == "/etc" or lowered.startswith(
+        (
+            "/etc/",
+            "/root/",
+            "/proc/",
+            "/sys/",
+            "/dev/",
+            "/private/etc/",
+        )
     )
 
 

@@ -592,6 +592,175 @@ async def test_remote_exec_bypass_runs_literal_inline_filter_pipeline_without_ap
 
 
 @pytest.mark.asyncio
+async def test_remote_read_file_bypass_runs_data_path_outside_root_without_approval(
+    db_session,
+):
+    from app.services.agent_core.service import AgentCoreService
+
+    service = RemoteConnectionService(db_session)
+    selected = await service.create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+        },
+        workspace_id="workspace-1",
+    )
+    agent_service = AgentCoreService(db_session)
+    agent_session = await agent_service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="bypass",
+        metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(selected.id),
+            },
+            "remote_project_root": "/mnt/nas1/.bioinfoflow",
+        },
+    )
+    turn = await agent_service.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Read a previous task input file.",
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="sample-a\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    remote_tool = registry.get("remote.read_file")
+    remote_tool.executor = executor
+    path = (
+        "/mnt/nas1/phoenix-task/Deaf_20/"
+        "sz01-Deaf_20-202607093417298900000001/input/sequence.list"
+    )
+
+    result = await AgentToolDispatcher(db_session, registry).dispatch(
+        tool_name="remote.read_file",
+        input={"path": path},
+        context=AgentToolContext(
+            db=db_session,
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+            turn_id=str(turn.id),
+        ),
+    )
+
+    assert result.status == "completed"
+    assert result.result["path"] == path
+    assert result.result["content"] == "sample-a\n"
+    assert "remote path is outside the remote project" not in executor.calls[0][
+        "command"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_remote_read_file_approved_data_path_outside_root_resumes_successfully(
+    db_session,
+):
+    from app.services.agent_core.service import AgentCoreService
+
+    service = RemoteConnectionService(db_session)
+    selected = await service.create_connection(
+        {
+            "name": "Phoenix login",
+            "host": "phoenix-login.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "phoenix-login",
+        },
+        workspace_id="workspace-1",
+    )
+    agent_service = AgentCoreService(db_session)
+    agent_session = await agent_service.create_session(
+        project_id=None,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        permission_mode="guarded_auto",
+        metadata={
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": str(selected.id),
+            },
+            "remote_project_root": "/mnt/nas1/.bioinfoflow",
+        },
+    )
+    turn = await agent_service.create_turn_record(
+        session_id=str(agent_session.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        input_text="Read a previous task input file after approval.",
+    )
+    executor = _FakeRemoteExecutor(
+        RemoteCommandResult(
+            exit_code=0,
+            stdout="sample-a\n",
+            stderr="",
+            timed_out=False,
+            truncated=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    registry = build_default_tool_registry()
+    remote_tool = registry.get("remote.read_file")
+    remote_tool.executor = executor
+    context = AgentToolContext(
+        db=db_session,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+        turn_id=str(turn.id),
+    )
+    path = (
+        "/mnt/nas1/phoenix-task/Deaf_20/"
+        "sz01-Deaf_20-202607093417298900000001/input/sequence.list"
+    )
+    dispatcher = AgentToolDispatcher(db_session, registry)
+
+    pending = await dispatcher.dispatch(
+        tool_name="remote.read_file",
+        input={"path": path},
+        context=context,
+    )
+    assert pending.status == "waiting_decision"
+    assert executor.calls == []
+
+    await agent_service.decide_action(
+        action_id=pending.action_id,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        decision="approve",
+    )
+    resumed = await dispatcher.resume_action(
+        action_id=pending.action_id,
+        context=context,
+    )
+
+    assert resumed.status == "completed"
+    assert resumed.result["path"] == path
+    assert resumed.result["content"] == "sample-a\n"
+    assert "remote path is outside the remote project" not in executor.calls[0][
+        "command"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_remote_exec_rejects_explicit_connection_outside_execution_target(
     db_session,
 ):
@@ -1430,6 +1599,52 @@ def test_bounded_structured_remote_paths_cannot_escape_root(tool, path):
 
     assert risk.level == "act_high"
     assert risk.requires_explicit_approval is True
+
+
+@pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
+def test_bounded_structured_remote_data_path_outside_root_is_full_access_safe(tool):
+    target = CommandTargetProfile(
+        kind="remote_ssh",
+        trust_domain="cluster.example.org",
+        identity="alice",
+        sandbox_strength="none",
+        read_roots=("/mnt/nas1/.bioinfoflow",),
+        working_directory="/mnt/nas1/.bioinfoflow",
+        connection_id="conn-1",
+    )
+
+    risk = tool.assess_risk(
+        {
+            "path": (
+                "/mnt/nas1/phoenix-task/Deaf_20/"
+                "sz01-Deaf_20-202607093417298900000001/input/sequence.list"
+            )
+        },
+        target=target,
+    )
+
+    assert risk.level == "act_high"
+    assert risk.requires_explicit_approval is False
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=risk,
+            permission_mode="bypass",
+            automation_mode="assisted",
+        )
+        .decision
+        == "allow"
+    )
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=risk,
+            permission_mode="guarded_auto",
+            automation_mode="assisted",
+        )
+        .decision
+        == "ask"
+    )
 
 
 @pytest.mark.parametrize("tool", [RemoteReadFileTool(), RemoteListDirTool()])
