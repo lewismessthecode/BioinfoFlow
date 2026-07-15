@@ -47,7 +47,10 @@ import type {
 import { tokenUsageViewFromSummary } from "@/lib/agent-runtime"
 import { cn } from "@/lib/utils"
 import { ContextAttachments } from "./context-attachments"
-import { ConnectedNodeSelector } from "./connected-node-selector"
+import {
+  ConnectedNodeSelector,
+  type ExecutionTargetSelection,
+} from "./connected-node-selector"
 import { PermissionControl } from "./permission-control"
 
 type AgentComposerProps = {
@@ -76,8 +79,9 @@ type AgentComposerProps = {
   onAddActiveSkill?: (name: string) => void
   onRemoveActiveSkill?: (name: string) => void
   tokenUsageSummary?: AgentTokenUsageSummary | null
-  selectedRemoteConnectionId?: string
-  onRemoteConnectionChange?: (connectionId: string) => void
+  executionSelection?: ExecutionTargetSelection
+  currentExecutionTargetLabel?: string | null
+  onExecutionSelectionChange?: (selection: ExecutionTargetSelection) => void
   compactControls?: boolean
   presentation?: "center" | "dock"
   contextTitle?: string | null
@@ -122,8 +126,9 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
       onAddActiveSkill,
       onRemoveActiveSkill,
       tokenUsageSummary,
-      selectedRemoteConnectionId,
-      onRemoteConnectionChange,
+      executionSelection,
+      currentExecutionTargetLabel,
+      onExecutionSelectionChange,
       compactControls = false,
       presentation = "dock",
       contextTitle,
@@ -456,8 +461,9 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
             <ConnectedNodeSelector
               disabled={disabled}
               compact={compactControls}
-              selectedConnectionId={selectedRemoteConnectionId}
-              onSelectedConnectionChange={onRemoteConnectionChange}
+              value={executionSelection}
+              currentTargetLabel={currentExecutionTargetLabel}
+              onChange={onExecutionSelectionChange}
             />
             {onPermissionModeChange ? (
               <PermissionControl
@@ -465,7 +471,7 @@ export const AgentComposer = forwardRef<HTMLTextAreaElement, AgentComposerProps>
                 onModeChange={onPermissionModeChange}
                 update={permissionUpdate}
                 onRetry={onRetryPermissionModeChange}
-                remote={Boolean(selectedRemoteConnectionId)}
+                remote={selectionIncludesRemote(executionSelection)}
                 disabled={disabled}
                 compact={compactControls}
               />
@@ -733,4 +739,10 @@ function TokenUsageStat({ label, value }: { label: string; value: string }) {
       </dd>
     </div>
   )
+}
+
+function selectionIncludesRemote(selection?: ExecutionTargetSelection) {
+  if (!selection) return false
+  if (selection.mode === "auto") return true
+  return selection.targetIds.some((targetId) => targetId !== "local")
 }

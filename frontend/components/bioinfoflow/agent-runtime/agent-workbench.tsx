@@ -32,6 +32,10 @@ import { AgentTabbedPanel, type AgentTabbedPanelTab } from "./agent-tabbed-panel
 import { AgentTodoDock } from "./agent-todo-dock"
 import { AgentTranscript } from "./agent-transcript"
 import { ComposerApprovalPopover } from "./composer-approval-popover"
+import {
+  LOCAL_TARGET_ID,
+  type ExecutionTargetSelection,
+} from "./connected-node-selector"
 import { jumpToDecisionTarget, scheduleDecisionFocusHandoff } from "./decision-focus"
 import { getPendingActions, parseWaitingDecision } from "./pending-actions"
 import type { AgentDecisionHandler } from "./types"
@@ -57,6 +61,7 @@ import {
   listAgentRuntimeSessionArtifacts,
   listAgentRuntimeSkills,
   type AgentRuntimeArtifact,
+  type AgentExecutionScope,
   type AgentRuntimeFileRefPart,
   type AgentRuntimeInputPart,
   type AgentRuntimeSkill,
@@ -171,9 +176,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const [activeSkillNames, setActiveSkillNames] = useState<string[]>([])
     const [skillsLoading, setSkillsLoading] = useState(true)
     const [skillsError, setSkillsError] = useState<string | null>(null)
-    const [remoteConnectionOverride, setRemoteConnectionOverride] = useState<{
+    const [executionSelectionOverride, setExecutionSelectionOverride] = useState<{
       sessionId: string
-      value: string
+      value: ExecutionTargetSelection
     } | null>(null)
     const [hasSubmittedDraft, setHasSubmittedDraft] = useState(false)
     const [optimisticTurns, setOptimisticTurns] = useState<AgentRuntimeTurn[]>([])
@@ -254,7 +259,10 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
     const agentMode = mode ?? "execution"
     const sessionId = state.session?.id ?? ""
     const submissionSessionId = activeSessionId || sessionId || "pending-session"
-    const sessionRemoteConnectionId = getSessionRemoteConnectionId(state.session)
+    const sessionExecutionSelection = useMemo(
+      () => getSessionExecutionSelection(state.session),
+      [state.session],
+    )
     const projectRemoteConnectionId = useMemo(() => {
       if (!projectId) return ""
       const project = workspaceShell?.projects.find((item) => item.id === projectId)
@@ -263,12 +271,30 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         ? project.remote_connection_id
         : ""
     }, [projectId, workspaceShell?.projects])
-    const hasRemoteConnectionOverride =
-      remoteConnectionOverride?.sessionId === sessionId
-    const selectedRemoteConnectionId =
-      hasRemoteConnectionOverride
-        ? remoteConnectionOverride.value
-        : sessionRemoteConnectionId || (state.session ? "" : projectRemoteConnectionId)
+    const projectExecutionSelection = useMemo<ExecutionTargetSelection>(
+      () =>
+        projectRemoteConnectionId
+          ? { mode: "manual", targetIds: [projectRemoteConnectionId] }
+          : { mode: "auto" },
+      [projectRemoteConnectionId],
+    )
+    const hasExecutionSelectionOverride =
+      executionSelectionOverride?.sessionId === sessionId
+    const executionSelection = useMemo<ExecutionTargetSelection>(
+      () =>
+        hasExecutionSelectionOverride
+          ? executionSelectionOverride.value
+          : sessionExecutionSelection ||
+            (state.session ? { mode: "auto" } : projectExecutionSelection),
+      [
+        executionSelectionOverride,
+        hasExecutionSelectionOverride,
+        projectExecutionSelection,
+        sessionExecutionSelection,
+        state.session,
+      ],
+    )
+    const currentExecutionTargetLabel = currentTargetLabelForSelection()
 
     const pendingApprovalSummary = useMemo(() => {
       let eligible = 0
@@ -445,7 +471,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           setInput("")
           setContextAttachments([])
           setActiveSkillNames([])
-          setRemoteConnectionOverride(null)
+          setExecutionSelectionOverride(null)
           setHasSubmittedDraft(false)
           setOptimisticTurns([])
           setInFlightOptimisticTurnIds([])
@@ -572,9 +598,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
       })
     }, [])
 
-    const handleRemoteConnectionChange = useCallback(
-      (connectionId: string) => {
-        setRemoteConnectionOverride({ sessionId, value: connectionId })
+    const handleExecutionSelectionChange = useCallback(
+      (selection: ExecutionTargetSelection) => {
+        setExecutionSelectionOverride({ sessionId, value: selection })
       },
       [sessionId],
     )
@@ -613,9 +639,7 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
           modelSelection,
           inputParts,
           activeSkillNames: activeSkillNamesSnapshot,
-          ...(hasRemoteConnectionOverride || selectedRemoteConnectionId || state.session
-            ? { remoteConnectionId: selectedRemoteConnectionId }
-            : {}),
+          executionScope: executionScopeForSelection(executionSelection),
         }).then(() => {
           setOptimisticTurns((current) =>
             current.filter((turn) => turn.id !== nextOptimisticTurn.id),
@@ -626,13 +650,11 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         })
       },
       [
-        hasRemoteConnectionOverride,
+        executionSelection,
         projectId,
         selectedModel,
-        selectedRemoteConnectionId,
         send,
         submissionSessionId,
-        state.session,
       ],
     )
 
@@ -1091,8 +1113,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onAddActiveSkill={addActiveSkill}
         onRemoveActiveSkill={removeActiveSkill}
         tokenUsageSummary={state.session?.token_usage_summary}
-        selectedRemoteConnectionId={selectedRemoteConnectionId}
-        onRemoteConnectionChange={handleRemoteConnectionChange}
+        executionSelection={executionSelection}
+        currentExecutionTargetLabel={currentExecutionTargetLabel}
+        onExecutionSelectionChange={handleExecutionSelectionChange}
         compactControls={desktopSidecarVisible}
         presentation={composerDocked ? "dock" : "center"}
         contextTitle={null}
@@ -1578,6 +1601,61 @@ function getSessionRemoteConnectionId(
 ): string {
   const target = resolveAgentExecutionTarget(session)
   return target.kind === "remote_ssh" ? target.remoteConnectionId : ""
+}
+
+function getSessionExecutionSelection(
+  session: Parameters<typeof resolveAgentExecutionTarget>[0],
+): ExecutionTargetSelection | null {
+  const scope = session?.execution_scope ?? executionScopeFromMetadata(session?.metadata)
+  if (scope?.mode === "auto") return { mode: "auto" }
+  if (scope?.mode === "manual") {
+    const targetIds = (scope.selected_targets ?? [])
+      .map((target) => {
+        const kind = target.kind ?? target.type
+        if (kind === "local") return LOCAL_TARGET_ID
+        if (kind === "remote_ssh") {
+          return target.remote_connection_id ?? target.connection_id ?? ""
+        }
+        return ""
+      })
+      .filter(Boolean)
+    return { mode: "manual", targetIds: targetIds.length ? targetIds : [LOCAL_TARGET_ID] }
+  }
+
+  const remoteConnectionId = getSessionRemoteConnectionId(session)
+  if (remoteConnectionId) {
+    return { mode: "manual", targetIds: [remoteConnectionId] }
+  }
+  return null
+}
+
+function executionScopeForSelection(
+  selection: ExecutionTargetSelection,
+): AgentExecutionScope {
+  if (selection.mode === "auto") return { mode: "auto" }
+  return {
+    mode: "manual",
+    selected_targets: selection.targetIds.map((targetId) =>
+      targetId === LOCAL_TARGET_ID
+        ? { kind: "local", type: "local" }
+        : {
+            kind: "remote_ssh",
+            type: "remote_ssh",
+            connection_id: targetId,
+            remote_connection_id: targetId,
+          },
+    ),
+  }
+}
+
+function executionScopeFromMetadata(metadata?: Record<string, unknown> | null) {
+  const scope = metadata?.execution_scope
+  if (!scope || typeof scope !== "object") return null
+  return scope as AgentExecutionScope
+}
+
+function currentTargetLabelForSelection() {
+  return null
 }
 
 function maxSidecarWidthForWorkbench(width: number) {

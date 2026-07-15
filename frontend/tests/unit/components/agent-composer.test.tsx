@@ -48,8 +48,13 @@ vi.mock("next-intl", () => ({
       configure: "Configure providers",
       noProviders: "No model available",
       searchModels: "Search models...",
-      "runtimeLocation.placeholder": "Local / Remote",
-      "runtimeLocation.menuTitle": "Local / Remote",
+      "runtimeLocation.placeholder": "Execution targets",
+      "runtimeLocation.menuTitle": "Execution targets",
+      "runtimeLocation.auto": "Auto",
+      "runtimeLocation.manual": "Manual",
+      "runtimeLocation.allTargets": "All",
+      "runtimeLocation.targetCount": `${values?.count ?? "0"} targets`,
+      "runtimeLocation.localBadge": "Local",
       "runtimeLocation.manage": "Manage SSH hosts",
       "runtimeLocation.local.label": "Local",
       "runtimeLocation.local.description": "Run in this Bioinfoflow workspace",
@@ -62,8 +67,14 @@ vi.mock("next-intl", () => ({
       "runtimeLocation.status.unknown": "Not tested",
       "runtimeLocation.selectedLocalAria": "Current execution target: local",
       "runtimeLocation.selectedRemoteAria": `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
-      placeholder: "Local / Remote",
-      menuTitle: "Local / Remote",
+      "runtimeLocation.selectedAutoAria": `Execution targets: Auto, ${values?.target ?? ""}`,
+      "runtimeLocation.selectedManualAria": `Execution targets: Manual, ${values?.target ?? ""}`,
+      placeholder: "Execution targets",
+      menuTitle: "Execution targets",
+      manual: "Manual",
+      allTargets: "All",
+      targetCount: `${values?.count ?? "0"} targets`,
+      localBadge: "Local",
       manage: "Manage SSH hosts",
       "local.label": "Local",
       "local.description": "Run in this Bioinfoflow workspace",
@@ -76,6 +87,8 @@ vi.mock("next-intl", () => ({
       "status.unknown": "Not tested",
       selectedLocalAria: "Current execution target: local",
       selectedRemoteAria: `Current execution target: ${values?.name ?? ""} at ${values?.host ?? ""}, ${values?.status ?? ""}`,
+      selectedAutoAria: `Execution targets: Auto, ${values?.target ?? ""}`,
+      selectedManualAria: `Execution targets: Manual, ${values?.target ?? ""}`,
       "tokenUsage.label": "Tokens",
       "tokenUsage.display": `${values?.value ?? ""} tokens`,
       "tokenUsage.compactDisplay": `${values?.value ?? ""}`,
@@ -541,7 +554,7 @@ describe("AgentComposer", () => {
         isRunning={false}
         permissionMode="bypass"
         onPermissionModeChange={vi.fn()}
-        selectedRemoteConnectionId="connection-1"
+        executionSelection={{ mode: "manual", targetIds: ["connection-1"] }}
         models={[]}
         selectedModel={null}
         onSelectModel={vi.fn()}
@@ -598,10 +611,10 @@ describe("AgentComposer", () => {
     )
 
     const locationChip = screen.getByRole("button", {
-      name: "Current execution target: local",
+      name: "Execution targets: Auto, All",
     })
     expect(locationChip).toHaveAttribute("data-composer-chip", "true")
-    expect(locationChip).toHaveClass("min-h-7", "rounded-[8px]", "bg-transparent")
+    expect(locationChip).toHaveClass("min-h-7", "rounded-[8px]", "bg-background")
 
     const permissionChip = screen.getByRole("button", { name: "Permission mode" })
     expect(permissionChip).toHaveAttribute("data-composer-chip", "true")
@@ -736,8 +749,8 @@ describe("AgentComposer", () => {
     expect(screen.queryByText("12.4K tokens")).not.toBeInTheDocument()
   })
 
-  it("surfaces selected remote connection changes", async () => {
-    const onRemoteConnectionChange = vi.fn()
+  it("surfaces manual execution target changes", async () => {
+    const onExecutionSelectionChange = vi.fn()
     apiRequestMock.mockResolvedValueOnce({ data: composerConnections })
 
     render(
@@ -750,18 +763,21 @@ describe("AgentComposer", () => {
         models={[]}
         selectedModel={null}
         onSelectModel={vi.fn()}
-        selectedRemoteConnectionId="connection-sim-224"
-        onRemoteConnectionChange={onRemoteConnectionChange}
+        executionSelection={{ mode: "manual", targetIds: ["connection-sim-224"] }}
+        onExecutionSelectionChange={onExecutionSelectionChange}
       />,
     )
 
     fireEvent.pointerDown(
       await screen.findByRole("button", {
-        name: "Current execution target: Simulation host sz01 at 10.227.5.224, Online",
+        name: "Execution targets: Manual, Simulation host sz01",
       }),
     )
     fireEvent.click(await screen.findByText("Test host sz03"))
 
-    expect(onRemoteConnectionChange).toHaveBeenCalledWith("connection-test-231")
+    expect(onExecutionSelectionChange).toHaveBeenCalledWith({
+      mode: "manual",
+      targetIds: ["connection-sim-224", "connection-test-231"],
+    })
   })
 })

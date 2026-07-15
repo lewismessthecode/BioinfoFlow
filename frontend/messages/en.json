@@ -2666,10 +2666,17 @@
       "comingSoon": "Coming soon"
     },
     "runtimeLocation": {
-      "placeholder": "Local / Remote",
+      "placeholder": "Execution targets",
       "selectedLocalAria": "Current execution target: local",
       "selectedRemoteAria": "Current execution target: {name} at {host}, {status}",
-      "menuTitle": "Local / Remote",
+      "selectedAutoAria": "Execution targets: Auto, {target}",
+      "selectedManualAria": "Execution targets: Manual, {target}",
+      "menuTitle": "Execution targets",
+      "auto": "Auto",
+      "manual": "Manual",
+      "allTargets": "All",
+      "targetCount": "{count} targets",
+      "localBadge": "Local",
       "manage": "Manage SSH hosts",
       "local": {
         "label": "Local",
