@@ -144,6 +144,18 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
             "placeholder": "Paste API key",
         }
     ]
+    anthropic_fields = {
+        field["name"]: field
+        for field in templates["anthropic"]["fields"]
+    }
+    assert anthropic_fields["base_url"] == {
+        "name": "base_url",
+        "label": "Endpoint",
+        "secret": False,
+        "required": False,
+        "placeholder": "Provider endpoint",
+        "default": "https://api.anthropic.com",
+    }
     vllm_fields = {field["name"]: field for field in templates["vllm"]["fields"]}
     assert vllm_fields["base_url"]["default"] == "http://localhost:8000/v1"
     assert vllm_fields["api_key"]["required"] is False
@@ -181,6 +193,44 @@ async def test_llm_provider_setup_creates_vllm_provider_key_and_manual_model(
     assert any(
         model["model_id"] == "deepseek_v4"
         and model["provider_id"] == payload["provider"]["id"]
+        for model in configured["models"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_setup_creates_anthropic_compatible_relay(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "anthropic",
+            "name": "cch Claude Relay",
+            "base_url": "http://8.129.13.231:8079",
+            "api_key": "relay-key",
+            "model_ids": ["claude-sonnet-5"],
+            "allow_insecure_http": True,
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    provider = payload["provider"]
+    assert provider["name"] == "cch Claude Relay"
+    assert provider["kind"] == "anthropic"
+    assert provider["wire_protocol"] == "chat_completions"
+    assert provider["base_url"] == "http://8.129.13.231:8079"
+    assert provider["allow_insecure_http"] is True
+    assert provider["credential"]["configured"] is True
+    assert payload["models"][0]["model_id"] == "claude-sonnet-5"
+
+    configuration = await async_client.get("/api/v1/llm/configuration")
+    assert configuration.status_code == 200
+    configured = configuration.json()["data"]
+    assert any(
+        model["model_id"] == "claude-sonnet-5"
+        and model["provider_id"] == provider["id"]
         for model in configured["models"]
     )
 

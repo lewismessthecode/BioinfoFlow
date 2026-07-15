@@ -13,6 +13,7 @@ from app.services.llm.provider_templates import (
     ProviderRegistry,
     ProviderTemplate,
     get_provider_template,
+    normalize_provider_base_url,
 )
 from app.utils.exceptions import PermissionDeniedError
 
@@ -49,6 +50,37 @@ def test_provider_templates_expose_explicit_supported_and_default_protocols() ->
         "chat_completions",
         "responses",
     ]
+    anthropic_fields = {
+        field["name"]: field
+        for field in anthropic.as_dict()["fields"]
+    }
+    assert anthropic_fields["base_url"] == {
+        "name": "base_url",
+        "label": "Endpoint",
+        "secret": False,
+        "required": False,
+        "placeholder": "Provider endpoint",
+        "default": "https://api.anthropic.com",
+    }
+
+
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [
+        ("http://8.129.13.231:8079", "http://8.129.13.231:8079"),
+        ("http://8.129.13.231:8079/v1", "http://8.129.13.231:8079"),
+        ("http://8.129.13.231:8079/v1/messages", "http://8.129.13.231:8079"),
+        (
+            "https://relay.example.com/anthropic/v1/messages",
+            "https://relay.example.com/anthropic",
+        ),
+    ],
+)
+def test_anthropic_base_url_normalizes_to_messages_api_root(
+    base_url,
+    expected,
+) -> None:
+    assert normalize_provider_base_url("anthropic", base_url) == expected
 
 
 def test_custom_provider_template_can_declare_responses_support() -> None:
@@ -132,6 +164,30 @@ async def test_environment_bootstrap_defaults_missing_protocol_to_chat(
         )
     ).mappings().one()
     assert provider["wire_protocol"] == "chat_completions"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_environment_bootstrap_accepts_custom_base_url(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "relay-key")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://8.129.13.231:8079")
+    monkeypatch.setattr(
+        "app.services.llm.bootstrap.LlmCatalogService.discover_models_unchecked",
+        _noop_discovery,
+    )
+
+    await sync_environment_llm_catalog(db_session)
+
+    provider = (
+        await db_session.execute(
+            LlmProvider.__table__.select().where(LlmProvider.kind == "anthropic")
+        )
+    ).mappings().one()
+    assert provider["base_url"] == "http://8.129.13.231:8079"
+    assert provider["wire_protocol"] == "chat_completions"
+    assert provider["metadata"]["providerTemplate"] == "anthropic"
 
 
 @pytest.mark.asyncio

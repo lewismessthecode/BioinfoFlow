@@ -127,6 +127,7 @@ class ProviderTemplate(ProviderAdapter):
     env_model_vars: tuple[str, ...] = ()
     env_wire_protocol_vars: tuple[str, ...] = ()
     api_key_required: bool = True
+    base_url_supported: bool = False
     base_url_required: bool = False
     model_id_supported: bool = False
     models: tuple[ModelTemplate, ...] = ()
@@ -142,7 +143,7 @@ class ProviderTemplate(ProviderAdapter):
 
     def fields(self) -> list[ProviderFieldTemplate]:
         fields: list[ProviderFieldTemplate] = []
-        if self.base_url_required:
+        if self.base_url_supported or self.base_url_required:
             fields.append(
                 ProviderFieldTemplate(
                     name="base_url",
@@ -223,6 +224,10 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
         discovery="anthropic_models",
         default_base_url="https://api.anthropic.com",
         env_api_key_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
+        env_base_url_vars=("ANTHROPIC_BASE_URL", "ANTHROPIC_API_BASE"),
+        env_model_vars=("ANTHROPIC_MODEL",),
+        base_url_supported=True,
+        model_id_supported=True,
         litellm_model_prefix="anthropic/",
     ),
     ProviderTemplate(
@@ -449,12 +454,24 @@ def normalize_ollama_base_url(base_url: str) -> str:
     return normalized
 
 
+def normalize_anthropic_base_url(base_url: str) -> str:
+    normalized = (base_url or "").strip().rstrip("/")
+    if not normalized:
+        return normalized
+    for suffix in ("/v1/messages", "/v1"):
+        if normalized.endswith(suffix):
+            return normalized[: -len(suffix)].rstrip("/")
+    return normalized
+
+
 def normalize_provider_base_url(kind: str, base_url: str | None) -> str | None:
     if not base_url:
         return None
     if kind == "ollama":
         return normalize_ollama_base_url(base_url)
-    if kind in ("anthropic", "gemini"):
+    if kind == "anthropic":
+        return normalize_anthropic_base_url(base_url)
+    if kind == "gemini":
         # These providers use native list endpoints (/v1/models, /v1beta/models)
         # appended at discovery time, so keep the host root intact.
         return base_url.strip().rstrip("/")
