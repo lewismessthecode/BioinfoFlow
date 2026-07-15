@@ -317,9 +317,28 @@ const DEMO_LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
   ], "https://openrouter.ai/api/v1", [
     providerModelTemplate("openrouter/auto", "OpenRouter Auto"),
   ]),
-  providerTemplate("kimi", "Kimi", "kimi", "openai_models", [
-    providerField("api_key", "API key", true, true),
-  ], "https://api.moonshot.cn/v1"),
+  providerTemplate(
+    "kimi",
+    "Kimi",
+    "kimi",
+    "openai_models",
+    [providerField("api_key", "API key", true, true)],
+    "https://api.moonshot.ai/v1",
+    [],
+    ["chat_completions"],
+    "https://platform.kimi.ai/console/api-keys",
+  ),
+  providerTemplate(
+    "kimi-cn",
+    "Kimi China",
+    "kimi_cn",
+    "openai_models",
+    [providerField("api_key", "API key", true, true)],
+    "https://api.moonshot.cn/v1",
+    [],
+    ["chat_completions"],
+    "https://platform.kimi.com/console/api-keys",
+  ),
   providerTemplate("qwen", "Qwen", "qwen", "openai_models", [
     providerField("api_key", "API key", true, true),
   ], "https://dashscope.aliyuncs.com/compatible-mode/v1"),
@@ -363,12 +382,13 @@ function providerTemplate(
   defaultBaseUrl: string | null = null,
   models: LlmProviderTemplate["models"] = [],
   supportedWireProtocols: LlmWireProtocol[] = ["chat_completions"],
+  docsUrl?: string,
 ): LlmProviderTemplate {
   return {
     id,
     name,
     kind,
-    docs_url: `https://docs.example.com/${id}`,
+    docs_url: docsUrl ?? `https://docs.example.com/${id}`,
     discovery,
     default_base_url: defaultBaseUrl,
     supported_wire_protocols: supportedWireProtocols,

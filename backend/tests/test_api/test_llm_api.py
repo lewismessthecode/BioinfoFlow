@@ -131,6 +131,7 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
         "deepseek",
         "openrouter",
         "kimi",
+        "kimi-cn",
         "qwen",
         "mistral",
         "cohere",
@@ -161,6 +162,14 @@ async def test_llm_provider_templates_drive_frontend_configuration(async_client)
         }
     ]
     assert templates["kimi"]["fields"] == templates["openai"]["fields"]
+    assert templates["kimi"]["default_base_url"] == "https://api.moonshot.ai/v1"
+    assert templates["kimi"]["docs_url"] == "https://platform.kimi.ai/console/api-keys"
+    assert templates["kimi-cn"]["fields"] == templates["openai"]["fields"]
+    assert templates["kimi-cn"]["default_base_url"] == "https://api.moonshot.cn/v1"
+    assert (
+        templates["kimi-cn"]["docs_url"]
+        == "https://platform.kimi.com/console/api-keys"
+    )
     assert templates["qwen"]["fields"] == templates["openai"]["fields"]
     assert templates["cohere"]["default_base_url"] == (
         "https://api.cohere.ai/compatibility/v1"
@@ -233,7 +242,7 @@ async def test_llm_provider_setup_creates_kimi_provider_from_key_only(
     assert provider["name"] == "Kimi"
     assert provider["kind"] == "kimi"
     assert provider["wire_protocol"] == "chat_completions"
-    assert provider["base_url"] == "https://api.moonshot.cn/v1"
+    assert provider["base_url"] == "https://api.moonshot.ai/v1"
     assert provider["allow_insecure_http"] is False
     assert provider["credential"]["configured"] is True
     assert payload["models"] == []
@@ -246,6 +255,75 @@ async def test_llm_provider_setup_creates_kimi_provider_from_key_only(
         and item["credential"]["configured"] is True
         for item in configured["providers"]
     )
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_setup_creates_kimi_china_provider_from_key_only(
+    async_client,
+):
+    response = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "kimi-cn",
+            "api_key": "moonshot-cn-key",
+            "scope": "user",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    provider = payload["provider"]
+    assert provider["name"] == "Kimi China"
+    assert provider["kind"] == "kimi_cn"
+    assert provider["base_url"] == "https://api.moonshot.cn/v1"
+
+
+@pytest.mark.asyncio
+async def test_discover_models_returns_provider_auth_error_without_500(
+    async_client,
+    monkeypatch,
+):
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None, params=None):
+            del headers, params
+            return httpx.Response(
+                401,
+                json={"error": {"message": "invalid api key"}},
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
+    setup = await async_client.post(
+        "/api/v1/llm/provider-setups",
+        json={
+            "template_id": "kimi",
+            "api_key": "wrong-platform-key",
+            "scope": "user",
+        },
+    )
+    provider_id = setup.json()["data"]["provider"]["id"]
+
+    response = await async_client.post(
+        f"/api/v1/llm/providers/{provider_id}/discover-models"
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    assert "401 Unauthorized" in payload["error"]["message"]
+    assert "API key" in payload["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -813,7 +891,11 @@ async def test_gemini_discovery_error_logs_do_not_expose_api_key(
         f"/api/v1/llm/providers/{provider['id']}/discover-models",
     )
 
-    assert response.status_code == 500
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    assert "403 Forbidden" in payload["error"]["message"]
+    assert "API key" in payload["error"]["message"]
     assert secret not in response.text
     assert secret not in caplog.text
 

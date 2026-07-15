@@ -5,6 +5,7 @@ import ipaddress
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -588,7 +589,7 @@ class LlmCatalogService:
                 timeout=timeout,
             ) as client:
                 response = await client.get(f"{base_url}/api/tags")
-                response.raise_for_status()
+                _raise_for_model_discovery_status(response)
             return [
                 await self._upsert_model_from_discovered(provider, item)
                 for item in _ollama_models_from_tags(response.json())
@@ -615,7 +616,7 @@ class LlmCatalogService:
                     headers=headers,
                     params={"limit": 1000},
                 )
-                response.raise_for_status()
+                _raise_for_model_discovery_status(response)
             return [
                 await self._upsert_model_from_discovered(provider, item)
                 for item in _anthropic_models_from_list(response.json())
@@ -638,7 +639,7 @@ class LlmCatalogService:
                     headers={"x-goog-api-key": material.api_key},
                     params={"pageSize": 1000},
                 )
-                response.raise_for_status()
+                _raise_for_model_discovery_status(response)
             return [
                 await self._upsert_model_from_discovered(provider, item)
                 for item in _gemini_models_from_list(response.json())
@@ -659,7 +660,7 @@ class LlmCatalogService:
                     headers={"Authorization": f"Bearer {material.api_key}"},
                     params={"page_size": 1000, "endpoint": "chat"},
                 )
-                response.raise_for_status()
+                _raise_for_model_discovery_status(response)
             return [
                 await self._upsert_model_from_discovered(provider, item)
                 for item in _cohere_models_from_list(response.json())
@@ -688,7 +689,7 @@ class LlmCatalogService:
                 timeout=timeout,
             ) as client:
                 response = await client.get(f"{base_url}/models", headers=headers)
-                response.raise_for_status()
+                _raise_for_model_discovery_status(response)
             return [
                 await self._upsert_model_from_discovered(provider, item)
                 for item in _openai_models_from_list(response.json())
@@ -1013,6 +1014,22 @@ def _provider_requires_credential(provider: LlmProvider) -> bool:
     if template is not None and not template.api_key_required:
         return False
     return provider.kind != "ollama"
+
+
+def _raise_for_model_discovery_status(response: httpx.Response) -> None:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        reason = exc.response.reason_phrase or "HTTP error"
+        if status_code in {401, 403}:
+            raise ValueError(
+                f"Provider model discovery failed with {status_code} {reason}. "
+                "Check that the API key matches this provider endpoint."
+            ) from exc
+        raise ValueError(
+            f"Provider model discovery failed with {status_code} {reason}."
+        ) from exc
 
 
 def _provider_discovery_base_url(provider: LlmProvider) -> str | None:

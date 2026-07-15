@@ -78,6 +78,7 @@ def _invocation(
         ("openrouter", "openrouter-test", "openrouter/openrouter-test"),
         ("vllm", "served-model", "openai/served-model"),
         ("kimi", "kimi-test", "openai/kimi-test"),
+        ("kimi_cn", "kimi-test", "openai/kimi-test"),
         ("qwen", "qwen-test", "openai/qwen-test"),
         ("mistral", "mistral-test", "openai/mistral-test"),
         ("cohere", "command-test", "openai/command-test"),
