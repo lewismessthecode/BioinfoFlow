@@ -72,9 +72,23 @@ def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(tmp_path: P
             row[1]
             for row in connection.execute("PRAGMA table_info(agent_tool_call_batches)")
         }
+        batch_column_info = {
+            row[1]: row
+            for row in connection.execute("PRAGMA table_info(agent_tool_call_batches)")
+        }
         indexes = {
             row[1] for row in connection.execute("PRAGMA index_list(agent_actions)")
         }
+        connection.execute(
+            "INSERT INTO agent_tool_call_batches "
+            "(id, session_id, turn_id, status, tool_call_count, batch_ordinal) "
+            "VALUES ('batch-with-db-timestamps', 'legacy-session', 'legacy-turn', "
+            "'evaluating', 1, 1)"
+        )
+        batch_timestamps = connection.execute(
+            "SELECT created_at, updated_at FROM agent_tool_call_batches "
+            "WHERE id = 'batch-with-db-timestamps'"
+        ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
         legacy_action = connection.execute(
             "SELECT tool_batch_id, tool_call_ordinal FROM agent_actions WHERE id = 'legacy-action'"
@@ -83,6 +97,10 @@ def test_agent_tool_call_batch_migration_adds_durable_barrier_schema(tmp_path: P
     assert "agent_tool_call_batches" in tables
     assert {"tool_batch_id", "tool_call_ordinal"} <= action_columns
     assert "batch_ordinal" in batch_columns
+    assert batch_column_info["created_at"][4] is not None
+    assert batch_column_info["updated_at"][4] is not None
+    assert batch_timestamps[0] is not None
+    assert batch_timestamps[1] is not None
     assert "sqlite_autoindex_agent_actions_1" in indexes
     assert legacy_action == (None, None)
     assert revision == (get_alembic_head_revision(),)
