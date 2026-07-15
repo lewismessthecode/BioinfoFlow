@@ -455,12 +455,15 @@ In **Settings -> AI Providers**, choose **Anthropic** and set:
 
 Do not add `/v1` or `/v1/messages` to the Anthropic endpoint. Bioinfoflow stores
 the root URL and LiteLLM's Anthropic adapter calls the Messages endpoint
-(`POST /v1/messages`) from there. For headless bootstrap, use the same root URL:
+(`POST /v1/messages`) from there. For headless bootstrap, use the same root URL
+and add `ANTHROPIC_ALLOW_INSECURE_HTTP=1` only for public plain-HTTP relays:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-...
 export ANTHROPIC_BASE_URL=http://8.129.13.231:8079
 export ANTHROPIC_MODEL=claude-sonnet-5
+export ANTHROPIC_ALLOW_INSECURE_HTTP=1  # omit for HTTPS
+read -rsp "Anthropic/cch API key: " ANTHROPIC_API_KEY && echo
+export ANTHROPIC_API_KEY
 ```
 
 For the cch service observed on July 14, 2026, the OpenAI-compatible GPT path

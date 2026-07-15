@@ -1235,11 +1235,17 @@ describe("LlmCatalogPanel", () => {
     const insecureSwitch = within(card).getByRole("switch", {
       name: "Allow insecure HTTP",
     })
+    const saveButton = within(card).getByRole("button", { name: "Save" })
     expect(insecureSwitch).not.toBeChecked()
     expect(within(card).getByText("Off")).toBeInTheDocument()
+    expect(saveButton).toBeDisabled()
+    fireEvent.click(saveButton)
+    expect(setupProvider).not.toHaveBeenCalled()
+
     fireEvent.click(insecureSwitch)
     expect(within(card).getByText("On")).toBeInTheDocument()
-    fireEvent.click(within(card).getByRole("button", { name: "Save" }))
+    expect(saveButton).toBeEnabled()
+    fireEvent.click(saveButton)
 
     await waitFor(() => {
       expect(setupProvider).toHaveBeenCalledWith({
@@ -1502,7 +1508,7 @@ describe("LlmCatalogPanel", () => {
 
     const card = screen.getByRole("group", { name: "OpenAI Compatible" })
     fireEvent.change(within(card).getByLabelText("OpenAI Compatible endpoint"), {
-      target: { value: "http://8.129.13.231:8079/v1" },
+      target: { value: "https://relay.example.com/v1" },
     })
     fireEvent.click(within(card).getByRole("button", { name: "Save" }))
 
