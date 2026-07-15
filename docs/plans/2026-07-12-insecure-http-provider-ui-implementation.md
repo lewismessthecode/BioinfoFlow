@@ -26,7 +26,7 @@ Add a provider setup test that posts:
 {
     "template_id": "openai-compatible",
     "name": "Public HTTP Relay",
-    "base_url": "http://8.129.13.231:8079/v1",
+    "base_url": "http://public-relay.example:8079/v1",
     "api_key": "relay-key",
     "model_ids": ["gpt-5.6-sol"],
     "allow_insecure_http": True,
@@ -82,7 +82,7 @@ Extend URL validation tests with:
 
 ```python
 _validate_provider_base_url(
-    "http://8.129.13.231:8079/v1",
+    "http://public-relay.example:8079/v1",
     allow_insecure_http=True,
 )
 ```
