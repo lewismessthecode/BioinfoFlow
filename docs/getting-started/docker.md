@@ -41,7 +41,7 @@ saved through the UI as stored credentials also require
 For headless bootstrap, set environment defaults such as:
 
 - `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `ANTHROPIC_MODEL`
 - `GEMINI_API_KEY`
 - `DEEPSEEK_API_KEY`
 - `OPENROUTER_API_KEY`

@@ -62,9 +62,10 @@ After first sign-in, configure the agent under **Settings -> AI Providers**.
 Hosted providers only need an API key; Ollama, vLLM, OpenRouter, and generic
 OpenAI-compatible endpoints can be configured from the same page. Environment
 variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
-`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `GROK_API_KEY`,
-`GROQ_API_KEY`, `OLLAMA_BASE_URL`, `VLLM_BASE_URL`, `VLLM_API_KEY`,
-`VLLM_MODEL`, `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, and
+`ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`, `DEEPSEEK_API_KEY`,
+`OPENROUTER_API_KEY`, `XAI_API_KEY`, `GROK_API_KEY`, `GROQ_API_KEY`,
+`OLLAMA_BASE_URL`, `VLLM_BASE_URL`, `VLLM_API_KEY`, `VLLM_MODEL`,
+`OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, and
 `OPENAI_COMPATIBLE_MODEL` are optional bootstrap defaults for fresh/headless
 deployments. UI-saved configuration takes precedence. In `AUTH_MODE=team`,
 provider keys saved through the UI as stored credentials also require
@@ -437,6 +438,35 @@ Then in two terminals:
 cd backend && uv run uvicorn app.main:app --reload --reload-dir app --port 8000
 cd frontend && bun run dev
 ```
+
+### Configure a cch Anthropic-compatible Claude relay
+
+cch exposes different API formats through different routes. If the OpenAI GPT
+routes fail, that does not prove the Anthropic route is unusable. Configure cch
+Claude models through the **Anthropic** provider template, not **OpenAI
+Compatible**.
+
+In **Settings -> AI Providers**, choose **Anthropic** and set:
+
+- Endpoint: the cch relay root, for example `http://8.129.13.231:8079`
+- API key: the cch API key
+- Model ID: a Claude model returned by the relay, for example `claude-sonnet-5`
+- Allow insecure HTTP: enabled only when the relay is public `http://`
+
+Do not add `/v1` or `/v1/messages` to the Anthropic endpoint. Bioinfoflow stores
+the root URL and LiteLLM's Anthropic adapter calls the Messages endpoint
+(`POST /v1/messages`) from there. For headless bootstrap, use the same root URL:
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+export ANTHROPIC_BASE_URL=http://8.129.13.231:8079
+export ANTHROPIC_MODEL=claude-sonnet-5
+```
+
+For the cch service observed on July 14, 2026, the OpenAI-compatible GPT path
+timed out on `/v1/responses` and returned `no_available_providers` on
+`/v1/chat/completions`, while the Anthropic Messages path returned a normal
+Claude response. Treat those as separate provider capabilities.
 
 ### Validate an OpenAI-compatible Responses relay
 
