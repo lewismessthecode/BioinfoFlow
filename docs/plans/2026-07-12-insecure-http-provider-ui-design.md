@@ -143,7 +143,7 @@ retry action.
 - Current local, Docker, Kubernetes, and private-network HTTP providers remain
   allowed without enabling the switch.
 - Credential storage and masking are unchanged.
-- Provider kinds remain generic; no CCH-specific provider or URL is hardcoded.
+- Provider kinds remain generic; no gateway-specific provider or URL is hardcoded.
 - `http://public-relay.example:8079/v1` works only when its provider explicitly stores
   `allow_insecure_http = true`.
 
@@ -164,7 +164,7 @@ retry action.
 
 - Provider setup serializes the flag.
 - Public HTTP reveals the warning and switch.
-- The target CCH URL can be saved when the switch is enabled.
+- A public HTTP gateway URL can be saved when the switch is enabled.
 - Backend errors render in the correct provider card.
 - Existing stored credentials remain write-only.
 - Desktop and narrow layouts keep labels, inputs, status, and actions aligned.
