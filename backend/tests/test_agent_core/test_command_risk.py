@@ -187,6 +187,96 @@ def test_remote_full_access_allows_literal_inline_filter_pipeline():
     )
 
 
+def test_remote_full_access_allows_read_only_compound_data_listing():
+    command = (
+        'for d in /mnt/nas1/phoenix-task/oseq_816/*/; do '
+        'if [ -d "$d/input" ]; then '
+        'echo "=== $d ==="; ls "$d/input/" 2>&1; '
+        "fi; done"
+    )
+    target = CommandTargetProfile(
+        kind="remote_ssh",
+        trust_domain="cluster.example.org",
+        identity="alice",
+        sandbox_strength="none",
+        read_roots=("/mnt/nas1/.bioinfoflow",),
+        write_roots=("/mnt/nas1/.bioinfoflow",),
+        working_directory="/mnt/nas1/.bioinfoflow",
+        network_allowed=True,
+        connection_id="conn-a",
+    )
+
+    assessment = assess_command_risk(command, target=target)
+
+    assert "write" not in assessment.effects
+    assert "/mnt/nas1/.bioinfoflow/2" not in assessment.referenced_paths
+    assert "/mnt/nas1/.bioinfoflow/>" not in assessment.referenced_paths
+    assert "/mnt/nas1/.bioinfoflow/&1" not in assessment.referenced_paths
+    assert assessment.requires_explicit_approval is False
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="assisted",
+        )
+        .decision
+        == "allow"
+    )
+
+
+def test_remote_full_access_keeps_compound_mutation_approval_gated():
+    command = 'for d in /mnt/nas1/phoenix-task/oseq_816/*/; do rm -rf "$d"; done'
+    target = CommandTargetProfile(
+        kind="remote_ssh",
+        trust_domain="cluster.example.org",
+        identity="alice",
+        sandbox_strength="none",
+        read_roots=("/mnt/nas1/.bioinfoflow",),
+        write_roots=("/mnt/nas1/.bioinfoflow",),
+        working_directory="/mnt/nas1/.bioinfoflow",
+        network_allowed=True,
+        connection_id="conn-a",
+    )
+
+    assessment = assess_command_risk(command, target=target)
+
+    assert assessment.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="assisted",
+        )
+        .decision
+        == "ask"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "if true; then printf ok; fi",
+        "for value in one; do printf ok; done",
+    ],
+)
+def test_local_compound_shell_still_requires_approval_in_bypass(command):
+    assessment = assess_command_risk(command, target=LOCAL_UNSANDBOXED)
+
+    assert assessment.requires_explicit_approval is True
+    assert (
+        PermissionPolicy()
+        .decide(
+            risk=assessment,
+            permission_mode="bypass",
+            automation_mode="autonomous",
+        )
+        .decision
+        == "ask"
+    )
+
+
 def test_assessment_records_semantics_and_canonical_boundary():
     assessment = assess_command_risk(
         "cat /analysis/project/input/sequence.list | head -20",
@@ -837,8 +927,6 @@ def test_literal_catastrophic_nested_commands_are_denied_in_bypass(target, comma
     "command",
     [
         "(printf ok)",
-        "if true; then printf ok; fi",
-        "for reboot in one; do printf ok; done",
         "diff <(cat before.txt) <(cat after.txt)",
         "sh <<'EOF'\nprintf ok\nEOF",
         "env --split-string='printf ok'",

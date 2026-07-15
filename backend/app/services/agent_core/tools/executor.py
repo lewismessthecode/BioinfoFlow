@@ -244,12 +244,18 @@ class AgentToolExecutor:
         )
         if not exposure.allowed:
             raise PermissionDeniedError("; ".join(exposure.reasons))
+        prepared_input = input
+        prepare_input = getattr(tool, "normalize_input", None)
+        if callable(prepare_input):
+            prepared_input = prepare_input(prepared_input)
         try:
-            normalized_input = normalize_tool_input(input, tool.spec.input_schema)
+            normalized_input = normalize_tool_input(
+                prepared_input, tool.spec.input_schema
+            )
         except BadRequestError as exc:
             return await self._record_validation_failure(
                 tool=tool,
-                input=input,
+                input=prepared_input,
                 context=context,
                 exposure_policy=exposure.policy,
                 automation_mode=automation_mode,
@@ -281,7 +287,7 @@ class AgentToolExecutor:
             turn_id=context.turn_id,
             kind="tool",
             name=tool.spec.name,
-            input=input,
+            input=prepared_input,
             normalized_input=normalized_input,
             requested_risk=requested_risk,
             permission_mode=permission_mode,

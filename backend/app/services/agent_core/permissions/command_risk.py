@@ -1458,7 +1458,9 @@ def _analyze_indirect_execution_safety(
             )
         if not tokens:
             continue
-        if _node_has_shell_control_syntax(node):
+        if _node_has_shell_control_syntax(
+            node
+        ) and not _remote_read_only_control_node_allowed(node, target):
             reasons.append(
                 "compound shell syntax cannot be proven safe and requires explicit approval"
             )
@@ -1540,6 +1542,36 @@ def _node_has_shell_control_syntax(node: _CommandNode) -> bool:
     return (
         first in _SHELL_CONTROL_WORDS or first.startswith("(") or first.startswith("{")
     )
+
+
+def _remote_read_only_control_node_allowed(
+    node: _CommandNode, target: CommandTargetProfile
+) -> bool:
+    if target.kind != "remote_ssh" or not node.tokens:
+        return False
+    first = node.tokens[0]
+    if first.startswith(("(", "{")):
+        return False
+    stripped = _strip_shell_control_tokens(list(node.tokens))
+    if not stripped:
+        return True
+    if any("$(" in token or "`" in token for token in stripped):
+        return False
+    if first == "for":
+        return len(stripped) >= 4 and stripped[2] == "in"
+    executable = _basename(stripped[0])
+    args = stripped[1:]
+    if executable in {"[", "test"}:
+        return True
+    if executable not in _READ_EXECUTABLES and not _is_read_only_platform_command(
+        executable, args
+    ):
+        return False
+    if _node_writes(stripped, executable, args):
+        return False
+    return _RANK[_classify_node(_CommandNode(tokens=tuple(stripped)))] <= _RANK[
+        "act_low"
+    ]
 
 
 def _is_unresolved_inline_code(code: str) -> bool:
@@ -2817,10 +2849,35 @@ def _referenced_paths(
                 redirected = _redirect_path_token(tokens, index)
                 if redirected is not None:
                     paths.append(_canonical_reference(redirected, target))
-        file_args, node_confident = _file_arguments(executable, args)
+        file_tokens = _tokens_without_redirection_syntax(tokens)
+        file_args, node_confident = _file_arguments(
+            _basename(file_tokens[0]) if file_tokens else executable,
+            file_tokens[1:] if file_tokens else args,
+        )
         confident = confident and node_confident
         paths.extend(_canonical_reference(arg, target) for arg in file_args)
     return _dedupe(_bounded_strings(paths, limit=32, width=1000)), confident
+
+
+def _tokens_without_redirection_syntax(tokens: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {">", ">>", "<", "<<"}:
+            if (
+                token in {">", ">>"}
+                and cleaned
+                and cleaned[-1].isdigit()
+                and index + 1 < len(tokens)
+                and _is_fd_duplication_word(tokens[index + 1])
+            ):
+                cleaned.pop()
+            index += 2
+            continue
+        cleaned.append(token)
+        index += 1
+    return cleaned
 
 
 def _file_arguments(executable: str, args: list[str]) -> tuple[list[str], bool]:

@@ -134,6 +134,38 @@ async def test_ask_user_pauses_even_under_bypass_then_resumes_with_answer(db_ses
 
 
 @pytest.mark.asyncio
+async def test_ask_user_truncates_overlong_question_header(db_session, monkeypatch):
+    monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
+    core, dispatcher, context, _session_id, turn_id = await _interaction_context(db_session)
+
+    pending = await dispatcher.dispatch(
+        tool_name="ask_user",
+        input={
+            "questions": [
+                {
+                    "question": "Which files should I inspect next?",
+                    "header": "需要确认的问题和下一步操作",
+                    "options": [
+                        {"label": "Continue", "description": "Inspect remote files"},
+                        {"label": "Stop", "description": "Wait for more context"},
+                    ],
+                }
+            ]
+        },
+        context=context,
+        permission_mode="bypass",
+    )
+
+    assert pending.status == "waiting_decision"
+    assert pending.error is None
+    events = await core.list_events_for_turn(
+        turn_id=turn_id, workspace_id=DEFAULT_WORKSPACE_ID, user_id="dev"
+    )
+    waiting = [e for e in events if e.type == "action.waiting_decision"]
+    assert waiting[-1].payload["interaction"]["questions"][0]["header"] == "需要确认的问题和下一步操"
+
+
+@pytest.mark.asyncio
 async def test_exit_plan_mode_flips_session_to_execution_on_approve(db_session, monkeypatch):
     monkeypatch.setattr("app.services.agent_core.service.enqueue_turn_resume", lambda *_args: None)
     core, dispatcher, context, session_id, _turn_id = await _interaction_context(
