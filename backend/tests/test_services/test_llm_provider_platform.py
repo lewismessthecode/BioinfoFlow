@@ -13,6 +13,7 @@ from app.services.llm.provider_templates import (
     ProviderRegistry,
     ProviderTemplate,
     get_provider_template,
+    list_provider_templates,
     normalize_provider_base_url,
 )
 from app.utils.exceptions import PermissionDeniedError
@@ -50,26 +51,67 @@ def test_provider_templates_expose_explicit_supported_and_default_protocols() ->
         "chat_completions",
         "responses",
     ]
-    anthropic_fields = {
-        field["name"]: field
-        for field in anthropic.as_dict()["fields"]
+    assert [field["name"] for field in anthropic.as_dict()["fields"]] == ["api_key"]
+
+
+def test_common_provider_templates_are_key_first_and_provider_neutral() -> None:
+    templates = {template.id: template for template in list_provider_templates()}
+    assert {
+        "openai",
+        "anthropic",
+        "gemini",
+        "deepseek",
+        "grok",
+        "groq",
+        "openrouter",
+        "ollama",
+        "vllm",
+        "kimi",
+        "qwen",
+        "mistral",
+        "cohere",
+        "together",
+        "fireworks",
+        "perplexity",
+        "openai-compatible",
+    }.issubset(templates)
+
+    hosted_key_first = {
+        "openai",
+        "anthropic",
+        "gemini",
+        "deepseek",
+        "grok",
+        "groq",
+        "openrouter",
+        "kimi",
+        "qwen",
+        "mistral",
+        "cohere",
+        "together",
+        "fireworks",
+        "perplexity",
     }
-    assert anthropic_fields["base_url"] == {
-        "name": "base_url",
-        "label": "Endpoint",
-        "secret": False,
-        "required": False,
-        "placeholder": "Provider endpoint",
-        "default": "https://api.anthropic.com",
-    }
+    for template_id in hosted_key_first:
+        fields = templates[template_id].as_dict()["fields"]
+        assert [field["name"] for field in fields] == ["api_key"], template_id
+        assert fields[0]["placeholder"] == "Paste API key"
+
+    serialized_templates = repr([template.as_dict() for template in templates.values()])
+    assert "".join(("c", "ch")) not in serialized_templates.lower()
+    assert ".".join(("8", "129", "13", "231")) not in serialized_templates
+    assert "-".join(("claude", "sonnet", "5")) not in serialized_templates
 
 
 @pytest.mark.parametrize(
     ("base_url", "expected"),
     [
-        ("http://8.129.13.231:8079", "http://8.129.13.231:8079"),
-        ("http://8.129.13.231:8079/v1", "http://8.129.13.231:8079"),
-        ("http://8.129.13.231:8079/v1/messages", "http://8.129.13.231:8079"),
+        ("https://anthropic-gateway.example", "https://anthropic-gateway.example"),
+        ("https://anthropic-gateway.example/v1", "https://anthropic-gateway.example"),
+        (
+            "https://anthropic-gateway.example/v1/messages",
+            "https://anthropic-gateway.example",
+        ),
         (
             "https://relay.example.com/anthropic/v1/messages",
             "https://relay.example.com/anthropic",
@@ -167,13 +209,12 @@ async def test_environment_bootstrap_defaults_missing_protocol_to_chat(
 
 
 @pytest.mark.asyncio
-async def test_anthropic_environment_bootstrap_accepts_custom_base_url(
+async def test_anthropic_environment_bootstrap_accepts_https_custom_base_url(
     db_session,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "relay-key")
-    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://8.129.13.231:8079")
-    monkeypatch.setenv("ANTHROPIC_ALLOW_INSECURE_HTTP", "1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://anthropic-gateway.example/v1")
     monkeypatch.setattr(
         "app.services.llm.bootstrap.LlmCatalogService.discover_models_unchecked",
         _noop_discovery,
@@ -186,8 +227,8 @@ async def test_anthropic_environment_bootstrap_accepts_custom_base_url(
             LlmProvider.__table__.select().where(LlmProvider.kind == "anthropic")
         )
     ).mappings().one()
-    assert provider["base_url"] == "http://8.129.13.231:8079"
-    assert provider["allow_insecure_http"] is True
+    assert provider["base_url"] == "https://anthropic-gateway.example"
+    assert provider["allow_insecure_http"] is False
     assert provider["wire_protocol"] == "chat_completions"
     assert provider["metadata"]["providerTemplate"] == "anthropic"
 
@@ -240,7 +281,7 @@ def test_validate_provider_base_url_rejects_public_http_and_malformed(base_url):
 
 def test_validate_provider_base_url_allows_public_http_with_explicit_opt_in():
     _validate_provider_base_url(
-        "http://8.129.13.231:8079/v1",
+        "http://public-relay.example:8079/v1",
         allow_insecure_http=True,
     )
 
@@ -284,7 +325,7 @@ async def test_model_discovery_rejects_unapproved_public_http_before_network(
     provider = LlmProvider(
         name="Unapproved public relay",
         kind="openai_compatible",
-        base_url="http://8.129.13.231:8079/v1",
+        base_url="http://public-relay.example:8079/v1",
         allow_insecure_http=False,
         scope="user",
         workspace_id=None,
@@ -494,6 +535,80 @@ async def test_environment_bootstrap_runs_live_discovery(db_session, monkeypatch
 
     models = (await db_session.execute(LlmModel.__table__.select())).mappings().all()
     assert any(model["model_id"] == "bootstrap-model" for model in models)
+
+
+@pytest.mark.asyncio
+async def test_cohere_template_discovers_models_from_native_models_api(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setenv("COHERE_API_KEY", "cohere-key")
+    requested: list[tuple[str, dict | None]] = []
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers=None, params=None):
+            del params
+            requested.append((url, headers))
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {
+                            "name": "command-a-03-2025",
+                            "endpoints": ["chat"],
+                            "context_length": 256000,
+                        }
+                    ]
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(
+        "app.services.llm.catalog.network_policy_http_client",
+        _network_client_factory(FakeAsyncClient),
+    )
+    provider = LlmProvider(
+        name="Cohere",
+        kind="cohere",
+        base_url="https://api.cohere.ai/compatibility/v1",
+        scope="user",
+        workspace_id=None,
+        user_id="dev",
+        enabled=True,
+        provider_metadata={"providerTemplate": "cohere"},
+    )
+    credential = LlmProviderCredential(
+        provider=provider,
+        source="env",
+        env_var_name="COHERE_API_KEY",
+        masked_hint="env:COHERE_API_KEY",
+    )
+    db_session.add(provider)
+    db_session.add(credential)
+    await db_session.commit()
+
+    discovered = await LlmCatalogService(db_session).discover_models_unchecked(
+        provider,
+        network_access="unrestricted",
+    )
+
+    assert requested == [
+        (
+            "https://api.cohere.ai/v2/models",
+            {"Authorization": "Bearer cohere-key"},
+        )
+    ]
+    assert [model.model_id for model in discovered] == ["command-a-03-2025"]
+    assert discovered[0].context_length == 256000
 
 
 @pytest.mark.asyncio

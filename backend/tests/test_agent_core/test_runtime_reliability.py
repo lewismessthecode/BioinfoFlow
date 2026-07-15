@@ -122,7 +122,7 @@ async def test_runtime_rejects_unapproved_public_http_provider(db_session):
     provider = LlmProvider(
         name="Unapproved public relay",
         kind="openai_compatible",
-        base_url="http://8.129.13.231:8079/v1",
+        base_url="http://public-relay.example:8079/v1",
         allow_insecure_http=False,
         scope="user",
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -154,7 +154,7 @@ async def test_runtime_allows_explicit_public_http_provider(db_session):
     provider = LlmProvider(
         name="Approved public relay",
         kind="openai_compatible",
-        base_url="http://8.129.13.231:8079/v1",
+        base_url="http://public-relay.example:8079/v1",
         allow_insecure_http=True,
         scope="user",
         workspace_id=DEFAULT_WORKSPACE_ID,
@@ -178,7 +178,7 @@ async def test_runtime_allows_explicit_public_http_provider(db_session):
     )
 
     assert resolved is not None
-    assert resolved["request_args"]["api_base"] == "http://8.129.13.231:8079/v1"
+    assert resolved["request_args"]["api_base"] == "http://public-relay.example:8079/v1"
 
 
 def test_agent_max_rounds_legacy_setting_is_removed(monkeypatch):

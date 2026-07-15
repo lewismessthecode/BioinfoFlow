@@ -643,14 +643,37 @@ class LlmCatalogService:
                 await self._upsert_model_from_discovered(provider, item)
                 for item in _gemini_models_from_list(response.json())
             ]
+        if discovery == "cohere_models":
+            base_url = _provider_model_discovery_base_url(provider, template)
+            if not base_url:
+                raise ValueError("Cohere model discovery endpoint is required")
+            material = await self._provider_credential_material(provider)
+            if not material.api_key:
+                raise ValueError("Cohere API key is required for model discovery")
+            async with network_policy_http_client(
+                network_access=network_access,
+                timeout=timeout,
+            ) as client:
+                response = await client.get(
+                    f"{base_url.rstrip('/')}/models",
+                    headers={"Authorization": f"Bearer {material.api_key}"},
+                )
+                response.raise_for_status()
+            return [
+                await self._upsert_model_from_discovered(provider, item)
+                for item in _cohere_models_from_list(response.json())
+            ]
         if discovery == "openai_models":
             discovery_base_url = provider.base_url
             if not discovery_base_url and template:
                 discovery_base_url = template.default_base_url
-            base_url = normalize_openai_compatible_base_url(
-                discovery_base_url or "",
-                prefer_loopback_ip=provider.kind == "vllm",
-            )
+            if template and template.metadata.get("preserveOpenAIBaseUrl") is True:
+                base_url = (discovery_base_url or "").strip().rstrip("/")
+            else:
+                base_url = normalize_openai_compatible_base_url(
+                    discovery_base_url or "",
+                    prefer_loopback_ip=provider.kind == "vllm",
+                )
             if not base_url:
                 raise ValueError("Provider endpoint is required for model discovery")
             material = await self._provider_credential_material(provider)
@@ -998,6 +1021,19 @@ def _provider_discovery_base_url(provider: LlmProvider) -> str | None:
         return normalize_ollama_base_url(
             provider.base_url or settings.ollama_base_url
         )
+    if discovery == "cohere_models":
+        return _provider_model_discovery_base_url(provider, template)
+    return provider.base_url or (template.default_base_url if template else None)
+
+
+def _provider_model_discovery_base_url(
+    provider: LlmProvider,
+    template: ProviderTemplate | None,
+) -> str | None:
+    if template:
+        base_url = template.metadata.get("modelDiscoveryBaseUrl")
+        if isinstance(base_url, str) and base_url.strip():
+            return base_url.strip().rstrip("/")
     return provider.base_url or (template.default_base_url if template else None)
 
 
@@ -1248,6 +1284,51 @@ def _gemini_models_from_list(payload: Any) -> list[dict[str, Any]]:
                 "supports_json_schema": True,
                 "supports_reasoning": _model_id_suggests_reasoning(model_id),
                 "metadata": {"source": "gemini_models_discovery"},
+            }
+        )
+    return models
+
+
+def _cohere_models_from_list(payload: Any) -> list[dict[str, Any]]:
+    raw_models = None
+    if isinstance(payload, dict):
+        raw_models = payload.get("models")
+        if raw_models is None:
+            raw_models = payload.get("data")
+    if not isinstance(raw_models, list):
+        return []
+    models: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_models:
+        if isinstance(item, str):
+            model_id = item.strip()
+            display_name = ""
+            endpoints = None
+            context_length = None
+        elif isinstance(item, dict):
+            model_id = str(item.get("name") or item.get("id") or "").strip()
+            display_name = str(item.get("display_name") or item.get("displayName") or "").strip()
+            endpoints = item.get("endpoints")
+            context_length = item.get("context_length") or item.get("contextLength")
+        else:
+            continue
+        if not model_id or model_id in seen:
+            continue
+        if isinstance(endpoints, list) and "chat" not in endpoints:
+            continue
+        seen.add(model_id)
+        models.append(
+            {
+                "model_id": model_id,
+                "display_name": display_name or _display_name_for_openai_model(model_id),
+                "context_length": context_length if isinstance(context_length, int) else None,
+                "max_output_tokens": None,
+                "supports_tools": True,
+                "supports_streaming": True,
+                "supports_vision": False,
+                "supports_json_schema": True,
+                "supports_reasoning": _model_id_suggests_reasoning(model_id),
+                "metadata": {"source": "cohere_models_discovery"},
             }
         )
     return models

@@ -147,6 +147,7 @@ class LlmProviderTemplateRead(BaseModel):
         "ollama_tags",
         "anthropic_models",
         "gemini_models",
+        "cohere_models",
     ]
     default_base_url: str | None = None
     supported_wire_protocols: list[WireProtocol]
