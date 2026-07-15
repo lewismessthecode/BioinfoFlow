@@ -12,11 +12,12 @@ seam is still coupled to LiteLLM Chat Completions: `AgentLoopController` builds
 `messages`, calls `acompletion()`, and parses `choices[].message` and Chat stream
 deltas itself.
 
-That coupling caused a real failure with the configured CCH relay. The same
-credential and `gpt-5.4-mini` model return `503 no_available_providers` through
-`/chat/completions`, while LiteLLM `aresponses()` against `/responses` completes
-successfully. The relay documentation explicitly requires the Responses wire
-API for Codex.
+That coupling caused a real failure with an OpenAI-compatible gateway whose
+Responses endpoint and Chat Completions endpoint did not behave the same way.
+The same credential and model could fail through `/chat/completions`, while
+LiteLLM `aresponses()` against `/responses` completed successfully. Gateway
+documentation can require a specific wire API for Codex-like runtimes, so the
+wire protocol must be explicit configuration rather than hidden provider logic.
 
 ## Decision
 
