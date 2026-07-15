@@ -276,11 +276,13 @@ class AgentLoopController:
             )
             permission_snapshot = permission_context.snapshot()
             expected_execution_target = permission_snapshot["execution_target"]
+            expected_execution_scope = permission_snapshot.get("execution_scope")
             visible_tools = (
                 self.executor.exposure.exposed_specs(
                     policy=permission_snapshot["toolset_policy"],
                     role=permission_context.role,
                     execution_target=expected_execution_target,
+                    execution_scope=expected_execution_scope,
                 )
                 if tools_enabled
                 else []

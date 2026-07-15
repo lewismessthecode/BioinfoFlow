@@ -1153,6 +1153,39 @@ async def test_agent_core_session_execution_scope_contract(async_client):
 
 
 @pytest.mark.asyncio
+async def test_agent_core_auto_scope_clears_stale_legacy_target(async_client):
+    create_session = await async_client.post(
+        "/api/v1/agent/sessions",
+        json={
+            "title": "Clear remote target",
+            "metadata": {"remote_connection_id": "connection-legacy"},
+            "execution_target": {
+                "type": "remote_ssh",
+                "connection_id": "connection-legacy",
+            },
+        },
+    )
+
+    assert create_session.status_code == 201
+    session = create_session.json()["data"]
+    assert session["execution_target"] == {
+        "type": "remote_ssh",
+        "connection_id": "connection-legacy",
+    }
+
+    updated = await async_client.patch(
+        f"/api/v1/agent/sessions/{session['id']}",
+        json={"execution_scope": {"mode": "auto"}},
+    )
+
+    assert updated.status_code == 200
+    updated_session = updated.json()["data"]
+    assert updated_session["execution_scope"] == {"mode": "auto"}
+    assert updated_session["execution_target"] == {"type": "local"}
+    assert updated_session["metadata"] == {"execution_scope": {"mode": "auto"}}
+
+
+@pytest.mark.asyncio
 async def test_agent_core_streams_text_and_reasoning_events(async_client, monkeypatch):
     completion_kwargs: list[dict] = []
 

@@ -176,6 +176,51 @@ describe("ConnectedNodeSelector", () => {
     ).toBeInTheDocument()
   })
 
+  it("falls back to local when every manual remote target is missing", async () => {
+    const onChange = vi.fn()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    render(
+      <ControlledSelector
+        initialValue={{
+          mode: "manual",
+          targetIds: ["missing-connection"],
+        }}
+        onChange={onChange}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith({
+        mode: "manual",
+        targetIds: [LOCAL_TARGET_ID],
+      }),
+    )
+  })
+
+  it("preserves stale manual remote targets when loading connections fails", async () => {
+    const onChange = vi.fn()
+    apiRequestMock.mockRejectedValueOnce(new Error("backend unavailable"))
+
+    render(
+      <ControlledSelector
+        initialValue={{
+          mode: "manual",
+          targetIds: ["missing-connection"],
+        }}
+        onChange={onChange}
+      />,
+    )
+
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole("button", {
+        name: "Execution targets: Manual, Remote",
+      }),
+    ).toBeInTheDocument()
+  })
+
   it("keeps Auto usable when remote hosts fail to load", async () => {
     const user = userEvent.setup()
     apiRequestMock.mockRejectedValueOnce(new Error("backend unavailable"))
@@ -198,5 +243,22 @@ describe("ConnectedNodeSelector", () => {
     expect(screen.getByRole("button", { name: "Execution targets: Auto, All" }))
       .toBeDisabled()
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/connections"))
+  })
+
+  it("keeps the compact trigger accessible and opens the menu", async () => {
+    const user = userEvent.setup()
+    apiRequestMock.mockResolvedValueOnce({ data: [liveConnection] })
+
+    render(<ConnectedNodeSelector compact />)
+
+    const trigger = screen.getByRole("button", {
+      name: "Execution targets: Auto, All",
+    })
+    expect(trigger).toHaveClass("max-w-9")
+    expect(trigger).not.toHaveTextContent("Auto")
+
+    await user.click(trigger)
+
+    expect(screen.getByRole("menuitemradio", { name: "Auto" })).toBeInTheDocument()
   })
 })
