@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,9 +12,16 @@ from app.models.agent_core import AgentActionStatus
 from app.repositories.agent_core_repo import (
     AgentActionRepository,
     AgentArtifactRepository,
+    AgentSessionRepository,
 )
+from app.repositories.remote_connection_repo import RemoteConnectionRepository
 from app.services.agent_core.actions import AgentActionService
 from app.services.agent_core.events import AgentEventType
+from app.services.agent_core.execution_target import (
+    execution_scope_allows_remote,
+    execution_scope_mode,
+    selected_remote_connection_ids_from_policy,
+)
 from app.services.agent_core.ledger import AgentEventLedger
 from app.services.agent_core.metrics import agent_metrics
 from app.services.agent_core.ownership import TurnOwnershipLostError
@@ -21,6 +29,7 @@ from app.services.agent_core.permissions.context import (
     PermissionContext,
     PermissionContextResolver,
 )
+from app.services.agent_core.permissions.remote_boundary import RemoteBoundaryResolver
 from app.services.agent_core.permissions.risk import RiskAssessment
 from app.services.agent_core.permissions.command_risk import (
     CommandRiskAssessment,
@@ -126,6 +135,7 @@ def _resolve_requested_risk(
     tool: AgentTool,
     normalized_input: dict[str, Any],
     permission_context: PermissionContext,
+    permission_snapshot: dict[str, Any] | None = None,
 ):
     """Let a tool dynamically raise its requested risk from its input.
 
@@ -138,9 +148,10 @@ def _resolve_requested_risk(
     if assess is not None:
         dynamic = assess(
             normalized_input or {},
-            target=command_target_profile_from_context(
+            target=_command_target_profile_for_risk(
                 permission_context,
                 action_input=normalized_input,
+                permission_snapshot=permission_snapshot,
             ),
         )
         if dynamic is not None:
@@ -154,8 +165,14 @@ def _produce_risk_assessment(
     action_input: dict[str, Any],
     action_service: AgentActionService,
     permission_context: PermissionContext,
+    permission_snapshot: dict[str, Any] | None = None,
 ) -> RiskAssessment:
-    requested = _resolve_requested_risk(tool, action_input, permission_context)
+    requested = _resolve_requested_risk(
+        tool,
+        action_input,
+        permission_context,
+        permission_snapshot=permission_snapshot,
+    )
     if isinstance(requested, RiskAssessment):
         return requested
     return action_service.risk_engine.assess(
@@ -166,12 +183,202 @@ def _produce_risk_assessment(
     )
 
 
+def _command_target_profile_for_risk(
+    permission_context: PermissionContext,
+    *,
+    action_input: dict[str, Any],
+    permission_snapshot: dict[str, Any] | None,
+):
+    if not isinstance(permission_snapshot, dict):
+        return command_target_profile_from_context(
+            permission_context,
+            action_input=action_input,
+        )
+    execution_target = permission_snapshot.get("execution_target")
+    scope_connection_id = permission_snapshot.get("scope_remote_connection_id")
+    if isinstance(scope_connection_id, str) and scope_connection_id:
+        execution_target = {
+            "type": "remote_ssh",
+            "connection_id": scope_connection_id,
+        }
+    target_context = SimpleNamespace(
+        execution_target=(
+            execution_target
+            if isinstance(execution_target, dict)
+            else {"type": "local"}
+        ),
+        boundary=permission_snapshot.get("boundary")
+        if isinstance(permission_snapshot.get("boundary"), dict)
+        else {},
+        effective_roots=tuple(
+            str(root)
+            for root in (
+                permission_snapshot.get("effective_roots")
+                if isinstance(permission_snapshot.get("effective_roots"), list)
+                else []
+            )
+        ),
+        remote_identity=permission_snapshot.get("remote_identity")
+        if isinstance(permission_snapshot.get("remote_identity"), dict)
+        else None,
+    )
+    return command_target_profile_from_context(
+        target_context,
+        action_input=action_input,
+    )
+
+
 def _snapshot_with_command_risk(
     snapshot: dict[str, Any], risk: RiskAssessment
 ) -> dict[str, Any]:
     if not isinstance(risk, CommandRiskAssessment):
         return snapshot
     return {**snapshot, "command_risk": risk.audit_snapshot()}
+
+
+async def _snapshot_with_scope_remote_boundary(
+    snapshot: dict[str, Any],
+    action_input: dict[str, Any],
+    *,
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    session_id: str,
+) -> dict[str, Any]:
+    if not _scope_uses_runtime_remote_target(snapshot):
+        return snapshot
+
+    agent_session = await AgentSessionRepository(session).get_fresh(session_id)
+    if agent_session is None:
+        raise PermissionDeniedError("Agent session is not accessible")
+    if (
+        str(agent_session.workspace_id) != str(workspace_id)
+        or str(agent_session.user_id) != str(user_id)
+    ):
+        raise PermissionDeniedError("Agent session is not accessible")
+
+    connection_id = _action_connection_id(action_input)
+    if not connection_id:
+        connection_id = await _sole_runtime_scope_connection_id(
+            snapshot,
+            session=session,
+            workspace_id=workspace_id,
+        )
+    if not connection_id:
+        return snapshot
+
+    boundary = await RemoteBoundaryResolver(session).resolve(
+        agent_session=agent_session,
+        connection_id=connection_id,
+    )
+    return {
+        **snapshot,
+        "scope_remote_connection_id": connection_id,
+        "boundary": boundary.audit_boundary(),
+        "effective_roots": (
+            [boundary.effective_root] if boundary.effective_root else []
+        ),
+        "remote_identity": boundary.remote_identity,
+        "resource_revisions": boundary.resource_revisions,
+    }
+
+
+def _scope_uses_runtime_remote_target(snapshot: dict[str, Any]) -> bool:
+    execution_target = snapshot.get("execution_target")
+    execution_scope = snapshot.get("execution_scope")
+    return (
+        isinstance(execution_scope, dict)
+        and execution_scope_allows_remote(execution_scope)
+        and (
+            not isinstance(execution_target, dict)
+            or execution_target.get("type") != "remote_ssh"
+        )
+    )
+
+
+def _action_connection_id(action_input: dict[str, Any]) -> str | None:
+    connection_id = action_input.get("connection_id")
+    if isinstance(connection_id, str) and connection_id.strip():
+        return connection_id.strip()
+    return None
+
+
+async def _sole_runtime_scope_connection_id(
+    snapshot: dict[str, Any],
+    *,
+    session: AsyncSession,
+    workspace_id: str,
+) -> str | None:
+    execution_scope = snapshot.get("execution_scope")
+    mode = execution_scope_mode(execution_scope)
+    if mode == "manual":
+        connection_ids = selected_remote_connection_ids_from_policy(
+            {"execution_scope": execution_scope}
+        )
+    elif mode == "auto":
+        connection_ids = await _all_remote_connection_ids_for_workspace(
+            session=session,
+            workspace_id=workspace_id,
+        )
+    else:
+        connection_ids = []
+    return connection_ids[0] if len(connection_ids) == 1 else None
+
+
+async def _all_remote_connection_ids_for_workspace(
+    *,
+    session: AsyncSession,
+    workspace_id: str,
+) -> list[str]:
+    repo = RemoteConnectionRepository(session)
+    selected: list[str] = []
+    cursor: str | None = None
+    while True:
+        connections, pagination = await repo.list_for_workspace(
+            workspace_id=workspace_id,
+            limit=100,
+            cursor=cursor,
+        )
+        selected.extend(str(connection.id) for connection in connections)
+        if not pagination.has_more or not pagination.next_cursor:
+            break
+        cursor = pagination.next_cursor
+    return selected
+
+
+def _snapshot_has_remote_boundary(snapshot: Any) -> bool:
+    if not isinstance(snapshot, dict):
+        return False
+    if snapshot.get("scope_remote_connection_id"):
+        return True
+    execution_target = snapshot.get("execution_target")
+    return (
+        isinstance(execution_target, dict)
+        and execution_target.get("type") == "remote_ssh"
+        and bool(execution_target.get("connection_id"))
+    )
+
+
+def _snapshot_with_authorized_remote_boundary(
+    snapshot: dict[str, Any],
+    authorized_snapshot: Any,
+) -> dict[str, Any]:
+    if not _snapshot_has_remote_boundary(authorized_snapshot):
+        return snapshot
+    bounded = dict(snapshot)
+    for key in (
+        "policy_version",
+        "execution_target",
+        "execution_scope",
+        "boundary",
+        "effective_roots",
+        "remote_identity",
+        "resource_revisions",
+        "scope_remote_connection_id",
+    ):
+        if key in authorized_snapshot:
+            bounded[key] = authorized_snapshot[key]
+    return bounded
 
 
 def _has_explicit_user_approval(permission_decision: dict[str, Any]) -> bool:
@@ -268,10 +475,19 @@ class AgentToolExecutor:
                 exc=exc,
                 commit=commit_action,
             )
+        permission_snapshot = await _snapshot_with_scope_remote_boundary(
+            permission_snapshot,
+            normalized_input,
+            session=self.session,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+            session_id=context.session_id,
+        )
         requested_risk = _resolve_requested_risk(
             tool,
             normalized_input,
             permission_context,
+            permission_snapshot=permission_snapshot,
         )
         permission_snapshot = _snapshot_with_command_risk(
             permission_snapshot,
@@ -590,11 +806,28 @@ class AgentToolExecutor:
                 expected_turn_owner_token=context.expected_owner_token,
             )
 
+        previous_decision = action.permission_decision or {}
+        explicitly_approved = _has_explicit_user_approval(previous_decision)
+        if explicitly_approved:
+            snapshot = _snapshot_with_authorized_remote_boundary(
+                snapshot,
+                action.permission_context_snapshot,
+            )
+        else:
+            snapshot = await _snapshot_with_scope_remote_boundary(
+                snapshot,
+                action.normalized_input or action.input or {},
+                session=self.session,
+                workspace_id=context.workspace_id,
+                user_id=context.user_id,
+                session_id=context.session_id,
+            )
         current_risk = _produce_risk_assessment(
             tool=tool,
             action_input=action.normalized_input or action.input or {},
             action_service=self.action_service,
             permission_context=permission_context,
+            permission_snapshot=snapshot,
         )
         snapshot = _snapshot_with_command_risk(snapshot, current_risk)
         fresh_decision = self.action_service.permission_policy.decide(
@@ -602,8 +835,6 @@ class AgentToolExecutor:
             permission_mode=permission_context.permission_mode,
             automation_mode=permission_context.automation_mode,
         )
-        previous_decision = action.permission_decision or {}
-        explicitly_approved = _has_explicit_user_approval(previous_decision)
         hard_denied = (
             fresh_decision.decision == "deny"
             or current_risk.level == "critical"

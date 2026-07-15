@@ -523,7 +523,31 @@ async def _resolve_claimed_remote_target(
             or execution_target.get("type") != "remote_ssh"
         )
     ):
-        connection = await _resolve_connection(input, context, resolver_factory)
+        claimed_connection_id = str(snapshot.get("scope_remote_connection_id") or "")
+        if claimed_connection_id:
+            requested_connection_id = input.get("connection_id")
+            if (
+                isinstance(requested_connection_id, str)
+                and requested_connection_id.strip()
+                and requested_connection_id.strip() != claimed_connection_id
+            ):
+                raise PermissionDeniedError(
+                    "Remote connection differs from the authorized target"
+                )
+            resolver = resolver_factory(context.db)
+            try:
+                connection = await resolver.get(
+                    claimed_connection_id,
+                    workspace_id=context.workspace_id,
+                    user_id=context.user_id,
+                    session_id=context.session_id,
+                )
+            except NotFoundError as exc:
+                raise PermissionDeniedError(
+                    "Remote connection changed after the action was authorized"
+                ) from exc
+        else:
+            connection = await _resolve_connection(input, context, resolver_factory)
         agent_session = await AgentSessionRepository(context.db).get_fresh(
             context.session_id
         )
@@ -540,6 +564,27 @@ async def _resolve_claimed_remote_target(
             raise PermissionDeniedError(
                 "Remote target changed after the action was authorized"
             )
+        if claimed_connection_id:
+            boundary = await RemoteBoundaryResolver(context.db).resolve(
+                agent_session=agent_session,
+                connection_id=claimed_connection_id,
+            )
+            claimed_roots = snapshot.get("effective_roots")
+            claimed_root = (
+                str(claimed_roots[0])
+                if isinstance(claimed_roots, list) and claimed_roots
+                else None
+            )
+            if (
+                snapshot.get("remote_identity") != boundary.remote_identity
+                or snapshot.get("resource_revisions")
+                != boundary.resource_revisions
+                or claimed_root != boundary.effective_root
+            ):
+                raise PermissionDeniedError(
+                    "Remote target changed after the action was authorized"
+                )
+            return connection, claimed_root
         return connection, await _remote_working_directory(context, connection.id)
 
     if not isinstance(execution_target, dict) or execution_target.get("type") != "remote_ssh":
