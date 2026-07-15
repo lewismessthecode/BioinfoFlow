@@ -1152,7 +1152,9 @@ export const AgentWorkbench = forwardRef<AgentWorkbenchHandle, AgentWorkbenchPro
         onRemoveActiveSkill={removeActiveSkill}
         tokenUsageSummary={state.session?.token_usage_summary}
         executionSelection={executionSelection}
-        currentExecutionTargetLabel={currentExecutionTargetLabel}
+        currentExecutionTargetLabel={
+          hasActiveTurn ? currentExecutionTargetLabel : null
+        }
         onExecutionSelectionChange={handleExecutionSelectionChange}
         compactControls={desktopSidecarVisible}
         presentation={composerDocked ? "dock" : "center"}

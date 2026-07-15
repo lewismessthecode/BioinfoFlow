@@ -1832,6 +1832,87 @@ describe("AgentWorkbench", () => {
     ).toBeInTheDocument()
   })
 
+  it("falls back to the selected target pill when no turn is active", async () => {
+    const completedTurn = {
+      ...baseTurn,
+      id: "completed-turn",
+      status: "completed" as const,
+    }
+    const staleRemoteTargetEvent: AgentRuntimeEvent = {
+      id: "risk-stale-remote",
+      session_id: "session-1",
+      turn_id: completedTurn.id,
+      seq: 1,
+      type: "action.risk_assessed",
+      payload: {
+        action_id: "action-stale-remote",
+        target: {
+          kind: "remote_ssh",
+          trust_domain: "sz01.example.org",
+          identity: "bioflow",
+          connection_id: "connection-sz01",
+        },
+      },
+      visibility: "user",
+      schema_version: 1,
+      created_at: "2026-07-13T00:00:00Z",
+      updated_at: "2026-07-13T00:00:00Z",
+    }
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path === "/connections") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "connection-sz01",
+              name: "Test host sz01",
+              host: "sz01.example.org",
+              port: 22,
+              username: "bioflow",
+              auth_method: "ssh_config",
+              ssh_alias: "bioflow-test-sz01",
+              key_path: "",
+              status: "online",
+              skill_instructions: "",
+            },
+          ],
+        })
+      }
+      if (path === "/agent/skills") return Promise.resolve({ data: { skills: [] } })
+      return Promise.resolve({ data: [] })
+    })
+    setupRuntime({
+      session: {
+        ...baseSession,
+        execution_scope: autoExecutionScope,
+      },
+      turns: [completedTurn],
+      events: [staleRemoteTargetEvent],
+      status: "idle",
+    })
+
+    render(<AgentWorkbench />)
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Execution targets: Auto, All targets",
+      }),
+    ).toBeInTheDocument()
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", {
+        name: "Execution targets: Auto, All targets",
+      }),
+    )
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Manual/ }))
+    fireEvent.keyDown(document.body, { key: "Escape" })
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Execution targets: Manual, Local",
+      }),
+    ).toBeInTheDocument()
+  })
+
   it("treats approval and user waits as active turns for queue policy", () => {
     writeAgentTurnPolicy("queue")
     const send = vi.fn().mockResolvedValue(undefined)
