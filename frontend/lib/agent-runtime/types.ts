@@ -34,6 +34,15 @@ export type AgentExecutionTarget = {
   connection_id?: string | null
 }
 
+export type AgentExecutionScopeMode = "auto" | "manual"
+
+export type AgentExecutionScopeTarget = AgentExecutionTarget
+
+export type AgentExecutionScope = {
+  mode: AgentExecutionScopeMode
+  selected_targets?: AgentExecutionScopeTarget[] | null
+}
+
 export type AgentTokenUsageSummary = {
   has_token_usage: boolean
   input_tokens: number

@@ -23,6 +23,7 @@ from app.schemas.agent_core import (
     AgentActionDecisionRequest,
     AgentActionRead,
     AgentArtifactRead,
+    AgentExecutionScope,
     AgentExecutionTarget,
     AgentEventRead,
     AgentModelSelection,
@@ -39,7 +40,10 @@ from app.schemas.agent_core import (
 )
 from app.repositories.llm_repo import LlmModelRepository
 from app.services.agent_core import AgentCoreService, AgentMemoryService
-from app.services.agent_core.execution_target import session_execution_target_from_metadata
+from app.services.agent_core.execution_target import (
+    session_execution_scope_from_metadata,
+    session_execution_target_from_metadata,
+)
 from app.services.agent_core.skills import AgentSkillRegistry
 from app.services.agent_core.metrics import agent_metrics
 from app.utils.logging import get_logger
@@ -65,12 +69,20 @@ def _session_read(session) -> AgentSessionRead:
     execution_target = session_execution_target_from_metadata(
         getattr(session, "session_metadata", None)
     )
+    execution_scope = session_execution_scope_from_metadata(
+        getattr(session, "session_metadata", None)
+    )
     model_selection = session_model_selection_from_metadata(
         getattr(session, "session_metadata", None)
     )
     return AgentSessionRead.model_validate(session).model_copy(
         update={
             "execution_target": AgentExecutionTarget.model_validate(execution_target),
+            "execution_scope": (
+                AgentExecutionScope.model_validate(execution_scope)
+                if execution_scope
+                else None
+            ),
             "model_selection": (
                 AgentModelSelection.model_validate(model_selection)
                 if model_selection
@@ -201,6 +213,11 @@ async def create_session(
             if payload.execution_target
             else None
         ),
+        execution_scope=(
+            payload.execution_scope.model_dump(mode="json", exclude_none=True)
+            if payload.execution_scope
+            else None
+        ),
         metadata=payload.metadata,
         toolset_policy={"name": payload.mode},
     )
@@ -310,6 +327,11 @@ async def create_turn(
         execution_target=(
             payload.execution_target.model_dump(mode="json", exclude_none=True)
             if payload.execution_target
+            else None
+        ),
+        execution_scope=(
+            payload.execution_scope.model_dump(mode="json", exclude_none=True)
+            if payload.execution_scope
             else None
         ),
         metadata=payload.metadata,

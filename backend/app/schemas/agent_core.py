@@ -11,6 +11,7 @@ PermissionMode = Literal["ask_each_action", "guarded_auto", "bypass"]
 AutomationMode = Literal["advise_only", "assisted", "autonomous"]
 AgentMode = Literal["plan", "execution"]
 ExecutionTargetType = Literal["local", "remote_ssh"]
+ExecutionScopeMode = Literal["auto", "manual"]
 SessionStatus = Literal["active", "archived", "deleted"]
 TurnStatus = Literal[
     "queued",
@@ -67,6 +68,11 @@ class AgentExecutionTarget(BaseModel):
     )
 
 
+class AgentExecutionScope(BaseModel):
+    mode: ExecutionScopeMode = "auto"
+    selected_targets: list[AgentExecutionTarget] | None = None
+
+
 class AgentTokenUsageSummary(BaseModel):
     has_token_usage: bool
     input_tokens: int = 0
@@ -103,6 +109,7 @@ class AgentSessionCreate(BaseModel):
     default_model_profile_id: UUID | None = None
     model_selection: AgentModelSelection | None = None
     execution_target: AgentExecutionTarget | None = None
+    execution_scope: AgentExecutionScope | None = None
     metadata: dict | None = None
 
 
@@ -115,6 +122,7 @@ class AgentSessionUpdate(BaseModel):
     default_model_profile_id: UUID | None = None
     model_selection: AgentModelSelection | None = None
     execution_target: AgentExecutionTarget | None = None
+    execution_scope: AgentExecutionScope | None = None
     status: SessionStatus | None = None
     metadata: dict | None = None
     pending_strategy: Literal["future_only", "approve_pending_tools"] = "future_only"
@@ -149,6 +157,7 @@ class AgentSessionRead(BaseModel):
     execution_target: AgentExecutionTarget = Field(
         default_factory=lambda: AgentExecutionTarget(type="local")
     )
+    execution_scope: AgentExecutionScope | None = None
     token_usage_summary: AgentTokenUsageSummary | None = None
     status: SessionStatus
     metadata: dict | None = Field(default=None, validation_alias="session_metadata")
@@ -165,6 +174,7 @@ class AgentTurnCreate(BaseModel):
     model_profile_id: UUID | None = None
     model_selection: AgentModelSelection | None = None
     execution_target: AgentExecutionTarget | None = None
+    execution_scope: AgentExecutionScope | None = None
     metadata: dict | None = None
 
 

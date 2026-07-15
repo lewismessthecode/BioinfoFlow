@@ -54,6 +54,53 @@ describe("agent runtime client", () => {
     })
   })
 
+  it("serializes auto execution scope when creating a turn", async () => {
+    await createAgentRuntimeTurn({
+      sessionId: "session-1",
+      inputText: "hello",
+      executionScope: { mode: "auto" },
+    })
+
+    const body = JSON.parse(apiRequestMock.mock.calls[0][1].body)
+    expect(body).toMatchObject({
+      input_text: "hello",
+      execution_scope: {
+        mode: "auto",
+      },
+    })
+  })
+
+  it("serializes manual execution scope with local and remote targets", async () => {
+    await createAgentRuntimeTurn({
+      sessionId: "session-1",
+      inputText: "hello",
+      executionScope: {
+        mode: "manual",
+        selected_targets: [
+          { kind: "local" },
+          { kind: "remote_ssh", connection_id: "connection-1" },
+        ],
+      },
+    })
+
+    const body = JSON.parse(apiRequestMock.mock.calls[0][1].body)
+    expect(body).toMatchObject({
+      input_text: "hello",
+      execution_scope: {
+        mode: "manual",
+        selected_targets: [
+          { kind: "local", type: "local" },
+          {
+            kind: "remote_ssh",
+            type: "remote_ssh",
+            connection_id: "connection-1",
+            remote_connection_id: "connection-1",
+          },
+        ],
+      },
+    })
+  })
+
   it("serializes a selected remote execution target when creating a session", async () => {
     await createAgentRuntimeSession({
       title: "Remote session",
