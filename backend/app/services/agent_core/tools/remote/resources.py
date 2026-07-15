@@ -628,28 +628,56 @@ async def _selected_remote_connection_ids(
         return []
     if str(session.workspace_id) != workspace_id or str(session.user_id) != user_id:
         return []
+    metadata = getattr(session, "session_metadata", None)
+    scope_mode = (
+        execution_scope_mode(metadata.get("execution_scope"))
+        if isinstance(metadata, dict)
+        else None
+    )
+    if scope_mode == "manual":
+        return _selected_remote_connection_ids_from_policies(metadata)
+    if scope_mode == "auto":
+        return await _all_remote_connection_ids_for_workspace(
+            db=db,
+            workspace_id=workspace_id,
+        )
+
     project_connection_id = await _session_remote_project_connection_id(db, session)
     if project_connection_id:
         return [project_connection_id]
 
-    metadata = getattr(session, "session_metadata", None)
-    if isinstance(metadata, dict) and execution_scope_mode(
-        metadata.get("execution_scope")
-    ) == "auto":
-        repo = RemoteConnectionRepository(db)
-        connections, _pagination = await repo.list_for_workspace(
-            workspace_id=workspace_id,
-            limit=100,
-        )
-        return [str(connection.id) for connection in connections]
-
-    selected: list[str] = []
-    seen: set[str] = set()
-    for policy in (
-        getattr(session, "session_metadata", None),
+    return _selected_remote_connection_ids_from_policies(
+        metadata,
         getattr(session, "context_policy", None),
         getattr(session, "toolset_policy", None),
-    ):
+    )
+
+
+async def _all_remote_connection_ids_for_workspace(
+    *,
+    db: AsyncSession,
+    workspace_id: str,
+) -> list[str]:
+    repo = RemoteConnectionRepository(db)
+    selected: list[str] = []
+    cursor: str | None = None
+    while True:
+        connections, pagination = await repo.list_for_workspace(
+            workspace_id=workspace_id,
+            limit=100,
+            cursor=cursor,
+        )
+        selected.extend(str(connection.id) for connection in connections)
+        if not pagination.has_more or not pagination.next_cursor:
+            break
+        cursor = pagination.next_cursor
+    return selected
+
+
+def _selected_remote_connection_ids_from_policies(*policies: Any) -> list[str]:
+    selected: list[str] = []
+    seen: set[str] = set()
+    for policy in policies:
         for connection_id in _selected_ids_from_policy(policy):
             if not _is_uuid_string(connection_id):
                 continue

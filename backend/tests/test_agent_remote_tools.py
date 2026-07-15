@@ -680,6 +680,114 @@ async def test_remote_exec_runs_with_manual_multi_scope_selected_connection(
 
 
 @pytest.mark.asyncio
+async def test_manual_scope_overrides_remote_project_binding_for_resolver(db_session):
+    from app.services.agent_core.service import AgentCoreService
+    from app.services.project_service import ProjectService
+
+    service = RemoteConnectionService(db_session)
+    project_connection = await service.create_connection(
+        {
+            "name": "Project HPC",
+            "host": "project.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "project-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    selected = await service.create_connection(
+        {
+            "name": "Manually selected HPC",
+            "host": "selected.cluster.example.org",
+            "port": 22,
+            "username": "alice",
+            "auth_method": "ssh_config",
+            "ssh_alias": "selected-hpc",
+        },
+        workspace_id="workspace-1",
+    )
+    project = await ProjectService(db_session).create_project(
+        {
+            "name": "Remote project",
+            "workspace_id": "workspace-1",
+            "remote_connection_id": str(project_connection.id),
+            "remote_root_path": "/analysis/project",
+        },
+        user_id="user-1",
+    )
+    agent_session = await AgentCoreService(db_session).create_session(
+        project_id=str(project.id),
+        workspace_id="workspace-1",
+        user_id="user-1",
+        execution_scope={
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "remote_ssh", "connection_id": str(selected.id)}
+            ],
+        },
+    )
+
+    resolver = DatabaseRemoteConnectionResolver(db_session)
+    connections = await resolver.list(
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+    )
+
+    assert [connection.id for connection in connections] == [str(selected.id)]
+    with pytest.raises(NotFoundError):
+        await resolver.get(
+            str(project_connection.id),
+            workspace_id="workspace-1",
+            user_id="user-1",
+            session_id=str(agent_session.id),
+        )
+
+
+@pytest.mark.asyncio
+async def test_auto_scope_resolver_lists_more_than_first_page(db_session, monkeypatch):
+    from app.schemas.common import Pagination
+    from app.services.agent_core.tools.remote import resources as remote_resources
+
+    created_ids = [f"connection-{index:03}" for index in range(101)]
+    calls: list[str | None] = []
+
+    async def list_for_workspace(self, *, workspace_id, limit=20, cursor=None):
+        calls.append(cursor)
+        page_ids = created_ids[:100] if cursor is None else created_ids[100:]
+        return (
+            [SimpleNamespace(id=connection_id) for connection_id in page_ids],
+            Pagination(
+                limit=limit,
+                has_more=cursor is None,
+                next_cursor="page-2" if cursor is None else None,
+                total_count=len(created_ids),
+            ),
+        )
+
+    monkeypatch.setattr(
+        remote_resources.RemoteConnectionRepository,
+        "list_for_workspace",
+        list_for_workspace,
+    )
+    agent_session = await _create_agent_session(
+        db_session,
+        session_metadata={"execution_scope": {"mode": "auto"}},
+    )
+
+    returned_ids = await remote_resources._selected_remote_connection_ids(
+        db_session,
+        workspace_id="workspace-1",
+        user_id="user-1",
+        session_id=str(agent_session.id),
+    )
+
+    assert returned_ids == created_ids
+    assert calls == [None, "page-2"]
+
+
+@pytest.mark.asyncio
 async def test_remote_read_file_bypass_runs_data_path_outside_root_without_approval(
     db_session,
 ):

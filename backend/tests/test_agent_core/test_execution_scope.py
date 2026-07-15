@@ -6,6 +6,8 @@ from app.services.agent_core.execution_target import (
     selected_remote_connection_ids_from_policy,
     session_metadata_with_execution_scope,
 )
+from app.services.agent_core.tools import build_default_tool_registry
+from app.services.agent_core.tools.toolsets import ToolsetExposure
 from app.utils.exceptions import BadRequestError
 
 
@@ -126,3 +128,22 @@ def test_manual_multi_scope_does_not_fall_back_to_stale_remote_alias():
 
     assert normalize_execution_target(None, metadata=metadata) == {"type": "local"}
     assert selected_remote_connection_ids_from_policy(metadata) == ["conn-selected"]
+
+
+def test_manual_remote_only_multi_scope_exposes_only_remote_compatible_tools():
+    names = ToolsetExposure(build_default_tool_registry()).exposed_names(
+        policy={"name": "execution"},
+        execution_target={"type": "local"},
+        execution_scope={
+            "mode": "manual",
+            "selected_targets": [
+                {"type": "remote_ssh", "connection_id": "conn-a"},
+                {"type": "remote_ssh", "connection_id": "conn-b"},
+            ],
+        },
+    )
+
+    assert "remote.exec" in names
+    assert "remote.read_file" in names
+    assert "bash" not in names
+    assert "files.write" not in names
